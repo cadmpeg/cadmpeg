@@ -17,10 +17,11 @@ use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Se
 use super::{
     bore_carrier_placements, compact_position_loci, cylindrical_face_axes_at_depth,
     cylindrical_support_normal, direct_hole_position_feature, enrich_history_hole_constructions,
-    enrich_history_parameters, hole_position_sketch_source, hole_temporary_axis,
-    marker_pattern_bore_axes, plane_owned_bore_placements, profiled_hole_construction,
-    project_hole_axes, project_hole_position_sketches, project_profiled_hole_constructions,
-    project_spatial_hole_position_sketches, project_topological_hole_constructions, HoleTopology,
+    enrich_history_parameters, hole_position_feature, hole_position_sketch_source,
+    hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
+    profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
+    project_profiled_hole_constructions, project_spatial_hole_position_sketches,
+    project_topological_hole_constructions, HoleTopology,
 };
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
@@ -1110,6 +1111,39 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
     assert_eq!(
         hole_position_sketch_source(&history.features[0], &lane),
         None
+    );
+
+    let mut legacy_history = history.clone();
+    legacy_history.features[0].source_id = None;
+    legacy_history.features.push(crate::records::Feature {
+        id: "native-position".into(),
+        parent: "history".into(),
+        xml_tag: "Sketch".into(),
+        tree_parent: None,
+        source_id: None,
+        parent_source_id: None,
+        ordinal: 1,
+        name: "Position".into(),
+        kind: "Sketch".into(),
+        input_class: Some("moProfileFeature_c".into()),
+        suppressed: false,
+        parameters: BTreeMap::default(),
+        dimension_properties: BTreeMap::default(),
+        properties: BTreeMap::default(),
+        text: None,
+        content: Vec::new(),
+    });
+    lane.native_payload[hole_trailer + 16..hole_trailer + 28].fill(0);
+    lane.native_payload[hole_trailer + 16..hole_trailer + 28]
+        .copy_from_slice(&[0, 0xc0, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(
+        hole_position_feature(
+            &legacy_history.features[0],
+            std::slice::from_ref(&legacy_history),
+            &[lane],
+        )
+        .map(|feature| feature.id.as_str()),
+        Some("native-position")
     );
 }
 

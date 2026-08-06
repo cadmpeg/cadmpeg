@@ -121,6 +121,39 @@ pub(super) fn resolve_operand_marker_excluding<'a>(
             return Some(*entity);
         }
     }
+    if matches!(
+        kind,
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386)
+    ) {
+        let indexed = entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.object_index == Some(u32::from(address)))
+            .filter(|entity| operand_accepts_marker(kind, entity.kind))
+            .filter(|entity| !excluded.contains(&entity.id))
+            .collect::<Vec<_>>();
+        if let [entity] = indexed.as_slice() {
+            return Some(*entity);
+        }
+        if kind == FeatureInputOperandKind::Native(0x8386) {
+            let entities_by_id = entities
+                .iter()
+                .map(|entity| (entity.id.as_str(), *entity))
+                .collect::<HashMap<_, _>>();
+            let indexed_line_handles = entities
+                .iter()
+                .copied()
+                .filter(|entity| entity.object_index == Some(u32::from(address)))
+                .filter(|entity| !excluded.contains(&entity.id))
+                .filter(|entity| {
+                    linked_coordinate_line_endpoints(entity, &entities_by_id).is_some()
+                })
+                .collect::<Vec<_>>();
+            if let [entity] = indexed_line_handles.as_slice() {
+                return Some(*entity);
+            }
+        }
+    }
     let mut compatible = entities
         .iter()
         .copied()
@@ -298,9 +331,6 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Option<[&'a SketchInputEntity; 2]> {
-    if matches!(marker.kind, SketchInputKind::Relation(_)) {
-        return None;
-    }
     let links = marker
         .links
         .iter()
@@ -320,7 +350,50 @@ pub(super) fn linked_coordinate_line_endpoints<'a>(
     let [Some(first), Some(second)] = endpoints else {
         return None;
     };
+    if matches!(marker.kind, SketchInputKind::Relation(_))
+        && ![first, second].into_iter().all(|endpoint| {
+            matches!(
+                endpoint.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            )
+        })
+    {
+        return None;
+    }
     (first.id != second.id).then_some([first, second])
+}
+
+pub(super) fn coordinate_line_endpoints_with_linked_point<'a>(
+    marker: &'a SketchInputEntity,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<[&'a SketchInputEntity; 2]> {
+    if !matches!(
+        marker.kind,
+        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+    ) || marker.coordinates_m.is_none()
+    {
+        return None;
+    }
+    let mut endpoints = marker
+        .links
+        .iter()
+        .filter(|link| link.entity_ref != marker.id)
+        .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
+        .filter(|endpoint| {
+            endpoint.feature_ref == marker.feature_ref
+                && endpoint.coordinates_m.is_some()
+                && matches!(
+                    endpoint.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+    endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+    let [endpoint] = endpoints.as_slice() else {
+        return None;
+    };
+    Some([marker, *endpoint])
 }
 
 #[cfg(test)]

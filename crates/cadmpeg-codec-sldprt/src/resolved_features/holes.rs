@@ -131,8 +131,14 @@ fn hole_position_sketch_source(
     if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
-    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
     let name = feature_object_name(feature, lane)?;
+    // Legacy keyword records may omit the XML source id while the serialized
+    // object name still carries the stable object id used by the input lane.
+    let source = feature
+        .source_id
+        .as_deref()
+        .and_then(|value| value.parse::<u32>().ok())
+        .or(name.object_id)?;
     let offset = usize::try_from(name.offset)
         .ok()?
         .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -427,6 +433,104 @@ pub(crate) fn enrich_history_hole_constructions(
                 .properties
                 .insert("DissectableChildren".into(), profile_source);
         }
+    }
+}
+
+pub(crate) fn enrich_history_cosmetic_thread_diameters(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for history in histories {
+        let features_by_id = history
+            .features
+            .iter()
+            .map(|feature| (feature.id.as_str(), feature))
+            .collect::<HashMap<_, _>>();
+        let features_by_source = history
+            .features
+            .iter()
+            .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+            .collect::<HashMap<_, _>>();
+        let mut candidates = HashMap::<String, Vec<f64>>::new();
+        for lane in lanes {
+            for selection in &lane.surface_selections {
+                let Some(thread) = features_by_id.get(selection.feature_ref.as_str()) else {
+                    continue;
+                };
+                if classify(thread) != Some(FeatureClass::CosmeticThread) {
+                    continue;
+                }
+                let mut producer_diameters = selection
+                    .producer_feature_refs
+                    .iter()
+                    .chain(selection.terminal_feature_ref.iter())
+                    .filter_map(|producer| features_by_id.get(producer.as_str()).copied())
+                    .filter_map(|producer| {
+                        crate::history::threaded_hole_major_diameter(
+                            producer,
+                            &features_by_source,
+                            &history.features,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                producer_diameters.sort_by(f64::total_cmp);
+                producer_diameters.dedup_by(|left, right| left.to_bits() == right.to_bits());
+                let [diameter] = producer_diameters.as_slice() else {
+                    continue;
+                };
+                candidates
+                    .entry(thread.id.clone())
+                    .or_default()
+                    .push(*diameter);
+            }
+        }
+        for feature in &mut history.features {
+            if feature.parameters.contains_key("D2") {
+                continue;
+            }
+            let Some(values) = candidates.get(&feature.id) else {
+                continue;
+            };
+            let Some((&diameter, rest)) = values.split_first() else {
+                continue;
+            };
+            if rest
+                .iter()
+                .any(|candidate| candidate.to_bits() != diameter.to_bits())
+            {
+                continue;
+            }
+            feature.parameters.insert(
+                "D2".into(),
+                format!("<MOD-DIAM>{}", crate::history::format_length_mm(diameter)),
+            );
+        }
+    }
+}
+
+pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut projection = histories.to_vec();
+    enrich_history_hole_constructions(&mut projection, lanes);
+    enrich_history_cosmetic_thread_diameters(&mut projection, lanes);
+    let fallback_parameters = projection
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| Some((feature.id.clone(), feature.parameters.get("D2")?.clone())))
+        .collect::<HashMap<_, _>>();
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if feature.parameters.contains_key("D2") {
+            continue;
+        }
+        let Some(diameter) = fallback_parameters.get(&feature.id) else {
+            continue;
+        };
+        feature.parameters.insert("D2".into(), diameter.clone());
     }
 }
 
@@ -993,12 +1097,17 @@ fn hole_position_feature<'a>(
         .iter()
         .flat_map(|history| &history.features)
         .filter(|candidate| {
-            candidate
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-                == Some(*source)
-                && classify(candidate) == Some(FeatureClass::Sketch)
+            classify(candidate) == Some(FeatureClass::Sketch)
+                && lanes.iter().any(|lane| {
+                    candidate
+                        .source_id
+                        .as_deref()
+                        .and_then(|value| value.parse::<u32>().ok())
+                        .or_else(|| {
+                            feature_object_name(candidate, lane).and_then(|name| name.object_id)
+                        })
+                        == Some(*source)
+                })
         });
     let position = position_features.next()?;
     position_features.next().is_none().then_some(position)

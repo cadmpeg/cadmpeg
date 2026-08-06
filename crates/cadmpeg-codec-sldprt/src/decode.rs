@@ -2092,6 +2092,13 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     );
+    crate::resolved_features::profiles::project_sketch_block_profiles(
+        &mut ir.model.features,
+        &mut sketches,
+        &mut sketch_entities,
+        &histories,
+        &sketch_lanes,
+    );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
     crate::resolved_features::component_paths::project_dissected_sketches(
         &mut ir.model.features,
@@ -2913,6 +2920,13 @@ fn build_metadata_ir(
         &histories,
         &sketch_lanes,
     );
+    crate::resolved_features::profiles::project_sketch_block_profiles(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &mut ir.model.sketch_entities,
+        &histories,
+        &sketch_lanes,
+    );
     crate::history::bind_unique_sketch_feature(
         &mut ir.model.features,
         &ir.model.sketches,
@@ -3098,6 +3112,11 @@ fn project_design_history(
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
     crate::history::enrich_history_parameters_values_only(&mut parameter_projection, lanes);
+    crate::resolved_features::holes::
+        enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+            &mut parameter_projection,
+            lanes,
+        );
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
     crate::history::project_configuration_design_states(ir, histories, lanes, pmi_dimensions);

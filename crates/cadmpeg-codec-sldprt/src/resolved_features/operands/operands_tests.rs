@@ -1,13 +1,14 @@
 //! Tests for the `operands` module.
 
 use super::{
-    resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+    coordinate_line_endpoints_with_linked_point, resolve_operand_marker,
+    resolve_operand_marker_excluding, resolve_scalar_operand_markers,
 };
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
     SketchInputLink, SketchRelationKind,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[test]
 fn qualified_operand_falls_back_to_marker_family_ordinal() {
@@ -481,5 +482,157 @@ fn exact_local_operand_excludes_an_already_resolved_sibling() {
         )
         .map(|marker| marker.id.as_str()),
         Some("second")
+    );
+}
+
+#[test]
+fn e1_operand_uses_unique_native_object_index_when_local_address_is_absent() {
+    let curve = SketchInputEntity {
+        id: "curve".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(13),
+        local_id: None,
+        kind: SketchInputKind::Arc,
+        state_value: None,
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    assert_eq!(
+        resolve_operand_marker(
+            std::slice::from_ref(&curve),
+            FeatureInputOperandKind::E1,
+            13
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("curve")
+    );
+    assert_eq!(
+        resolve_operand_marker(
+            std::slice::from_ref(&curve),
+            FeatureInputOperandKind::Native(0x8386),
+            13,
+        )
+        .map(|marker| marker.id.as_str()),
+        Some("curve")
+    );
+}
+
+#[test]
+fn line_distance_operand_uses_an_object_indexed_relation_line_handle() {
+    let endpoint = |id: &str, offset, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: offset,
+        offset: u64::from(offset),
+        object_index: None,
+        local_id: Some(offset),
+        kind: SketchInputKind::Point,
+        state_value: None,
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let endpoints = [
+        endpoint("first", 1, Some([0.0, 0.0])),
+        endpoint("second", 2, Some([1.0, 0.0])),
+    ];
+    let handle = SketchInputEntity {
+        id: "relation-line-handle".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 16,
+        offset: 16,
+        object_index: Some(5),
+        local_id: Some(6),
+        kind: SketchInputKind::Relation(SketchRelationKind::Radius),
+        state_value: None,
+        coordinates_m: None,
+        links: endpoints
+            .iter()
+            .map(|endpoint| SketchInputLink {
+                local_id: u16::try_from(endpoint.local_id.expect("local identity"))
+                    .expect("u16 local identity"),
+                entity_ref: endpoint.id.clone(),
+            })
+            .collect(),
+        link_selector: None,
+    };
+    let markers = [&endpoints[0], &endpoints[1], &handle];
+
+    assert_eq!(
+        resolve_operand_marker(markers, FeatureInputOperandKind::Native(0x8386), 5)
+            .map(|marker| marker.id.as_str()),
+        Some("relation-line-handle")
+    );
+}
+
+#[test]
+fn coordinate_line_handle_uses_its_own_coordinate_and_one_point_link() {
+    let point = SketchInputEntity {
+        id: "point".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 1,
+        offset: 1,
+        object_index: Some(2),
+        local_id: Some(2),
+        kind: SketchInputKind::Point,
+        state_value: None,
+        coordinates_m: Some([2.0, 0.0]),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let relation = SketchInputEntity {
+        id: "relation".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 2,
+        offset: 2,
+        object_index: Some(3),
+        local_id: Some(3),
+        kind: SketchInputKind::Relation(SketchRelationKind::Angle),
+        state_value: None,
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let marker = SketchInputEntity {
+        id: "line-handle".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(1),
+        local_id: Some(1),
+        kind: SketchInputKind::Arc,
+        state_value: None,
+        coordinates_m: Some([1.0, 0.0]),
+        links: vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: relation.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: point.id.clone(),
+            },
+        ],
+        link_selector: None,
+    };
+    let markers = HashMap::from([
+        (marker.id.as_str(), &marker),
+        (point.id.as_str(), &point),
+        (relation.id.as_str(), &relation),
+    ]);
+
+    assert_eq!(
+        coordinate_line_endpoints_with_linked_point(&marker, &markers)
+            .map(|endpoints| endpoints.map(|endpoint| endpoint.id.as_str())),
+        Some(["line-handle", "point"])
     );
 }

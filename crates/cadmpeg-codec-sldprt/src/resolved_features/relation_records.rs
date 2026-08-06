@@ -308,7 +308,7 @@ pub(super) fn relation_signature(
         return matches!(
             operands,
             [operand]
-                if matches!(operand.kind, Native(0x80cc | 0x83fe | 0x8ab6 | 0x929d | 0xbd69))
+                if matches!(operand.kind, Native(_))
         );
     }
     let [first, second] = operands else {

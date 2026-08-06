@@ -360,7 +360,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     }
 }
 
-pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
+pub(crate) fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
     native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
         == NativeClassKind::ProfileFeature
         || (feature.input_class.is_none()
@@ -372,7 +372,7 @@ pub(super) fn is_profile_feature_object(feature: &crate::records::Feature) -> bo
                 .is_some_and(|source| source != 0))
 }
 
-pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
+pub(crate) fn profile_owns_intervening_sketch_blocks<'a>(
     profile: &crate::records::Feature,
     objects: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> bool {
@@ -429,9 +429,6 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
                     .and_then(|source| source.parse::<u32>().ok())
                     .filter(|source| *source != 0)
                 else {
-                    if explicit_children.is_none() {
-                        return false;
-                    }
                     continue;
                 };
                 referenced_definitions.insert(definition);
@@ -442,7 +439,10 @@ pub(super) fn profile_owns_intervening_sketch_blocks<'a>(
     if let Some(Some(children)) = explicit_children.as_ref() {
         return &definitions == children;
     }
-    instance_count == 1 && definitions.len() == 1 && referenced_definitions == definitions
+    if definitions.len() != 1 || instance_count == 0 {
+        return false;
+    }
+    referenced_definitions.is_empty() || referenced_definitions == definitions
 }
 
 pub(crate) fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {

@@ -4,10 +4,10 @@ use super::curves::compact_bounded_curve_tangent;
 use super::endpoints::{
     compact_indexed_curve_endpoint_indices, compact_indexed_curve_record_end,
     compact_legacy_code_one_line_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
-    extended_direct_object_line_endpoint_ids, legacy_marker104_arc_center,
-    legacy_terminal_profile_endpoint_offset, marker_profile_curve_role,
-    roster_curve_endpoint_markers, wide_indexed_curve_endpoint_indices,
-    CompactIndexedCurveRecordEnd,
+    extended_direct_object_line_endpoint_ids, extended_shifted_construction_line_endpoint_indices,
+    legacy_marker104_arc_center, legacy_terminal_profile_endpoint_offset,
+    marker_profile_curve_role, roster_curve_endpoint_markers, wide_indexed_curve_endpoint_indices,
+    wide_indexed_curve_record_is_complete, CompactIndexedCurveRecordEnd,
 };
 use super::markers::{
     finite_coordinate_pair, inline_arc_coordinates, legacy_extended_profile_curve_kind,
@@ -125,6 +125,42 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     };
     Some(match kind {
         Horizontal | Vertical | Fixed => {
+            if matches!(kind, Horizontal | Vertical) {
+                let point_links = marker
+                    .links
+                    .iter()
+                    .filter(|link| !relation_link_identifies_owner(marker, link))
+                    .collect::<Vec<_>>();
+                if let [first_link, second_link] = point_links.as_slice() {
+                    let point_links = [first_link, second_link];
+                    if point_links.into_iter().all(|link| {
+                        matches!(
+                            markers_by_id
+                                .get(link.entity_ref.as_str())
+                                .map(|linked| linked.kind),
+                            Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+                        )
+                    }) {
+                        if let Some(loci) =
+                            relation_operand_loci(marker, markers_by_id, loci_by_marker)
+                        {
+                            if let [first, second] = loci.as_slice() {
+                                return Some(if kind == Horizontal {
+                                    SketchConstraintDefinition::HorizontalPoints {
+                                        first: first.clone(),
+                                        second: second.clone(),
+                                    }
+                                } else {
+                                    SketchConstraintDefinition::VerticalPoints {
+                                        first: first.clone(),
+                                        second: second.clone(),
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             let inferred_entities =
                 marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
             let mut exact_entities = marker
@@ -1255,6 +1291,46 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if endpoints.len() == 2 {
         return endpoints;
     }
+    let shifted = usize::try_from(curve.offset).ok().and_then(|offset| {
+        extended_shifted_construction_line_endpoint_indices(payload, offset)
+            .map(|indices| (offset, indices))
+    });
+    if let Some((offset, indices)) = shifted {
+        let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
+            let mut owned = markers
+                .iter()
+                .copied()
+                .filter(|marker| marker.feature_ref == curve.feature_ref)
+                .collect::<Vec<_>>();
+            owned.sort_unstable_by_key(|marker| marker.offset);
+            indices
+                .into_iter()
+                .filter_map(|index| {
+                    let index = usize::try_from(index).ok()?.checked_sub(1)?;
+                    owned.get(index).copied().filter(|marker| {
+                        marker.coordinates_m.is_some()
+                            && matches!(
+                                marker.kind,
+                                SketchInputKind::Point
+                                    | SketchInputKind::ConstrainedPoint
+                                    | SketchInputKind::LineOrCircle
+                                    | SketchInputKind::Arc
+                            )
+                    })
+                })
+                .collect::<Vec<_>>()
+        } else {
+            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
+                payload,
+                curve,
+                markers,
+                Some(56),
+            )
+        };
+        if endpoints.len() == 2 {
+            return endpoints;
+        }
+    }
     if let Some(endpoints) = compact_legacy_object_line_endpoints(payload, curve, markers) {
         return endpoints.to_vec();
     }
@@ -1679,7 +1755,7 @@ pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: u
         .is_some_and(distinct)
         || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some_and(distinct);
     let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && wide_indexed_curve_record_is_complete(payload, offset)
         || compact_indexed_record
             && matches!(
                 compact_indexed_curve_record_end(payload, offset),

@@ -7,8 +7,9 @@ note = """
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), and the Parasolid geometry
 carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; those are listed under "Not tabulated" with a coverage note
-rather than transcribed in this pass.
+layouts in prose; the fixed-offset profile and sketch-input layouts are tabulated
+below, and the remaining layouts are listed under "Not tabulated" with a coverage
+note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -1033,11 +1034,1006 @@ path = "crates/cadmpeg-codec-sldprt/src/brep/blend.rs"
 contains = "0x45 | 0x52"
 note = "The parser's selector value set; see the `selector` field note."
 
+[[record]]
+name = "extended_wide_104_profile_curve"
+kind = "byte"
+section = "2"
+anchor = "An extended-prefix 104-byte wide indexed profile curve has kind u32"
+size = 104
+endianness = "little"
+note = "The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix 104-byte wide indexed profile curve"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind u32 `0`, `1`, or `2`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at marker +56 through +63 and +80 through +87"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +68"
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +72"
+
+[[record.field]]
+name = "zero_trailer_prefix"
+offset = 80
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at marker +56 through +63 and +80 through +87"
+
+[[record.field]]
+name = "trailer_tag0"
+offset = 88
+type = "bytes[4]"
+source = "spec"
+anchor = "`00 00 01 00` at marker +88 and +92"
+
+[[record.field]]
+name = "trailer_tag1"
+offset = 92
+type = "bytes[4]"
+source = "spec"
+anchor = "`00 00 01 00` at marker +88 and +92"
+
+[[record.field]]
+name = "zero_trailer_suffix"
+offset = 96
+type = "bytes[4]"
+source = "spec"
+anchor = "zero bytes at marker +96 through +99"
+
+[[record.field]]
+name = "identity"
+offset = 100
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +100"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "extended_terminal_164_wide_profile_curve"
+kind = "byte"
+section = "2"
+anchor = "An extended-prefix terminal 164-byte wide indexed profile curve has kind u32"
+size = 164
+endianness = "little"
+note = "The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix terminal 164-byte wide indexed profile curve"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind u32 `0`, `1`, or `2`"
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at marker +56 through +63"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "zero-based coordinate-roster endpoint ordinals at marker +64 and +66"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +68"
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +72"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 80
+type = "bytes[54]"
+source = "spec"
+anchor = "zero bytes from marker +80 through +133"
+
+[[record.field]]
+name = "terminal_state"
+offset = 134
+type = "u16"
+source = "spec"
+anchor = "u16 `3` at marker +134"
+
+[[record.field]]
+name = "zero_terminal_padding"
+offset = 136
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +136"
+
+[[record.field]]
+name = "null_identity"
+offset = 144
+type = "u32"
+source = "spec"
+anchor = "the null u32 identity at marker +144"
+
+[[record.field]]
+name = "zero_terminal_suffix"
+offset = 148
+type = "bytes[16]"
+source = "spec"
+anchor = "16 zero bytes at marker +148"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this profile layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "extended_geometry_locus_138_point"
+kind = "byte"
+section = "2"
+anchor = "The extended prefix defines a 138-byte geometry-locus point"
+size = 138
+endianness = "little"
+note = "The finite pair is a point coordinate; the two identity words are distinct record identities."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The extended prefix defines a 138-byte geometry-locus point"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "header `ff ff ff ff ff ff ff ff` at marker +5"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "the little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value u32 `2`"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "state_at_29"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "marker +29 u16 zero"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 56
+type = "bytes[2]"
+source = "spec"
+anchor = "`1e 00` at marker +56"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 58
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 66
+type = "f64"
+source = "spec"
+anchor = "finite planar coordinates at marker +58 and +66"
+
+[[record.field]]
+name = "state_at_74"
+offset = 74
+type = "u16"
+source = "spec"
+anchor = "Marker +74 stores u16 state `0` followed by u16 link count `1`"
+
+[[record.field]]
+name = "link_count"
+offset = 76
+type = "u16"
+source = "spec"
+anchor = "u16 link count `1`"
+
+[[record.field]]
+name = "zero_link_cell"
+offset = 78
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +78 through +81 are zero"
+
+[[record.field]]
+name = "link_sentinel"
+offset = 82
+type = "i32"
+source = "spec"
+anchor = "marker +82 stores i32 `-1`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 86
+type = "bytes[38]"
+source = "spec"
+anchor = "marker +86 through +123 are zero"
+
+[[record.field]]
+name = "identity_first"
+offset = 124
+type = "u32"
+source = "spec"
+anchor = "marker +124 and +128 store distinct nonzero, non-null u32 identities"
+
+[[record.field]]
+name = "identity_second"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "marker +124 and +128 store distinct nonzero, non-null u32 identities"
+
+[[record.field]]
+name = "identity_terminator"
+offset = 132
+type = "bytes[6]"
+source = "spec"
+anchor = "marker +132 stores `00 00 01 00 00 00`"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "extended_geometry_locus_96_construction_line"
+kind = "byte"
+section = "2"
+anchor = "The extended prefix defines a 96-byte geometry-locus selected construction line"
+size = 96
+endianness = "little"
+note = "The endpoint fields are direct feature-local object identifiers."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The extended prefix defines a 96-byte geometry-locus selected construction line"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "header `ff ff ff ff 04 00 ff ff` at marker +5"
+
+[[record.field]]
+name = "sentinel"
+offset = 13
+type = "f32"
+source = "spec"
+anchor = "the little-endian f32 `-1.0`"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "native value u32 `0`"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role u16 `2`"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "marker +29 u16 zero"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector `00 00 80 bf 00 00 0c 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "distinct nonzero u16 endpoint object identifiers are at marker +56 and +58"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "distinct nonzero u16 endpoint object identifiers are at marker +56 and +58"
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 60
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +60 through +63 are zero"
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "marker +64 stores f64 `-1`"
+
+[[record.field]]
+name = "zero_selector_trailer"
+offset = 72
+type = "bytes[8]"
+source = "spec"
+anchor = "marker +72 through +79 are zero"
+
+[[record.field]]
+name = "tail_tag"
+offset = 80
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +80 stores `00 00 04 00`"
+
+[[record.field]]
+name = "zero_tail_prefix"
+offset = 84
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +84 through +87 are zero"
+
+[[record.field]]
+name = "identity_first"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null u32 identities occupy marker +88 and +92"
+
+[[record.field]]
+name = "identity_second"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null u32 identities occupy marker +88 and +92"
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
+name = "compact_legacy_code_two_profile_point"
+kind = "byte"
+section = "2"
+anchor = "A compact legacy code-`2` profile point is a 132-byte record"
+size = 132
+endianness = "little"
+note = "The record emits a point and contributes its coordinate to the raw coordinate roster."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A compact legacy code-`2` profile point is a 132-byte record"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "native_kind"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "native code u32 `2` at marker +13"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 17
+type = "bytes[2]"
+source = "spec"
+anchor = "zero bytes at marker +17 through +18"
+
+[[record.field]]
+name = "profile_locus"
+offset = 19
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "zero_state"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "zero bytes at marker +25 through +30"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "selector bytes `04 00 00 00 00 00 00 00 00 00 00` at marker +31"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 42
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +42"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 44
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +44 and +52"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 52
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +44 and +52"
+
+[[record.field]]
+name = "zero_link_prefix"
+offset = 60
+type = "bytes[2]"
+source = "spec"
+anchor = "Marker +60 through +61 are zero"
+
+[[record.field]]
+name = "operand_tag"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "marker +62 stores u16 `4`"
+
+[[record.field]]
+name = "operand_first"
+offset = 64
+type = "bytes[8]"
+source = "spec"
+anchor = "two homogeneous eight-byte operand cells begin at marker +64 and +72"
+
+[[record.field]]
+name = "operand_second"
+offset = 72
+type = "bytes[8]"
+source = "spec"
+anchor = "two homogeneous eight-byte operand cells begin at marker +64 and +72"
+
+[[record.field]]
+name = "link_terminator"
+offset = 80
+type = "bytes[6]"
+source = "spec"
+anchor = "Marker +80 stores `00 00 fe ff ff ff`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 86
+type = "bytes[34]"
+source = "spec"
+anchor = "marker +86 through +119 are zero"
+
+[[record.field]]
+name = "trailer_kind"
+offset = 120
+type = "u32"
+source = "spec"
+anchor = "marker +120 stores u32 `2`"
+
+[[record.field]]
+name = "zero_identity_prefix"
+offset = 124
+type = "bytes[4]"
+source = "spec"
+anchor = "marker +124 through +127 are zero"
+
+[[record.field]]
+name = "identity"
+offset = 128
+type = "u32"
+source = "spec"
+anchor = "marker +128 stores the non-null feature-local object identifier"
+
+[[record]]
+name = "compact_legacy_embedded_geometry_handle"
+kind = "byte"
+section = "2"
+anchor = "An embedded compact legacy geometry handle is a 120-byte record"
+size = 120
+endianness = "little"
+note = "The record contributes its coordinate to the raw coordinate roster and emits no sketch entity."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An embedded compact legacy geometry handle is a 120-byte record"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "eight `ff` bytes at marker +5"
+
+[[record.field]]
+name = "native_kind"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "native code u32 `0`"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 17
+type = "bytes[2]"
+source = "spec"
+anchor = "zero bytes at marker +17 through +18"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 19
+type = "bytes[4]"
+source = "spec"
+anchor = "geometry locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "role u16 `1`"
+
+[[record.field]]
+name = "zero_state_prefix"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "zero bytes at marker +25 through +30"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "selector bytes `05 00 00 00 00 00 00 00 00 00 00` at marker +31"
+
+[[record.field]]
+name = "coordinate_tag"
+offset = 42
+type = "bytes[2]"
+source = "spec"
+anchor = "coordinate tag `1e 00` at marker +42"
+
+[[record.field]]
+name = "coordinate_first"
+offset = 44
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +44 and +52"
+
+[[record.field]]
+name = "coordinate_second"
+offset = 52
+type = "f64"
+source = "spec"
+anchor = "finite f64 coordinates at marker +44 and +52"
+
+[[record.field]]
+name = "state"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "Its u32 state at marker +60 is zero or nonzero and non-null"
+
+[[record.field]]
+name = "zero_link_prefix"
+offset = 64
+type = "bytes[6]"
+source = "spec"
+anchor = "marker +64 through +69 are zero"
+
+[[record.field]]
+name = "link_sentinel"
+offset = 70
+type = "i32"
+source = "spec"
+anchor = "marker +70 stores i32 `-1`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 74
+type = "bytes[42]"
+source = "spec"
+anchor = "marker +74 through +115 are zero"
+
+[[record.field]]
+name = "identity"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "marker +116 stores a non-null feature-local identity"
+
+[[record]]
+name = "compact_legacy_terminal_diameter_circle"
+kind = "byte"
+section = "2"
+anchor = "A terminal compact legacy diameter-circle record has kind u32 `1`"
+size = 121
+endianness = "little"
+note = "The radial ordinal is zero-based in the feature-owned raw coordinate roster, including coordinate-bearing geometry handles that do not emit sketch entities."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "A terminal compact legacy diameter-circle record has kind u32 `1`"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "Each prefix is followed by eight `ff` bytes"
+
+[[record.field]]
+name = "native_kind"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "kind u32 `1`"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 17
+type = "bytes[2]"
+source = "spec"
+anchor = "Bytes +17 through +18 are zero"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 19
+type = "bytes[4]"
+source = "spec"
+anchor = "geometry locus `04 00 02 00`"
+
+[[record.field]]
+name = "role"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "profile role u16 `1`"
+
+[[record.field]]
+name = "state"
+offset = 25
+type = "u16"
+source = "spec"
+anchor = "state u16 `1`"
+
+[[record.field]]
+name = "zero_selector_prefix"
+offset = 27
+type = "bytes[4]"
+source = "spec"
+anchor = "bytes +27 through +30 are zero"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[11]"
+source = "spec"
+anchor = "selector bytes `04 00 00 00 00 00 00 00 00 00 00` at marker +31"
+
+[[record.field]]
+name = "radial_ordinal"
+offset = 42
+type = "u16"
+source = "spec"
+anchor = "zero-based radial-roster ordinal at marker +42"
+
+[[record.field]]
+name = "radial_sentinel"
+offset = 44
+type = "u16"
+source = "spec"
+anchor = "u16 `0` at marker +44"
+
+[[record.field]]
+name = "selector_value"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +46"
+
+[[record.field]]
+name = "signed_selector"
+offset = 50
+type = "f64"
+source = "spec"
+anchor = "f64 `-1.0` at marker +50"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 58
+type = "bytes[44]"
+source = "spec"
+anchor = "Bytes +58 through +101 are zero"
+
+[[record.field]]
+name = "terminal_state"
+offset = 102
+type = "u16"
+source = "spec"
+anchor = "u16 `3` is at marker +102"
+
+[[record.field]]
+name = "class_marker"
+offset = 104
+type = "bytes[4]"
+source = "spec"
+anchor = "the terminal class declaration is `ff ff 01 00`"
+
+[[record.field]]
+name = "class_length"
+offset = 108
+type = "u16"
+source = "spec"
+anchor = "u16 length `11`"
+
+[[record.field]]
+name = "class_name"
+offset = 110
+type = "bytes[11]"
+source = "spec"
+anchor = "class name `sgCircleDim` at marker +110"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]
 area = "ResolvedFeatures sketch and feature-input markers (§2)"
-reason = "About 125 distinct marker layouts, each one prose paragraph stating marker-relative offsets for a specific record length. They are transcribable in principle but were not covered in this pass; each paragraph is self-contained and can be added incrementally."
+reason = "The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile and sketch-input forms; the remaining paragraphs are transcribable in principle and can be added incrementally."
 section = "2"
 anchor = "Each prefix is followed by eight `ff` bytes and the little-endian f32 `-1.0`"
 

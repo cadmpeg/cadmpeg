@@ -1047,6 +1047,13 @@ mod idless_history_binding_tests {
         second_instance
             .properties
             .insert("BlockDefinition".into(), "23".into());
+        assert!(profile_owns_intervening_sketch_blocks(
+            &profile,
+            [&instance, &second_instance, &referenced]
+        ));
+        second_instance
+            .properties
+            .insert("BlockDefinition".into(), "24".into());
         assert!(!profile_owns_intervening_sketch_blocks(
             &profile,
             [&instance, &second_instance, &referenced]

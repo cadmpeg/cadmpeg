@@ -3,13 +3,17 @@
 use super::endpoints::legacy_undetailed_profile_line;
 use super::markers::marker_is_geometry_locus;
 use super::names::operand_kind_name;
-use super::operands::linked_coordinate_line_endpoints;
+use super::operands::{
+    coordinate_line_endpoints_with_linked_point, linked_coordinate_line_endpoints,
+};
 use super::relation_loci::{
     line_line_distance, marker_point_locus, marker_transform_candidates_by_feature,
     profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
     same_dimension_length, typed_relation_definition,
 };
-use super::transforms::{marker_entities, quantize, sketch_entity_loci};
+use super::transforms::{
+    marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform,
+};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
@@ -184,6 +188,17 @@ pub(crate) fn project_relation_point_geometry(
                 .flatten()
                 .filter_map(|transform| transform.apply(native))
                 .collect::<HashSet<_>>();
+            let positions = if positions.len() == 1 {
+                positions
+            } else {
+                sketches
+                    .iter()
+                    .find(|candidate| candidate.id == *sketch)
+                    .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                    .and_then(|transform| transform.apply(native))
+                    .map(|position| HashSet::from([position]))
+                    .unwrap_or(positions)
+            };
             if positions.len() != 1 {
                 continue;
             }
@@ -239,7 +254,10 @@ pub(crate) fn project_relation_point_geometry(
                     .count()
                     == 1;
             let linked_curve_handle = curve_operands.contains(marker.id.as_str())
-                && linked_coordinate_line_endpoints(marker, &markers_by_id).is_some();
+                && !marker.links.iter().any(|link| link.entity_ref == marker.id)
+                && (linked_coordinate_line_endpoints(marker, &markers_by_id).is_some()
+                    || coordinate_line_endpoints_with_linked_point(marker, &markers_by_id)
+                        .is_some());
             if !referenced.contains(marker.id.as_str())
                 || !(marker.kind == SketchInputKind::LineOrCircle
                     || undetailed_arc_line
@@ -265,6 +283,7 @@ pub(crate) fn project_relation_point_geometry(
             );
             if endpoints.len() != 2 && linked_curve_handle {
                 endpoints = linked_coordinate_line_endpoints(marker, &markers_by_id)
+                    .or_else(|| coordinate_line_endpoints_with_linked_point(marker, &markers_by_id))
                     .into_iter()
                     .flatten()
                     .collect();
@@ -353,8 +372,10 @@ pub(crate) fn project_relation_point_geometry(
                 )),
                 sketch: sketch.clone(),
                 construction: true,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: None,
+                native_ref: (!matches!(marker.kind, SketchInputKind::Relation(_)))
+                    .then(|| marker.id.clone()),
+                geometry_ref: matches!(marker.kind, SketchInputKind::Relation(_))
+                    .then(|| marker.id.clone()),
                 endpoint_refs: vec![first_marker.id.clone(), second_marker.id.clone()],
                 geometry: SketchGeometry::Line { start, end },
             });
@@ -977,6 +998,17 @@ pub(crate) fn owned_relation_parameters(
     for lane in lanes {
         for relation in &lane.relation_instances {
             if relation.parameter_scalar_ref.is_some() {
+                continue;
+            }
+            let exact_matches = relation
+                .scalar_refs
+                .iter()
+                .filter_map(|scalar| parameters_by_scalar.get(scalar.as_str()).copied())
+                .collect::<Vec<_>>();
+            if let [parameter] = exact_matches.as_slice() {
+                if claimed.insert(parameter.id.clone()) {
+                    owned.insert(relation.id.clone(), Some(parameter.id.clone()));
+                }
                 continue;
             }
             let Some(parameter) =

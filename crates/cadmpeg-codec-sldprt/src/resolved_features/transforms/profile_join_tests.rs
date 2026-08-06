@@ -2300,6 +2300,46 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
 }
 
 #[test]
+fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
+    let sketch = SketchId("sketch".into());
+    let line_id = SketchEntityId("line".into());
+    let point_id = SketchEntityId("point-entity".into());
+    let entities = vec![
+        SketchEntity {
+            id: line_id.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        },
+        SketchEntity {
+            id: point_id.clone(),
+            sketch,
+            construction: true,
+            native_ref: Some("point-handle".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(1.0, 0.0),
+            },
+        },
+    ];
+    let point = marker("point-handle", Some([1.0, 0.0]));
+    let markers = HashMap::from([(point.id.as_str(), &point)]);
+    let loci = HashMap::from([(point.id.clone(), vec![SketchLocus::Entity(point_id)])]);
+
+    assert_eq!(
+        single_marker_line_entity("point-handle", &markers, &loci, &entities),
+        Some(line_id)
+    );
+}
+
+#[test]
 fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     let sketch = SketchId("sketch".into());
     let first_id = SketchEntityId("first".into());
@@ -5328,6 +5368,23 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
             .as_ref(),
         Some(&parameter.id)
     );
+    let mut exact_parameter = parameter.clone();
+    exact_parameter.native_ref = Some("scalar".into());
+    let mut exact_lane = lane.clone();
+    exact_lane.scalars[0].role = FeatureInputScalarRole::Native;
+    exact_lane.relation_instances = vec![FeatureInputRelationInstance {
+        display_scalar_ref: None,
+        ..relation.clone()
+    }];
+    assert_eq!(
+        owned_relation_parameters(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&exact_parameter),
+            std::slice::from_ref(&exact_lane),
+        )["relation"]
+            .as_ref(),
+        Some(&exact_parameter.id)
+    );
     let driving_relation = FeatureInputRelationInstance {
         id: "driving-relation".into(),
         parameter_scalar_ref: Some("existing-driver".into()),
@@ -6958,6 +7015,113 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             "sldprt:model:sketch-entity#relation-line:lane:84".into(),
         )))
     );
+}
+
+#[test]
+fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
+    let sketch = SketchId("sketch".into());
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let sketch_record = Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let mut first_marker = marker("first-point", Some([-0.005, 0.002]));
+    first_marker.offset = 1;
+    let mut second_marker = marker("second-point", Some([0.005, 0.002]));
+    second_marker.offset = 2;
+    let relation = FeatureInputRelationInstance {
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 3,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: vec!["distance".into()],
+        parameter_scalar_ref: Some("distance".into()),
+        display_scalar_ref: None,
+        operands: vec![
+            FeatureInputOperand {
+                offset: 4,
+                reference_ref: "first-reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                entity_ref: Some(first_marker.id.clone()),
+            },
+            FeatureInputOperand {
+                offset: 5,
+                reference_ref: "second-reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 1,
+                entity_ref: Some(second_marker.id.clone()),
+            },
+        ],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![first_marker, second_marker],
+    };
+    let mut entities = Vec::new();
+
+    project_relation_point_geometry(
+        &mut entities,
+        std::slice::from_ref(&sketch_record),
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+
+    assert_eq!(entities.len(), 2);
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some("first-point")
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(-5.0, 2.0)
+            )
+    }));
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some("second-point")
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(5.0, 2.0)
+            )
+    }));
 }
 
 #[test]
