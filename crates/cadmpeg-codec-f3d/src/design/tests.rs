@@ -34,12 +34,13 @@ use crate::design::decode::scopes::{
     bind_joint_origin_frames_from_assemblies, exact_assembly_alignment,
     exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
     exact_combine_operation, exact_component_insert_construction, exact_direct_face_operation,
-    exact_draft_operation, exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
-    exact_fixed_fillet_parameters, exact_joint_origin_frame, exact_path_feature_construction,
-    exact_rectangular_pattern_construction, exact_ruled_surface_operation, exact_scale_operation,
-    exact_solid_primitive, exact_surface_extend_operation, exact_surface_offset_operation,
-    exact_surface_stitch_operation, exact_work_axis_construction, exact_work_plane_frame,
-    exact_work_point_position, parse_parameter_scope, parse_thread_payload,
+    exact_draft_operation_with_owners, exact_fixed_chamfer_parameters,
+    exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
+    exact_path_feature_construction, exact_rectangular_pattern_construction,
+    exact_ruled_surface_operation, exact_scale_operation, exact_solid_primitive,
+    exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
+    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_position,
+    parse_parameter_scope, parse_thread_payload,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -3292,6 +3293,162 @@ fn move_matrix_decomposes_to_translation_and_axis_angle() {
 }
 
 #[test]
+fn parameter_scope_parses_named_variable_tail() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"378");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "Draft");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    lp_utf16(&mut bytes, "draft-name");
+    bytes.extend_from_slice(&[0; 7]);
+
+    bytes.push(1);
+    bytes.push(0x4e);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&9u32.to_le_bytes());
+    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.push(1);
+    bytes.push(0x4d);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1, 0, 0]);
+    bytes.push(1);
+    bytes.push(0x4c);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 3]);
+
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: "378".into(),
+        byte_offset: 0,
+    };
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("named variable-tail scope");
+    assert_eq!(scope.kind, "Draft");
+    assert_eq!(scope.feature_ordinal, 1);
+    assert_eq!(scope.history_state_id, Some(7));
+    assert_eq!(scope.previous_history_state_id, None);
+    assert_eq!(scope.previous_history_state_id_offset, 0);
+    assert_eq!(scope.reference_members, [55]);
+    assert_eq!(scope.frame_length, paired_at as u64);
+
+    let mut owner_scope = scope.clone();
+    owner_scope.reference_members = vec![327, 330, 55, 56, 57, 58];
+    let owners = vec![
+        DesignParameterOwner {
+            id: "f3d:test:owner#327".into(),
+            byte_offset: 0,
+            class_tag: "272".into(),
+            record_index: 327,
+            scope_record_index: 12,
+            local_ordinal: 0,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 111,
+            parameter_record_index: 326,
+            owned_ordinal: 3,
+            variant: Some(0),
+            companion_record_index: 328,
+        },
+        DesignParameterOwner {
+            id: "f3d:test:owner#330".into(),
+            byte_offset: 0,
+            class_tag: "272".into(),
+            record_index: 330,
+            scope_record_index: 12,
+            local_ordinal: 1,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 222,
+            parameter_record_index: 329,
+            owned_ordinal: 4,
+            variant: Some(0),
+            companion_record_index: 331,
+        },
+    ];
+    let operation = exact_draft_operation_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &owner_scope,
+        &owners,
+    )
+    .expect("owner-lane Draft operation");
+    assert_eq!(operation.angle, 0.0);
+    assert_eq!(operation.angle_record_index, 327);
+    assert_eq!(operation.opposite_angle_record_index, 330);
+    assert_eq!(operation.angle_offset, 111);
+    assert_eq!(operation.opposite_angle_offset, 222);
+}
+
+#[test]
+fn parameter_scope_parses_named_tail_with_empty_label() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"378");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&55u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&7u32.to_le_bytes());
+    lp_utf16(&mut bytes, "CylinderPrimitive");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 7]);
+
+    bytes.push(1);
+    bytes.push(0x0f);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&9u32.to_le_bytes());
+    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.extend_from_slice(&0.25f64.to_le_bytes());
+    bytes.extend_from_slice(&0xfcu32.to_le_bytes());
+    bytes.push(1);
+    bytes.push(0x0e);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0, 1, 0, 0]);
+    bytes.push(1);
+    bytes.push(0x0d);
+    bytes.extend_from_slice(&1u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 3]);
+
+    let paired_at = bytes.len();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"261");
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 12,
+        class_tag: "378".into(),
+        byte_offset: 0,
+    };
+
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("empty-label named scope");
+    assert_eq!(scope.kind, "CylinderPrimitive");
+    assert_eq!(scope.frame_length, paired_at as u64);
+    assert_eq!(scope.previous_history_state_id, None);
+    assert_eq!(scope.previous_history_state_id_offset, 0);
+}
+
+#[test]
 fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -4818,7 +4975,12 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         opposite_angle_offset: (draft_start + 155) as u64,
     });
     assert_eq!(
-        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        exact_draft_operation_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &draft_scope,
+            &[],
+        ),
         expected
     );
 
@@ -4827,21 +4989,36 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     // them within the table must not change the recovered operation.
     draft_scope.reference_members = vec![181, 182, 186, 190, 193, 175, 176];
     assert_eq!(
-        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        exact_draft_operation_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &draft_scope,
+            &[],
+        ),
         expected
     );
 
     // A table that reaches only one of the two lanes has no complete operation.
     draft_scope.reference_members = vec![175, 181, 182, 186, 190, 193];
     assert_eq!(
-        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        exact_draft_operation_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &draft_scope,
+            &[],
+        ),
         None
     );
 
     // Fewer than six references cannot carry the two lanes plus both groups.
     draft_scope.reference_members = vec![175, 176, 181, 182, 186];
     assert_eq!(
-        exact_draft_operation(&bytes, &IndexedRecordOffsets::build(&bytes), &draft_scope),
+        exact_draft_operation_with_owners(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &draft_scope,
+            &[],
+        ),
         None
     );
     draft_scope.reference_members = vec![175, 176, 181, 182, 186, 190, 193];

@@ -263,13 +263,12 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }),
                 Some(DesignFeatureFamily::Draft) => {
-                    project_draft(scope, construction_groups, face_operands).unwrap_or_else(|| {
-                        FeatureDefinition::Native {
+                    project_draft(scope, construction_groups, face_operands, histories)
+                        .unwrap_or_else(|| FeatureDefinition::Native {
                             kind: scope.kind.clone(),
                             parameters: BTreeMap::new(),
                             properties: native_scope_properties(scope, native_scope),
-                        }
-                    })
+                        })
                 }
                 Some(DesignFeatureFamily::Revolve) => project_fixed_revolve_with_entities(
                     scope,
@@ -1641,6 +1640,7 @@ fn project_draft(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    histories: &[crate::history_records::AsmHistory],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{Angle, FeatureDefinition};
 
@@ -1669,7 +1669,19 @@ fn project_draft(
     // keeps its native face selections, and the decode report marks its
     // definition incomplete.
     let selection = |group: &DesignConstructionOperandGroup| {
-        resolved_historical_face_group(scope, group, face_operands)
+        let historical = crate::history::effective_scope_previous_history_state_id(
+            scope, histories,
+        )
+        .and_then(|previous_state_id| {
+            if scope.previous_history_state_id == Some(previous_state_id) {
+                return resolved_historical_face_group(scope, group, face_operands);
+            }
+            let mut effective_scope = scope.clone();
+            effective_scope.previous_history_state_id = Some(previous_state_id);
+            resolved_historical_face_group(&effective_scope, group, face_operands)
+        });
+        historical
+            .or_else(|| resolved_face_group(group, face_operands))
             .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone()))
     };
     Some(FeatureDefinition::Draft {

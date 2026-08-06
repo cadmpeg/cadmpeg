@@ -170,7 +170,7 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
             face
         }
     };
-    if !face_operand_candidates(operand).contains(direct) {
+    if !historical_face_operand_candidates(operand).contains(direct) {
         return None;
     }
     direct.0.rsplit_once('#')?.1.parse().ok()
@@ -357,6 +357,34 @@ pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_
     } else {
         &operand.unreferenced_candidate_faces
     }
+}
+
+/// Return the active face identities that can participate in historical
+/// resolution. A single-face recipe names its selected face in the recipe
+/// reference even when the broader persistent-tag set also contains faces
+/// excluded from the operand's unreferenced candidate lane.
+pub(crate) fn historical_face_operand_candidates(
+    operand: &DesignFaceOperand,
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    if operand.recipe_kind == crate::records::ConstructionRecipeKind::Face {
+        let mut referenced = operand
+            .recipe_references
+            .iter()
+            .flat_map(|reference| {
+                reference
+                    .candidate_faces
+                    .iter()
+                    .chain(&reference.alternate_selector_faces)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        referenced.sort_by(|left, right| left.0.cmp(&right.0));
+        referenced.dedup();
+        if !referenced.is_empty() {
+            return referenced;
+        }
+    }
+    face_operand_candidates(operand).to_vec()
 }
 
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.

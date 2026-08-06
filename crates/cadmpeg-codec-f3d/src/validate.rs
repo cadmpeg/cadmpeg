@@ -1295,15 +1295,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             scope.draft_operation.as_ref(),
             design::design_feature_family(&scope.kind),
         ) {
-            (None, _) => true,
+            (None, family) => family != Some(design::DesignFeatureFamily::Draft),
             (Some(_), family) if family != Some(design::DesignFeatureFamily::Draft) => false,
             (Some(operation), _) => {
-                scope.frame_length == 361
-                    && scope.reference_members.len() == 7
-                    && scope.reference_members[0] == operation.angle_record_index
-                    && scope.reference_members[1] == operation.opposite_angle_record_index
+                scope.reference_members.len() >= 6
+                    && scope
+                        .reference_members
+                        .contains(&operation.angle_record_index)
+                    && scope
+                        .reference_members
+                        .contains(&operation.opposite_angle_record_index)
+                    && operation.angle_record_index != operation.opposite_angle_record_index
                     && operation.angle.is_finite()
-                    && operation.angle != 0.0
                     && operation.angle_offset > scope.paired_byte_offset
                     && operation.opposite_angle_offset > operation.angle_offset
                     && record_indices.contains(&(native_stream, operation.angle_record_index))
@@ -1616,25 +1619,26 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
-            && match scope
-                .paired_byte_offset
-                .checked_sub(scope.feature_ordinal_offset)
-                .and_then(|tail_length| usize::try_from(tail_length).ok())
-                .and_then(|tail_length| {
-                    design::decode::scopes::parameter_scope_previous_history_offset(
-                        &scope.kind,
-                        tail_length,
-                    )
-                }) {
-                Some(offset) => {
-                    scope.previous_history_state_id_offset
-                        == scope.feature_ordinal_offset.saturating_add(offset as u64)
-                        && scope.history_state_id.is_some()
-                            == scope.previous_history_state_id.is_some()
-                }
-                None => {
-                    scope.previous_history_state_id.is_none()
-                        && scope.previous_history_state_id_offset == 0
+            && if scope.previous_history_state_id_offset == 0 {
+                scope.previous_history_state_id.is_none()
+            } else {
+                match scope
+                    .paired_byte_offset
+                    .checked_sub(scope.feature_ordinal_offset)
+                    .and_then(|tail_length| usize::try_from(tail_length).ok())
+                    .and_then(|tail_length| {
+                        design::decode::scopes::parameter_scope_previous_history_offset(
+                            &scope.kind,
+                            tail_length,
+                        )
+                    }) {
+                    Some(offset) => {
+                        scope.previous_history_state_id_offset
+                            == scope.feature_ordinal_offset.saturating_add(offset as u64)
+                            && scope.history_state_id.is_some()
+                                == scope.previous_history_state_id.is_some()
+                    }
+                    None => false,
                 }
             }
             && scope.reference_count_offset > scope.byte_offset

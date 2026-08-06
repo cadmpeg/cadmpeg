@@ -1732,21 +1732,24 @@ pub(crate) fn project_feature_input_topologies(
             if matching_scopes.next().is_some() {
                 return None;
             }
-            let previous_state_id = scope.previous_history_state_id.or_else(|| {
-                let stream = crate::ids::native_stream(&scope.id);
-                let operands = edge_operands
-                    .iter()
-                    .filter(|operand| {
-                        operand.scope_record_index == scope.record_index
-                            && crate::ids::native_stream(&operand.id) == stream
-                    })
-                    .collect::<Vec<_>>();
-                let state = operands.first()?.recipe_state_id?;
-                operands
-                    .iter()
-                    .all(|operand| operand.recipe_state_id == Some(state))
-                    .then_some(state)
-            })?;
+            let previous_state_id = scope
+                .previous_history_state_id
+                .or_else(|| {
+                    let stream = crate::ids::native_stream(&scope.id);
+                    let operands = edge_operands
+                        .iter()
+                        .filter(|operand| {
+                            operand.scope_record_index == scope.record_index
+                                && crate::ids::native_stream(&operand.id) == stream
+                        })
+                        .collect::<Vec<_>>();
+                    let state = operands.first()?.recipe_state_id?;
+                    operands
+                        .iter()
+                        .all(|operand| operand.recipe_state_id == Some(state))
+                        .then_some(state)
+                })
+                .or_else(|| effective_scope_previous_history_state_id(scope, histories))?;
             let state = scope
                 .history_state_id
                 .and_then(|state_id| {
@@ -1810,6 +1813,23 @@ fn unique_history_state(
     });
     let state = matches.next()?;
     matches.next().is_none().then_some(state)
+}
+
+/// Return the effective input state for a scope. Some Design scope envelopes
+/// omit the preceding state identity even though the current ASM delta state
+/// carries the direct transition predecessor.
+pub(crate) fn effective_scope_previous_history_state_id(
+    scope: &crate::records::DesignParameterScope,
+    histories: &[AsmHistory],
+) -> Option<i64> {
+    scope.previous_history_state_id.or_else(|| {
+        let state_id = scope.history_state_id?;
+        unique_history_state(histories, state_id)?
+            .1
+            .transition
+            .as_ref()?
+            .previous_state_id
+    })
 }
 
 pub(crate) fn unique_history_state_pair(
@@ -2088,8 +2108,10 @@ pub(crate) fn bind_face_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+        let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
             continue;
         };
@@ -2107,10 +2129,9 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        operand.preceding_candidate_faces = faces_in_topology(
-            crate::design::face_resolve::face_operand_candidates(operand),
-            topology,
-        );
+        let history_candidates =
+            crate::design::face_resolve::historical_face_operand_candidates(operand);
+        operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces
             .iter()
@@ -2118,7 +2139,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             .cloned()
             .collect();
         operand.historical_support_contexts = historical_face_support_contexts(
-            crate::design::face_resolve::face_operand_candidates(operand),
+            &history_candidates,
             histories,
             topology,
             &changed_faces,

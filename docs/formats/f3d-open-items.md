@@ -158,7 +158,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 **Question.** How do the signed angle, the neutral-plane orientation, the explicit pull direction, and the outward-material convention of a `Draft` scope relate to each other? Which references of a parting-line draft name its pull direction and its parting tool?
 
-**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is the nonzero signed draft angle in radians and the second reserves the opposite-side angle at zero.
+**Known.** `f3d.md` §3.1 "A `Draft` scope has" gives the field roles and both group forms. The first scalar is a finite signed draft angle in radians, including zero, and the second reserves the opposite-side angle at zero.
 
 A neutral-plane draft and a parting-line draft authored to the same result show the angle sign and the pull direction are independent stored fields whose combination fixes the geometry: a draft authored at `+7` degrees with the default pull direction and one authored at `-7` degrees with the pull direction reversed carry the two angle signs and produce the same result. Neither the pull direction nor the outward flag is therefore derivable from the angle sign alone.
 

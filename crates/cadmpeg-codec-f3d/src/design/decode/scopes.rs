@@ -140,7 +140,8 @@ pub fn decode_parameter_scopes(
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners);
             scope.combine_operation = exact_combine_operation(bytes, &records, &scope);
             scope.thread_construction = exact_thread_construction(bytes, &scope);
-            scope.draft_operation = exact_draft_operation(bytes, &records, &scope);
+            scope.draft_operation =
+                exact_draft_operation_with_owners(bytes, &records, &scope, parameter_owners);
             scope.circular_pattern_construction = exact_circular_pattern_construction_with_owners(
                 bytes,
                 &records,
@@ -3641,10 +3642,11 @@ fn combine_operation_identity_role(
     Some(CombineOperandRole::Tool)
 }
 
-pub(crate) fn exact_draft_operation(
+pub(crate) fn exact_draft_operation_with_owners(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignDraftOperation> {
     // The frame is variable-length and carries six or more references, so no
     // frame length or reference count identifies the record. The ordered
@@ -3658,34 +3660,55 @@ pub(crate) fn exact_draft_operation(
     {
         return None;
     }
+    let scope_stream = native_stream(&scope.id);
     let mut lanes = scope
         .reference_members
         .iter()
         .filter_map(|record_index| {
-            let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-            (scalar.owner_record_index == Some(scope.record_index))
-                .then_some((*record_index, scalar))
+            if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) {
+                return (scalar.owner_record_index == Some(scope.record_index)).then_some((
+                    *record_index,
+                    u32::from(scalar.ordinal),
+                    scalar.value,
+                    scalar.value_offset,
+                ));
+            }
+            let owners = parameter_owners
+                .iter()
+                .filter(|owner| {
+                    owner.record_index == *record_index
+                        && owner.scope_record_index == scope.record_index
+                        && scope_stream
+                            .is_none_or(|stream| native_stream(&owner.id) == Some(stream))
+                        && owner.evaluated_value.is_finite()
+                })
+                .collect::<Vec<_>>();
+            let [owner] = owners.as_slice() else {
+                return None;
+            };
+            Some((
+                *record_index,
+                owner.local_ordinal,
+                owner.evaluated_value,
+                owner.evaluated_value_offset,
+            ))
         })
         .collect::<Vec<_>>();
-    lanes.sort_by_key(|(_, scalar)| scalar.ordinal);
-    let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] = lanes.as_slice()
+    lanes.sort_by_key(|(_, ordinal, _, _)| *ordinal);
+    let [(angle_record_index, angle_ordinal, angle, angle_offset), (opposite_angle_record_index, opposite_ordinal, opposite, opposite_offset)] =
+        lanes.as_slice()
     else {
         return None;
     };
-    if angle.ordinal != 0
-        || opposite.ordinal != 1
-        || !angle.value.is_finite()
-        || angle.value == 0.0
-        || opposite.value != 0.0
-    {
+    if *angle_ordinal != 0 || *opposite_ordinal != 1 || !angle.is_finite() || *opposite != 0.0 {
         return None;
     }
     Some(DesignDraftOperation {
-        angle: angle.value,
+        angle: *angle,
         angle_record_index: *angle_record_index,
-        angle_offset: angle.value_offset,
+        angle_offset: *angle_offset,
         opposite_angle_record_index: *opposite_angle_record_index,
-        opposite_angle_offset: opposite.value_offset,
+        opposite_angle_offset: *opposite_offset,
     })
 }
 
@@ -3725,6 +3748,9 @@ pub(crate) fn parameter_scope_candidate_headers(
 }
 
 pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usize) -> bool {
+    if (80..=590).contains(&tail_length) && tail_length.is_multiple_of(2) {
+        return true;
+    }
     match kind {
         "CopyPasteBodies" => tail_length == 110,
         "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
@@ -3736,6 +3762,17 @@ pub(crate) fn parameter_scope_previous_history_offset(
     kind: &str,
     tail_length: usize,
 ) -> Option<usize> {
+    parameter_scope_previous_history_offset_for_form(kind, tail_length, false)
+}
+
+fn parameter_scope_previous_history_offset_for_form(
+    kind: &str,
+    tail_length: usize,
+    named_tail: bool,
+) -> Option<usize> {
+    if named_tail {
+        return None;
+    }
     match (kind, tail_length) {
         ("CopyPasteBodies", 110) => Some(53),
         ("CoilPrimitive", 88) => None,
@@ -3756,7 +3793,17 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    for tail_length in [72, 76, 77, 78, 87, 88, 110] {
+    let mut tail_candidates = vec![
+        (72, false),
+        (76, false),
+        (77, false),
+        (78, false),
+        (87, false),
+        (88, false),
+        (110, false),
+    ];
+    tail_candidates.extend((0..=256).map(|label_code_units| (78 + label_code_units * 2, true)));
+    for (tail_length, named_tail) in tail_candidates {
         let Some(end) = paired_at.checked_sub(tail_length) else {
             continue;
         };
@@ -3765,15 +3812,23 @@ pub(crate) fn parse_parameter_scope(
             let Some((kind, decoded_end)) = lp_utf16_bounded(bytes, at, 1..=256) else {
                 continue;
             };
+            let named_tail_valid = !named_tail
+                || named_parameter_scope_tail_is_valid(bytes, decoded_end, paired_at, tail_length)
+                    .is_some_and(|valid| valid);
             if decoded_end == end
-                && parameter_scope_tail_length_is_valid(&kind, tail_length)
+                && (parameter_scope_tail_length_is_valid(&kind, tail_length)
+                    || named_tail && tail_length == 78)
                 && kind.chars().all(|character| !character.is_control())
+                && named_tail_valid
             {
-                candidates.push((at, end, tail_length, kind));
+                candidates.push((at, end, tail_length, kind, named_tail));
             }
         }
     }
-    let [(kind_at, kind_end, tail_length, kind)] = candidates.as_slice() else {
+    if candidates.iter().filter(|candidate| candidate.4).count() == 1 {
+        candidates.retain(|candidate| candidate.4);
+    }
+    let [(kind_at, kind_end, tail_length, kind, named_tail)] = candidates.as_slice() else {
         return None;
     };
     let kind_end = *kind_end;
@@ -3788,7 +3843,7 @@ pub(crate) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset =
-        match parameter_scope_previous_history_offset(kind, *tail_length) {
+        match parameter_scope_previous_history_offset_for_form(kind, *tail_length, *named_tail) {
             Some(offset) => Some(kind_end.checked_add(offset)?),
             None => None,
         };
@@ -3990,6 +4045,50 @@ pub(crate) fn parse_parameter_scope(
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })
+}
+
+fn named_parameter_scope_tail_is_valid(
+    bytes: &[u8],
+    kind_end: usize,
+    paired_at: usize,
+    tail_length: usize,
+) -> Option<bool> {
+    let label_at = kind_end.checked_add(8)?;
+    let (label, label_end) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
+    let label_code_units = label.encode_utf16().count();
+    if tail_length != 78usize.checked_add(label_code_units.checked_mul(2)?)?
+        || label_end.checked_add(7)? != kind_end.checked_add(19 + label_code_units * 2)?
+        || label.chars().any(char::is_control)
+    {
+        return Some(false);
+    }
+    let marker = kind_end.checked_add(19 + label_code_units.checked_mul(2)?)?;
+    if marker.checked_add(59)? != paired_at || bytes.get(label_end..marker)? != [0; 7] {
+        return Some(false);
+    }
+    Some(
+        bytes.get(kind_end + 4..kind_end + 8)? == [0; 4]
+            && bytes.get(marker) == Some(&1)
+            && bytes.get(marker + 1).is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 2)? == 1
+            && bytes.get(marker + 10..marker + 12)? == [0; 2]
+            && u32_at(bytes, marker + 12)? > 0
+            && u32_at(bytes, marker + 16)? == 0xfc
+            && f64_at(bytes, marker + 20)?.is_finite()
+            && u32_at(bytes, marker + 28)? == 0xfc
+            && bytes.get(marker + 32) == Some(&1)
+            && bytes
+                .get(marker + 33)
+                .is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 34)? == 1
+            && bytes.get(marker + 42..marker + 46)? == [0, 1, 0, 0]
+            && bytes.get(marker + 46) == Some(&1)
+            && bytes
+                .get(marker + 47)
+                .is_some_and(|field_id| *field_id != 0)
+            && read_u64(bytes, marker + 48)? == 1
+            && bytes.get(marker + 56..marker + 59)? == [0; 3],
+    )
 }
 
 /// Decode the fixed discriminator block of the closed Coil scope forms.
