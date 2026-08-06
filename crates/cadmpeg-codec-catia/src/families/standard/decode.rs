@@ -3707,17 +3707,44 @@ fn attach_standard_topology(
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
         let branch_groups = standard_curve_branch_groups(&supports, options);
+        let initial_assignment = options
+            .iter()
+            .map(|candidates| {
+                if candidates.len() == 1 {
+                    Some(candidates[0])
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let solver_options = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            options,
+            &branch_groups,
+            &initial_assignment,
+        )?;
+        let mut branch_preferred_edges = vec![false; options.len()];
+        for edge in branch_groups
+            .iter()
+            .flat_map(|group| group.edges.iter().copied())
+        {
+            branch_preferred_edges[edge] = true;
+        }
+        let branch_assignment_dependencies =
+            standard_curve_branch_assignment_dependencies(&supports, &branch_groups);
         let preferred = mesh_quotient::parse_standard_mesh_candidate_outcome(
             brep,
             &edge_faces,
-            options,
+            &solver_options,
             &edge_classes,
             &circle_constraint_edges,
+            &branch_preferred_edges,
+            Some(&branch_assignment_dependencies),
             work_budget,
             |pairs| {
                 standard_curve_branch_assignment_is_ranked(
                     &supports,
-                    options,
+                    &solver_options,
                     &branch_groups,
                     pairs,
                 ) && standard_circle_pair_solution_is_simple(
@@ -3726,7 +3753,7 @@ fn attach_standard_topology(
                     &surface_indices,
                     brep,
                     &supports,
-                    options,
+                    &solver_options,
                     pairs,
                 )
             },
@@ -3744,14 +3771,16 @@ fn attach_standard_topology(
                 mesh_quotient::parse_standard_mesh_candidate_outcome(
                     brep,
                     &edge_faces,
-                    options,
+                    &solver_options,
                     &edge_classes,
                     &unconstrained,
+                    &branch_preferred_edges,
+                    Some(&branch_assignment_dependencies),
                     work_budget,
                     |pairs| {
                         standard_curve_branch_assignment_is_ranked(
                             &supports,
-                            options,
+                            &solver_options,
                             &branch_groups,
                             pairs,
                         )
@@ -4834,25 +4863,57 @@ fn standard_curve_branch_groups(
     groups
 }
 
-fn standard_curve_branch_assignment_is_ranked(
+fn standard_curve_branch_assignment_dependencies(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    groups: &[StandardCurveBranchGroup],
+) -> Vec<Vec<usize>> {
+    let mut grouped = vec![false; supports.len()];
+    for edge in groups.iter().flat_map(|group| group.edges.iter().copied()) {
+        if let Some(grouped_edge) = grouped.get_mut(edge) {
+            *grouped_edge = true;
+        }
+    }
+    let mut dependencies = vec![Vec::new(); supports.len()];
+    for group in groups {
+        let external = supports
+            .iter()
+            .enumerate()
+            .filter(|(edge, support)| {
+                !grouped[*edge] && support.faces.iter().any(|face| group.faces.contains(face))
+            })
+            .map(|(edge, _)| edge)
+            .collect::<Vec<_>>();
+        for &edge in &group.edges {
+            dependencies[edge].extend(external.iter().copied());
+        }
+    }
+    for edge_dependencies in &mut dependencies {
+        edge_dependencies.sort_unstable();
+        edge_dependencies.dedup();
+    }
+    dependencies
+}
+
+fn standard_curve_branch_candidates_after_partial_assignment(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
-) -> bool {
+) -> Option<Vec<Vec<[usize; 2]>>> {
     if supports.len() != candidates.len() || candidates.len() != assignment.len() {
-        return false;
+        return None;
     }
+    let mut constrained = candidates.to_vec();
     for StandardCurveBranchGroup {
         edges: group,
         faces,
     } in groups
     {
-        let mut constrained = candidates.to_vec();
+        let mut group_constrained = candidates.to_vec();
         for (edge, pair) in assignment.iter().copied().enumerate() {
             if !group.contains(&edge) {
                 if let Some(pair) = pair {
-                    constrained[edge] = vec![pair];
+                    group_constrained[edge] = vec![pair];
                 }
             }
         }
@@ -4885,20 +4946,35 @@ fn standard_curve_branch_assignment_is_ranked(
             continue;
         }
         for &edge in group {
-            constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
+            group_constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
         }
-        bind_ordered_standard_curve_branches(supports, &mut constrained);
+        bind_ordered_standard_curve_branches(supports, &mut group_constrained);
         if group.iter().copied().any(|edge| {
             assignment[edge].is_some_and(|assigned| {
-                !constrained[edge]
+                !group_constrained[edge]
                     .iter()
                     .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
             })
         }) {
-            return false;
+            return None;
+        }
+        for &edge in group {
+            constrained[edge].clone_from(&group_constrained[edge]);
         }
     }
-    true
+    Some(constrained)
+}
+
+fn standard_curve_branch_assignment_is_ranked(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &[Vec<[usize; 2]>],
+    groups: &[StandardCurveBranchGroup],
+    assignment: &[Option<[usize; 2]>],
+) -> bool {
+    standard_curve_branch_candidates_after_partial_assignment(
+        supports, candidates, groups, assignment,
+    )
+    .is_some()
 }
 
 pub(crate) fn standard_circle_endpoint_candidates(
@@ -6552,7 +6628,8 @@ mod route_tests {
         point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
         resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
         standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_curve_branch_assignment_is_ranked, standard_curve_branch_groups,
+        standard_curve_branch_assignment_is_ranked,
+        standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
@@ -8100,6 +8177,44 @@ mod route_tests {
             &groups,
             &crossed
         ));
+    }
+
+    #[test]
+    fn standard_spline_branch_candidates_narrow_after_fixed_frontiers() {
+        let fixed = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+        };
+        let spline = |tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let supports = [fixed(0), fixed(1), spline(2), spline(3)];
+        let candidates = [
+            vec![[0, 1]],
+            vec![[2, 3]],
+            vec![[0, 2], [1, 2], [2, 4]],
+            vec![[0, 3], [1, 3], [3, 4]],
+        ];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let assignment = [Some([0, 1]), Some([2, 3]), None, None];
+        let narrowed = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &assignment,
+        )
+        .expect("fixed frontiers establish a valid branch relation");
+
+        assert_eq!(narrowed[2], vec![[0, 2]]);
+        assert_eq!(narrowed[3], vec![[1, 3]]);
     }
 
     #[test]

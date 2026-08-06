@@ -1048,7 +1048,8 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let edges = [0, 1];
-    let active_edges = [false, true];
+    let active_edges = [true, true];
+    let assignment_dependencies = [vec![1], Vec::new()];
     let valid = |_: &[Option<[usize; 2]>]| true;
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -1075,6 +1076,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: Some(&assignment_dependencies),
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -1128,6 +1130,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: Some(&assignment_predecessors),
+            assignment_dependencies: None,
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -2044,7 +2047,9 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let active = [true, false, false, true, false, false];
 
     assert_eq!(
-        crate::solve::incidence::join_partial_constraint_components(components, &active, None),
+        crate::solve::incidence::join_partial_constraint_components(
+            components, &active, None, None,
+        ),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
 }
@@ -2059,8 +2064,32 @@ fn partial_incidence_predecessors_join_only_their_class_components() {
             components,
             &[false; 6],
             Some(&predecessors),
+            None,
         ),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
+    );
+}
+
+#[test]
+fn partial_incidence_dependencies_join_their_component_barriers() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let dependencies = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![1],
+        Vec::new(),
+    ];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(
+            components,
+            &[false; 6],
+            None,
+            Some(&dependencies),
+        ),
+        vec![vec![0, 2], vec![1, 4], vec![3, 5]],
     );
 }
 
@@ -2880,6 +2909,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: None,
             valid: &partial,
         }),
         &|_| true,
@@ -2969,6 +2999,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: None,
             valid: &partial,
         }),
         &|_| true,
