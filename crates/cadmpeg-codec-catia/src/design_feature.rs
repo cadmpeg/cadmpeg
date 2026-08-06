@@ -39,6 +39,11 @@ impl DesignFeatureTransfer {
             .flat_map(|graph| &graph.records)
             .map(|record| (record.id.as_str(), record))
             .collect::<HashMap<_, _>>();
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<HashMap<_, _>>();
 
         for parameter in &mut ir.model.parameters {
             if parameter.owner.is_some() {
@@ -56,12 +61,49 @@ impl DesignFeatureTransfer {
             let Some(design_object) = object_record.design_object.as_deref() else {
                 continue;
             };
-            let Some(feature_id) = self.feature_ids.get(design_object) else {
+            let Some(feature_id) =
+                feature_owner_for_design_object(design_object, &design_objects, &self.feature_ids)
+            else {
                 continue;
             };
-            parameter.owner = Some(feature_id.clone());
+            parameter.owner = Some(feature_id);
         }
     }
+}
+
+/// Resolve one unique transferred feature on a complete structural owner chain.
+///
+/// An immediate field group is not always the semantic feature object. CATIA
+/// may store a feature's parameter in a child design object. The parent links
+/// are exact object-graph incidences, so following them is safe when the chain
+/// is complete, has no non-reflexive cycle, and reaches exactly one transferred
+/// feature.
+fn feature_owner_for_design_object(
+    design_object_id: &str,
+    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    feature_ids: &HashMap<String, FeatureId>,
+) -> Option<FeatureId> {
+    let mut current = Some(design_object_id);
+    let mut visited = HashSet::new();
+    let mut feature = None;
+
+    while let Some(current_id) = current {
+        if !visited.insert(current_id) {
+            return None;
+        }
+        let object = design_objects.get(current_id).copied()?;
+        if let Some(candidate) = feature_ids.get(current_id) {
+            if feature.replace(candidate.clone()).is_some() {
+                return None;
+            }
+        }
+        current = object
+            .owner_design_object
+            .as_deref()
+            .filter(|parent| *parent != current_id);
+    }
+
+    feature
 }
 
 /// Transfer exact owner-bound reference history nodes.

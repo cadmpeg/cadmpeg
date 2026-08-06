@@ -9655,6 +9655,107 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
 }
 
 #[test]
+fn parameter_owner_follows_one_exact_child_design_object() {
+    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    let owner_record = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| graph.records.iter())
+        .find(|record| record.design_object.is_some())
+        .expect("synthetic owner declaration record")
+        .clone();
+    let owner_record_id = owner_record.id.clone();
+    let owner_design_object = owner_record.design_object.clone();
+    let owner_class_entry = "synthetic-sketch-class".to_string();
+    let owner_record_mut = native
+        .object_graphs
+        .iter_mut()
+        .flat_map(|graph| graph.records.iter_mut())
+        .find(|record| record.id == owner_record_id)
+        .expect("mutable synthetic owner declaration record");
+    owner_record_mut.class_name = Some("Sketch".to_string());
+    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+
+    let feature_object = native
+        .design_objects
+        .first_mut()
+        .expect("synthetic design object");
+    feature_object.owner_record = Some(owner_record_id);
+    feature_object.owner_design_object = owner_design_object.clone();
+    feature_object.owner_class = Some(crate::native::CatiaDesignClass {
+        entry: owner_class_entry,
+        name: "Sketch".to_string(),
+    });
+    let feature_id = feature_object.id.clone();
+
+    let child_record_id = "synthetic-child-record".to_string();
+    let child_entity_id = "synthetic-child-entity".to_string();
+    let mut child_record = owner_record.clone();
+    child_record.id.clone_from(&child_record_id);
+    child_record.entity_record = Some(child_entity_id.clone());
+    child_record.entity_id = Some(2);
+    child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
+    child_record.design_object = Some("synthetic-child-object".to_string());
+    native.object_graphs[0].records.push(child_record);
+
+    let mut child_entity = native.entity_records[0].clone();
+    child_entity.id.clone_from(&child_entity_id);
+    child_entity.object_record = child_record_id.clone();
+    child_entity.entity_id = 2;
+    child_entity.ordinal = native.entity_records.len() as u64;
+    native.entity_records.push(child_entity);
+
+    let mut child_object = native.design_objects[0].clone();
+    child_object.id = "synthetic-child-object".to_string();
+    child_object.ordinal += 1;
+    child_object.first_field_byte_offset += 1;
+    child_object.owner_entity_id = 2;
+    child_object.owner_record = Some(child_record_id);
+    child_object.owner_design_object = Some(feature_id.clone());
+    child_object.owner_class = None;
+    child_object.owner_storage_ref = None;
+    child_object.fields = vec!["synthetic-child-record".to_string()];
+    child_object.field_classes.clear();
+    child_object.definition_values.clear();
+    child_object.definition_chain_values.clear();
+    child_object.relations.clear();
+    child_object.parallel_reference_table = None;
+    native.design_objects.push(child_object);
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId("synthetic:child-parameter".to_string()),
+            owner: None,
+            ordinal: 0,
+            name: "Value".to_string(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(child_entity_id),
+        });
+
+    transfer.assign_parameter_owners(&mut ir, &native);
+
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(
+        ir.model.parameters[0].owner,
+        Some(cadmpeg_ir::features::FeatureId(format!(
+            "{feature_id}:feature"
+        )))
+    );
+}
+
+#[test]
 fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
     use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
 
