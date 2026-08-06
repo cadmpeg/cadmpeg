@@ -34,6 +34,7 @@ use super::{
     extended_geometry_locus_construction_line_endpoint_indices,
     extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
     extended_profile_roster_construction_line_endpoint_indices,
+    extended_shifted_construction_line_endpoint_indices,
     extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
     extended_wide_construction_line_roster_indices, indexed_arc_uses_coordinate_center,
     legacy_compact_104_profile_line_endpoint_indices, legacy_compact_diameter_arc_center,
@@ -3052,6 +3053,105 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
     assert_eq!(
         extended_compact_84_construction_line_endpoint_indices(&payload, 0),
         None
+    );
+}
+
+#[test]
+fn extended_shifted_construction_line_indexes_coordinate_roster() {
+    let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&5u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&9u16.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&[0x00, 0x00, 0x02, 0x00]);
+    payload[80..84].copy_from_slice(&2u32.to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    assert_eq!(
+        extended_shifted_construction_line_endpoint_indices(&payload, 0),
+        Some([5, 9])
+    );
+    assert!(marker_is_selected_construction_line(&payload, 0));
+
+    payload.truncate(84);
+    payload[72..76].fill(0);
+    payload[80..84].fill(0);
+    assert_eq!(
+        extended_shifted_construction_line_endpoint_indices(&payload, 0),
+        Some([5, 9])
+    );
+
+    payload[58..60].copy_from_slice(&5u16.to_le_bytes());
+    assert_eq!(
+        extended_shifted_construction_line_endpoint_indices(&payload, 0),
+        None
+    );
+
+    let entity = |id: &str, offset: u64, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind: if coordinates_m.is_some() {
+            SketchInputKind::Point
+        } else {
+            SketchInputKind::Relation(SketchRelationKind::Horizontal)
+        },
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let points = (0..10)
+        .map(|index| {
+            entity(
+                &format!("marker-{index}"),
+                10 + index * 10,
+                matches!(index, 4 | 8).then_some([index as f64, 0.0]),
+            )
+        })
+        .collect::<Vec<_>>();
+    let curve = SketchInputEntity {
+        id: "curve".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 110,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::LineOrCircle,
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let markers = points
+        .iter()
+        .chain(std::iter::once(&curve))
+        .collect::<Vec<_>>();
+    let markers_by_id = markers
+        .iter()
+        .map(|marker| (marker.id.as_str(), *marker))
+        .collect::<HashMap<_, _>>();
+    payload[58..60].copy_from_slice(&9u16.to_le_bytes());
+    let record = payload[..84].to_vec();
+    payload.resize(110 + 84, 0);
+    payload[110..110 + 84].copy_from_slice(&record);
+    assert_eq!(
+        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["marker-4", "marker-8"]
     );
 }
 
