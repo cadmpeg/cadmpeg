@@ -424,34 +424,75 @@ fn retain_unowned_pcurves(
         .collect::<BTreeSet<_>>();
     let protected = record_closure(&protected_roots, exchange);
     let removed_closure = record_closure(&unowned, exchange);
-    let removed = unowned.len();
+    let deleted_pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .filter(|pcurve| !retains_carrier(&pcurve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_points = ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !retains_carrier(&point.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_curves = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_procedural_curves = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter(|curve| !retains_carrier(&curve.id.0, &removed_closure, &protected))
+        .count();
+    let deleted_procedural_surfaces = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .filter(|surface| !retains_carrier(&surface.id.0, &removed_closure, &protected))
+        .count();
     ir.model
         .pcurves
-        .retain(|pcurve| owned.contains(&pcurve.id.0));
-    ir.model.points.retain(|point| {
-        step_id_from_ir(&point.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.curves.retain(|curve| {
-        step_id_from_ir(&curve.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.surfaces.retain(|surface| {
-        step_id_from_ir(&surface.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.procedural_curves.retain(|curve| {
-        step_id_from_ir(&curve.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
-    ir.model.procedural_surfaces.retain(|surface| {
-        step_id_from_ir(&surface.id.0)
-            .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
-    });
+        .retain(|pcurve| retains_carrier(&pcurve.id.0, &removed_closure, &protected));
+    ir.model
+        .points
+        .retain(|point| retains_carrier(&point.id.0, &removed_closure, &protected));
+    ir.model
+        .curves
+        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+    ir.model
+        .surfaces
+        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
+    ir.model
+        .procedural_curves
+        .retain(|curve| retains_carrier(&curve.id.0, &removed_closure, &protected));
+    ir.model
+        .procedural_surfaces
+        .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
     typed_records.retain(|id| !removed_closure.contains(id) || protected.contains(id));
+    let protected_pcurves = unowned.iter().filter(|id| protected.contains(id)).count();
+    let opaque_pcurves = unowned.len() - protected_pcurves;
     warnings.push(format!(
-        "retained {removed} unowned pcurve carrier(s) as opaque source records"
+        "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     ));
+}
+
+fn retains_carrier(
+    identity: &str,
+    removed_closure: &BTreeSet<u64>,
+    protected: &BTreeSet<u64>,
+) -> bool {
+    step_id_from_ir(identity)
+        .is_none_or(|id| !removed_closure.contains(&id) || protected.contains(&id))
 }
 
 fn step_id_from_ir(identity: &str) -> Option<u64> {

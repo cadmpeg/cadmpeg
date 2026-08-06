@@ -1583,6 +1583,91 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
 }
 
 #[test]
+fn a_protected_unowned_pcurve_survives_retention() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#19=EDGE_CURVE('',#6,#7,#57,.T.);",
+            "#19=EDGE_CURVE('',#6,#7,#72,.T.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#28,#55);\n#72=TRIMMED_CURVE('',#16,(#69,0.),(#69,10.),.T.,.PARAMETER.);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode protected unowned pcurve");
+    assert!(decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#69"));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("protected_pcurves=1")));
+    let unknowns = decoded
+        .ir
+        .native
+        .namespace("step")
+        .expect("STEP namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .expect("STEP unknown arena");
+    assert!(unknowns
+        .iter()
+        .all(|record| record.id.0 != "step:data:pcurve#69"));
+}
+
+#[test]
+fn retention_reports_every_deleted_carrier_category() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=PCURVE('',#78,#70);\n#70=DEFINITIONAL_REPRESENTATION('',(#71,#84),#50);\n#71=LINE('',#51,#53);\n#74=CARTESIAN_POINT('',(20.,20.,0.));\n#75=DIRECTION('',(0.,0.,1.));\n#76=DIRECTION('',(1.,0.,0.));\n#77=AXIS2_PLACEMENT_3D('',#74,#75,#76);\n#78=PLANE('',#77);\n#79=DIRECTION('',(1.,0.,0.));\n#80=VECTOR('',#79,1.);\n#83=LINE('',#74,#80);\n#84=OPAQUE_REFERENCE(#83,#86);\n#86=POLY_LOOP('',(#74));\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode carrier retention fixture");
+    let message = decoded
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.message.contains("unowned STEP carrier retention"))
+        .map(|loss| loss.message.as_str())
+        .expect("carrier retention report");
+    for category in ["deleted pcurves=1", "points=1", "curves=1", "surfaces=1"] {
+        assert!(message.contains(category), "missing {category}: {message}");
+    }
+    assert!(decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .all(|curve| curve.id.as_str() != "step:data:curve#83"));
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "step:data:surface#78"));
+    assert!(decoded
+        .ir
+        .model
+        .points
+        .iter()
+        .all(|point| point.id.as_str() != "step:data:point#74"));
+}
+
+#[test]
 fn writer_round_trips_rational_nurbs_pcurves() {
     let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
     let mut ir = StepCodec::default()
