@@ -71,15 +71,21 @@ use native::{annotate, emit_arena, store_arena};
 )]
 use records::*;
 
+/// The sole item of `iter`, or `None` when `iter` is empty or ambiguous.
+fn exactly_one<T>(mut iter: impl Iterator<Item = T>) -> Option<T> {
+    let first = iter.next()?;
+    iter.next().is_none().then_some(first)
+}
+
 fn unique_owned_feature_definition(
     definitions: &[crate::feature::FeatureDefinition],
     feature_id: u32,
 ) -> Option<&crate::feature::FeatureDefinition> {
-    let mut matches = definitions
-        .iter()
-        .filter(|definition| definition.owner_feature_id == Some(feature_id));
-    let definition = matches.next()?;
-    matches.next().is_none().then_some(definition)
+    exactly_one(
+        definitions
+            .iter()
+            .filter(|definition| definition.owner_feature_id == Some(feature_id)),
+    )
 }
 
 fn unique_feature_section_transform(
@@ -87,11 +93,9 @@ fn unique_feature_section_transform(
     definition_id: u32,
     section_offset: usize,
 ) -> Option<&crate::placement::FeatureSectionTransform> {
-    let mut matches = transforms.iter().filter(|transform| {
+    let transform = exactly_one(transforms.iter().filter(|transform| {
         transform.definition_id == definition_id && transform.offset == section_offset
-    });
-    let transform = matches.next()?;
-    matches.next().is_none().then_some(())?;
+    }))?;
     if let Some(feature_id) = transform.feature_id {
         let feature_matches = transforms
             .iter()
@@ -106,15 +110,13 @@ fn unique_feature_definition_for_transform<'a>(
     definitions: &'a [crate::feature::FeatureDefinition],
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<&'a crate::feature::FeatureDefinition> {
-    let mut matches = definitions.iter().filter(|definition| {
+    exactly_one(definitions.iter().filter(|definition| {
         definition.id == transform.definition_id
             && definition
                 .section_3d
                 .as_ref()
                 .is_some_and(|section| section.offset == transform.offset)
-    });
-    let definition = matches.next()?;
-    matches.next().is_none().then_some(definition)
+    }))
 }
 
 fn unique_owned_transformed_definition<'a>(
@@ -161,9 +163,7 @@ fn unique_feature_datum_plane(
     datums: &[crate::datum::DatumPlane],
     feature_id: u32,
 ) -> Option<&crate::datum::DatumPlane> {
-    let mut matches = datums.iter().filter(|datum| datum.feature_id == feature_id);
-    let datum = matches.next()?;
-    matches.next().is_none().then_some(datum)
+    exactly_one(datums.iter().filter(|datum| datum.feature_id == feature_id))
 }
 
 #[derive(Serialize)]
@@ -12272,9 +12272,7 @@ fn unique_section_incidence_curve_family(
     definition: &crate::feature::FeatureDefinition,
     entity_id: u32,
 ) -> Option<SectionEntityIncidenceFamily> {
-    let mut evidence = section_incidence_curve_family_evidence(definition, entity_id).into_iter();
-    let family = evidence.next()?;
-    evidence.next().is_none().then_some(family)
+    exactly_one(section_incidence_curve_family_evidence(definition, entity_id).into_iter())
 }
 
 fn normalize_section_incidence_curve_family_evidence(
@@ -16356,13 +16354,12 @@ fn unique_surface_parameter_record<'a>(
     scan: &'a ContainerScan,
     row: &crate::surface::SurfaceRow,
 ) -> Option<&'a crate::surface::SurfaceParameterRecord> {
-    let mut records = scan
-        .surfaces
-        .parameters
-        .iter()
-        .filter(|record| record.offset == row.offset);
-    let record = records.next()?;
-    records.next().is_none().then_some(record)
+    exactly_one(
+        scan.surfaces
+            .parameters
+            .iter()
+            .filter(|record| record.offset == row.offset),
+    )
 }
 
 fn unique_section_torus_minor_radius(
@@ -16372,13 +16369,11 @@ fn unique_section_torus_minor_radius(
     let section = scan.framing.sections.iter().find(|section| {
         row.offset >= section.offset && row.offset < section.offset.saturating_add(section.length)
     })?;
-    let mut prototypes = scan.surfaces.prototype_records.iter().filter(|prototype| {
+    let prototype = exactly_one(scan.surfaces.prototype_records.iter().filter(|prototype| {
         prototype.family == crate::surface::SurfacePrototypeFamily::Torus
             && prototype.offset >= section.offset
             && prototype.offset < section.offset.saturating_add(section.length)
-    });
-    let prototype = prototypes.next()?;
-    prototypes.next().is_none().then_some(())?;
+    }))?;
     prototype_scalar(prototype, "radius2").filter(|radius| radius.is_finite() && *radius > 0.0)
 }
 
