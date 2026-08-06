@@ -28631,50 +28631,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let (meta, mut coverage) = source_meta(scan);
     ir.source = Some(meta);
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
-    emit_uniform(
-        &mut ir,
-        &mut annotations,
-        "reference_lines",
-        &reference_line_records(scan),
-        |record| &record.id,
-        |_| "MdlRefInfo",
-        |record| record.offset as u64,
-        "reference_line_record",
-        Exactness::ByteExact,
-    )?;
-    emit_uniform(
-        &mut ir,
-        &mut annotations,
-        "reference_circles",
-        &reference_circle_records(scan),
-        |record| &record.id,
-        |_| "MdlRefInfo",
-        |record| record.offset as u64,
-        "reference_circle_record",
-        Exactness::Derived,
-    )?;
-    emit_uniform(
-        &mut ir,
-        &mut annotations,
-        "reference_conics",
-        &reference_conic_records(scan),
-        |record| &record.id,
-        |_| "MdlRefInfo",
-        |record| record.offset as u64,
-        "reference_conic_record",
-        Exactness::ByteExact,
-    )?;
-    emit_uniform(
-        &mut ir,
-        &mut annotations,
-        "reference_ellipses",
-        &reference_ellipse_records(scan),
-        |record| &record.id,
-        |_| "MdlRefInfo",
-        |record| record.offset as u64,
-        "reference_ellipse_carrier",
-        Exactness::Derived,
-    )?;
+    emit_reference_arenas(scan, &mut ir, &mut annotations)?;
     let line3d_id_counts =
         scan.references
             .lines
@@ -29961,10 +29918,86 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     }
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
+    emit_geometry_arenas(scan, &mut ir, &mut annotations)?;
+    collect_feature_coverage(scan, &ir, geometry_generator_feature_count, &mut coverage);
+    Ok(BuiltIr {
+        ir,
+        annotations: annotations.build(),
+        unknowns,
+        coverage,
+    })
+}
+
+/// Emit the `MdlRefInfo` reference-geometry arenas.
+///
+/// Reference lines, circles, conics, and ellipse carriers, each annotated
+/// against the `MdlRefInfo` stream at the record offset.
+fn emit_reference_arenas(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
+    emit_uniform(
+        ir,
+        annotations,
+        "reference_lines",
+        &reference_line_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_line_record",
+        Exactness::ByteExact,
+    )?;
+    emit_uniform(
+        ir,
+        annotations,
+        "reference_circles",
+        &reference_circle_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_circle_record",
+        Exactness::Derived,
+    )?;
+    emit_uniform(
+        ir,
+        annotations,
+        "reference_conics",
+        &reference_conic_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_conic_record",
+        Exactness::ByteExact,
+    )?;
+    emit_uniform(
+        ir,
+        annotations,
+        "reference_ellipses",
+        &reference_ellipse_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_ellipse_carrier",
+        Exactness::Derived,
+    )?;
+    Ok(())
+}
+
+/// Emit the surface, curve, topology, plane, and feature arenas.
+///
+/// Each arena is built from the scan and stored under its native key in the
+/// order the source streams are read; that order fixes the annotation stream
+/// numbering, so the emissions must not be reordered.
+fn emit_geometry_arenas(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
     let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "surface_rows",
         &surface_rows,
         |record| &record.id,
@@ -29976,8 +30009,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let nonvisible_surface_rows =
         surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_surface_rows",
         &nonvisible_surface_rows,
         |record| &record.id,
@@ -29992,8 +30025,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "cross_section_geometry",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "cross_section_surface_rows",
         &cross_section_surface_rows,
         |record| &record.id,
@@ -30005,8 +30038,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let surface_prototypes =
         surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "surface_prototypes",
         &surface_prototypes,
         |record| &record.id,
@@ -30021,8 +30054,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "novisgeom",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_surface_prototypes",
         &nonvisible_surface_prototypes,
         |record| &record.id,
@@ -30033,8 +30066,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "tabulated_cylinder_curve_replays",
         &tabulated_cylinder_curve_replays,
         |record| &record.id,
@@ -30045,8 +30078,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "curve_parameters",
         &curve_parameters,
         |record| &record.id,
@@ -30058,8 +30091,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let nonvisible_curve_parameters =
         curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_curve_parameters",
         &nonvisible_curve_parameters,
         |record| &record.id,
@@ -30070,8 +30103,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let fc_curve_coordinates = fc_curve_coordinate_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "fc_curve_coordinates",
         &fc_curve_coordinates,
         |record| &record.id,
@@ -30081,22 +30114,18 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         Exactness::ByteExact,
     )?;
     let fc05_circles = fc05_circle_records(scan);
-    store_arena(&mut ir, "fc05_circles", &fc05_circles)?;
+    store_arena(ir, "fc05_circles", &fc05_circles)?;
     let fc05_cylinder_cap_pairs = fc05_cylinder_cap_pair_records(scan);
-    store_arena(&mut ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
+    store_arena(ir, "fc05_cylinder_cap_pairs", &fc05_cylinder_cap_pairs)?;
     let prototype_pcurves = prototype_pcurve_records(scan);
-    store_arena(&mut ir, "prototype_pcurves", &prototype_pcurves)?;
+    store_arena(ir, "prototype_pcurves", &prototype_pcurves)?;
     let curve_prototype_topology = curve_prototype_topology_records(scan);
-    store_arena(
-        &mut ir,
-        "curve_prototype_topology",
-        &curve_prototype_topology,
-    )?;
+    store_arena(ir, "curve_prototype_topology", &curve_prototype_topology)?;
     let curve_prototypes =
         curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "curve_prototypes",
         &curve_prototypes,
         |record| &record.id,
@@ -30111,8 +30140,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "creo:novisgeom:curve_prototype",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_curve_prototypes",
         &nonvisible_curve_prototypes,
         |record| &record.id,
@@ -30127,8 +30156,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "creo:cross_section_geometry:curve_prototype",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "cross_section_curve_prototypes",
         &cross_section_curve_prototypes,
         |record| &record.id,
@@ -30140,8 +30169,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "curve_topology_rows",
         &curve_topology_rows,
         |record| &record.id,
@@ -30153,8 +30182,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let nonvisible_curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom");
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_curve_topology_rows",
         &nonvisible_curve_topology_rows,
         |record| &record.id,
@@ -30165,8 +30194,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let cross_section_curve_rows = cross_section_curve_row_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "cross_section_curve_rows",
         &cross_section_curve_rows,
         |record| &record.id,
@@ -30177,8 +30206,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let half_edges = half_edge_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "half_edges",
         &half_edges,
         |record| &record.id,
@@ -30188,17 +30217,17 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         Exactness::Derived,
     )?;
     let native_loops = loop_records(scan);
-    store_arena(&mut ir, "loops", &native_loops)?;
+    store_arena(ir, "loops", &native_loops)?;
     let topological_vertices = topological_vertex_records(scan);
-    store_arena(&mut ir, "topological_vertices", &topological_vertices)?;
+    store_arena(ir, "topological_vertices", &topological_vertices)?;
     let half_edge_vertex_incidence = half_edge_vertex_incidence_records(scan);
     store_arena(
-        &mut ir,
+        ir,
         "half_edge_vertex_incidence",
         &half_edge_vertex_incidence,
     )?;
     let face_components = face_component_records(scan);
-    store_arena(&mut ir, "face_components", &face_components)?;
+    store_arena(ir, "face_components", &face_components)?;
     let surface_parameters = surface_parameter_records(
         scan,
         &scan.surfaces.rows,
@@ -30206,8 +30235,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "visibgeom",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "surface_parameters",
         &surface_parameters,
         |record| &record.id,
@@ -30223,8 +30252,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "novisgeom",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "nonvisible_surface_parameters",
         &nonvisible_surface_parameters,
         |record| &record.id,
@@ -30240,8 +30269,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "cross_section_geometry",
     );
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "cross_section_surface_parameters",
         &cross_section_surface_parameters,
         |record| &record.id,
@@ -30255,60 +30284,60 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &scan.planes.local_systems,
         "creo:surface:plane_local_system",
     );
-    store_arena(&mut ir, "plane_local_systems", &plane_local_systems)?;
+    store_arena(ir, "plane_local_systems", &plane_local_systems)?;
     let cross_section_plane_local_systems = plane_local_system_records(
         scan,
         &scan.planes.cross_section_local_systems,
         "creo:cross_section_geometry:plane_local_system",
     );
     store_arena(
-        &mut ir,
+        ir,
         "cross_section_plane_local_systems",
         &cross_section_plane_local_systems,
     )?;
     let plane_envelopes =
         plane_envelope_records(scan, &scan.planes.envelopes, "creo:surface:plane_envelope");
-    store_arena(&mut ir, "plane_envelopes", &plane_envelopes)?;
+    store_arena(ir, "plane_envelopes", &plane_envelopes)?;
     let cross_section_plane_envelopes = plane_envelope_records(
         scan,
         &scan.planes.cross_section_envelopes,
         "creo:cross_section_geometry:plane_envelope",
     );
     store_arena(
-        &mut ir,
+        ir,
         "cross_section_plane_envelopes",
         &cross_section_plane_envelopes,
     )?;
     let outline_planes =
         outline_plane_records(scan, &scan.planes.outlines, "creo:surface:outline_plane");
-    store_arena(&mut ir, "outline_planes", &outline_planes)?;
+    store_arena(ir, "outline_planes", &outline_planes)?;
     let positional_frame_planes = outline_plane_records(
         scan,
         &scan.planes.positional_frames,
         "creo:surface:positional_frame_plane",
     );
-    store_arena(&mut ir, "positional_frame_planes", &positional_frame_planes)?;
+    store_arena(ir, "positional_frame_planes", &positional_frame_planes)?;
     let cross_section_outline_planes = outline_plane_records(
         scan,
         &scan.planes.cross_section_outlines,
         "creo:cross_section_geometry:outline_plane",
     );
     store_arena(
-        &mut ir,
+        ir,
         "cross_section_outline_planes",
         &cross_section_outline_planes,
     )?;
     let datum_planes = datum_plane_records(scan);
-    store_arena(&mut ir, "datum_planes", &datum_planes)?;
+    store_arena(ir, "datum_planes", &datum_planes)?;
     let feature_section_transforms = feature_section_transform_records(scan);
     store_arena(
-        &mut ir,
+        ir,
         "feature_section_transforms",
         &feature_section_transforms,
     )?;
     let feature_placement_instructions = feature_placement_instruction_records(scan);
     store_arena(
-        &mut ir,
+        ir,
         "feature_placement_instructions",
         &feature_placement_instructions,
     )?;
@@ -30317,7 +30346,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let pcurve_endpoints = pcurve_endpoint_records(scan);
     for (record, offset) in &pcurve_endpoints {
         annotate(
-            &mut annotations,
+            annotations,
             &record.id,
             "VisibGeom",
             *offset as u64,
@@ -30329,11 +30358,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .iter()
         .map(|(record, _)| record)
         .collect::<Vec<_>>();
-    store_arena(&mut ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
+    store_arena(ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_definitions",
         &feature_definitions,
         |definition| &definition.id,
@@ -30344,8 +30373,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_entities = feature_entity_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_entities",
         &feature_entities,
         |entity| &entity.id,
@@ -30356,8 +30385,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_entity_references = feature_entity_reference_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_entity_references",
         &feature_entity_references,
         |reference| &reference.id,
@@ -30368,8 +30397,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_entity_tables = feature_entity_table_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_entity_tables",
         &feature_entity_tables,
         |table| &table.id,
@@ -30380,8 +30409,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_surface_replays = feature_surface_replay_associations(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_surface_replays",
         &feature_surface_replays,
         |association| &association.id,
@@ -30392,8 +30421,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_geometry_tables = feature_geometry_table_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_geometry_tables",
         &feature_geometry_tables,
         |table| &table.id,
@@ -30404,8 +30433,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_loop_history_entries = feature_loop_history_entry_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_loop_history_entries",
         &feature_loop_history_entries,
         |entry| &entry.id,
@@ -30416,8 +30445,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_affected_ids = feature_affected_id_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_affected_ids",
         &feature_affected_ids,
         |record| &record.id,
@@ -30428,8 +30457,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_replay_affected_ids",
         &feature_replay_affected_ids,
         |record| &record.id,
@@ -30440,8 +30469,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "surface_merge_replay_affected_ids",
         &surface_merge_replay_affected_ids,
         |record| &record.id,
@@ -30452,8 +30481,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_loop_restore_directions",
         &feature_loop_restore_directions,
         |record| &record.id,
@@ -30464,8 +30493,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_revolution_extents = feature_revolution_extent_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_revolution_extents",
         &feature_revolution_extents,
         |record| &record.id,
@@ -30476,8 +30505,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_rows = feature_row_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_rows",
         &feature_rows,
         |record| &record.id,
@@ -30488,8 +30517,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let depdb_recipe_rows = depdb_recipe_row_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "depdb_recipe_rows",
         &depdb_recipe_rows,
         |record| &record.id,
@@ -30500,8 +30529,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_choices = feature_choice_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_choices",
         &feature_choices,
         |record| &record.id,
@@ -30512,8 +30541,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_choice_fields = feature_choice_field_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_choice_fields",
         &feature_choice_fields,
         |record| &record.id,
@@ -30524,8 +30553,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let sketches = sketch_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "sketches",
         &sketches,
         |sketch| &sketch.id,
@@ -30539,7 +30568,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let curve_expressions = curve_expression_records(scan);
     for (expression, source) in curve_expressions.iter().zip(&scan.curves.expressions) {
         annotate(
-            &mut annotations,
+            annotations,
             &expression.id,
             "DEPDB_DATA",
             source.expression_offset as u64,
@@ -30547,11 +30576,11 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
             Exactness::ByteExact,
         );
     }
-    store_arena(&mut ir, "curve_expressions", &curve_expressions)?;
+    store_arena(ir, "curve_expressions", &curve_expressions)?;
     let feature_operation_states = feature_operation_state_records(scan);
     emit_arena(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_operation_states",
         &feature_operation_states,
         |annotations, state| {
@@ -30576,8 +30605,8 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let feature_reference_names = feature_reference_name_records(scan);
     emit_uniform(
-        &mut ir,
-        &mut annotations,
+        ir,
+        annotations,
         "feature_reference_names",
         &feature_reference_names,
         |record| &record.id,
@@ -30588,22 +30617,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     if let Some(family_table) = family_table_record(scan) {
         annotate(
-            &mut annotations,
+            annotations,
             family_table.id,
             "FamilyInf",
             family_table.offset as u64,
             "configuration_driver_table_pointer",
             Exactness::ByteExact,
         );
-        store_arena(&mut ir, "configuration", &[family_table])?;
+        store_arena(ir, "configuration", &[family_table])?;
     }
-    collect_feature_coverage(scan, &ir, geometry_generator_feature_count, &mut coverage);
-    Ok(BuiltIr {
-        ir,
-        annotations: annotations.build(),
-        unknowns,
-        coverage,
-    })
+    Ok(())
 }
 
 /// Count transferred features by kind and record the counts in `coverage`.
