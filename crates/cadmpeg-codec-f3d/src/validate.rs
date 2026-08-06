@@ -2066,10 +2066,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         None => {
                             group.role == 0x0000_0005_0000_0000
                                 && group.extrude_face_role.is_none()
-                                && scope
-                                    .extrude_prologue
-                                    .map(records::DesignExtrudePrologue::start)
-                                    != Some(records::DesignExtrudeStart::FromFace)
+                                && scope.extrude_prologue.is_some_and(|prologue| {
+                                    prologue.extent()
+                                        == Some(records::DesignExtrudeExtent::OneSidedToFace)
+                                })
                         }
                     },
                     Some(
@@ -2590,6 +2590,33 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
                 })
                 .count();
+            let target_shape_group_count = native
+                .design_construction_operand_groups
+                .iter()
+                .filter(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.role == 0x0000_0005_0000_0000
+                        && group.extrude_role.is_none()
+                        && group.extrude_face_role.is_none()
+                        && !group.members.is_empty()
+                        && group
+                            .members
+                            .iter()
+                            .enumerate()
+                            .all(|(ordinal, record_index)| {
+                                u32::try_from(ordinal).ok().is_some_and(|ordinal| {
+                                    native.design_body_recipe_operands.iter().any(|operand| {
+                                        design_stream(&operand.id) == native_stream
+                                            && operand.scope_record_index == scope.record_index
+                                            && operand.owner.group()
+                                                == Some((group.record_index, ordinal))
+                                            && operand.record_index == *record_index
+                                    })
+                                })
+                            })
+                })
+                .count();
             let operation_matches_operands = match scope
                 .extrude_prologue
                 .map(records::DesignExtrudePrologue::operation)
@@ -2680,7 +2707,11 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     along_count == 0
                         && !has_fixed_extrude_parameters
                         && against_count == 0
-                        && side_one_offset_count == 1
+                        && if target_shape_group_count == 1 {
+                            side_one_offset_is_absent
+                        } else {
+                            side_one_offset_count == 1
+                        }
                 }
                 records::DesignExtrudeExtent::TwoSidedDistance => {
                     along_count == 1
@@ -2716,10 +2747,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 records::DesignExtrudeStart::OffsetProfilePlane
                 | records::DesignExtrudeStart::FromFace => profile_offset_count == 1,
             };
-            let expected_face_group_count = usize::from(matches!(
-                extrude_extent,
-                records::DesignExtrudeExtent::OneSidedToFace
-            )) + usize::from(matches!(
+            let expected_face_group_count = usize::from(
+                matches!(extrude_extent, records::DesignExtrudeExtent::OneSidedToFace)
+                    && target_shape_group_count == 0,
+            ) + usize::from(matches!(
                 extrude_start,
                 records::DesignExtrudeStart::FromFace
             ));
@@ -2737,14 +2768,16 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (
                     records::DesignExtrudeStart::FromFace,
                     records::DesignExtrudeExtent::OneSidedToFace,
-                ) => vec![
+                ) if target_shape_group_count == 0 => vec![
                     records::DesignExtrudeFaceRole::Start,
                     records::DesignExtrudeFaceRole::Termination,
                 ],
                 (records::DesignExtrudeStart::FromFace, _) => {
                     vec![records::DesignExtrudeFaceRole::Start]
                 }
-                (_, records::DesignExtrudeExtent::OneSidedToFace) => {
+                (_, records::DesignExtrudeExtent::OneSidedToFace)
+                    if target_shape_group_count == 0 =>
+                {
                     vec![records::DesignExtrudeFaceRole::Termination]
                 }
                 _ => Vec::new(),

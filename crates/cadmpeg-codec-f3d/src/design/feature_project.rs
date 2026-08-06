@@ -13,8 +13,8 @@ use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
 };
 use crate::design::face_resolve::{
-    design_angle, resolved_face_group, resolved_historical_face_group, resolved_profile_face_group,
-    valid_chamfer_spec,
+    design_angle, resolved_body_recipe_shape, resolved_face_group, resolved_historical_face_group,
+    resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -22,14 +22,15 @@ use crate::ids::{
     neutral_spatial_sketch_id,
 };
 use crate::records::{
-    ConstructionRecipeKind, DesignBodyBinding, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignConstructionOperandGroup, DesignDirectFaceOperation,
-    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance, DesignParameter,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, SketchCurveGeometry, SketchCurveIdentity,
+    ConstructionRecipeKind, DesignBodyBinding, DesignBodyRecipeOperand, DesignCoilExtent,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
+    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance,
+    DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, SketchCurveGeometry,
+    SketchCurveIdentity,
 };
 use cadmpeg_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -38,8 +39,9 @@ use std::collections::{HashMap, HashSet};
 
 /// Design record slices projected together into the neutral construction
 /// history: the parameter, owner, and scope tables plus the construction
-/// operand, fillet-radius, edge, edge-identity, and face operand records and
-/// the sketch placements and body bindings each feature scope resolves against.
+/// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
+/// operand records and the sketch placements and body bindings each feature
+/// scope resolves against.
 pub struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
@@ -51,6 +53,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) entity_selection_operands: &'a [crate::records::DesignEntitySelectionOperand],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
     pub(crate) face_operands: &'a [DesignFaceOperand],
+    pub(crate) body_recipe_operands: &'a [DesignBodyRecipeOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
@@ -89,6 +92,7 @@ pub fn project_parameter_design(
         entity_selection_operands: &[],
         curve_identities: &[],
         face_operands,
+        body_recipe_operands: &[],
         placements,
         body_bindings: &[],
         histories: &[],
@@ -118,6 +122,7 @@ pub fn project_parameter_design_with_edge_identities(
         entity_selection_operands,
         curve_identities,
         face_operands,
+        body_recipe_operands,
         placements,
         body_bindings,
         histories,
@@ -213,6 +218,7 @@ pub fn project_parameter_design_with_edge_identities(
                     construction_groups,
                     face_operands,
                     placements,
+                    body_recipe_operands,
                 )
                 .unwrap_or_else(|| FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -5300,6 +5306,7 @@ pub(crate) fn project_extrude(
     construction_groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
+    body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         Angle, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
@@ -5498,6 +5505,15 @@ pub(crate) fn project_extrude(
         .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Termination))
         .copied()
         .collect::<Vec<_>>();
+    let target_shape_groups = scope_groups
+        .iter()
+        .filter(|group| {
+            group.role == 0x0000_0005_0000_0000
+                && group.extrude_role.is_none()
+                && group.extrude_face_role.is_none()
+        })
+        .copied()
+        .collect::<Vec<_>>();
     if start_groups.len() + termination_groups.len() != face_groups.len() {
         return None;
     }
@@ -5592,19 +5608,30 @@ pub(crate) fn project_extrude(
             (ExtentShape::Symmetric(Termination::ThroughAll), false)
         }
         (DesignExtrudeExtent::OneSidedToFace, None, None) => {
-            let offset = side_one_offset?;
-            let [termination] = termination_groups.as_slice() else {
-                return None;
-            };
-            (
-                ExtentShape::OneSided(Termination::ToFace {
-                    face: resolved_historical_face_group(scope, termination, face_operands)
-                        .or_else(|| resolved_face_group(termination, face_operands))
-                        .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
-                    offset: (offset.0 != 0.0).then_some(offset),
-                }),
-                prologue.direction_reversed(),
-            )
+            match (
+                termination_groups.as_slice(),
+                target_shape_groups.as_slice(),
+            ) {
+                ([termination], []) => {
+                    let offset = side_one_offset?;
+                    (
+                        ExtentShape::OneSided(Termination::ToFace {
+                            face: resolved_historical_face_group(scope, termination, face_operands)
+                                .or_else(|| resolved_face_group(termination, face_operands))
+                                .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
+                            offset: (offset.0 != 0.0).then_some(offset),
+                        }),
+                        prologue.direction_reversed(),
+                    )
+                }
+                ([], [target]) if effective_side_one_offset.is_none() => (
+                    ExtentShape::OneSided(Termination::ToShape {
+                        target: resolved_body_recipe_shape(target, body_recipe_operands)?,
+                    }),
+                    prologue.direction_reversed(),
+                ),
+                _ => return None,
+            }
         }
         (DesignExtrudeExtent::OneSidedThroughNext, None, None)
             if termination_groups.is_empty() && effective_side_one_offset.is_none() =>
