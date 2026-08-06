@@ -10,8 +10,9 @@ Table source: `docs/layouts/sldprt.toml`.
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), and the Parasolid geometry
 carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; the two wide indexed profile layouts are tabulated below, and
-the remaining layouts are listed under "Not tabulated" with a coverage note.
+layouts in prose; the fixed-offset profile and sketch-input layouts are tabulated
+below, and the remaining layouts are listed under "Not tabulated" with a coverage
+note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -513,11 +514,92 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_code_two_profile_point`
+
+Spec §2 · layout: byte offsets · size: 132 B
+
+The record emits a point and contributes its coordinate to the raw coordinate roster.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A compact legacy code-`2` profile point is a 132-byte record |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `native_kind` | `u32` | little | spec | native code u32 `2` at marker +13 |
+| 17 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +17 through +18 |
+| 19 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 23 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 25 | 6 | `zero_state` | `bytes[6]` | little | spec | zero bytes at marker +25 through +30 |
+| 31 | 11 | `selector` | `bytes[11]` | little | spec | selector bytes `04 00 00 00 00 00 00 00 00 00 00` at marker +31 |
+| 42 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +42 |
+| 44 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +44 and +52 |
+| 52 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +44 and +52 |
+| 60 | 2 | `zero_link_prefix` | `bytes[2]` | little | spec | Marker +60 through +61 are zero |
+| 62 | 2 | `operand_tag` | `u16` | little | spec | marker +62 stores u16 `4` |
+| 64 | 8 | `operand_first` | `bytes[8]` | little | spec | two homogeneous eight-byte operand cells begin at marker +64 and +72 |
+| 72 | 8 | `operand_second` | `bytes[8]` | little | spec | two homogeneous eight-byte operand cells begin at marker +64 and +72 |
+| 80 | 6 | `link_terminator` | `bytes[6]` | little | spec | Marker +80 stores `00 00 fe ff ff ff` |
+| 86 | 34 | `zero_trailer` | `bytes[34]` | little | spec | marker +86 through +119 are zero |
+| 120 | 4 | `trailer_kind` | `u32` | little | spec | marker +120 stores u32 `2` |
+| 124 | 4 | `zero_identity_prefix` | `bytes[4]` | little | spec | marker +124 through +127 are zero |
+| 128 | 4 | `identity` | `u32` | little | spec | marker +128 stores the non-null feature-local object identifier |
+
+## `compact_legacy_embedded_geometry_handle`
+
+Spec §2 · layout: byte offsets · size: 120 B
+
+The record contributes its coordinate to the raw coordinate roster and emits no sketch entity.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An embedded compact legacy geometry handle is a 120-byte record |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `native_kind` | `u32` | little | spec | native code u32 `0` |
+| 17 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +17 through +18 |
+| 19 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `05 00 01 00` |
+| 23 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 25 | 6 | `zero_state_prefix` | `bytes[6]` | little | spec | zero bytes at marker +25 through +30 |
+| 31 | 11 | `selector` | `bytes[11]` | little | spec | selector bytes `05 00 00 00 00 00 00 00 00 00 00` at marker +31 |
+| 42 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +42 |
+| 44 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +44 and +52 |
+| 52 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +44 and +52 |
+| 60 | 4 | `state` | `u32` | little | spec | Its u32 state at marker +60 is zero or nonzero and non-null |
+| 64 | 6 | `zero_link_prefix` | `bytes[6]` | little | spec | marker +64 through +69 are zero |
+| 70 | 4 | `link_sentinel` | `i32` | little | spec | marker +70 stores i32 `-1` |
+| 74 | 42 | `zero_trailer` | `bytes[42]` | little | spec | marker +74 through +115 are zero |
+| 116 | 4 | `identity` | `u32` | little | spec | marker +116 stores a non-null feature-local identity |
+
+## `compact_legacy_terminal_diameter_circle`
+
+Spec §2 · layout: byte offsets · size: 121 B
+
+The radial ordinal is zero-based in the feature-owned raw coordinate roster, including coordinate-bearing geometry handles that do not emit sketch entities.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A terminal compact legacy diameter-circle record has kind u32 `1` |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Each prefix is followed by eight `ff` bytes |
+| 13 | 4 | `native_kind` | `u32` | little | spec | kind u32 `1` |
+| 17 | 2 | `zero_prefix` | `bytes[2]` | little | spec | Bytes +17 through +18 are zero |
+| 19 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry locus `04 00 02 00` |
+| 23 | 2 | `role` | `u16` | little | spec | profile role u16 `1` |
+| 25 | 2 | `state` | `u16` | little | spec | state u16 `1` |
+| 27 | 4 | `zero_selector_prefix` | `bytes[4]` | little | spec | bytes +27 through +30 are zero |
+| 31 | 11 | `selector` | `bytes[11]` | little | spec | selector bytes `04 00 00 00 00 00 00 00 00 00 00` at marker +31 |
+| 42 | 2 | `radial_ordinal` | `u16` | little | spec | zero-based radial-roster ordinal at marker +42 |
+| 44 | 2 | `radial_sentinel` | `u16` | little | spec | u16 `0` at marker +44 |
+| 46 | 4 | `selector_value` | `u32` | little | spec | u32 `1` at marker +46 |
+| 50 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1.0` at marker +50 |
+| 58 | 44 | `zero_trailer` | `bytes[44]` | little | spec | Bytes +58 through +101 are zero |
+| 102 | 2 | `terminal_state` | `u16` | little | spec | u16 `3` is at marker +102 |
+| 104 | 4 | `class_marker` | `bytes[4]` | little | spec | the terminal class declaration is `ff ff 01 00` |
+| 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
+| 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
-| ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. Two wide indexed profile layouts are tabulated above; the remaining paragraphs are transcribable in principle and can be added incrementally. |
+| ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile and sketch-input forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
 | Body records (§6) | §6 | §6 states slot-reference graphs and population invariants over about thirty named disc layouts. It states no byte offsets; the slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a record: `end = pos + 14 + 3*slot_count + 1` for a prefixed subrecord and `end = pos + 14 + 2*slot_count` for a bare one. The slot-count table it depends on is an open item, not a stated layout. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |

@@ -115,6 +115,89 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
 }
 
 #[test]
+fn compact_legacy_embedded_geometry_preserves_coordinate_roster_ordinals() {
+    let marker_size = LEGACY_SKETCH_MARKER.len();
+    let mut payload = vec![0; 132 + 120 + 120 + 120 + 68 + marker_size];
+    let profile_point = |payload: &mut [u8], offset: usize, code: u32, coordinate: [f64; 2]| {
+        payload[offset..offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&code.to_le_bytes());
+        payload[offset + 19..offset + 25].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 42].copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        payload[offset + 42..offset + 44].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 44..offset + 52].copy_from_slice(&coordinate[0].to_le_bytes());
+        payload[offset + 52..offset + 60].copy_from_slice(&coordinate[1].to_le_bytes());
+    };
+    profile_point(&mut payload, 0, 2, [0.03, 0.005]);
+    payload[62..64].copy_from_slice(&4u16.to_le_bytes());
+    for (relative, id) in [(64, 8u16), (72, 11u16)] {
+        payload[relative..relative + 2].copy_from_slice(&0x811au16.to_le_bytes());
+        payload[relative + 2..relative + 4].copy_from_slice(&id.to_le_bytes());
+        payload[relative + 4..relative + 8].fill(0xff);
+    }
+    payload[80..86].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    payload[120..124].copy_from_slice(&2u32.to_le_bytes());
+    payload[128..132].copy_from_slice(&10u32.to_le_bytes());
+
+    let second_offset = 132;
+    profile_point(&mut payload, second_offset, 0, [-0.03, 0.005]);
+    let embedded_offset = second_offset + 120;
+    payload[embedded_offset..embedded_offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[embedded_offset + 5..embedded_offset + 13].fill(0xff);
+    payload[embedded_offset + 19..embedded_offset + 25]
+        .copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[embedded_offset + 31..embedded_offset + 42]
+        .copy_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    payload[embedded_offset + 42..embedded_offset + 44].copy_from_slice(&[0x1e, 0x00]);
+    payload[embedded_offset + 44..embedded_offset + 52].copy_from_slice(&0.03f64.to_le_bytes());
+    payload[embedded_offset + 52..embedded_offset + 60].copy_from_slice(&0.005f64.to_le_bytes());
+    payload[embedded_offset + 70..embedded_offset + 74].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    payload[embedded_offset + 116..embedded_offset + 120].copy_from_slice(&12u32.to_le_bytes());
+
+    let third_offset = embedded_offset + 120;
+    profile_point(&mut payload, third_offset, 0, [-0.03, -0.005]);
+    let curve_offset = third_offset + 120;
+    payload[curve_offset..curve_offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[curve_offset + 5..curve_offset + 13].fill(0xff);
+    payload[curve_offset + 19..curve_offset + 25]
+        .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[curve_offset + 25..curve_offset + 27].copy_from_slice(&1u16.to_le_bytes());
+    payload[curve_offset + 31..curve_offset + 42]
+        .copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    payload[curve_offset + 42..curve_offset + 44].copy_from_slice(&1u16.to_le_bytes());
+    payload[curve_offset + 44..curve_offset + 46].copy_from_slice(&3u16.to_le_bytes());
+    payload[curve_offset + 46..curve_offset + 50].copy_from_slice(&1u32.to_le_bytes());
+    payload[curve_offset + 50..curve_offset + 58].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[curve_offset + 68..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let mut entities = sketch_input_entities(&payload, "lane");
+    assert_eq!(
+        entities
+            .iter()
+            .map(|entity| entity.kind)
+            .collect::<Vec<_>>(),
+        vec![
+            SketchInputKind::Point,
+            SketchInputKind::Point,
+            SketchInputKind::Point,
+            SketchInputKind::LineOrCircle,
+        ]
+    );
+    for entity in &mut entities {
+        entity.feature_ref = Some("feature".into());
+    }
+    let markers = entities.iter().collect::<Vec<_>>();
+    let endpoints = coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers);
+    assert_eq!(
+        endpoints
+            .iter()
+            .map(|marker| marker.coordinates_m)
+            .collect::<Vec<_>>(),
+        vec![Some([-0.03, 0.005]), Some([-0.03, -0.005])]
+    );
+}
+
+#[test]
 fn compact_legacy_generation_carries_points_curves_and_selected_axes() {
     let mut payload = vec![0; 280 + LEGACY_SKETCH_MARKER.len()];
     let header = |payload: &mut [u8], offset: usize, code: u32, role: u16, flag: u8| {
@@ -2130,6 +2213,112 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     payload[circle_offset + 120] = b'x';
     assert_eq!(
         super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        None
+    );
+}
+
+#[test]
+fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
+    let marker_size = LEGACY_SKETCH_MARKER.len();
+    let circle_offset = 768;
+    let mut payload = vec![0; circle_offset + 121];
+    let profile_point = |payload: &mut [u8], offset: usize, coordinates: [f64; 2]| {
+        payload[offset..offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 19..offset + 25].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 42].copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        payload[offset + 42..offset + 44].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 44..offset + 52].copy_from_slice(&coordinates[0].to_le_bytes());
+        payload[offset + 52..offset + 60].copy_from_slice(&coordinates[1].to_le_bytes());
+        payload[offset + 62..offset + 64].copy_from_slice(&4u16.to_le_bytes());
+        for (relative, id) in [(64, 8u16), (72, 11u16)] {
+            payload[offset + relative..offset + relative + 2]
+                .copy_from_slice(&0x811au16.to_le_bytes());
+            payload[offset + relative + 2..offset + relative + 4]
+                .copy_from_slice(&id.to_le_bytes());
+            payload[offset + relative + 4..offset + relative + 8].fill(0xff);
+        }
+        payload[offset + 80..offset + 86].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + 120..offset + 124].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 128..offset + 132].copy_from_slice(&10u32.to_le_bytes());
+    };
+    let embedded_geometry = |payload: &mut [u8], offset: usize, coordinates: [f64; 2]| {
+        payload[offset..offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 19..offset + 25].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+        payload[offset + 31..offset + 42].copy_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        payload[offset + 42..offset + 44].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 44..offset + 52].copy_from_slice(&coordinates[0].to_le_bytes());
+        payload[offset + 52..offset + 60].copy_from_slice(&coordinates[1].to_le_bytes());
+        payload[offset + 70..offset + 74].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+        payload[offset + 116..offset + 120].copy_from_slice(&12u32.to_le_bytes());
+    };
+    for (offset, coordinates) in [
+        (0, [0.03, 0.005]),
+        (132, [-0.03, 0.005]),
+        (384, [-0.03, -0.005]),
+        (516, [0.03, -0.0048]),
+    ] {
+        profile_point(&mut payload, offset, coordinates);
+    }
+    embedded_geometry(&mut payload, 264, [0.03, 0.005]);
+    embedded_geometry(&mut payload, 648, [-0.03, 0.005]);
+
+    payload[circle_offset..circle_offset + marker_size].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[circle_offset + 5..circle_offset + 13].fill(0xff);
+    payload[circle_offset + 13..circle_offset + 17].copy_from_slice(&1u32.to_le_bytes());
+    payload[circle_offset + 19..circle_offset + 25]
+        .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[circle_offset + 25..circle_offset + 27].copy_from_slice(&1u16.to_le_bytes());
+    payload[circle_offset + 31..circle_offset + 42]
+        .copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    payload[circle_offset + 42..circle_offset + 44].copy_from_slice(&4u16.to_le_bytes());
+    payload[circle_offset + 46..circle_offset + 50].copy_from_slice(&1u32.to_le_bytes());
+    payload[circle_offset + 50..circle_offset + 58].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[circle_offset + 102..circle_offset + 104].copy_from_slice(&3u16.to_le_bytes());
+    payload[circle_offset + 104..circle_offset + 108].copy_from_slice(CLASS_MARKER);
+    payload[circle_offset + 108..circle_offset + 110].copy_from_slice(&11u16.to_le_bytes());
+    payload[circle_offset + 110..circle_offset + 121].copy_from_slice(b"sgCircleDim");
+
+    let entity = |id: &str, offset: u64, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let entities = [
+        entity("center", 0, SketchInputKind::Point, Some([0.03, 0.005])),
+        entity("second", 132, SketchInputKind::Point, Some([-0.03, 0.005])),
+        entity("third", 384, SketchInputKind::Point, Some([-0.03, -0.005])),
+        entity("radial", 516, SketchInputKind::Point, Some([0.03, -0.0048])),
+        entity(
+            "circle",
+            circle_offset as u64,
+            SketchInputKind::LineOrCircle,
+            None,
+        ),
+    ];
+    let markers = entities.iter().collect::<Vec<_>>();
+    let Some((center, radius)) =
+        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers)
+    else {
+        panic!("terminal circle did not resolve");
+    };
+    assert_eq!(center, [0.03, 0.005]);
+    assert!((radius - 0.0098).abs() < 1e-12);
+
+    payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
+    assert_eq!(
+        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers),
         None
     );
 }

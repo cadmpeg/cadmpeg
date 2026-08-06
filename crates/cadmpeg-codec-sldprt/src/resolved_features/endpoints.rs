@@ -3,9 +3,11 @@
 use super::curves::compact_bounded_curve_tangent;
 use super::dimensions::compact_legacy_radial_circle_index;
 use super::markers::{
-    alternate_current_curve_body, compact_legacy_marker_body,
-    current_reverse_incidence_endpoint_offsets, finite_coordinate_pair, marker_is_geometry_locus,
-    marker_native_code, marker_object_index, packed_legacy_marker_body, sketch_marker_prefix_at,
+    alternate_current_curve_body, compact_legacy_code_two_profile_point_coordinates,
+    compact_legacy_coordinate_roster_coordinates, compact_legacy_embedded_geometry_coordinates,
+    compact_legacy_marker_body, current_reverse_incidence_endpoint_offsets, finite_coordinate_pair,
+    marker_is_geometry_locus, marker_native_code, marker_object_index, packed_legacy_marker_body,
+    sketch_marker_prefix_at,
 };
 use super::relation_loci::same_dimension_length;
 use super::scalars::operand_kind;
@@ -993,11 +995,26 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         || extended_marker84_line_uses_point_roster(payload, offset)
             && marker_profile_curve_role(payload, offset) == Some(2)
             && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
-    let Some(endpoint_offset) =
-        explicit_endpoint_offset.or_else(|| coordinate_roster_endpoint_offset(payload, offset))
-    else {
+    let endpoint_offset =
+        explicit_endpoint_offset.or_else(|| coordinate_roster_endpoint_offset(payload, offset));
+    if endpoint_offset.is_none() && compact_legacy_coordinate_roster_curve_record(payload, offset) {
+        if let Some(endpoints) =
+            compact_legacy_embedded_coordinate_roster_endpoint_markers(payload, curve, markers, 42)
+        {
+            return endpoints;
+        }
+    }
+    let Some(endpoint_offset) = endpoint_offset else {
         return Vec::new();
     };
+    if let Some(endpoints) = compact_legacy_embedded_coordinate_roster_endpoint_markers(
+        payload,
+        curve,
+        markers,
+        endpoint_offset,
+    ) {
+        return endpoints;
+    }
     let one_based = (extended_marker84_line_uses_point_roster(payload, offset)
         && payload.get(offset + 27..offset + 31) == Some(&[0x01, 0x00, 0x01, 0x00])
         && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x02, 0x00]))
@@ -1061,6 +1078,100 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
             .flatten()
         })
         .unwrap_or_default()
+}
+
+fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+    endpoint_offset: usize,
+) -> Option<Vec<&'a SketchInputEntity>> {
+    let offset = usize::try_from(curve.offset).ok()?;
+    if !compact_legacy_coordinate_roster_curve_record(payload, offset) || endpoint_offset != 42 {
+        return None;
+    }
+    let roster = compact_legacy_embedded_coordinate_roster(payload, curve, markers)?;
+    let endpoint = |relative| {
+        let index = usize::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        ));
+        roster.get(index).copied()
+    };
+    let [first, second] = [endpoint(endpoint_offset), endpoint(endpoint_offset + 2)];
+    match (first, second) {
+        (Some(first), Some(second)) if first.id != second.id => Some(vec![first, second]),
+        _ => None,
+    }
+}
+
+fn compact_legacy_embedded_coordinate_roster<'a>(
+    payload: &[u8],
+    owner: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Option<Vec<&'a SketchInputEntity>> {
+    let mut owned = markers
+        .iter()
+        .copied()
+        .filter(|marker| {
+            marker.feature_ref == owner.feature_ref
+                && marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point
+                        | SketchInputKind::ConstrainedPoint
+                        | SketchInputKind::LineOrCircle
+                        | SketchInputKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    owned.sort_unstable_by_key(|marker| marker.offset);
+    let first = usize::try_from(owned.first()?.offset).ok()?;
+    let owner_offset = usize::try_from(owner.offset).ok()?;
+    if owner_offset < first {
+        return None;
+    }
+    let mut raw = Vec::new();
+    let mut has_code_two_point = false;
+    let mut has_embedded_geometry = false;
+    for candidate in first..=owner_offset.saturating_sub(LEGACY_SKETCH_MARKER.len()) {
+        let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(payload, candidate)
+        else {
+            continue;
+        };
+        has_code_two_point |=
+            compact_legacy_code_two_profile_point_coordinates(payload, candidate).is_some();
+        has_embedded_geometry |=
+            compact_legacy_embedded_geometry_coordinates(payload, candidate).is_some();
+        raw.push((candidate, coordinates));
+    }
+    if !has_code_two_point || !has_embedded_geometry {
+        return None;
+    }
+    let roster = raw
+        .into_iter()
+        .map(|(_, coordinates)| {
+            let mut matches = owned.iter().copied().filter(|marker| {
+                marker.coordinates_m.is_some_and(|candidate| {
+                    same_dimension_length(candidate[0], coordinates[0])
+                        && same_dimension_length(candidate[1], coordinates[1])
+                })
+            });
+            let marker = matches.next()?;
+            matches.next().is_none().then_some(marker)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(roster)
+}
+
+fn compact_legacy_coordinate_roster_curve_record(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && (compact_legacy_curve_endpoint_indices(payload, offset).is_some()
+            || compact_legacy_code_one_line_endpoint_indices(payload, offset).is_some()
+            || compact_legacy_short_role_one_curve_endpoint_indices(payload, offset).is_some()
+            || compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_some())
 }
 
 pub(super) fn output_curve_endpoint_markers<'a>(
@@ -2298,6 +2409,42 @@ pub(super) fn compact_profile_full_circle(
     };
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     Some((center, radius))
+}
+
+pub(super) fn compact_legacy_terminal_diameter_circle(
+    payload: &[u8],
+    circle: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+) -> Option<([f64; 2], f64)> {
+    let offset = usize::try_from(circle.offset).ok()?;
+    if circle.kind != SketchInputKind::LineOrCircle
+        || !compact_legacy_marker_body(payload, offset)
+        || marker_native_code(payload, offset) != Some(1)
+        || payload.get(offset + 19..offset + 25) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload
+            .get(offset + 42..offset + 44)
+            .is_none_or(|index| index == [0; 2])
+        || payload.get(offset + 44..offset + 46) != Some(&[0; 2])
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 58..offset + 102) != Some(&[0; 44])
+        || payload.get(offset + 102..offset + 104) != Some(&3u16.to_le_bytes())
+        || payload.get(offset + 104..offset + 108) != Some(CLASS_MARKER)
+        || payload.get(offset + 108..offset + 110) != Some(&11u16.to_le_bytes())
+        || payload.get(offset + 110..offset + 121) != Some(b"sgCircleDim")
+    {
+        return None;
+    }
+    let radial_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 42..offset + 44)?.try_into().ok()?,
+    ));
+    let roster = compact_legacy_embedded_coordinate_roster(payload, circle, markers)?;
+    let center = roster.first()?.coordinates_m?;
+    let radial = roster.get(radial_index)?.coordinates_m?;
+    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+    (radius.is_finite() && radius > 0.0).then_some((center, radius))
 }
 
 pub(super) fn compact_legacy_profile_full_circle(
@@ -4303,6 +4450,7 @@ fn class_declaration_at(payload: &[u8], offset: usize) -> bool {
 pub(super) fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
     let relative = if compact_legacy_marker_body(payload, offset)
         || packed_legacy_marker_body(payload, offset)
+        || compact_legacy_code_two_profile_point_coordinates(payload, offset).is_some()
     {
         23
     } else {

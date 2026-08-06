@@ -21,8 +21,8 @@ use super::curves::{
 use super::endpoints::{
     auxiliary_profile_record, compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices, compact_legacy_profile_full_circle,
-    compact_profile_full_circle, coordinate_circle_radius, coordinate_ellipse_axes,
-    coordinate_roster_arc_center, coordinate_roster_full_circle,
+    compact_legacy_terminal_diameter_circle, compact_profile_full_circle, coordinate_circle_radius,
+    coordinate_ellipse_axes, coordinate_roster_arc_center, coordinate_roster_full_circle,
     current_compact_roster_selected_axis, current_indexed_arc_reverses_center_sweep,
     equal_index_coordinate_roster_full_circle, extended_declared_inline_line_endpoints,
     extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
@@ -765,6 +765,13 @@ pub(crate) fn project_marker_backed_sketches(
                             )
                             .or_else(|| {
                                 compact_profile_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                )
+                            })
+                            .or_else(|| {
+                                compact_legacy_terminal_diameter_circle(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,

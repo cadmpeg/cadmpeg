@@ -6,14 +6,16 @@ use super::super::{
 };
 use super::{
     additional_linked_profile_point_coordinates, compact_geometry_locus_point_coordinates,
-    compact_legacy_linked_profile_point_coordinates, compact_legacy_profile_vertex,
-    current_geometry_locus_profile_vertex, current_reverse_incidence_endpoint_offsets,
-    extended_geometry_locus_single_link_point, extended_profile_point_coordinates,
-    geometry_locus_profile_vertex, indexed_profile_vertex, inline_arc_coordinates,
-    legacy_declared_handle_coordinates, legacy_extended_linked_profile_point_coordinates,
-    legacy_extended_profile_curve_kind, legacy_linked_coordinates,
-    legacy_single_incidence_profile_point_coordinates, linked_profile_point, marker_coordinates,
-    marker_is_geometry_locus, marker_local_id, marker_object_index, marker_spatial_coordinates,
+    compact_legacy_code_two_profile_point_coordinates,
+    compact_legacy_embedded_geometry_coordinates, compact_legacy_linked_profile_point_coordinates,
+    compact_legacy_profile_vertex, current_geometry_locus_profile_vertex,
+    current_reverse_incidence_endpoint_offsets, extended_geometry_locus_single_link_point,
+    extended_profile_point_coordinates, geometry_locus_profile_vertex, indexed_profile_vertex,
+    inline_arc_coordinates, legacy_declared_handle_coordinates,
+    legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
+    legacy_linked_coordinates, legacy_single_incidence_profile_point_coordinates,
+    linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_local_id,
+    marker_object_index, marker_spatial_coordinates,
     packed_legacy_linked_profile_point_coordinates, relation_bindings, sketch_input_entities,
     terminal_extended_profile_point_coordinates,
 };
@@ -1729,6 +1731,62 @@ fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
         compact_legacy_linked_profile_point_coordinates(&payload, 0),
         None
     );
+}
+
+#[test]
+fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_layouts() {
+    let mut point = vec![0; 132 + LEGACY_SKETCH_MARKER.len()];
+    point[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    point[5..13].fill(0xff);
+    point[13..17].copy_from_slice(&2u32.to_le_bytes());
+    point[19..25].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    point[31..42].copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    point[42..44].copy_from_slice(&[0x1e, 0x00]);
+    point[44..52].copy_from_slice(&0.03f64.to_le_bytes());
+    point[52..60].copy_from_slice(&0.005f64.to_le_bytes());
+    point[62..64].copy_from_slice(&4u16.to_le_bytes());
+    for (relative, id) in [(64, 8u16), (72, 11u16)] {
+        point[relative..relative + 2].copy_from_slice(&0x811au16.to_le_bytes());
+        point[relative + 2..relative + 4].copy_from_slice(&id.to_le_bytes());
+        point[relative + 4..relative + 8].fill(0xff);
+    }
+    point[80..86].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    point[120..124].copy_from_slice(&2u32.to_le_bytes());
+    point[128..132].copy_from_slice(&10u32.to_le_bytes());
+    point[132..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        compact_legacy_code_two_profile_point_coordinates(&point, 0),
+        Some([0.03, 0.005])
+    );
+    let entity = &sketch_input_entities(&point, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.03, 0.005]));
+    assert_eq!(entity.local_id, Some(10));
+    assert_eq!(entity.state_value, None);
+
+    let mut embedded = vec![0; 120 + LEGACY_SKETCH_MARKER.len()];
+    embedded[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    embedded[5..13].fill(0xff);
+    embedded[19..25].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    embedded[31..42].copy_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    embedded[42..44].copy_from_slice(&[0x1e, 0x00]);
+    embedded[44..52].copy_from_slice(&0.03f64.to_le_bytes());
+    embedded[52..60].copy_from_slice(&0.005f64.to_le_bytes());
+    embedded[70..74].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    embedded[116..120].copy_from_slice(&12u32.to_le_bytes());
+    embedded[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        Some([0.03, 0.005])
+    );
+    embedded[60..64].copy_from_slice(&8u32.to_le_bytes());
+    assert_eq!(
+        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        Some([0.03, 0.005])
+    );
+    assert!(sketch_input_entities(&embedded, "lane").is_empty());
 }
 
 #[test]
