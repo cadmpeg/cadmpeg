@@ -4191,10 +4191,12 @@ pub(crate) fn resolve_standard_endpoint_pairs(
         if pairs.len() < edges.len() {
             continue;
         }
-        if pairs.len() == edges.len() {
-            for (edge, pair) in edges.into_iter().zip(pairs) {
-                resolved[edge] = vec![pair];
-            }
+        // A multi-row relation is not ordered by the support-table ordinal.
+        // Keep every valid pair on every physical row until the trim quotient
+        // binds the row; lexicographic row assignment can break a serialized
+        // boundary even when the resulting analytic edge set is equivalent.
+        if pairs.len() == edges.len() && edges.len() == 1 {
+            resolved[edges[0]] = vec![pairs[0]];
         } else {
             for edge in edges {
                 resolved[edge].clone_from(&pairs);
@@ -7500,7 +7502,7 @@ mod route_tests {
     }
 
     #[test]
-    fn standard_parallel_line_rows_bind_by_serialized_branch_rank() {
+    fn standard_parallel_line_rows_retain_mesh_resolvable_domains() {
         let mut ir = CadIr::empty(Units::default());
         for (index, position) in [
             Point3::new(-2.0, 0.0, 0.0),
@@ -7555,7 +7557,7 @@ mod route_tests {
         )
         .expect("endpoint option pass");
 
-        assert_eq!(choices, [vec![[0, 2]], vec![[1, 3]]]);
+        assert_eq!(choices, [vec![[0, 2], [1, 3]], vec![[0, 2], [1, 3]]]);
     }
 
     #[test]
