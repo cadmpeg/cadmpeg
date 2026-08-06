@@ -144,6 +144,7 @@ pub enum DraftError {
 pub struct ModelDraft {
     model: Model,
     identities: HashSet<String>,
+    identities_synced: bool,
     exactness: BTreeMap<String, ExactnessNote>,
     notes: Vec<LossNote>,
     ledger: TransferLedger,
@@ -152,7 +153,10 @@ pub struct ModelDraft {
 impl ModelDraft {
     /// Creates an empty draft.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            identities_synced: true,
+            ..Self::default()
+        }
     }
 
     /// Inserts one entity, rejecting draft-local identity collisions immediately.
@@ -172,6 +176,7 @@ impl ModelDraft {
 
     /// Returns the mutable staged arena for one entity type.
     pub fn arena_mut<T: ArenaEntity>(&mut self) -> &mut Vec<T> {
+        self.identities_synced = false;
         T::arena_mut(&mut self.model)
     }
 
@@ -185,6 +190,7 @@ impl ModelDraft {
     /// Commit still checks all identities and references, including entities inserted
     /// through this lower-level surface.
     pub fn model_mut(&mut self) -> &mut Model {
+        self.identities_synced = false;
         &mut self.model
     }
 
@@ -234,35 +240,37 @@ impl ModelDraft {
         )
     }
 
-    fn validate_against(&self, base: &CadIr) -> Result<(), DraftError> {
+    fn validate_against(&mut self, base: &CadIr) -> Result<(), DraftError> {
         let index = ModelIndex::new(base);
         self.validate_with_contains(|identity| index.contains(identity))
-            .map(|_| ())
     }
 
     /// Validates staged identities and references against one identity universe.
     ///
     /// The caller supplies the identities already committed outside this draft;
     /// references may also target another entity staged in the same draft. The
-    /// returned set owns the identities collected from every arena so a session
-    /// can absorb it after the commit without allocating them again.
+    /// identity set populated by `insert` is reused. Direct mutable staging
+    /// invalidates that set and causes one complete rebuild before validation.
     fn validate_with_contains(
-        &self,
+        &mut self,
         contains: impl Fn(&str) -> bool,
-    ) -> Result<HashSet<String>, DraftError> {
-        let mut staged_identities = HashSet::with_capacity(self.model.entity_count());
-        macro_rules! collect_staged_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(for entity in &self.model.$field {
-                    let identity = entity.identity().to_owned();
-                    if !staged_identities.insert(identity.clone()) {
-                        return Err(DraftError::IdentityCollision(identity));
-                    }
-                })*
-            };
+    ) -> Result<(), DraftError> {
+        if !self.identities_synced {
+            self.identities.clear();
+            macro_rules! collect_staged_identities {
+                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                    $(for entity in &self.model.$field {
+                        let identity = entity.identity().to_owned();
+                        if !self.identities.insert(identity.clone()) {
+                            return Err(DraftError::IdentityCollision(identity));
+                        }
+                    })*
+                };
+            }
+            crate::document::arena_registry!(collect_staged_identities);
+            self.identities_synced = true;
         }
-        crate::document::arena_registry!(collect_staged_identities);
-        for identity in &staged_identities {
+        for identity in &self.identities {
             if contains(identity) {
                 return Err(DraftError::IdentityCollision(identity.clone()));
             }
@@ -275,7 +283,7 @@ impl ModelDraft {
                     entity.visit_references(&mut |reference| {
                         if missing.is_none()
                             && !contains(&reference.target)
-                            && !staged_identities.contains(&reference.target)
+                            && !self.identities.contains(&reference.target)
                         {
                             missing = Some(reference.target);
                         }
@@ -290,19 +298,19 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(validate_arenas);
-        Ok(staged_identities)
+        Ok(())
     }
 
     /// Validates and atomically extends a document, annotations, notes, and ledger.
     pub fn commit(
-        self,
+        mut self,
         base: &mut CadIr,
         annotations: &mut Annotations,
         notes: &mut Vec<LossNote>,
         ledger: &mut TransferLedger,
     ) -> Result<(), DraftError> {
         self.validate_against(base)?;
-        self.commit_validated(base, annotations, notes, ledger);
+        let _ = self.commit_validated(base, annotations, notes, ledger);
         Ok(())
     }
 
@@ -330,6 +338,7 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(collect_identities);
+        self.identities_synced = false;
         self.exactness
             .retain(|identity, _| self.identities.contains(identity));
         self.commit(base, annotations, notes, ledger)
@@ -341,10 +350,11 @@ impl ModelDraft {
         annotations: &mut Annotations,
         notes: &mut Vec<LossNote>,
         ledger: &mut TransferLedger,
-    ) {
+    ) -> HashSet<String> {
         let Self {
             mut model,
-            identities: _,
+            identities,
+            identities_synced: _,
             exactness,
             notes: staged_notes,
             ledger: staged_ledger,
@@ -358,6 +368,7 @@ impl ModelDraft {
         annotations.exactness.extend(exactness);
         notes.extend(staged_notes);
         ledger.entries.extend(staged_ledger.entries);
+        identities
     }
 }
 
@@ -410,10 +421,13 @@ impl CommitSession {
     /// success, the draft's owned identities are moved into this session. A
     /// rejected draft therefore leaves both the document and the session
     /// unchanged and does not poison a later commit.
-    pub fn commit_model(&mut self, draft: ModelDraft, base: &mut CadIr) -> Result<(), DraftError> {
-        let staged_identities =
-            draft.validate_with_contains(|identity| self.identities.contains(identity))?;
-        draft.commit_validated(
+    pub fn commit_model(
+        &mut self,
+        mut draft: ModelDraft,
+        base: &mut CadIr,
+    ) -> Result<(), DraftError> {
+        draft.validate_with_contains(|identity| self.identities.contains(identity))?;
+        let staged_identities = draft.commit_validated(
             base,
             &mut Annotations::default(),
             &mut Vec::new(),
@@ -531,6 +545,64 @@ mod tests {
         assert!(annotations.exactness.is_empty());
         assert!(notes.is_empty());
         assert!(ledger.is_empty());
+    }
+
+    #[test]
+    fn direct_model_staging_rebuilds_identity_cache_before_commit() {
+        let identity = "test:model:point#direct-duplicate";
+        let mut draft = ModelDraft::new();
+        draft.model_mut().points.push(point(identity));
+        draft.model_mut().points.push(point(identity));
+        let mut ir = CadIr::empty(Units::default());
+
+        assert_eq!(
+            draft.commit_model(&mut ir),
+            Err(DraftError::IdentityCollision(identity.into()))
+        );
+        assert!(ir.model.points.is_empty());
+    }
+
+    #[test]
+    fn direct_model_staging_revalidates_references_before_commit() {
+        let owner = "test:model:vertex#direct-missing";
+        let target = "test:model:point#direct-missing";
+        let mut draft = ModelDraft::new();
+        draft.model_mut().vertices.push(Vertex {
+            id: owner.into(),
+            point: target.into(),
+            tolerance: None,
+        });
+        let mut ir = CadIr::empty(Units::default());
+
+        assert_eq!(
+            draft.commit_model(&mut ir),
+            Err(DraftError::UnresolvedReference {
+                owner: owner.into(),
+                target: target.into(),
+            })
+        );
+        assert!(ir.model.vertices.is_empty());
+    }
+
+    #[test]
+    fn incomplete_commit_rechecks_duplicate_identities() {
+        let identity = "test:model:point#incomplete-duplicate";
+        let mut draft = ModelDraft::new();
+        draft.model_mut().points.push(point(identity));
+        draft.model_mut().points.push(point(identity));
+        let mut ir = CadIr::empty(Units::default());
+
+        assert_eq!(
+            draft.commit_incomplete(
+                &mut ir,
+                &mut Annotations::default(),
+                &mut Vec::new(),
+                &mut TransferLedger::default(),
+                |_, _| true,
+            ),
+            Err(DraftError::IdentityCollision(identity.into()))
+        );
+        assert!(ir.model.points.is_empty());
     }
 
     #[test]

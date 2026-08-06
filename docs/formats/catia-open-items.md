@@ -148,11 +148,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DI-15. Sketch instance binding
 
-**Question.** How do numeric tuples and the `2DPoint`, `PRTSketch`, and `Sketch` schema fields bind to one sketch instance?
+**Question.** How do numeric tuples and the `2DPoint` and `PRTSketch` schema fields bind to the geometry of one sketch instance?
 
-**Known.** `catia.md` §7.3 "An object graph is preceded by" and `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines field framing, object identity, schema selection, and structural ownership. These incidences do not assign sketch identity.
+**Known.** `catia.md` §7.3 "An object graph is preceded by" and `catia.md` §7.3 "All `7C09` records in one graph carrying the same `owner_ref`" defines field framing, object identity, schema selection, and structural ownership. A separator-form owner declaration whose resolved class is `Sketch` establishes the sketch identity. A `PRTSketch` or `Sketch` field class alone does not assign geometry to that identity.
 
-**Need.** We must know the binding to make a neutral sketch.
+**Need.** We must know the binding to make a neutral sketch with geometry, placement, and profiles.
 
 ### DI-16. Sketch coordinate semantics
 

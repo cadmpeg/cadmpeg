@@ -1048,7 +1048,8 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
     let edge_faces = [[0, 0], [0, 0]];
     let face_edges = vec![vec![0, 1]];
     let edges = [0, 1];
-    let active_edges = [false, true];
+    let active_edges = [true, true];
+    let assignment_dependencies = [vec![1], Vec::new()];
     let valid = |_: &[Option<[usize; 2]>]| true;
     let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
@@ -1075,6 +1076,7 @@ fn incidence_component_schedules_partial_constraint_variables_first() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: Some(&assignment_dependencies),
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -1128,6 +1130,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: Some(&assignment_predecessors),
+            assignment_dependencies: None,
             valid: &valid,
         }),
         dead_states: HashSet::new(),
@@ -2044,7 +2047,9 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let active = [true, false, false, true, false, false];
 
     assert_eq!(
-        crate::solve::incidence::join_partial_constraint_components(components, &active, None),
+        crate::solve::incidence::join_partial_constraint_components(
+            components, &active, None, None,
+        ),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
     );
 }
@@ -2059,8 +2064,32 @@ fn partial_incidence_predecessors_join_only_their_class_components() {
             components,
             &[false; 6],
             Some(&predecessors),
+            None,
         ),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
+    );
+}
+
+#[test]
+fn partial_incidence_dependencies_join_their_component_barriers() {
+    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
+    let dependencies = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        vec![1],
+        Vec::new(),
+    ];
+
+    assert_eq!(
+        crate::solve::incidence::join_partial_constraint_components(
+            components,
+            &[false; 6],
+            None,
+            Some(&dependencies),
+        ),
+        vec![vec![0, 2], vec![1, 4], vec![3, 5]],
     );
 }
 
@@ -2880,6 +2909,7 @@ fn incidence_components_apply_monotone_partial_constraints_before_solution_limit
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: None,
             valid: &partial,
         }),
         &|_| true,
@@ -2969,6 +2999,7 @@ fn incidence_components_preflight_independent_unsatisfiable_domains() {
             active_edges: &active_edges,
             coupled_edges: &active_edges,
             assignment_predecessors: None,
+            assignment_dependencies: None,
             valid: &partial,
         }),
         &|_| true,
@@ -6221,6 +6252,23 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 }
 
 #[test]
+fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
+    let run = |face| MeshEdgeRun {
+        edge: 0,
+        face,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+
+    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run(1), run(5), run(6)])
+        .expect("ambiguous occurrences remain a deferred face domain");
+
+    assert_eq!(faces, vec![[1, 1]]);
+}
+
+#[test]
 fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
     let rows = vec![
         EdgeRow {
@@ -6672,8 +6720,8 @@ mod record_decoders {
         assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
         assert_eq!(topology.logical_vertex_count(), 8);
         assert_eq!(topology.vertex_points().len(), 4);
-        let table_ports = crate::solve::missing_edge::standard_edge_port_identities(&bytes)
-            .expect("scoped FBB ports");
+        let table_ports =
+            crate::solve::missing_edge::fbb_edge_port_identities(&bytes).expect("scoped FBB ports");
         assert_eq!(table_ports[0][1], table_ports[1][0]);
         assert_eq!(table_ports[1][1], table_ports[2][0]);
         assert_eq!(table_ports[2][1], table_ports[3][0]);
@@ -6919,6 +6967,53 @@ mod record_decoders {
             .iter()
             .all(|boundary| boundary.coedges.len() == 3));
         assert_eq!(topology.logical_vertex_count(), 6);
+    }
+
+    #[test]
+    fn standard_two_strip_packet_uses_raw_lengths_at_three_byte_width() {
+        let mut bytes = vec![0x01, 0x42, 0x02, 0xff, 6, 0, 0, 0, 3, 3];
+        let handles = [
+            0x01_0203u32,
+            0x02_0304,
+            0x03_0405,
+            0x04_0506,
+            0x05_0607,
+            0x06_0708,
+        ];
+        for handle in handles {
+            let encoded = handle.to_be_bytes();
+            bytes.extend_from_slice(&encoded[1..]);
+        }
+
+        let layout = crate::families::standard::fbb::parse_trim_record_layout(&bytes, 0, 3)
+            .expect("three-byte packet layout");
+        assert_eq!(layout.handle_offset, 8);
+        assert_eq!(layout.stored_count, handles.len());
+        assert_eq!(layout.end, bytes.len());
+
+        let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
+            .expect("three-byte packet");
+        assert_eq!(record.handles, handles);
+        assert_eq!(record.strip_lengths, [3, 3]);
+        assert!(record.fan_lengths.is_empty());
+    }
+
+    #[test]
+    fn standard_two_strip_packet_treats_ff_length_as_raw_u8_at_three_byte_width() {
+        let handle_count = 256u32;
+        let mut bytes = vec![0x01, 0x42, 0x02, 0xff];
+        bytes.extend_from_slice(&handle_count.to_le_bytes());
+        bytes.extend_from_slice(&[0xff, 0x01]);
+        for handle in 0..handle_count {
+            let encoded = handle.to_be_bytes();
+            bytes.extend_from_slice(&encoded[1..]);
+        }
+
+        let record = crate::families::standard::fbb::parse_trim_record(&bytes, 0, 3)
+            .expect("raw 0xff strip length");
+        assert_eq!(record.handles.len(), handle_count as usize);
+        assert_eq!(record.strip_lengths, [255, 1]);
+        assert!(record.fan_lengths.is_empty());
     }
 
     #[test]

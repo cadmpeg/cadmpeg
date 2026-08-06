@@ -959,6 +959,20 @@ pub(super) fn tangent_bridge_arc_geometry(
 }
 
 pub(super) fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
+    closed_marker_profiles_with_policy(entities, true)
+}
+
+/// Recover closed curve cycles when endpoint markers are shared by construction geometry.
+pub(super) fn closed_marker_profiles_allowing_shared_endpoints(
+    entities: &[SketchEntity],
+) -> Vec<Vec<SketchEntityUse>> {
+    closed_marker_profiles_with_policy(entities, false)
+}
+
+fn closed_marker_profiles_with_policy(
+    entities: &[SketchEntity],
+    reject_branching_components: bool,
+) -> Vec<Vec<SketchEntityUse>> {
     let mut profiles = entities
         .iter()
         .filter(|entity| {
@@ -1005,13 +1019,15 @@ pub(super) fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<Sketc
                 }
             }
         }
-        if component.iter().any(|curve| {
-            entities[*curve].endpoint_refs.iter().any(|endpoint| {
-                incidence
-                    .get(endpoint.as_str())
-                    .is_none_or(|curves| curves.len() != 2)
+        if reject_branching_components
+            && component.iter().any(|curve| {
+                entities[*curve].endpoint_refs.iter().any(|endpoint| {
+                    incidence
+                        .get(endpoint.as_str())
+                        .is_none_or(|curves| curves.len() != 2)
+                })
             })
-        }) {
+        {
             unused.retain(|curve| !component.contains(curve));
             continue;
         }
@@ -1044,10 +1060,14 @@ pub(super) fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<Sketc
             if current == start {
                 break;
             }
-            let Some(candidates) = incidence.get(current).filter(|curves| curves.len() == 2) else {
+            let Some(candidates) = incidence.get(current) else {
                 profile.clear();
                 break;
             };
+            if reject_branching_components && candidates.len() != 2 {
+                profile.clear();
+                break;
+            }
             let Some(next_curve) = candidates
                 .iter()
                 .copied()

@@ -16,21 +16,36 @@ use crate::writer::{real, refs, Emitter, Ref};
 
 pub(crate) fn surface_is_supported(surface: &SurfaceGeometry) -> bool {
     match surface {
-        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => false,
         SurfaceGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && surface_is_supported(basis)
         }
-        _ => true,
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Nurbs(_) => true,
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => false,
     }
 }
 
 pub(crate) fn curve_is_supported(curve: &CurveGeometry) -> bool {
     match curve {
-        CurveGeometry::Unknown { .. } => false,
         CurveGeometry::Transformed { basis, transform } => {
             similarity_transform(transform) && curve_is_supported(basis)
         }
-        _ => true,
+        CurveGeometry::Line { .. }
+        | CurveGeometry::Circle { .. }
+        | CurveGeometry::Ellipse { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline { .. } => true,
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => false,
     }
 }
 
@@ -295,8 +310,8 @@ fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
 }
 
 /// Emit an analytic or NURBS surface carrier.
-pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
-    match g {
+pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Option<Ref> {
+    Some(match g {
         SurfaceGeometry::Plane {
             origin,
             normal,
@@ -359,23 +374,21 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         }
         SurfaceGeometry::Nurbs(n) => nurbs_surface(e, n),
         SurfaceGeometry::Transformed { basis, transform } => {
-            let parent = surface(e, basis);
+            let parent = surface(e, basis)?;
             let operator = transformation_operator(e, *transform);
             e.emit("SURFACE_REPLICA", &format!("'',{parent},{operator}"))
         }
-        // Unknown surfaces have no STEP representation; the writer filters faces
-        // resting on them in `emit_face` before ever reaching here.
+        // These carrier families have no direct STEP representation; callers
+        // report the omitted carrier instead of fabricating a placeholder.
         SurfaceGeometry::Procedural { .. }
         | SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Unknown { .. } => {
-            unreachable!("non-explicit surfaces are filtered before surface emission")
-        }
-    }
+        | SurfaceGeometry::Unknown { .. } => return None,
+    })
 }
 
 /// Emit an analytic or NURBS 3D curve carrier.
-pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
-    match g {
+pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Option<Ref> {
+    Some(match g {
         CurveGeometry::Line {
             origin,
             direction: d,
@@ -444,17 +457,15 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({points})"))
         }
         CurveGeometry::Transformed { basis, transform } => {
-            let parent = curve(e, basis);
+            let parent = curve(e, basis)?;
             let operator = transformation_operator(e, *transform);
             e.emit("CURVE_REPLICA", &format!("'',{parent},{operator}"))
         }
         CurveGeometry::Composite { .. } => {
             unreachable!("composite curves are emitted from their child graph")
         }
-        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {
-            unreachable!("non-explicit curves are filtered before emission")
-        }
-    }
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => return None,
+    })
 }
 
 /// Convert a repeated knot vector into ordered values and multiplicities.

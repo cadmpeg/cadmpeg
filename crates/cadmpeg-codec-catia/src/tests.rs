@@ -9559,6 +9559,249 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
 }
 
 #[test]
+fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
+    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    let owner_record = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| graph.records.iter())
+        .find(|record| record.design_object.is_some())
+        .expect("synthetic owner declaration record")
+        .clone();
+    let owner_record_id = owner_record.id.clone();
+    let owner_design_object = owner_record.design_object.clone();
+    let owner_class_entry = "synthetic-sketch-class".to_string();
+    let owner_record_mut = native
+        .object_graphs
+        .iter_mut()
+        .flat_map(|graph| graph.records.iter_mut())
+        .find(|record| record.id == owner_record_id)
+        .expect("mutable synthetic owner declaration record");
+    owner_record_mut.class_name = Some("Sketch".to_string());
+    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+
+    let object = native
+        .design_objects
+        .first_mut()
+        .expect("synthetic design object");
+    object.owner_record = Some(owner_record_id.clone());
+    object.owner_design_object = owner_design_object;
+    object.owner_class = Some(crate::native::CatiaDesignClass {
+        entry: owner_class_entry,
+        name: "Sketch".to_string(),
+    });
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+
+    let parameter_entity = native
+        .entity_records
+        .iter()
+        .find(|entity| {
+            native
+                .object_graphs
+                .iter()
+                .flat_map(|graph| graph.records.iter())
+                .find(|record| record.id == entity.object_record)
+                .and_then(|record| record.design_object.as_deref())
+                == Some(native.design_objects[0].id.as_str())
+        })
+        .expect("synthetic feature-owned parameter entity");
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId("synthetic:parameter".to_string()),
+            owner: None,
+            ordinal: 0,
+            name: "Value".to_string(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(parameter_entity.id.clone()),
+        });
+    transfer.assign_parameter_owners(&mut ir, &native);
+
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert!(matches!(
+        ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Unresolved,
+            sketch: Some(_),
+        }
+    ));
+    assert!(ir.model.sketches[0].profiles.is_empty());
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+    );
+    assert_eq!(
+        ir.model.parameters[0].owner,
+        Some(cadmpeg_ir::features::FeatureId(format!(
+            "{}:feature",
+            native.design_objects[0].id
+        )))
+    );
+    assert_eq!(
+        transfer.sketch_owner_records,
+        std::collections::HashSet::from([owner_record_id])
+    );
+}
+
+#[test]
+fn incompatible_exact_feature_candidates_on_one_object_remain_unresolved() {
+    let records = [
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x84, 0x84], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x85, 0x85], &[0xfe]),
+    ];
+    let mut bytes = entity_backed_object_graph(&records, &[2, 3, 4]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "xy-plane",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    let candidate = native
+        .design_objects
+        .iter()
+        .find(|object| object.owner_entity_id == 4)
+        .expect("synthetic dual-candidate object");
+    assert_eq!(candidate.field_classes[0].name, "xy-plane");
+    assert_eq!(candidate.owner_entity_id, 4);
+    assert_eq!(
+        candidate
+            .owner_class
+            .as_ref()
+            .map(|class| class.name.as_str()),
+        Some("Sketch")
+    );
+    assert_eq!(
+        candidate.owner_design_object,
+        Some(native.design_objects[1].id.clone())
+    );
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+
+    assert!(ir.model.features.is_empty());
+    assert!(ir.model.sketches.is_empty());
+    assert!(transfer.consumed_records().is_empty());
+    assert!(transfer.feature_ids.is_empty());
+}
+
+#[test]
+fn parameter_owner_follows_one_exact_child_design_object() {
+    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    let owner_record = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| graph.records.iter())
+        .find(|record| record.design_object.is_some())
+        .expect("synthetic owner declaration record")
+        .clone();
+    let owner_record_id = owner_record.id.clone();
+    let owner_design_object = owner_record.design_object.clone();
+    let owner_class_entry = "synthetic-sketch-class".to_string();
+    let owner_record_mut = native
+        .object_graphs
+        .iter_mut()
+        .flat_map(|graph| graph.records.iter_mut())
+        .find(|record| record.id == owner_record_id)
+        .expect("mutable synthetic owner declaration record");
+    owner_record_mut.class_name = Some("Sketch".to_string());
+    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+
+    let feature_object = native
+        .design_objects
+        .first_mut()
+        .expect("synthetic design object");
+    feature_object.owner_record = Some(owner_record_id);
+    feature_object.owner_design_object = owner_design_object.clone();
+    feature_object.owner_class = Some(crate::native::CatiaDesignClass {
+        entry: owner_class_entry,
+        name: "Sketch".to_string(),
+    });
+    let feature_id = feature_object.id.clone();
+
+    let child_record_id = "synthetic-child-record".to_string();
+    let child_entity_id = "synthetic-child-entity".to_string();
+    let mut child_record = owner_record.clone();
+    child_record.id.clone_from(&child_record_id);
+    child_record.entity_record = Some(child_entity_id.clone());
+    child_record.entity_id = Some(2);
+    child_record.owner = Some(crate::native::CatiaObjectOwner::Entity(2));
+    child_record.design_object = Some("synthetic-child-object".to_string());
+    native.object_graphs[0].records.push(child_record);
+
+    let mut child_entity = native.entity_records[0].clone();
+    child_entity.id.clone_from(&child_entity_id);
+    child_entity.object_record = child_record_id.clone();
+    child_entity.entity_id = 2;
+    child_entity.ordinal = native.entity_records.len() as u64;
+    native.entity_records.push(child_entity);
+
+    let mut child_object = native.design_objects[0].clone();
+    child_object.id = "synthetic-child-object".to_string();
+    child_object.ordinal += 1;
+    child_object.first_field_byte_offset += 1;
+    child_object.owner_entity_id = 2;
+    child_object.owner_record = Some(child_record_id);
+    child_object.owner_design_object = Some(feature_id.clone());
+    child_object.owner_class = None;
+    child_object.owner_storage_ref = None;
+    child_object.fields = vec!["synthetic-child-record".to_string()];
+    child_object.field_classes.clear();
+    child_object.definition_values.clear();
+    child_object.definition_chain_values.clear();
+    child_object.relations.clear();
+    child_object.parallel_reference_table = None;
+    native.design_objects.push(child_object);
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId("synthetic:child-parameter".to_string()),
+            owner: None,
+            ordinal: 0,
+            name: "Value".to_string(),
+            expression: String::new(),
+            display: None,
+            value: None,
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(child_entity_id),
+        });
+
+    transfer.assign_parameter_owners(&mut ir, &native);
+
+    assert_eq!(ir.model.features.len(), 1);
+    assert_eq!(
+        ir.model.parameters[0].owner,
+        Some(cadmpeg_ir::features::FeatureId(format!(
+            "{feature_id}:feature"
+        )))
+    );
+}
+
+#[test]
 fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
     use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
 
@@ -11401,6 +11644,15 @@ fn native_namespace_retains_and_validates_complete_entity_reference_signatures()
     let [cohort] = native.reference_signature_cohorts.as_slice() else {
         panic!("one reference-signature cohort");
     };
+    let graph_key = cohort
+        .parent
+        .split_once('#')
+        .expect("object graph identity")
+        .1;
+    assert_eq!(
+        cohort.id,
+        format!("catia:outer:reference-signature-cohort#{graph_key}:00000000")
+    );
     assert_eq!(cohort.ordinal, 0);
     assert_eq!(cohort.first_reference, 3);
     assert_eq!(cohort.second_reference, 4);
@@ -13071,6 +13323,15 @@ fn configuration_productions_retain_exact_same_graph_incidence() {
     assert_eq!(native.configuration_row_chains.len(), 1);
     let chain = &native.configuration_row_chains[0];
     assert_eq!(chain.object_graph, native.entity_records[1].object_graph);
+    let graph_key = chain
+        .object_graph
+        .split_once('#')
+        .expect("object graph identity")
+        .1;
+    assert_eq!(
+        chain.id,
+        format!("catia:outer:configuration-row-chain#{graph_key}:6")
+    );
     assert_eq!(chain.links.len(), 1);
     assert_eq!(chain.links[0].row, row.class_reference);
     assert_eq!(
@@ -18203,7 +18464,7 @@ fn decode_rejects_a_conditional_with_different_branch_dimensions() {
 }
 
 #[test]
-fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
+fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(
@@ -18212,7 +18473,7 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
                     false,
                     &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
                     "LENGTH",
-                    Some(13.0),
+                    None,
                     "#1_ /2+1mm",
                     (&[0xfe], Some(0)),
                 ),
@@ -18220,8 +18481,8 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
             &DecodeOptions::default(),
         )
         .expect("decode unset formula input");
-    let [input] = decoded.ir.model.parameters.as_slice() else {
-        panic!("only the independently typed unset input")
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("unset formula parameters")
     };
 
     assert_eq!(input.name, "Width");
@@ -18229,6 +18490,10 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(output.value, None);
+    assert_eq!(output.expression, "#1_ /2+1mm");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.properties["value_type"], "LENGTH");
 }
 
 #[test]
@@ -18261,6 +18526,37 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert_eq!(input.properties["value_type"], parameter_type);
         assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     }
+}
+
+#[test]
+fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    4,
+                    false,
+                    &[("#1_", "String", "Value", "#1_", 1.0)],
+                    "String",
+                    None,
+                    "#1_",
+                    (&[0xfe], Some(0)),
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset String formula result");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("unset String formula parameters")
+    };
+
+    assert_eq!(input.value, None);
+    assert_eq!(input.properties["value_type"], "String");
+    assert_eq!(output.value, None);
+    assert_eq!(output.expression, "#1_");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.properties["value_type"], "String");
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]

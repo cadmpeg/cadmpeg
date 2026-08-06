@@ -2,6 +2,8 @@
 
 #![allow(clippy::unwrap_used)]
 
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
 use crate::CodecError;
 
 use super::*;
@@ -22,6 +24,46 @@ fn root_limit_is_enforced() {
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::InputBytes
     ));
+}
+
+#[test]
+fn read_root_uses_sized_and_fallback_read_paths() {
+    let bytes = vec![0_u8; 32];
+    let policy = policy_with(|limits| limits.max_input_bytes = bytes.len() as u64);
+
+    let arena = DecodeArena::new();
+    let mut seekable = Cursor::new(bytes.clone());
+    let (_, root) = DecodeContext::read_root(&mut seekable, &arena, &policy).unwrap();
+    assert_eq!(root.window(), bytes.as_slice());
+
+    let arena = DecodeArena::new();
+    let mut fallback = Unseekable::new(bytes.clone());
+    let (_, root) = DecodeContext::read_root(&mut fallback, &arena, &policy).unwrap();
+    assert_eq!(root.window(), bytes.as_slice());
+}
+
+struct Unseekable {
+    input: Cursor<Vec<u8>>,
+}
+
+impl Unseekable {
+    fn new(bytes: Vec<u8>) -> Self {
+        Self {
+            input: Cursor::new(bytes),
+        }
+    }
+}
+
+impl Read for Unseekable {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.input.read(bytes)
+    }
+}
+
+impl Seek for Unseekable {
+    fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+        Err(io::Error::other("seek unavailable"))
+    }
 }
 
 #[test]

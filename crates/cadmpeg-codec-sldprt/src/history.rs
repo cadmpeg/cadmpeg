@@ -2605,6 +2605,50 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn offset_plane_face_reference_accepts_the_serialized_signed_side() {
+        let surface = Surface {
+            id: cadmpeg_ir::ids::SurfaceId("surface".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, -5.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let face = Face {
+            id: cadmpeg_ir::ids::FaceId("face".into()),
+            shell: cadmpeg_ir::ids::ShellId("shell".into()),
+            surface: surface.id.clone(),
+            sense: cadmpeg_ir::topology::Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let surfaces = HashMap::from([(&surface.id, &surface)]);
+        let mut selection = FaceSelection::Native("component-path".into());
+        let mut origin = Point3::new(0.0, 0.0, 5.0);
+
+        resolve_offset_plane_face_selection(
+            &mut selection,
+            &mut origin,
+            Vector3::new(0.0, 0.0, 1.0),
+            Length(5.0),
+            std::slice::from_ref(&face),
+            &surfaces,
+        );
+
+        assert_eq!(origin, Point3::new(0.0, 0.0, -5.0));
+        assert_eq!(
+            selection,
+            FaceSelection::Resolved {
+                faces: vec![face.id],
+                native: "component-path".into(),
+            }
+        );
+    }
+
+    #[test]
     fn offset_plane_frame_does_not_bind_a_later_builtin_principal_plane() {
         let mut offset = feature("sldprt:history:feature#0:0", None, 0);
         offset.input_class = Some("moRefPlane_c".into());
@@ -4216,6 +4260,65 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
+        let mut hole = feature("hole", Some("10"), 0);
+        hole.input_class = Some("moHoleWzd_c".into());
+        hole.properties
+            .insert("DissectableChildren".into(), "11".into());
+
+        let mut profile = feature("profile", Some("11"), 1);
+        profile.kind = "Sketch".into();
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile.parameters = [
+            ("bore".into(), "<MOD-DIAM>2.5".into()),
+            ("drill depth".into(), "7.5".into()),
+            ("major".into(), "<MOD-DIAM>3".into()),
+            ("thread depth".into(), "6".into()),
+            ("angle".into(), "118°".into()),
+        ]
+        .into();
+        profile.content = ["bore", "drill depth", "major", "thread depth", "angle"]
+            .into_iter()
+            .map(|name| FeatureContent::Dimension(name.into()))
+            .collect();
+
+        let mut thread = feature("thread", Some("12"), 2);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        let thread_id = thread.id.clone();
+        let hole_id = hole.id.clone();
+        let mut history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![hole, profile, thread],
+        };
+        let mut lane = feature_input_lane("lane", None);
+        lane.surface_selections
+            .push(crate::records::FeatureInputSurfaceSelection {
+                id: "selection".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: 0,
+                object_name_ref: "thread-name".into(),
+                feature_ref: thread_id,
+                producer_feature_refs: vec![hole_id.clone()],
+                terminal_feature_ref: Some(hole_id),
+                components: Vec::new(),
+            });
+
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(
+            std::slice::from_mut(&mut history),
+            &[lane],
+        );
+        assert_eq!(
+            history.features[2].parameters.get("D2"),
+            Some(&"<MOD-DIAM>3mm".to_string())
+        );
+    }
+
+    #[test]
     fn profile_consumers_require_a_regeneration_profile() {
         let mut definition = FeatureDefinition::Extrude {
             profile: ProfileRef::Native("sketch-native".into()),
@@ -5081,7 +5184,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn configuration_spatial_sketch_state_reuses_shared_geometry_across_lanes() {
+    fn configuration_sketch_states_reuse_shared_geometry_across_lanes() {
         use cadmpeg_ir::features::{
             ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
             FeatureDefinition, FeatureId,
@@ -5090,6 +5193,8 @@ mod history_reference_tests {
 
         let feature_id = FeatureId("sldprt:model:feature#spatial".into());
         let sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#spatial".into());
+        let planar_state_id = FeatureId("sldprt:model:feature#planar-state".into());
+        let planar_sketch_id = SpatialSketchId("sldprt:model:spatial-sketch#planar-state".into());
         let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
         ir.model.features.push(NeutralFeature {
             id: feature_id.clone(),
@@ -5108,9 +5213,33 @@ mod history_reference_tests {
             },
             native_ref: Some("spatial-native".into()),
         });
+        ir.model.features.push(NeutralFeature {
+            id: planar_state_id.clone(),
+            ordinal: 1,
+            name: Some("planar-state".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SpatialSketch {
+                sketch: Some(planar_sketch_id.clone()),
+            },
+            native_ref: Some("planar-state-native".into()),
+        });
         ir.model.spatial_sketches.push(SpatialSketch {
             id: sketch_id.clone(),
             name: Some("spatial".into()),
+            configuration: None,
+            profiles: Vec::new(),
+            native_ref: Some("first-lane".into()),
+        });
+        ir.model.spatial_sketches.push(SpatialSketch {
+            id: planar_sketch_id.clone(),
+            name: Some("planar-state".into()),
             configuration: None,
             profiles: Vec::new(),
             native_ref: Some("first-lane".into()),
@@ -5128,15 +5257,29 @@ mod history_reference_tests {
                 parameter_values: BTreeMap::new(),
                 suppressed_features: Vec::new(),
                 parameter_overrides: BTreeMap::new(),
-                feature_states: BTreeMap::from([(
-                    feature_id.clone(),
-                    ConfigurationFeatureState {
-                        suppressed: false,
-                        dependencies: Vec::new(),
-                        outputs: Vec::new(),
-                        definition: FeatureDefinition::SpatialSketch { sketch: None },
-                    },
-                )]),
+                feature_states: BTreeMap::from([
+                    (
+                        feature_id.clone(),
+                        ConfigurationFeatureState {
+                            suppressed: false,
+                            dependencies: Vec::new(),
+                            outputs: Vec::new(),
+                            definition: FeatureDefinition::SpatialSketch { sketch: None },
+                        },
+                    ),
+                    (
+                        planar_state_id.clone(),
+                        ConfigurationFeatureState {
+                            suppressed: false,
+                            dependencies: Vec::new(),
+                            outputs: Vec::new(),
+                            definition: FeatureDefinition::Sketch {
+                                space: SketchSpace::Planar,
+                                sketch: None,
+                            },
+                        },
+                    ),
+                ]),
                 native_ref: None,
             });
         }
@@ -5157,6 +5300,12 @@ mod history_reference_tests {
             FeatureDefinition::SpatialSketch {
                 sketch: Some(projected),
             } if projected == &sketch_id
+        )));
+        assert!(ir.model.configurations.iter().all(|configuration| matches!(
+            &configuration.feature_states[&planar_state_id].definition,
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(projected),
+            } if projected == &planar_sketch_id
         )));
     }
 
@@ -5894,9 +6043,16 @@ pub fn bind_topology_selections(
                         normal,
                         ..
                     }),
-                ..
+                distance,
             } => {
-                resolve_planar_face_selection(reference, *origin, *normal, faces, &surfaces_by_id);
+                resolve_offset_plane_face_selection(
+                    reference,
+                    origin,
+                    *normal,
+                    *distance,
+                    faces,
+                    &surfaces_by_id,
+                );
             }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
@@ -6161,6 +6317,34 @@ fn resolve_planar_face_selection(
         (None, [face]) => FaceSelection::Faces(vec![face.clone()]),
         _ => return,
     };
+}
+
+fn resolve_offset_plane_face_selection(
+    selection: &mut FaceSelection,
+    origin: &mut Point3,
+    normal: Vector3,
+    distance: Length,
+    faces: &[Face],
+    surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
+) {
+    let native = matches!(selection, FaceSelection::Native(_));
+    resolve_planar_face_selection(selection, *origin, normal, faces, surfaces);
+    if !native || !matches!(selection, FaceSelection::Native(_)) {
+        return;
+    }
+    let signed_distance = distance.0;
+    if !signed_distance.is_finite() || signed_distance.abs() <= f64::EPSILON {
+        return;
+    }
+    let alternate_origin = Point3::new(
+        origin.x - normal.x * signed_distance * 2.0,
+        origin.y - normal.y * signed_distance * 2.0,
+        origin.z - normal.z * signed_distance * 2.0,
+    );
+    resolve_planar_face_selection(selection, alternate_origin, normal, faces, surfaces);
+    if !matches!(selection, FaceSelection::Native(_)) {
+        *origin = alternate_origin;
+    }
 }
 
 fn resolve_profile_ref(
@@ -8064,6 +8248,24 @@ fn project_hole(
     }
 }
 
+pub(crate) fn threaded_hole_major_diameter(
+    feature: &Feature,
+    features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
+) -> Option<f64> {
+    if classify(feature) != Some(FeatureClass::Hole) {
+        return None;
+    }
+    let FeatureDefinition::Hole {
+        kind: HoleKind::Threaded { major_diameter, .. },
+        ..
+    } = project_hole(feature, features_by_source, history_features)
+    else {
+        return None;
+    };
+    (major_diameter.0.is_finite() && major_diameter.0 > 0.0).then_some(major_diameter.0)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct HoleProfileConstruction {
     diameter: Length,
@@ -9733,6 +9935,10 @@ pub(crate) fn enrich_history_semantic(
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
+    } else {
+        crate::resolved_features::holes::
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
@@ -9794,6 +10000,11 @@ pub(crate) fn project_configuration_design_states(
             &ir.model.features,
         );
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
+        crate::resolved_features::holes::
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+                &mut projection,
+                scoped_lanes,
+            );
         crate::pmi::enrich_history_parameters_with_features(
             &mut projection,
             pmi_dimensions,
@@ -9965,17 +10176,41 @@ pub(crate) fn project_configuration_sketch_states(
             })
             .map(|sketch| &sketch.id)
             .collect::<HashSet<_>>();
+        let base_definitions = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| (feature.id.clone(), feature.definition.clone()))
+            .collect::<HashMap<_, _>>();
         for feature in &mut features {
-            let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition else {
+            if let FeatureDefinition::SpatialSketch { sketch } = &mut feature.definition {
+                let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
+                    ":model:feature#",
+                    ":model:spatial-sketch#",
+                    1,
+                ));
+                if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
+                    *sketch = Some(expected);
+                }
+                continue;
+            }
+            let FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch,
+            } = &mut feature.definition
+            else {
                 continue;
             };
-            let expected = cadmpeg_ir::sketches::SpatialSketchId(feature.id.0.replacen(
-                ":model:feature#",
-                ":model:spatial-sketch#",
-                1,
-            ));
-            if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
-                *sketch = Some(expected);
+            let Some(FeatureDefinition::SpatialSketch {
+                sketch: Some(base_sketch),
+            }) = base_definitions.get(&feature.id)
+            else {
+                continue;
+            };
+            if sketch.is_none() && reusable_spatial_sketches.contains(base_sketch) {
+                feature.definition = FeatureDefinition::SpatialSketch {
+                    sketch: Some(base_sketch.clone()),
+                };
             }
         }
         let mut parameters = ir.model.parameters.clone();
@@ -10004,6 +10239,13 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         crate::resolved_features::profiles::project_marker_backed_sketches(
+            &mut features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::profiles::project_sketch_block_profiles(
             &mut features,
             &mut ir.model.sketches,
             &mut ir.model.sketch_entities,

@@ -378,6 +378,7 @@ pub(crate) fn join_partial_constraint_components(
     components: Vec<Vec<usize>>,
     coupled_edges: &[bool],
     assignment_predecessors: Option<&[Option<usize>]>,
+    assignment_dependencies: Option<&[Vec<usize>]>,
 ) -> Vec<Vec<usize>> {
     let component_by_edge = components
         .iter()
@@ -408,6 +409,19 @@ pub(crate) fn join_partial_constraint_components(
                 component_by_edge.get(&edge),
                 component_by_edge.get(&predecessor),
             ) {
+                union.union(left, right);
+            }
+        }
+    }
+    if let Some(dependencies) = assignment_dependencies {
+        for (edge, predecessors) in dependencies.iter().enumerate() {
+            let Some(&right) = component_by_edge.get(&edge) else {
+                continue;
+            };
+            for predecessor in predecessors {
+                let Some(&left) = component_by_edge.get(predecessor) else {
+                    continue;
+                };
                 union.union(left, right);
             }
         }
@@ -1619,12 +1633,23 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     fn branch_edge_ready(&self, edge: usize) -> bool {
-        self.partial_solution_filter
+        let predecessor_ready = self
+            .partial_solution_filter
             .and_then(|constraint| constraint.assignment_predecessors)
             .and_then(|predecessors| predecessors.get(edge).copied().flatten())
             .is_none_or(|predecessor| {
                 !self.active[predecessor] || self.assignment[predecessor].is_some()
-            })
+            });
+        let dependencies_ready = self
+            .partial_solution_filter
+            .and_then(|constraint| constraint.assignment_dependencies)
+            .and_then(|dependencies| dependencies.get(edge))
+            .is_none_or(|dependencies| {
+                dependencies.iter().all(|&predecessor| {
+                    !self.active[predecessor] || self.assignment[predecessor].is_some()
+                })
+            });
+        predecessor_ready && dependencies_ready
     }
 
     fn degree_frontiers_supported(
@@ -3746,6 +3771,7 @@ where
                 components,
                 constraint.coupled_edges,
                 constraint.assignment_predecessors,
+                constraint.assignment_dependencies,
             );
         }
         order_incidence_components_by_branch_width(&mut components, choices)?;

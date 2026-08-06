@@ -309,6 +309,12 @@ struct ColorSpec<'a> {
     binding_id: Option<&'a str>,
 }
 
+struct LoopSegment {
+    coedge_id: String,
+    start_vertex: String,
+    end_vertex: String,
+}
+
 struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -364,7 +370,15 @@ struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
-    unsupported_standalone_geometry: usize,
+    unwritten_geometry_carriers: BTreeSet<String>,
+    unwritten_pcurve_carriers: BTreeSet<String>,
+    missing_parent_products: BTreeSet<String>,
+    empty_regions: BTreeSet<String>,
+    empty_wire_regions: BTreeSet<String>,
+    missing_wire_shells: BTreeSet<(String, String)>,
+    hidden_bodies_without_items: BTreeSet<String>,
+    dangling_appearance_bindings: BTreeSet<(String, String)>,
+    colorless_appearance_bindings: BTreeSet<(String, String)>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -503,7 +517,15 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
-            unsupported_standalone_geometry: 0,
+            unwritten_geometry_carriers: BTreeSet::new(),
+            unwritten_pcurve_carriers: BTreeSet::new(),
+            missing_parent_products: BTreeSet::new(),
+            empty_regions: BTreeSet::new(),
+            empty_wire_regions: BTreeSet::new(),
+            missing_wire_shells: BTreeSet::new(),
+            hidden_bodies_without_items: BTreeSet::new(),
+            dangling_appearance_bindings: BTreeSet::new(),
+            colorless_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
             length_unit: None,
             angle_unit: None,
@@ -627,11 +649,17 @@ impl<'a> Builder<'a> {
             .collect();
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut dangling_appearance_bindings = BTreeSet::new();
+        let mut colorless_appearance_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
+                dangling_appearance_bindings
+                    .insert((binding.id.clone(), binding.appearance.0.clone()));
                 continue;
             };
             let Some(color) = appearance.base_color else {
+                colorless_appearance_bindings
+                    .insert((binding.id.clone(), binding.appearance.0.clone()));
                 continue;
             };
             let spec = ColorSpec {
@@ -655,6 +683,10 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Source { .. } => {}
             }
         }
+        self.dangling_appearance_bindings
+            .extend(dangling_appearance_bindings);
+        self.colorless_appearance_bindings
+            .extend(colorless_appearance_bindings);
         for body in &ir.model.bodies {
             if let Some(color) = body.color {
                 body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
@@ -1204,6 +1236,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let Some(parent_product) = occurrence_products.get(&parent_occurrence.id) else {
+                self.missing_parent_products.insert(occurrence.id.0.clone());
                 continue;
             };
             let Some(child_product) = occurrence_products.get(&occurrence.id) else {
@@ -1361,11 +1394,14 @@ impl<'a> Builder<'a> {
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
+                } else {
+                    self.empty_wire_regions.insert(region.id.0.clone());
                 }
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
+                self.empty_regions.insert(region.id.0.clone());
                 continue;
             };
             let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
@@ -1499,25 +1535,35 @@ impl<'a> Builder<'a> {
             }
             return;
         }
-        let hidden = self
-            .ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.visible == Some(false))
-            .filter_map(|body| self.body_step_refs.get(body.id.as_str()).copied())
-            .collect::<Vec<_>>();
+        let mut hidden = Vec::new();
+        let mut hidden_without_items = Vec::new();
+        for body in &self.ir.model.bodies {
+            if body.visible != Some(false) {
+                continue;
+            }
+            if let Some(reference) = self.body_step_refs.get(body.id.as_str()).copied() {
+                hidden.push(reference);
+            } else {
+                hidden_without_items.push(body.id.0.clone());
+            }
+        }
+        self.hidden_bodies_without_items
+            .extend(hidden_without_items);
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
         }
     }
 
     fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
-        let shells = region
-            .shells
-            .iter()
-            .filter_map(|shell_id| self.shells.get(shell_id.as_str()).copied().cloned())
-            .collect::<Vec<_>>();
+        let mut shells = Vec::new();
+        for shell_id in &region.shells {
+            if let Some(shell) = self.shells.get(shell_id.as_str()).copied().cloned() {
+                shells.push(shell);
+            } else {
+                self.missing_wire_shells
+                    .insert((region.id.0.clone(), shell_id.0.clone()));
+            }
+        }
         let mut connected_sets = Vec::new();
         for shell in shells {
             if !shell.free_vertices.is_empty() {
@@ -1568,7 +1614,7 @@ impl<'a> Builder<'a> {
                 members.push(reference);
                 has_surfaces = true;
             } else {
-                self.unsupported_standalone_geometry += 1;
+                self.unwritten_geometry_carriers.insert(surface_id);
             }
         }
         let curve_ids = self
@@ -1580,14 +1626,10 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.0.clone())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
-            if self
-                .curves
-                .get(curve_id.as_str())
-                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-            {
-                self.unsupported_standalone_geometry += 1;
-            } else if let Some(reference) = self.emit_curve(&curve_id) {
+            if let Some(reference) = self.emit_curve(&curve_id) {
                 members.push(reference);
+            } else {
+                self.unwritten_geometry_carriers.insert(curve_id);
             }
         }
         let point_ids = self
@@ -1908,28 +1950,28 @@ impl<'a> Builder<'a> {
             };
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
-        let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
+        let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
             let Some(coedge) = self.coedges.get(cid.as_str()).copied() else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:coedge:{cid}"),
-                    Severity::Warning,
+                    Severity::Error,
                     format!("loop {loop_id} omitted coedge {cid} because its record is missing"),
                 );
-                continue;
+                return None;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:edge:{}", coedge.edge),
-                    Severity::Warning,
+                    Severity::Error,
                     format!(
                         "loop {loop_id} omitted edge {} because the edge is not writable",
                         coedge.edge
                     ),
                 );
-                continue;
+                return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
             let oe = self
@@ -1948,6 +1990,169 @@ impl<'a> Builder<'a> {
         Some(
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
+        )
+    }
+
+    fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
+        let mut segments = Vec::with_capacity(lp.coedges.len());
+        let mut seen = BTreeSet::new();
+
+        for coedge_id in &lp.coedges {
+            let coedge_key = coedge_id.as_str();
+            if !seen.insert(coedge_key) {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:duplicate-coedge:{coedge_id}"),
+                    Severity::Error,
+                    format!(
+                        "loop {loop_id} cannot be ordered because coedge {coedge_id} occurs more than once"
+                    ),
+                );
+                return None;
+            }
+            let Some(coedge) = self.coedges.get(coedge_key).copied() else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:coedge:{coedge_id}"),
+                    Severity::Error,
+                    format!(
+                        "loop {loop_id} cannot be ordered because coedge {coedge_id} is missing"
+                    ),
+                );
+                return None;
+            };
+            let edge_key = coedge.edge.as_str();
+            let Some(edge) = self.edges.get(edge_key).copied() else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:edge:{edge_key}"),
+                    Severity::Error,
+                    format!("loop {loop_id} cannot be ordered because edge {edge_key} is missing"),
+                );
+                return None;
+            };
+            let Some(curve_id) = edge.curve.as_ref() else {
+                self.curveless_edges.insert(edge_key.to_string());
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:curve"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because it has no 3D curve"),
+                );
+                continue;
+            };
+            let Some(curve) = self.curves.get(curve_id.as_str()).copied() else {
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:curve:{curve_id}"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because curve {curve_id} is not writable"),
+                );
+                continue;
+            };
+            if !geometry::curve_is_supported(&curve.geometry) {
+                self.curveless_edges.insert(edge_key.to_string());
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because curve {curve_id} is unsupported"),
+                );
+                continue;
+            }
+            let (start_vertex, end_vertex) = match coedge.sense {
+                Sense::Forward => (&edge.start, &edge.end),
+                Sense::Reversed => (&edge.end, &edge.start),
+            };
+            segments.push(LoopSegment {
+                coedge_id: coedge_id.0.clone(),
+                start_vertex: start_vertex.0.clone(),
+                end_vertex: end_vertex.0.clone(),
+            });
+        }
+
+        let mut outgoing: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut incoming: HashMap<&str, usize> = HashMap::new();
+        for (index, segment) in segments.iter().enumerate() {
+            outgoing
+                .entry(segment.start_vertex.clone())
+                .or_default()
+                .push(index);
+            *incoming.entry(segment.end_vertex.as_str()).or_default() += 1;
+        }
+        if segments.iter().any(|segment| {
+            outgoing.get(&segment.start_vertex).map_or(0, Vec::len)
+                != incoming
+                    .get(segment.start_vertex.as_str())
+                    .copied()
+                    .unwrap_or(0)
+        }) {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        // The IR coedge list and its next/previous links are not sufficient to
+        // establish the STEP path order. Build an Eulerian circuit from the
+        // oriented edge endpoints instead; this also handles repeated vertices
+        // without choosing a geometric edge by position in the source list.
+        for candidates in outgoing.values_mut() {
+            candidates.reverse();
+        }
+        let first_start = segments.first()?.start_vertex.clone();
+        let mut vertex_stack = vec![first_start.clone()];
+        let mut edge_stack = Vec::new();
+        let mut circuit = Vec::with_capacity(segments.len());
+        while let Some(vertex) = vertex_stack.last().cloned() {
+            let next_edge = outgoing.get_mut(&vertex).and_then(Vec::pop);
+            if let Some(edge_index) = next_edge {
+                vertex_stack.push(segments[edge_index].end_vertex.clone());
+                edge_stack.push(edge_index);
+            } else {
+                vertex_stack.pop();
+                if let Some(edge_index) = edge_stack.pop() {
+                    circuit.push(edge_index);
+                }
+            }
+        }
+        circuit.reverse();
+
+        if circuit.len() != segments.len() {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        if let Some(first_index) = circuit.iter().position(|index| *index == 0) {
+            circuit.rotate_left(first_index);
+        }
+        let mut current_vertex = segments.first()?.start_vertex.as_str();
+        for edge_index in &circuit {
+            let segment = &segments[*edge_index];
+            if segment.start_vertex != current_vertex {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:continuity"),
+                    Severity::Error,
+                    format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+                );
+                return None;
+            }
+            current_vertex = segment.end_vertex.as_str();
+        }
+        if current_vertex != first_start {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        Some(
+            circuit
+                .into_iter()
+                .map(|index| segments[index].coedge_id.clone())
+                .collect(),
         )
     }
 
@@ -2020,6 +2225,8 @@ impl<'a> Builder<'a> {
         for (pcurve_id, surface_id) in associated {
             if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
                 pcurve_refs.push(pcurve);
+            } else if self.pcurves.contains_key(pcurve_id) {
+                self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
         let curve_ref = if pcurve_refs.is_empty() {
@@ -2102,7 +2309,7 @@ impl<'a> Builder<'a> {
             } else if !geometry::surface_is_supported(&surf.geometry) {
                 return None;
             } else {
-                geometry::surface(&mut self.emitter, &surf.geometry)
+                geometry::surface(&mut self.emitter, &surf.geometry)?
             };
             Some(r)
         })();
@@ -2262,7 +2469,7 @@ impl<'a> Builder<'a> {
             } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
-                geometry::curve(&mut self.emitter, &geometry)
+                geometry::curve(&mut self.emitter, &geometry)?
             };
             Some(r)
         })();
@@ -2782,13 +2989,147 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if self.unsupported_standalone_geometry > 0 {
+        if !self.unwritten_geometry_carriers.is_empty() {
+            let carriers = self
+                .unwritten_geometry_carriers
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 LossKind::GeometryNotTransferred,
                 Severity::Warning,
                 format!(
-                    "{} standalone unknown geometry carrier(s) were not written",
-                    self.unsupported_standalone_geometry
+                    "{} geometry carrier(s) were not written: {carriers}",
+                    self.unwritten_geometry_carriers.len()
+                ),
+            );
+        }
+        if !self.unwritten_pcurve_carriers.is_empty() {
+            let pcurves = self
+                .unwritten_pcurve_carriers
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::PcurveOmitted,
+                Severity::Warning,
+                format!(
+                    "{} coedge pcurve carrier(s) use geometry or surface references that were not writable: {pcurves}",
+                    self.unwritten_pcurve_carriers.len()
+                ),
+            );
+        }
+        if !self.missing_parent_products.is_empty() {
+            let occurrences = self
+                .missing_parent_products
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::AssemblyPlacementsNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} assembly occurrence(s) were omitted because their parent has no local product definition: {occurrences}",
+                    self.missing_parent_products.len()
+                ),
+            );
+        }
+        if !self.empty_regions.is_empty() {
+            let regions = self
+                .empty_regions
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Error,
+                format!(
+                    "{} region(s) have no shell list and were not written to STEP: {regions}",
+                    self.empty_regions.len()
+                ),
+            );
+        }
+        if !self.empty_wire_regions.is_empty() {
+            let regions = self
+                .empty_wire_regions
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} wire region(s) had no writable connected edge set and were not written to STEP: {regions}",
+                    self.empty_wire_regions.len()
+                ),
+            );
+        }
+        if !self.missing_wire_shells.is_empty() {
+            let shells = self
+                .missing_wire_shells
+                .iter()
+                .map(|(region, shell)| format!("'{region}' -> '{shell}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} wire region/shell relation(s) referenced missing shell records: {shells}",
+                    self.missing_wire_shells.len()
+                ),
+            );
+        }
+        if !self.hidden_bodies_without_items.is_empty() {
+            let bodies = self
+                .hidden_bodies_without_items
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::HiddenBodyOmitted,
+                Severity::Warning,
+                format!(
+                    "{} hidden body/bodies had no emitted STEP item and were omitted from INVISIBILITY: {bodies}",
+                    self.hidden_bodies_without_items.len()
+                ),
+            );
+        }
+        if !self.dangling_appearance_bindings.is_empty() {
+            let bindings = self
+                .dangling_appearance_bindings
+                .iter()
+                .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::MaterialNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} appearance binding(s) reference missing appearance assets and were not written: {bindings}",
+                    self.dangling_appearance_bindings.len()
+                ),
+            );
+        }
+        if !self.colorless_appearance_bindings.is_empty() {
+            let bindings = self
+                .colorless_appearance_bindings
+                .iter()
+                .map(|(binding, appearance)| format!("'{binding}' -> '{appearance}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::MaterialNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{} appearance binding(s) reference appearances without a base color and were not written: {bindings}",
+                    self.colorless_appearance_bindings.len()
                 ),
             );
         }

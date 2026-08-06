@@ -7,17 +7,47 @@ use super::super::{
     CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
 };
 use super::{
-    compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
-    compact_line_chain_addresses, compact_line_region_addresses,
-    complete_ordered_compact_line_profile, current_linked_semicircle_record,
-    indexed_rectangle_from_line_cycle, legacy_extended_rectangle_diagonal_endpoint,
-    ordered_compact_line_profile, ordered_rectangle_corners, resolve_two_center_semicircle_profile,
-    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
+    closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
+    compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
+    compact_line_region_addresses, complete_ordered_compact_line_profile,
+    current_linked_semicircle_record, indexed_rectangle_from_line_cycle,
+    legacy_extended_rectangle_diagonal_endpoint, ordered_compact_line_profile,
+    ordered_rectangle_corners, resolve_two_center_semicircle_profile, tangent_bounded_curve,
+    unique_dimensioned_rectangle_markers,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::features::{Angle, Length};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+
+#[test]
+fn shared_endpoint_block_cycles_remain_profile_chains() {
+    let sketch = SketchId("block-sketch".into());
+    let line = |id: &str, start: &str, end: &str| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(id.into()),
+        geometry_ref: None,
+        endpoint_refs: vec![start.into(), end.into()],
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    };
+    let entities = vec![
+        line("bottom", "p0", "p1"),
+        line("right", "p1", "p2"),
+        line("top", "p2", "p3"),
+        line("left", "p3", "p0"),
+        line("diagonal", "p0", "p2"),
+    ];
+
+    assert!(super::closed_marker_profiles(&entities).is_empty());
+    let profiles = closed_marker_profiles_allowing_shared_endpoints(&entities);
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].len(), 4);
+}
 
 #[test]
 fn compact_line_region_is_an_ordered_one_based_curve_roster() {

@@ -1261,11 +1261,13 @@ fn object_stream_pcurve_candidate(
 
 fn a8_class21_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
-    for offset in 0..bytes.len().saturating_sub(11) {
-        let Some((end, 0xa8, 0x21, object_id)) = object_frame(bytes, offset) else {
+    for frame in object_stream_frames(bytes) {
+        if frame.family != 0xa8 || frame.class != 0x21 {
             continue;
-        };
-        if let Some(pcurve) = parse_a8_class21_pcurve(object_id, &bytes[offset + 11..end]) {
+        }
+        if let Some(pcurve) =
+            parse_a8_class21_pcurve(frame.object_id, &bytes[frame.start + 11..frame.end])
+        {
             pcurves.push(pcurve);
         }
     }
@@ -1365,26 +1367,26 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
 pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     let mut edges = BTreeMap::new();
     let mut ambiguous = HashSet::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, 0xb5, 0x5e, object_id)) = object_frame(bytes, offset) else {
+    for frame in object_stream_frames(bytes) {
+        if frame.family != 0xb5 || frame.class != 0x5e {
             continue;
-        };
+        }
         let record = B5Record {
-            offset,
+            offset: frame.start,
             family: 0xb5,
             class: 0x5e,
-            object_id,
-            payload: bytes[offset + 8..end].to_vec(),
+            object_id: frame.object_id,
+            payload: bytes[frame.start + 8..frame.end].to_vec(),
         };
         let Some(edge) = parse_edge(&record) else {
             continue;
         };
         let vertices = edge.vertices;
         if edges
-            .insert(object_id, vertices)
+            .insert(frame.object_id, vertices)
             .is_some_and(|existing| existing != vertices)
         {
-            ambiguous.insert(object_id);
+            ambiguous.insert(frame.object_id);
         }
     }
     edges.retain(|object_id, _| !ambiguous.contains(object_id));
@@ -1400,36 +1402,33 @@ pub(crate) fn edge_support_pcurve_references(
 ) -> BTreeMap<u32, [u32; 2]> {
     let mut edge_wrappers = HashMap::<u32, Option<u32>>::new();
     let mut wrappers = HashMap::<u32, Option<[u32; 2]>>::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
-            continue;
-        };
-        let header = if family == 0xa8 { 11 } else { 8 };
+    for frame in object_stream_frames(bytes) {
+        let header = if frame.family == 0xa8 { 11 } else { 8 };
         let record = B5Record {
-            offset,
-            family,
-            class,
-            object_id,
-            payload: bytes[offset + header..end].to_vec(),
+            offset: frame.start,
+            family: frame.family,
+            class: frame.class,
+            object_id: frame.object_id,
+            payload: bytes[frame.start + header..frame.end].to_vec(),
         };
-        if class == 0x5e && edge_ids.contains(&object_id) {
+        if frame.class == 0x5e && edge_ids.contains(&frame.object_id) {
             let Some(wrapper) = parse_edge(&record).map(|edge| edge.support) else {
                 continue;
             };
             edge_wrappers
-                .entry(object_id)
+                .entry(frame.object_id)
                 .and_modify(|stored| {
                     if stored.is_some_and(|stored| stored != wrapper) {
                         *stored = None;
                     }
                 })
                 .or_insert(Some(wrapper));
-        } else if family == 0xb5 && class == 0x23 {
+        } else if frame.family == 0xb5 && frame.class == 0x23 {
             let Some(references) = record_references(&record).try_into().ok() else {
                 continue;
             };
             wrappers
-                .entry(object_id)
+                .entry(frame.object_id)
                 .and_modify(|stored| {
                     if stored.is_some_and(|stored| stored != references) {
                         *stored = None;
@@ -1466,23 +1465,20 @@ pub(crate) fn targeted_surfaces(
         .map(|header| (header.object_id, header))
         .collect::<HashMap<_, _>>();
     let mut records = HashMap::<u32, Option<B5Record>>::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, family, class, found_id)) = object_frame(bytes, offset) else {
-            continue;
-        };
-        if !is_surface_class(class) {
+    for frame in object_stream_frames(bytes) {
+        if !is_surface_class(frame.class) {
             continue;
         }
-        let header = if family == 0xa8 { 11 } else { 8 };
+        let header = if frame.family == 0xa8 { 11 } else { 8 };
         let record = B5Record {
-            offset,
-            family,
-            class,
-            object_id: found_id,
-            payload: bytes[offset + header..end].to_vec(),
+            offset: frame.start,
+            family: frame.family,
+            class: frame.class,
+            object_id: frame.object_id,
+            payload: bytes[frame.start + header..frame.end].to_vec(),
         };
         records
-            .entry(found_id)
+            .entry(frame.object_id)
             .and_modify(|stored| {
                 if stored.as_ref().is_some_and(|stored| {
                     stored.family != record.family
@@ -1523,23 +1519,20 @@ pub(crate) fn targeted_surfaces(
 #[must_use]
 pub(crate) fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
-            continue;
-        };
-        if !is_targeted_geometry_class(family, class) {
+    for frame in object_stream_frames(bytes) {
+        if !is_targeted_geometry_class(frame.family, frame.class) {
             continue;
         }
-        let header = if family == 0xa8 { 11 } else { 8 };
+        let header = if frame.family == 0xa8 { 11 } else { 8 };
         let record = B5Record {
-            offset,
-            family,
-            class,
-            object_id,
-            payload: bytes[offset + header..end].to_vec(),
+            offset: frame.start,
+            family: frame.family,
+            class: frame.class,
+            object_id: frame.object_id,
+            payload: bytes[frame.start + header..frame.end].to_vec(),
         };
         candidates
-            .entry(object_id)
+            .entry(frame.object_id)
             .and_modify(|stored| {
                 if stored.as_ref().is_some_and(|stored| {
                     stored.family != record.family
@@ -4014,16 +4007,16 @@ fn parse_sphere_great_circle_pcurve(
 
 fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, 0xb5, 0x19, object_id)) = object_frame(bytes, offset) else {
+    for frame in object_stream_frames(bytes) {
+        if frame.family != 0xb5 || frame.class != 0x19 {
             continue;
-        };
+        }
         let record = B5Record {
-            offset,
+            offset: frame.start,
             family: 0xb5,
             class: 0x19,
-            object_id,
-            payload: bytes[offset + 8..end].to_vec(),
+            object_id: frame.object_id,
+            payload: bytes[frame.start + 8..frame.end].to_vec(),
         };
         if let Some(pcurve) = parse_circle_pcurve(&record) {
             pcurves.push(pcurve);
@@ -4105,23 +4098,22 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             break;
         }
         let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-        for offset in 0..bytes.len().saturating_sub(8) {
-            let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
-                continue;
-            };
-            if !pending.contains(&object_id) || !is_reference_dependency_class(family, class) {
+        for frame in object_stream_frames(bytes) {
+            if !pending.contains(&frame.object_id)
+                || !is_reference_dependency_class(frame.family, frame.class)
+            {
                 continue;
             }
-            let header = if family == 0xa8 { 11 } else { 8 };
+            let header = if frame.family == 0xa8 { 11 } else { 8 };
             let candidate = B5Record {
-                offset,
-                family,
-                class,
-                object_id,
-                payload: bytes[offset + header..end].to_vec(),
+                offset: frame.start,
+                family: frame.family,
+                class: frame.class,
+                object_id: frame.object_id,
+                payload: bytes[frame.start + header..frame.end].to_vec(),
             };
             candidates
-                .entry(object_id)
+                .entry(frame.object_id)
                 .and_modify(|slot| {
                     if slot.as_ref().is_some_and(|existing| {
                         existing.family != candidate.family
@@ -4149,102 +4141,110 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
 }
 
 fn framed_records(bytes: &[u8]) -> Vec<B5Record> {
-    let recurse: fn(&[u8]) -> Vec<B5Record> = framed_records;
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
-    for run in object_runs(bytes) {
-        for frame in run {
-            let ObjectFrame {
-                start: record_start,
-                end: record_end,
-                family,
-                class,
-                object_id,
-            } = frame;
-            if family == 0xa8 {
-                let payload = record_start + 11;
-                for mut child in recurse(&bytes[payload..record_end]) {
-                    child.offset += payload;
-                    if seen
-                        .get(&child.object_id)
-                        .is_some_and(|(seen_class, seen_payload)| {
-                            *seen_class == child.class && *seen_payload == child.payload
-                        })
-                    {
-                        continue;
-                    }
-                    seen.insert(child.object_id, (child.class, child.payload.clone()));
-                    records.push(child);
-                }
-            }
-            if !((family == 0xb5 && is_topology_class(class))
-                || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
-            {
-                continue;
-            }
-            let header = if family == 0xa8 { 11 } else { 8 };
-            let payload = bytes[record_start + header..record_end].to_vec();
-            if seen
-                .get(&object_id)
-                .is_some_and(|(seen_class, seen_payload)| {
-                    *seen_class == class && *seen_payload == payload
-                })
-            {
-                continue;
-            }
-            seen.insert(object_id, (class, payload.clone()));
-            records.push(B5Record {
-                offset: record_start,
+    for ObjectFrame {
+        start,
+        end,
+        family,
+        class,
+        object_id,
+    } in object_stream_frames(bytes)
+    {
+        if !((family == 0xb5 && is_topology_class(class))
+            || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
+        {
+            continue;
+        }
+        let header = if family == 0xa8 { 11 } else { 8 };
+        let Some(payload) = bytes.get(start + header..end).map(ToOwned::to_owned) else {
+            continue;
+        };
+        if seen
+            .get(&object_id)
+            .is_some_and(|(seen_class, seen_payload)| {
+                *seen_class == class && *seen_payload == payload
+            })
+        {
+            continue;
+        }
+        seen.insert(object_id, (class, payload.clone()));
+        records.push((
+            end,
+            B5Record {
+                offset: start,
                 family,
                 class,
                 object_id,
                 payload,
-            });
-        }
+            },
+        ));
     }
-    records
+    // Preserve the historical child-before-wrapper order for records nested in
+    // an A8 frame while retaining the walker's bounded admission rules.
+    records.sort_unstable_by(|(left_end, left), (right_end, right)| {
+        left_end
+            .cmp(right_end)
+            .then_with(|| right.offset.cmp(&left.offset))
+    });
+    records.into_iter().map(|(_, record)| record).collect()
 }
 
-/// Return complete byte ranges for length-closed B5/A8 record runs. A lone
-/// frame-like candidate does not establish an object-stream record.
+/// Return complete byte ranges for length-closed object-stream records.
 #[must_use]
 pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
-    object_runs(bytes)
+    object_stream_frames(bytes)
         .into_iter()
-        .flatten()
         .map(|frame| frame.start..frame.end)
         .collect()
 }
 
-fn object_runs(bytes: &[u8]) -> Vec<Vec<ObjectFrame>> {
-    let mut runs = Vec::new();
-    let mut position = 0usize;
-    while position + 8 <= bytes.len() {
-        let Some((first_end, _, _, _)) = object_frame(bytes, position) else {
-            position += 1;
-            continue;
-        };
-        let start = position;
-        let mut at = position;
-        let mut run = Vec::new();
-        while let Some((end, family, class, object_id)) = object_frame(bytes, at) {
-            run.push(ObjectFrame {
-                start: at,
-                end,
+fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
+    fn walk(
+        bytes: &[u8],
+        base: usize,
+        admit_a8: bool,
+        admit_b5: bool,
+        frames: &mut Vec<ObjectFrame>,
+    ) {
+        let mut position = 0usize;
+        while position + 8 <= bytes.len() {
+            let Some(frame) = object_frame(bytes, position) else {
+                position += 1;
+                continue;
+            };
+            let (end, family, class, object_id) = frame;
+            let absolute = ObjectFrame {
+                start: base + position,
+                end: base + end,
                 family,
                 class,
                 object_id,
-            });
-            at = end;
+            };
+            match family {
+                0xa8 if admit_a8 => {
+                    frames.push(absolute);
+                    walk(
+                        &bytes[position + 11..end],
+                        base + position + 11,
+                        false,
+                        admit_b5,
+                        frames,
+                    );
+                    position = end;
+                }
+                0xb5 if admit_b5 => {
+                    frames.push(absolute);
+                    position = end;
+                }
+                _ => position += 1,
+            }
         }
-        if run.len() < 2 {
-            position = start + 1;
-            continue;
-        }
-        runs.push(run);
-        position = at.max(first_end);
     }
-    runs
+
+    let mut frames = Vec::new();
+    walk(bytes, 0, true, true, &mut frames);
+    frames
 }
 
 fn record_references(record: &B5Record) -> Vec<u32> {
@@ -4467,11 +4467,11 @@ pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<
 /// Read each face's leading surface reference independently of its loop grammar.
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
     let mut references = Vec::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, 0xb5, 0x5f, object_id)) = object_frame(bytes, offset) else {
+    for frame in object_stream_frames(bytes) {
+        if frame.family != 0xb5 || frame.class != 0x5f {
             continue;
-        };
-        let payload = &bytes[offset + 8..end];
+        }
+        let payload = &bytes[frame.start + 8..frame.end];
         let Some(&lead) = payload.first() else {
             continue;
         };
@@ -4482,7 +4482,7 @@ pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
         let Some(surface) = wire::object_ref(payload, &mut position, true) else {
             continue;
         };
-        references.push((object_id, surface));
+        references.push((frame.object_id, surface));
     }
     references
 }
@@ -6753,6 +6753,116 @@ mod tests {
 
     #[test]
     fn a8_class21_jet_decodes_a_piecewise_quintic_pcurve() {
+        let mut payload = a8_class21_test_payload();
+
+        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
+        assert_eq!(pcurve.object_id, 7);
+        assert_eq!(pcurve.surface, 3);
+        assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
+        assert_eq!(pcurve.multiplicities, [6, 6]);
+        assert_eq!(pcurve.control_points.len(), 6);
+        assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
+        assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
+
+        payload[6] = 0x0d;
+        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    }
+
+    #[test]
+    fn a8_class21_scan_ignores_marker_shaped_nested_payload() {
+        let child_payload = a8_class21_test_payload();
+        let mut nested = vec![0xa8, 0x03, 0x21];
+        nested.extend_from_slice(
+            &u32::try_from(child_payload.len())
+                .expect("small nested A8 payload")
+                .to_le_bytes(),
+        );
+        nested.extend_from_slice(&7u32.to_le_bytes());
+        nested.extend_from_slice(&child_payload);
+
+        let mut wrapper = vec![0xa8, 0x03, 0x34];
+        wrapper.extend_from_slice(
+            &u32::try_from(nested.len())
+                .expect("small wrapper A8 payload")
+                .to_le_bytes(),
+        );
+        wrapper.extend_from_slice(&8u32.to_le_bytes());
+        wrapper.extend_from_slice(&nested);
+
+        let mut peer = vec![0xa8, 0x03, 0x21];
+        peer.extend_from_slice(
+            &u32::try_from(child_payload.len())
+                .expect("small peer A8 payload")
+                .to_le_bytes(),
+        );
+        peer.extend_from_slice(&9u32.to_le_bytes());
+        peer.extend_from_slice(&child_payload);
+        wrapper.extend_from_slice(&peer);
+
+        let pcurves = a8_class21_pcurves(&wrapper);
+        assert_eq!(pcurves.len(), 1);
+        assert_eq!(pcurves[0].object_id, 9);
+    }
+
+    #[test]
+    fn object_stream_frame_walk_descends_only_into_a8_b5_children() {
+        let b5 = |class: u8, object_id: u32, payload: &[u8]| {
+            let mut frame = vec![0xb5, 0x03, class, payload.len() as u8];
+            frame.extend_from_slice(&object_id.to_le_bytes());
+            frame.extend_from_slice(payload);
+            frame
+        };
+        let nested_b5 = b5(0x5e, 7, &[0x00]);
+        let mut wrapper = vec![0xa8, 0x03, 0x34];
+        wrapper.extend_from_slice(
+            &u32::try_from(nested_b5.len())
+                .expect("small wrapper payload")
+                .to_le_bytes(),
+        );
+        wrapper.extend_from_slice(&8u32.to_le_bytes());
+        wrapper.extend_from_slice(&nested_b5);
+
+        let mut nested_a8 = vec![0xa8, 0x03, 0x21];
+        nested_a8.extend_from_slice(&1u32.to_le_bytes());
+        nested_a8.extend_from_slice(&10u32.to_le_bytes());
+        nested_a8.push(0x00);
+        let peer_b5 = b5(0x5e, 9, &nested_a8);
+        wrapper.extend_from_slice(&peer_b5);
+
+        let frames = object_stream_frames(&wrapper);
+        assert_eq!(
+            frames
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 8), (0xb5, 0x5e, 7), (0xb5, 0x5e, 9)]
+        );
+    }
+
+    #[test]
+    fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
+        let mut nested_a8 = vec![0xa8, 0x03, 0x62];
+        nested_a8.extend_from_slice(&0u32.to_le_bytes());
+        nested_a8.extend_from_slice(&7u32.to_le_bytes());
+
+        let mut bytes = vec![0xb5, 0x03, 0x5f, nested_a8.len() as u8];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&nested_a8);
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x01]);
+        bytes.extend_from_slice(&9u32.to_le_bytes());
+        bytes.push(0x00);
+
+        let records = framed_records(&bytes);
+        assert_eq!(
+            records
+                .iter()
+                .map(|record| (record.family, record.class, record.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xb5, 0x5f, 8), (0xb5, 0x5e, 9)]
+        );
+    }
+
+    fn a8_class21_test_payload() -> Vec<u8> {
         let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x09, 0x01];
         for value in [10.0f64, 20.0] {
             payload.extend_from_slice(&value.to_le_bytes());
@@ -6768,18 +6878,7 @@ mod tests {
             payload.extend_from_slice(&value.to_le_bytes());
         }
         payload.extend_from_slice(&[0x00, 0x07]);
-
-        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("complete class-21 jet");
-        assert_eq!(pcurve.object_id, 7);
-        assert_eq!(pcurve.surface, 3);
-        assert_eq!(pcurve.distinct_knots, [10.0, 20.0]);
-        assert_eq!(pcurve.multiplicities, [6, 6]);
-        assert_eq!(pcurve.control_points.len(), 6);
-        assert_eq!(pcurve.parameter_range, Some([10.0, 20.0]));
-        assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
-
-        payload[6] = 0x0d;
-        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+        payload
     }
 
     #[test]

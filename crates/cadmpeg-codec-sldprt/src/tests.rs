@@ -18895,6 +18895,7 @@ fn decode_groups_each_circle_dimension_operand_tag() {
         [0xb6, 0x8a],
         [0x9d, 0x92],
         [0x69, 0xbd],
+        [0x46, 0x81],
     ] {
         let mut source =
             sldprt_with_tagged_compact_relation(&triangle_body(), "sgCircleDim", [tag, [0, 0]]);

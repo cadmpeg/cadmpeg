@@ -6,8 +6,10 @@ use super::super::{
 };
 use super::{
     additional_linked_profile_point_coordinates, compact_geometry_locus_point_coordinates,
-    compact_legacy_linked_profile_point_coordinates, compact_legacy_profile_vertex,
-    current_geometry_locus_profile_vertex, current_reverse_incidence_endpoint_offsets,
+    compact_legacy_code_two_profile_point_coordinates,
+    compact_legacy_embedded_geometry_coordinates, compact_legacy_linked_profile_point_coordinates,
+    compact_legacy_profile_vertex, current_geometry_locus_profile_vertex,
+    current_reverse_incidence_endpoint_offsets, extended_geometry_locus_single_link_point,
     extended_profile_point_coordinates, geometry_locus_profile_vertex, indexed_profile_vertex,
     inline_arc_coordinates, legacy_declared_handle_coordinates,
     legacy_extended_linked_profile_point_coordinates, legacy_extended_profile_curve_kind,
@@ -756,6 +758,53 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     );
     extended[offset + 144..offset + 148].fill(0);
     assert_eq!(linked_profile_point(&extended, offset), None);
+
+    let mut legacy_geometry = vec![0; offset + 154 + LEGACY_SKETCH_MARKER.len()];
+    legacy_geometry[..offset].copy_from_slice(&7u32.to_le_bytes());
+    legacy_geometry[offset..offset + LEGACY_SKETCH_MARKER.len()]
+        .copy_from_slice(LEGACY_SKETCH_MARKER);
+    legacy_geometry[offset + 5..offset + 13].fill(0xff);
+    legacy_geometry[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    legacy_geometry[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
+    legacy_geometry[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    legacy_geometry[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+    legacy_geometry[offset + 31..offset + 39]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    legacy_geometry[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    legacy_geometry[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+    legacy_geometry[offset + 58..offset + 66].copy_from_slice(&1.25f64.to_le_bytes());
+    legacy_geometry[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
+    legacy_geometry[offset + 76..offset + 78].copy_from_slice(&2u16.to_le_bytes());
+    for (start, local_id) in [(78, 1u16), (90, 0)] {
+        legacy_geometry[offset + start..offset + start + 2]
+            .copy_from_slice(&0x8139u16.to_le_bytes());
+        legacy_geometry[offset + start + 2..offset + start + 4]
+            .copy_from_slice(&local_id.to_le_bytes());
+        legacy_geometry[offset + start + 4..offset + start + 8].fill(0xff);
+    }
+    legacy_geometry[offset + 102..offset + 108]
+        .copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    legacy_geometry[offset + 150..offset + 154].copy_from_slice(&11u32.to_le_bytes());
+    legacy_geometry[offset + 154..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        linked_profile_point(&legacy_geometry, offset),
+        Some(([1.25, -2.5], [(0x8139, 1), (0x8139, 0)]))
+    );
+    assert_eq!(
+        coordinate_marker_local_links(&legacy_geometry, offset),
+        Some((vec![1, 0], 0x8139))
+    );
+    assert_eq!(
+        marker_coordinates(&legacy_geometry, offset),
+        Some([1.25, -2.5])
+    );
+    let entity = super::sketch_input_entities(&legacy_geometry, "lane")
+        .into_iter()
+        .find(|entity| entity.offset == offset as u64)
+        .expect("legacy geometry linked profile point");
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([1.25, -2.5]));
 }
 
 #[test]
@@ -1732,6 +1781,62 @@ fn compact_legacy_linked_profile_point_decodes_inline_coordinates() {
 }
 
 #[test]
+fn compact_legacy_code_two_profile_point_and_embedded_geometry_have_distinct_layouts() {
+    let mut point = vec![0; 132 + LEGACY_SKETCH_MARKER.len()];
+    point[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    point[5..13].fill(0xff);
+    point[13..17].copy_from_slice(&2u32.to_le_bytes());
+    point[19..25].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    point[31..42].copy_from_slice(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    point[42..44].copy_from_slice(&[0x1e, 0x00]);
+    point[44..52].copy_from_slice(&0.03f64.to_le_bytes());
+    point[52..60].copy_from_slice(&0.005f64.to_le_bytes());
+    point[62..64].copy_from_slice(&4u16.to_le_bytes());
+    for (relative, id) in [(64, 8u16), (72, 11u16)] {
+        point[relative..relative + 2].copy_from_slice(&0x811au16.to_le_bytes());
+        point[relative + 2..relative + 4].copy_from_slice(&id.to_le_bytes());
+        point[relative + 4..relative + 8].fill(0xff);
+    }
+    point[80..86].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    point[120..124].copy_from_slice(&2u32.to_le_bytes());
+    point[128..132].copy_from_slice(&10u32.to_le_bytes());
+    point[132..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        compact_legacy_code_two_profile_point_coordinates(&point, 0),
+        Some([0.03, 0.005])
+    );
+    let entity = &sketch_input_entities(&point, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.03, 0.005]));
+    assert_eq!(entity.local_id, Some(10));
+    assert_eq!(entity.state_value, None);
+
+    let mut embedded = vec![0; 120 + LEGACY_SKETCH_MARKER.len()];
+    embedded[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    embedded[5..13].fill(0xff);
+    embedded[19..25].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    embedded[31..42].copy_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    embedded[42..44].copy_from_slice(&[0x1e, 0x00]);
+    embedded[44..52].copy_from_slice(&0.03f64.to_le_bytes());
+    embedded[52..60].copy_from_slice(&0.005f64.to_le_bytes());
+    embedded[70..74].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    embedded[116..120].copy_from_slice(&12u32.to_le_bytes());
+    embedded[120..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert_eq!(
+        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        Some([0.03, 0.005])
+    );
+    embedded[60..64].copy_from_slice(&8u32.to_le_bytes());
+    assert_eq!(
+        compact_legacy_embedded_geometry_coordinates(&embedded, 0),
+        Some([0.03, 0.005])
+    );
+    assert!(sketch_input_entities(&embedded, "lane").is_empty());
+}
+
+#[test]
 fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
     let mut payload = vec![0; 140 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
@@ -2057,6 +2162,38 @@ fn current_geometry_locus_profile_vertex_decodes_as_a_point() {
 }
 
 #[test]
+fn extended_geometry_locus_single_link_record_decodes_as_a_point() {
+    let mut payload = vec![0; 138 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+    payload[58..66].copy_from_slice(&0.0f64.to_le_bytes());
+    payload[66..74].copy_from_slice(&0.019f64.to_le_bytes());
+    payload[74..78].copy_from_slice(&[0x00, 0x00, 0x01, 0x00]);
+    payload[82..86].copy_from_slice(&(-1i32).to_le_bytes());
+    payload[124..128].copy_from_slice(&1u32.to_le_bytes());
+    payload[128..132].copy_from_slice(&2u32.to_le_bytes());
+    payload[132..138].copy_from_slice(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+    payload[138..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    assert!(extended_geometry_locus_single_link_point(&payload, 0));
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.0, 0.019]));
+
+    payload[128..132].copy_from_slice(&1u32.to_le_bytes());
+    assert!(!extended_geometry_locus_single_link_point(&payload, 0));
+    payload[128..132].copy_from_slice(&2u32.to_le_bytes());
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    assert!(!extended_geometry_locus_single_link_point(&payload, 0));
+}
+
+#[test]
 fn current_compact_geometry_locus_profile_point_decodes_inline_coordinates() {
     let mut payload = vec![0; 134 + SKETCH_MARKER.len()];
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -2114,6 +2251,34 @@ fn legacy_compact_geometry_locus_point_decodes_inline_coordinates() {
     assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
     payload[130..134].fill(0);
     assert_eq!(compact_geometry_locus_point_coordinates(&payload, 0), None);
+}
+
+#[test]
+fn legacy_geometry_locus_value_two_point_decodes_inline_coordinates() {
+    let mut payload = vec![0; 134 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+    payload[58..66].copy_from_slice(&(-1.125f64).to_le_bytes());
+    payload[66..74].copy_from_slice(&0.542f64.to_le_bytes());
+    payload[74..78].copy_from_slice(&1u32.to_le_bytes());
+    payload[84..88].copy_from_slice(&(-2i32).to_le_bytes());
+    payload[126..130].copy_from_slice(&6u32.to_le_bytes());
+    payload[130..134].copy_from_slice(&2u32.to_le_bytes());
+    payload[134..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    assert!(geometry_locus_profile_vertex(&payload, 0));
+    assert_eq!(marker_coordinates(&payload, 0), Some([-1.125, 0.542]));
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([-1.125, 0.542]));
+    payload[74..78].fill(0);
+    assert!(!geometry_locus_profile_vertex(&payload, 0));
 }
 
 #[test]

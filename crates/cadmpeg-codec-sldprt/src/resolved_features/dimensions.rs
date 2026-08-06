@@ -708,11 +708,36 @@ pub(crate) fn project_marker_dimensioned_circles(
                     .rsplit_once('#')
                     .map_or(lane.id.as_str(), |(_, key)| key);
                 let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
+                let pair_radial_object_indices = pairs
+                    .iter()
+                    .filter_map(|(_, radial)| radial.object_index)
+                    .collect::<HashSet<_>>();
+                let consumed_carrier_refs = radial_records_by_lane
+                    .get(lane.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .filter(|(candidate_offset, candidate_radial_index, construction)| {
+                        !*construction
+                            && lane.sketch_entities.iter().any(|marker| {
+                                marker.feature_ref.as_deref() == Some(native_ref)
+                                    && marker.offset == *candidate_offset as u64
+                            })
+                            && (*candidate_offset == *offset
+                                || pair_radial_object_indices.contains(
+                                    &u32::try_from(*candidate_radial_index).unwrap_or(u32::MAX),
+                                ))
+                    })
+                    .map(|(candidate_offset, ..)| {
+                        format!("sldprt:feature-input:sketch-entity#{lane_key}:{candidate_offset}")
+                    })
+                    .collect::<HashSet<_>>();
                 let removed = entities
                     .iter()
                     .filter(|entity| {
                         entity.sketch == *sketch_id
-                            && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
+                            && entity.native_ref.as_deref().is_some_and(|native_ref| {
+                                consumed_carrier_refs.contains(native_ref)
+                            })
                     })
                     .map(|entity| entity.id.clone())
                     .collect::<HashSet<_>>();

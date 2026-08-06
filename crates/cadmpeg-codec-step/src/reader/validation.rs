@@ -5,15 +5,18 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct ValidationResult {
     pub typed_records: BTreeSet<u64>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
 }
 
 #[derive(Clone, Copy)]
@@ -28,10 +31,20 @@ pub(super) fn decode(
     geometry: &GeometryResult,
     ir: &mut CadIr,
 ) -> ValidationResult {
+    if !exchange.has_entity("PROPERTY_DEFINITION")
+        || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
+    {
+        return ValidationResult {
+            typed_records: BTreeSet::new(),
+            notes: Vec::new(),
+            warnings: Vec::new(),
+            losses: Vec::new(),
+        };
+    }
+    let mut losses = Vec::new();
     let representations = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
+        .filter_map(|(id, record)| {
             if !matches!(
                 record.simple_name(),
                 Some("REPRESENTATION" | "SHAPE_REPRESENTATION")
@@ -42,20 +55,33 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let properties = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("PROPERTY_DEFINITION")
+        .filter_map(|(id, record)| {
+            let name = record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "validation property name",
+                    LossKind::MetadataNotTransferred,
+                )
+            })?;
             if record.simple_name() == Some("PROPERTY_DEFINITION")
-                && record
-                    .parameter(0)?
-                    .text()?
-                    .eq_ignore_ascii_case("geometric validation property")
+                && name.eq_ignore_ascii_case("geometric validation property")
             {
                 Some((
                     id,
                     record
                         .parameter(1)
-                        .and_then(ValueExt::text)
+                        .and_then(|value| {
+                            decode_text(
+                                value,
+                                &mut losses,
+                                id,
+                                "validation property description",
+                                LossKind::MetadataNotTransferred,
+                            )
+                        })
                         .unwrap_or_default(),
                 ))
             } else {
@@ -70,10 +96,7 @@ pub(super) fn decode(
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
 
-    for (&relation_id, relation) in &exchange.records {
-        if relation.simple_name() != Some("PROPERTY_DEFINITION_REPRESENTATION") {
-            continue;
-        }
+    for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
             continue;
         };
@@ -89,7 +112,7 @@ pub(super) fn decode(
         let Some(item) = exchange.records.get(&item_id) else {
             continue;
         };
-        let expected = expected_value(item, exchange, geometry.length_scale);
+        let expected = expected_value(item, exchange, geometry.length_scale, &mut losses);
         let Some(expected) = expected else {
             warnings.push(format!(
                 "geometric validation property #{property_id} has an unsupported value"
@@ -128,20 +151,22 @@ pub(super) fn decode(
         }
     }
     let mut referenced_validation_points = BTreeSet::new();
-    for (&record_id, record) in &exchange.records {
-        if validation_representations.contains(&record_id) {
-            continue;
-        }
-        for value in record
-            .partials
-            .iter()
-            .flat_map(|partial| &partial.parameters)
-        {
-            collect_validation_references(
-                value,
-                &validation_points,
-                &mut referenced_validation_points,
-            );
+    if !validation_points.is_empty() {
+        for (&record_id, record) in &exchange.records {
+            if validation_representations.contains(&record_id) {
+                continue;
+            }
+            for value in record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+            {
+                collect_validation_references(
+                    value,
+                    &validation_points,
+                    &mut referenced_validation_points,
+                );
+            }
         }
     }
     ir.model.points.retain(|point| {
@@ -152,10 +177,16 @@ pub(super) fn decode(
         typed_records: typed,
         notes,
         warnings,
+        losses,
     }
 }
 
-fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option<Expected> {
+fn expected_value(
+    record: &RawRecord,
+    exchange: &Exchange,
+    scale: f64,
+    losses: &mut Vec<LossNote>,
+) -> Option<Expected> {
     if record.simple_name() == Some("CARTESIAN_POINT") {
         let values = record.parameter(1)?.list()?;
         if values.len() != 3 {
@@ -172,16 +203,22 @@ fn expected_value(record: &RawRecord, exchange: &Exchange, scale: f64) -> Option
     }
     match record.parameter(1)? {
         Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
-            value.number()? * measure_scale(record, exchange, scale, 2),
+            value.number()? * measure_scale(record, exchange, scale, 2, losses),
         )),
         Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
-            value.number()? * measure_scale(record, exchange, scale, 3),
+            value.number()? * measure_scale(record, exchange, scale, 3, losses),
         )),
         _ => None,
     }
 }
 
-fn measure_scale(record: &RawRecord, exchange: &Exchange, fallback: f64, order: i32) -> f64 {
+fn measure_scale(
+    record: &RawRecord,
+    exchange: &Exchange,
+    fallback: f64,
+    order: i32,
+    losses: &mut Vec<LossNote>,
+) -> f64 {
     record
         .parameter(2)
         .and_then(ValueExt::reference)
@@ -202,7 +239,18 @@ fn measure_scale(record: &RawRecord, exchange: &Exchange, fallback: f64, order: 
                     Some(scale * base.powf(exponent))
                 })
         })
-        .unwrap_or_else(|| fallback.powi(order))
+        .unwrap_or_else(|| {
+            losses.push(LossNote {
+                code: LossKind::GeometryNotTransferred,
+                severity: Severity::Error,
+                message: format!(
+                    "geometric validation measure #{} unit scale did not resolve; the document length scale was used",
+                    record.id
+                ),
+                provenance: None,
+            });
+            fallback.powi(order)
+        })
 }
 
 fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
@@ -382,7 +430,6 @@ trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
     fn number(&self) -> Option<f64>;
-    fn text(&self) -> Option<String>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
@@ -404,13 +451,6 @@ impl ValueExt for Value {
             Value::Integer(value) => Some(*value as f64),
             Value::Real(value) => Some(*value),
             _ => None,
-        }
-    }
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
         }
     }
 }

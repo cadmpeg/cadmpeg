@@ -26,7 +26,7 @@ fn geometry_pipeline_composes_analytic_conic_nurbs_procedural_and_unit_conversio
     decode_resolves_conversion_units_and_linear_uncertainty();
     procedural_step_geometry_round_trips_as_native_entities();
     writer_round_trips_rational_nurbs_pcurves();
-    parabola_and_hyperbola_map_to_step_conics();
+    analytic_conics_round_trip_through_step();
     nurbs_surface_grid_orientation_is_u_major();
 }
 
