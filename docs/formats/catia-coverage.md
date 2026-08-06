@@ -248,6 +248,10 @@ current scores require those matrices and representative fixtures.
   source-ordered chains, intervening entities, and complete `Configuration`
   records among those entities. These records do not count as transferred
   neutral configurations.
+- A separator-form owner declaration with the exact class `Sketch` transfers
+  one sketch identity and one unresolved sketch history node. The transfer
+  does not assign placement, geometry, profiles, or constraints. A `PRTSketch`
+  or `Sketch` field class alone does not establish a sketch instance.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source

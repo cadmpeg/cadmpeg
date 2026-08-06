@@ -9559,6 +9559,65 @@ fn prt_sketch_schema_field_does_not_create_a_feature_instance() {
 }
 
 #[test]
+fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
+    let mut native = crate::native::CatiaNative::decode(&standard_catpart_with_definition_value(
+        &[0x00, 0x08, 0x32, 4, 0, 0, 0],
+        &[0xfe],
+        &[0xd1, 0x67, 0x88, 0x81, 0xbd, 0xe8, 0x81, 0x49],
+    ));
+    let owner_record = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| graph.records.iter())
+        .find(|record| record.design_object.is_some())
+        .expect("synthetic owner declaration record")
+        .clone();
+    let owner_record_id = owner_record.id.clone();
+    let owner_design_object = owner_record.design_object.clone();
+    let owner_class_entry = "synthetic-sketch-class".to_string();
+    let owner_record_mut = native
+        .object_graphs
+        .iter_mut()
+        .flat_map(|graph| graph.records.iter_mut())
+        .find(|record| record.id == owner_record_id)
+        .expect("mutable synthetic owner declaration record");
+    owner_record_mut.class_name = Some("Sketch".to_string());
+    owner_record_mut.class_entry = Some(owner_class_entry.clone());
+
+    let object = native
+        .design_objects
+        .first_mut()
+        .expect("synthetic design object");
+    object.owner_record = Some(owner_record_id.clone());
+    object.owner_design_object = owner_design_object;
+    object.owner_class = Some(crate::native::CatiaDesignClass {
+        entry: owner_class_entry,
+        name: "Sketch".to_string(),
+    });
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let transfer = crate::design_feature::transfer_design_features(&mut ir, &native, None);
+
+    assert_eq!(ir.model.sketches.len(), 1);
+    assert!(matches!(
+        ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Unresolved,
+            sketch: Some(_),
+        }
+    ));
+    assert!(ir.model.sketches[0].profiles.is_empty());
+    assert_eq!(
+        ir.model.sketches[0].placement,
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+    );
+    assert_eq!(
+        transfer.sketch_owner_records,
+        std::collections::HashSet::from([owner_record_id])
+    );
+}
+
+#[test]
 fn complete_standalone_principal_plane_declarations_transfer_one_history_node() {
     use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
 

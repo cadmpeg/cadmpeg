@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PrincipalPlane};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PrincipalPlane, SketchSpace};
+use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
@@ -12,11 +13,15 @@ use crate::object_graph::{PayloadField, PayloadSubtype};
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
     pub(crate) principal_plane_records: HashSet<String>,
+    pub(crate) sketch_owner_records: HashSet<String>,
 }
 
 impl DesignFeatureTransfer {
     pub(crate) fn consumed_records(&self) -> HashSet<String> {
-        self.principal_plane_records.clone()
+        self.principal_plane_records
+            .union(&self.sketch_owner_records)
+            .cloned()
+            .collect()
     }
 }
 
@@ -32,43 +37,92 @@ pub(crate) fn transfer_design_features(
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
-    let candidates = native
+    let mut transfer = DesignFeatureTransfer::default();
+
+    for object in native
         .design_objects
         .iter()
         .filter(|object| graph_scope.is_none_or(|scope| scope.contains(object.parent.as_str())))
-        .filter_map(|object| principal_plane_candidate(object, &records))
-        .collect::<Vec<_>>();
-    let mut transfer = DesignFeatureTransfer::default();
-
-    for candidate in candidates {
-        let object = candidate.object;
-        let feature_id = FeatureId(format!("{}:feature", object.id));
-        ir.model.features.push(Feature {
-            id: feature_id.clone(),
-            ordinal: object.first_field_byte_offset,
-            name: None,
-            suppressed: None,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some(candidate.declaration_class.to_string()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: FeatureDefinition::DatumPrincipalPlane {
-                plane: candidate.plane,
-            },
-            native_ref: Some(object.id.clone()),
-        });
-        transfer.principal_plane_records.extend(
-            candidate
-                .declarations
-                .into_iter()
-                .map(|record| record.id.clone()),
-        );
+    {
+        if let Some(candidate) = principal_plane_candidate(object, &records) {
+            transfer_principal_plane(ir, &mut transfer, candidate);
+        }
+        if let Some(owner_record) = sketch_candidate(object, &records) {
+            transfer_sketch(ir, &mut transfer, object, owner_record);
+        }
     }
 
     transfer
+}
+
+fn transfer_principal_plane(
+    ir: &mut CadIr,
+    transfer: &mut DesignFeatureTransfer,
+    candidate: PrincipalPlaneCandidate<'_>,
+) {
+    let object = candidate.object;
+    let feature_id = FeatureId(format!("{}:feature", object.id));
+    ir.model.features.push(Feature {
+        id: feature_id,
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some(candidate.declaration_class.to_string()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DatumPrincipalPlane {
+            plane: candidate.plane,
+        },
+        native_ref: Some(object.id.clone()),
+    });
+    transfer.principal_plane_records.extend(
+        candidate
+            .declarations
+            .into_iter()
+            .map(|record| record.id.clone()),
+    );
+}
+
+fn transfer_sketch(
+    ir: &mut CadIr,
+    transfer: &mut DesignFeatureTransfer,
+    object: &CatiaDesignObject,
+    owner_record: &CatiaObjectRecord,
+) {
+    let sketch_id = SketchId(format!("{}:sketch", object.id));
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: SketchPlacement::Unresolved,
+        profiles: Vec::new(),
+        native_ref: Some(object.id.clone()),
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId(format!("{}:feature", object.id)),
+        ordinal: object.first_field_byte_offset,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: Some("Sketch".to_string()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: SketchSpace::Unresolved,
+            sketch: Some(sketch_id),
+        },
+        native_ref: Some(object.id.clone()),
+    });
+    transfer
+        .sketch_owner_records
+        .insert(owner_record.id.clone());
 }
 
 struct PrincipalPlaneCandidate<'a> {
@@ -105,6 +159,20 @@ fn principal_plane_candidate<'a>(
             plane,
             declaration_class: class_name,
         })
+}
+
+fn sketch_candidate<'a>(
+    object: &CatiaDesignObject,
+    records: &HashMap<&str, &'a CatiaObjectRecord>,
+) -> Option<&'a CatiaObjectRecord> {
+    let owner_class = object.owner_class.as_ref()?;
+    (owner_class.name == "Sketch").then_some(())?;
+    let owner_record_id = object.owner_record.as_deref()?;
+    let owner_record = records.get(owner_record_id).copied()?;
+    (owner_record.class_name.as_deref() == Some("Sketch")
+        && owner_record.class_entry.as_deref() == Some(owner_class.entry.as_str())
+        && owner_record.design_object.as_deref() == object.owner_design_object.as_deref())
+    .then_some(owner_record)
 }
 
 fn principal_plane(class_name: &str) -> Option<PrincipalPlane> {
