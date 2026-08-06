@@ -6961,6 +6961,113 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 }
 
 #[test]
+fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
+    let sketch = SketchId("sketch".into());
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let sketch_record = Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let mut first_marker = marker("first-point", Some([-0.005, 0.002]));
+    first_marker.offset = 1;
+    let mut second_marker = marker("second-point", Some([0.005, 0.002]));
+    second_marker.offset = 2;
+    let relation = FeatureInputRelationInstance {
+        id: "relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 3,
+        family: FeatureInputRelationFamily::PointPointDistance,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: vec!["distance".into()],
+        parameter_scalar_ref: Some("distance".into()),
+        display_scalar_ref: None,
+        operands: vec![
+            FeatureInputOperand {
+                offset: 4,
+                reference_ref: "first-reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                entity_ref: Some(first_marker.id.clone()),
+            },
+            FeatureInputOperand {
+                offset: 5,
+                reference_ref: "second-reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 1,
+                entity_ref: Some(second_marker.id.clone()),
+            },
+        ],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![first_marker, second_marker],
+    };
+    let mut entities = Vec::new();
+
+    project_relation_point_geometry(
+        &mut entities,
+        std::slice::from_ref(&sketch_record),
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+
+    assert_eq!(entities.len(), 2);
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some("first-point")
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(-5.0, 2.0)
+            )
+    }));
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some("second-point")
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(5.0, 2.0)
+            )
+    }));
+}
+
+#[test]
 fn unique_zero_translation_resolves_symmetric_axis_swaps() {
     let markers = [(0, 0), (48, 0), (48, 24), (0, 24)].into_iter().collect();
     let loci = [(0, 0), (24, 0), (24, 48), (0, 48)].into_iter().collect();

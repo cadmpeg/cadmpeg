@@ -9,7 +9,9 @@ use super::relation_loci::{
     profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
     same_dimension_length, typed_relation_definition,
 };
-use super::transforms::{marker_entities, quantize, sketch_entity_loci};
+use super::transforms::{
+    marker_entities, quantize, sketch_entity_loci, sketch_frame_marker_transform,
+};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
     marker_relation_is_inactive, typed_marker_relation_definition_in_sketch,
@@ -184,6 +186,17 @@ pub(crate) fn project_relation_point_geometry(
                 .flatten()
                 .filter_map(|transform| transform.apply(native))
                 .collect::<HashSet<_>>();
+            let positions = if positions.len() == 1 {
+                positions
+            } else {
+                sketches
+                    .iter()
+                    .find(|candidate| candidate.id == *sketch)
+                    .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                    .and_then(|transform| transform.apply(native))
+                    .map(|position| HashSet::from([position]))
+                    .unwrap_or(positions)
+            };
             if positions.len() != 1 {
                 continue;
             }
