@@ -443,6 +443,13 @@ current scores require those matrices and representative fixtures.
   the candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
   atomically for the loop.
+  A closed loop transfers as an independent wire body when every member has a
+  transferred model-space curve, every member has a lifted model-space endpoint
+  pair, and the oriented endpoint tape closes within the format tolerance. The
+  wire contains one edge per face-local support occurrence and one vertex at
+  each cyclic join. This transfer does not assign source physical-edge
+  identity, radial use, endpoint-incidence identity, or source body and shell
+  ownership; those native bindings remain unresolved.
   In the object stream, full-pcurve endpoint loci are geometric fallback
   candidates only. Conflicting candidates for one edge are discarded locally;
   they do not discard other pcurve records or override the edge's serialized
