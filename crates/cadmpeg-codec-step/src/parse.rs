@@ -319,47 +319,50 @@ impl Parser {
         if self.at != self.tokens.len() {
             return self.err("tokens after exchange terminator");
         }
-        let anchor_bindings = anchors
-            .iter()
-            .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        if anchor_bindings.len() != anchors.len() {
-            return self.err("duplicate anchor name");
-        }
-        let mut resolver = AnchorResolver::new(&anchor_bindings);
-        for anchor in &mut anchors {
-            anchor.value = resolver
-                .resolve_root(&anchor.value)
-                .map_err(|message| ParseError::Syntax { offset: 0, message })?;
-        }
-        for record in records.values_mut() {
-            for partial in &mut record.partials {
-                for value in &mut partial.parameters {
-                    *value =
-                        resolver
-                            .resolve_root(value)
-                            .map_err(|message| ParseError::Syntax {
-                                offset: record.span.start,
-                                message,
-                            })?;
+        if !anchors.is_empty() {
+            let anchor_bindings = anchors
+                .iter()
+                .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
+                .collect::<BTreeMap<_, _>>();
+            if anchor_bindings.len() != anchors.len() {
+                return self.err("duplicate anchor name");
+            }
+            let mut resolver = AnchorResolver::new(&anchor_bindings);
+            for anchor in &mut anchors {
+                anchor.value = resolver
+                    .resolve_root(&anchor.value)
+                    .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+            }
+            for record in records.values_mut() {
+                for partial in &mut record.partials {
+                    for value in &mut partial.parameters {
+                        *value =
+                            resolver
+                                .resolve_root(value)
+                                .map_err(|message| ParseError::Syntax {
+                                    offset: record.span.start,
+                                    message,
+                                })?;
+                    }
                 }
             }
         }
+        let mut refs = Vec::new();
         for anchor in &anchors {
-            let mut refs = Vec::new();
+            refs.clear();
             references(&anchor.value, &mut refs);
-            if refs.into_iter().any(|id| !records.contains_key(&id)) {
+            if refs.iter().any(|id| !records.contains_key(id)) {
                 return self.err("unresolved instance reference in anchor binding");
             }
         }
         for record in records.values() {
-            let mut refs = Vec::new();
+            refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
                     references(value, &mut refs);
                 }
             }
-            if refs.into_iter().any(|id| !records.contains_key(&id)) {
+            if refs.iter().any(|id| !records.contains_key(id)) {
                 return Self::err_at(record.span.start, "unresolved instance reference");
             }
         }
@@ -468,6 +471,9 @@ impl Parser {
     }
 
     fn value(&mut self) -> Result<Value, ParseError> {
+        if self.peek(&TokenKind::LParen) {
+            return Ok(Value::List(self.parameters()?));
+        }
         match self.next_kind()? {
             TokenKind::Instance(v) => Ok(Value::Reference(v)),
             TokenKind::Integer(v) => Ok(Value::Integer(v)),
@@ -478,10 +484,6 @@ impl Parser {
             TokenKind::Resource(v) => Ok(Value::Resource(v)),
             TokenKind::Omitted => Ok(Value::Omitted),
             TokenKind::Derived => Ok(Value::Derived),
-            TokenKind::LParen => {
-                self.at -= 1;
-                Ok(Value::List(self.parameters()?))
-            }
             TokenKind::Name(name) => {
                 let parameters = self.parameters()?;
                 if parameters.len() != 1 {
@@ -532,11 +534,11 @@ impl Parser {
         matches!(self.tokens.get(self.at).map(|t| &t.kind), Some(TokenKind::Name(name)) if name == expected)
     }
     fn next_kind(&mut self) -> Result<TokenKind, ParseError> {
-        let Some(token) = self.tokens.get(self.at) else {
+        let Some(token) = self.tokens.get_mut(self.at) else {
             return self.err("unexpected end of input");
         };
         self.at += 1;
-        Ok(token.kind.clone())
+        Ok(std::mem::replace(&mut token.kind, TokenKind::Omitted))
     }
     fn current_offset(&self) -> usize {
         self.tokens
