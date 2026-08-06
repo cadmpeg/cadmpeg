@@ -12064,6 +12064,29 @@ fn legacy_line_orthogonalizes_its_auxiliary_normal() {
 }
 
 #[test]
+fn spatial_line_with_parallel_auxiliary_normal_retains_its_endpoints() {
+    let values: [f64; 12] = [0.0, 3.0, 0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+    let mut bytes = vec![0u8; 133];
+    for value in values {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let SketchCurveGeometry::Line {
+        start,
+        end,
+        direction,
+        normal,
+    } = crate::design::decode::sketch::decode_line(&bytes).expect("spatial line")
+    else {
+        panic!("expected line");
+    };
+    assert_eq!(start, Point3::new(0.0, 30.0, 0.0));
+    assert_eq!(end, Point3::new(0.0, 30.0, 15.0));
+    assert_eq!(direction, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(normal, Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
 fn compact_planar_line_uses_its_implicit_normal() {
     let values: [f64; 9] = [0.5, 0.875, 0.0, 0.0, -1.75, 0.0, 0.0, -1.0, 0.0];
     let mut bytes = vec![0u8; 133];

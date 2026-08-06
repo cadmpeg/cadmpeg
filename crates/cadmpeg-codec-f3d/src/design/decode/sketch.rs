@@ -3075,20 +3075,34 @@ fn decode_line_components(values: &[f64], stored_normal: Vector3) -> Option<Sket
     let dot = direction.x * stored_normal.x
         + direction.y * stored_normal.y
         + direction.z * stored_normal.z;
-    let normal = Vector3::new(
+    let projected_normal = Vector3::new(
         stored_normal.x - dot * direction.x,
         stored_normal.y - dot * direction.y,
         stored_normal.z - dot * direction.z,
     );
-    let normal_length = normal.norm();
-    if !normal_length.is_finite() || normal_length <= 1.0e-12 {
-        return None;
-    }
-    let normal = Vector3::new(
-        normal.x / normal_length,
-        normal.y / normal_length,
-        normal.z / normal_length,
-    );
+    let projected_length = projected_normal.norm();
+    let normal = if projected_length.is_finite() && projected_length > 1.0e-12 {
+        projected_normal.scale(1.0 / projected_length)
+    } else {
+        // Spatial line carriers can store a unit auxiliary vector parallel to
+        // the line. The neutral spatial-line geometry has no plane normal;
+        // retain the bounded carrier and choose a stable perpendicular basis
+        // vector so the native geometry record still satisfies its typed
+        // invariant.
+        let basis = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .min_by(|left, right| {
+            direction
+                .dot(*left)
+                .abs()
+                .total_cmp(&direction.dot(*right).abs())
+        })?;
+        direction.cross(basis).unit()?
+    };
     let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
     Some(SketchCurveGeometry::Line {
         start,
