@@ -20,7 +20,7 @@ pub const DETECTION_PREFIX_LEN: usize = 128 * 1024;
 pub fn read_prefix(path: &Path, n: usize) -> Result<Vec<u8>> {
     let mut f = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut buf = Vec::with_capacity(n);
-    let mut chunk = [0_u8; 16 * 1024];
+    let mut chunk = vec![0_u8; 64 * 1024].into_boxed_slice();
     while buf.len() < n {
         let remaining = n - buf.len();
         let chunk_len = remaining.min(chunk.len());
