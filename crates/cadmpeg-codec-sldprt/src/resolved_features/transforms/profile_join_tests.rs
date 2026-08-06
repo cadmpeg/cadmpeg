@@ -2300,6 +2300,46 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
 }
 
 #[test]
+fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
+    let sketch = SketchId("sketch".into());
+    let line_id = SketchEntityId("line".into());
+    let point_id = SketchEntityId("point-entity".into());
+    let entities = vec![
+        SketchEntity {
+            id: line_id.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        },
+        SketchEntity {
+            id: point_id.clone(),
+            sketch,
+            construction: true,
+            native_ref: Some("point-handle".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(1.0, 0.0),
+            },
+        },
+    ];
+    let point = marker("point-handle", Some([1.0, 0.0]));
+    let markers = HashMap::from([(point.id.as_str(), &point)]);
+    let loci = HashMap::from([(point.id.clone(), vec![SketchLocus::Entity(point_id)])]);
+
+    assert_eq!(
+        single_marker_line_entity("point-handle", &markers, &loci, &entities),
+        Some(line_id)
+    );
+}
+
+#[test]
 fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
     let sketch = SketchId("sketch".into());
     let first_id = SketchEntityId("first".into());

@@ -3,7 +3,9 @@
 use super::endpoints::legacy_undetailed_profile_line;
 use super::markers::marker_is_geometry_locus;
 use super::names::operand_kind_name;
-use super::operands::linked_coordinate_line_endpoints;
+use super::operands::{
+    coordinate_line_endpoints_with_linked_point, linked_coordinate_line_endpoints,
+};
 use super::relation_loci::{
     line_line_distance, marker_point_locus, marker_transform_candidates_by_feature,
     profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
@@ -252,7 +254,10 @@ pub(crate) fn project_relation_point_geometry(
                     .count()
                     == 1;
             let linked_curve_handle = curve_operands.contains(marker.id.as_str())
-                && linked_coordinate_line_endpoints(marker, &markers_by_id).is_some();
+                && !marker.links.iter().any(|link| link.entity_ref == marker.id)
+                && (linked_coordinate_line_endpoints(marker, &markers_by_id).is_some()
+                    || coordinate_line_endpoints_with_linked_point(marker, &markers_by_id)
+                        .is_some());
             if !referenced.contains(marker.id.as_str())
                 || !(marker.kind == SketchInputKind::LineOrCircle
                     || undetailed_arc_line
@@ -278,6 +283,7 @@ pub(crate) fn project_relation_point_geometry(
             );
             if endpoints.len() != 2 && linked_curve_handle {
                 endpoints = linked_coordinate_line_endpoints(marker, &markers_by_id)
+                    .or_else(|| coordinate_line_endpoints_with_linked_point(marker, &markers_by_id))
                     .into_iter()
                     .flatten()
                     .collect();
@@ -366,8 +372,10 @@ pub(crate) fn project_relation_point_geometry(
                 )),
                 sketch: sketch.clone(),
                 construction: true,
-                native_ref: Some(marker.id.clone()),
-                geometry_ref: None,
+                native_ref: (!matches!(marker.kind, SketchInputKind::Relation(_)))
+                    .then(|| marker.id.clone()),
+                geometry_ref: matches!(marker.kind, SketchInputKind::Relation(_))
+                    .then(|| marker.id.clone()),
                 endpoint_refs: vec![first_marker.id.clone(), second_marker.id.clone()],
                 geometry: SketchGeometry::Line { start, end },
             });

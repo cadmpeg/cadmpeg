@@ -125,6 +125,42 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     };
     Some(match kind {
         Horizontal | Vertical | Fixed => {
+            if matches!(kind, Horizontal | Vertical) {
+                let point_links = marker
+                    .links
+                    .iter()
+                    .filter(|link| !relation_link_identifies_owner(marker, link))
+                    .collect::<Vec<_>>();
+                if let [first_link, second_link] = point_links.as_slice() {
+                    let point_links = [first_link, second_link];
+                    if point_links.into_iter().all(|link| {
+                        matches!(
+                            markers_by_id
+                                .get(link.entity_ref.as_str())
+                                .map(|linked| linked.kind),
+                            Some(SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+                        )
+                    }) {
+                        if let Some(loci) =
+                            relation_operand_loci(marker, markers_by_id, loci_by_marker)
+                        {
+                            if let [first, second] = loci.as_slice() {
+                                return Some(if kind == Horizontal {
+                                    SketchConstraintDefinition::HorizontalPoints {
+                                        first: first.clone(),
+                                        second: second.clone(),
+                                    }
+                                } else {
+                                    SketchConstraintDefinition::VerticalPoints {
+                                        first: first.clone(),
+                                        second: second.clone(),
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             let inferred_entities =
                 marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
             let mut exact_entities = marker

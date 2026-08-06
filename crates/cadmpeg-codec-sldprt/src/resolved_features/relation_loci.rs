@@ -1680,38 +1680,117 @@ pub(super) fn single_marker_line_entity(
     }
     let marker = markers_by_id.get(marker_id)?;
     let [first_link, second_link] = marker.links.as_slice() else {
-        return None;
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
     };
-    let first_locus = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker)?;
-    let second_locus = marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker)?;
+    let Some(first_locus) =
+        marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker)
+    else {
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
+    };
+    let Some(second_locus) =
+        marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker)
+    else {
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
+    };
     let first_entity = locus_entity(&first_locus);
     let second_entity = locus_entity(&second_locus);
-    let sketch = &sketch_entities
+    let Some(sketch) = sketch_entities
         .iter()
-        .find(|entity| entity.id == first_entity)?
-        .sketch;
+        .find(|entity| entity.id == first_entity)
+        .map(|entity| entity.sketch.clone())
+    else {
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
+    };
     if sketch_entities
         .iter()
         .find(|entity| entity.id == second_entity)
-        .is_none_or(|entity| entity.sketch != *sketch)
+        .is_none_or(|entity| entity.sketch != sketch)
     {
-        return None;
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
     }
     let first = profile_locus_point(&first_locus, sketch_entities)?;
     let second = profile_locus_point(&second_locus, sketch_entities)?;
     if same_dimension_length(first.u, second.u) && same_dimension_length(first.v, second.v) {
-        return None;
+        return unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        );
     }
     sole_sorted(
         sketch_entities
             .iter()
             .filter(|entity| {
-                entity.sketch == *sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
+                entity.sketch == sketch && matches!(entity.geometry, SketchGeometry::Line { .. })
             })
             .filter(|entity| {
                 sketch_entity_contains_point(entity, first)
                     && sketch_entity_contains_point(entity, second)
             })
+            .map(|entity| entity.id.clone())
+            .collect(),
+    )
+    .or_else(|| {
+        unique_line_containing_marker_point(
+            marker_id,
+            markers_by_id,
+            loci_by_marker,
+            sketch_entities,
+        )
+    })
+}
+
+fn unique_line_containing_marker_point(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let marker = markers_by_id.get(marker_id)?;
+    if !matches!(
+        marker.kind,
+        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+    ) {
+        return None;
+    }
+    let locus = marker_point_locus(marker_id, markers_by_id, loci_by_marker)?;
+    let point = profile_locus_point(&locus, sketch_entities)?;
+    let sketch = sketch_entities
+        .iter()
+        .find(|entity| entity.id == locus_entity(&locus))
+        .map(|entity| entity.sketch.clone())?;
+    sole_sorted(
+        sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch)
+            .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .filter(|entity| sketch_entity_contains_point(entity, point))
             .map(|entity| entity.id.clone())
             .collect(),
     )
@@ -1839,12 +1918,12 @@ pub(super) fn profile_loci_by_marker(
             let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
                 (marker, false)
             } else {
+                let reference = entity.geometry_ref.as_ref().filter(|reference| {
+                    reference.starts_with("sldprt:feature-input:sketch-entity#")
+                })?;
                 (
-                    entity.geometry_ref.as_ref().filter(|reference| {
-                        reference.starts_with("sldprt:feature-input:sketch-entity#")
-                            && matches!(entity.geometry, SketchGeometry::Point { .. })
-                    })?,
-                    true,
+                    reference,
+                    matches!(entity.geometry, SketchGeometry::Point { .. }),
                 )
             };
             markers_by_id.contains_key(marker.as_str()).then(|| {
