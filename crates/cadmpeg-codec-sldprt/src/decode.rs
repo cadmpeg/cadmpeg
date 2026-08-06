@@ -1273,6 +1273,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             FeatureDefinition::SheetMetalEdgeFlange { edges, .. } => {
                 incomplete_edge_selection(edges)
             }
+            FeatureDefinition::SheetMetalHem { .. } => true,
             FeatureDefinition::Fillet { groups } => {
                 groups.is_empty()
                     || groups.iter().any(|group| {

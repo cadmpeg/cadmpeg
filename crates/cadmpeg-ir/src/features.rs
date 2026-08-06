@@ -982,6 +982,17 @@ pub enum FeatureDefinition {
         /// Inside radius of the bend joining the flange to its source face.
         bend_radius: Length,
     },
+    /// Sheet-metal hem grown from one or more selected edges.
+    SheetMetalHem {
+        /// Edges the hem is grown from.
+        edges: EdgeSelection,
+        /// Dimensional owner layout carried by the source hem.
+        form: SheetMetalHemForm,
+        /// Direction of the hem fold, when the source carries a proven value.
+        direction: SheetMetalHemDirection,
+        /// Inside radius of the bend joining the hem to its source face.
+        bend_radius: Length,
+    },
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
@@ -2106,6 +2117,53 @@ pub enum SheetMetalBendPosition {
     Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
+}
+
+/// Dimensional owner layout carried by a sheet-metal hem.
+///
+/// The source uses one owner layout for both flat and open hems. Until a
+/// stable selector for that distinction is available, [`GapLength`] retains
+/// the shared layout without assigning either semantic form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalHemForm {
+    /// Flat or open source form with a gap and a length owner.
+    GapLength {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Rolled source form with radius and included-angle owners.
+    Rolled {
+        /// Rolled section radius.
+        radius: Length,
+        /// Included angle of the rolled section.
+        angle: Angle,
+    },
+    /// Teardrop source form with gap, length, and radius owners.
+    Teardrop {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+        /// Teardrop section radius.
+        radius: Length,
+    },
+}
+
+/// Direction of a sheet-metal hem fold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum SheetMetalHemDirection {
+    /// Fold in the source operation's forward direction.
+    Forward,
+    /// Fold opposite the source operation's forward direction.
+    Reverse,
+    /// Source direction carrier is not resolved.
+    Unresolved,
 }
 
 /// Construction feature used as the reference for a sheet-metal flange height.

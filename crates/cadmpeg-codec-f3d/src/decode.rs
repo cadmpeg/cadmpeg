@@ -326,6 +326,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 ..
             }
         ),
+        FeatureDefinition::SheetMetalHem {
+            form, direction, ..
+        } => {
+            matches!(
+                direction,
+                cadmpeg_ir::features::SheetMetalHemDirection::Unresolved
+            ) || matches!(
+                form,
+                cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
+            )
+        }
         _ => false,
     }
 }
@@ -895,6 +906,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }
                 face_selection(removed_faces);
             }
+            FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
         }

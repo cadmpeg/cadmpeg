@@ -615,6 +615,17 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
+                Some(DesignFeatureFamily::SheetMetalHem) => project_hem(scope, inputs)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }),
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
@@ -2046,6 +2057,122 @@ pub(crate) fn project_edge_flange(
         height_datum,
         bend_position,
         width,
+        bend_radius: Length(operation.bend_radius * 10.0),
+    })
+}
+
+/// Project a sheet-metal `Hem` scope onto its neutral operation.
+///
+/// The owner layout distinguishes the rolled and teardrop forms from the
+/// shared gap-and-length layout. The source fields currently retained by the
+/// native decoder do not distinguish flat from open or carry a proven fold
+/// direction, so those distinctions remain explicit in the neutral form and
+/// completeness report rather than being inferred from parameter values.
+pub(crate) fn project_hem(
+    scope: &DesignParameterScope,
+    inputs: &ProjectInputs<'_>,
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use crate::records::DesignHemParameterOwners;
+    use cadmpeg_ir::features::{
+        FeatureDefinition, Length, SheetMetalHemDirection, SheetMetalHemForm,
+    };
+
+    let ProjectInputs {
+        native: parameters,
+        owners,
+        construction_groups: groups,
+        edge_operands,
+        edge_identity_operands,
+        ..
+    } = inputs;
+    let operation = scope.hem_operation.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let parameter = |owner_record_index: u32, source_kind: &str| {
+        let mut matching_owners = owners.iter().filter(|owner| {
+            native_stream(&owner.id) == Some(stream)
+                && owner.scope_record_index == scope.record_index
+                && owner.record_index == owner_record_index
+        });
+        let owner = matching_owners.next()?;
+        if matching_owners.next().is_some() {
+            return None;
+        }
+        let mut matching_parameters = parameters.iter().filter(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index
+                && parameter.source_kind == source_kind
+        });
+        let parameter = matching_parameters.next()?;
+        matching_parameters.next().is_none().then_some(parameter)
+    };
+
+    let form = match &operation.parameter_owners {
+        DesignHemParameterOwners::GapLength {
+            gap_owner_record_index,
+            length_owner_record_index,
+        } => SheetMetalHemForm::GapLength {
+            gap: design_length(parameter(*gap_owner_record_index, "HemGap")?)?,
+            length: design_length(parameter(*length_owner_record_index, "HemLength")?)?,
+        },
+        DesignHemParameterOwners::RadiusAngle {
+            radius_owner_record_index,
+            angle_owner_record_index,
+        } => SheetMetalHemForm::Rolled {
+            radius: design_length(parameter(*radius_owner_record_index, "HemRadius")?)?,
+            angle: design_angle(parameter(*angle_owner_record_index, "HemAngle")?)?,
+        },
+        DesignHemParameterOwners::GapLengthRadius {
+            gap_owner_record_index,
+            length_owner_record_index,
+            radius_owner_record_index,
+        } => SheetMetalHemForm::Teardrop {
+            gap: design_length(parameter(*gap_owner_record_index, "HemGap")?)?,
+            length: design_length(parameter(*length_owner_record_index, "HemLength")?)?,
+            radius: design_length(parameter(*radius_owner_record_index, "HemRadius")?)?,
+        },
+    };
+
+    let mut edge_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == operation.edge_group_record_index
+    });
+    let edge_group = edge_groups.next()?;
+    let edge_has_extra = edge_groups.next().is_some();
+    let edge_role_ok = edge_group.role == 0x0000_0008_0000_0000;
+    let edge_members_ok = edge_group.members == [operation.edge_operand_record_index];
+    if edge_has_extra || !edge_role_ok || !edge_members_ok {
+        return None;
+    }
+
+    let mut aggregate_groups = groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.record_index == operation.aggregate_group_record_index
+    });
+    let aggregate_group = aggregate_groups.next()?;
+    let aggregate_has_extra = aggregate_groups.next().is_some();
+    let aggregate_role_ok = aggregate_group.role == 0x0000_0043_0000_0000;
+    let aggregate_members_ok =
+        aggregate_group.members == [operation.aggregate_operand_record_index];
+    if aggregate_has_extra || !aggregate_role_ok || !aggregate_members_ok {
+        return None;
+    }
+
+    let edges = resolved_edge_group(
+        edge_group,
+        groups,
+        edge_operands,
+        edge_identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        None,
+    );
+
+    Some(FeatureDefinition::SheetMetalHem {
+        edges,
+        form,
+        direction: SheetMetalHemDirection::Unresolved,
         bend_radius: Length(operation.bend_radius * 10.0),
     })
 }

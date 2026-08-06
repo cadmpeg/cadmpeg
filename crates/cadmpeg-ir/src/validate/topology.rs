@@ -2909,6 +2909,42 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     );
                 }
             }
+            FeatureDefinition::SheetMetalHem {
+                edges,
+                form,
+                bend_radius,
+                ..
+            } => {
+                edge_selections.push(edges);
+                if !positive_feature_length(*bend_radius) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal hem bend radius is invalid",
+                    );
+                }
+                let gap_is_valid = |gap: crate::features::Length| gap.0.is_finite() && gap.0 >= 0.0;
+                let form_is_valid = match form {
+                    crate::features::SheetMetalHemForm::GapLength { gap, length } => {
+                        gap_is_valid(*gap) && positive_feature_length(*length)
+                    }
+                    crate::features::SheetMetalHemForm::Rolled { radius, angle } => {
+                        positive_feature_length(*radius) && angle.0.is_finite()
+                    }
+                    crate::features::SheetMetalHemForm::Teardrop {
+                        gap,
+                        length,
+                        radius,
+                    } => {
+                        gap_is_valid(*gap)
+                            && positive_feature_length(*length)
+                            && positive_feature_length(*radius)
+                    }
+                };
+                if !form_is_valid {
+                    feature_geometry_error(findings, feature, "sheet-metal hem form is invalid");
+                }
+            }
             FeatureDefinition::Revolve { construction, .. } => {
                 paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {

@@ -396,6 +396,13 @@ fn feature_family_tokens_are_localized() {
         Some(DesignFeatureFamily::Coil)
     );
     assert_eq!(
+        design_feature_family("Hem"),
+        Some(DesignFeatureFamily::SheetMetalHem)
+    );
+    assert!(crate::design::decode::operands::has_edge_recipe_operands(
+        "Hem"
+    ));
+    assert_eq!(
         design_feature_family("SurfacePatch"),
         Some(DesignFeatureFamily::SurfacePatch)
     );
@@ -7852,6 +7859,225 @@ fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint
             SurfaceContinuity::Contact,
         ]
     ));
+}
+
+#[test]
+fn hem_scope_projects_each_decoded_owner_layout() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignHemOperation,
+        DesignHemParameterOwners, DesignParameter, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope,
+    };
+    use cadmpeg_ir::features::{FeatureDefinition, SheetMetalHemDirection, SheetMetalHemForm};
+
+    let stream = "f3d:FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let owner = |scope_record_index: u32,
+                 record_index: u32,
+                 parameter_record_index: u32|
+     -> DesignParameterOwner {
+        DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal: 0,
+            evaluated_value: 0.0,
+            evaluated_value_offset: 0,
+            parameter_record_index,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 0,
+        }
+    };
+    let parameter =
+        |record_index: u32, source_kind: &str, unit: &str, value: f64| DesignParameter {
+            id: format!("{stream}:design-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: "000".into(),
+            record_index,
+            family_discriminator: None,
+            family_discriminator_offset: None,
+            source_ordinal: 0,
+            owner_record_index: None,
+            expression: String::new(),
+            expression_offset: 0,
+            source_kind: source_kind.into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some(unit.into()),
+            unit_offset: None,
+            name: source_kind.into(),
+            name_offset: 0,
+            evaluated_value: value,
+            evaluated_value_offset: 0,
+        };
+    let group = |scope_record_index: u32, record_index: u32, member: u32, role: u64| {
+        DesignConstructionOperandGroup {
+            id: format!("{stream}:design-construction-operand-group#{record_index}"),
+            scope_record_index,
+            scope_reference_ordinal: 0,
+            record_index,
+            byte_offset: 0,
+            class_tag: "000".into(),
+            members: vec![member],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![0],
+            frame: DesignConstructionOperandGroupFrame {
+                member_count_offset: 0,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 0,
+                opaque_index_offset: 0,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 0,
+                variant: false,
+            },
+            role,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 0,
+            paired_class_tag: "000".into(),
+            paired_byte_offset: 0,
+        }
+    };
+    let operation = |parameter_owners| DesignHemOperation {
+        edge_wrapper_record_index: 708,
+        edge_group_record_index: 710,
+        edge_operand_record_index: 713,
+        aggregate_group_record_index: 717,
+        aggregate_operand_record_index: 720,
+        parameter_owners,
+        settings_record_index: 724,
+        bend_radius: 0.25,
+        bend_radius_offset: 100,
+        form_code: 3,
+        direction_code: 1,
+        direction_reversal_byte: 0,
+        reference_side_code: 4,
+    };
+    let project = |record_index: u32,
+                   operation: DesignHemOperation,
+                   owners: Vec<DesignParameterOwner>,
+                   parameters: Vec<DesignParameter>| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            "Hem",
+            record_index,
+        );
+        scope.hem_operation = Some(operation);
+        let groups = vec![
+            group(record_index, 710, 713, 0x0000_0008_0000_0000),
+            group(record_index, 717, 720, 0x0000_0043_0000_0000),
+        ];
+        let inputs = crate::design::feature_project::ProjectInputs {
+            native: &parameters,
+            owners: &owners,
+            scopes: &[],
+            construction_groups: &groups,
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        };
+        crate::design::feature_project::project_hem(&scope, &inputs).expect("typed Hem definition")
+    };
+
+    let gap_length = project(
+        900,
+        operation(DesignHemParameterOwners::GapLength {
+            gap_owner_record_index: 901,
+            length_owner_record_index: 902,
+        }),
+        vec![owner(900, 901, 903), owner(900, 902, 904)],
+        vec![
+            parameter(903, "HemGap", "mm", 0.02),
+            parameter(904, "HemLength", "mm", 10.0),
+        ],
+    );
+    let rolled = project(
+        910,
+        operation(DesignHemParameterOwners::RadiusAngle {
+            radius_owner_record_index: 911,
+            angle_owner_record_index: 912,
+        }),
+        vec![owner(910, 911, 913), owner(910, 912, 914)],
+        vec![
+            parameter(913, "HemRadius", "mm", 0.5),
+            parameter(914, "HemAngle", "deg", std::f64::consts::FRAC_PI_2),
+        ],
+    );
+    let teardrop = project(
+        920,
+        operation(DesignHemParameterOwners::GapLengthRadius {
+            gap_owner_record_index: 921,
+            length_owner_record_index: 922,
+            radius_owner_record_index: 923,
+        }),
+        vec![
+            owner(920, 921, 924),
+            owner(920, 922, 925),
+            owner(920, 923, 926),
+        ],
+        vec![
+            parameter(924, "HemGap", "mm", 0.25),
+            parameter(925, "HemLength", "mm", 10.0),
+            parameter(926, "HemRadius", "mm", 0.5),
+        ],
+    );
+
+    let FeatureDefinition::SheetMetalHem {
+        form,
+        direction,
+        bend_radius,
+        ..
+    } = gap_length
+    else {
+        panic!("expected a gap-length Hem");
+    };
+    assert_eq!(
+        form,
+        SheetMetalHemForm::GapLength {
+            gap: cadmpeg_ir::features::Length(0.2),
+            length: cadmpeg_ir::features::Length(100.0),
+        }
+    );
+    assert_eq!(direction, SheetMetalHemDirection::Unresolved);
+    assert_eq!(bend_radius, cadmpeg_ir::features::Length(2.5));
+
+    let FeatureDefinition::SheetMetalHem { form, .. } = rolled else {
+        panic!("expected a rolled Hem");
+    };
+    assert_eq!(
+        form,
+        SheetMetalHemForm::Rolled {
+            radius: cadmpeg_ir::features::Length(5.0),
+            angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+        }
+    );
+
+    let FeatureDefinition::SheetMetalHem { form, .. } = teardrop else {
+        panic!("expected a teardrop Hem");
+    };
+    assert_eq!(
+        form,
+        SheetMetalHemForm::Teardrop {
+            gap: cadmpeg_ir::features::Length(2.5),
+            length: cadmpeg_ir::features::Length(100.0),
+            radius: cadmpeg_ir::features::Length(5.0),
+        }
+    );
 }
 
 #[test]
