@@ -36,7 +36,9 @@ use std::sync::Arc;
 
 pub(crate) const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
 pub(crate) const MAX_FACE_ENDPOINT_CONFIGURATION_WORK: usize = 4_096;
-pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
+/// Bounds one complete mesh-constraint phase, including exhaustive endpoint
+/// orientation selection. The decode session applies its own global work cap.
+pub(crate) const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 pub(crate) type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -6005,10 +6007,21 @@ impl MeshSelectionSearch<'_> {
             .then_some(measured)
     }
 
+    #[cfg(test)]
     pub(crate) fn search(&mut self, quotient: &MeshQuotient) {
         self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS);
     }
 
+    pub(crate) fn search_with_budget(
+        &mut self,
+        quotient: &MeshQuotient,
+        budget: &WorkBudget<'_>,
+        propagation_budget: &WorkBudget<'_>,
+    ) {
+        self.search_from_state(quotient, false, budget, propagation_budget);
+    }
+
+    #[cfg(test)]
     pub(crate) fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
         let budget = WorkBudget::new(limit);
         let propagation_budget = WorkBudget::new(limit);
@@ -6679,7 +6692,7 @@ fn resolve_standard_mesh_endpoint_candidates(
         exhausted: false,
         face_equation_cache: RefCell::default(),
     };
-    search.search(&quotient);
+    search.search_with_budget(&quotient, budget, budget);
     if search.exhausted {
         MeshEndpointResolve::Exhausted
     } else if search.ambiguous {
