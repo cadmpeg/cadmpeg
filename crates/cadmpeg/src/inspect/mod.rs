@@ -206,6 +206,9 @@ pub struct StructArgs {
 pub struct ContainerArgs {
     #[command(flatten)]
     pub file: FileArg,
+    /// Print the entries as versioned JSON instead of the table.
+    #[arg(long)]
+    pub json: bool,
     /// Resource-limit profile applied while reading the central directory.
     #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
     pub limits: LimitProfile,
@@ -490,7 +493,11 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
             file_path.display()
         )
     })?;
-    print!("{}", container::render(&entries));
+    if args.json {
+        print!("{}", container::render_json(&entries));
+    } else {
+        print!("{}", container::render(&entries));
+    }
     Ok(())
 }
 

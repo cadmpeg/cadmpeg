@@ -865,3 +865,23 @@ fn inspect_input_flag_positional_and_subcommand_interplay() {
         .code(2)
         .stderr(predicate::str::contains("required arguments"));
 }
+
+#[test]
+fn container_json_lists_entries_under_the_envelope() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args(["inspect", "container", "--json", archive.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "inspect container");
+    let entries = value["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    // Raw names in JSON: no shell quoting.
+    assert_eq!(entries[0]["name"], "Body[Active].brp");
+    assert_eq!(entries[0]["compression"], "stored");
+    assert_eq!(entries[0]["uncompressed_size"], 17);
+}

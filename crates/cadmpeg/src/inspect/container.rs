@@ -110,6 +110,36 @@ pub fn shell_quote(name: &str) -> String {
     out
 }
 
+/// Formats an entry listing as the versioned JSON envelope.
+///
+/// Names are raw strings here — shell quoting belongs to the table
+/// rendering, not to JSON.
+pub fn render_json(entries: &[EntryRecord]) -> String {
+    let entries: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "name": entry.name,
+                "compression": entry.compression.label(),
+                "crc32": entry.crc32,
+                "compressed_size": entry.compressed_size,
+                "uncompressed_size": entry.uncompressed_size,
+                "header_start": entry.header_start,
+                "data_start": entry.data_start,
+                "central_start": entry.central_start,
+            })
+        })
+        .collect();
+    let envelope = serde_json::json!({
+        "schema_version": crate::commands::CLI_SCHEMA_VERSION,
+        "command": "inspect container",
+        "entries": entries,
+    });
+    let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");
+    rendered.push('\n');
+    rendered
+}
+
 /// Formats an entry listing as an aligned table.
 pub fn render(entries: &[EntryRecord]) -> String {
     let mut out = String::new();

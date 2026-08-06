@@ -1667,3 +1667,32 @@ fn input_flag_reaches_every_single_input_command() {
         .code(2)
         .stderr(predicate::str::contains("cannot be used with"));
 }
+
+#[test]
+fn json_on_artifact_commands_is_a_teaching_error() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["decode", path, "--json"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("already JSON").and(predicate::str::contains("cadmpeg query")),
+        );
+
+    for command in ["export", "convert"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([command, path, "--json"])
+            .assert()
+            .code(2)
+            .stderr(
+                predicate::str::contains("not an output selector")
+                    .and(predicate::str::contains("--report")),
+            );
+    }
+}

@@ -328,6 +328,9 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
+        /// Rejected placeholder: decode's stdout is already the CADIR JSON.
+        #[arg(long, hide = true)]
+        json: bool,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -393,6 +396,10 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
+        /// Rejected placeholder: the artifact format comes from --format/-o and
+        /// the machine-readable report from --report.
+        #[arg(long, hide = true)]
+        json: bool,
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
@@ -458,6 +465,10 @@ enum Command {
             conflicts_with = "input"
         )]
         input_flag: Option<PathBuf>,
+        /// Rejected placeholder: the artifact format comes from --format/-o and
+        /// the machine-readable report from --report.
+        #[arg(long, hide = true)]
+        json: bool,
         /// Output format; inferred from the output extension when omitted.
         #[arg(short, long, value_enum)]
         format: Option<Format>,
@@ -501,6 +512,15 @@ fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf 
         .expect("clap requires one input spelling")
 }
 
+/// Error for `--json` on a command whose output is an artifact.
+fn misdirected_json(command: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "--json is not an output selector on {command}; the artifact format comes from \
+         --format/-o, and the machine-readable report from --report FILE, projected \
+         with `cadmpeg query`"
+    )
+}
+
 fn main() -> ExitCode {
     let command = Cli::parse().command;
     let registry = Registry::with_builtins();
@@ -533,20 +553,31 @@ fn main() -> ExitCode {
         Command::Decode {
             input,
             input_flag,
+            json,
             output,
             force,
             report,
             input_args,
             decode,
-        } => commands::decode(
-            &registry,
-            &resolve_input(input, input_flag),
-            output.as_deref(),
-            force,
-            report.as_deref(),
-            input_args.forced(),
-            &decode,
-        )
+        } => {
+            if json {
+                Err(anyhow::anyhow!(
+                    "decode writes the CADIR JSON artifact itself; its standard output is \
+                     already JSON when -o is omitted; the decode report goes to --report FILE, \
+                     projected with `cadmpeg query`"
+                ))
+            } else {
+                commands::decode(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    output.as_deref(),
+                    force,
+                    report.as_deref(),
+                    input_args.forced(),
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
         Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
         Command::Validate {
@@ -570,6 +601,7 @@ fn main() -> ExitCode {
         Command::Export {
             input,
             input_flag,
+            json,
             format,
             output,
             force,
@@ -580,23 +612,29 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => commands::export(
-            &registry,
-            &resolve_input(input, input_flag),
-            format,
-            output.as_deref(),
-            commands::ConversionPlan {
-                force,
-                report,
-                validation: commands::ValidationMode::Skipped,
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                step_options: step.options(),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
+        } => {
+            if json {
+                Err(misdirected_json("export"))
+            } else {
+                commands::export(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    format,
+                    output.as_deref(),
+                    commands::ConversionPlan {
+                        force,
+                        report,
+                        validation: commands::ValidationMode::Skipped,
+                        allow_empty,
+                        reject_lossy,
+                        rhino_version: rhino_version.map(RhinoVersion::codec),
+                        step_options: step.options(),
+                        forced_input: input_args.forced(),
+                    },
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
             a,
@@ -625,6 +663,7 @@ fn main() -> ExitCode {
         Command::Convert {
             input,
             input_flag,
+            json,
             format,
             output,
             force,
@@ -636,23 +675,29 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => commands::convert(
-            &registry,
-            &resolve_input(input, input_flag),
-            format,
-            output.as_deref(),
-            commands::ConversionPlan {
-                force,
-                report,
-                validation: commands::ValidationMode::Required { allow_invalid },
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                step_options: step.options(),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
+        } => {
+            if json {
+                Err(misdirected_json("convert"))
+            } else {
+                commands::convert(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    format,
+                    output.as_deref(),
+                    commands::ConversionPlan {
+                        force,
+                        report,
+                        validation: commands::ValidationMode::Required { allow_invalid },
+                        allow_empty,
+                        reject_lossy,
+                        rhino_version: rhino_version.map(RhinoVersion::codec),
+                        step_options: step.options(),
+                        forced_input: input_args.forced(),
+                    },
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
     };
     result.unwrap_or_else(|err| {
