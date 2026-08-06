@@ -2025,6 +2025,30 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),
         Some(([2.0, 3.0], 5.0))
     );
+    terminal[64..68].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
+    terminal[84..86].copy_from_slice(&[0; 2]);
+    let mut direct_entities = entities.clone();
+    direct_entities[2].object_index = Some(1);
+    let direct_markers = direct_entities.iter().collect::<Vec<_>>();
+    assert_eq!(
+        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &direct_markers,),
+        Some(([2.0, 3.0], 5.0))
+    );
+    let mut short_terminal = payload[..102].to_vec();
+    short_terminal.resize(145, 0);
+    short_terminal[64..68].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
+    short_terminal[84..86].copy_from_slice(&[0; 2]);
+    short_terminal[128..132].copy_from_slice(CLASS_MARKER);
+    short_terminal[132..134].copy_from_slice(&11u16.to_le_bytes());
+    short_terminal[134..145].copy_from_slice(b"sgCircleDim");
+    assert_eq!(
+        super::wide_coordinate_roster_full_circle(
+            &short_terminal,
+            &extended_circle,
+            &direct_markers,
+        ),
+        Some(([2.0, 3.0], 5.0))
+    );
     terminal[133] = 1;
     assert_eq!(
         super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),

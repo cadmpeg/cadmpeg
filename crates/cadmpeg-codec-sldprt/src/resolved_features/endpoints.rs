@@ -2459,18 +2459,11 @@ pub(super) fn wide_coordinate_roster_full_circle(
         wide_indexed_curve_endpoint_indices(payload, offset)?
     };
     let [first, second] = endpoints;
-    if first != second || first <= 1 {
+    if first != second || first == 1 {
         return None;
     }
-    let radial_index = usize::try_from(first.checked_sub(1)?).ok()?;
     let terminal = prefix == LEGACY_EXTENDED_SKETCH_MARKER
         && extended_terminal_wide_repeated_circle_record(payload, offset);
-    let radial_index = if terminal {
-        radial_index.checked_sub(1)?
-    } else {
-        radial_index
-    };
-    let center_index = radial_index.checked_sub(1)?;
     let mut coordinates = markers
         .iter()
         .copied()
@@ -2488,10 +2481,44 @@ pub(super) fn wide_coordinate_roster_full_circle(
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset);
-    let center = coordinates.get(center_index)?.coordinates_m?;
-    let radial = coordinates.get(radial_index)?.coordinates_m?;
-    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
-    (radius.is_finite() && radius > 0.0).then_some((center, radius))
+    let raw_index = usize::from(u16::from_le_bytes(
+        payload.get(offset + 64..offset + 66)?.try_into().ok()?,
+    ));
+    if raw_index == 0 {
+        return None;
+    }
+    let roster_pair = if terminal {
+        raw_index.checked_sub(2).zip(raw_index.checked_sub(1))
+    } else {
+        raw_index.checked_sub(1).map(|center| (center, raw_index))
+    };
+    let direct_pair = terminal
+        .then(|| {
+            coordinates
+                .iter()
+                .position(|marker| marker.object_index == Some(raw_index as u32))
+                .and_then(|radial| radial.checked_sub(1).map(|center| (center, radial)))
+        })
+        .flatten();
+    let mut candidates = [roster_pair, direct_pair]
+        .into_iter()
+        .flatten()
+        .filter_map(|(center_index, radial_index)| {
+            let center = coordinates.get(center_index)?.coordinates_m?;
+            let radial = coordinates.get(radial_index)?.coordinates_m?;
+            let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+            (radius.is_finite() && radius > 0.0).then_some((center, radius))
+        })
+        .collect::<Vec<_>>();
+    candidates.dedup_by(|(left_center, left_radius), (right_center, right_radius)| {
+        same_dimension_length(left_center[0], right_center[0])
+            && same_dimension_length(left_center[1], right_center[1])
+            && same_dimension_length(*left_radius, *right_radius)
+    });
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
@@ -2522,11 +2549,6 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 68..offset + 72) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 72..offset + 80) == Some(&(-1.0f64).to_le_bytes())
         && payload.get(offset + 80..offset + 84) == Some(&1i32.to_le_bytes())
-        && payload
-            .get(offset + 84..offset + 86)
-            .and_then(|bytes| bytes.try_into().ok())
-            .map(u16::from_le_bytes)
-            .is_some_and(|state| state != 0)
         && payload.get(offset + 86..offset + 102)
             == Some(&[
                 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
@@ -2535,6 +2557,11 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
     // The trailer identities retain the circle carrier, not two curve endpoints,
     // so a repeated identity is valid for the already-equal endpoint ordinal.
     let referenced = payload.get(offset + 102..offset + 104) == Some(&[0; 2])
+        && payload
+            .get(offset + 84..offset + 86)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .is_some_and(|state| state != 0)
         && matches!(identities, [Some(first), Some(second)] if first != 0 && first != u32::MAX && second != 0 && second != u32::MAX)
         && sketch_marker_prefix_at(payload, offset.saturating_add(112));
     let terminal = extended_terminal_wide_repeated_circle_record(payload, offset);
@@ -2542,9 +2569,11 @@ fn extended_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
 }
 
 fn extended_terminal_wide_repeated_circle_record(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 102..offset + 134) == Some(&[0; 32])
+    (payload.get(offset + 102..offset + 134) == Some(&[0; 32])
         && payload.get(offset + 134..offset + 136) == Some(&[0x04, 0x00])
-        && class_declaration_at(payload, offset.saturating_add(136))
+        && class_declaration_at(payload, offset.saturating_add(136)))
+        || (payload.get(offset + 102..offset + 128) == Some(&[0; 26])
+            && class_declaration_at(payload, offset.saturating_add(128)))
 }
 
 pub(super) fn coordinate_ellipse_axes(
