@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use cadmpeg_ir::features::{Feature, FeatureDefinition};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
@@ -118,6 +119,63 @@ pub(crate) fn project_local_components(
         occurrence.ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
     }
     (components.into_values().collect(), occurrences)
+}
+
+/// Project the occurrence side of an external `Component Insert` when its
+/// target reference table is not present in this container.
+///
+/// The operation still has a complete local placement. The prototype remains
+/// explicitly unresolved because the source does not provide a target
+/// document or a target object that this decoder can identify. Keeping the
+/// occurrence in the product graph lets the feature retain its operation and
+/// transform while native storage retains the exact external-reference role.
+pub(crate) fn project_unresolved_component_insert_occurrences(
+    features: &mut [Feature],
+    scopes: &[DesignParameterScope],
+    ordinal_start: usize,
+) -> Vec<Occurrence> {
+    let mut occurrences = Vec::new();
+    for scope in scopes {
+        let Some(construction) = scope.component_insert_construction.as_ref() else {
+            continue;
+        };
+        let Some(feature) = features
+            .iter_mut()
+            .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+        else {
+            continue;
+        };
+        if !matches!(feature.definition, FeatureDefinition::Native { .. }) {
+            continue;
+        }
+
+        let occurrence_id = crate::ids::neutral_component_insert_occurrence_id(scope);
+        feature.definition = FeatureDefinition::InsertComponent {
+            occurrence: occurrence_id.clone(),
+        };
+        occurrences.push(Occurrence {
+            id: occurrence_id,
+            prototype: PrototypeReference::Unresolved,
+            parent: OccurrenceParent::Root,
+            ordinal: u32::try_from(ordinal_start.saturating_add(occurrences.len()))
+                .unwrap_or(u32::MAX),
+            transform: neutral_transform(construction.transform),
+            prototype_transform: cadmpeg_ir::transform::Transform::identity(),
+            scale: [1.0; 3],
+            name: Some(construction.neutron_role.clone()),
+            linked_subelements: Vec::new(),
+            visible: None,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: Some(scope.id.clone()),
+        });
+    }
+    occurrences
 }
 
 fn project_occurrence(

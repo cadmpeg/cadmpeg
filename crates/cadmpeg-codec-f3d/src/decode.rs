@@ -1746,6 +1746,13 @@ fn finish_model_decode<'a>(
     );
     ir.model.product_definitions.extend(components);
     ir.model.occurrences.extend(occurrences);
+    let unresolved_component_inserts =
+        crate::design::components::project_unresolved_component_insert_occurrences(
+            &mut ir.model.features,
+            &native.design_parameter_scopes,
+            ir.model.occurrences.len(),
+        );
+    ir.model.occurrences.extend(unresolved_component_inserts);
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
@@ -2249,6 +2256,13 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     ir.model.product_definitions.extend(components);
     ir.model.occurrences.extend(occurrences);
+    let unresolved_component_inserts =
+        crate::design::components::project_unresolved_component_insert_occurrences(
+            &mut ir.model.features,
+            &native.design_parameter_scopes,
+            ir.model.occurrences.len(),
+        );
+    ir.model.occurrences.extend(unresolved_component_inserts);
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
