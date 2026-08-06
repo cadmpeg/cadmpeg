@@ -396,6 +396,14 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must identify the coefficient grouping and coordinate scale before projecting the symmetry plane into a neutral geometric plane or writing a new symmetry block from neutral data.
 
+### TS-05. Compact Form cage-list tail
+
+**Question.** What do bytes 49 through 99 of the compact one-cage cage-list record hold?
+
+**Known.** `f3d.md` §1.1.1 "A compact one-cage cage-list record is 100 bytes" gives the indexed header, the ten zero bytes, the owning Form scope record index, the one-cage count, the sole cage-object record index, the two zero bytes, and the `0x00fc` member flags. The remaining 51 bytes are retained with the native record and have no assigned semantic field.
+
+**Need.** A writer must know the compact-form tail before it can emit this record from a neutral Form feature. The decoder can bind the sole cage from the settled prefix and retain the tail for source fidelity.
+
 ## 5. Mesh geometry
 
 ### PM-01. `.paramesh` packed and per-triangle element contents

@@ -2694,6 +2694,30 @@ pub(crate) fn bind_form_cages(
                 form_cage_objects(bytes, &records, *record_index, scope.record_index)
             })
             .collect::<Vec<_>>();
+        let legacy_cage = scope.reference_members.iter().find_map(|record_index| {
+            legacy_form_cage_count(bytes, &records, *record_index, scope.record_index)
+        });
+        if scopes
+            .iter()
+            .filter(|candidate| candidate.kind == "Form")
+            .count()
+            == 1
+            && cages.len() == 1
+            && legacy_cage == Some(1)
+        {
+            let feature_id = neutral_feature_id(scope);
+            if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
+                if matches!(
+                    &feature.definition,
+                    cadmpeg_ir::features::FeatureDefinition::Native { .. }
+                ) {
+                    feature.definition = cadmpeg_ir::features::FeatureDefinition::Form {
+                        cages: vec![cages[0].id.clone()],
+                    };
+                }
+            }
+            continue;
+        }
         let [cage_objects] = cage_lists.as_slice() else {
             continue;
         };
@@ -2737,6 +2761,44 @@ pub(crate) fn bind_form_cages(
         }
     }
     Ok(())
+}
+
+/// Read the one-cage envelope used by the compact Form record generation.
+///
+/// This generation has no serializer-name record. Its 100-byte cage-list
+/// frame still identifies the Form scope and the sole cage object, so a
+/// document with exactly one Form and one T-spline entry has a unique neutral
+/// binding.
+fn legacy_form_cage_count(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    scope_record_index: u32,
+) -> Option<usize> {
+    for (start, paired) in records.frames(record_index) {
+        if paired.checked_sub(start)? != 100
+            || bytes.get(start + 11..start + 21)? != [0; 10]
+            || bytes.get(start + 21) != Some(&1)
+            || read_u64(bytes, start + 22)? != u64::from(scope_record_index)
+            || bytes.get(start + 30..start + 32)? != [0; 2]
+        {
+            continue;
+        }
+        let count = usize::try_from(u32_at(bytes, start + 32)?).ok()?;
+        if count != 1 {
+            continue;
+        }
+        let member = start + 36;
+        if bytes.get(member) != Some(&1) || bytes.get(member + 9..member + 13)? != [0, 0, 0xfc, 0] {
+            continue;
+        }
+        let object = u32::try_from(read_u64(bytes, member + 1)?).ok()?;
+        if records.offsets(object).is_empty() {
+            continue;
+        }
+        return Some(count);
+    }
+    None
 }
 
 fn form_cage_objects(
@@ -2997,6 +3059,29 @@ mod form_tests {
             )
             .get(&8304),
             Some(&Some(entry_name.into()))
+        );
+    }
+
+    #[test]
+    fn reads_compact_form_one_cage_envelope() {
+        let mut list = indexed_frame(b"355", 205, 100);
+        list[21] = 1;
+        list[22..30].copy_from_slice(&201u64.to_le_bytes());
+        list[32..36].copy_from_slice(&1u32.to_le_bytes());
+        list[36] = 1;
+        list[37..45].copy_from_slice(&971u64.to_le_bytes());
+        list[47..49].copy_from_slice(&[0xfc, 0]);
+        let paired = indexed_frame(b"262", 205, 15);
+        let object = indexed_frame(b"325", 971, 15);
+        let bytes = [list, paired, object].concat();
+        assert_eq!(
+            super::legacy_form_cage_count(
+                &bytes,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                205,
+                201,
+            ),
+            Some(1)
         );
     }
 }

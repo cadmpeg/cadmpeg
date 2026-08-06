@@ -59,6 +59,29 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
+## `form_compact_one_cage_list`
+
+Spec §1.1.1 · layout: byte offsets · size: 100 B
+
+Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes follow the indexed header |
+| 21 | 1 | `owner_marker` | `u8` | little | spec | `u8 1`, the owning Form scope's u64 record index |
+| 22 | 8 | `owner_scope_record_index` | `u64` | little | spec | owning Form scope's u64 record index |
+| 30 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
+| 32 | 4 | `cage_count` | `u32` | little | spec | a u32 cage count of one |
+| 36 | 1 | `member_marker` | `u8` | little | spec | The sole member is `u8 1` |
+| 37 | 8 | `cage_object_record_index` | `u64` | little | spec | a u64 cage-object record index |
+| 45 | 2 | `member_zero` | `u16` | little | spec | `u16 0` |
+| 47 | 2 | `member_flags` | `u16` | little | spec | `u16 0x00fc` |
+
+Unstated regions:
+
+- `49..100` (51 B): The compact-form tail is retained with the native record; no semantic field is assigned.
+
 ## `coil_long_scope_fixed_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 52 B

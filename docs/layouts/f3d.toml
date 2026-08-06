@@ -150,6 +150,89 @@ source = "spec"
 anchor = "byte 25 is `0x01`"
 
 [[record]]
+name = "form_compact_one_cage_list"
+kind = "byte"
+section = "1.1.1"
+anchor = "A compact one-cage cage-list record is 100 bytes from its indexed header to its same-index paired header."
+size = 100
+note = "Offsets are relative to the primary indexed header. The class tags are dynamic; the frame length and fixed fields select the compact one-cage form."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes follow the indexed header"
+
+[[record.field]]
+name = "owner_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "`u8 1`, the owning Form scope's u64 record index"
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 22
+type = "u64"
+source = "spec"
+anchor = "owning Form scope's u64 record index"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 30
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "cage_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "a u32 cage count of one"
+
+[[record.field]]
+name = "member_marker"
+offset = 36
+type = "u8"
+source = "spec"
+anchor = "The sole member is `u8 1`"
+
+[[record.field]]
+name = "cage_object_record_index"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "a u64 cage-object record index"
+
+[[record.field]]
+name = "member_zero"
+offset = 45
+type = "u16"
+source = "spec"
+anchor = "`u16 0`"
+
+[[record.field]]
+name = "member_flags"
+offset = 47
+type = "u16"
+source = "spec"
+anchor = "`u16 0x00fc`"
+
+[[record.gap]]
+offset = 49
+size = 51
+note = "The compact-form tail is retained with the native record; no semantic field is assigned."
+
+[[record]]
 name = "coil_long_scope_fixed_prologue"
 kind = "byte"
 section = "3.1"
