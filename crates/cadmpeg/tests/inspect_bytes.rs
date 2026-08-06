@@ -333,7 +333,7 @@ fn the_bytes_group_prefix_reaches_the_tool_and_its_help() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("inspect bytes hex [OPTIONS] <FILE>")
+            predicate::str::contains("inspect bytes hex [OPTIONS] [FILE]")
                 .and(predicate::str::contains("--width <WIDTH>")),
         );
 
@@ -624,4 +624,367 @@ fn inspect_help_lists_every_byte_subcommand() {
         .assert()
         .success()
         .stdout(expected);
+}
+
+/// Builds a ZIP with a bracketed Fusion-style name and a deflated member.
+fn extract_fixture(dir: &Path) -> PathBuf {
+    let path = dir.join("model.f3d");
+    let file = fs::File::create(&path).unwrap();
+    let mut archive = zip::ZipWriter::new(file);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    archive.start_file("Body[Active].brp", stored).unwrap();
+    archive.write_all(b"bracketed payload").unwrap();
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    archive.start_file("Design/Streams.dat", deflated).unwrap();
+    archive.write_all(&[0x42u8; 512]).unwrap();
+    archive.finish().unwrap();
+    path
+}
+
+#[test]
+fn extract_writes_a_member_and_streams_it_to_stdout() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let out = dir.path().join("streams.dat");
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Design/Streams.dat",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&out).unwrap(), vec![0x42u8; 512]);
+
+    let stdout = cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Design/Streams.dat",
+        ])
+        .output()
+        .unwrap();
+    assert!(stdout.status.success());
+    assert_eq!(stdout.stdout, fs::read(&out).unwrap());
+}
+
+#[test]
+fn extract_matches_a_bracketed_name_byte_exactly() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"bracketed payload");
+}
+
+#[test]
+fn extract_names_candidates_when_the_member_is_missing() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "streams.dat",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("'Design/Streams.dat'")
+                .and(predicate::str::contains("cadmpeg inspect container")),
+        );
+}
+
+#[test]
+fn extract_refuses_to_overwrite_without_force() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let out = dir.path().join("existing.bin");
+    fs::write(&out, b"precious").unwrap();
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--force"));
+    assert_eq!(fs::read(&out).unwrap(), b"precious");
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+            "-o",
+            out.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&out).unwrap(), b"bracketed payload");
+}
+
+#[test]
+fn extract_is_reachable_through_the_bytes_group() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args([
+            "inspect",
+            "bytes",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"bracketed payload");
+}
+
+#[test]
+fn input_flag_reaches_the_same_file_as_the_positional() {
+    let dir = tempdir().unwrap();
+    let bytes: Vec<u8> = (0u8..64).collect();
+    let counter = write(dir.path(), "counter.bin", &bytes);
+    let path = counter.to_str().unwrap();
+
+    // Byte-identical stdout under either spelling, per single-input tool.
+    for args in [
+        vec!["inspect", "hex", "--len", "0x10"],
+        vec!["inspect", "read", "--type", "u8", "-n", "2"],
+        vec!["inspect", "strings", "--min", "1"],
+        vec!["inspect", "struct", "--layout", "u8:a"],
+        vec!["inspect", "find", "--hex", "05"],
+    ] {
+        let positional = cadmpeg().args(&args).arg(path).output().unwrap();
+        let mut flagged = args.clone();
+        flagged.push("--input");
+        flagged.push(path);
+        let via_flag = cadmpeg().args(&flagged).output().unwrap();
+        assert!(positional.status.success(), "{args:?}");
+        assert!(via_flag.status.success(), "{args:?} --input");
+        assert_eq!(positional.stdout, via_flag.stdout, "{args:?}");
+    }
+}
+
+#[test]
+fn input_flag_and_positional_together_conflict() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+    cadmpeg()
+        .args(["inspect", "hex", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn find_with_input_flag_still_teaches_a_misplaced_pattern() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"document here");
+    let path = file.to_str().unwrap();
+    for extra in [vec!["document"], vec![]] {
+        let mut args = vec!["inspect", "find", "--input", path];
+        args.extend(&extra);
+        let assert = cadmpeg().args(&args).assert();
+        if extra.is_empty() {
+            assert
+                .code(2)
+                .stderr(predicate::str::contains("--hex, --ascii, or --utf16le"));
+        } else {
+            assert.code(2).stderr(predicate::str::contains(
+                "`document` is an extra positional argument",
+            ));
+        }
+    }
+}
+
+#[test]
+fn inspect_input_flag_positional_and_subcommand_interplay() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "plain.bin", b"not a container");
+    let path = file.to_str().unwrap();
+
+    // `inspect --input FILE` reaches the container summary (which then
+    // rejects this non-container file with its own operational error).
+    cadmpeg()
+        .args(["inspect", "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("no codec recognized"));
+
+    // A byte subcommand still parses with no top-level input.
+    cadmpeg()
+        .args(["inspect", "hex", path, "--len", "1"])
+        .assert()
+        .success();
+
+    // Top-level `--input` cannot be combined with a byte subcommand.
+    cadmpeg()
+        .args(["inspect", "--input", path, "hex"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    // Both spellings at once conflict.
+    cadmpeg()
+        .args(["inspect", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+
+    // Bare `inspect` still demands an input.
+    cadmpeg()
+        .args(["inspect"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("required arguments"));
+}
+
+#[test]
+fn container_json_lists_entries_under_the_envelope() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args(["inspect", "container", "--json", archive.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["schema_version"], 5);
+    assert_eq!(value["command"], "inspect container");
+    let entries = value["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    // Raw names in JSON: no shell quoting.
+    assert_eq!(entries[0]["name"], "Body[Active].brp");
+    assert_eq!(entries[0]["compression"], "stored");
+    assert_eq!(entries[0]["uncompressed_size"], 17);
+}
+
+#[test]
+fn step_is_an_alias_of_stride() {
+    let dir = tempdir().unwrap();
+    let bytes: Vec<u8> = (0u8..16).collect();
+    let file = write(dir.path(), "counter.bin", &bytes);
+    let path = file.to_str().unwrap();
+    let stride = cadmpeg()
+        .args([
+            "inspect", "read", path, "--type", "u8", "-n", "3", "--stride", "4",
+        ])
+        .output()
+        .unwrap();
+    let step = cadmpeg()
+        .args([
+            "inspect", "read", path, "--type", "u8", "-n", "3", "--step", "4",
+        ])
+        .output()
+        .unwrap();
+    assert!(stride.status.success());
+    assert_eq!(stride.stdout, step.stdout);
+}
+
+#[test]
+fn read_type_text_and_hex_guesses_teach_the_right_tool() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+
+    for (guess, expected) in [
+        ("ascii", "cadmpeg inspect strings"),
+        ("text", "cadmpeg inspect strings"),
+        ("hex", "cadmpeg inspect hex"),
+    ] {
+        cadmpeg()
+            .args(["inspect", "read", path, "--type", guess])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(expected));
+    }
+
+    // The scalar list still renders in help.
+    cadmpeg()
+        .args(["inspect", "read", "-h"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("possible values: u8, i8"));
+}
+
+#[test]
+fn find_type_guess_names_the_encoding_flags() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+    for (guess, flag) in [
+        ("ascii", "--ascii TEXT"),
+        ("hex", "--hex PATTERN"),
+        ("utf16", "--utf16le TEXT"),
+    ] {
+        cadmpeg()
+            .args(["inspect", "find", path, "--type", guess])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(flag));
+    }
+}
+
+#[test]
+fn find_context_prints_a_window_around_each_hit() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "ctx.bin", b"AAAAneedleBBBB");
+    let path = file.to_str().unwrap();
+
+    // --context 0 output is exactly the old hit-line format.
+    cadmpeg()
+        .args(["inspect", "find", path, "--ascii", "needle"])
+        .assert()
+        .success()
+        .stdout(
+            "pattern: ascii \"needle\" (6 bytes)  hits: 1\n\
+             0x00000004  4\n",
+        );
+
+    // --context 4 appends a dump spanning 4 bytes before and after the hit.
+    cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            path,
+            "--ascii",
+            "needle",
+            "--context",
+            "4",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            "pattern: ascii \"needle\" (6 bytes)  hits: 1\n\
+             0x00000004  4\n\
+             00000000  41 41 41 41 6e 65 65 64  6c 65 42 42 42 42        \
+             |AAAAneedleBBBB|\n",
+        );
 }

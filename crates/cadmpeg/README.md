@@ -46,12 +46,17 @@ cadmpeg convert bracket.f3d -o bracket.step --reject-step-losses
 note would be reported.
 
 The output extension selects `step`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
-`cadir`. Pass `--format` when writing to standard output or when the filename
-does not identify the format:
+`cadir`. Pass `--format` (alias `--to`) when the filename does not identify
+the format, or when a text format (`cadir`, `step`) goes to standard output:
 
 ```sh
 cadmpeg convert bracket.f3d --format step > bracket.step
 ```
+
+Binary formats (`fcstd`, `f3d`, `sldprt`, `rhino`) are refused on standard
+output, because that spelling is nearly always `--input-format` (alias
+`--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
+pipe, `--binary-stdout`.
 
 Conversion stops before export if validation finds errors. It also refuses
 geometry output when decoding transfers no geometry. `--allow-invalid` and
@@ -110,6 +115,7 @@ cadmpeg inspect strings part.prt --min 6 --encoding both
 cadmpeg inspect struct part.prt --offset 0x100 --count 4 \
   --layout 'u32le:id,pad4,f64le:x,f64le:y,f64le:z'
 cadmpeg inspect container part.f3d                      # ZIP entries with byte offsets
+cadmpeg inspect extract part.f3d 'Design/Streams.dat' -o streams.dat
 cadmpeg inspect diff probe-a.prt probe-b.prt            # positional byte diff
 ```
 
@@ -118,11 +124,15 @@ default. `read --count N` walks a record array, stepping `--stride` bytes and
 defaulting to the scalar width.
 
 Common alternative spellings are accepted: `--length` for `--len`, `--min-len`
-and `--min-length` for `--min`, `--start` for `--offset`, and `-n` for
-`--count`. `cadmpeg inspect bytes <tool>` runs the same tool as `cadmpeg inspect
-<tool>`. `find` needs its pattern on `--hex`, `--ascii`, or `--utf16le`, because
-a bare word does not say how to encode it; the tool stops at `--max` hits and
-says so, and `--max 0` reports every hit.
+and `--min-length` for `--min`, `--start` for `--offset`, `--step` for
+`--stride`, `-n` for `--count`, and `--input FILE` for the positional file on
+every single-input tool. `cadmpeg inspect bytes <tool>` runs the same tool as
+`cadmpeg inspect <tool>`. `find` needs its pattern on `--hex`, `--ascii`, or
+`--utf16le`, because a bare word does not say how to encode it; a guessed
+`--type` on `find`, or a text or hex value on `read --type`, gets an error that
+names the right flag or tool. `find` stops at `--max` hits and says so,
+`--max 0` reports every hit, and `--context N` dumps `N` bytes around each
+hit.
 
 `--layout` is a comma-separated record spec with no implicit alignment:
 
@@ -138,10 +148,14 @@ Every field except `padN` accepts an optional `:name`; unnamed fields are called
 error rather than a partial record when the run passes end of file.
 
 `inspect container` lists ZIP entries with their local-header and payload
-offsets, so a hex dump of an entry follows directly. Names are single-quoted
+offsets, so a hex dump of an entry follows directly; `--json` prints the same
+listing as versioned JSON with raw names. Names in the table are single-quoted
 because Fusion `.f3d` entry names hold `[` and `]`, which a shell reads as a
-glob. Other container families are listed by `cadmpeg inspect FILE` through
-their codec.
+glob. `inspect extract FILE MEMBER` writes one entry's decompressed,
+CRC-checked bytes to `-o FILE` or standard output; the member name matches
+byte-exactly, brackets included, where `unzip` reads it as a glob and fails.
+Other container families are listed by `cadmpeg inspect FILE` through their
+codec.
 
 `inspect diff` compares byte `n` of one file with byte `n` of the other. It
 reports the first differing offset, the differing byte count, and the differing
@@ -167,8 +181,11 @@ Exit status `1` indicates a difference.
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.sldprt`, `.3dm`, `.CATPart`,
 IGES, STEP, and the NX and Creo `.prt` layouts by content. Commands that load
-models also accept CADIR JSON. Use `--input-format` to bypass detection for an
-ambiguous or extensionless input.
+models also accept CADIR JSON. Use `--input-format` (alias `--from`) to bypass
+detection for an ambiguous or extensionless input. Every command that takes
+one input file also accepts `--input FILE` as a spelling of the positional;
+the two-file commands (`diff`, `inspect diff`, `inspect extract`) take their
+inputs positionally only.
 
 Output formats are:
 
@@ -198,14 +215,37 @@ cadmpeg convert bracket.f3d -o bracket.step \
 ```
 
 The command report contains decode, validation, and export sections when those
-stages ran. `inspect --json`, `validate --json`, and `diff --json` write
-versioned JSON directly to standard output.
+stages ran. `inspect --json`, `inspect container --json`, `validate --json`,
+and `diff --json` write versioned JSON directly to standard output.
 
 `inspect`, `validate`, and `diff` produce no artifact beside the report, so they
 also accept `-o` and `--output` for the report path. Every command refuses to
 replace an existing report or artifact unless `--force` is present. Validation
 findings live under `.validation_report.findings`; the printed error count and
 exit status 1 count the same `error` and `blocking` findings.
+
+## Query reports
+
+`query` projects one named view from a JSON artifact without `jq`: it reads a
+command report, a decoded CADIR document, or a `.decode.json` sidecar, detects
+which one it was given, and prints tab-separated rows with a header.
+
+```sh
+cadmpeg validate bracket.f3d -o report.json
+cadmpeg query findings report.json     # severity  check  entity  message
+cadmpeg query losses report.json       # severity  code   message
+cadmpeg query coverage report.json     # decode coverage counts
+cadmpeg query counts bracket.cadir.json  # per-arena entity counts; alias: arenas
+cadmpeg query summary report.json      # artifact kind and section counts
+```
+
+`counts` on a CADIR document lists arena lengths for `model` and every
+`native.<codec>` namespace; on a validate report it lists `entity_counts`.
+An empty or not-run section is not an error: the header prints, a note goes
+to standard error, and the exit status stays `0`. A view the artifact kind
+can never carry exits `2` and names the command that produces the right
+artifact. `--json` wraps the projection in the versioned envelope, and `-`
+reads standard input.
 
 ## Exit status
 

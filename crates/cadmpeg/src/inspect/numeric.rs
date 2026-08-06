@@ -76,6 +76,54 @@ impl EndianArgs {
     }
 }
 
+/// Parses `--type`, teaching the right tool for non-scalar guesses.
+///
+/// Delegates to the `ScalarType` value enum — including its possible-values
+/// help list — but catches the recurring text and hex-dump guesses with an
+/// error that names the tool that does that job.
+#[derive(Clone)]
+pub struct ScalarTypeParser;
+
+impl clap::builder::TypedValueParser for ScalarTypeParser {
+    type Value = ScalarType;
+
+    fn parse_ref(
+        &self,
+        cmd: &clap::Command,
+        arg: Option<&clap::Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<ScalarType, clap::Error> {
+        let redirect = match value.to_str().map(str::to_ascii_lowercase).as_deref() {
+            Some("ascii" | "string" | "str" | "text" | "utf8") => Some(
+                "--type takes a fixed-width scalar; for text use `cadmpeg inspect strings`, \
+                 or `cadmpeg inspect find --ascii TEXT` to locate it",
+            ),
+            Some("hex" | "bytes") => {
+                Some("--type takes a fixed-width scalar; for a hex dump use `cadmpeg inspect hex`")
+            }
+            _ => None,
+        };
+        if let Some(message) = redirect {
+            return Err(clap::Error::raw(
+                clap::error::ErrorKind::InvalidValue,
+                format!("{message}\n"),
+            )
+            .with_cmd(cmd));
+        }
+        clap::builder::EnumValueParser::<ScalarType>::new().parse_ref(cmd, arg, value)
+    }
+
+    fn possible_values(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+        Some(Box::new(
+            clap::ValueEnum::value_variants()
+                .iter()
+                .filter_map(|variant: &ScalarType| clap::ValueEnum::to_possible_value(variant)),
+        ))
+    }
+}
+
 /// A fixed-width scalar that a decoder reads out of a record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum ScalarType {

@@ -1626,3 +1626,175 @@ fn report_to_an_unwritable_path_is_an_operational_error() {
         .code(2);
     assert!(!report.exists());
 }
+
+#[test]
+fn input_flag_reaches_every_single_input_command() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    // Byte-identical stdout under either input spelling.
+    for args in [
+        vec!["decode", "--input-format", "cadir"],
+        vec!["validate"],
+        vec!["export", "-f", "step"],
+        vec!["convert", "-f", "step"],
+    ] {
+        let positional = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&args)
+            .arg(path)
+            .output()
+            .unwrap();
+        let mut flagged = args.clone();
+        flagged.push("--input");
+        flagged.push(path);
+        let via_flag = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args(&flagged)
+            .output()
+            .unwrap();
+        assert_eq!(positional.status.code(), via_flag.status.code(), "{args:?}");
+        assert_eq!(positional.stdout, via_flag.stdout, "{args:?}");
+    }
+
+    // Both spellings at once are a clap conflict.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["validate", path, "--input", path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("cannot be used with"));
+}
+
+#[test]
+fn json_on_artifact_commands_is_a_teaching_error() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["decode", path, "--json"])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("already JSON").and(predicate::str::contains("cadmpeg query")),
+        );
+
+    for command in ["export", "convert"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([command, path, "--json"])
+            .assert()
+            .code(2)
+            .stderr(
+                predicate::str::contains("not an output selector")
+                    .and(predicate::str::contains("--report")),
+            );
+    }
+}
+
+#[test]
+fn export_and_convert_refuse_binary_output_to_stdout() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    // The hazard reproduction: an output-format flag with no -o used to
+    // stream ZIP bytes to stdout, where they were mistaken for JSON.
+    for command in ["convert", "export"] {
+        Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([command, path, "--format", "sldprt"])
+            .assert()
+            .code(2)
+            .stderr(
+                predicate::str::contains("refusing to write binary sldprt")
+                    .and(predicate::str::contains("--input-format sldprt"))
+                    .and(predicate::str::contains("--binary-stdout")),
+            );
+    }
+
+    // With -o the write succeeds (Rhino is the binary writer that accepts a
+    // source-less IR; the guard question is the destination, not the codec).
+    let mut point_ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    point_ir.model.points.push(cadmpeg_ir::topology::Point {
+        id: cadmpeg_ir::ids::PointId("cadir:model:point#guard".into()),
+        position: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+        source_object: None,
+    });
+    let point = fixture(dir.path(), "point.cadir.json", &point_ir);
+    let out = dir.path().join("point.3dm");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            point.to_str().unwrap(),
+            "--format",
+            "rhino",
+            "-o",
+            out.to_str().unwrap(),
+            "--allow-invalid",
+        ])
+        .assert()
+        .success();
+    let written = fs::read(&out).unwrap();
+    assert!(written.starts_with(b"3D Geometry File Format"));
+
+    // The escape hatch streams the same bytes to stdout deliberately.
+    let streamed = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            point.to_str().unwrap(),
+            "--format",
+            "rhino",
+            "--allow-invalid",
+            "--binary-stdout",
+        ])
+        .output()
+        .unwrap();
+    assert!(streamed.status.success());
+    assert!(streamed.stdout.starts_with(b"3D Geometry File Format"));
+
+    // Text formats to stdout stay untouched by the guard.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["export", path, "--format", "step"])
+        .assert()
+        .success()
+        .stdout(predicate::str::starts_with("ISO-10303-21;"));
+}
+
+#[test]
+fn from_and_to_aliases_match_input_format_and_format() {
+    let dir = tempdir().unwrap();
+    let ir = unit_cube();
+    let model = fixture(dir.path(), "cube.cadir.json", &ir);
+    let path = model.to_str().unwrap();
+
+    let long = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            path,
+            "--input-format",
+            "cadir",
+            "--format",
+            "step",
+        ])
+        .output()
+        .unwrap();
+    let aliased = Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["convert", path, "--from", "cadir", "--to", "step"])
+        .output()
+        .unwrap();
+    assert!(long.status.success());
+    assert!(aliased.status.success());
+    assert_eq!(long.stdout, aliased.stdout);
+}

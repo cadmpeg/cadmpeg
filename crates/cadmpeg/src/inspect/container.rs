@@ -25,6 +25,72 @@ pub fn list(bytes: &[u8], limits: ResourceLimits) -> Result<Vec<EntryRecord>> {
     Ok(snapshot.entries().to_vec())
 }
 
+/// Extracts one entry's decompressed, CRC-verified bytes.
+///
+/// The archive `ctx` and arena stay alive in this scope until the view's
+/// bytes are copied out; `list` drops them, which is why extraction cannot
+/// reuse it.
+///
+/// # Errors
+///
+/// Returns an error when the bytes are not a ZIP archive within the limit
+/// profile, when no entry has exactly `name` (the message suggests close
+/// names), or when the entry fails its size or CRC check.
+pub fn extract(bytes: &[u8], limits: ResourceLimits, name: &str) -> Result<Vec<u8>> {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits,
+        ..DecodePolicy::default()
+    };
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+        .context("the file does not fit the resource-limit profile")?;
+    let snapshot = ArchiveSnapshot::new(root).context("reading the ZIP central directory")?;
+    let entry = snapshot
+        .entry(name)
+        .ok_or_else(|| anyhow::anyhow!("{}", missing_member_message(&snapshot, name)))?;
+    let view = snapshot
+        .open(&ctx, entry)
+        .with_context(|| format!("opening entry {}", shell_quote(name)))?;
+    Ok(view.window().to_vec())
+}
+
+/// Builds the error text for a member name with no exact match.
+///
+/// Names that contain the request case-insensitively, or whose final path
+/// component equals it, are suggested first; with no near-miss the first
+/// entries are listed instead. Every name is shell-quoted the way the
+/// listing prints it.
+fn missing_member_message(snapshot: &ArchiveSnapshot<'_>, name: &str) -> String {
+    const SHOWN: usize = 10;
+    let lower = name.to_lowercase();
+    let mut label = "close names";
+    let mut names: Vec<String> = snapshot
+        .entries()
+        .iter()
+        .filter(|entry| {
+            entry.name.to_lowercase().contains(&lower)
+                || entry.name.rsplit('/').next() == Some(name)
+        })
+        .take(SHOWN)
+        .map(|entry| shell_quote(&entry.name))
+        .collect();
+    if names.is_empty() {
+        label = "entries include";
+        names = snapshot
+            .entries()
+            .iter()
+            .take(SHOWN)
+            .map(|entry| shell_quote(&entry.name))
+            .collect();
+    }
+    format!(
+        "no entry is named exactly {}; {label}: {}; run `cadmpeg inspect container FILE` \
+         for the full list",
+        shell_quote(name),
+        names.join(", ")
+    )
+}
+
 /// Quotes an entry name so it survives a POSIX shell verbatim.
 ///
 /// Fusion `.f3d` entry names hold `[` and `]`, which a shell expands as a glob
@@ -42,6 +108,36 @@ pub fn shell_quote(name: &str) -> String {
     }
     out.push('\'');
     out
+}
+
+/// Formats an entry listing as the versioned JSON envelope.
+///
+/// Names are raw strings here — shell quoting belongs to the table
+/// rendering, not to JSON.
+pub fn render_json(entries: &[EntryRecord]) -> String {
+    let entries: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "name": entry.name,
+                "compression": entry.compression.label(),
+                "crc32": entry.crc32,
+                "compressed_size": entry.compressed_size,
+                "uncompressed_size": entry.uncompressed_size,
+                "header_start": entry.header_start,
+                "data_start": entry.data_start,
+                "central_start": entry.central_start,
+            })
+        })
+        .collect();
+    let envelope = serde_json::json!({
+        "schema_version": crate::commands::CLI_SCHEMA_VERSION,
+        "command": "inspect container",
+        "entries": entries,
+    });
+    let mut rendered = serde_json::to_string_pretty(&envelope).expect("the envelope serializes");
+    rendered.push('\n');
+    rendered
 }
 
 /// Formats an entry listing as an aligned table.

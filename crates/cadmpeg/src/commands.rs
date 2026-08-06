@@ -21,7 +21,7 @@ use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::{DetectionOutcome, Registry, TargetOptions};
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 5;
+pub(crate) const CLI_SCHEMA_VERSION: u32 = 5;
 
 fn validate_ir(
     registry: &Registry,
@@ -56,11 +56,16 @@ pub enum ValidationMode {
 }
 
 /// Complete policy and target configuration for one conversion pipeline.
+// Each bool mirrors one independent CLI switch; a state machine over their
+// combinations would say less than the flags themselves.
+#[allow(clippy::struct_excessive_bools)]
 pub struct ConversionPlan {
     /// Replace an existing output or report file.
     pub force: bool,
     /// Optional path for the versioned JSON command report.
     pub report: Option<PathBuf>,
+    /// Stream a binary output format to standard output instead of refusing.
+    pub binary_stdout: bool,
     /// Neutral validation policy.
     pub validation: ValidationMode,
     /// Export a geometry format when decoding transferred no geometry.
@@ -311,6 +316,16 @@ fn execute_conversion(
     command: &'static str,
 ) -> Result<()> {
     let format = resolve_format(format, out)?;
+    if format.is_binary_container() && out.is_none() && !plan.binary_stdout {
+        // Streaming a ZIP or 3DM to stdout is nearly always the --format /
+        // --input-format mix-up, and the bytes get mistaken for JSON.
+        bail!(
+            "refusing to write binary {name} to standard output; pass -o FILE.{name}, or \
+             --input-format {name} (alias --from) if you meant to force how the INPUT is \
+             read; pass --binary-stdout to stream the bytes anyway",
+            name = format.name()
+        );
+    }
     let loaded = loader::load_artifact(registry, path, args.options(), plan.forced_input)?;
     let mut stderr = io::stderr();
     if let Some(report) = loaded.decode_report() {

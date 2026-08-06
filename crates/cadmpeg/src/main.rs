@@ -3,13 +3,15 @@
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
-//! CADIR, validates and compares CADIR models, and writes CADIR, STEP AP214,
-//! `.FCStd`, `.f3d`, or `.sldprt` output. See the package README for workflows, format
-//! limits, loss reporting, and exit-status semantics.
+//! CADIR, validates and compares CADIR models, projects report and CADIR JSON
+//! through `query`, and writes CADIR, STEP AP214, `.FCStd`, `.f3d`, or
+//! `.sldprt` output. See the package README for workflows, format limits, loss
+//! reporting, and exit-status semantics.
 
 mod commands;
 mod inspect;
 mod loader;
+mod query;
 mod registry;
 
 use std::path::PathBuf;
@@ -145,6 +147,12 @@ impl Format {
         )
     }
 
+    /// Whether this output format is a binary container, which is unsafe to
+    /// stream to a terminal or a JSON-expecting pipe by accident.
+    fn is_binary_container(self) -> bool {
+        matches!(self, Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino)
+    }
+
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
         path.and_then(std::path::Path::extension)
             .and_then(|extension| extension.to_str())
@@ -220,7 +228,7 @@ impl InputFormat {
 #[derive(Debug, Clone, Args)]
 struct InputArgs {
     /// Bypass content detection and read the input as this format.
-    #[arg(long, value_enum)]
+    #[arg(long, visible_alias = "from", value_enum)]
     input_format: Option<InputFormat>,
 }
 
@@ -286,8 +294,16 @@ enum Command {
     #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Inspect {
         /// Native CAD file to inspect. Omit it when using a byte subcommand.
-        #[arg(required = true)]
+        #[arg(required_unless_present = "input_flag")]
         input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Write a versioned JSON summary to standard output.
         #[arg(long)]
         json: bool,
@@ -309,7 +325,19 @@ enum Command {
     /// Decode a native CAD file to canonical CADIR JSON.
     Decode {
         /// Native CAD file to decode.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
+        /// Rejected placeholder: decode's stdout is already the CADIR JSON.
+        #[arg(long, hide = true)]
+        json: bool,
         /// Output file; omit to write CADIR to standard output.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -324,10 +352,30 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
+    /// Project one named view from a cadmpeg JSON artifact.
+    ///
+    /// Accepts a decoded CADIR document, a command report written by
+    /// `--report`/`-o`, or a `.decode.json` sidecar, and detects which one
+    /// it was given. Output is tab-separated with a header row.
+    Query {
+        /// View to project.
+        #[command(subcommand)]
+        view: query::QueryView,
+    },
     /// Validate a CADIR document or a decoded native CAD file.
+    #[command(after_help = "Project fields from the written report with `cadmpeg query`.")]
     Validate {
         /// CADIR or supported native CAD file to validate.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
         /// Write a versioned JSON result to standard output.
         #[arg(long)]
         json: bool,
@@ -345,9 +393,25 @@ enum Command {
     /// Decode if needed, then export without CADIR validation.
     Export {
         /// CADIR or supported native CAD file to export.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
+        /// Rejected placeholder: the artifact format comes from --format/-o and
+        /// the machine-readable report from --report.
+        #[arg(long, hide = true)]
+        json: bool,
+        /// Stream a binary output format to standard output anyway.
+        #[arg(long, hide = true)]
+        binary_stdout: bool,
         /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, value_enum)]
+        #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
         /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
@@ -401,9 +465,25 @@ enum Command {
     /// Decode if needed, validate CADIR, then export.
     Convert {
         /// CADIR or supported native CAD file to convert.
-        input: PathBuf,
+        #[arg(required_unless_present = "input_flag")]
+        input: Option<PathBuf>,
+        /// Tolerated spelling of the positional input.
+        #[arg(
+            long = "input",
+            value_name = "FILE",
+            hide = true,
+            conflicts_with = "input"
+        )]
+        input_flag: Option<PathBuf>,
+        /// Rejected placeholder: the artifact format comes from --format/-o and
+        /// the machine-readable report from --report.
+        #[arg(long, hide = true)]
+        json: bool,
+        /// Stream a binary output format to standard output anyway.
+        #[arg(long, hide = true)]
+        binary_stdout: bool,
         /// Output format; inferred from the output extension when omitted.
-        #[arg(short, long, value_enum)]
+        #[arg(short, long, visible_alias = "to", value_enum)]
         format: Option<Format>,
         /// Output file; omit to write the artifact to standard output.
         #[arg(short, long)]
@@ -435,12 +515,32 @@ enum Command {
     },
 }
 
+/// Collapses the positional input and the tolerated `--input` spelling.
+///
+/// Clap guarantees exactly one of the pair is present: the positional is
+/// required unless the flag is given, and the two conflict.
+fn resolve_input(positional: Option<PathBuf>, flag: Option<PathBuf>) -> PathBuf {
+    positional
+        .or(flag)
+        .expect("clap requires one input spelling")
+}
+
+/// Error for `--json` on a command whose output is an artifact.
+fn misdirected_json(command: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "--json is not an output selector on {command}; the artifact format comes from \
+         --format/-o, and the machine-readable report from --report FILE, projected \
+         with `cadmpeg query`"
+    )
+}
+
 fn main() -> ExitCode {
     let command = Cli::parse().command;
     let registry = Registry::with_builtins();
     let result = match command {
         Command::Inspect {
             input,
+            input_flag,
             json,
             report,
             force,
@@ -450,7 +550,7 @@ fn main() -> ExitCode {
         } => match bytes {
             Some(byte_command) => inspect::run(byte_command).map(|()| ExitCode::SUCCESS),
             None => {
-                let input = input.expect("clap requires an input without a subcommand");
+                let input = resolve_input(input, input_flag);
                 commands::inspect(
                     &registry,
                     &input,
@@ -465,23 +565,37 @@ fn main() -> ExitCode {
         },
         Command::Decode {
             input,
+            input_flag,
+            json,
             output,
             force,
             report,
             input_args,
             decode,
-        } => commands::decode(
-            &registry,
-            &input,
-            output.as_deref(),
-            force,
-            report.as_deref(),
-            input_args.forced(),
-            &decode,
-        )
+        } => {
+            if json {
+                Err(anyhow::anyhow!(
+                    "decode writes the CADIR JSON artifact itself; its standard output is \
+                     already JSON when -o is omitted; the decode report goes to --report FILE, \
+                     projected with `cadmpeg query`"
+                ))
+            } else {
+                commands::decode(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    output.as_deref(),
+                    force,
+                    report.as_deref(),
+                    input_args.forced(),
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
+        Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
         Command::Validate {
             input,
+            input_flag,
             json,
             report,
             force,
@@ -489,7 +603,7 @@ fn main() -> ExitCode {
             decode,
         } => commands::validate_cmd(
             &registry,
-            &input,
+            &resolve_input(input, input_flag),
             input_args.forced(),
             &decode,
             json,
@@ -499,6 +613,9 @@ fn main() -> ExitCode {
         .map(|()| ExitCode::SUCCESS),
         Command::Export {
             input,
+            input_flag,
+            json,
+            binary_stdout,
             format,
             output,
             force,
@@ -509,23 +626,30 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => commands::export(
-            &registry,
-            &input,
-            format,
-            output.as_deref(),
-            commands::ConversionPlan {
-                force,
-                report,
-                validation: commands::ValidationMode::Skipped,
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                step_options: step.options(),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
+        } => {
+            if json {
+                Err(misdirected_json("export"))
+            } else {
+                commands::export(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    format,
+                    output.as_deref(),
+                    commands::ConversionPlan {
+                        force,
+                        report,
+                        binary_stdout,
+                        validation: commands::ValidationMode::Skipped,
+                        allow_empty,
+                        reject_lossy,
+                        rhino_version: rhino_version.map(RhinoVersion::codec),
+                        step_options: step.options(),
+                        forced_input: input_args.forced(),
+                    },
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
             a,
@@ -553,6 +677,9 @@ fn main() -> ExitCode {
         ),
         Command::Convert {
             input,
+            input_flag,
+            json,
+            binary_stdout,
             format,
             output,
             force,
@@ -564,23 +691,30 @@ fn main() -> ExitCode {
             input_args,
             decode,
             step,
-        } => commands::convert(
-            &registry,
-            &input,
-            format,
-            output.as_deref(),
-            commands::ConversionPlan {
-                force,
-                report,
-                validation: commands::ValidationMode::Required { allow_invalid },
-                allow_empty,
-                reject_lossy,
-                rhino_version: rhino_version.map(RhinoVersion::codec),
-                step_options: step.options(),
-                forced_input: input_args.forced(),
-            },
-            &decode,
-        )
+        } => {
+            if json {
+                Err(misdirected_json("convert"))
+            } else {
+                commands::convert(
+                    &registry,
+                    &resolve_input(input, input_flag),
+                    format,
+                    output.as_deref(),
+                    commands::ConversionPlan {
+                        force,
+                        report,
+                        binary_stdout,
+                        validation: commands::ValidationMode::Required { allow_invalid },
+                        allow_empty,
+                        reject_lossy,
+                        rhino_version: rhino_version.map(RhinoVersion::codec),
+                        step_options: step.options(),
+                        forced_input: input_args.forced(),
+                    },
+                    &decode,
+                )
+            }
+        }
         .map(|()| ExitCode::SUCCESS),
     };
     result.unwrap_or_else(|err| {

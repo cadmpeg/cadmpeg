@@ -1,0 +1,642 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Named projections over cadmpeg JSON artifacts.
+//!
+//! `cadmpeg query` reads one of the three JSON artifact kinds the CLI
+//! produces — a decoded CADIR document, a versioned command report, or a
+//! `.decode.json` sidecar — detects which one it was given, and prints one
+//! named view as tab-separated rows. It replaces ad-hoc `jq` path
+//! exploration: the view names are stable and each view's help states which
+//! artifact kinds it accepts.
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+use anyhow::{bail, Context, Result};
+use clap::{Args, Subcommand};
+use serde::de::{IgnoredAny, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+
+use crate::commands::CLI_SCHEMA_VERSION;
+
+/// One named projection over a cadmpeg JSON artifact.
+#[derive(Debug, Subcommand)]
+pub enum QueryView {
+    /// Artifact kind and section counts. Accepts every artifact kind.
+    Summary(QueryArgs),
+    /// Decode coverage counts. Accepts a command report or a decode
+    /// sidecar; empty coverage is not an error.
+    Coverage(QueryArgs),
+    /// Validation findings: severity, check, entity, message. Accepts a
+    /// command report written by `validate` or `convert`.
+    Findings(QueryArgs),
+    /// Loss notes: severity, code, message. Accepts a command report or a
+    /// decode sidecar.
+    Losses(QueryArgs),
+    /// Per-arena entity counts. Accepts a CADIR document (arena lengths,
+    /// including `native.<codec>` arenas) or a command report
+    /// (`entity_counts`).
+    #[command(visible_alias = "arenas")]
+    Counts(QueryArgs),
+}
+
+/// Input selection and output format for one query view.
+#[derive(Debug, Args)]
+pub struct QueryArgs {
+    /// Artifact file, or `-` for standard input.
+    pub file: PathBuf,
+    /// Print the projected subtree as JSON instead of the table.
+    #[arg(long)]
+    pub json: bool,
+}
+
+impl QueryView {
+    fn args(&self) -> &QueryArgs {
+        match self {
+            Self::Summary(args)
+            | Self::Coverage(args)
+            | Self::Findings(args)
+            | Self::Losses(args)
+            | Self::Counts(args) => args,
+        }
+    }
+}
+
+/// Which artifact kind a JSON file turned out to be.
+enum Artifact {
+    /// A versioned CLI command report (`--report`/`-o`).
+    Report(ReportProbe),
+    /// A decoded CADIR document.
+    Cadir(CadirProbe),
+    /// A `.decode.json` sidecar.
+    Sidecar(SidecarProbe),
+}
+
+impl Artifact {
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Report(_) => "command report",
+            Self::Cadir(_) => "CADIR document",
+            Self::Sidecar(_) => "decode sidecar",
+        }
+    }
+}
+
+/// Top-level key sniff. Every field optional; unknown fields ignored.
+#[derive(Deserialize)]
+struct KindProbe {
+    schema_version: Option<u32>,
+    command: Option<String>,
+    ir_version: Option<String>,
+    version: Option<String>,
+    ir_sha256: Option<String>,
+}
+
+/// Lenient shape of a CLI command report. Sections the command did not run
+/// are JSON `null`; sections this build does not know stay unparsed.
+#[derive(Deserialize)]
+struct ReportProbe {
+    schema_version: u32,
+    command: String,
+    #[serde(default)]
+    decode_report: Option<DecodeReportProbe>,
+    #[serde(default)]
+    validation_report: Option<ValidationReportProbe>,
+}
+
+/// Lenient decode report: enum-valued fields read as strings so future
+/// severities and loss kinds do not break projection.
+#[derive(Deserialize)]
+struct DecodeReportProbe {
+    #[serde(default)]
+    format: Option<String>,
+    #[serde(default)]
+    container_only: Option<bool>,
+    #[serde(default)]
+    geometry_transferred: Option<bool>,
+    #[serde(default)]
+    coverage: BTreeMap<String, u64>,
+    #[serde(default)]
+    losses: Vec<LossProbe>,
+}
+
+#[derive(Deserialize)]
+struct ValidationReportProbe {
+    #[serde(default)]
+    entity_counts: BTreeMap<String, u64>,
+    #[serde(default)]
+    findings: Vec<FindingProbe>,
+    #[serde(default)]
+    losses: Vec<LossProbe>,
+}
+
+#[derive(Deserialize)]
+struct FindingProbe {
+    #[serde(default)]
+    check: Option<String>,
+    #[serde(default)]
+    severity: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    entity: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct LossProbe {
+    #[serde(default)]
+    code: Option<String>,
+    #[serde(default)]
+    severity: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// Lenient CADIR document probe: arena contents are counted, never
+/// materialized, so a large document costs one parse pass and no entity
+/// allocation.
+#[derive(Deserialize)]
+struct CadirProbe {
+    ir_version: String,
+    #[serde(default)]
+    model: BTreeMap<String, ArenaLen>,
+    #[serde(default)]
+    native: BTreeMap<String, NativeNamespaceProbe>,
+}
+
+#[derive(Deserialize)]
+struct NativeNamespaceProbe {
+    #[serde(default)]
+    arenas: BTreeMap<String, ArenaLen>,
+}
+
+/// Lenient decode sidecar probe. Deliberately not `DecodeSidecar::from_json`,
+/// which rejects unknown sidecar versions; query projects whatever it can.
+#[derive(Deserialize)]
+struct SidecarProbe {
+    version: String,
+    #[serde(default)]
+    report: Option<DecodeReportProbe>,
+}
+
+/// Length of a JSON array, counted without materializing its elements.
+/// A non-array value counts as zero instead of failing the projection.
+struct ArenaLen(u64);
+
+impl<'de> Deserialize<'de> for ArenaLen {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct LenVisitor;
+
+        impl<'de> Visitor<'de> for LenVisitor {
+            type Value = ArenaLen;
+
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an arena array")
+            }
+
+            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<ArenaLen, A::Error> {
+                let mut len = 0;
+                while seq.next_element::<IgnoredAny>()?.is_some() {
+                    len += 1;
+                }
+                Ok(ArenaLen(len))
+            }
+
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<ArenaLen, A::Error> {
+                while map.next_entry::<IgnoredAny, IgnoredAny>()?.is_some() {}
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_unit<E>(self) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_bool<E>(self, _: bool) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_i64<E>(self, _: i64) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_u64<E>(self, _: u64) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_f64<E>(self, _: f64) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+
+            fn visit_str<E>(self, _: &str) -> Result<ArenaLen, E> {
+                Ok(ArenaLen(0))
+            }
+        }
+
+        deserializer.deserialize_any(LenVisitor)
+    }
+}
+
+/// Runs one query view against one artifact file.
+pub fn run(view: &QueryView) -> Result<()> {
+    let args = view.args();
+    let bytes = read_input(&args.file)?;
+    let artifact = detect(&bytes, &args.file)?;
+    match view {
+        QueryView::Summary(args) => {
+            summary(&artifact, args);
+            Ok(())
+        }
+        QueryView::Coverage(args) => coverage(&artifact, args),
+        QueryView::Findings(args) => findings(&artifact, args),
+        QueryView::Losses(args) => losses(&artifact, args),
+        QueryView::Counts(args) => counts(&artifact, args),
+    }
+}
+
+fn read_input(path: &Path) -> Result<Vec<u8>> {
+    if path == Path::new("-") {
+        let mut bytes = Vec::new();
+        std::io::stdin()
+            .lock()
+            .read_to_end(&mut bytes)
+            .context("reading standard input")?;
+        Ok(bytes)
+    } else {
+        std::fs::read(path).with_context(|| format!("reading {}", path.display()))
+    }
+}
+
+fn detect(bytes: &[u8], path: &Path) -> Result<Artifact> {
+    let sniff: KindProbe = serde_json::from_slice(bytes).with_context(|| {
+        format!(
+            "{} is not a JSON object; query reads a command report (--report/-o), \
+             a decoded CADIR document, or a .decode.json sidecar",
+            path.display()
+        )
+    })?;
+    if sniff.schema_version.is_some() && sniff.command.is_some() {
+        let report: ReportProbe = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing the command report {}", path.display()))?;
+        return Ok(Artifact::Report(report));
+    }
+    if sniff.ir_version.is_some() {
+        let cadir: CadirProbe = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing the CADIR document {}", path.display()))?;
+        return Ok(Artifact::Cadir(cadir));
+    }
+    if sniff.version.is_some() && sniff.ir_sha256.is_some() {
+        let sidecar: SidecarProbe = serde_json::from_slice(bytes)
+            .with_context(|| format!("parsing the decode sidecar {}", path.display()))?;
+        return Ok(Artifact::Sidecar(sidecar));
+    }
+    bail!(
+        "{} is JSON but not a recognized artifact; query reads a command report \
+         (top-level `schema_version` and `command`), a decoded CADIR document \
+         (`ir_version` and `model`), or a .decode.json sidecar (`version` and \
+         `ir_sha256`)",
+        path.display()
+    )
+}
+
+/// Replaces TSV structure characters in free-form text with spaces.
+fn cell(text: &str) -> String {
+    text.replace(['\t', '\n', '\r'], " ")
+}
+
+fn opt(text: Option<&String>) -> String {
+    text.map(|value| cell(value)).unwrap_or_default()
+}
+
+fn print_json(view: &str, payload: &serde_json::Value) {
+    let envelope = serde_json::json!({
+        "schema_version": CLI_SCHEMA_VERSION,
+        "command": format!("query {view}"),
+        view: payload,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&envelope).expect("envelope serializes")
+    );
+}
+
+fn counts_json(map: &BTreeMap<String, u64>) -> serde_json::Value {
+    serde_json::json!(map)
+}
+
+fn summary(artifact: &Artifact, args: &QueryArgs) {
+    let mut rows: Vec<(String, String)> =
+        vec![("kind".to_owned(), artifact.kind_name().to_owned())];
+    match artifact {
+        Artifact::Report(report) => {
+            rows.push((
+                "schema_version".to_owned(),
+                report.schema_version.to_string(),
+            ));
+            rows.push(("command".to_owned(), cell(&report.command)));
+            match &report.decode_report {
+                Some(decode) => {
+                    if let Some(format) = &decode.format {
+                        rows.push(("decode_format".to_owned(), cell(format)));
+                    }
+                    if let Some(container_only) = decode.container_only {
+                        rows.push(("container_only".to_owned(), container_only.to_string()));
+                    }
+                    if let Some(geometry) = decode.geometry_transferred {
+                        rows.push(("geometry_transferred".to_owned(), geometry.to_string()));
+                    }
+                    rows.push((
+                        "coverage_rows".to_owned(),
+                        decode.coverage.len().to_string(),
+                    ));
+                    rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                }
+                None => rows.push(("decode_report".to_owned(), "null".to_owned())),
+            }
+            match &report.validation_report {
+                Some(validation) => {
+                    rows.push((
+                        "findings".to_owned(),
+                        format!(
+                            "{} ({} error, {} warning)",
+                            validation.findings.len(),
+                            count_severity(&validation.findings, &["error", "blocking"]),
+                            count_severity(&validation.findings, &["warning"]),
+                        ),
+                    ));
+                    rows.push((
+                        "validation_losses".to_owned(),
+                        validation.losses.len().to_string(),
+                    ));
+                    rows.push((
+                        "entity_count_rows".to_owned(),
+                        validation.entity_counts.len().to_string(),
+                    ));
+                }
+                None => rows.push(("validation_report".to_owned(), "null".to_owned())),
+            }
+        }
+        Artifact::Cadir(cadir) => {
+            rows.push(("ir_version".to_owned(), cell(&cadir.ir_version)));
+            rows.push(("model_arenas".to_owned(), cadir.model.len().to_string()));
+            rows.push((
+                "model_entities".to_owned(),
+                cadir
+                    .model
+                    .values()
+                    .map(|len| len.0)
+                    .sum::<u64>()
+                    .to_string(),
+            ));
+            for (namespace, probe) in &cadir.native {
+                rows.push((
+                    format!("native.{namespace}.arenas"),
+                    probe.arenas.len().to_string(),
+                ));
+                rows.push((
+                    format!("native.{namespace}.entities"),
+                    probe
+                        .arenas
+                        .values()
+                        .map(|len| len.0)
+                        .sum::<u64>()
+                        .to_string(),
+                ));
+            }
+        }
+        Artifact::Sidecar(sidecar) => {
+            rows.push(("sidecar_version".to_owned(), cell(&sidecar.version)));
+            match &sidecar.report {
+                Some(decode) => {
+                    if let Some(format) = &decode.format {
+                        rows.push(("decode_format".to_owned(), cell(format)));
+                    }
+                    rows.push((
+                        "coverage_rows".to_owned(),
+                        decode.coverage.len().to_string(),
+                    ));
+                    rows.push(("decode_losses".to_owned(), decode.losses.len().to_string()));
+                }
+                None => rows.push(("report".to_owned(), "null".to_owned())),
+            }
+        }
+    }
+    if args.json {
+        let map: serde_json::Map<String, serde_json::Value> = rows
+            .into_iter()
+            .map(|(field, value)| (field, serde_json::Value::String(value)))
+            .collect();
+        print_json("summary", &serde_json::Value::Object(map));
+    } else {
+        println!("field\tvalue");
+        for (field, value) in rows {
+            println!("{field}\t{value}");
+        }
+    }
+}
+
+fn count_severity(findings: &[FindingProbe], severities: &[&str]) -> usize {
+    findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .severity
+                .as_deref()
+                .is_some_and(|severity| severities.contains(&severity))
+        })
+        .count()
+}
+
+fn coverage(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    let decode = match artifact {
+        Artifact::Report(report) => report.decode_report.as_ref(),
+        Artifact::Sidecar(sidecar) => sidecar.report.as_ref(),
+        Artifact::Cadir(_) => bail!(
+            "a CADIR document has no decode report; coverage is in the report \
+             written by `decode --report` or in the `.decode.json` sidecar"
+        ),
+    };
+    let (coverage, note): (&BTreeMap<String, u64>, Option<&str>) = match decode {
+        Some(decode) if decode.coverage.is_empty() => {
+            (&decode.coverage, Some("(coverage is empty)"))
+        }
+        Some(decode) => (&decode.coverage, None),
+        None => {
+            static EMPTY: BTreeMap<String, u64> = BTreeMap::new();
+            (
+                &EMPTY,
+                Some("(no decode report — this command did not decode)"),
+            )
+        }
+    };
+    if args.json {
+        print_json("coverage", &counts_json(coverage));
+    } else {
+        println!("measure\tcount");
+        for (measure, count) in coverage {
+            println!("{}\t{count}", cell(measure));
+        }
+    }
+    if let Some(note) = note {
+        eprintln!("{note}");
+    }
+    Ok(())
+}
+
+fn findings(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    let report = match artifact {
+        Artifact::Report(report) => report,
+        Artifact::Cadir(_) => bail!(
+            "a CADIR document has no findings; run: cadmpeg validate FILE -o report.json \
+             && cadmpeg query findings report.json"
+        ),
+        Artifact::Sidecar(_) => bail!(
+            "a decode sidecar has no validation findings; run: cadmpeg validate FILE \
+             -o report.json && cadmpeg query findings report.json \
+             (a sidecar carries `coverage` and `losses`)"
+        ),
+    };
+    let (rows, note): (&[FindingProbe], Option<&str>) = match &report.validation_report {
+        Some(validation) => (&validation.findings, None),
+        None => (
+            &[],
+            Some("(no validation report — this command did not validate)"),
+        ),
+    };
+    if args.json {
+        let payload = rows
+            .iter()
+            .map(|finding| {
+                serde_json::json!({
+                    "check": finding.check,
+                    "severity": finding.severity,
+                    "message": finding.message,
+                    "entity": finding.entity,
+                })
+            })
+            .collect();
+        print_json("findings", &serde_json::Value::Array(payload));
+    } else {
+        println!("severity\tcheck\tentity\tmessage");
+        for finding in rows {
+            println!(
+                "{}\t{}\t{}\t{}",
+                opt(finding.severity.as_ref()),
+                opt(finding.check.as_ref()),
+                opt(finding.entity.as_ref()),
+                opt(finding.message.as_ref()),
+            );
+        }
+    }
+    if let Some(note) = note {
+        eprintln!("{note}");
+    }
+    Ok(())
+}
+
+fn losses(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    let (rows, note): (&[LossProbe], Option<&str>) = match artifact {
+        Artifact::Report(report) => match (&report.validation_report, &report.decode_report) {
+            (Some(validation), _) => (&validation.losses, None),
+            (None, Some(decode)) => (&decode.losses, None),
+            (None, None) => (&[], Some("(this report has no decode or validation stage)")),
+        },
+        Artifact::Sidecar(sidecar) => match &sidecar.report {
+            Some(decode) => (&decode.losses, None),
+            None => (&[], Some("(this sidecar has no decode report)")),
+        },
+        Artifact::Cadir(_) => bail!(
+            "a CADIR document has no loss notes; losses are in the report written \
+             by `--report` or in the `.decode.json` sidecar"
+        ),
+    };
+    if args.json {
+        let payload = rows
+            .iter()
+            .map(|loss| {
+                serde_json::json!({
+                    "code": loss.code,
+                    "severity": loss.severity,
+                    "message": loss.message,
+                })
+            })
+            .collect();
+        print_json("losses", &serde_json::Value::Array(payload));
+    } else {
+        println!("severity\tcode\tmessage");
+        for loss in rows {
+            println!(
+                "{}\t{}\t{}",
+                opt(loss.severity.as_ref()),
+                opt(loss.code.as_ref()),
+                opt(loss.message.as_ref()),
+            );
+        }
+    }
+    if let Some(note) = note {
+        eprintln!("{note}");
+    }
+    Ok(())
+}
+
+fn counts(artifact: &Artifact, args: &QueryArgs) -> Result<()> {
+    match artifact {
+        Artifact::Cadir(cadir) => {
+            let mut rows: Vec<(String, String, u64)> = cadir
+                .model
+                .iter()
+                .map(|(arena, len)| ("model".to_owned(), arena.clone(), len.0))
+                .collect();
+            for (namespace, probe) in &cadir.native {
+                for (arena, len) in &probe.arenas {
+                    rows.push((format!("native.{namespace}"), arena.clone(), len.0));
+                }
+            }
+            if args.json {
+                let mut map = serde_json::Map::new();
+                for (namespace, arena, entries) in &rows {
+                    map.insert(format!("{namespace}.{arena}"), serde_json::json!(entries));
+                }
+                print_json("counts", &serde_json::Value::Object(map));
+            } else {
+                println!("namespace\tarena\tentries");
+                for (namespace, arena, entries) in rows {
+                    println!("{}\t{}\t{entries}", cell(&namespace), cell(&arena));
+                }
+            }
+            Ok(())
+        }
+        Artifact::Report(report) => {
+            let (entity_counts, note): (&BTreeMap<String, u64>, Option<&str>) =
+                match &report.validation_report {
+                    Some(validation) => (&validation.entity_counts, None),
+                    None => {
+                        static EMPTY: BTreeMap<String, u64> = BTreeMap::new();
+                        (
+                            &EMPTY,
+                            Some("(no validation report — this command did not validate)"),
+                        )
+                    }
+                };
+            if args.json {
+                print_json("counts", &counts_json(entity_counts));
+            } else {
+                println!("namespace\tarena\tentries");
+                for (arena, entries) in entity_counts {
+                    println!("model\t{}\t{entries}", cell(arena));
+                }
+            }
+            if let Some(note) = note {
+                eprintln!("{note}");
+            }
+            Ok(())
+        }
+        Artifact::Sidecar(_) => bail!(
+            "a decode sidecar has no entity counts; use `cadmpeg query coverage` or \
+             `cadmpeg query losses` on it, or run `cadmpeg validate` for entity counts"
+        ),
+    }
+}
