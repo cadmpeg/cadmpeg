@@ -624,10 +624,16 @@ pub(crate) fn project_marker_backed_sketches(
             else {
                 continue;
             };
+            let end = objects
+                .get(object_index + 1)
+                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
             let object_markers = lane
                 .sketch_entities
                 .iter()
-                .filter(|marker| marker.feature_ref.as_deref() == Some(native_feature.id.as_str()))
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
+                        && marker.offset < end
+                })
                 .collect::<Vec<_>>();
             let markers = object_markers
                 .iter()
@@ -653,9 +659,6 @@ pub(crate) fn project_marker_backed_sketches(
             if markers.is_empty() {
                 continue;
             }
-            let end = objects
-                .get(object_index + 1)
-                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
             let context_start = object_index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))

@@ -393,23 +393,34 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         }
     }
     if let Some(indices) = resolved_curve_endpoint_indices(payload, offset) {
-        let indexed = indices
-            .into_iter()
-            .filter_map(|index| {
-                let mut candidates = markers.iter().copied().filter(|marker| {
-                    marker.feature_ref == curve.feature_ref
-                        && marker.object_index == Some(index)
-                        && marker.coordinates_m.is_some()
-                        && (selected_construction
-                            || matches!(
-                                marker.kind,
-                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                            ))
-                });
-                let candidate = candidates.next()?;
-                candidates.next().is_none().then_some(candidate)
-            })
-            .collect::<Vec<_>>();
+        let resolve_indexed = |indices: [u32; 2]| {
+            indices
+                .into_iter()
+                .filter_map(|index| {
+                    let mut candidates = markers.iter().copied().filter(|marker| {
+                        marker.feature_ref == curve.feature_ref
+                            && marker.object_index == Some(index)
+                            && marker.coordinates_m.is_some()
+                            && (selected_construction
+                                || matches!(
+                                    marker.kind,
+                                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                                ))
+                    });
+                    let candidate = candidates.next()?;
+                    candidates.next().is_none().then_some(candidate)
+                })
+                .collect::<Vec<_>>()
+        };
+        let indexed = resolve_indexed(indices);
+        if indexed.len() != 2 {
+            if let Some(raw_indices) = compact_indexed_curve_raw_endpoint_indices(payload, offset) {
+                let raw = resolve_indexed(raw_indices);
+                if raw.len() == 2 {
+                    return raw;
+                }
+            }
+        }
         if coordinate_roster_curve_layout(payload, offset) {
             let roster = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
             let legacy = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
@@ -4025,6 +4036,14 @@ pub(super) fn compact_indexed_curve_endpoint_indices(
     )
 }
 
+pub(super) fn compact_indexed_curve_raw_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    let [first, second] = compact_indexed_curve_endpoint_indices(payload, offset)?;
+    Some([first.checked_sub(1)?, second.checked_sub(1)?])
+}
+
 pub(super) fn legacy_compact_profile_line(payload: &[u8], offset: usize) -> bool {
     let common = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
         == Some(LEGACY_SKETCH_MARKER)
@@ -4550,12 +4569,33 @@ pub(super) fn relation_reference_curve_record(
         return false;
     }
     let resolve = |object_index| {
-        let mut candidates = markers
+        let candidates = markers
             .iter()
             .copied()
-            .filter(|marker| marker.object_index == Some(object_index));
-        let marker = candidates.next()?;
-        candidates.next().is_none().then_some(marker)
+            .filter(|marker| marker.object_index == Some(object_index))
+            .collect::<Vec<_>>();
+        let relations = candidates
+            .iter()
+            .copied()
+            .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
+            .collect::<Vec<_>>();
+        if relations.len() == 1 {
+            return relations.into_iter().next();
+        }
+        let points = candidates
+            .iter()
+            .copied()
+            .filter(|marker| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
+            .collect::<Vec<_>>();
+        if points.len() == 1 {
+            return points.into_iter().next();
+        }
+        (candidates.len() == 1).then(|| candidates[0])
     };
     let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) else {
         return false;

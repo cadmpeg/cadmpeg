@@ -16,8 +16,8 @@ use super::{
     alternate_current_indexed_curve_endpoint_indices,
     alternate_current_selected_axis_endpoint_indices, auxiliary_profile_record,
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
-    compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
-    compact_legacy_selected_axis_endpoint_indices,
+    compact_indexed_curve_raw_endpoint_indices, compact_legacy_code_one_line_endpoint_indices,
+    compact_legacy_curve_endpoint_indices, compact_legacy_selected_axis_endpoint_indices,
     compact_legacy_short_role_one_curve_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices, coordinate_circle_radius,
     coordinate_roster_arc_center, coordinate_roster_curve_endpoint_markers,
@@ -577,8 +577,14 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         SketchInputKind::Relation(SketchRelationKind::Distance),
         None,
     );
+    let duplicate_curve = marker(
+        "duplicate-curve",
+        Some(3),
+        SketchInputKind::LineOrCircle,
+        None,
+    );
     let point = marker("point", Some(5), SketchInputKind::Point, Some([1.0, 0.0]));
-    let markers = [&curve, &relation, &point];
+    let markers = [&curve, &relation, &duplicate_curve, &point];
 
     assert!(relation_reference_curve_record(&payload, &curve, &markers));
 
@@ -596,6 +602,68 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     );
     let markers = [&curve, &first_point, &second_point];
     assert!(!relation_reference_curve_record(&payload, &curve, &markers));
+}
+
+#[test]
+fn current_compact_curve_falls_back_to_raw_object_indices() {
+    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..60].copy_from_slice(&[15, 0, 6, 0]);
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[84..].copy_from_slice(SKETCH_MARKER);
+
+    assert_eq!(
+        compact_indexed_curve_raw_endpoint_indices(&payload, 0),
+        Some([15, 6])
+    );
+    let marker = |id: &str, object_index, offset, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let first = marker("first", Some(15), 1, Some([0.0, 0.0]));
+    let second = marker("second", Some(6), 2, Some([1.0, 0.0]));
+    let curve = SketchInputEntity {
+        id: "curve".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: 0,
+        object_index: Some(1),
+        local_id: None,
+        kind: SketchInputKind::LineOrCircle,
+        state_value: Some(1.0),
+        coordinates_m: None,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let markers = [&first, &second];
+    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    assert_eq!(
+        endpoints
+            .iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
+    );
 }
 
 #[test]
