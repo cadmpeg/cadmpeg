@@ -3,9 +3,10 @@
 //! The `cadmpeg` command-line interface.
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
-//! CADIR, validates and compares CADIR models, and writes CADIR, STEP AP214,
-//! `.FCStd`, `.f3d`, or `.sldprt` output. See the package README for workflows, format
-//! limits, loss reporting, and exit-status semantics.
+//! CADIR, validates and compares CADIR models, projects report and CADIR JSON
+//! through `query`, and writes CADIR, STEP AP214, `.FCStd`, `.f3d`, or
+//! `.sldprt` output. See the package README for workflows, format limits, loss
+//! reporting, and exit-status semantics.
 
 mod commands;
 mod inspect;
