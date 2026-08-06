@@ -2137,14 +2137,27 @@ pub enum SheetMetalBendPosition {
 
 /// Dimensional owner layout carried by a sheet-metal hem.
 ///
-/// The source uses one owner layout for both flat and open hems. Until a
-/// stable selector for that distinction is available, [`GapLength`] retains
-/// the shared layout without assigning either semantic form.
+/// The source uses one owner layout for flat and open hems. A resolved
+/// transition projects that layout to [`Flat`] or [`Open`]; [`GapLength`]
+/// retains the dimensional owners when the transition does not prove either
+/// semantic form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum SheetMetalHemForm {
-    /// Flat or open source form with a gap and a length owner.
+    /// Flat hem with its developed length.
+    Flat {
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Open hem with a gap and a developed length.
+    Open {
+        /// Gap between the folded wall and its source.
+        gap: Length,
+        /// Developed length of the hem.
+        length: Length,
+    },
+    /// Unresolved flat-or-open form with a gap and a length owner.
     GapLength {
         /// Gap between the folded wall and its source.
         gap: Length,

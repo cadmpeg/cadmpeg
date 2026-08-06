@@ -34,19 +34,15 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
 
-### DR-09A. Sheet-metal `Hem` form selector and direction
+### DR-09A. Sheet-metal `Hem` fixed-section semantics
 
-**Question.** Which field selects the hem form, which field carries the hem direction, and what is the layout of the rolled and teardrop frames?
+**Question.** What independent native settings do the four retained fixed-section fields and the indexed settings record carry?
 
-**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the two-owner layout, the header shift, the parameter source kinds of each form, and the four retained fields.
+**Known.** `f3d.md` §3.1 "A `Hem` scope names one parameter" gives the owner layouts, the header shift, the parameter source kinds, and the four retained fields. The owner layout separates rolled and teardrop inputs from the gap-and-length inputs. The executed transition separates the gap-and-length forms through its two coaxial bend carriers and supplies the signed direction from the preceding source plane; the settled invariants are in `f3d.md`.
 
-The parameter set separates a rolled hem, which owns `HemRadius` and `HemAngle`, and a teardrop hem, which owns three parameters, from the two-owner forms. It does not separate a flat hem from an open one: both own `HemGap` and `HemLength`. A flat hem's `HemGap` holds a small value its form does not use, which is a value difference and not a selector.
+The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
 
-The four retained fields each hold one value across the flat, open, rolled, and teardrop forms and across both authored direction states, so none of them carries the form or the direction. The retained u32 at offset `121 + S` is not the bend position either: it holds `4` in hems whose authored bend position is adjacent, which `EdgeFlange` shows is code `3`. The gap-and-length, radius-and-angle, and gap-length-radius owner layouts have distinct fixed-section lengths and rule-radius offsets.
-
-A rolled frame places its two owner references 13 bytes apart rather than 11, and a teardrop frame adds a third owner reference and moves the group references by ten bytes. Neither form uses the gap-and-length owner layout. The parameter source kinds identify the rolled and teardrop input sets, but the fixed fields do not identify flat versus open or either direction state.
-
-**Need.** A hem has no neutral operation without the form selector and the direction carrier. The fixed owner layouts settle the rolled and teardrop input sets, but the flat/open distinction and direction remain unresolved.
+**Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
 
 ### DR-12. Placement `refType` values
 

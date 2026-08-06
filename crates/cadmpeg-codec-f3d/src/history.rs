@@ -6144,6 +6144,97 @@ mod tests {
     }
 
     #[test]
+    fn hem_carrier_offsets_prove_fold_direction() {
+        use crate::history_records::{
+            AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
+            AsmHistoricalEntityDelta, AsmHistoricalPlane, AsmHistoricalRelation,
+            AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+        };
+        use cadmpeg_ir::features::SheetMetalHemDirection;
+        use cadmpeg_ir::math::{Point3, Vector3};
+
+        let previous = AsmHistoricalTopology {
+            coedge_topology: vec![AsmHistoricalCoedge {
+                coedge: 6,
+                owner_loop: 5,
+                edge: 7,
+                next: 6,
+                previous: 6,
+                radial_next: 6,
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 5,
+                member_refs: vec![6],
+            }],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 4,
+                member_refs: vec![5],
+            }],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 4,
+                carrier: 11,
+            }],
+            surface_planes: vec![AsmHistoricalPlane {
+                surface: 11,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+            }],
+            ..Default::default()
+        };
+        let transition = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: Default::default(),
+            topology: AsmHistoricalTopologyDelta {
+                surfaces: AsmHistoricalEntityDelta {
+                    inserted: vec![12, 13],
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        };
+        let cylinder = |origin| AsmHistoricalCylinder {
+            surface: 12,
+            origin,
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            radius: 1.0,
+        };
+        let forward_first = cylinder(Point3::new(1.0, 0.0, 0.0));
+        let forward_second = cylinder(Point3::new(2.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&forward_first, &forward_second],
+                &previous,
+                &transition,
+            ),
+            Some(SheetMetalHemDirection::Forward)
+        );
+
+        let reverse_first = cylinder(Point3::new(-1.0, 0.0, 0.0));
+        let reverse_second = cylinder(Point3::new(-2.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&reverse_first, &reverse_second],
+                &previous,
+                &transition,
+            ),
+            Some(SheetMetalHemDirection::Reverse)
+        );
+
+        let zero_offset = cylinder(Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(
+            super::hem_direction_from_transition(
+                7,
+                &[&zero_offset, &forward_second],
+                &previous,
+                &transition,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
         use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};

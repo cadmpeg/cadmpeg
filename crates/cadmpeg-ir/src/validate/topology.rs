@@ -2961,6 +2961,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 }
                 let gap_is_valid = |gap: crate::features::Length| gap.0.is_finite() && gap.0 >= 0.0;
                 let form_is_valid = match form {
+                    crate::features::SheetMetalHemForm::Flat { length } => {
+                        positive_feature_length(*length)
+                    }
+                    crate::features::SheetMetalHemForm::Open { gap, length } => {
+                        gap_is_valid(*gap) && positive_feature_length(*length)
+                    }
                     crate::features::SheetMetalHemForm::GapLength { gap, length } => {
                         gap_is_valid(*gap) && positive_feature_length(*length)
                     }

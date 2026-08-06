@@ -2516,17 +2516,32 @@ pub(crate) fn project_hem(
                 && operand.record_index == operation.edge_operand_record_index
         })
         .collect::<Vec<_>>();
-    let direction = match edge_slot.as_slice() {
+    let edge_slot = match edge_slot.as_slice() {
         [operand] => crate::design::edge_resolve::resolved_hem_edge_slot(
             operand,
             crate::history::effective_scope_previous_history_state_id(scope, histories),
-        )
-        .and_then(|edge_slot| {
-            crate::history::hem_geometry_semantics(scope, edge_slot, histories).direction
-        })
-        .unwrap_or(SheetMetalHemDirection::Unresolved),
-        _ => SheetMetalHemDirection::Unresolved,
+        ),
+        _ => None,
     };
+    let semantics = edge_slot
+        .map(|edge_slot| crate::history::hem_geometry_semantics(scope, edge_slot, histories));
+    let form = match (
+        form,
+        semantics.and_then(|semantics| semantics.gap_length_form),
+    ) {
+        (
+            SheetMetalHemForm::GapLength { gap: _, length },
+            Some(crate::history::HemGapLengthForm::Flat),
+        ) => SheetMetalHemForm::Flat { length },
+        (
+            SheetMetalHemForm::GapLength { gap, length },
+            Some(crate::history::HemGapLengthForm::Open),
+        ) => SheetMetalHemForm::Open { gap, length },
+        (form, _) => form,
+    };
+    let direction = semantics
+        .and_then(|semantics| semantics.direction)
+        .unwrap_or(SheetMetalHemDirection::Unresolved);
 
     Some(FeatureDefinition::SheetMetalHem {
         edges,
