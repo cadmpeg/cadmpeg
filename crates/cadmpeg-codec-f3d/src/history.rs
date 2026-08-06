@@ -3300,28 +3300,13 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+        let Some(state_id) = scope.history_state_id else {
+            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
+            continue;
+        };
+        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
-            bind_active_edge_operand_candidates(operand, &terminal_topologies);
-            if crate::design::design_feature_family(&scope.kind)
-                == Some(crate::design::DesignFeatureFamily::Revolve)
-            {
-                let topology = operand.recipe_state_id.and_then(|state_id| {
-                    terminal_topologies
-                        .iter()
-                        .find(|(candidate, _)| *candidate == state_id)
-                        .map(|(_, topology)| *topology)
-                });
-                if let Some((origin, direction)) = operand
-                    .resolved_edge_slot
-                    .zip(topology)
-                    .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
-                {
-                    operand.resolved_axis_origin = Some(origin);
-                    operand.resolved_axis_direction = Some(direction);
-                }
-            }
+            bind_active_edge_operand_for_scope(operand, scope, &terminal_topologies);
             continue;
         };
         let Some((_, state, previous)) = bound_history_state_pair(
@@ -3524,6 +3509,32 @@ fn historical_edge_axis(
     let first = axes.next()?;
     axes.all(|axis| same_axis_line(first, axis))
         .then_some(first)
+}
+
+fn bind_active_edge_operand_for_scope(
+    operand: &mut crate::records::DesignEdgeOperand,
+    scope: &crate::records::DesignParameterScope,
+    terminal_topologies: &[(i64, &AsmHistoricalTopology)],
+) {
+    bind_active_edge_operand_candidates(operand, terminal_topologies);
+    if crate::design::design_feature_family(&scope.kind)
+        == Some(crate::design::DesignFeatureFamily::Revolve)
+    {
+        let topology = operand.recipe_state_id.and_then(|state_id| {
+            terminal_topologies
+                .iter()
+                .find(|(candidate, _)| *candidate == state_id)
+                .map(|(_, topology)| *topology)
+        });
+        if let Some((origin, direction)) = operand
+            .resolved_edge_slot
+            .zip(topology)
+            .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
+        {
+            operand.resolved_axis_origin = Some(origin);
+            operand.resolved_axis_direction = Some(direction);
+        }
+    }
 }
 
 fn bind_active_edge_operand_candidates(
@@ -6339,6 +6350,13 @@ mod tests {
             unique_history_state_pair(&histories, 10, 4).expect("raw reachable state pair");
         assert_eq!(current.state_id, 10);
         assert_eq!(previous.state_id, 4);
+        let mut omitted_predecessor =
+            crate::records::DesignParameterScope::empty("f3d:native:scope#0", "Fillet", 0);
+        omitted_predecessor.history_state_id = Some(10);
+        assert_eq!(
+            effective_scope_previous_history_state_id(&omitted_predecessor, &histories),
+            Some(6)
+        );
 
         let mut root =
             crate::records::DesignParameterScope::empty("f3d:native:scope#1", "BaseFlange", 1);
