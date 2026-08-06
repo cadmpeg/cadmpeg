@@ -1957,6 +1957,25 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
                     && first != second
         )
         && sketch_marker_prefix_at(payload, offset.saturating_add(134));
+    let compact_value_two_identity_pair = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+        == Some(LEGACY_SKETCH_MARKER)
+        && payload.get(offset + 74..offset + 78) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 78..offset + 84) == Some(&[0; 6])
+        && payload.get(offset + 84..offset + 88) == Some(&[0xfe, 0xff, 0xff, 0xff])
+        && payload.get(offset + 88..offset + 126) == Some(&[0; 38])
+        && matches!(
+            (
+                payload.get(offset + 126..offset + 130),
+                payload.get(offset + 130..offset + 134)
+            ),
+            (Some(first), Some(second))
+                if first != [0; 4]
+                    && first != [0xff; 4]
+                    && second != [0; 4]
+                    && second != [0xff; 4]
+                    && first != second
+        )
+        && sketch_marker_prefix_at(payload, offset.saturating_add(134));
     let identities = [
         payload.get(offset + 124..offset + 128),
         payload.get(offset + 128..offset + 132),
@@ -1973,7 +1992,11 @@ fn geometry_locus_profile_vertex(payload: &[u8], offset: usize) -> bool {
         && identity
         && payload.get(offset + 132..offset + 138) == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00])
         && sketch_marker_prefix_at(payload, offset.saturating_add(138));
-    compact || compact_local_identity || compact_identity_pair || identity_bearing
+    compact
+        || compact_local_identity
+        || compact_identity_pair
+        || compact_value_two_identity_pair
+        || identity_bearing
 }
 
 fn extended_geometry_locus_single_link_point(payload: &[u8], offset: usize) -> bool {
