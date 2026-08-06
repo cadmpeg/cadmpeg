@@ -7,7 +7,7 @@ use super::endpoints::{
     extended_direct_object_line_endpoint_ids, legacy_marker104_arc_center,
     legacy_terminal_profile_endpoint_offset, marker_profile_curve_role,
     roster_curve_endpoint_markers, wide_indexed_curve_endpoint_indices,
-    CompactIndexedCurveRecordEnd,
+    wide_indexed_curve_record_is_complete, CompactIndexedCurveRecordEnd,
 };
 use super::markers::{
     finite_coordinate_pair, inline_arc_coordinates, legacy_extended_profile_curve_kind,
@@ -1679,7 +1679,7 @@ pub(super) fn current_undetailed_bounded_curve_is_line(payload: &[u8], offset: u
         .is_some_and(distinct)
         || extended_compact_indexed_curve_endpoint_indices(payload, offset).is_some_and(distinct);
     let complete_indexed_record = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
-        && sketch_marker_prefix_at(payload, offset.saturating_add(92))
+        && wide_indexed_curve_record_is_complete(payload, offset)
         || compact_indexed_record
             && matches!(
                 compact_indexed_curve_record_end(payload, offset),

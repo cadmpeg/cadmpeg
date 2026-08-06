@@ -4161,6 +4161,26 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
     {
         return true;
     }
+    if prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 80..offset + 88) == Some(&[0; 8])
+        && payload.get(offset + 88..offset + 92) == Some(&[0x00, 0x00, 0x01, 0x00])
+        && payload.get(offset + 92..offset + 96) == Some(&[0x00, 0x00, 0x01, 0x00])
+        && payload.get(offset + 96..offset + 100) == Some(&[0; 4])
+        && payload.get(offset + 100..offset + 104) == Some(&1u32.to_le_bytes())
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+    {
+        return true;
+    }
+    if prefix == LEGACY_EXTENDED_SKETCH_MARKER
+        && payload.get(offset + 80..offset + 134) == Some(&[0; 54])
+        && payload.get(offset + 134..offset + 136) == Some(&3u16.to_le_bytes())
+        && payload.get(offset + 136..offset + 144) == Some(&[0; 8])
+        && payload.get(offset + 144..offset + 148) == Some(&u32::MAX.to_le_bytes())
+        && payload.get(offset + 148..offset + 164) == Some(&[0; 16])
+    {
+        return true;
+    }
     let selector = payload
         .get(offset + 80..offset + 84)
         .and_then(|bytes| bytes.try_into().ok())
@@ -4188,6 +4208,13 @@ fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8
         && matches!(identities, [Some(first), Some(second)] if first != u32::MAX && second != u32::MAX && first != second)
         && sketch_marker_prefix_at(payload, offset.saturating_add(112));
     referenced || legacy_terminal_wide_indexed_curve(payload, offset)
+}
+
+pub(super) fn wide_indexed_curve_record_is_complete(payload: &[u8], offset: usize) -> bool {
+    let Some(prefix) = payload.get(offset..offset + SKETCH_MARKER.len()) else {
+        return false;
+    };
+    wide_indexed_curve_record_ends_at(payload, offset, prefix)
 }
 
 fn legacy_terminal_wide_indexed_curve(payload: &[u8], offset: usize) -> bool {

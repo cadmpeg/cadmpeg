@@ -10,8 +10,8 @@ Table source: `docs/layouts/sldprt.toml`.
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
 inventory (§4), the entity common header (§5), and the Parasolid geometry
 carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
-layouts in prose; those are listed under "Not tabulated" with a coverage note
-rather than transcribed in this pass.
+layouts in prose; the two wide indexed profile layouts are tabulated below, and
+the remaining layouts are listed under "Not tabulated" with a coverage note.
 
 Endianness is stated per lane: §1 container words are little-endian, §4-§7
 Parasolid payload words are big-endian. Where a §1 field states no endianness
@@ -383,11 +383,75 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/brep/blend.rs` — The parser's selector value set; see the `selector` field note.
 
+## `extended_wide_104_profile_curve`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix 104-byte wide indexed profile curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 and +80 through +87 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +68 |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +72 |
+| 80 | 8 | `zero_trailer_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 and +80 through +87 |
+| 88 | 4 | `trailer_tag0` | `bytes[4]` | little | spec | `00 00 01 00` at marker +88 and +92 |
+| 92 | 4 | `trailer_tag1` | `bytes[4]` | little | spec | `00 00 01 00` at marker +88 and +92 |
+| 96 | 4 | `zero_trailer_suffix` | `bytes[4]` | little | spec | zero bytes at marker +96 through +99 |
+| 100 | 4 | `identity` | `u32` | little | spec | u32 `1` at marker +100 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
+## `extended_terminal_164_wide_profile_curve`
+
+Spec §2 · layout: byte offsets · size: 164 B
+
+The endpoint fields are zero-based ordinals in the feature-owned coordinate-bearing geometry roster.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix terminal 164-byte wide indexed profile curve |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind u32 `0`, `1`, or `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | zero bytes at marker +56 through +63 |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | zero-based coordinate-roster endpoint ordinals at marker +64 and +66 |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +68 |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +72 |
+| 80 | 54 | `zero_trailer` | `bytes[54]` | little | spec | zero bytes from marker +80 through +133 |
+| 134 | 2 | `terminal_state` | `u16` | little | spec | u16 `3` at marker +134 |
+| 136 | 8 | `zero_terminal_padding` | `bytes[8]` | little | spec | eight zero bytes at marker +136 |
+| 144 | 4 | `null_identity` | `u32` | little | spec | the null u32 identity at marker +144 |
+| 148 | 16 | `zero_terminal_suffix` | `bytes[16]` | little | spec | 16 zero bytes at marker +148 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this profile layout.
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
-| ResolvedFeatures sketch and feature-input markers (§2) | §2 | About 125 distinct marker layouts, each one prose paragraph stating marker-relative offsets for a specific record length. They are transcribable in principle but were not covered in this pass; each paragraph is self-contained and can be added incrementally. |
+| ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. Two wide indexed profile layouts are tabulated above; the remaining paragraphs are transcribable in principle and can be added incrementally. |
 | Body records (§6) | §6 | §6 states slot-reference graphs and population invariants over about thirty named disc layouts. It states no byte offsets; the slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a record: `end = pos + 14 + 3*slot_count + 1` for a prefixed subrecord and `end = pos + 14 + 2*slot_count` for a bare one. The slot-count table it depends on is an open item, not a stated layout. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |
