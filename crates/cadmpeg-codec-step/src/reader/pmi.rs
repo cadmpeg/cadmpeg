@@ -14,6 +14,7 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct PmiResult {
@@ -60,13 +61,29 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .parameters()
             .iter()
             .rev()
-            .find_map(ValueExt::text)
+            .find_map(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum identification",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
             .unwrap_or_else(|| format!("#{id}"));
         push_annotation(
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets([id]),
             PmiDefinition::Datum { identification },
         );
@@ -106,7 +123,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "datum system name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets(
                 record
                     .parameters()
@@ -129,13 +154,29 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(mut kind) = dimension_kind(record.simple_name()) else {
             continue;
         };
-        let name = record.parameters().iter().find_map(ValueExt::text);
+        let name = record.parameters().iter().find_map(|value| {
+            decode_text(
+                value,
+                &mut losses,
+                id,
+                "dimension name",
+                LossKind::MetadataNotTransferred,
+            )
+        });
         if matches!(kind, DimensionKind::Size) {
             let category = if record
                 .simple_name()
                 .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
             {
-                record.parameters().iter().rev().find_map(ValueExt::text)
+                record.parameters().iter().rev().find_map(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "dimension category",
+                        LossKind::MetadataNotTransferred,
+                    )
+                })
             } else {
                 name.clone()
             };
@@ -194,19 +235,51 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                     LimitsAndFits {
                         form_variance: record
                             .parameter(0)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits form variance",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         zone_variance: record
                             .parameter(1)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits zone variance",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         grade: record
                             .parameter(2)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits grade",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                         source: record
                             .parameter(3)
-                            .and_then(ValueExt::text)
+                            .and_then(|value| {
+                                decode_text(
+                                    value,
+                                    &mut losses,
+                                    *reference,
+                                    "limits-and-fits source",
+                                    LossKind::MetadataNotTransferred,
+                                )
+                            })
                             .unwrap_or_default(),
                     },
                 )
@@ -304,7 +377,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "geometric tolerance name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -349,7 +430,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             continue;
         }
         let mut text_records = BTreeSet::new();
-        let text = find_annotation_text(id, exchange, &mut text_records, 0);
+        let text = find_annotation_text(id, exchange, &mut text_records, &mut losses, 0);
         let mut placement_records = BTreeSet::new();
         let placement = record
             .parameters()
@@ -377,7 +458,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(ValueExt::text),
+            record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "presentation annotation name",
+                    LossKind::MetadataNotTransferred,
+                )
+            }),
             Vec::new(),
             PmiDefinition::Presentation {
                 text,
@@ -605,6 +694,7 @@ fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<String> {
     if depth >= 256 || !visited.insert(id) {
@@ -615,13 +705,21 @@ fn find_annotation_text(
         record.simple_name(),
         Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
     ) {
-        return record.parameter(0).and_then(ValueExt::text);
+        return record.parameter(0).and_then(|value| {
+            decode_text(
+                value,
+                losses,
+                id,
+                "PMI annotation text",
+                LossKind::MetadataNotTransferred,
+            )
+        });
     }
     record
         .parameters()
         .iter()
         .flat_map(references)
-        .find_map(|reference| find_annotation_text(reference, exchange, visited, depth + 1))
+        .find_map(|reference| find_annotation_text(reference, exchange, visited, losses, depth + 1))
 }
 
 fn find_placement(
@@ -984,7 +1082,6 @@ impl RecordExt for RawRecord {
 }
 
 trait ValueExt {
-    fn text(&self) -> Option<String>;
     fn number(&self) -> Option<f64>;
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
@@ -992,13 +1089,6 @@ trait ValueExt {
 }
 
 impl ValueExt for Value {
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
-        }
-    }
     fn number(&self) -> Option<f64> {
         match self {
             Value::Integer(value) => Some(*value as f64),

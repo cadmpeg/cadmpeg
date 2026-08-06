@@ -9,6 +9,7 @@ use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct ValidationResult {
@@ -40,6 +41,7 @@ pub(super) fn decode(
             losses: Vec::new(),
         };
     }
+    let mut losses = Vec::new();
     let representations = exchange
         .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
         .filter_map(|(id, record)| {
@@ -55,17 +57,31 @@ pub(super) fn decode(
     let properties = exchange
         .entities("PROPERTY_DEFINITION")
         .filter_map(|(id, record)| {
+            let name = record.parameter(0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "validation property name",
+                    LossKind::MetadataNotTransferred,
+                )
+            })?;
             if record.simple_name() == Some("PROPERTY_DEFINITION")
-                && record
-                    .parameter(0)?
-                    .text()?
-                    .eq_ignore_ascii_case("geometric validation property")
+                && name.eq_ignore_ascii_case("geometric validation property")
             {
                 Some((
                     id,
                     record
                         .parameter(1)
-                        .and_then(ValueExt::text)
+                        .and_then(|value| {
+                            decode_text(
+                                value,
+                                &mut losses,
+                                id,
+                                "validation property description",
+                                LossKind::MetadataNotTransferred,
+                            )
+                        })
                         .unwrap_or_default(),
                 ))
             } else {
@@ -79,7 +95,6 @@ pub(super) fn decode(
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
-    let mut losses = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
@@ -415,7 +430,6 @@ trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
     fn number(&self) -> Option<f64>;
-    fn text(&self) -> Option<String>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
@@ -437,13 +451,6 @@ impl ValueExt for Value {
             Value::Integer(value) => Some(*value as f64),
             Value::Real(value) => Some(*value),
             _ => None,
-        }
-    }
-    fn text(&self) -> Option<String> {
-        if let Value::String(bytes) = self {
-            crate::strings::decode(bytes).ok()
-        } else {
-            None
         }
     }
 }

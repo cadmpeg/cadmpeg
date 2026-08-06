@@ -1115,6 +1115,7 @@ pub(super) fn associate_free_geometric_set_members(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
+    losses: &mut Vec<LossNote>,
 ) {
     for set in exchange.records.values() {
         if !matches!(
@@ -1131,9 +1132,14 @@ pub(super) fn associate_free_geometric_set_members(
                 .records
                 .get(&member)
                 .and_then(|record| record.parameter(0))
-                .and_then(|value| match value {
-                    Value::String(bytes) => crate::strings::decode(bytes).ok(),
-                    _ => None,
+                .and_then(|value| {
+                    super::decode_text(
+                        value,
+                        losses,
+                        member,
+                        "geometric-set member name",
+                        LossKind::MetadataNotTransferred,
+                    )
                 })
                 .filter(|name| !name.is_empty());
             let association = || SourceObjectAssociation {
@@ -1183,6 +1189,7 @@ pub(super) fn associate_free_representation_members(
     ir: &mut CadIr,
     index: &CarrierIndex,
     owned: &OwnedCarriers,
+    losses: &mut Vec<LossNote>,
 ) {
     for representation in exchange.records.values().filter(|record| {
         record
@@ -1198,9 +1205,14 @@ pub(super) fn associate_free_representation_members(
                 .records
                 .get(&member)
                 .and_then(|record| record.parameter(0))
-                .and_then(|value| match value {
-                    Value::String(bytes) => crate::strings::decode(bytes).ok(),
-                    _ => None,
+                .and_then(|value| {
+                    super::decode_text(
+                        value,
+                        losses,
+                        member,
+                        "representation member name",
+                        LossKind::MetadataNotTransferred,
+                    )
                 })
                 .filter(|name| !name.is_empty());
             let association = || SourceObjectAssociation {

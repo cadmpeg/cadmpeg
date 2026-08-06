@@ -108,7 +108,7 @@ fn decode_exchange_mode(
         );
     }
 
-    let geometry = geometry::decode(exchange, &mut ir);
+    let mut geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let carrier_index = index::CarrierIndex::from_ir(&ir);
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
@@ -119,12 +119,14 @@ fn decode_exchange_mode(
         &mut ir,
         &carrier_index,
         &owned_carriers,
+        &mut geometry.losses,
     );
     geometry::associate_free_representation_members(
         exchange,
         &mut ir,
         &carrier_index,
         &owned_carriers,
+        &mut geometry.losses,
     );
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
@@ -133,6 +135,9 @@ fn decode_exchange_mode(
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
+    report.losses.extend(dependencies.losses);
+    report.losses.extend(presentation.losses);
+    report.losses.extend(product.losses);
     report.geometry_transferred = !ir.model.points.is_empty()
         || !ir.model.curves.is_empty()
         || !ir.model.surfaces.is_empty()
@@ -568,6 +573,32 @@ fn schema_name(exchange: &Exchange) -> String {
             .for_each(|value| collect_strings(value, &mut names));
     }
     names.join(",")
+}
+
+pub(super) fn decode_text(
+    value: &Value,
+    losses: &mut Vec<LossNote>,
+    record_id: u64,
+    field: &str,
+    code: LossKind,
+) -> Option<String> {
+    let Value::String(bytes) = value else {
+        return None;
+    };
+    match crate::strings::decode(bytes) {
+        Ok(text) => Some(text),
+        Err(error) => {
+            losses.push(LossNote {
+                code,
+                severity: Severity::Warning,
+                message: format!(
+                    "STEP record #{record_id} has an invalid {field} string escape: {error}"
+                ),
+                provenance: None,
+            });
+            None
+        }
+    }
 }
 
 fn collect_strings(value: &Value, output: &mut Vec<String>) {

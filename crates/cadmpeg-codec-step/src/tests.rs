@@ -3654,6 +3654,19 @@ fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
         .expect("decode inline STEP")
 }
 
+#[test]
+fn invalid_step_string_escape_is_reported_as_metadata_loss() {
+    let decoded = decode_inline(r"#1=PRODUCT('\X\GG','valid name','',());");
+
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss
+                .message
+                .contains("STEP record #1 has an invalid product identifier string escape")
+    }));
+}
+
 fn oriented_closed_shell_source(derived_slot: bool) -> String {
     let oriented_shell = if derived_slot {
         "#33=ORIENTED_CLOSED_SHELL('',*,#30,.F.);"
