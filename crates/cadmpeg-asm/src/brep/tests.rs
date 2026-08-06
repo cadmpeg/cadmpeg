@@ -542,6 +542,107 @@ fn shell_and_loop_attribute_chains_retain_their_native_owners() {
         .any(|attribute| attribute.target == AttributeTarget::Loop(LoopId(id(FORMAT, 4)))));
 }
 
+#[test]
+fn lump_named_attributes_bind_to_their_owning_body() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::topology::{Body, BodyKind, Region};
+
+    let record = |index, name: &str, head: &str, tokens: Vec<Token>| Record {
+        index,
+        name: name.into(),
+        head: head.into(),
+        tokens: tokens.into(),
+        offset: 0,
+        len: 0,
+    };
+    let records = vec![
+        record(1, "body", "body", vec![Token::Ref(-1)]),
+        record(
+            2,
+            "lump",
+            "lump",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(1),
+            ],
+        ),
+        record(
+            3,
+            "name_attrib-gen-attrib",
+            "name",
+            vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(2),
+                Token::Enum(1),
+                Token::Enum(3),
+                Token::Enum(1),
+                Token::Enum(1),
+                Token::Str("MBRD_ST_SHEETMETAL_LUMP".into()),
+            ],
+        ),
+    ];
+    let by_index = records
+        .iter()
+        .map(|record| (record.index as i64, record))
+        .collect();
+    let body_id = BodyId(id(FORMAT, 1));
+    let mut brep = AsmBrep {
+        bodies: vec![Body {
+            id: body_id.clone(),
+            kind: BodyKind::Sheet,
+            regions: vec![RegionId(id(FORMAT, 2))],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        }],
+        regions: vec![Region {
+            id: RegionId(id(FORMAT, 2)),
+            body: body_id.clone(),
+            shells: Vec::new(),
+        }],
+        ..AsmBrep::default()
+    };
+
+    let emitted = emit_attributes(
+        &mut brep,
+        &records,
+        &by_index,
+        &Reachable::default(),
+        FORMAT,
+    );
+
+    assert_eq!(emitted, HashSet::from([3]));
+    assert_eq!(
+        brep.attributes,
+        vec![SourceAttribute {
+            id: cadmpeg_ir::ids::AttributeId("f3d:brep:attribute#3".into()),
+            target: AttributeTarget::Body(body_id),
+            name: "name_attrib-gen-attrib".into(),
+            values: vec![
+                AttributeValue::Reference("f3d:brep:entity#-1".into()),
+                AttributeValue::Integer(-1),
+                AttributeValue::Reference("f3d:brep:entity#-1".into()),
+                AttributeValue::Reference("f3d:brep:entity#-1".into()),
+                AttributeValue::Reference("f3d:brep:entity#2".into()),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(3),
+                AttributeValue::Integer(1),
+                AttributeValue::Integer(1),
+                AttributeValue::String("MBRD_ST_SHEETMETAL_LUMP".into()),
+            ],
+        }]
+    );
+}
+
 fn ident(bytes: &mut Vec<u8>, name: &str) {
     bytes.push(0x0d);
     bytes.push(name.len() as u8);
