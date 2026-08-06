@@ -1088,6 +1088,71 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sheet pcurve")
+        .ir;
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Harmonic {
+        center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+        cosine: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        sine: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+    };
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("report mode writes the representable sheet");
+    assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PcurveOmitted
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains("step:data:pcurve#56")
+    }));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    assert!(matches!(
+        write_step(&ir, &mut Vec::new(), &options),
+        Err(StepError::Unsupported(message)) if message.contains("pcurve")
+    ));
+}
+
+#[test]
+fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
+    let mut ir = CadIr::empty(Units::default());
+    let curve_id = CurveId("step:test:curve#standalone-unsupported".into());
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: CurveGeometry::Procedural {
+            construction: ProceduralCurveId("step:test:construction#standalone-unsupported".into()),
+        },
+        source_object: None,
+    });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the representable subset");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains(curve_id.as_str())
+    }));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    assert!(matches!(
+        write_step(&ir, &mut Vec::new(), &options),
+        Err(StepError::Unsupported(message)) if message.contains("geometry carrier")
+    ));
+}
+
+#[test]
 fn decode_builds_a_valid_ap203_sheet_brep() {
     use cadmpeg_ir::topology::BodyKind;
 

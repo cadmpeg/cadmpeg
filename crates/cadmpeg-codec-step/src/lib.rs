@@ -365,6 +365,7 @@ struct Builder<'a> {
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
+    unwritten_pcurve_carriers: BTreeSet<String>,
     written_pmi: usize,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
@@ -504,6 +505,7 @@ impl<'a> Builder<'a> {
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
+            unwritten_pcurve_carriers: BTreeSet::new(),
             written_pmi: 0,
             length_unit: None,
             angle_unit: None,
@@ -2016,6 +2018,8 @@ impl<'a> Builder<'a> {
         for (pcurve_id, surface_id) in associated {
             if let Some(pcurve) = self.emit_pcurve(pcurve_id, surface_id) {
                 pcurve_refs.push(pcurve);
+            } else if self.pcurves.contains_key(pcurve_id) {
+                self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
         let curve_ref = if pcurve_refs.is_empty() {
@@ -2791,6 +2795,22 @@ impl<'a> Builder<'a> {
                 format!(
                     "{} geometry carrier(s) were not written: {carriers}",
                     self.unwritten_geometry_carriers.len()
+                ),
+            );
+        }
+        if !self.unwritten_pcurve_carriers.is_empty() {
+            let pcurves = self
+                .unwritten_pcurve_carriers
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::PcurveOmitted,
+                Severity::Warning,
+                format!(
+                    "{} coedge pcurve carrier(s) use geometry or surface references that were not writable: {pcurves}",
+                    self.unwritten_pcurve_carriers.len()
                 ),
             );
         }
