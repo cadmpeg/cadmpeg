@@ -14,6 +14,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 use std::fmt::Write as _;
@@ -2730,6 +2731,45 @@ fn complex_vertex_point_instances_retain_their_point_carriers() {
 }
 
 #[test]
+fn complex_geometry_instances_decode_named_partials() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#27=(AXIS2_PLACEMENT_3D('',#3,#9,#10) PLACEMENT());",
+        )
+        .replace(
+            "#28=PLANE('',#27);",
+            "#28=(GEOMETRIC_REPRESENTATION_ITEM() PLANE('',#27) SURFACE());",
+        )
+        .replace("#16=LINE('',#3,#13);", "#16=(CURVE() LINE('',#3,#13));")
+        .replace("#54=LINE('',#51,#53);", "#54=(CURVE() LINE('',#51,#53));")
+        .replace(
+            "#56=PCURVE('',#28,#55);",
+            "#56=(CURVE() PCURVE('',#28,#55));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometry instances");
+
+    assert!(decoded.ir.model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#16"
+            && matches!(curve.geometry, CurveGeometry::Line { .. })
+    }));
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#28"
+            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+    }));
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert!(matches!(
+        decoded.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
+    ));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     use cadmpeg_ir::topology::BodyKind;
 
@@ -5264,25 +5304,111 @@ fn analytic_surface_placements_preserve_orientation() {
 }
 
 #[test]
-fn parabola_and_hyperbola_map_to_step_conics() {
-    let parabola = emit_curve_only(&CurveGeometry::Parabola {
+fn analytic_conics_round_trip_through_step() {
+    let parabola = CurveGeometry::Parabola {
         vertex: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
         major_direction: Vector3::new(0.0, 1.0, 0.0),
         focal_distance: 2.5,
-    });
-    assert!(parabola.contains("= PARABOLA("));
-    assert!(parabola.contains(",2.5)"));
-
-    let hyperbola = emit_curve_only(&CurveGeometry::Hyperbola {
+    };
+    let hyperbola = CurveGeometry::Hyperbola {
         center: Point3::new(1.0, 2.0, 3.0),
         axis: Vector3::new(0.0, 0.0, 1.0),
         major_direction: Vector3::new(0.0, 1.0, 0.0),
         major_radius: 4.0,
         minor_radius: 1.5,
+    };
+    let mut source = CadIr::empty(Units::default());
+    source.model.curves.extend([
+        Curve {
+            id: CurveId("parabola".into()),
+            geometry: parabola.clone(),
+            source_object: None,
+        },
+        Curve {
+            id: CurveId("hyperbola".into()),
+            geometry: hyperbola.clone(),
+            source_object: None,
+        },
+    ]);
+
+    let mut output = Vec::new();
+    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write conics");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode conics");
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == parabola));
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == hyperbola));
+}
+
+#[test]
+fn transformed_curves_and_surfaces_round_trip_through_step_replicas() {
+    let transform = Transform {
+        rows: [
+            [0.0, -2.0, 0.0, 10.0],
+            [2.0, 0.0, 0.0, 20.0],
+            [0.0, 0.0, 2.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    let curve_geometry = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    let surface_geometry = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    let mut source = CadIr::empty(Units::default());
+    source.model.curves.push(Curve {
+        id: CurveId("transformed-curve".into()),
+        geometry: curve_geometry.clone(),
+        source_object: None,
     });
-    assert!(hyperbola.contains("= HYPERBOLA("));
-    assert!(hyperbola.contains(",4.,1.5)"));
+    source.model.surfaces.push(Surface {
+        id: SurfaceId("transformed-surface".into()),
+        geometry: surface_geometry.clone(),
+        source_object: None,
+    });
+
+    let mut output = Vec::new();
+    write_step(&source, &mut output, &StepWriteOptions::default()).expect("write replicas");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    assert!(text.contains("CURVE_REPLICA"));
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D"));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode replicas");
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == curve_geometry));
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == surface_geometry));
 }
 
 #[test]

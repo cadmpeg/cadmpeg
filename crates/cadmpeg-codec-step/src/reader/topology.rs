@@ -2622,8 +2622,8 @@ fn associated_pcurves(
         .filter_map(|pcurve_step| {
             let pcurve = exchange.records.get(&pcurve_step)?;
             let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
-            (pcurve.simple_name() == Some("PCURVE")
-                && pcurve.parameter(1)?.reference()? == surface_step
+            (has_type(pcurve, "PCURVE")
+                && entity_parameter(pcurve, "PCURVE", 1)?.reference()? == surface_step
                 && decoded_pcurves.contains(&pcurve_id))
             .then_some(pcurve_id)
         })

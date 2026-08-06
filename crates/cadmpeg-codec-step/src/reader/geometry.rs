@@ -17,6 +17,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -150,18 +151,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             })
         }));
     for (id, record) in exchange.entities("VECTOR") {
-        if record.simple_name() == Some("VECTOR") {
-            let value = record
-                .parameter(1)
+        if record.partial("VECTOR").is_some() {
+            let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
-                .zip(record.parameter(2).and_then(Value::number))
+                .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
                 .map(|(direction, magnitude)| scale_vector(direction, magnitude * scale));
-            let value2 = record
-                .parameter(1)
+            let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
-                .zip(record.parameter(2).and_then(Value::number))
+                .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
                 .map(|(direction, magnitude)| {
                     Point2::new(direction.u * magnitude, direction.v * magnitude)
                 });
@@ -179,18 +178,24 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     for (id, record) in exchange.entities_any(&["AXIS2_PLACEMENT_3D", "AXIS1_PLACEMENT"]) {
-        if matches!(
-            record.simple_name(),
-            Some("AXIS2_PLACEMENT_3D" | "AXIS1_PLACEMENT")
-        ) {
-            let placement = record
-                .parameter(1)
+        let Some(placement_type) = entity_type(record, &["AXIS2_PLACEMENT_3D", "AXIS1_PLACEMENT"])
+        else {
+            continue;
+        };
+        {
+            let placement = named_parameter(record, placement_type, 1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
                 .map(|origin| {
-                    let axis = optional_direction(record.parameter(2), &directions)
+                    let axis = optional_direction(
+                        named_parameter(record, placement_type, 2),
+                        &directions,
+                    )
                         .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
-                    let reference = match optional_direction(record.parameter(3), &directions) {
+                    let reference = match optional_direction(
+                        named_parameter(record, placement_type, 3),
+                        &directions,
+                    ) {
                         Some(reference) => {
                             if let Some(reference) = orthogonal_reference(axis, reference) {
                                 reference
@@ -218,16 +223,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             }
         }
     }
+    let mut transformation_operators = BTreeMap::new();
+    for (id, record) in exchange.entities("CARTESIAN_TRANSFORMATION_OPERATOR_3D") {
+        if let Some(transform) = cartesian_transformation_operator(record, &points, &directions) {
+            transformation_operators.insert(id, transform);
+            typed.insert(id);
+        } else {
+            warnings.push(format!(
+                "CARTESIAN_TRANSFORMATION_OPERATOR_3D #{id} has invalid axes, origin, or scale"
+            ));
+        }
+    }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
-        if record.simple_name() != Some("AXIS2_PLACEMENT_2D") {
+        if record.partial("AXIS2_PLACEMENT_2D").is_none() {
             continue;
         }
-        let placement = record
-            .parameter(1)
+        let placement = named_parameter(record, "AXIS2_PLACEMENT_2D", 1)
             .and_then(Value::reference)
             .and_then(|point| points2.get(&point).copied())
             .and_then(|origin| {
-                let x_axis = match record.parameter(2) {
+                let x_axis = match named_parameter(record, "AXIS2_PLACEMENT_2D", 2) {
                     Some(Value::Reference(direction)) => directions2.get(direction).copied()?,
                     Some(Value::Omitted) | None => Point2::new(1.0, 0.0),
                     _ => return None,
@@ -244,11 +259,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut pcurve_geometries = BTreeMap::<u64, (PcurveGeometry, BTreeSet<u64>)>::new();
     let mut pcurve_geometry_records = BTreeSet::new();
     for (_, record) in exchange.entities("PCURVE") {
-        if record.simple_name() != Some("PCURVE") {
+        if record.partial("PCURVE").is_none() {
             continue;
         }
-        let Some(items) = record
-            .parameter(2)
+        let Some(items) = named_parameter(record, "PCURVE", 2)
             .and_then(Value::reference)
             .and_then(|representation| exchange.records.get(&representation))
             .and_then(|representation| representation.parameter(1))
@@ -283,32 +297,46 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         "LINE",
         "CIRCLE",
         "ELLIPSE",
+        "PARABOLA",
+        "HYPERBOLA",
         "POLYLINE",
         "B_SPLINE_CURVE_WITH_KNOTS",
     ]) {
-        let geometry = match record.simple_name() {
-            Some("LINE" | "CIRCLE" | "ELLIPSE" | "POLYLINE" | "B_SPLINE_CURVE_WITH_KNOTS")
-                if pcurve_geometry_records.contains(&id) =>
-            {
-                continue;
-            }
-            Some("LINE") => record
-                .parameter(1)
+        let Some(curve_type) = entity_type(
+            record,
+            &[
+                "LINE",
+                "CIRCLE",
+                "ELLIPSE",
+                "PARABOLA",
+                "HYPERBOLA",
+                "POLYLINE",
+                "B_SPLINE_CURVE_WITH_KNOTS",
+            ],
+        ) else {
+            continue;
+        };
+        if pcurve_geometry_records.contains(&id) {
+            continue;
+        }
+        if curve_type == "B_SPLINE_CURVE_WITH_KNOTS" && record.simple_name().is_none() {
+            continue;
+        }
+        let geometry = match curve_type {
+            "LINE" => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
                 .and_then(|point| points.get(&point).copied())
                 .zip(
-                    record
-                        .parameter(2)
+                    named_parameter(record, "LINE", 2)
                         .and_then(Value::reference)
                         .and_then(|vector| vectors.get(&vector).copied())
                         .and_then(normalize),
                 )
                 .map(|(origin, direction)| CurveGeometry::Line { origin, direction }),
-            Some("CIRCLE") => record
-                .parameter(1)
+            "CIRCLE" => named_parameter(record, "CIRCLE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
-                .zip(record.parameter(2).and_then(Value::number))
+                .zip(named_parameter(record, "CIRCLE", 2).and_then(Value::number))
                 .filter(|(_, radius)| radius.is_finite() && *radius > 0.0)
                 .map(
                     |((center, axis, ref_direction), radius)| CurveGeometry::Circle {
@@ -318,12 +346,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         radius: radius * scale,
                     },
                 ),
-            Some("ELLIPSE") => record
-                .parameter(1)
+            "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
-                .zip(record.parameter(2).and_then(Value::number))
-                .zip(record.parameter(3).and_then(Value::number))
+                .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
+                .zip(named_parameter(record, "ELLIPSE", 3).and_then(Value::number))
                 .filter(|((_, major), minor)| {
                     major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
                 })
@@ -338,11 +365,43 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
-            Some("POLYLINE") => polyline(record, &points).map(CurveGeometry::Nurbs),
-            Some("B_SPLINE_CURVE_WITH_KNOTS") => {
+            "PARABOLA" => named_parameter(record, "PARABOLA", 1)
+                .and_then(Value::reference)
+                .and_then(|placement| placements.get(&placement).copied())
+                .zip(named_parameter(record, "PARABOLA", 2).and_then(Value::number))
+                .filter(|(_, focal_distance)| focal_distance.is_finite() && *focal_distance > 0.0)
+                .map(
+                    |((vertex, axis, major_direction), focal_distance)| CurveGeometry::Parabola {
+                        vertex,
+                        axis,
+                        major_direction,
+                        focal_distance: focal_distance * scale,
+                    },
+                ),
+            "HYPERBOLA" => named_parameter(record, "HYPERBOLA", 1)
+                .and_then(Value::reference)
+                .and_then(|placement| placements.get(&placement).copied())
+                .zip(named_parameter(record, "HYPERBOLA", 2).and_then(Value::number))
+                .zip(named_parameter(record, "HYPERBOLA", 3).and_then(Value::number))
+                .filter(|((_, major), minor)| {
+                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
+                })
+                .map(
+                    |(((center, axis, major_direction), major_radius), minor_radius)| {
+                        CurveGeometry::Hyperbola {
+                            center,
+                            axis,
+                            major_direction,
+                            major_radius: major_radius * scale,
+                            minor_radius: minor_radius * scale,
+                        }
+                    },
+                ),
+            "POLYLINE" => polyline(record, &points).map(CurveGeometry::Nurbs),
+            "B_SPLINE_CURVE_WITH_KNOTS" => {
                 nurbs_curve(record, &points, &mut warnings).map(CurveGeometry::Nurbs)
             }
-            _ => continue,
+            _ => unreachable!("curve type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
             ir.model.curves.push(Curve {
@@ -352,10 +411,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             });
             typed.insert(id);
         } else {
-            warnings.push(format!(
-                "{} #{id} has invalid geometry",
-                record.simple_name().expect("matched simple name")
-            ));
+            warnings.push(format!("{curve_type} #{id} has invalid geometry"));
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_CURVE_WITH_KNOTS") {
@@ -554,6 +610,71 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
         wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
     }
+    let curve_replica_count = exchange.entities("CURVE_REPLICA").count();
+    for _ in 0..=curve_replica_count {
+        let mut progress = false;
+        for (id, record) in exchange.entities("CURVE_REPLICA") {
+            if carrier_index.curves.contains_key(&id) {
+                continue;
+            }
+            let Some(parent_step) =
+                named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
+            else {
+                continue;
+            };
+            let Some(operator_step) =
+                named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
+            else {
+                continue;
+            };
+            let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
+                continue;
+            };
+            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
+                continue;
+            };
+            let Some(basis) = ir
+                .model
+                .curves
+                .get(parent_index)
+                .map(|curve| curve.geometry.clone())
+            else {
+                continue;
+            };
+            let curve_index = ir.model.curves.len();
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:data:curve#{id}")),
+                geometry: CurveGeometry::Transformed {
+                    basis: Box::new(basis),
+                    transform,
+                },
+                source_object: None,
+            });
+            carrier_index.curves.insert(id, curve_index);
+            typed.insert(id);
+            typed.insert(operator_step);
+            progress = true;
+        }
+        if !progress {
+            break;
+        }
+    }
+    for (id, _) in exchange.entities("CURVE_REPLICA") {
+        if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
+            warnings.push(format!(
+                "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
+            ));
+            let curve_index = ir.model.curves.len();
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:data:curve#{id}")),
+                geometry: CurveGeometry::Unknown {
+                    record: exchange.records.get(&id).map(opaque_record_id),
+                },
+                source_object: None,
+            });
+            entry.insert(curve_index);
+        }
+    }
     for (id, _) in exchange.entities("TRIMMED_CURVE") {
         if !carrier_index.curves.contains_key(&id) {
             warnings.push(format!(
@@ -681,31 +802,49 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         "CYLINDRICAL_SURFACE",
         "CONICAL_SURFACE",
         "SPHERICAL_SURFACE",
-        "TOROIDAL_SURFACE",
         "DEGENERATE_TOROIDAL_SURFACE",
+        "TOROIDAL_SURFACE",
         "B_SPLINE_SURFACE_WITH_KNOTS",
     ]) {
-        let placement = record
-            .parameter(1)
+        let Some(surface_type) = entity_type(
+            record,
+            &[
+                "PLANE",
+                "CYLINDRICAL_SURFACE",
+                "CONICAL_SURFACE",
+                "SPHERICAL_SURFACE",
+                "DEGENERATE_TOROIDAL_SURFACE",
+                "TOROIDAL_SURFACE",
+                "B_SPLINE_SURFACE_WITH_KNOTS",
+            ],
+        ) else {
+            continue;
+        };
+        if surface_type == "B_SPLINE_SURFACE_WITH_KNOTS" && record.simple_name().is_none() {
+            continue;
+        }
+        let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
-        let geometry = match record.simple_name() {
-            Some("PLANE") => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
+        let geometry = match surface_type {
+            "PLANE" => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
                 origin,
                 normal,
                 u_axis,
             }),
-            Some("CYLINDRICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
-                |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    ref_direction,
-                    radius: radius * scale,
-                },
-            ),
-            Some("CONICAL_SURFACE") => placement
-                .zip(nonnegative(record.parameter(2)))
-                .zip(record.parameter(3).and_then(Value::number))
+            "CYLINDRICAL_SURFACE" => placement
+                .zip(positive(named_parameter(record, "CYLINDRICAL_SURFACE", 2)))
+                .map(
+                    |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
+                        origin,
+                        axis,
+                        ref_direction,
+                        radius: radius * scale,
+                    },
+                ),
+            "CONICAL_SURFACE" => placement
+                .zip(nonnegative(named_parameter(record, "CONICAL_SURFACE", 2)))
+                .zip(named_parameter(record, "CONICAL_SURFACE", 3).and_then(Value::number))
                 .filter(|(_, angle)| angle.is_finite())
                 .map(|(((origin, axis, ref_direction), radius), half_angle)| {
                     SurfaceGeometry::Cone {
@@ -717,17 +856,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         half_angle: half_angle * angle_scale,
                     }
                 }),
-            Some("SPHERICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
-                |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
-                    center,
-                    axis,
-                    ref_direction,
-                    radius: radius * scale,
-                },
-            ),
-            Some("TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE") => placement
-                .zip(positive(record.parameter(2)))
-                .zip(positive(record.parameter(3)))
+            "SPHERICAL_SURFACE" => placement
+                .zip(positive(named_parameter(record, "SPHERICAL_SURFACE", 2)))
+                .map(
+                    |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
+                        center,
+                        axis,
+                        ref_direction,
+                        radius: radius * scale,
+                    },
+                ),
+            "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
+                .zip(positive(named_parameter(record, surface_type, 2)))
+                .zip(positive(named_parameter(record, surface_type, 3)))
                 .map(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
                         SurfaceGeometry::Torus {
@@ -739,10 +880,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
-            Some("B_SPLINE_SURFACE_WITH_KNOTS") => {
+            "B_SPLINE_SURFACE_WITH_KNOTS" => {
                 nurbs_surface(record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
             }
-            _ => continue,
+            _ => unreachable!("surface type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
@@ -752,10 +893,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             });
             typed.insert(id);
         } else {
-            warnings.push(format!(
-                "{} #{id} has invalid geometry",
-                record.simple_name().expect("matched simple name")
-            ));
+            warnings.push(format!("{surface_type} #{id} has invalid geometry"));
         }
     }
     for (id, record) in exchange.entities("B_SPLINE_SURFACE_WITH_KNOTS") {
@@ -893,6 +1031,71 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             break;
         }
     }
+    let surface_replica_count = exchange.entities("SURFACE_REPLICA").count();
+    for _ in 0..=surface_replica_count {
+        let mut progress = false;
+        for (id, record) in exchange.entities("SURFACE_REPLICA") {
+            if carrier_index.surfaces.contains_key(&id) {
+                continue;
+            }
+            let Some(parent_step) =
+                named_parameter(record, "SURFACE_REPLICA", 1).and_then(Value::reference)
+            else {
+                continue;
+            };
+            let Some(operator_step) =
+                named_parameter(record, "SURFACE_REPLICA", 2).and_then(Value::reference)
+            else {
+                continue;
+            };
+            let Some(parent_index) = carrier_index.surfaces.get(&parent_step).copied() else {
+                continue;
+            };
+            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
+                continue;
+            };
+            let Some(basis) = ir
+                .model
+                .surfaces
+                .get(parent_index)
+                .map(|surface| surface.geometry.clone())
+            else {
+                continue;
+            };
+            let surface_index = ir.model.surfaces.len();
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("step:data:surface#{id}")),
+                geometry: SurfaceGeometry::Transformed {
+                    basis: Box::new(basis),
+                    transform,
+                },
+                source_object: None,
+            });
+            carrier_index.surfaces.insert(id, surface_index);
+            typed.insert(id);
+            typed.insert(operator_step);
+            progress = true;
+        }
+        if !progress {
+            break;
+        }
+    }
+    for (id, _) in exchange.entities("SURFACE_REPLICA") {
+        if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
+            warnings.push(format!(
+                "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"
+            ));
+            let surface_index = ir.model.surfaces.len();
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("step:data:surface#{id}")),
+                geometry: SurfaceGeometry::Unknown {
+                    record: exchange.records.get(&id).map(opaque_record_id),
+                },
+                source_object: None,
+            });
+            entry.insert(surface_index);
+        }
+    }
     for (id, _) in exchange.entities("CURVE_BOUNDED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
             warnings.push(format!(
@@ -980,12 +1183,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .filter_map(|surface| step_instance_id(&surface.id.0))
         .collect::<BTreeSet<_>>();
     for (id, record) in exchange.entities("PCURVE") {
-        if record.simple_name() != Some("PCURVE") {
+        if record.partial("PCURVE").is_none() {
             continue;
         }
-        let surface_step = record.parameter(1).and_then(Value::reference);
-        let representation = record
-            .parameter(2)
+        let surface_step = named_parameter(record, "PCURVE", 1).and_then(Value::reference);
+        let representation = named_parameter(record, "PCURVE", 2)
             .and_then(Value::reference)
             .and_then(|representation| exchange.records.get(&representation));
         let curve_steps = representation
@@ -1029,7 +1231,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             fit_tolerance: None,
         });
         typed.insert(id);
-        if let Some(representation) = record.parameter(2).and_then(Value::reference) {
+        if let Some(representation) =
+            named_parameter(record, "PCURVE", 2).and_then(Value::reference)
+        {
             typed.insert(representation);
         }
         typed.insert(curve_step);
@@ -1037,23 +1241,21 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
-        if record.simple_name() != Some("DEGENERATE_TOROIDAL_SURFACE") {
-            continue;
-        }
-        let select_outer = record
-            .parameter(4)
+        let Some(select_outer) = named_parameter(record, "DEGENERATE_TOROIDAL_SURFACE", 4)
             .and_then(logical_value)
-            .and_then(StepLogical::into_option);
+            .and_then(StepLogical::into_option)
+        else {
+            if carrier_index.surfaces.contains_key(&id) {
+                warnings.push(format!(
+                    "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
+                ));
+            }
+            continue;
+        };
         let surface = SurfaceId(format!("step:data:surface#{id}"));
         if !carrier_index.surfaces.contains_key(&id) {
             continue;
         }
-        let Some(select_outer) = select_outer else {
-            warnings.push(format!(
-                "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
-            ));
-            continue;
-        };
         ir.model.procedural_surfaces.push(ProceduralSurface {
             id: ProceduralSurfaceId(format!("step:construction:degenerate_torus#{id}")),
             surface,
@@ -1118,13 +1320,10 @@ pub(super) fn associate_free_geometric_set_members(
     losses: &mut Vec<LossNote>,
 ) {
     for set in exchange.records.values() {
-        if !matches!(
-            set.simple_name(),
-            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
-        ) {
+        let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
-        }
-        let Some(members) = set.parameter(1).and_then(Value::list) else {
+        };
+        let Some(members) = named_parameter(set, set_type, 1).and_then(Value::list) else {
             continue;
         };
         for member in members.iter().filter_map(Value::reference) {
@@ -1262,6 +1461,17 @@ fn entity_parameters<'a>(record: &'a RawRecord, name: &str) -> Option<&'a [Value
     record
         .partial(name)
         .map(|partial| partial.parameters.as_slice())
+}
+
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record.partial(name)?.parameters.get(index)
+}
+
+fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
+    names
+        .iter()
+        .copied()
+        .find(|name| record.partial(name).is_some())
 }
 
 fn first_named_list(record: &RawRecord, names: &[&str]) -> Option<Vec<u64>> {
@@ -1768,12 +1978,12 @@ fn line_parameter_scale(
     exchange
         .records
         .get(&curve)
-        .filter(|record| record.simple_name() == Some("LINE"))
-        .and_then(|record| record.parameter(2))
+        .filter(|record| record.partial("LINE").is_some())
+        .and_then(|record| named_parameter(record, "LINE", 2))
         .and_then(ValueExt::reference)
         .and_then(|vector| exchange.records.get(&vector))
-        .filter(|record| record.simple_name() == Some("VECTOR"))
-        .and_then(|record| record.parameter(2))
+        .filter(|record| record.partial("VECTOR").is_some())
+        .and_then(|record| named_parameter(record, "VECTOR", 2))
         .and_then(ValueExt::number)
         .map(|magnitude| magnitude * length_scale)
         .filter(|scale| scale.is_finite() && *scale > 0.0)
@@ -2169,22 +2379,33 @@ fn decode_pcurve_geometry(
     let geometry = if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
         nurbs_pcurve(record, points, warnings)?
     } else {
-        match record.simple_name() {
-            Some("LINE") => {
-                let origin = record
-                    .parameter(1)?
+        let curve_type = entity_type(
+            record,
+            &[
+                "LINE",
+                "CIRCLE",
+                "ELLIPSE",
+                "PARABOLA",
+                "HYPERBOLA",
+                "POLYLINE",
+                "TRIMMED_CURVE",
+                "OFFSET_CURVE_2D",
+            ],
+        )?;
+        match curve_type {
+            "LINE" => {
+                let origin = named_parameter(record, "LINE", 1)?
                     .reference()
                     .and_then(|point| points.get(&point).copied())?;
-                let direction = record
-                    .parameter(2)?
+                let direction = named_parameter(record, "LINE", 2)?
                     .reference()
                     .and_then(|vector| vectors.get(&vector).copied())?;
                 PcurveGeometry::Line { origin, direction }
             }
-            Some("CIRCLE") => {
-                let placement = record.parameter(1)?.reference()?;
+            "CIRCLE" => {
+                let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
                 let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let radius = positive(record.parameter(2))?;
+                let radius = positive(named_parameter(record, "CIRCLE", 2))?;
                 records.insert(placement);
                 PcurveGeometry::Circle {
                     center,
@@ -2193,11 +2414,11 @@ fn decode_pcurve_geometry(
                     radius,
                 }
             }
-            Some("ELLIPSE") => {
-                let placement = record.parameter(1)?.reference()?;
+            "ELLIPSE" => {
+                let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
                 let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let major_radius = positive(record.parameter(2))?;
-                let minor_radius = positive(record.parameter(3))?;
+                let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
+                let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
                 records.insert(placement);
                 PcurveGeometry::Ellipse {
                     center,
@@ -2207,10 +2428,10 @@ fn decode_pcurve_geometry(
                     minor_radius,
                 }
             }
-            Some("PARABOLA") => {
-                let placement = record.parameter(1)?.reference()?;
+            "PARABOLA" => {
+                let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
                 let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let focal_distance = positive(record.parameter(2))?;
+                let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
                 records.insert(placement);
                 PcurveGeometry::Parabola {
                     vertex,
@@ -2219,11 +2440,11 @@ fn decode_pcurve_geometry(
                     focal_distance,
                 }
             }
-            Some("HYPERBOLA") => {
-                let placement = record.parameter(1)?.reference()?;
+            "HYPERBOLA" => {
+                let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
                 let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let major_radius = positive(record.parameter(2))?;
-                let minor_radius = positive(record.parameter(3))?;
+                let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
+                let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
                 records.insert(placement);
                 PcurveGeometry::Hyperbola {
                     center,
@@ -2233,10 +2454,10 @@ fn decode_pcurve_geometry(
                     minor_radius,
                 }
             }
-            Some("POLYLINE") => polyline_pcurve(record, points)?,
-            Some("TRIMMED_CURVE") => {
-                let basis_id = record.parameter(1)?.reference()?;
-                let sense = record.parameter(4)?.logical()?;
+            "POLYLINE" => polyline_pcurve(record, points)?,
+            "TRIMMED_CURVE" => {
+                let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
+                let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
                 let (basis, basis_records) = decode_pcurve_geometry(
                     basis_id,
                     exchange,
@@ -2256,18 +2477,24 @@ fn decode_pcurve_geometry(
                 } else {
                     1.0
                 };
-                let start = pcurve_trim_parameter(record.parameter(2)?)? * scale;
-                let end = pcurve_trim_parameter(record.parameter(3)?)? * scale;
+                let start =
+                    pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)? * scale;
+                let end =
+                    pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)? * scale;
                 records.extend(basis_records);
                 PcurveGeometry::Trimmed {
                     parameter_range: if sense { [start, end] } else { [end, start] },
                     basis: Box::new(basis),
                 }
             }
-            Some("OFFSET_CURVE_2D") => {
-                let basis_id = record.parameter(1)?.reference()?;
-                let distance = record.parameter(2)?.number()?;
-                if !distance.is_finite() || record.parameter(3)?.logical().is_none() {
+            "OFFSET_CURVE_2D" => {
+                let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
+                let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
+                if !distance.is_finite()
+                    || named_parameter(record, "OFFSET_CURVE_2D", 3)?
+                        .logical()
+                        .is_none()
+                {
                     active.remove(&id);
                     return None;
                 }
@@ -2599,6 +2826,57 @@ fn numbers(value: &Value) -> Option<Vec<f64>> {
 fn normalize(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
     (norm.is_finite() && norm > 0.0).then(|| scale_vector(vector, 1.0 / norm))
+}
+
+fn cartesian_transformation_operator(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point3>,
+    directions: &BTreeMap<u64, Vector3>,
+) -> Option<Transform> {
+    let axis_x = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 1)?
+        .reference()
+        .and_then(|id| directions.get(&id).copied())?;
+    let axis_y = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
+        .reference()
+        .and_then(|id| directions.get(&id).copied())?;
+    let origin = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 3)?
+        .reference()
+        .and_then(|id| points.get(&id).copied())?;
+    let scale = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 4) {
+        Some(Value::Omitted | Value::Derived) | None => 1.0,
+        Some(value) => value.number()?,
+    };
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let axis_z = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 5) {
+        Some(Value::Reference(id)) => directions.get(id).copied()?,
+        Some(Value::Omitted | Value::Derived) | None => normalize(cross(axis_x, axis_y))?,
+        Some(_) => return None,
+    };
+    Some(Transform {
+        rows: [
+            [
+                axis_x.x * scale,
+                axis_y.x * scale,
+                axis_z.x * scale,
+                origin.x,
+            ],
+            [
+                axis_x.y * scale,
+                axis_y.y * scale,
+                axis_z.y * scale,
+                origin.y,
+            ],
+            [
+                axis_x.z * scale,
+                axis_y.z * scale,
+                axis_z.z * scale,
+                origin.z,
+            ],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    })
 }
 
 fn scale_vector(vector: Vector3, scale: f64) -> Vector3 {
