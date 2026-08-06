@@ -1429,27 +1429,26 @@ impl FormulaExpressionParser<'_, '_> {
             if left.dimension != right.dimension {
                 return None;
             }
+            let left_known = left.known_value;
+            let right_known = right.known_value;
             let integral = if self.evaluate {
                 None
             } else {
                 static_all_integral(left.integral, right.integral)
             };
-            left.value = if operator == b'+' {
+            let result_value = if operator == b'+' {
                 left.value + right.value
             } else {
                 left.value - right.value
             };
-            if self.evaluate && !left.value.is_finite() {
+            if self.evaluate && !result_value.is_finite() {
                 return None;
             }
-            if !left.value.is_finite() {
-                left.value = 0.0;
-            }
             let known_value = if self.evaluate {
-                Some(left.value)
+                Some(result_value)
             } else {
-                left.known_value
-                    .zip(right.known_value)
+                left_known
+                    .zip(right_known)
                     .map(|(left, right)| {
                         if operator == b'+' {
                             left + right
@@ -1459,8 +1458,20 @@ impl FormulaExpressionParser<'_, '_> {
                     })
                     .filter(|value| value.is_finite())
             };
+            if self.static_check
+                && left_known.is_some()
+                && right_known.is_some()
+                && known_value.is_none()
+            {
+                return None;
+            }
+            left.value = if result_value.is_finite() {
+                result_value
+            } else {
+                0.0
+            };
             left.integral = if self.evaluate {
-                finite_integrality(left.value)
+                finite_integrality(result_value)
             } else {
                 integral
             };
@@ -1482,9 +1493,33 @@ impl FormulaExpressionParser<'_, '_> {
             self.at += 1;
             let left = value.scalar()?;
             let right = self.unary(depth)?.scalar()?;
+            let left_known = left.known_value;
+            let right_known = right.known_value;
             if self.static_check
                 && operator == b'/'
-                && right.known_value.is_some_and(|value| value == 0.0)
+                && right_known.is_some_and(|value| value == 0.0)
+            {
+                return None;
+            }
+            let known_value = if operator == b'*' {
+                left_known
+                    .zip(right_known)
+                    .map(|(left, right)| left * right)
+                    .filter(|value| value.is_finite())
+            } else if right.value == 0.0 {
+                None
+            } else if self.evaluate {
+                Some(left.value / right.value)
+            } else {
+                left_known
+                    .zip(right_known)
+                    .map(|(left, right)| left / right)
+                    .filter(|value| value.is_finite())
+            };
+            if self.static_check
+                && left_known.is_some()
+                && right_known.is_some()
+                && known_value.is_none()
             {
                 return None;
             }
@@ -1497,14 +1532,7 @@ impl FormulaExpressionParser<'_, '_> {
                     } else {
                         static_all_integral(left.integral, right.integral)
                     },
-                    known_value: if self.evaluate {
-                        Some(left.value * right.value)
-                    } else {
-                        left.known_value
-                            .zip(right.known_value)
-                            .map(|(left, right)| left * right)
-                            .filter(|value| value.is_finite())
-                    },
+                    known_value,
                 }
             } else {
                 if self.evaluate && right.value == 0.0 {
@@ -1518,16 +1546,7 @@ impl FormulaExpressionParser<'_, '_> {
                     },
                     dimension: left.dimension.quotient(right.dimension)?,
                     integral: None,
-                    known_value: if right.value == 0.0 {
-                        None
-                    } else if self.evaluate {
-                        Some(left.value / right.value)
-                    } else {
-                        left.known_value
-                            .zip(right.known_value)
-                            .map(|(left, right)| left / right)
-                            .filter(|value| value.is_finite())
-                    },
+                    known_value,
                 }
             };
             if self.evaluate && !result.value.is_finite() {
@@ -1778,6 +1797,9 @@ impl FormulaExpressionParser<'_, '_> {
         if (self.static_check || self.evaluate) && !value.satisfies_source_type("Integer") {
             return None;
         }
+        if self.static_check && value.known_value.is_some_and(|value| value < 0.0) {
+            return None;
+        }
         if !self.evaluate {
             return Some(0);
         }
@@ -1988,6 +2010,31 @@ impl FormulaExpressionParser<'_, '_> {
                 fraction.value
             };
             let value = start.value + (end.value - start.value) * fraction_value;
+            let known_value = if self.evaluate {
+                Some(value)
+            } else {
+                start
+                    .known_value
+                    .zip(end.known_value)
+                    .zip(fraction.known_value)
+                    .map(|((start, end), fraction)| {
+                        if function == "CubicInterpolation" {
+                            let fraction = fraction * fraction * (3.0 - 2.0 * fraction);
+                            start + (end - start) * fraction
+                        } else {
+                            start + (end - start) * fraction
+                        }
+                    })
+                    .filter(|value| value.is_finite())
+            };
+            if self.static_check
+                && start.known_value.is_some()
+                && end.known_value.is_some()
+                && fraction.known_value.is_some()
+                && known_value.is_none()
+            {
+                return None;
+            }
             return (value.is_finite() || !self.evaluate).then_some(EvaluatedFormulaValue::Scalar(
                 EvaluatedFormulaScalar {
                     value: if value.is_finite() { value } else { 0.0 },
@@ -1997,23 +2044,7 @@ impl FormulaExpressionParser<'_, '_> {
                     } else {
                         None
                     },
-                    known_value: if self.evaluate {
-                        Some(value)
-                    } else {
-                        start
-                            .known_value
-                            .zip(end.known_value)
-                            .zip(fraction.known_value)
-                            .map(|((start, end), fraction)| {
-                                if function == "CubicInterpolation" {
-                                    let fraction = fraction * fraction * (3.0 - 2.0 * fraction);
-                                    start + (end - start) * fraction
-                                } else {
-                                    start + (end - start) * fraction
-                                }
-                            })
-                            .filter(|value| value.is_finite())
-                    },
+                    known_value,
                 },
             ));
         }
@@ -2093,13 +2124,31 @@ impl FormulaExpressionParser<'_, '_> {
                     0.0
                 })
             }
-            ("exp", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("exp", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| value.exp().is_finite())) =>
+            {
                 self.scalar_result(argument.value.exp())
             }
-            ("sinh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("sinh", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| value.sinh().is_finite())) =>
+            {
                 self.scalar_result(argument.value.sinh())
             }
-            ("cosh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("cosh", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| value.cosh().is_finite())) =>
+            {
                 self.scalar_result(argument.value.cosh())
             }
             ("tanh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
@@ -2108,10 +2157,20 @@ impl FormulaExpressionParser<'_, '_> {
             ("asinh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
                 self.scalar_result(argument.value.asinh())
             }
-            ("acosh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("acosh", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument.known_value.is_none_or(|value| value >= 1.0)) =>
+            {
                 self.scalar_result(argument.value.acosh())
             }
-            ("atanh", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("atanh", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| (-1.0..1.0).contains(&value))) =>
+            {
                 self.scalar_result(argument.value.atanh())
             }
             ("ceil", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
@@ -2571,6 +2630,15 @@ mod parser_tests {
             "round(#1_, \"mm\", #3_)",
             "mod(2, #3_)",
             "1 / 0",
+            "1e308 + 1e308",
+            "1e308 * 1e308",
+            "LinearInterpolation(1e308, -1e308, 0.5)",
+            "exp(10000)",
+            "sinh(10000)",
+            "cosh(10000)",
+            "acosh(0)",
+            "atanh(1)",
+            "#4_.Extract(-1, 1)",
             "sqrt(-1)",
         ] {
             assert!(
@@ -2579,6 +2647,12 @@ mod parser_tests {
             );
         }
         assert!(evaluate_formula_expression_with_mode("1 * 0", &bindings, false).is_some());
+        for expression in ["exp(#3_)", "acosh(#3_)", "atanh(#3_)"] {
+            assert!(
+                evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                "{expression}"
+            );
+        }
 
         assert!(
             evaluate_formula_expression_with_mode("round(#1_, \"mm\", #2_)", &bindings, false)

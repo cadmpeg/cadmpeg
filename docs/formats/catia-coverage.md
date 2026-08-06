@@ -213,8 +213,9 @@ current scores require those matrices and representative fixtures.
   calls, absolute values, and square roots. Typed comparisons, Boolean literals,
   negation, lazy conjunctions and disjunctions, and equal-dimension numeric or
   equal-type nonnumeric lazy ternaries transfer predicate and conditional
-  formulas. Unset-formula type checking retains unknown scalar values, proves
-  only known constant domains, and preserves runtime lazy-branch semantics.
+  formulas. Unset-formula type checking retains unknown scalar values, rejects
+  known invalid domains and non-finite constant arithmetic, and preserves
+  runtime lazy-branch semantics.
   String literals, concatenation,
   occurrence removal, equality, replacement, case conversion, signed-integer
   formatting, Unicode-scalar length and extraction, indexed directional
