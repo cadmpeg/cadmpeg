@@ -30597,6 +30597,27 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         );
         store_arena(&mut ir, "configuration", &[family_table])?;
     }
+    collect_feature_coverage(scan, &ir, geometry_generator_feature_count, &mut coverage);
+    Ok(BuiltIr {
+        ir,
+        annotations: annotations.build(),
+        unknowns,
+        coverage,
+    })
+}
+
+/// Count transferred features by kind and record the counts in `coverage`.
+///
+/// Walks the transferred feature list once, classifying each feature by its
+/// definition and by whether its operands resolved, then writes one
+/// `transferred_*` entry per counted kind. Reads the built model; emits no
+/// entities and no annotations.
+fn collect_feature_coverage(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    geometry_generator_feature_count: usize,
+    coverage: &mut BTreeMap<String, usize>,
+) {
     let native_feature_count = ir
         .model
         .features
@@ -31366,12 +31387,6 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         "transferred_native_axis_helix_feature_count".to_string(),
         native_axis_helix_feature_count,
     );
-    Ok(BuiltIr {
-        ir,
-        annotations: annotations.build(),
-        unknowns,
-        coverage,
-    })
 }
 
 #[derive(Default)]
