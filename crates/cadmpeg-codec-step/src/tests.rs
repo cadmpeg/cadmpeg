@@ -425,6 +425,23 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
 }
 
 #[test]
+fn opaque_links_retain_typed_step_targets() {
+    let result = decode_inline(
+        "#1=EXAMPLE_RECORD('',#2);
+        #2=LINE('typed target',#3,#5);
+        #3=CARTESIAN_POINT('',(0.,0.,0.));
+        #4=DIRECTION('',(1.,0.,0.));
+        #5=VECTOR('',#4,1.);",
+    );
+    let unknowns = result
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown records");
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].links, vec!["step:data:curve#2".to_string()]);
+}
+
+#[test]
 fn decode_accounts_for_every_part21_byte() {
     let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
     let result = StepCodec::default()
@@ -3377,6 +3394,28 @@ fn decode_builds_product_occurrences_with_relative_placement() {
         .expect("round-tripped child occurrence");
     assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
     assert_eq!(child.transform.rows[0][3], 25.0);
+}
+
+#[test]
+fn unresolved_occurrence_transform_is_reported_as_error() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','parent','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('parent','',#4,#5);
+#7=PRODUCT('C','child','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('child','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','child instance','',#6,#9,$);",
+    );
+
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("NAUO #10")
+    }));
 }
 
 #[test]

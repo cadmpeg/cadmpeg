@@ -246,6 +246,7 @@ fn decode_exchange_mode(
             .filter(|record| !typed_records.contains(&record.id))
             .map(|record| (record.id, opaque_record_id(record).0))
             .collect::<BTreeMap<_, _>>();
+        let typed_targets = typed_record_targets(&ir, &typed_records);
         let mut opaque = Vec::with_capacity(exchange.records.len());
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
@@ -274,7 +275,13 @@ fn decode_exchange_mode(
                 data: Some(bytes),
                 links: links
                     .into_iter()
-                    .filter_map(|id| opaque_ids.get(&id).cloned())
+                    .flat_map(|id| {
+                        opaque_ids
+                            .get(&id)
+                            .cloned()
+                            .into_iter()
+                            .chain(typed_targets.get(&id).into_iter().flatten().cloned())
+                    })
                     .collect(),
             });
         }
@@ -533,6 +540,28 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
         .collect::<Vec<_>>()
         .join("_");
     UnknownId(format!("step:data:{kind}#{}", record.id))
+}
+
+fn typed_record_targets(
+    ir: &CadIr,
+    typed_records: &BTreeSet<u64>,
+) -> BTreeMap<u64, BTreeSet<String>> {
+    cadmpeg_ir::index::ModelIndex::new(ir)
+        .identities()
+        .filter_map(|identity| {
+            let record_id = source_record_id(identity)?;
+            typed_records
+                .contains(&record_id)
+                .then(|| (record_id, identity.to_owned()))
+        })
+        .fold(BTreeMap::new(), |mut targets, (record_id, identity)| {
+            targets.entry(record_id).or_default().insert(identity);
+            targets
+        })
+}
+
+fn source_record_id(identity: &str) -> Option<u64> {
+    identity.rsplit_once('#')?.1.split('-').next()?.parse().ok()
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

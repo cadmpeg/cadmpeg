@@ -9,7 +9,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
     Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
 };
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -212,6 +212,7 @@ pub(super) fn decode(
     }
     let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
     let mut usage_instances = BTreeMap::<u64, usize>::new();
+    let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
     for (&usage_id, usage) in &usages {
@@ -262,6 +263,22 @@ pub(super) fn decode(
                 break 'expansion;
             }
             let ordinal = child_ordinals.entry(parent.clone()).or_default();
+            let transform = if let Some(transform) = placements.get(&usage_id).copied() {
+                transform
+            } else {
+                if missing_placement_reports.insert(usage_id) {
+                    losses.push(LossNote {
+                        code: LossKind::AssemblyPlacementsNotTransferred,
+                        severity: Severity::Error,
+                        message: format!(
+                            "NAUO #{usage_id} has no resolved occurrence transform; \
+                             identity placement was used"
+                        ),
+                        provenance: None,
+                    });
+                }
+                Transform::identity()
+            };
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
@@ -271,10 +288,7 @@ pub(super) fn decode(
                     occurrence: parent.clone(),
                 },
                 ordinal: *ordinal,
-                transform: placements
-                    .get(&usage_id)
-                    .copied()
-                    .unwrap_or_else(Transform::identity),
+                transform,
                 prototype_transform: Transform::identity(),
                 scale: [1.0; 3],
                 name: usage.name.clone(),
