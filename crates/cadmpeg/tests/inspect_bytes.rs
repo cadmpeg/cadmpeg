@@ -885,3 +885,106 @@ fn container_json_lists_entries_under_the_envelope() {
     assert_eq!(entries[0]["compression"], "stored");
     assert_eq!(entries[0]["uncompressed_size"], 17);
 }
+
+#[test]
+fn step_is_an_alias_of_stride() {
+    let dir = tempdir().unwrap();
+    let bytes: Vec<u8> = (0u8..16).collect();
+    let file = write(dir.path(), "counter.bin", &bytes);
+    let path = file.to_str().unwrap();
+    let stride = cadmpeg()
+        .args([
+            "inspect", "read", path, "--type", "u8", "-n", "3", "--stride", "4",
+        ])
+        .output()
+        .unwrap();
+    let step = cadmpeg()
+        .args([
+            "inspect", "read", path, "--type", "u8", "-n", "3", "--step", "4",
+        ])
+        .output()
+        .unwrap();
+    assert!(stride.status.success());
+    assert_eq!(stride.stdout, step.stdout);
+}
+
+#[test]
+fn read_type_text_and_hex_guesses_teach_the_right_tool() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+
+    for (guess, expected) in [
+        ("ascii", "cadmpeg inspect strings"),
+        ("text", "cadmpeg inspect strings"),
+        ("hex", "cadmpeg inspect hex"),
+    ] {
+        cadmpeg()
+            .args(["inspect", "read", path, "--type", guess])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(expected));
+    }
+
+    // The scalar list still renders in help.
+    cadmpeg()
+        .args(["inspect", "read", "-h"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("possible values: u8, i8"));
+}
+
+#[test]
+fn find_type_guess_names_the_encoding_flags() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "some.bin", b"x");
+    let path = file.to_str().unwrap();
+    for (guess, flag) in [
+        ("ascii", "--ascii TEXT"),
+        ("hex", "--hex PATTERN"),
+        ("utf16", "--utf16le TEXT"),
+    ] {
+        cadmpeg()
+            .args(["inspect", "find", path, "--type", guess])
+            .assert()
+            .code(2)
+            .stderr(predicate::str::contains(flag));
+    }
+}
+
+#[test]
+fn find_context_prints_a_window_around_each_hit() {
+    let dir = tempdir().unwrap();
+    let file = write(dir.path(), "ctx.bin", b"AAAAneedleBBBB");
+    let path = file.to_str().unwrap();
+
+    // --context 0 output is exactly the old hit-line format.
+    cadmpeg()
+        .args(["inspect", "find", path, "--ascii", "needle"])
+        .assert()
+        .success()
+        .stdout(
+            "pattern: ascii \"needle\" (6 bytes)  hits: 1\n\
+             0x00000004  4\n",
+        );
+
+    // --context 4 appends a dump spanning 4 bytes before and after the hit.
+    cadmpeg()
+        .args([
+            "inspect",
+            "find",
+            path,
+            "--ascii",
+            "needle",
+            "--context",
+            "4",
+        ])
+        .assert()
+        .success()
+        .stdout(
+            "pattern: ascii \"needle\" (6 bytes)  hits: 1\n\
+             0x00000004  4\n\
+             00000000  41 41 41 41 6e 65 65 64  6c 65 42 42 42 42        \
+             |AAAAneedleBBBB|\n",
+        );
+}

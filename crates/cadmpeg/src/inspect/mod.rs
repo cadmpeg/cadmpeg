@@ -122,7 +122,7 @@ pub struct ReadArgs {
     #[command(flatten)]
     pub file: FileArg,
     /// Scalar type to decode.
-    #[arg(long = "type", value_enum)]
+    #[arg(long = "type", value_parser = numeric::ScalarTypeParser)]
     pub ty: ScalarType,
     /// Offset of the first value.
     #[arg(long, alias = "start", default_value = "0", value_parser = parse_offset)]
@@ -131,7 +131,7 @@ pub struct ReadArgs {
     #[arg(short = 'n', long, default_value_t = 1)]
     pub count: u64,
     /// Byte step between consecutive values; defaults to the scalar width.
-    #[arg(long, value_parser = parse_offset)]
+    #[arg(long, alias = "step", value_parser = parse_offset)]
     pub stride: Option<u64>,
     #[command(flatten)]
     pub endian: EndianArgs,
@@ -165,6 +165,13 @@ pub struct FindArgs {
     /// Stop after this many hits; 0 reports every hit.
     #[arg(long, default_value_t = 100)]
     pub max: usize,
+    /// Bytes of context dumped before and after each hit; 0 prints none.
+    #[arg(long, default_value = "0", value_parser = parse_offset)]
+    pub context: u64,
+    /// Rejected placeholder: `find` names the encoding by flag, not by a
+    /// `--type` value.
+    #[arg(long = "type", hide = true)]
+    pub misplaced_type: Option<String>,
 }
 
 /// Arguments for `cadmpeg inspect strings`.
@@ -386,6 +393,17 @@ fn find(args: &FindArgs) -> Result<()> {
              pattern, `--ascii {stray}` for text, or `--utf16le {stray}` for UTF-16LE text"
         );
     }
+    if let Some(guessed) = &args.misplaced_type {
+        let flag = match guessed.to_ascii_lowercase().as_str() {
+            "hex" | "bytes" => "--hex PATTERN",
+            text if text.starts_with("utf16") || text.starts_with("utf-16") => "--utf16le TEXT",
+            _ => "--ascii TEXT",
+        };
+        bail!(
+            "`--type {guessed}` does not select an encoding here; `find` names the pattern \
+             encoding by flag: pass `{flag}` (the choices are --hex, --ascii, and --utf16le)"
+        );
+    }
     let (pattern, described) = if let Some(text) = &args.hex {
         (search::parse_pattern(text), format!("hex {text}"))
     } else if let Some(text) = &args.ascii {
@@ -412,6 +430,14 @@ fn find(args: &FindArgs) -> Result<()> {
     );
     for offset in &hits {
         println!("0x{offset:08x}  {offset}");
+        if args.context > 0 {
+            let start = offset.saturating_sub(args.context);
+            let len = args
+                .context
+                .saturating_mul(2)
+                .saturating_add(pattern.len() as u64);
+            print!("{}", window(&bytes, start, len));
+        }
     }
     if truncated {
         println!(
