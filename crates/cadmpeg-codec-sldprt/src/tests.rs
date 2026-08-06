@@ -14801,8 +14801,10 @@ fn semantic_writer_round_trips_filled_surface() {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Resolved { edges, native: edge_native }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
             continuity: Some(SurfaceContinuity::Tangent),
+            boundary_continuities,
             merge_result: Some(false),
-        } if edges == std::slice::from_ref(&edge_id) && edge_native == &edge
+        } if boundary_continuities.is_empty()
+            && edges == std::slice::from_ref(&edge_id) && edge_native == &edge
             && faces == std::slice::from_ref(&face_id) && face_native == &face
     ));
 
@@ -14810,6 +14812,7 @@ fn semantic_writer_round_trips_filled_surface() {
         boundary,
         support_faces,
         continuity,
+        boundary_continuities,
         merge_result,
     } = &mut decoded.ir.model.features[0].definition
     else {
@@ -14819,6 +14822,7 @@ fn semantic_writer_round_trips_filled_surface() {
         cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Edges(vec![edge_id.clone()]));
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
     *continuity = Some(SurfaceContinuity::Curvature);
+    boundary_continuities.clear();
     *merge_result = Some(true);
 
     let mut encoded = Vec::new();

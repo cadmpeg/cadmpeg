@@ -8465,6 +8465,7 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
         )),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
         continuity: Some(continuity),
+        boundary_continuities: Vec::new(),
         merge_result: Some(
             feature
                 .properties
@@ -14017,6 +14018,7 @@ pub fn sync_neutral_features(
                 boundary,
                 support_faces,
                 continuity,
+                boundary_continuities,
                 merge_result,
             } => {
                 let cadmpeg_ir::features::SurfaceBoundary::Edges(boundary) = boundary else {
@@ -14043,6 +14045,12 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
+                if !boundary_continuities.is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has per-boundary filled-surface continuity",
+                        feature.id
+                    )));
+                }
                 let merge_result = merge_result.ok_or_else(|| {
                     CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved filled-surface merge state",

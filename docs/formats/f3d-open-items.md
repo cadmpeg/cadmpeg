@@ -72,7 +72,7 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 
 `PatchFlip` does not hold the boundary side. It carries the value `2` in every record, including in patches that differ only in the authored boundary side. `PatchScale` is `-1.0` in every record, so no mapping from it to a neutral value is decidable in either direction. `IsSeedSel` is set on exactly one boundary component of a patch.
 
-**Need.** A neutral patch needs the boundary side to place its generated surface, and the neutral operation carries one continuity, so a patch imposing more than one condition needs a per-boundary neutral carrier before its continuity transfers completely. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
+**Need.** A neutral patch still needs the boundary side to place its generated surface. A tangency or curvature weight authored away from its default separates `PatchScale` from a constant.
 
 ### DR-15. Recipe fields for ambiguous edge operands
 

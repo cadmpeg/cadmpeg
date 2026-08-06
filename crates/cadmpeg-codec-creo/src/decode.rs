@@ -16740,6 +16740,7 @@ fn filled_surface_feature_definition(
         boundary,
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: Some(SurfaceContinuity::Contact),
+        boundary_continuities: Vec::new(),
         merge_result: Some(false),
     }
 }
@@ -31233,6 +31234,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 support_faces,
                 continuity,
                 merge_result,
+                ..
             } => {
                 filled_surface_feature_count += 1;
                 let unresolved_boundary = surface_boundary_has_unresolved_operands(boundary);

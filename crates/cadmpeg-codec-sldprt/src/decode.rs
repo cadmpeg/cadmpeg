@@ -4871,6 +4871,7 @@ mod design_loss_tests {
                 boundary: cadmpeg_ir::features::SurfaceBoundary::Path(path.clone()),
                 support_faces: face.clone(),
                 continuity: None,
+                boundary_continuities: Vec::new(),
                 merge_result: Some(false),
             },
             FeatureDefinition::TrimSurface {
@@ -5002,6 +5003,7 @@ mod design_loss_tests {
                     )),
                     support_faces: FaceSelection::Faces(Vec::new()),
                     continuity: Some(SurfaceContinuity::Contact),
+                    boundary_continuities: Vec::new(),
                     merge_result: Some(false),
                 },
             ),

@@ -1142,6 +1142,10 @@ pub enum FeatureDefinition {
         /// Continuity imposed against the support faces, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         continuity: Option<SurfaceContinuity>,
+        /// Continuity imposed by each boundary component, in source order,
+        /// when the operation carries component-specific conditions.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boundary_continuities: Vec<SurfaceContinuity>,
         /// Whether the generated patch is merged into adjacent surface bodies,
         /// when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]

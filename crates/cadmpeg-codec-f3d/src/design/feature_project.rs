@@ -4240,30 +4240,45 @@ fn project_fixed_pipe(
     })
 }
 
-/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
-/// neutral continuity.
-///
-/// A `SurfacePatch` carries one continuity value. The projector returns it when
-/// every boundary carries the same value; mixed boundaries produce `None`.
-pub(crate) fn surface_patch_continuity(
-    scope: &DesignParameterScope,
+fn surface_patch_boundary_continuity(
+    continuity: crate::records::DesignPatchContinuity,
 ) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
     use cadmpeg_ir::features::SurfaceContinuity;
 
-    let boundaries = scope.surface_patch_boundaries.as_slice();
-    let (first, rest) = boundaries.split_first()?;
-    if rest
-        .iter()
-        .any(|other| other.continuity != first.continuity)
-    {
-        return None;
-    }
-    match first.continuity {
+    match continuity {
         crate::records::DesignPatchContinuity::Connected => Some(SurfaceContinuity::Contact),
         crate::records::DesignPatchContinuity::Tangent => Some(SurfaceContinuity::Tangent),
         crate::records::DesignPatchContinuity::Curvature => Some(SurfaceContinuity::Curvature),
         crate::records::DesignPatchContinuity::Unknown(_) => None,
     }
+}
+
+/// Map every known boundary-settings continuity in source order.
+///
+/// A missing or unknown component condition makes the complete per-boundary
+/// vector unavailable. The caller can still retain the native scope.
+pub(crate) fn surface_patch_boundary_continuities(
+    scope: &DesignParameterScope,
+) -> Vec<cadmpeg_ir::features::SurfaceContinuity> {
+    scope
+        .surface_patch_boundaries
+        .iter()
+        .map(|boundary| surface_patch_boundary_continuity(boundary.continuity))
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default()
+}
+
+/// Map the boundary-settings continuity of a `SurfacePatch` scope onto one
+/// neutral continuity when every boundary uses the same condition.
+pub(crate) fn surface_patch_continuity(
+    scope: &DesignParameterScope,
+) -> Option<cadmpeg_ir::features::SurfaceContinuity> {
+    let boundaries = surface_patch_boundary_continuities(scope);
+    let (first, rest) = boundaries.split_first()?;
+    if rest.iter().any(|other| other != first) {
+        return None;
+    }
+    Some(*first)
 }
 
 pub(crate) fn project_surface_patch(
@@ -4317,6 +4332,7 @@ pub(crate) fn project_surface_patch(
             )),
             support_faces: FaceSelection::Faces(Vec::new()),
             continuity: surface_patch_continuity(scope),
+            boundary_continuities: Vec::new(),
             merge_result: None,
         });
     }
@@ -4334,19 +4350,48 @@ pub(crate) fn project_surface_patch(
         }
         (boundary_count, ROLE_0X4)
     };
-    if groups.len() != boundary_count {
+    if groups.len() != boundary_count || scope.surface_patch_boundaries.len() != boundary_count {
         return None;
     }
-    for (ordinal, boundary) in groups.iter().enumerate() {
-        let reference_ordinal = ordinal * 3;
-        if boundary.scope_reference_ordinal != u32::try_from(reference_ordinal).ok()?
-            || boundary.record_index != scope.reference_members[reference_ordinal]
+    let mut occupied = vec![false; scope.reference_members.len()];
+    for boundary in &groups {
+        let group_ordinal = usize::try_from(boundary.scope_reference_ordinal).ok()?;
+        let member_ordinal = group_ordinal.checked_add(1)?;
+        let settings_ordinal = group_ordinal.checked_add(2)?;
+        if settings_ordinal >= scope.reference_members.len()
+            || boundary.record_index != scope.reference_members[group_ordinal]
             || boundary.role != boundary_role
             || boundary.members.as_slice()
-                != &scope.reference_members[reference_ordinal + 1..reference_ordinal + 2]
+                != &scope.reference_members[member_ordinal..=member_ordinal]
+            || occupied[group_ordinal]
+            || occupied[member_ordinal]
+            || occupied[settings_ordinal]
         {
             return None;
         }
+        let settings = scope.surface_patch_boundaries.iter().find(|settings| {
+            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
+        })?;
+        if settings.record_index != scope.reference_members[settings_ordinal]
+            || settings.model_reference != boundary.record_index
+        {
+            return None;
+        }
+        occupied[group_ordinal] = true;
+        occupied[member_ordinal] = true;
+        occupied[settings_ordinal] = true;
+    }
+    let unoccupied = occupied
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, occupied)| (!occupied).then_some(ordinal))
+        .collect::<Vec<_>>();
+    let endpoint_unoccupied = unoccupied.as_slice() == [0]
+        || unoccupied.as_slice() == [scope.reference_members.len().saturating_sub(1)];
+    if (scope.reference_members.len() == 3 && !unoccupied.is_empty())
+        || (scope.reference_members.len() != 3 && !endpoint_unoccupied)
+    {
+        return None;
     }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
@@ -4363,6 +4408,7 @@ pub(crate) fn project_surface_patch(
         boundary: SurfaceBoundary::Path(boundary),
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: surface_patch_continuity(scope),
+        boundary_continuities: surface_patch_boundary_continuities(scope),
         merge_result: None,
     })
 }

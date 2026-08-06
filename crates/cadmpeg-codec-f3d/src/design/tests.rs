@@ -7716,6 +7716,10 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Tangent),
         boundary(DesignPatchContinuity::Connected),
     ]);
+    assert_eq!(
+        crate::design::feature_project::surface_patch_boundary_continuities(&mixed),
+        vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
+    );
     assert!(crate::design::feature_project::surface_patch_continuity(&mixed).is_none());
     assert!(
         crate::design::feature_project::surface_patch_continuity(&scope_with(Vec::new())).is_none()
@@ -7726,6 +7730,128 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         )]))
         .is_none()
     );
+    assert!(
+        crate::design::feature_project::surface_patch_boundary_continuities(&scope_with(vec![
+            boundary(DesignPatchContinuity::Unknown(9))
+        ]))
+        .is_empty()
+    );
+}
+
+#[test]
+fn surface_patch_projection_accepts_boundary_groups_at_either_reference_endpoint() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame, DesignParameterScope,
+        DesignPatchContinuity, DesignSurfacePatchBoundary,
+    };
+    use cadmpeg_ir::features::{FeatureDefinition, SurfaceContinuity};
+
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#1", "SurfacePatch", 1);
+    scope.frame_length = 442;
+    scope.reference_members = vec![900, 100, 101, 102, 110, 111, 112, 120, 121, 122];
+    scope.surface_patch_boundaries = vec![
+        DesignSurfacePatchBoundary {
+            scope_reference_ordinal: 3,
+            record_index: 102,
+            is_seed_selection: false,
+            continuity: DesignPatchContinuity::Connected,
+            flip: 2,
+            scale: -1.0,
+            model_reference: 100,
+        },
+        DesignSurfacePatchBoundary {
+            scope_reference_ordinal: 6,
+            record_index: 112,
+            is_seed_selection: true,
+            continuity: DesignPatchContinuity::Connected,
+            flip: 2,
+            scale: -1.0,
+            model_reference: 110,
+        },
+        DesignSurfacePatchBoundary {
+            scope_reference_ordinal: 9,
+            record_index: 122,
+            is_seed_selection: false,
+            continuity: DesignPatchContinuity::Connected,
+            flip: 2,
+            scale: -1.0,
+            model_reference: 120,
+        },
+    ];
+    let group = |record_index, ordinal, member| DesignConstructionOperandGroup {
+        id: format!("f3d:test:construction-group#{record_index}"),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal: ordinal,
+        record_index,
+        byte_offset: 0,
+        class_tag: "277".into(),
+        members: vec![member],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![0],
+        frame: DesignConstructionOperandGroupFrame {
+            member_count_offset: 0,
+            auxiliary_record_indices: Vec::new(),
+            auxiliary_record_offsets: Vec::new(),
+            auxiliary_paths: Vec::new(),
+            trailing_record_indices: Vec::new(),
+            trailing_record_offsets: Vec::new(),
+            trailing_transforms: Vec::new(),
+            trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(),
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+        },
+        role: 0x0000_0004_0000_0000,
+        extrude_role: None,
+        extrude_face_role: None,
+        role_offset: 0,
+        paired_class_tag: "260".into(),
+        paired_byte_offset: 0,
+    };
+    let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &scope,
+            &shifted_groups,
+            &[],
+            &[],
+        ),
+        Some(FeatureDefinition::FilledSurface {
+            continuity: Some(SurfaceContinuity::Contact),
+            ref boundary_continuities,
+            ..
+        }) if boundary_continuities == &[
+            SurfaceContinuity::Contact,
+            SurfaceContinuity::Contact,
+            SurfaceContinuity::Contact,
+        ]
+    ));
+
+    scope.reference_members = vec![100, 101, 102, 110, 111, 112, 120, 121, 122, 900];
+    for (boundary, ordinal) in scope.surface_patch_boundaries.iter_mut().zip([2_u32, 5, 8]) {
+        boundary.scope_reference_ordinal = ordinal;
+    }
+    let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
+    assert!(matches!(
+        crate::design::feature_project::project_surface_patch(
+            &scope,
+            &endpoint_groups,
+            &[],
+            &[],
+        ),
+        Some(FeatureDefinition::FilledSurface {
+            continuity: Some(SurfaceContinuity::Contact),
+            ref boundary_continuities,
+            ..
+        }) if boundary_continuities == &[
+            SurfaceContinuity::Contact,
+            SurfaceContinuity::Contact,
+            SurfaceContinuity::Contact,
+        ]
+    ));
 }
 
 #[test]
@@ -17722,6 +17848,18 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     patch_scope.kind = "SurfacePatch".into();
     patch_scope.frame_length = 354;
     patch_scope.reference_members = vec![100, 200, 300, 301];
+    let patch_boundary = |scope_reference_ordinal, record_index, model_reference| {
+        crate::records::DesignSurfacePatchBoundary {
+            scope_reference_ordinal,
+            record_index,
+            is_seed_selection: false,
+            continuity: crate::records::DesignPatchContinuity::Connected,
+            flip: 2,
+            scale: -1.0,
+            model_reference,
+        }
+    };
+    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -17736,13 +17874,18 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 cadmpeg_ir::features::PathRef::Native(ref native)
             ),
             support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
-            continuity: None,
+            continuity: Some(cadmpeg_ir::features::SurfaceContinuity::Contact),
+            ref boundary_continuities,
             merge_result: None,
-        }) if native == &patch_group.id && faces.is_empty()
+        }) if boundary_continuities
+            == &[cadmpeg_ir::features::SurfaceContinuity::Contact]
+            && native == &patch_group.id && faces.is_empty()
     ));
 
     patch_scope.frame_length = 398;
     patch_scope.reference_members = vec![100, 200, 300, 101, 201, 301, 102];
+    patch_scope.surface_patch_boundaries =
+        vec![patch_boundary(2, 300, 100), patch_boundary(5, 301, 101)];
     let mut second_patch_group = group(101, 3, vec![201]);
     second_patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
@@ -17762,6 +17905,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 339;
     patch_scope.reference_members = vec![100, 200, 300];
+    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
     patch_group.role = 0x0000_0041_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -17792,6 +17936,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
     patch_scope.frame_length = 340;
     patch_scope.reference_members = vec![100, 200, 300, 301];
+    patch_scope.surface_patch_boundaries = vec![patch_boundary(2, 300, 100)];
     patch_group.role = 0x0000_0004_0000_0000;
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
@@ -17813,6 +17958,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
 
     patch_scope.frame_length = 343;
     patch_scope.reference_members = vec![100, 200, 201, 202, 203, 300];
+    patch_scope.surface_patch_boundaries.clear();
     patch_group.members = vec![200, 201, 202, 203];
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
