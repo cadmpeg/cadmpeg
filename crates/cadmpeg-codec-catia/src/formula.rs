@@ -1191,6 +1191,7 @@ struct FormulaExpressionParser<'a, 'b> {
     at: usize,
     bindings: &'b BTreeMap<&'a str, EvaluatedFormulaValue>,
     evaluate: bool,
+    static_check: bool,
 }
 
 const MAX_FORMULA_EXPRESSION_DEPTH: usize = 128;
@@ -1481,6 +1482,12 @@ impl FormulaExpressionParser<'_, '_> {
             self.at += 1;
             let left = value.scalar()?;
             let right = self.unary(depth)?.scalar()?;
+            if self.static_check
+                && operator == b'/'
+                && right.known_value.is_some_and(|value| value == 0.0)
+            {
+                return None;
+            }
             let result = if operator == b'*' {
                 EvaluatedFormulaScalar {
                     value: left.value * right.value,
@@ -1601,6 +1608,13 @@ impl FormulaExpressionParser<'_, '_> {
                 .map(|(base, exponent)| base.powf(exponent))
                 .filter(|value| value.is_finite())
         };
+        if self.static_check
+            && base.known_value.is_some()
+            && exponent.known_value.is_some()
+            && known_value.is_none()
+        {
+            return None;
+        }
         (value.is_finite() || !self.evaluate).then_some(EvaluatedFormulaValue::Scalar(
             EvaluatedFormulaScalar {
                 value: if value.is_finite() { value } else { 0.0 },
@@ -1689,24 +1703,34 @@ impl FormulaExpressionParser<'_, '_> {
             value = match (method, value, arguments.as_slice()) {
                 ("Length", EvaluatedFormulaValue::String(value), []) => {
                     let length = u32::try_from(value.chars().count()).ok()?;
-                    EvaluatedFormulaValue::Scalar(finite_scalar(f64::from(length))?)
+                    EvaluatedFormulaValue::Scalar(if self.evaluate {
+                        finite_scalar(f64::from(length))?
+                    } else {
+                        static_integral_result(0.0, FormulaDimension::SCALAR)
+                    })
                 }
                 (
                     "Search",
                     EvaluatedFormulaValue::String(value),
                     [EvaluatedFormulaValue::String(needle)],
-                ) => {
+                ) => EvaluatedFormulaValue::Scalar(if self.evaluate {
                     let index = Self::search_string(&value, needle, 0, true)?;
-                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
-                }
+                    finite_scalar(index as f64)?
+                } else {
+                    static_integral_result(0.0, FormulaDimension::SCALAR)
+                }),
                 (
                     "Search",
                     EvaluatedFormulaValue::String(value),
                     [EvaluatedFormulaValue::String(needle), EvaluatedFormulaValue::Scalar(start)],
                 ) => {
                     let start = self.string_index(*start)?;
-                    let index = Self::search_string(&value, needle, start, true)?;
-                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                    EvaluatedFormulaValue::Scalar(if self.evaluate {
+                        let index = Self::search_string(&value, needle, start, true)?;
+                        finite_scalar(index as f64)?
+                    } else {
+                        static_integral_result(0.0, FormulaDimension::SCALAR)
+                    })
                 }
                 (
                     "Search",
@@ -1714,8 +1738,12 @@ impl FormulaExpressionParser<'_, '_> {
                     [EvaluatedFormulaValue::String(needle), EvaluatedFormulaValue::Scalar(start), EvaluatedFormulaValue::Boolean(forward)],
                 ) => {
                     let start = self.string_index(*start)?;
-                    let index = Self::search_string(&value, needle, start, *forward)?;
-                    EvaluatedFormulaValue::Scalar(finite_scalar(index as f64)?)
+                    EvaluatedFormulaValue::Scalar(if self.evaluate {
+                        let index = Self::search_string(&value, needle, start, *forward)?;
+                        finite_scalar(index as f64)?
+                    } else {
+                        static_integral_result(0.0, FormulaDimension::SCALAR)
+                    })
                 }
                 (
                     "Extract",
@@ -1734,12 +1762,11 @@ impl FormulaExpressionParser<'_, '_> {
                     })
                 }
                 ("ToReal", EvaluatedFormulaValue::String(value), []) => {
-                    let value = if self.evaluate {
-                        value.parse::<f64>().ok()?
+                    EvaluatedFormulaValue::Scalar(if self.evaluate {
+                        finite_scalar(value.parse::<f64>().ok()?)?
                     } else {
-                        0.0
-                    };
-                    EvaluatedFormulaValue::Scalar(finite_scalar(value)?)
+                        static_unknown_result(0.0, FormulaDimension::SCALAR)
+                    })
                 }
                 _ => return None,
             };
@@ -1748,10 +1775,12 @@ impl FormulaExpressionParser<'_, '_> {
 
     fn string_index(&self, value: EvaluatedFormulaScalar) -> Option<usize> {
         (value.dimension == FormulaDimension::SCALAR).then_some(())?;
+        if (self.static_check || self.evaluate) && !value.satisfies_source_type("Integer") {
+            return None;
+        }
         if !self.evaluate {
             return Some(0);
         }
-        value.satisfies_source_type("Integer").then_some(())?;
         usize::try_from(value.value as i64).ok()
     }
 
@@ -1829,7 +1858,7 @@ impl FormulaExpressionParser<'_, '_> {
             let [EvaluatedFormulaValue::Scalar(value)] = arguments.as_slice() else {
                 return None;
             };
-            if self.evaluate && !value.satisfies_source_type("Integer") {
+            if (self.static_check || self.evaluate) && !value.satisfies_source_type("Integer") {
                 return None;
             }
             return Some(EvaluatedFormulaValue::String(if self.evaluate {
@@ -1864,6 +1893,16 @@ impl FormulaExpressionParser<'_, '_> {
             if value.dimension != unit_dimension || digits.dimension != FormulaDimension::SCALAR {
                 return None;
             }
+            if (self.static_check || self.evaluate) && !digits.satisfies_source_type("Integer") {
+                return None;
+            }
+            if self.static_check
+                && digits
+                    .known_value
+                    .is_some_and(|value| value < 0.0 || value > f64::from(i32::MAX))
+            {
+                return None;
+            }
             if !self.evaluate {
                 return Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
                     value: 0.0,
@@ -1872,10 +1911,7 @@ impl FormulaExpressionParser<'_, '_> {
                     known_value: None,
                 }));
             }
-            if !digits.satisfies_source_type("Integer")
-                || digits.value < 0.0
-                || digits.value > f64::from(i32::MAX)
-            {
+            if digits.value < 0.0 || digits.value > f64::from(i32::MAX) {
                 return None;
             }
             let quantum = unit_scale * 10.0_f64.powi(-(digits.value as i32));
@@ -2012,10 +2048,22 @@ impl FormulaExpressionParser<'_, '_> {
             {
                 self.scalar_result(argument.value.tan())
             }
-            ("asin", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("asin", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| (-1.0..=1.0).contains(&value))) =>
+            {
                 self.angle_result(argument.value.asin())
             }
-            ("acos", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
+            ("acos", argument, None)
+                if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument
+                            .known_value
+                            .is_none_or(|value| (-1.0..=1.0).contains(&value))) =>
+            {
                 self.angle_result(argument.value.acos())
             }
             ("atan", argument, None) if argument.dimension == FormulaDimension::SCALAR => {
@@ -2023,6 +2071,8 @@ impl FormulaExpressionParser<'_, '_> {
             }
             ("log", argument, None)
                 if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument.known_value.is_none_or(|value| value > 0.0))
                     && (!self.evaluate || argument.value > 0.0) =>
             {
                 self.scalar_result(if self.evaluate {
@@ -2033,6 +2083,8 @@ impl FormulaExpressionParser<'_, '_> {
             }
             ("ln", argument, None)
                 if argument.dimension == FormulaDimension::SCALAR
+                    && (!self.static_check
+                        || argument.known_value.is_none_or(|value| value > 0.0))
                     && (!self.evaluate || argument.value > 0.0) =>
             {
                 self.scalar_result(if self.evaluate {
@@ -2077,8 +2129,10 @@ impl FormulaExpressionParser<'_, '_> {
             ("mod", dividend, Some(divisor))
                 if dividend.dimension == FormulaDimension::SCALAR
                     && divisor.dimension == FormulaDimension::SCALAR
-                    && (!self.evaluate
-                        || (divisor.satisfies_source_type("Integer") && divisor.value != 0.0)) =>
+                    && (!self.static_check && !self.evaluate
+                        || divisor.satisfies_source_type("Integer"))
+                    && (!self.static_check || divisor.known_value != Some(0.0))
+                    && (!self.evaluate || divisor.value != 0.0) =>
             {
                 let result = if self.evaluate {
                     dividend.value.trunc() % divisor.value
@@ -2119,7 +2173,11 @@ impl FormulaExpressionParser<'_, '_> {
                     })
                 }
             }
-            ("sqrt", argument, None) if !self.evaluate || argument.value >= 0.0 => {
+            ("sqrt", argument, None)
+                if (!self.static_check
+                    || argument.known_value.is_none_or(|value| value >= 0.0))
+                    && (!self.evaluate || argument.value >= 0.0) =>
+            {
                 Some(EvaluatedFormulaScalar {
                     value: if self.evaluate {
                         argument.value.sqrt()
@@ -2307,6 +2365,7 @@ fn evaluate_formula_expression_with_mode<'a>(
         at: 0,
         bindings,
         evaluate,
+        static_check: !evaluate,
     }
     .parse()
 }
@@ -2480,6 +2539,51 @@ mod parser_tests {
                             angle: 0,
                         }
                 })
+        );
+    }
+
+    #[test]
+    fn static_formula_check_does_not_use_placeholder_values_as_facts() {
+        let bindings = BTreeMap::from([
+            ("#1_", static_formula_value("LENGTH").expect("length type")),
+            (
+                "#2_",
+                static_formula_value("Integer").expect("integer type"),
+            ),
+            ("#3_", static_formula_value("Real").expect("real type")),
+            ("#4_", static_formula_value("String").expect("string type")),
+        ]);
+
+        let length = evaluate_formula_expression_with_mode("#4_.Length()", &bindings, false)
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("string length type");
+        assert_eq!(length.integral, Some(true));
+        assert_eq!(length.known_value, None);
+
+        let parsed = evaluate_formula_expression_with_mode("#4_.ToReal()", &bindings, false)
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("string-to-real type");
+        assert_eq!(parsed.known_value, None);
+
+        for expression in [
+            "ToString(#3_)",
+            "#4_.Extract(#3_, 1)",
+            "round(#1_, \"mm\", #3_)",
+            "mod(2, #3_)",
+            "1 / 0",
+            "sqrt(-1)",
+        ] {
+            assert!(
+                evaluate_formula_expression_with_mode(expression, &bindings, false).is_none(),
+                "{expression}"
+            );
+        }
+        assert!(evaluate_formula_expression_with_mode("1 * 0", &bindings, false).is_some());
+
+        assert!(
+            evaluate_formula_expression_with_mode("round(#1_, \"mm\", #2_)", &bindings, false)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .is_some_and(|value| value.dimension == FormulaDimension::LENGTH)
         );
     }
 
