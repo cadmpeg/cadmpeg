@@ -2087,8 +2087,9 @@ pub(super) fn linked_profile_point(payload: &[u8], offset: usize) -> Option<Link
         && payload.get(offset + 152..offset + 154) == Some(&[0; 2])
         && payload.get(offset + 154..offset + 158) != Some(&0u32.to_le_bytes())
         && sketch_marker_prefix_at(payload, offset.checked_add(158)?);
-    let valid_tail =
-        long_tail || ((profile_layout || current_geometry_long_layout) && standard_tail);
+    let valid_tail = long_tail
+        || ((profile_layout || legacy_geometry_long_layout || current_geometry_long_layout)
+            && standard_tail);
     if !valid_tail {
         return None;
     }

@@ -4744,6 +4744,66 @@ fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
 }
 
 #[test]
+fn legacy_compact_96_profile_line_falls_back_to_one_based_complete_roster() {
+    let mut payload = vec![0; 96 + LEGACY_SKETCH_MARKER.len()];
+    payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[29..31].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&15u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[82..84].copy_from_slice(&1u16.to_le_bytes());
+    payload[88..92].copy_from_slice(&6u32.to_le_bytes());
+    payload[92..96].copy_from_slice(&1u32.to_le_bytes());
+    payload[96..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let entity = |id: String, offset, kind, coordinates_m| SketchInputEntity {
+        id,
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let mut entities = vec![entity(
+        "curve".into(),
+        0,
+        SketchInputKind::LineOrCircle,
+        None,
+    )];
+    entities.extend((1..=15).map(|index| {
+        entity(
+            format!("point-{index}"),
+            index,
+            SketchInputKind::Point,
+            Some([index as f64, 0.0]),
+        )
+    }));
+    let markers = entities.iter().collect::<Vec<_>>();
+
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &entities[0], &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["point-14", "point-2"]
+    );
+}
+
+#[test]
 fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
     let detail = 92;
     let mut payload = vec![0; detail + 80];

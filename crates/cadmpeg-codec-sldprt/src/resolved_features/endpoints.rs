@@ -1003,10 +1003,12 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     };
     let current_complete_roster =
         current_referenced_compact_curve_uses_marker_roster(payload, offset);
+    let compact_96_complete_roster = compact_96_profile_line_uses_complete_roster(payload, offset);
     let complete_entity_roster = current_complete_roster
-        || extended_marker84_line_uses_point_roster(payload, offset)
+        || (extended_marker84_line_uses_point_roster(payload, offset)
             && marker_profile_curve_role(payload, offset) == Some(2)
-            && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]);
+            && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x01, 0x00]))
+        || compact_96_complete_roster;
     let endpoint_offset =
         explicit_endpoint_offset.or_else(|| coordinate_roster_endpoint_offset(payload, offset));
     if endpoint_offset.is_none() && compact_legacy_coordinate_roster_curve_record(payload, offset) {
@@ -1031,7 +1033,8 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         && payload.get(offset + 27..offset + 31) == Some(&[0x01, 0x00, 0x01, 0x00])
         && payload.get(offset + 72..offset + 76) == Some(&[0x00, 0x00, 0x02, 0x00]))
         || current_identity_linked_wide_curve_uses_one_based_roster(payload, offset)
-        || current_complete_roster;
+        || current_complete_roster
+        || compact_96_complete_roster;
     let resolve = |complete_entity_roster: bool, one_based: bool| {
         let mut coordinates = markers
             .iter()
@@ -3155,6 +3158,22 @@ pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -
     } else {
         None
     }
+}
+
+fn compact_96_profile_line_uses_complete_roster(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()),
+        Some(prefix) if prefix == LEGACY_SKETCH_MARKER
+    ) && marker_native_code(payload, offset) == Some(1)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&[0x01, 0x00])
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && compact_indexed_curve_record_end(payload, offset)
+            == Some(CompactIndexedCurveRecordEnd::Marker96)
 }
 
 pub(super) fn packed_legacy_curve_endpoint_indices(

@@ -5,7 +5,9 @@ use super::component_paths::{
     surface_selection_producer_features,
 };
 use super::endpoints::{marker_profile_curve_role, wide_indexed_curve_endpoint_indices};
-use super::markers::{marker_coordinates, marker_native_code};
+use super::markers::{
+    linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_native_code,
+};
 use super::operations::repeated_class_token;
 use super::scalars::{feature_object_name, operand_kind};
 use super::terminations::{
@@ -1959,6 +1961,18 @@ pub(super) fn coordinate_marker_local_links(
     payload: &[u8],
     offset: usize,
 ) -> Option<(Vec<u16>, u16)> {
+    let legacy_geometry_linked_point = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+        == Some(LEGACY_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(1)
+        && marker_is_geometry_locus(payload, offset);
+    if legacy_geometry_linked_point {
+        let (_, links) = linked_profile_point(payload, offset)?;
+        let selector = links.first()?.0;
+        return Some((
+            links.into_iter().map(|(_, local_id)| local_id).collect(),
+            selector,
+        ));
+    }
     if marker_coordinates(payload, offset).is_none()
         && !counted_legacy_profile_line_layout(payload, offset)
     {
