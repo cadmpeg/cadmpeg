@@ -1,5 +1,8 @@
 [alias]
-test-fast = "test --workspace --lib --bins --tests"
+# -q removes the cargo status lines and condenses the test list to one
+# character per test; warnings, errors, and failure detail still print in
+# full. Run with --verbose when the compile plan itself is the question.
+test-fast = "test -q --workspace --lib --bins --tests"
 
 [build]
 # Linking is never incremental, and this workspace's test binaries run from
