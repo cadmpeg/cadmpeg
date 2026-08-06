@@ -131,8 +131,14 @@ fn hole_position_sketch_source(
     if classify(feature) != Some(FeatureClass::Hole) {
         return None;
     }
-    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
     let name = feature_object_name(feature, lane)?;
+    // Legacy keyword records may omit the XML source id while the serialized
+    // object name still carries the stable object id used by the input lane.
+    let source = feature
+        .source_id
+        .as_deref()
+        .and_then(|value| value.parse::<u32>().ok())
+        .or(name.object_id)?;
     let offset = usize::try_from(name.offset)
         .ok()?
         .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
@@ -1091,12 +1097,17 @@ fn hole_position_feature<'a>(
         .iter()
         .flat_map(|history| &history.features)
         .filter(|candidate| {
-            candidate
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok())
-                == Some(*source)
-                && classify(candidate) == Some(FeatureClass::Sketch)
+            classify(candidate) == Some(FeatureClass::Sketch)
+                && lanes.iter().any(|lane| {
+                    candidate
+                        .source_id
+                        .as_deref()
+                        .and_then(|value| value.parse::<u32>().ok())
+                        .or_else(|| {
+                            feature_object_name(candidate, lane).and_then(|name| name.object_id)
+                        })
+                        == Some(*source)
+                })
         });
     let position = position_features.next()?;
     position_features.next().is_none().then_some(position)
