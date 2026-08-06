@@ -6672,7 +6672,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
     bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
-    bytes[107..111].copy_from_slice(&3u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
     let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
     bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
     for reference in references {
@@ -6700,31 +6700,38 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
         .expect("compact Coil scope");
     assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
     assert_eq!(scope.coil_extent, Some(DesignCoilExtent::RevolutionsHeight));
-    assert_eq!(
-        scope.coil_section,
-        Some(DesignCoilSection::ExternalTriangle)
-    );
+    assert_eq!(scope.coil_section, Some(DesignCoilSection::Circular));
     assert_eq!(
         scope.coil_section_placement,
         Some(DesignCoilSectionPlacement::Inside)
     );
     assert_eq!(scope.coil_clockwise, Some(false));
 
-    bytes[92..96].copy_from_slice(&2u32.to_le_bytes());
-    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
-    let centered = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
-        .expect("centered internal-triangle Coil scope");
-    assert_eq!(
-        centered.coil_section,
-        Some(DesignCoilSection::InternalTriangle)
-    );
-    assert_eq!(
-        centered.coil_section_placement,
-        Some(DesignCoilSectionPlacement::Center)
-    );
+    for (placement_code, placement) in [
+        (1u32, DesignCoilSectionPlacement::Inside),
+        (2u32, DesignCoilSectionPlacement::Center),
+        (3u32, DesignCoilSectionPlacement::Outside),
+    ] {
+        for (section_code, section) in [
+            (1u32, DesignCoilSection::Circular),
+            (2u32, DesignCoilSection::Square),
+            (3u32, DesignCoilSection::ExternalTriangle),
+            (4u32, DesignCoilSection::InternalTriangle),
+        ] {
+            bytes[92..96].copy_from_slice(&placement_code.to_le_bytes());
+            bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
+            let parsed =
+                parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+                    .expect("compact Coil scope");
+            assert_eq!(parsed.coil_section, Some(section));
+            assert_eq!(parsed.coil_section_placement, Some(placement));
+        }
+    }
 
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    assert!(parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).is_none());
+    let unsupported = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("unsupported Coil operation remains a native scope");
+    assert!(unsupported.coil_operation.is_none());
 }
 
 #[test]

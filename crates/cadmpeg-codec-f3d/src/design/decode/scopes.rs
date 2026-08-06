@@ -3886,61 +3886,22 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise,
         coil_clockwise_offset,
     ) = if family == Some(DesignFeatureFamily::Coil) {
-        let operation_offset = start.checked_add(20)?;
-        let operation = match (kind.as_str(), u32_at(bytes, operation_offset)?) {
-            ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
-            ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
-            ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
-            ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
-            _ => return None,
-        };
-        let clockwise_offset = start.checked_add(24)?;
-        let clockwise = match bytes.get(clockwise_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
-        };
-        let structural_constant = match kind.as_str() {
-            "SpirePrimitive" => 2,
-            "CoilPrimitive" => 4,
-            _ => return None,
-        };
-        if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
-            return None;
-        }
-        let extent_offset = start.checked_add(30)?;
-        let extent = match u32_at(bytes, extent_offset)? {
-            1 => DesignCoilExtent::RevolutionsHeight,
-            2 => DesignCoilExtent::RevolutionsPitch,
-            3 => DesignCoilExtent::HeightPitch,
-            4 => DesignCoilExtent::Spiral,
-            _ => return None,
-        };
-        let section_offset = start.checked_add(92)?;
-        let section = match (kind.as_str(), u32_at(bytes, section_offset)?) {
-            ("SpirePrimitive", 0) => DesignCoilSection::Circular,
-            ("SpirePrimitive", 1) => DesignCoilSection::Square,
-            ("SpirePrimitive", 2) | ("CoilPrimitive", 1) => DesignCoilSection::ExternalTriangle,
-            ("SpirePrimitive", 3) | ("CoilPrimitive", 2) => DesignCoilSection::InternalTriangle,
-            _ => return None,
-        };
-        let section_placement_offset = start.checked_add(107)?;
-        let section_placement = match (kind.as_str(), u32_at(bytes, section_placement_offset)?) {
-            ("SpirePrimitive", 4) | ("CoilPrimitive", 3) => DesignCoilSectionPlacement::Inside,
-            ("CoilPrimitive", 1) => DesignCoilSectionPlacement::Center,
-            _ => return None,
-        };
-        (
-            Some(operation),
-            Some(operation_offset as u64),
-            Some(extent),
-            Some(extent_offset as u64),
-            Some(section),
-            Some(section_offset as u64),
-            Some(section_placement),
-            Some(section_placement_offset as u64),
-            Some(clockwise),
-            Some(clockwise_offset as u64),
+        exact_coil_discriminators(bytes, start, kind).map_or(
+            (None, None, None, None, None, None, None, None, None, None),
+            |fields| {
+                (
+                    Some(fields.operation),
+                    Some(fields.operation_offset),
+                    Some(fields.extent),
+                    Some(fields.extent_offset),
+                    Some(fields.section),
+                    Some(fields.section_offset),
+                    Some(fields.section_placement),
+                    Some(fields.section_placement_offset),
+                    Some(fields.clockwise),
+                    Some(fields.clockwise_offset),
+                )
+            },
         )
     } else {
         (None, None, None, None, None, None, None, None, None, None)
@@ -4022,6 +3983,106 @@ pub(crate) fn parse_parameter_scope(
         entity_reference_offset: None,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
+    })
+}
+
+/// Decode the fixed discriminator block of the closed Coil scope forms.
+///
+/// A scope whose envelope is valid but whose Coil dialect is not recognized
+/// still belongs in the native arena. Returning `None` here leaves its
+/// family-local fields unset without discarding the ordered references and
+/// byte span that preserve the unsupported form.
+struct CoilDiscriminators {
+    operation: DesignExtrudeOperation,
+    operation_offset: u64,
+    extent: DesignCoilExtent,
+    extent_offset: u64,
+    section: DesignCoilSection,
+    section_offset: u64,
+    section_placement: DesignCoilSectionPlacement,
+    section_placement_offset: u64,
+    clockwise: bool,
+    clockwise_offset: u64,
+}
+
+fn exact_coil_discriminators(bytes: &[u8], start: usize, kind: &str) -> Option<CoilDiscriminators> {
+    let operation_offset = start.checked_add(20)?;
+    let operation = match (kind, u32_at(bytes, operation_offset)?) {
+        ("SpirePrimitive", 1) => DesignExtrudeOperation::Join,
+        ("SpirePrimitive", 2) => DesignExtrudeOperation::Cut,
+        ("SpirePrimitive", 3) => DesignExtrudeOperation::Intersect,
+        ("SpirePrimitive", 4) | ("CoilPrimitive", 1) => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let clockwise_offset = start.checked_add(24)?;
+    let clockwise = match bytes.get(clockwise_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    let structural_constant = match kind {
+        "SpirePrimitive" => 2,
+        "CoilPrimitive" => 4,
+        _ => return None,
+    };
+    if u32_at(bytes, start.checked_add(26)?)? != structural_constant {
+        return None;
+    }
+    let extent_offset = start.checked_add(30)?;
+    let extent = match u32_at(bytes, extent_offset)? {
+        1 => DesignCoilExtent::RevolutionsHeight,
+        2 => DesignCoilExtent::RevolutionsPitch,
+        3 => DesignCoilExtent::HeightPitch,
+        4 => DesignCoilExtent::Spiral,
+        _ => return None,
+    };
+    let section_offset = start.checked_add(92)?;
+    let section_placement_offset = start.checked_add(107)?;
+    let (section, section_placement) = match kind {
+        "SpirePrimitive" => (
+            match u32_at(bytes, section_offset)? {
+                0 => DesignCoilSection::Circular,
+                1 => DesignCoilSection::Square,
+                2 => DesignCoilSection::ExternalTriangle,
+                3 => DesignCoilSection::InternalTriangle,
+                _ => return None,
+            },
+            match u32_at(bytes, section_placement_offset)? {
+                4 => DesignCoilSectionPlacement::Inside,
+                _ => return None,
+            },
+        ),
+        // The compact Coil dialect stores the two discriminators in the
+        // opposite lanes from SpirePrimitive: position at offset 92 and
+        // section shape at offset 107.
+        "CoilPrimitive" => (
+            match u32_at(bytes, section_placement_offset)? {
+                1 => DesignCoilSection::Circular,
+                2 => DesignCoilSection::Square,
+                3 => DesignCoilSection::ExternalTriangle,
+                4 => DesignCoilSection::InternalTriangle,
+                _ => return None,
+            },
+            match u32_at(bytes, section_offset)? {
+                1 => DesignCoilSectionPlacement::Inside,
+                2 => DesignCoilSectionPlacement::Center,
+                3 => DesignCoilSectionPlacement::Outside,
+                _ => return None,
+            },
+        ),
+        _ => return None,
+    };
+    Some(CoilDiscriminators {
+        operation,
+        operation_offset: operation_offset as u64,
+        extent,
+        extent_offset: extent_offset as u64,
+        section,
+        section_offset: section_offset as u64,
+        section_placement,
+        section_placement_offset: section_placement_offset as u64,
+        clockwise,
+        clockwise_offset: clockwise_offset as u64,
     })
 }
 

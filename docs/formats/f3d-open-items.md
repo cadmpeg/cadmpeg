@@ -61,15 +61,11 @@ A rolled frame places its two owner references 13 bytes apart rather than 11, an
 **Question.** What do these values mean?
 
 - `SpirePrimitive` section-placement values other than `4`
-- `CoilPrimitive` operation values other than `1`
-- `CoilPrimitive` extent values other than `1`
-- `CoilPrimitive` section values other than `1`
-- `CoilPrimitive` section-placement values other than `3`
-- the fixed u32 value at primary-header offset 26 in each record
+- the discriminator block of the ten-reference `CoilPrimitive` form
 
-**Known.** `f3d.md` §3.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives the `CoilPrimitive` fields. Each field has one known value. The two records use different numbers for the same meaning, so a value from one record does not transfer to the other. The ten-reference `CoilPrimitive` form's member layout is settled and its section placement precedes its section shape in the stream, which is the opposite of the order the compact form's offsets assume.
+**Known.** `f3d.md` §3.1 "`SpirePrimitive` selects the Coil" gives the `SpirePrimitive` fields. `f3d.md` §3.1 "`CoilPrimitive` is the compact" gives the compact `CoilPrimitive` fields. In the compact form, offset 20 value `1` is new body, offset 26 is u32 `4`, offset 30 uses the four extent values, offset 92 uses `1 = inside`, `2 = on center`, and `3 = outside`, and offset 107 uses `1 = circle`, `2 = square`, `3 = external triangle`, and `4 = internal triangle`.
 
-**Need.** We must know the value sets to build these two features in a neutral model. **Blocked on specimens:** every discriminator carries one value in the records available. Settling it needs one coil per creation type, one per boolean operation, and a grid of section shape against section placement, one coil per file. The compact form is absent, so whether it is the same class as the ten-reference form is also open.
+**Need.** The ten-reference `CoilPrimitive` form needs its operation, extent, section, section-placement, and fixed-prologue values. The `SpirePrimitive` placement value set beyond `4` also remains open.
 
 ### DR-11. Eighth `CoilPrimitive` reference
 

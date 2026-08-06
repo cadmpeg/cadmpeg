@@ -808,6 +808,8 @@ pub enum DesignCoilSectionPlacement {
     Inside,
     /// Section centered on the reference trajectory.
     Center,
+    /// Section outside the reference trajectory.
+    Outside,
 }
 
 /// Exact fixed-form construction data of a solid primitive scope.

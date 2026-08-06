@@ -5333,6 +5333,7 @@ fn project_coil(
     let section_placement = match scope.coil_section_placement? {
         DesignCoilSectionPlacement::Inside => CoilSectionPlacement::Inside,
         DesignCoilSectionPlacement::Center => CoilSectionPlacement::Center,
+        DesignCoilSectionPlacement::Outside => CoilSectionPlacement::Outside,
     };
     let stream = native_stream(&scope.id)?;
     let mut body_groups = construction_groups.iter().filter(|group| {
