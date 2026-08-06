@@ -2311,6 +2311,83 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
 }
 
 /// Validate path-feature operand roles against the scope construction.
+///
+/// The role grammar is shared with the fixed Loft projector. Keeping the
+/// predicate independent of native byte offsets lets validation reject a
+/// malformed role combination without rejecting a valid section/guide mix.
+pub(crate) fn loft_operand_roles_are_valid(
+    operation: records::DesignExtrudeOperation,
+    groups: &[(u64, usize)],
+) -> bool {
+    const BODY: u64 = 0x0000_0004_0000_0000;
+    const SECTION: u64 = 0x0000_0041_0000_0000;
+    const FACE_SECTION: u64 = 0x0000_0043_0000_0000;
+    const GUIDE: u64 = 0x0000_0005_0000_0000;
+    const CENTERLINE: u64 = 0x0000_0007_0000_0000;
+
+    let body_count = groups.iter().filter(|(role, _)| *role == BODY).count();
+    let expected_body_count = usize::from(operation != records::DesignExtrudeOperation::NewBody);
+    if body_count != expected_body_count {
+        return false;
+    }
+    let operands = groups
+        .iter()
+        .filter(|(role, _)| *role != BODY)
+        .collect::<Vec<_>>();
+    let section_count = operands
+        .iter()
+        .filter(|(role, _)| matches!(*role, SECTION | FACE_SECTION))
+        .count();
+    let guide_count = operands.iter().filter(|(role, _)| *role == GUIDE).count();
+    let centerline_count = operands
+        .iter()
+        .filter(|(role, _)| *role == CENTERLINE)
+        .count();
+
+    if section_count >= 2 {
+        let roles_are_known = operands
+            .iter()
+            .all(|(role, _)| matches!(*role, SECTION | FACE_SECTION | GUIDE | CENTERLINE));
+        return roles_are_known
+            && centerline_count <= 1
+            && !(guide_count > 0 && centerline_count > 0)
+            && operands.len() == section_count + guide_count + centerline_count;
+    }
+
+    if operation != records::DesignExtrudeOperation::NewBody {
+        return false;
+    }
+
+    if section_count == 1
+        && operands
+            .iter()
+            .all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE))
+    {
+        let point_ordinals = operands
+            .iter()
+            .enumerate()
+            .filter(|(_, (role, member_count))| *role == GUIDE && *member_count == 1)
+            .map(|(ordinal, _)| ordinal)
+            .collect::<Vec<_>>();
+        return point_ordinals.len() == 1
+            && (point_ordinals[0] == 0 || point_ordinals[0] + 1 == operands.len())
+            && operands
+                .iter()
+                .enumerate()
+                .all(|(ordinal, (role, member_count))| {
+                    ordinal == point_ordinals[0] || *role != GUIDE || *member_count != 1
+                });
+    }
+
+    if section_count == 0 && operands.len() >= 2 {
+        let all_sections = operands.iter().all(|(role, _)| *role == SECTION);
+        let all_guides = operands.iter().all(|(role, _)| *role == GUIDE);
+        return all_sections || all_guides;
+    }
+
+    false
+}
+
 fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
@@ -2333,11 +2410,9 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             })
             .collect::<Vec<_>>();
         let role_count = |role| groups.iter().filter(|group| group.role == role).count();
-        let singleton_role_5_ordinals = groups
+        let group_roles = groups
             .iter()
-            .enumerate()
-            .filter(|(_, group)| group.role == 0x0000_0005_0000_0000 && group.members.len() == 1)
-            .map(|(ordinal, _)| ordinal)
+            .map(|group| (group.role, group.members.len()))
             .collect::<Vec<_>>();
         let valid = match scope.path_feature_construction.as_ref() {
             Some(records::DesignPathFeatureConstruction::Revolve {
@@ -2367,31 +2442,9 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && role_count(0x0000_0041_0000_0000) == 1
                     && body_count == expected_body_count
             }
-            Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => match operation
-            {
-                records::DesignExtrudeOperation::Join => {
-                    groups.len() == 3
-                        && role_count(0x0000_0004_0000_0000) == 1
-                        && role_count(0x0000_0041_0000_0000) == 2
-                }
-                records::DesignExtrudeOperation::NewBody => {
-                    (groups.len() >= 2
-                        && (role_count(0x0000_0005_0000_0000) == groups.len()
-                            || role_count(0x0000_0041_0000_0000) == groups.len()))
-                        || (groups.len() >= 2
-                            && role_count(0x0000_0043_0000_0000) == 2
-                            && ((role_count(0x0000_0005_0000_0000) == groups.len() - 2
-                                && role_count(0x0000_0007_0000_0000) == 0)
-                                || (groups.len() == 3
-                                    && role_count(0x0000_0005_0000_0000) == 0
-                                    && role_count(0x0000_0007_0000_0000) == 1)))
-                        || (role_count(0x0000_0043_0000_0000) == 1
-                            && role_count(0x0000_0005_0000_0000) == groups.len() - 1
-                            && (singleton_role_5_ordinals.as_slice() == [0]
-                                || singleton_role_5_ordinals.as_slice() == [groups.len() - 1]))
-                }
-                _ => false,
-            },
+            Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => {
+                loft_operand_roles_are_valid(*operation, &group_roles)
+            }
             Some(records::DesignPathFeatureConstruction::Sweep { operation, .. }) => {
                 let path_count = role_count(0x0000_0005_0000_0000);
                 let profile_count = role_count(0x0000_0041_0000_0000);

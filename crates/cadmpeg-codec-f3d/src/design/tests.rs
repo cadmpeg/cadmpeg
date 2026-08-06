@@ -5650,6 +5650,16 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
             if sections.len() == 3 && guides.len() == 1
     ));
+    let role_shape = |groups: &[DesignConstructionOperandGroup]| {
+        groups
+            .iter()
+            .map(|group| (group.role, group.members.len()))
+            .collect::<Vec<_>>()
+    };
+    assert!(crate::validate::loft_operand_roles_are_valid(
+        DesignExtrudeOperation::NewBody,
+        &role_shape(&guided_role_41),
+    ));
     loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
         operation: DesignExtrudeOperation::Cut,
         operation_offset: (loft_start + 29) as u64,
@@ -5666,6 +5676,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             op: cadmpeg_ir::features::BooleanOp::Cut,
             ..
         }) if sections.len() == 2
+    ));
+    assert!(crate::validate::loft_operand_roles_are_valid(
+        DesignExtrudeOperation::Cut,
+        &role_shape(&cut),
     ));
     loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
         operation: DesignExtrudeOperation::NewBody,
@@ -5705,6 +5719,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[]),
         None
     );
+    assert!(!crate::validate::loft_operand_roles_are_valid(
+        DesignExtrudeOperation::NewBody,
+        &role_shape(&mixed),
+    ));
     let mut point = loft_group(0, 0x5_0000_0000);
     point.members = vec![10];
     let profile = loft_group(1, 0x43_0000_0000);
@@ -5713,7 +5731,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert!(matches!(
         crate::design::feature_project::project_fixed_loft(
             &loft_scope,
-            &[point, profile, boundary],
+            &[point.clone(), profile.clone(), boundary.clone()],
             &[],
             &[],
             &[],
@@ -5730,6 +5748,10 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
             cadmpeg_ir::features::LoftSection::Profile(_),
             cadmpeg_ir::features::LoftSection::Profile(_),
         ]) && guides.is_empty()
+    ));
+    assert!(crate::validate::loft_operand_roles_are_valid(
+        DesignExtrudeOperation::NewBody,
+        &role_shape(&[point, profile, boundary]),
     ));
 
     let sweep_start = bytes.len();
