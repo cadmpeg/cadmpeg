@@ -28631,142 +28631,50 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     let (meta, mut coverage) = source_meta(scan);
     ir.source = Some(meta);
     let unknowns = preserve_passthrough_sections(scan, &mut annotations);
-    if !scan.references.lines.is_empty() {
-        let family = |kind: &crate::reference::ReferenceLineKind| match kind {
-            crate::reference::ReferenceLineKind::Line => "line",
-            crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
-        };
-        let records = scan
-            .references
-            .lines
-            .iter()
-            .map(|line| CreoReferenceLineRecord {
-                id: format!(
-                    "creo:mdl_ref_info:{}_record#{}",
-                    family(&line.kind),
-                    line.offset
-                ),
-                family: family(&line.kind),
-                entity_id: match &line.kind {
-                    crate::reference::ReferenceLineKind::Line => None,
-                    crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
-                        Some(*entity_id)
-                    }
-                },
-                start: line.start,
-                end: line.end,
-                original_length: match &line.kind {
-                    crate::reference::ReferenceLineKind::Line => None,
-                    crate::reference::ReferenceLineKind::Line3d {
-                        original_length, ..
-                    } => Some(*original_length),
-                },
-                offset: line.offset,
-            })
-            .collect::<Vec<_>>();
-        emit_uniform(
-            &mut ir,
-            &mut annotations,
-            "reference_lines",
-            &records,
-            |record| &record.id,
-            |_| "MdlRefInfo",
-            |record| record.offset as u64,
-            "reference_line_record",
-            Exactness::ByteExact,
-        )?;
-    }
-    if !scan.references.circles.is_empty() {
-        let records = scan
-            .references
-            .circles
-            .iter()
-            .map(|circle| CreoReferenceCircleRecord {
-                id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
-                entity_id: circle.entity_id,
-                center: circle.center,
-                center_source: if circle.center_stored {
-                    "stored"
-                } else {
-                    "endpoint_midpoint"
-                },
-                radius: circle.radius,
-                axis: circle.axis,
-                endpoints: [circle.start, circle.end],
-                offset: circle.offset,
-            })
-            .collect::<Vec<_>>();
-        emit_uniform(
-            &mut ir,
-            &mut annotations,
-            "reference_circles",
-            &records,
-            |record| &record.id,
-            |_| "MdlRefInfo",
-            |record| record.offset as u64,
-            "reference_circle_record",
-            Exactness::Derived,
-        )?;
-    }
-    if !scan.references.conics.is_empty() {
-        let records = scan
-            .references
-            .conics
-            .iter()
-            .map(|conic| CreoReferenceConicRecord {
-                id: format!("creo:mdl_ref_info:conic_record#{}", conic.offset),
-                entity_id: conic.entity_id,
-                type_id: conic.type_id,
-                flip: conic.flip,
-                endpoints: [conic.start, conic.end],
-                parameter_interval: [conic.parameter_start, conic.parameter_end],
-                coefficients: [conic.coefficient_1, conic.coefficient_2],
-                local_system: conic.local_system,
-                body: conic.body.clone(),
-                offset: conic.offset,
-            })
-            .collect::<Vec<_>>();
-        emit_uniform(
-            &mut ir,
-            &mut annotations,
-            "reference_conics",
-            &records,
-            |record| &record.id,
-            |_| "MdlRefInfo",
-            |record| record.offset as u64,
-            "reference_conic_record",
-            Exactness::ByteExact,
-        )?;
-    }
-    if !scan.references.ellipses.is_empty() {
-        let records = scan
-            .references
-            .ellipses
-            .iter()
-            .map(|ellipse| CreoReferenceEllipseRecord {
-                id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
-                source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
-                source_entity_id: ellipse.source_entity_id,
-                center: ellipse.center,
-                axis: ellipse.axis,
-                major_direction: ellipse.major_direction,
-                major_radius: ellipse.major_radius,
-                minor_radius: ellipse.minor_radius,
-                offset: ellipse.offset,
-            })
-            .collect::<Vec<_>>();
-        emit_uniform(
-            &mut ir,
-            &mut annotations,
-            "reference_ellipses",
-            &records,
-            |record| &record.id,
-            |_| "MdlRefInfo",
-            |record| record.offset as u64,
-            "reference_ellipse_carrier",
-            Exactness::Derived,
-        )?;
-    }
+    emit_uniform(
+        &mut ir,
+        &mut annotations,
+        "reference_lines",
+        &reference_line_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_line_record",
+        Exactness::ByteExact,
+    )?;
+    emit_uniform(
+        &mut ir,
+        &mut annotations,
+        "reference_circles",
+        &reference_circle_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_circle_record",
+        Exactness::Derived,
+    )?;
+    emit_uniform(
+        &mut ir,
+        &mut annotations,
+        "reference_conics",
+        &reference_conic_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_conic_record",
+        Exactness::ByteExact,
+    )?;
+    emit_uniform(
+        &mut ir,
+        &mut annotations,
+        "reference_ellipses",
+        &reference_ellipse_records(scan),
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "reference_ellipse_carrier",
+        Exactness::Derived,
+    )?;
     let line3d_id_counts =
         scan.references
             .lines

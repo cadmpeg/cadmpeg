@@ -370,6 +370,96 @@ pub(super) struct CreoReferenceEllipseRecord {
     pub(super) offset: usize,
 }
 
+pub(super) fn reference_line_records(scan: &ContainerScan) -> Vec<CreoReferenceLineRecord> {
+    let family = |kind: &crate::reference::ReferenceLineKind| match kind {
+        crate::reference::ReferenceLineKind::Line => "line",
+        crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
+    };
+    scan.references
+        .lines
+        .iter()
+        .map(|line| CreoReferenceLineRecord {
+            id: format!(
+                "creo:mdl_ref_info:{}_record#{}",
+                family(&line.kind),
+                line.offset
+            ),
+            family: family(&line.kind),
+            entity_id: match &line.kind {
+                crate::reference::ReferenceLineKind::Line => None,
+                crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => Some(*entity_id),
+            },
+            start: line.start,
+            end: line.end,
+            original_length: match &line.kind {
+                crate::reference::ReferenceLineKind::Line => None,
+                crate::reference::ReferenceLineKind::Line3d {
+                    original_length, ..
+                } => Some(*original_length),
+            },
+            offset: line.offset,
+        })
+        .collect()
+}
+
+pub(super) fn reference_circle_records(scan: &ContainerScan) -> Vec<CreoReferenceCircleRecord> {
+    scan.references
+        .circles
+        .iter()
+        .map(|circle| CreoReferenceCircleRecord {
+            id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+            entity_id: circle.entity_id,
+            center: circle.center,
+            center_source: if circle.center_stored {
+                "stored"
+            } else {
+                "endpoint_midpoint"
+            },
+            radius: circle.radius,
+            axis: circle.axis,
+            endpoints: [circle.start, circle.end],
+            offset: circle.offset,
+        })
+        .collect()
+}
+
+pub(super) fn reference_conic_records(scan: &ContainerScan) -> Vec<CreoReferenceConicRecord> {
+    scan.references
+        .conics
+        .iter()
+        .map(|conic| CreoReferenceConicRecord {
+            id: format!("creo:mdl_ref_info:conic_record#{}", conic.offset),
+            entity_id: conic.entity_id,
+            type_id: conic.type_id,
+            flip: conic.flip,
+            endpoints: [conic.start, conic.end],
+            parameter_interval: [conic.parameter_start, conic.parameter_end],
+            coefficients: [conic.coefficient_1, conic.coefficient_2],
+            local_system: conic.local_system,
+            body: conic.body.clone(),
+            offset: conic.offset,
+        })
+        .collect()
+}
+
+pub(super) fn reference_ellipse_records(scan: &ContainerScan) -> Vec<CreoReferenceEllipseRecord> {
+    scan.references
+        .ellipses
+        .iter()
+        .map(|ellipse| CreoReferenceEllipseRecord {
+            id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
+            source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+            source_entity_id: ellipse.source_entity_id,
+            center: ellipse.center,
+            axis: ellipse.axis,
+            major_direction: ellipse.major_direction,
+            major_radius: ellipse.major_radius,
+            minor_radius: ellipse.minor_radius,
+            offset: ellipse.offset,
+        })
+        .collect()
+}
+
 pub(super) fn expanded_section_records(scan: &ContainerScan) -> Vec<CreoExpandedSectionRecord> {
     scan.framing
         .expanded_sections
