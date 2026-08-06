@@ -2076,6 +2076,27 @@ impl DesignParameterScope {
     }
 }
 
+/// Height extent law carried by a sheet-metal `EdgeFlange` scope.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum DesignEdgeFlangeHeightExtent {
+    /// The flange height is a direct distance from the selected sheet datum.
+    #[default]
+    Distance,
+    /// The flange height is measured from a selected construction entity.
+    ToObject {
+        /// Role-`0x21` construction-operand group containing the target.
+        target_group_record_index: u32,
+        /// Entity-selection operand carried by the target group.
+        target_operand_record_index: u32,
+        /// Parameter owner carrying the signed target offset.
+        offset_owner_record_index: u32,
+        /// Two marked references inserted in the fixed operation section.
+        reference_record_indices: [u32; 2],
+    },
+}
+
 /// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2092,6 +2113,9 @@ pub struct DesignEdgeFlangeOperation {
     pub aggregate_operand_record_indices: Vec<u32>,
     /// Height parameter-owner record.
     pub height_owner_record_index: u32,
+    /// Height extent law and, for a to-object form, its target records.
+    #[serde(default)]
+    pub height_extent: DesignEdgeFlangeHeightExtent,
     /// Angle parameter-owner record.
     pub angle_owner_record_index: u32,
     /// Width-distance parameter-owner records the edge-width mode adds, in source order.
@@ -2102,7 +2126,7 @@ pub struct DesignEdgeFlangeOperation {
     pub bend_radius: f64,
     /// Byte offset of `bend_radius`.
     pub bend_radius_offset: u64,
-    /// Uninterpreted side-reference discriminator (DR-09).
+    /// Uninterpreted side-reference discriminator.
     pub reference_side_code: u32,
     /// Face pair the flange height is measured from.
     pub height_datum: DesignSheetMetalHeightDatum,

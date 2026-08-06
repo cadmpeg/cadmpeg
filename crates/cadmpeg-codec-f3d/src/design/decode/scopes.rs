@@ -15,14 +15,14 @@ use crate::records::{
     DesignCoilSectionPlacement, DesignCombineOperation, DesignComponentInsertConstruction,
     DesignComponentOccurrence, DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
-    DesignEdgeFlangeOperation, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudePrologueReference, DesignExtrudeStart,
-    DesignFixedChamferDistance, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletGroup,
-    DesignFixedFilletParameters, DesignHemOperation, DesignHemParameterOwners,
-    DesignMirrorConstruction, DesignMoveOperation, DesignParameter, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
+    DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
+    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
+    DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
+    DesignHemOperation, DesignHemParameterOwners, DesignMirrorConstruction, DesignMoveOperation,
+    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
     DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
     DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -4706,15 +4706,18 @@ pub(crate) fn exact_edge_flange_operation(
     // evaluated and a frame that reads under either one is refused as ambiguous.
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
-        let Some(candidate) =
-            edge_flange_operation_at(bytes, start, paired_at, references, header_shift)
-        else {
-            continue;
-        };
-        if resolved.is_some() {
-            return None;
+        for candidate in [
+            edge_flange_operation_at(bytes, start, paired_at, references, header_shift),
+            edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if resolved.is_some() {
+                return None;
+            }
+            resolved = Some(candidate);
         }
-        resolved = Some(candidate);
     }
     resolved
 }
@@ -4816,8 +4819,140 @@ fn edge_flange_operation_at(
         aggregate_group_record_index,
         aggregate_operand_record_indices,
         height_owner_record_index,
+        height_extent: DesignEdgeFlangeHeightExtent::Distance,
         angle_owner_record_index,
         width_distance_owner_record_indices,
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        reference_side_code,
+        height_datum,
+        bend_position,
+    })
+}
+
+/// Read the single-edge `EdgeFlange` form whose height is measured from a
+/// selected construction entity.
+fn edge_flange_to_object_operation_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+    header_shift: usize,
+) -> Option<DesignEdgeFlangeOperation> {
+    // This form has one target group and one target entity-selection operand in
+    // addition to the distance form's roles. The two marked references between
+    // the target group and the aggregate group are fixed-frame references, not
+    // entries in the scope's ordered reference table, and are retained as
+    // native references for rewrite.
+    if references.len() != 11 {
+        return None;
+    }
+    let common = start.checked_add(85)?.checked_add(header_shift)?;
+    let bend_position = DesignBendPosition::from_code(u32_at(bytes, common)?);
+    if u32_at(bytes, common.checked_add(4)?)? != 1 {
+        return None;
+    }
+    let mut unclaimed = references.to_vec();
+    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+        let at = pool.iter().position(|entry| *entry == index)?;
+        pool.remove(at);
+        Some(index)
+    };
+    let mut cursor = common.checked_add(8)?;
+    let edge_wrapper_record_indices = vec![claim(
+        marked_record_reference(bytes, cursor)?,
+        &mut unclaimed,
+    )?];
+    cursor = cursor.checked_add(11)?;
+    let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let height_datum = DesignSheetMetalHeightDatum::from_code(u32_at(bytes, cursor)?);
+    cursor = cursor.checked_add(4)?;
+    let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+    cursor = cursor.checked_add(11)?;
+    let reference_side_code = u32_at(bytes, cursor)?;
+    let bend_radius_offset = cursor.checked_add(15)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    let result_count = u32_at(bytes, bend_radius_offset.checked_add(14)?)?;
+    if result_count != 1
+        || bytes.get(bend_radius_offset.checked_add(18)?..bend_radius_offset.checked_add(22)?)?
+            != [0; 4]
+    {
+        return None;
+    }
+    if bytes.get(common.checked_add(89)?..common.checked_add(94)?)? != [0; 5] {
+        return None;
+    }
+    let target_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(94)?)?,
+        &mut unclaimed,
+    )?;
+    if u32_at(bytes, common.checked_add(105)?)? != 2 {
+        return None;
+    }
+    let reference_record_indices = [
+        marked_record_reference(bytes, common.checked_add(109)?)?,
+        marked_record_reference(bytes, common.checked_add(124)?)?,
+    ];
+    if reference_record_indices[0] == reference_record_indices[1]
+        || reference_record_indices
+            .iter()
+            .any(|record_index| references.contains(record_index))
+        || u32_at(bytes, common.checked_add(120)?)? != 1
+        || bytes.get(common.checked_add(135)?..common.checked_add(139)?)? != [0; 4]
+        || u32_at(bytes, common.checked_add(139)?)? != 1
+        || bytes.get(common.checked_add(154)?..common.checked_add(166)?)? != [0; 12]
+        || u32_at(bytes, common.checked_add(166)?)? != 1
+    {
+        return None;
+    }
+    let aggregate_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(143)?)?,
+        &mut unclaimed,
+    )?;
+    let edge_group_record_index = claim(
+        marked_record_reference(bytes, common.checked_add(170)?)?,
+        &mut unclaimed,
+    )?;
+    let target_operand_record_index =
+        claim(target_group_record_index.checked_add(3)?, &mut unclaimed)?;
+    let aggregate_operand_record_indices = vec![claim(
+        aggregate_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    let edge_group_record_indices = vec![edge_group_record_index];
+    let edge_operand_record_indices = vec![claim(
+        edge_group_record_index.checked_add(3)?,
+        &mut unclaimed,
+    )?];
+    let [offset_owner_record_index] = unclaimed.as_slice() else {
+        return None;
+    };
+    let expected_length = 576usize.checked_add(header_shift)?;
+    if paired_at.checked_sub(start)? != expected_length {
+        return None;
+    }
+    Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices,
+        edge_group_record_indices,
+        edge_operand_record_indices,
+        aggregate_group_record_index,
+        aggregate_operand_record_indices,
+        height_owner_record_index,
+        height_extent: DesignEdgeFlangeHeightExtent::ToObject {
+            target_group_record_index,
+            target_operand_record_index,
+            offset_owner_record_index: *offset_owner_record_index,
+            reference_record_indices,
+        },
+        angle_owner_record_index,
+        width_distance_owner_record_indices: Vec::new(),
         settings_record_index,
         bend_radius,
         bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,

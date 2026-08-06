@@ -92,6 +92,30 @@ Unstated regions:
 
 - `60..71` (11 B): The spec places the radius 15 bytes after the unsettled u32, so eleven bytes between them are unaccounted for.
 
+## `edge_flange_to_object_fixed_operation_section`
+
+Spec §3.1 · layout: byte offsets · size: 181 B
+
+Offsets are relative to the section base `85 + S`. This single-edge form closes at the marked role-`0x08` group reference; the paired header follows at `576 + S`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 94 | 11 | `target_group_reference` | `bytes[11]` | little | spec | the marked target-group reference starts at |
+| 105 | 4 | `target_reference_count` | `u32` | little | spec | The u32 at `105 + S` is `2` |
+| 109 | 11 | `inserted_reference_one` | `bytes[11]` | little | spec | marked first inserted reference starts at |
+| 120 | 4 | `inserted_reference_count` | `u32` | little | spec | the u32 at `120 + S` is `1` |
+| 124 | 11 | `inserted_reference_two` | `bytes[11]` | little | spec | marked second inserted reference starts at |
+| 139 | 4 | `aggregate_reference_count` | `u32` | little | spec | the u32 at `139 + S` is `1` |
+| 143 | 11 | `aggregate_group_reference` | `bytes[11]` | little | spec | marked aggregate-group reference starts at |
+| 166 | 4 | `edge_reference_count` | `u32` | little | spec | the u32 at `166 + S` is `1` |
+| 170 | 11 | `edge_group_reference` | `bytes[11]` | little | spec | marked role-`0x08` group reference starts at |
+
+Unstated regions:
+
+- `0..94` (94 B): The common operation fields through the single result-record count occupy offsets 0 through 93.
+- `135..139` (4 B): Four zero bytes precede the structural u32 value `1` at offset 139.
+- `154..166` (12 B): Twelve zero bytes precede the structural u32 value `1` at offset 166.
+
 ## `hem_gap_length_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

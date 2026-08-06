@@ -256,6 +256,92 @@ source = "spec"
 anchor = "the positive f64 inside bend radius in centimetres starts 15 bytes after that u32"
 
 [[record]]
+name = "edge_flange_to_object_fixed_operation_section"
+kind = "byte"
+section = "3.1"
+anchor = "The to-object fixed operation section uses the same common fields"
+size = 181
+note = "Offsets are relative to the section base `85 + S`. This single-edge form closes at the marked role-`0x08` group reference; the paired header follows at `576 + S`."
+
+[[record.gap]]
+offset = 0
+size = 94
+note = "The common operation fields through the single result-record count occupy offsets 0 through 93."
+
+[[record.field]]
+name = "target_group_reference"
+offset = 94
+type = "bytes[11]"
+source = "spec"
+anchor = "the marked target-group reference starts at"
+
+[[record.field]]
+name = "target_reference_count"
+offset = 105
+type = "u32"
+source = "spec"
+anchor = "The u32 at `105 + S` is `2`"
+
+[[record.field]]
+name = "inserted_reference_one"
+offset = 109
+type = "bytes[11]"
+source = "spec"
+anchor = "marked first inserted reference starts at"
+
+[[record.field]]
+name = "inserted_reference_count"
+offset = 120
+type = "u32"
+source = "spec"
+anchor = "the u32 at `120 + S` is `1`"
+
+[[record.field]]
+name = "inserted_reference_two"
+offset = 124
+type = "bytes[11]"
+source = "spec"
+anchor = "marked second inserted reference starts at"
+
+[[record.gap]]
+offset = 135
+size = 4
+note = "Four zero bytes precede the structural u32 value `1` at offset 139."
+
+[[record.field]]
+name = "aggregate_reference_count"
+offset = 139
+type = "u32"
+source = "spec"
+anchor = "the u32 at `139 + S` is `1`"
+
+[[record.field]]
+name = "aggregate_group_reference"
+offset = 143
+type = "bytes[11]"
+source = "spec"
+anchor = "marked aggregate-group reference starts at"
+
+[[record.gap]]
+offset = 154
+size = 12
+note = "Twelve zero bytes precede the structural u32 value `1` at offset 166."
+
+[[record.field]]
+name = "edge_reference_count"
+offset = 166
+type = "u32"
+source = "spec"
+anchor = "the u32 at `166 + S` is `1`"
+
+[[record.field]]
+name = "edge_group_reference"
+offset = 170
+type = "bytes[11]"
+source = "spec"
+anchor = "marked role-`0x08` group reference starts at"
+
+[[record]]
 name = "hem_gap_length_fixed_operation_section"
 kind = "byte"
 section = "3.1"

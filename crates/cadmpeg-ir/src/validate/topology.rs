@@ -2860,7 +2860,20 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                 ..
             } => {
                 edge_selections.push(edges);
-                if !positive_feature_length(*height) {
+                let height_valid = match height {
+                    crate::features::SheetMetalFlangeHeight::Distance(height) => {
+                        positive_feature_length(*height)
+                    }
+                    crate::features::SheetMetalFlangeHeight::ToObject { target, offset } => {
+                        offset.0.is_finite()
+                            && !matches!(
+                                target,
+                                crate::features::SheetMetalFlangeHeightTarget::Native(native)
+                                    if native.is_empty()
+                            )
+                    }
+                };
+                if !height_valid {
                     feature_geometry_error(
                         findings,
                         feature,

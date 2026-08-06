@@ -970,7 +970,7 @@ pub enum FeatureDefinition {
         /// Edges the flange is grown from.
         edges: EdgeSelection,
         /// Height of the flange wall.
-        height: Length,
+        height: SheetMetalFlangeHeight,
         /// Angle between the flange wall and its source face.
         angle: Angle,
         /// Face pair the height is measured from.
@@ -2102,6 +2102,33 @@ pub enum SheetMetalBendPosition {
     Adjacent,
     /// The bend is tangent to the side reference plane.
     TangentToSide,
+}
+
+/// Construction feature used as the reference for a sheet-metal flange height.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalFlangeHeightTarget {
+    /// A neutral construction feature in the same design history.
+    Feature(FeatureId),
+    /// A source selection whose neutral construction identity is not resolved.
+    Native(String),
+}
+
+/// Height law for a sheet-metal edge flange.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SheetMetalFlangeHeight {
+    /// Fixed distance from the operation's height datum.
+    Distance(Length),
+    /// Signed offset from a selected construction entity.
+    ToObject {
+        /// Construction entity that supplies the height reference.
+        target: SheetMetalFlangeHeightTarget,
+        /// Signed distance from the target entity.
+        offset: Length,
+    },
 }
 
 /// Extent of a sheet-metal flange along its selected edge.

@@ -34,14 +34,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation to build a neutral dimension from more than one recipe record.
 
-### DR-09. Sheet-metal `EdgeFlange` to-object height extent
-
-**Question.** What is the layout of an `EdgeFlange` frame whose height extent terminates at a selected object rather than at a distance?
-
-**Known.** `f3d.md` §3.1 "A single-edge `EdgeFlange` scope has" gives the distance-extent layout, the header shift, the bend-position values, the height-datum values, and the edge-width mode. A to-object frame adds three ordered references and inserts a marked reference pair into the fixed operation section between the height-owner reference and the result-record run. Its frame length does not satisfy the distance-extent length relation for any result-record count, so the to-object form is a separate layout and the decoder refuses it. The height-datum discriminator still carries the outer-faces value in a to-object frame, where the height datum has no effect.
-
-**Need.** A to-object height extent has no neutral extent without the inserted pair's roles. The decoder retains the scope as a native record, so the item blocks the extent semantics of that form only.
-
 ### DR-09A. Sheet-metal `Hem` form selector and direction
 
 **Question.** Which field selects the hem form, which field carries the hem direction, and what is the layout of the rolled and teardrop frames?

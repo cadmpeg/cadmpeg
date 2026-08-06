@@ -601,24 +601,20 @@ pub fn project_parameter_design_with_edge_identities(
                             }
                         },
                     ),
-                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => project_edge_flange(
-                    scope,
-                    owners,
-                    native,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                )
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
-                    parameters: parameters
-                        .iter()
-                        .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
-                        })
-                        .collect(),
-                    properties: native_scope_properties(scope, native_scope),
-                }),
+                Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
+                    project_edge_flange(scope, inputs).unwrap_or_else(|| {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
+                                .iter()
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
+                                })
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    })
+                }
                 None => {
                     if let Some(primitive) = scope.solid_primitive.as_ref() {
                         let operation = |operation| match operation {
@@ -1881,22 +1877,32 @@ fn project_base_flange(
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
 ///
 /// The typed operation supplies the bend position, height datum, and inside
-/// radius. Owner parameters supply the height, angle, and width. The projector
-/// keeps the native scope when an owner lacks a parameter.
+/// radius. Owner parameters supply the height, angle, and width. A to-object
+/// height resolves its target entity to a known neutral construction feature;
+/// otherwise the source selection remains explicit in the neutral height law.
 pub(crate) fn project_edge_flange(
     scope: &DesignParameterScope,
-    owners: &[crate::records::DesignParameterOwner],
-    parameters: &[DesignParameter],
-    groups: &[DesignConstructionOperandGroup],
-    edge_operands: &[DesignEdgeOperand],
-    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    inputs: &ProjectInputs<'_>,
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use crate::records::{DesignBendPosition, DesignEdgeWidthMode, DesignSheetMetalHeightDatum};
+    use crate::records::{
+        DesignBendPosition, DesignEdgeFlangeHeightExtent, DesignEdgeWidthMode,
+        DesignSheetMetalHeightDatum,
+    };
     use cadmpeg_ir::features::{
-        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeWidth,
-        SheetMetalHeightDatum,
+        FeatureDefinition, Length, SheetMetalBendPosition, SheetMetalFlangeHeight,
+        SheetMetalFlangeHeightTarget, SheetMetalFlangeWidth, SheetMetalHeightDatum,
     };
 
+    let ProjectInputs {
+        native: parameters,
+        owners,
+        scopes,
+        construction_groups: groups,
+        edge_operands,
+        edge_identity_operands,
+        entity_selection_operands,
+        ..
+    } = inputs;
     let operation = scope.edge_flange_operation.as_ref()?;
     let stream = native_stream(&scope.id)?;
     let parameter = |owner_record_index, source_kind: &str| {
@@ -1916,10 +1922,64 @@ pub(crate) fn project_edge_flange(
         })
     };
 
-    let height = design_length(parameter(
-        operation.height_owner_record_index,
-        "FlangeHeight",
-    )?)?;
+    let height = match &operation.height_extent {
+        DesignEdgeFlangeHeightExtent::Distance => SheetMetalFlangeHeight::Distance(design_length(
+            parameter(operation.height_owner_record_index, "FlangeHeight")?,
+        )?),
+        DesignEdgeFlangeHeightExtent::ToObject {
+            target_group_record_index,
+            target_operand_record_index,
+            offset_owner_record_index,
+            ..
+        } => {
+            let target_group = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(stream)
+                        && group.scope_record_index == scope.record_index
+                        && group.record_index == *target_group_record_index
+                        && group.role == 0x0000_0021_0000_0000
+                        && group.members == [*target_operand_record_index]
+                })
+                .collect::<Vec<_>>();
+            let [target_group] = target_group.as_slice() else {
+                return None;
+            };
+            let target_selections = entity_selection_operands
+                .iter()
+                .filter(|operand| {
+                    native_stream(&operand.id) == Some(stream)
+                        && operand.scope_record_index == scope.record_index
+                        && operand.group_record_index == target_group.record_index
+                        && operand.group_member_ordinal == 0
+                        && operand.record_index == *target_operand_record_index
+                })
+                .collect::<Vec<_>>();
+            let [target_selection] = target_selections.as_slice() else {
+                return None;
+            };
+            let target_record_index = u32::try_from(target_selection.primary_identity)
+                .ok()?
+                .checked_add(1)?;
+            let target_scopes = scopes
+                .iter()
+                .filter(|candidate| {
+                    native_stream(&candidate.id) == Some(stream)
+                        && candidate.record_index == target_record_index
+                        && matches!(candidate.kind.as_str(), "WorkPlane" | "WorkPoint")
+                })
+                .collect::<Vec<_>>();
+            let target = match target_scopes.as_slice() {
+                [target_scope] => {
+                    SheetMetalFlangeHeightTarget::Feature(neutral_feature_id(target_scope))
+                }
+                [] => SheetMetalFlangeHeightTarget::Native(target_selection.id.clone()),
+                _ => return None,
+            };
+            let offset = design_length(parameter(*offset_owner_record_index, "ToObjectOffset")?)?;
+            SheetMetalFlangeHeight::ToObject { target, offset }
+        }
+    };
     let angle = design_angle(parameter(
         operation.angle_owner_record_index,
         "FlangeAngle",

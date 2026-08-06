@@ -319,6 +319,13 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::Pattern { seeds, pattern } => {
             seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. })
         }
+        FeatureDefinition::SheetMetalEdgeFlange { height, .. } => matches!(
+            height,
+            cadmpeg_ir::features::SheetMetalFlangeHeight::ToObject {
+                target: cadmpeg_ir::features::SheetMetalFlangeHeightTarget::Native(_),
+                ..
+            }
+        ),
         _ => false,
     }
 }

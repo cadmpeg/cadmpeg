@@ -738,11 +738,29 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     ])
                     .copied()
                     .collect::<Vec<_>>();
+                let mut claimed = claimed;
+                if let records::DesignEdgeFlangeHeightExtent::ToObject {
+                    target_group_record_index,
+                    target_operand_record_index,
+                    offset_owner_record_index,
+                    ..
+                } = operation.height_extent
+                {
+                    claimed.extend([
+                        target_group_record_index,
+                        target_operand_record_index,
+                        offset_owner_record_index,
+                    ]);
+                }
                 edge_count > 0
                     && operation.edge_group_record_indices.len() == edge_count
                     && operation.edge_operand_record_indices.len() == edge_count
                     && operation.aggregate_operand_record_indices.len() == edge_count
                     && operation.width_distance_owner_record_indices.len() <= 2
+                    && (!matches!(
+                        operation.height_extent,
+                        records::DesignEdgeFlangeHeightExtent::ToObject { .. }
+                    ) || operation.width_distance_owner_record_indices.is_empty())
                     && claimed.len() == scope.reference_members.len()
                     && claimed.iter().copied().collect::<HashSet<_>>().len() == claimed.len()
                     && claimed
@@ -2179,8 +2197,10 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 })
                     }
                     Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
-                        matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
-                            && group.extrude_role.is_none()
+                        matches!(
+                            group.role,
+                            0x0000_0008_0000_0000 | 0x0000_0021_0000_0000 | 0x0000_0043_0000_0000
+                        ) && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
                     Some(_) => false,
