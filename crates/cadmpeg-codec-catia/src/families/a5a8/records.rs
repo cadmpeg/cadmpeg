@@ -18,7 +18,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 /// Native identity form of one decoded freeform surface carrier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FreeformSurfaceIdentity {
-    /// Common-form `a8 03 34` carrier with an inline persistent object id.
+    /// Common-form `a8 <flag> 34` carrier with an inline persistent object id.
     Object(u32),
     /// Consolidated `a5 03 34` carrier identified by its framed source offset.
     FrameOffset(usize),
@@ -46,7 +46,73 @@ impl FreeformSurface {
     }
 }
 
-/// Parameter lattice decoded from an `a8 03 34` surface record independently
+#[derive(Clone, Copy)]
+struct A8Frame {
+    pos: usize,
+    payload: usize,
+    end: usize,
+    object_id: u32,
+}
+
+fn a8_frames(data: &[u8], class: u8) -> Vec<A8Frame> {
+    let mut frames = Vec::new();
+    let mut payload_end = None;
+    let mut pos = 0usize;
+    while pos + 11 <= data.len() {
+        if let Some(end) = payload_end.filter(|end| pos < *end) {
+            pos = end;
+            continue;
+        }
+        if data[pos] != 0xa8 || !object_frame_flag(data[pos + 1]) {
+            pos += 1;
+            continue;
+        }
+        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
+        else {
+            pos += 1;
+            continue;
+        };
+        let Some(end) = pos
+            .checked_add(11)
+            .and_then(|payload| payload.checked_add(length))
+            .filter(|end| *end <= data.len())
+        else {
+            pos += 1;
+            continue;
+        };
+        let Some(object_id) = u32_le(data, pos + 7) else {
+            pos += 1;
+            continue;
+        };
+        if data[pos + 2] == class {
+            frames.push(A8Frame {
+                pos,
+                payload: pos + 11,
+                end,
+                object_id,
+            });
+        }
+        payload_end = Some(end);
+        pos += 1;
+    }
+    frames
+}
+
+fn object_frame_flag(flag: u8) -> bool {
+    matches!(flag, 0x03 | 0x13 | 0x83)
+}
+
+fn object_frame_start(data: &[u8], pos: usize) -> bool {
+    let Some(&family) = data.get(pos) else {
+        return false;
+    };
+    matches!(
+        family,
+        0xa5 | 0xa6 | 0xa7 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6
+    ) && data.get(pos + 1).copied().is_some_and(object_frame_flag)
+}
+
+/// Parameter lattice decoded from an `a8 <flag> 34` surface record independently
 /// of its pole representation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct A8SurfaceHeader {
@@ -78,7 +144,7 @@ pub struct A8SurfaceHeader {
 }
 
 #[derive(Debug, Clone)]
-/// Degree-5 UV jet stored in an `a8 03 20` object record.
+/// Degree-5 UV jet stored in an `a8 <flag> 20` object record.
 pub struct A8Pcurve {
     /// Record byte offset.
     #[cfg(test)]
@@ -402,7 +468,7 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     })
 }
 
-/// Common-form degree-5 rolling-ball jet stored in an `a8 03 32` object record.
+/// Common-form degree-5 rolling-ball jet stored in an `a8 <flag> 32` object record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct A8FreeformCurve {
     /// Record byte offset.
@@ -466,32 +532,23 @@ pub(crate) fn rolling_ball_jet_definition(
     })
 }
 
-/// Decode framed `a8 03 32` common-form rolling-ball jet records.
+/// Decode framed `a8 <flag> 32` common-form rolling-ball jet records.
 #[must_use]
 pub fn a8_freeform_curves(data: &[u8]) -> Vec<A8FreeformCurve> {
-    let mut out = Vec::new();
-    let mut search = 0;
-    while let Some(relative) = data[search..].windows(3).position(|v| v == [0xa8, 3, 0x32]) {
-        let pos = search + relative;
-        search = pos + 3;
-        let Some(length) = u32_le(data, pos + 3).and_then(|v| usize::try_from(v).ok()) else {
-            continue;
-        };
-        let Some(end) = pos.checked_add(11).and_then(|v| v.checked_add(length)) else {
-            continue;
-        };
-        if end <= data.len() {
-            if let Some(value) = parse_a8_curve(data, pos, end) {
-                out.push(value);
-            }
-        }
-    }
-    out
+    a8_frames(data, 0x32)
+        .into_iter()
+        .filter_map(|frame| parse_a8_curve(data, frame))
+        .collect()
 }
 
-fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve> {
-    let object_id = u32_le(data, pos + 7)?;
-    let mut at = pos + 12;
+fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
+    let A8Frame {
+        pos,
+        payload,
+        end,
+        object_id,
+    } = frame;
+    let mut at = payload.checked_add(1)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
@@ -501,7 +558,7 @@ fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve
     {
         return None;
     }
-    at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
+    at = at.checked_add(if data.get(at) == Some(&0x08) { 2 } else { 1 })?;
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
         knots.push(f64_le(data, at)?);
@@ -659,7 +716,7 @@ fn distance3(a: [f64; 3], b: [f64; 3]) -> f64 {
     (a[0] - b[0]).hypot(a[1] - b[1]).hypot(a[2] - b[2])
 }
 
-/// Decode framed `a8 03 20` UV jet records.
+/// Decode framed `a8 <flag> 20` UV jet records.
 #[must_use]
 #[cfg(test)]
 pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
@@ -669,7 +726,7 @@ pub fn a8_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
         .collect()
 }
 
-/// Decode framed `a8 03 20` and `b5 03 20` object-stream UV jet records.
+/// Decode framed `a8 <flag> 20` and `b5 <flag> 20` object-stream UV jet records.
 #[must_use]
 pub fn object_stream_pcurves(data: &[u8]) -> Vec<A8Pcurve> {
     let mut out = Vec::new();
@@ -798,7 +855,10 @@ fn parse_object_stream_pcurve(
 /// not become carriers.
 #[cfg(any(test, feature = "fuzzing"))]
 pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
-    scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
+    a8_frames(data, 0x34)
+        .into_iter()
+        .filter_map(|frame| a8_surface_from_parsed(data, parse_a8_surface_header(data, frame)?))
+        .collect()
 }
 
 /// Decode every complete common-form object-stream NURBS surface, including
@@ -807,14 +867,8 @@ pub fn a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
 #[must_use]
 pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     let mut surfaces = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = data[search..]
-        .windows(3)
-        .position(|bytes| bytes == [0xa8, 0x03, 0x34])
-    {
-        let pos = search + relative;
-        search = pos + 3;
-        let Some(parsed) = parse_a8_surface_header(data, pos) else {
+    for frame in a8_frames(data, 0x34) {
+        let Some(parsed) = parse_a8_surface_header(data, frame) else {
             continue;
         };
         if parsed.header.poles_elided {
@@ -828,25 +882,19 @@ pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     surfaces
 }
 
-/// Decode every structurally complete `a8 03 34` parameter lattice, including
+/// Decode every structurally complete `a8 <flag> 34` parameter lattice, including
 /// records whose pole representation is not inline.
 #[must_use]
 pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
-    let mut out = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = data[search..].windows(3).position(|v| v == [0xa8, 3, 0x34]) {
-        let pos = search + relative;
-        search = pos + 3;
-        if let Some(parsed) = parse_a8_surface_header(data, pos) {
-            out.push(parsed.header);
-        }
-    }
-    out
+    a8_frames(data, 0x34)
+        .into_iter()
+        .filter_map(|frame| parse_a8_surface_header(data, frame).map(|parsed| parsed.header))
+        .collect()
 }
 
-/// Resolve an elided-pole `a8 03 34` carrier from its uniquely sized external
+/// Resolve an elided-pole `a8 <flag> 34` carrier from its uniquely sized external
 /// grid allocation. The allocation occupies the complete unframed gap between
-/// a length-closed `b5 03 21` pcurve and the following A/B-family frame.
+/// a length-closed `b5 <flag> 21` pcurve and the following A/B-family frame.
 #[must_use]
 pub fn a8_surface_from_external_grid(
     data: &[u8],
@@ -869,21 +917,14 @@ pub fn a8_surface_from_external_grid(
     let mut search = 0usize;
     while let Some(relative) = data[search..]
         .windows(3)
-        .position(|bytes| bytes == [0xb5, 0x03, 0x21])
+        .position(|bytes| bytes[0] == 0xb5 && object_frame_flag(bytes[1]) && bytes[2] == 0x21)
     {
         let frame = search + relative;
         search = frame + 3;
         let payload_len = usize::from(*data.get(frame + 3)?);
         let start = frame.checked_add(8)?.checked_add(payload_len)?;
         let end = start.checked_add(grid_bytes)?;
-        if !matches!(
-            data.get(end..end + 3),
-            Some([
-                0xa5 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6,
-                0x03,
-                _
-            ])
-        ) {
+        if !object_frame_start(data, end) {
             continue;
         }
         let mut at = start;
@@ -951,29 +992,6 @@ pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
         .into_iter()
         .filter_map(|frame| a5_surface(data, frame))
         .collect()
-}
-
-#[cfg(any(test, feature = "fuzzing"))]
-fn scan_surfaces(
-    data: &[u8],
-    marker: [u8; 3],
-    advance: usize,
-    decode: fn(&[u8], usize) -> Option<FreeformSurface>,
-) -> Vec<FreeformSurface> {
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    while let Some(relative) = data[start..]
-        .windows(marker.len())
-        .position(|bytes| bytes == marker)
-    {
-        let pos = start + relative;
-        start = pos + advance;
-        let Some(surface) = decode(data, pos) else {
-            continue;
-        };
-        out.push(surface);
-    }
-    out
 }
 
 fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> {
@@ -1054,14 +1072,17 @@ struct ParsedA8SurfaceHeader {
     end: usize,
 }
 
-fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHeader> {
-    let payload_len = u32_le(data, pos + 3)? as usize;
-    let object_id = u32_le(data, pos + 7)?;
-    let end = pos.checked_add(11)?.checked_add(payload_len)?;
-    if payload_len < 20 || end > data.len() {
+fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8SurfaceHeader> {
+    let A8Frame {
+        pos,
+        payload,
+        end,
+        object_id,
+    } = frame;
+    if end.checked_sub(payload)? < 20 {
         return None;
     }
-    let mut at = pos + 12; // framing + lead byte
+    let mut at = payload.checked_add(1)?; // framing + lead byte
     let u_degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?; // flags
     let u_distinct_count = compact_int(data, &mut at)? as usize;
@@ -1094,15 +1115,7 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     let tail_end = at.checked_add(141)?;
     let poles_elided = matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
         && tail_end <= end
-        && (tail_end == end
-            || matches!(
-                data.get(tail_end..tail_end + 3),
-                Some([
-                    0xa5 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6,
-                    0x03,
-                    _
-                ])
-            ));
+        && (tail_end == end || object_frame_start(data, tail_end));
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1121,11 +1134,6 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
         pole_start: at,
         end,
     })
-}
-
-#[cfg(any(test, feature = "fuzzing"))]
-fn a8_surface(data: &[u8], pos: usize) -> Option<FreeformSurface> {
-    a8_surface_from_parsed(data, parse_a8_surface_header(data, pos)?)
 }
 
 fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<FreeformSurface> {

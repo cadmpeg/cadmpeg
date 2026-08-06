@@ -28,6 +28,28 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
+fn a8_surface_parser_accepts_each_object_frame_flag() {
+    for flag in [0x03, 0x13, 0x83] {
+        let mut bytes = a8_surface_stream();
+        bytes[1] = flag;
+        assert_eq!(
+            crate::families::a5a8::records::a8_surfaces(&bytes).len(),
+            1,
+            "flag {flag:#04x}"
+        );
+        assert_eq!(
+            crate::families::a5a8::records::a8_surface_headers(&bytes).len(),
+            1,
+            "flag {flag:#04x}"
+        );
+    }
+
+    let mut malformed = a8_surface_stream();
+    malformed[1] = 0x23;
+    assert!(crate::families::a5a8::records::a8_surfaces(&malformed).is_empty());
+}
+
+#[test]
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());
@@ -81,6 +103,32 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
         panic!("NURBS surface");
     };
     assert_eq!(resolved.control_points, surface.control_points);
+}
+
+#[test]
+fn a8_elided_surface_accepts_all_child_frame_flags() {
+    for a8_flag in [0x03, 0x13, 0x83] {
+        for child_flag in [0x03, 0x13, 0x83] {
+            let mut bytes = a8_elided_surface_stream();
+            bytes[1] = a8_flag;
+            let pcurve = bytes
+                .windows(3)
+                .position(|value| value == [0xb5, 0x03, 0x21])
+                .expect("external pcurve");
+            bytes[pcurve + 1] = child_flag;
+            let successor = bytes
+                .windows(3)
+                .rposition(|value| value == [0xb5, 0x03, 0x5e])
+                .expect("successor frame");
+            bytes[successor + 1] = child_flag;
+
+            assert_eq!(
+                crate::families::a5a8::records::resolved_a8_surfaces(&bytes).len(),
+                1,
+                "a8 flag {a8_flag:#04x}, child flag {child_flag:#04x}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -536,6 +584,23 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
         crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
             .is_empty()
     );
+}
+
+#[test]
+fn a8_curve_parser_accepts_each_object_frame_flag() {
+    for flag in [0x03, 0x13, 0x83] {
+        let mut bytes = a8_freeform_curve_stream();
+        bytes[1] = flag;
+        assert_eq!(
+            crate::families::a5a8::records::a8_freeform_curves(&bytes).len(),
+            1,
+            "flag {flag:#04x}"
+        );
+    }
+
+    let mut malformed = a8_freeform_curve_stream();
+    malformed[1] = 0x23;
+    assert!(crate::families::a5a8::records::a8_freeform_curves(&malformed).is_empty());
 }
 
 fn a5_nurbs_curve_stream() -> Vec<u8> {

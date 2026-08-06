@@ -18,12 +18,12 @@ A file stores its geometry in one of six families; the family determines the rec
 | **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u8`, `u16be`, or `u24be` width |
 | **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
 | **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
-| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no standard FBB spine, large vertex/object-graph/float populations                              | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
+| **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no standard FBB spine, large vertex/object-graph/float populations                              | Object-stream (`b5 <frame_flag>` / `a8 <frame_flag>`) records; surface-kind markers only for the pure marker case |
 | **Inner body without directory** | Nested `V5_CFV2` whose directory contains no BREP body; the body occupies the contiguous region before the directory | Contiguous inner records and freeform carrier families                                        |
 
 Detection invariants: a standard file has one nested inner `V5_CFV2` past byte 8; the standard BREP spine contains the largest FBB run followed by parseable edge tables and a `kind=0x06` table of 15-byte `05 08 01` vertex records. E5 classification requires a coherent record walk. Zero-entity classification requires no inner `V5_CFV2` and at least one recognized `a9 03` family.
 
-Freeform NURBS geometry uses a **three-way storage-class split** cutting across the variants: the consolidated `a5 03 34/32/20` class, the common object-stream `a8 03 34/32/20` class, and the zero-entity `a9 03 34` family. There is no single universal freeform marker.
+Freeform NURBS geometry uses a **three-way storage-class split** cutting across the variants: the consolidated `a5 03 34/32/20` class, the common object-stream `a8 <frame_flag> 34/32/20` class, and the zero-entity `a9 03 34` family. There is no single universal freeform marker.
 
 ---
 
@@ -395,7 +395,7 @@ For `c1 != 0`, the construction is an exact torus with center `(O·X)X + c2A`, a
 
 ---
 
-## 6. Object-stream record framing (`a5 03` / `a8 03` / `b5 03`)
+## 6. Object-stream record framing (`a5` / `a8` / `b5` families)
 
 The object stream is a contiguous run of length-framed records in two width-prefixed families.
 
@@ -498,15 +498,15 @@ When these clamped NURBS or bounded spatial-circle carriers are the complete geo
 - **`b2 03 65`** is the constant group separator `81 03 05 0d`.
 - **`b2 03 60`** is a two-compact-integer typed group opener. The first integer is the fixed framing opcode `32`; the second is the group type. Type `3` opens a cylinder chain. Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener.
 
-### 6.6 `a8 03` common object-stream freeform class
+### 6.6 `a8` common object-stream freeform class
 
-Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`, where `frame_flag` is `03`, `13`, or `83`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 03 32` stores the same complete degree-5 rolling-ball value/derivative jet and exact procedural surface as the consolidated `a5 03 32` form, followed by a fixed 59-byte tail. Its knots are strictly increasing. The endpoint multiplicities are six and every interior multiplicity is one or three. A class-`20` frame stores a pcurve under every valid frame flag.
+Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`, where `frame_flag` is `03`, `13`, or `83`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 <frame_flag> 32` stores the same complete degree-5 rolling-ball value/derivative jet and exact procedural surface as the consolidated `a5 03 32` form, followed by a fixed 59-byte tail. Its knots are strictly increasing. The endpoint multiplicities are six and every interior multiplicity is one or three. A class-`20` frame stores a pcurve under every valid frame flag.
 
-For `a8 03 34`, the lead byte, U degree/flags/distinct knots/multiplicities, V degree/flags/distinct knots/multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
+For `a8 <frame_flag> 34`, the lead byte, U degree/flags/distinct knots/multiplicities, V degree/flags/distinct knots/multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
-The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The byte after that tail is the end of the `a8` frame or the first owned A/B-family child record. It carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 03 21` pcurve and the next A/B-family frame. Grid cardinality comes from the elided surface header. A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation.
+The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The byte after that tail is the end of the `a8` frame or the first owned A/B-family child record. It carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. Grid cardinality comes from the elided surface header. A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation.
 
-**In-stream object-id resolver:** `a8 03` and `b5 03` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
+**In-stream object-id resolver:** `a8 <frame_flag>` and `b5 <frame_flag>` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
 ### 6.7 Object-stream topology (`b5 03`)
 
