@@ -729,25 +729,34 @@ pub(super) fn extended_compact_endpoint_markers<'a>(
                     }
                 }
             }
-            let endpoint_by_roster_index = |id| {
-                let mut candidates = markers.iter().copied().filter(|marker| {
-                    marker.feature_ref == curve.feature_ref
-                        && marker.ordinal == id
-                        && marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind,
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                });
-                let candidate = candidates.next()?;
-                candidates.next().is_none().then_some(candidate)
-            };
-            match (
-                endpoint_by_roster_index(first),
-                endpoint_by_roster_index(second),
-            ) {
-                (Some(first), Some(second)) if first.id != second.id => vec![first, second],
-                _ => Vec::new(),
+            if marker_profile_curve_role(payload, offset) == Some(1) {
+                let mut owned = markers
+                    .iter()
+                    .copied()
+                    .filter(|marker| marker.feature_ref == curve.feature_ref)
+                    .collect::<Vec<_>>();
+                owned.sort_unstable_by_key(|marker| marker.offset);
+                let endpoint_by_roster_index = |id| {
+                    owned
+                        .get(usize::try_from(id).ok()?)
+                        .copied()
+                        .filter(|marker| {
+                            marker.coordinates_m.is_some()
+                                && matches!(
+                                    marker.kind,
+                                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                                )
+                        })
+                };
+                match (
+                    endpoint_by_roster_index(first),
+                    endpoint_by_roster_index(second),
+                ) {
+                    (Some(first), Some(second)) if first.id != second.id => vec![first, second],
+                    _ => Vec::new(),
+                }
+            } else {
+                Vec::new()
             }
         }
     }

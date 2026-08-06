@@ -1178,16 +1178,16 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
 
     let mut roster_indexed = entities.clone();
     roster_indexed[1].object_index = None;
-    roster_indexed[1].ordinal = 16;
     roster_indexed[3].object_index = None;
-    roster_indexed[3].ordinal = 14;
+    payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     let markers = roster_indexed.iter().collect::<Vec<_>>();
     assert_eq!(
         extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
             .iter()
             .map(|marker| marker.id.as_str())
             .collect::<Vec<_>>(),
-        ["explicit-fourteen", "explicit"]
+        ["explicit", "explicit-fourteen"]
     );
 
     payload.resize(116, 0);
@@ -2312,6 +2312,69 @@ fn extended_compact_construction_line_distinguishes_direct_ids_from_roster_indic
     assert_eq!(
         extended_compact_84_construction_line_endpoint_indices(&payload, 0),
         None
+    );
+}
+
+#[test]
+fn extended_compact_profile_line_uses_complete_feature_roster_fallback() {
+    let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&1u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    let entity = |id: &str, offset, kind, object_index, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 10_000,
+        offset,
+        object_index,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, SketchInputKind::LineOrCircle, None, None);
+    let first = entity(
+        "first",
+        10,
+        SketchInputKind::Point,
+        Some(7),
+        Some([1.0, 2.0]),
+    );
+    let relation = entity(
+        "relation",
+        20,
+        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        None,
+        None,
+    );
+    let second = entity(
+        "second",
+        30,
+        SketchInputKind::Point,
+        Some(9),
+        Some([3.0, 4.0]),
+    );
+    let markers = [&curve, &first, &relation, &second];
+
+    assert_eq!(
+        extended_compact_endpoint_markers(&payload, &curve, &markers)
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+        ["first", "second"]
     );
 }
 
