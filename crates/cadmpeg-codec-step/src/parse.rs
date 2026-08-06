@@ -116,6 +116,24 @@ pub struct Exchange {
 #[derive(Debug, Default)]
 struct EntityIndex(OnceLock<HashMap<String, Vec<u64>>>);
 
+const EMPTY_ENTITY_IDS: &[u64] = &[];
+
+enum EntityIdIter<'a> {
+    Borrowed(std::slice::Iter<'a, u64>),
+    Owned(std::vec::IntoIter<u64>),
+}
+
+impl Iterator for EntityIdIter<'_> {
+    type Item = u64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Borrowed(ids) => ids.next().copied(),
+            Self::Owned(ids) => ids.next(),
+        }
+    }
+}
+
 impl Clone for EntityIndex {
     fn clone(&self) -> Self {
         Self::default()
@@ -157,16 +175,31 @@ impl Exchange {
         &'a self,
         names: &[&str],
     ) -> impl Iterator<Item = (u64, &'a RawRecord)> {
-        let mut ids = names
-            .iter()
-            .filter_map(|name| self.entity_ids().get(*name))
-            .flatten()
-            .copied()
-            .collect::<Vec<_>>();
-        ids.sort_unstable();
-        ids.dedup();
-        ids.into_iter()
-            .filter_map(|id| self.records.get(&id).map(|record| (id, record)))
+        let ids = if let [name] = names {
+            let ids = self
+                .entity_ids()
+                .get(*name)
+                .map_or(EMPTY_ENTITY_IDS, Vec::as_slice);
+            EntityIdIter::Borrowed(ids.iter())
+        } else {
+            let capacity = names
+                .iter()
+                .filter_map(|name| self.entity_ids().get(*name))
+                .map(Vec::len)
+                .sum();
+            let mut ids = Vec::with_capacity(capacity);
+            ids.extend(
+                names
+                    .iter()
+                    .filter_map(|name| self.entity_ids().get(*name))
+                    .flatten()
+                    .copied(),
+            );
+            ids.sort_unstable();
+            ids.dedup();
+            EntityIdIter::Owned(ids.into_iter())
+        };
+        ids.filter_map(|id| self.records.get(&id).map(|record| (id, record)))
     }
 }
 
