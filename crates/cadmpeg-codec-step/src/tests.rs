@@ -2876,6 +2876,70 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
 }
 
 #[test]
+fn writer_orders_edge_loop_coedges_by_oriented_endpoints() {
+    let mut source = unit_cube();
+    source
+        .model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.coedges.len() >= 3)
+        .expect("unit cube has an edge loop")
+        .coedges
+        .swap(0, 1);
+
+    let mut bytes = Vec::new();
+    let report = write_step(&source, &mut bytes, &StepWriteOptions::default())
+        .expect("writer should recover a continuous loop order");
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("continuous vertex-to-vertex")
+    }));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode reordered edge loops");
+    assert_eq!(decoded.ir.model.faces.len(), source.model.faces.len());
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn writer_reports_edge_loop_without_a_continuous_ordering() {
+    let mut source = unit_cube();
+    let edge_id = source
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.coedges.len() >= 3)
+        .and_then(|loop_| loop_.coedges.first())
+        .and_then(|coedge_id| {
+            source
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)
+        })
+        .map(|coedge| coedge.edge.clone())
+        .expect("unit cube has a loop edge");
+    source
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .expect("loop edge exists")
+        .start = cadmpeg_ir::ids::VertexId("missing-loop-vertex".into());
+
+    let report = write_step(&source, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode should record the topology loss");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("continuous vertex-to-vertex")
+    }));
+}
+
+#[test]
 fn writer_round_trips_rigid_body_placements() {
     let mut ir = unit_cube();
     ir.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {

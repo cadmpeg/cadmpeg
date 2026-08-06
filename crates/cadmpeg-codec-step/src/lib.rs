@@ -309,6 +309,12 @@ struct ColorSpec<'a> {
     binding_id: Option<&'a str>,
 }
 
+struct LoopSegment {
+    coedge_id: String,
+    start_vertex: String,
+    end_vertex: String,
+}
+
 struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -1944,28 +1950,28 @@ impl<'a> Builder<'a> {
             };
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
-        let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
+        let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {
             let Some(coedge) = self.coedges.get(cid.as_str()).copied() else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:coedge:{cid}"),
-                    Severity::Warning,
+                    Severity::Error,
                     format!("loop {loop_id} omitted coedge {cid} because its record is missing"),
                 );
-                continue;
+                return None;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 self.topology_relation_loss(
                     format!("loop:{loop_id}:edge:{}", coedge.edge),
-                    Severity::Warning,
+                    Severity::Error,
                     format!(
                         "loop {loop_id} omitted edge {} because the edge is not writable",
                         coedge.edge
                     ),
                 );
-                continue;
+                return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
             let oe = self
@@ -1984,6 +1990,169 @@ impl<'a> Builder<'a> {
         Some(
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
+        )
+    }
+
+    fn ordered_loop_coedges(&mut self, loop_id: &str, lp: &Loop) -> Option<Vec<String>> {
+        let mut segments = Vec::with_capacity(lp.coedges.len());
+        let mut seen = BTreeSet::new();
+
+        for coedge_id in &lp.coedges {
+            let coedge_key = coedge_id.as_str();
+            if !seen.insert(coedge_key) {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:duplicate-coedge:{coedge_id}"),
+                    Severity::Error,
+                    format!(
+                        "loop {loop_id} cannot be ordered because coedge {coedge_id} occurs more than once"
+                    ),
+                );
+                return None;
+            }
+            let Some(coedge) = self.coedges.get(coedge_key).copied() else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:coedge:{coedge_id}"),
+                    Severity::Error,
+                    format!(
+                        "loop {loop_id} cannot be ordered because coedge {coedge_id} is missing"
+                    ),
+                );
+                return None;
+            };
+            let edge_key = coedge.edge.as_str();
+            let Some(edge) = self.edges.get(edge_key).copied() else {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:edge:{edge_key}"),
+                    Severity::Error,
+                    format!("loop {loop_id} cannot be ordered because edge {edge_key} is missing"),
+                );
+                return None;
+            };
+            let Some(curve_id) = edge.curve.as_ref() else {
+                self.curveless_edges.insert(edge_key.to_string());
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:curve"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because it has no 3D curve"),
+                );
+                continue;
+            };
+            let Some(curve) = self.curves.get(curve_id.as_str()).copied() else {
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:curve:{curve_id}"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because curve {curve_id} is not writable"),
+                );
+                continue;
+            };
+            if !geometry::curve_is_supported(&curve.geometry) {
+                self.curveless_edges.insert(edge_key.to_string());
+                self.topology_relation_loss(
+                    format!("edge:{edge_key}:unsupported-curve:{curve_id}"),
+                    Severity::Warning,
+                    format!("edge {edge_key} was omitted because curve {curve_id} is unsupported"),
+                );
+                continue;
+            }
+            let (start_vertex, end_vertex) = match coedge.sense {
+                Sense::Forward => (&edge.start, &edge.end),
+                Sense::Reversed => (&edge.end, &edge.start),
+            };
+            segments.push(LoopSegment {
+                coedge_id: coedge_id.0.clone(),
+                start_vertex: start_vertex.0.clone(),
+                end_vertex: end_vertex.0.clone(),
+            });
+        }
+
+        let mut outgoing: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut incoming: HashMap<&str, usize> = HashMap::new();
+        for (index, segment) in segments.iter().enumerate() {
+            outgoing
+                .entry(segment.start_vertex.clone())
+                .or_default()
+                .push(index);
+            *incoming.entry(segment.end_vertex.as_str()).or_default() += 1;
+        }
+        if segments.iter().any(|segment| {
+            outgoing.get(&segment.start_vertex).map_or(0, Vec::len)
+                != incoming
+                    .get(segment.start_vertex.as_str())
+                    .copied()
+                    .unwrap_or(0)
+        }) {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        // The IR coedge list and its next/previous links are not sufficient to
+        // establish the STEP path order. Build an Eulerian circuit from the
+        // oriented edge endpoints instead; this also handles repeated vertices
+        // without choosing a geometric edge by position in the source list.
+        for candidates in outgoing.values_mut() {
+            candidates.reverse();
+        }
+        let first_start = segments.first()?.start_vertex.clone();
+        let mut vertex_stack = vec![first_start.clone()];
+        let mut edge_stack = Vec::new();
+        let mut circuit = Vec::with_capacity(segments.len());
+        while let Some(vertex) = vertex_stack.last().cloned() {
+            let next_edge = outgoing.get_mut(&vertex).and_then(Vec::pop);
+            if let Some(edge_index) = next_edge {
+                vertex_stack.push(segments[edge_index].end_vertex.clone());
+                edge_stack.push(edge_index);
+            } else {
+                vertex_stack.pop();
+                if let Some(edge_index) = edge_stack.pop() {
+                    circuit.push(edge_index);
+                }
+            }
+        }
+        circuit.reverse();
+
+        if circuit.len() != segments.len() {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        if let Some(first_index) = circuit.iter().position(|index| *index == 0) {
+            circuit.rotate_left(first_index);
+        }
+        let mut current_vertex = segments.first()?.start_vertex.as_str();
+        for edge_index in &circuit {
+            let segment = &segments[*edge_index];
+            if segment.start_vertex != current_vertex {
+                self.topology_relation_loss(
+                    format!("loop:{loop_id}:continuity"),
+                    Severity::Error,
+                    format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+                );
+                return None;
+            }
+            current_vertex = segment.end_vertex.as_str();
+        }
+        if current_vertex != first_start {
+            self.topology_relation_loss(
+                format!("loop:{loop_id}:continuity"),
+                Severity::Error,
+                format!("loop {loop_id} has no continuous vertex-to-vertex coedge ordering"),
+            );
+            return None;
+        }
+
+        Some(
+            circuit
+                .into_iter()
+                .map(|index| segments[index].coedge_id.clone())
+                .collect(),
         )
     }
 
