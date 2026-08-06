@@ -35,6 +35,7 @@ cadmpeg-codec-sat.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 memchr.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
@@ -44,7 +45,6 @@ thiserror.workspace = true
 assert_cmd.workspace = true
 crc32fast.workspace = true
 predicates.workspace = true
-serde.workspace = true
 toml.workspace = true
 zip.workspace = true
 # The CLI integration tests build `cadmpeg_ir::examples`; the feature keeps

@@ -21,7 +21,7 @@ use crate::loader::{self, read_prefix, DETECTION_PREFIX_LEN};
 use crate::registry::{DetectionOutcome, Registry, TargetOptions};
 use crate::{DecodeArgs, ForcedInput, Format};
 
-const CLI_SCHEMA_VERSION: u32 = 5;
+pub(crate) const CLI_SCHEMA_VERSION: u32 = 5;
 
 fn validate_ir(
     registry: &Registry,

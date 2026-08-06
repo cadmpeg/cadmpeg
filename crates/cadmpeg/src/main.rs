@@ -10,6 +10,7 @@
 mod commands;
 mod inspect;
 mod loader;
+mod query;
 mod registry;
 
 use std::path::PathBuf;
@@ -324,7 +325,18 @@ enum Command {
         #[command(flatten)]
         decode: DecodeArgs,
     },
+    /// Project one named view from a cadmpeg JSON artifact.
+    ///
+    /// Accepts a decoded CADIR document, a command report written by
+    /// `--report`/`-o`, or a `.decode.json` sidecar, and detects which one
+    /// it was given. Output is tab-separated with a header row.
+    Query {
+        /// View to project.
+        #[command(subcommand)]
+        view: query::QueryView,
+    },
     /// Validate a CADIR document or a decoded native CAD file.
+    #[command(after_help = "Project fields from the written report with `cadmpeg query`.")]
     Validate {
         /// CADIR or supported native CAD file to validate.
         input: PathBuf,
@@ -480,6 +492,7 @@ fn main() -> ExitCode {
             &decode,
         )
         .map(|()| ExitCode::SUCCESS),
+        Command::Query { view } => query::run(&view).map(|()| ExitCode::SUCCESS),
         Command::Validate {
             input,
             json,
