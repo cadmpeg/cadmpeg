@@ -15,6 +15,7 @@ use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -26,6 +27,7 @@ use super::opaque_record_id;
 pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
     pub length_scale: f64,
     pub plane_angle_scale: f64,
@@ -36,6 +38,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let angle_scale = plane_angle_scale(exchange).unwrap_or(1.0);
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
+    let losses = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
     let mut directions = BTreeMap::new();
@@ -1054,6 +1057,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     GeometryResult {
         typed_records: typed,
         warnings,
+        losses,
         placements,
         length_scale: scale,
         plane_angle_scale: angle_scale,

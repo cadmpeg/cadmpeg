@@ -1282,6 +1282,38 @@ fn unresolved_vertex_point_does_not_enter_a_topology_draft() {
 }
 
 #[test]
+fn rejected_solid_root_reports_an_error_severity_loss() {
+    let source =
+        String::from_utf8(include_bytes!("../tests/fixtures/ap242_vertex_loop.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("salvage mode accepts a destroyed solid");
+
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
+}
+
+#[test]
+fn strict_decode_rejects_a_destroyed_solid() {
+    let source =
+        String::from_utf8(include_bytes!("../tests/fixtures/ap242_vertex_loop.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#10=VERTEX_POINT('',#8);", "#10=VERTEX_POINT('',#4);");
+    let mut options = DecodeOptions::default();
+    options.policy.mode = DecodeMode::Strict;
+
+    let error = StepCodec::default()
+        .decode(&mut Cursor::new(source), &options)
+        .expect_err("strict mode rejects a destroyed solid");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn sheet_root_salvages_independent_shells() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

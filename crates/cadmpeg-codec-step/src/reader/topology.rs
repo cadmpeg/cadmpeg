@@ -11,6 +11,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
     Vertex, VertexUse,
@@ -23,6 +24,7 @@ use super::index::CarrierIndex;
 pub(super) struct TopologyResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
+    pub losses: Vec<LossNote>,
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
     pub body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
     pub faces_by_source: BTreeMap<u64, Vec<FaceId>>,
@@ -64,6 +66,7 @@ pub(super) fn decode(
     let mut result = TopologyResult {
         typed_records: BTreeSet::new(),
         warnings: Vec::new(),
+        losses: Vec::new(),
         body_by_root: BTreeMap::new(),
         body_by_shell: BTreeMap::new(),
         faces_by_source: BTreeMap::new(),
@@ -280,13 +283,21 @@ pub(super) fn decode(
         }
         if body_ids.is_empty() {
             if let Some(message) = failure_message {
-                result
-                    .warnings
-                    .push(format!("STEP topology root #{id} rejected: {message}"));
+                result.losses.push(LossNote {
+                    code: LossKind::TopologyNotTransferred,
+                    severity: Severity::Error,
+                    message: format!("STEP topology root #{id} rejected: {message}"),
+                    provenance: None,
+                });
             } else {
-                result.warnings.push(format!(
-                    "STEP topology root #{id} does not resolve to a complete connected topology graph",
-                ));
+                result.losses.push(LossNote {
+                    code: LossKind::TopologyNotTransferred,
+                    severity: Severity::Error,
+                    message: format!(
+                        "STEP topology root #{id} does not resolve to a complete connected topology graph",
+                    ),
+                    provenance: None,
+                });
             }
         } else {
             result.body_by_root.insert(id, body_ids.clone());

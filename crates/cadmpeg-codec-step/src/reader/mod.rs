@@ -179,6 +179,8 @@ fn decode_exchange_mode(
             provenance: None,
         }));
     report.losses.extend(tessellation.losses);
+    report.losses.extend(topology.losses);
+    report.losses.extend(geometry.losses);
     report
         .losses
         .extend(pmi.warnings.into_iter().map(|message| LossNote {
