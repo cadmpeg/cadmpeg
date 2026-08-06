@@ -64,6 +64,8 @@ pub enum ByteTool {
     Struct(StructArgs),
     /// List ZIP entries with their physical offsets.
     Container(ContainerArgs),
+    /// Write one ZIP entry's decompressed bytes to a file or standard output.
+    Extract(ExtractArgs),
     /// Compare two files byte for byte at the same offsets.
     Diff(DiffArgs),
 }
@@ -173,6 +175,25 @@ pub struct ContainerArgs {
     pub limits: LimitProfile,
 }
 
+/// Arguments for `cadmpeg inspect extract`.
+#[derive(Debug, Args)]
+pub struct ExtractArgs {
+    /// ZIP-based file to read.
+    pub file: PathBuf,
+    /// Exact entry name as printed by `inspect container` (quotes removed).
+    pub member: String,
+    /// Output file for the extracted bytes; omit it or pass `-` to write
+    /// them to standard output.
+    #[arg(short = 'o', long)]
+    pub output: Option<PathBuf>,
+    /// Replace an existing output file.
+    #[arg(long)]
+    pub force: bool,
+    /// Resource-limit profile applied while reading the archive.
+    #[arg(long, value_enum, default_value_t = LimitProfile::Desktop)]
+    pub limits: LimitProfile,
+}
+
 /// Arguments for `cadmpeg inspect diff`.
 #[derive(Debug, Args)]
 pub struct DiffArgs {
@@ -208,6 +229,7 @@ pub fn run(command: ByteCommand) -> Result<()> {
         ByteTool::Strings(args) => strings(&args),
         ByteTool::Struct(args) => structure(&args),
         ByteTool::Container(args) => container_list(&args),
+        ByteTool::Extract(args) => extract_entry(&args),
         ByteTool::Diff(args) => diff_files(&args),
     }
 }
@@ -423,6 +445,33 @@ fn container_list(args: &ContainerArgs) -> Result<()> {
     })?;
     print!("{}", container::render(&entries));
     Ok(())
+}
+
+fn extract_entry(args: &ExtractArgs) -> Result<()> {
+    let bytes = read_whole(&args.file)?;
+    let payload = container::extract(&bytes, args.limits.limits(), &args.member)
+        .with_context(|| format!("extracting from {}", args.file.display()))?;
+    match &args.output {
+        None => write_payload_to_stdout(&payload),
+        Some(path) if path == Path::new("-") => write_payload_to_stdout(&payload),
+        Some(path) => {
+            if path.exists() && !args.force {
+                bail!("{} exists; pass --force to replace it", path.display());
+            }
+            std::fs::write(path, &payload)
+                .with_context(|| format!("writing {}", path.display()))?;
+            Ok(())
+        }
+    }
+}
+
+/// Writes extracted bytes to standard output without any rendering.
+fn write_payload_to_stdout(payload: &[u8]) -> Result<()> {
+    use std::io::Write as _;
+    std::io::stdout()
+        .lock()
+        .write_all(payload)
+        .context("writing the entry to standard output")
 }
 
 fn diff_files(args: &DiffArgs) -> Result<()> {

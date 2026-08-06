@@ -625,3 +625,142 @@ fn inspect_help_lists_every_byte_subcommand() {
         .success()
         .stdout(expected);
 }
+
+/// Builds a ZIP with a bracketed Fusion-style name and a deflated member.
+fn extract_fixture(dir: &Path) -> PathBuf {
+    let path = dir.join("model.f3d");
+    let file = fs::File::create(&path).unwrap();
+    let mut archive = zip::ZipWriter::new(file);
+    let stored =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    archive.start_file("Body[Active].brp", stored).unwrap();
+    archive.write_all(b"bracketed payload").unwrap();
+    let deflated = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    archive.start_file("Design/Streams.dat", deflated).unwrap();
+    archive.write_all(&[0x42u8; 512]).unwrap();
+    archive.finish().unwrap();
+    path
+}
+
+#[test]
+fn extract_writes_a_member_and_streams_it_to_stdout() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let out = dir.path().join("streams.dat");
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Design/Streams.dat",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&out).unwrap(), vec![0x42u8; 512]);
+
+    let stdout = cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Design/Streams.dat",
+        ])
+        .output()
+        .unwrap();
+    assert!(stdout.status.success());
+    assert_eq!(stdout.stdout, fs::read(&out).unwrap());
+}
+
+#[test]
+fn extract_matches_a_bracketed_name_byte_exactly() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"bracketed payload");
+}
+
+#[test]
+fn extract_names_candidates_when_the_member_is_missing() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "streams.dat",
+        ])
+        .assert()
+        .code(2)
+        .stderr(
+            predicate::str::contains("'Design/Streams.dat'")
+                .and(predicate::str::contains("cadmpeg inspect container")),
+        );
+}
+
+#[test]
+fn extract_refuses_to_overwrite_without_force() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let out = dir.path().join("existing.bin");
+    fs::write(&out, b"precious").unwrap();
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+            "-o",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("--force"));
+    assert_eq!(fs::read(&out).unwrap(), b"precious");
+
+    cadmpeg()
+        .args([
+            "inspect",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+            "-o",
+            out.to_str().unwrap(),
+            "--force",
+        ])
+        .assert()
+        .success();
+    assert_eq!(fs::read(&out).unwrap(), b"bracketed payload");
+}
+
+#[test]
+fn extract_is_reachable_through_the_bytes_group() {
+    let dir = tempdir().unwrap();
+    let archive = extract_fixture(dir.path());
+    let output = cadmpeg()
+        .args([
+            "inspect",
+            "bytes",
+            "extract",
+            archive.to_str().unwrap(),
+            "Body[Active].brp",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"bracketed payload");
+}
