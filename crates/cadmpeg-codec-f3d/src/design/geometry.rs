@@ -66,36 +66,57 @@ pub(crate) fn sketch_arrangement_faces(
     tolerance: f64,
 ) -> Option<Vec<SketchArrangementFace>> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry};
 
     let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
-    for profile in &sketch.profiles {
-        for use_ in profile {
-            let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
-            if matches!(entity.geometry, SketchGeometry::Circle { .. }) {
-                circles.push((use_, entity));
-                continue;
-            }
-            let range = sketch_geometry_parameter_range(&entity.geometry)?;
-            for point in [
-                sketch_geometry_point(&entity.geometry, range[0])?,
-                sketch_geometry_point(&entity.geometry, range[1])?,
-            ] {
-                arrangement_node(&mut nodes, point, tolerance);
-            }
-            pending.push(SketchProfileBoundaryUse {
+    let candidate_uses = if sketch.profiles.is_empty() {
+        entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+            .filter(|entity| {
+                matches!(&entity.geometry, SketchGeometry::Circle { .. })
+                    || sketch_geometry_parameter_range(&entity.geometry).is_some()
+            })
+            .map(|entity| SketchEntityUse {
                 entity: entity.id.clone(),
-                parameter_range: range,
-                reversed: use_.reversed,
-            });
+                reversed: false,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        sketch
+            .profiles
+            .iter()
+            .flat_map(|profile| profile.iter().cloned())
+            .collect::<Vec<_>>()
+    };
+    for use_ in candidate_uses {
+        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        if matches!(entity.geometry, SketchGeometry::Circle { .. }) {
+            circles.push((use_, entity));
+            continue;
         }
+        let range = sketch_geometry_parameter_range(&entity.geometry)?;
+        for point in [
+            sketch_geometry_point(&entity.geometry, range[0])?,
+            sketch_geometry_point(&entity.geometry, range[1])?,
+        ] {
+            arrangement_node(&mut nodes, point, tolerance);
+        }
+        pending.push(SketchProfileBoundaryUse {
+            entity: entity.id.clone(),
+            parameter_range: range,
+            reversed: use_.reversed,
+        });
     }
     for (use_, entity) in circles {
         let SketchGeometry::Circle { center, radius } = entity.geometry else {
             unreachable!("circle collection contains only circles")
         };
+        if !radius.0.is_finite() || radius.0 <= tolerance {
+            return None;
+        }
         let mut angles = nodes
             .iter()
             .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
@@ -107,6 +128,34 @@ pub(crate) fn sketch_arrangement_faces(
             .collect::<Vec<_>>();
         angles.sort_by(f64::total_cmp);
         angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+        if angles.len() < 2 {
+            let additional = if angles.is_empty() {
+                vec![0.0, std::f64::consts::PI]
+            } else {
+                vec![angles[0] + std::f64::consts::PI]
+            };
+            for angle in additional {
+                arrangement_node(
+                    &mut nodes,
+                    Point2::new(
+                        center.u + radius.0 * angle.cos(),
+                        center.v + radius.0 * angle.sin(),
+                    ),
+                    tolerance,
+                );
+            }
+            angles = nodes
+                .iter()
+                .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+                .map(|point| {
+                    (point.v - center.v)
+                        .atan2(point.u - center.u)
+                        .rem_euclid(std::f64::consts::TAU)
+                })
+                .collect::<Vec<_>>();
+            angles.sort_by(f64::total_cmp);
+            angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+        }
         if angles.len() < 2 {
             return None;
         }
@@ -168,6 +217,7 @@ pub(crate) fn sketch_arrangement_faces(
         }
         edges.push(edge);
     }
+    arrangement_retain_cycle_edges(&mut edges, nodes.len());
     if edges.len() < 3 {
         return None;
     }
@@ -236,7 +286,10 @@ pub(crate) fn sketch_arrangement_faces(
             (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
         ));
     }
-    if outgoing.iter().any(|uses| uses.len() < 2) {
+    if edges
+        .iter()
+        .any(|edge| edge.nodes.iter().any(|node| outgoing[*node].len() < 2))
+    {
         return None;
     }
     for uses in &mut outgoing {
@@ -748,6 +801,69 @@ fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> u
             nodes.push(point);
             nodes.len() - 1
         })
+}
+
+/// Remove curve fragments that cannot bound a planar face.
+///
+/// A sketch can contain construction-like open branches in the solved entity
+/// stream even when the source profile table is empty. Such branches are graph
+/// bridges, not profile boundaries. Retaining only edges with an alternate
+/// path between their endpoints leaves the bounded-face arrangement intact
+/// while preserving intersections and nested loops.
+fn arrangement_retain_cycle_edges(edges: &mut Vec<SketchArrangementEdge>, node_count: usize) {
+    loop {
+        let retained = edges
+            .iter()
+            .enumerate()
+            .filter(|(index, edge)| {
+                arrangement_has_alternate_path(
+                    edges,
+                    *index,
+                    edge.nodes[0],
+                    edge.nodes[1],
+                    node_count,
+                )
+            })
+            .map(|(_, edge)| edge.clone())
+            .collect::<Vec<_>>();
+        if retained.len() == edges.len() {
+            break;
+        }
+        *edges = retained;
+    }
+}
+
+fn arrangement_has_alternate_path(
+    edges: &[SketchArrangementEdge],
+    excluded_edge: usize,
+    start: usize,
+    destination: usize,
+    node_count: usize,
+) -> bool {
+    let mut visited = vec![false; node_count];
+    let mut pending = vec![start];
+    visited[start] = true;
+    while let Some(node) = pending.pop() {
+        if node == destination {
+            return true;
+        }
+        for (index, edge) in edges.iter().enumerate() {
+            if index == excluded_edge {
+                continue;
+            }
+            let Some(next) = (edge.nodes[0] == node)
+                .then_some(edge.nodes[1])
+                .or_else(|| (edge.nodes[1] == node).then_some(edge.nodes[0]))
+            else {
+                continue;
+            };
+            if !visited[next] {
+                visited[next] = true;
+                pending.push(next);
+            }
+        }
+    }
+    false
 }
 
 fn arrangement_edges_coincident(
@@ -3143,6 +3259,85 @@ mod tests {
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
     };
+
+    #[test]
+    fn empty_profile_table_arranges_face_around_open_sketch_branch() {
+        let sketch_id = SketchId("sketch-with-overhang".into());
+        let line = |id: &str, start: Point2, end: Point2, construction: bool| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch_id.clone(),
+            construction,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            line(
+                "bottom",
+                Point2::new(0.0, 0.0),
+                Point2::new(37.0, 0.0),
+                false,
+            ),
+            line(
+                "right",
+                Point2::new(31.0, 0.0),
+                Point2::new(31.0, 19.0),
+                false,
+            ),
+            line(
+                "top",
+                Point2::new(31.0, 19.0),
+                Point2::new(0.0, 19.0),
+                false,
+            ),
+            line("left", Point2::new(0.0, 19.0), Point2::new(0.0, 0.0), false),
+            line(
+                "construction",
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 19.0),
+                true,
+            ),
+        ];
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+
+        let Some(SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        }) = arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, 0.0),
+                Point2::new(31.0, 0.0),
+                Point2::new(31.0, 19.0),
+                Point2::new(0.0, 19.0),
+            ],
+            1.0e-6,
+        )
+        else {
+            panic!("selected face must resolve from raw sketch geometry")
+        };
+        assert!(hole_boundaries.is_empty());
+        let mut boundary_entities = outer_boundary
+            .iter()
+            .map(|use_| use_.entity.0.as_str())
+            .collect::<Vec<_>>();
+        boundary_entities.sort_unstable();
+        assert_eq!(boundary_entities, ["bottom", "left", "right", "top"]);
+    }
+
     #[test]
     fn historical_point_inside_unique_closed_line_profile_selects_region() {
         let sketch_id = SketchId("sketch".into());

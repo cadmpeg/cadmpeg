@@ -388,6 +388,8 @@ pub(crate) fn bind_extrude_profile_selections(
         let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
             continue;
         };
+        let effective_previous_history_state_id =
+            crate::history::effective_scope_previous_history_state_id(scope, resolution.histories);
         let mut matching_groups = groups
             .iter()
             .filter(|group| {
@@ -407,7 +409,7 @@ pub(crate) fn bind_extrude_profile_selections(
                 &matching_groups,
                 members,
                 resolution.histories,
-                scope.previous_history_state_id,
+                effective_previous_history_state_id,
                 &feature.id,
             ) {
                 *profile = selection;
@@ -438,7 +440,7 @@ pub(crate) fn bind_extrude_profile_selections(
                             resolution.spatial_entities,
                             resolution,
                             scope.history_state_id,
-                            scope.previous_history_state_id,
+                            effective_previous_history_state_id,
                         )
                     })
                     .collect::<Vec<_>>();
@@ -484,7 +486,7 @@ pub(crate) fn bind_extrude_profile_selections(
                     sketch,
                     resolution,
                     scope.history_state_id,
-                    scope.previous_history_state_id,
+                    effective_previous_history_state_id,
                 )
             })
             .collect::<Vec<_>>();
