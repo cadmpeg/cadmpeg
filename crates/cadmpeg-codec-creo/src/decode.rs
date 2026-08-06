@@ -64,7 +64,7 @@ use crate::topology::HalfEdgeId;
 
 mod native;
 mod records;
-use native::{annotate, emit_arena, store_arena};
+use native::{annotate, emit_arena, emit_uniform, store_arena};
 #[allow(
     clippy::wildcard_imports,
     reason = "Split check modules share a private orchestration prelude via wildcard import."
@@ -580,21 +580,16 @@ fn attach_expanded_sections(
     if records.is_empty() {
         return Ok(());
     }
-    emit_arena(
+    emit_uniform(
         ir,
         annotations,
         "expanded_sections",
         &records,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.name,
-                record.source_offset as u64,
-                "unix_compress_expanded_section",
-                Exactness::Derived,
-            );
-        },
+        |record| &record.id,
+        |record| &record.name,
+        |record| record.source_offset as u64,
+        "unix_compress_expanded_section",
+        Exactness::Derived,
     )?;
     let tables = scan
         .primitives
@@ -621,21 +616,16 @@ fn attach_expanded_sections(
                 .collect(),
         })
         .collect::<Vec<_>>();
-    emit_arena(
+    emit_uniform(
         ir,
         annotations,
         "double_xar_tables",
         &tables,
-        |annotations, table| {
-            annotate(
-                annotations,
-                &table.id,
-                &table.section_name,
-                table.section_source_offset as u64,
-                "model_scalar_dictionary",
-                Exactness::ByteExact,
-            );
-        },
+        |table| &table.id,
+        |table| &table.section_name,
+        |table| table.section_source_offset as u64,
+        "model_scalar_dictionary",
+        Exactness::ByteExact,
     )?;
     let primitive_arrays = scan
         .primitives
@@ -28674,21 +28664,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 offset: line.offset,
             })
             .collect::<Vec<_>>();
-        emit_arena(
+        emit_uniform(
             &mut ir,
             &mut annotations,
             "reference_lines",
             &records,
-            |annotations, record| {
-                annotate(
-                    annotations,
-                    &record.id,
-                    "MdlRefInfo",
-                    record.offset as u64,
-                    "reference_line_record",
-                    Exactness::ByteExact,
-                );
-            },
+            |record| &record.id,
+            |_| "MdlRefInfo",
+            |record| record.offset as u64,
+            "reference_line_record",
+            Exactness::ByteExact,
         )?;
     }
     if !scan.references.circles.is_empty() {
@@ -28711,21 +28696,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 offset: circle.offset,
             })
             .collect::<Vec<_>>();
-        emit_arena(
+        emit_uniform(
             &mut ir,
             &mut annotations,
             "reference_circles",
             &records,
-            |annotations, record| {
-                annotate(
-                    annotations,
-                    &record.id,
-                    "MdlRefInfo",
-                    record.offset as u64,
-                    "reference_circle_record",
-                    Exactness::Derived,
-                );
-            },
+            |record| &record.id,
+            |_| "MdlRefInfo",
+            |record| record.offset as u64,
+            "reference_circle_record",
+            Exactness::Derived,
         )?;
     }
     if !scan.references.conics.is_empty() {
@@ -28746,21 +28726,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 offset: conic.offset,
             })
             .collect::<Vec<_>>();
-        emit_arena(
+        emit_uniform(
             &mut ir,
             &mut annotations,
             "reference_conics",
             &records,
-            |annotations, record| {
-                annotate(
-                    annotations,
-                    &record.id,
-                    "MdlRefInfo",
-                    record.offset as u64,
-                    "reference_conic_record",
-                    Exactness::ByteExact,
-                );
-            },
+            |record| &record.id,
+            |_| "MdlRefInfo",
+            |record| record.offset as u64,
+            "reference_conic_record",
+            Exactness::ByteExact,
         )?;
     }
     if !scan.references.ellipses.is_empty() {
@@ -28780,21 +28755,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
                 offset: ellipse.offset,
             })
             .collect::<Vec<_>>();
-        emit_arena(
+        emit_uniform(
             &mut ir,
             &mut annotations,
             "reference_ellipses",
             &records,
-            |annotations, record| {
-                annotate(
-                    annotations,
-                    &record.id,
-                    "MdlRefInfo",
-                    record.offset as u64,
-                    "reference_ellipse_carrier",
-                    Exactness::Derived,
-                );
-            },
+            |record| &record.id,
+            |_| "MdlRefInfo",
+            |record| record.offset as u64,
+            "reference_ellipse_carrier",
+            Exactness::Derived,
         )?;
     }
     let line3d_id_counts =
@@ -30084,168 +30054,123 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     let surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "surface_rows",
         &surface_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "surface_namespace_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "surface_namespace_row",
+        Exactness::ByteExact,
     )?;
     let nonvisible_surface_rows =
         surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_surface_rows",
         &nonvisible_surface_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "nonvisible_surface_namespace_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_surface_namespace_row",
+        Exactness::ByteExact,
     )?;
     let cross_section_surface_rows = surface_row_records(
         scan,
         &scan.surfaces.cross_section_rows,
         "cross_section_geometry",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "cross_section_surface_rows",
         &cross_section_surface_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "cross_section_surface_namespace_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "cross_section_surface_namespace_row",
+        Exactness::ByteExact,
     )?;
     let surface_prototypes =
         surface_prototype_records(scan, &scan.surfaces.prototype_records, "visibgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "surface_prototypes",
         &surface_prototypes,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "surface_prototype_record",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "surface_prototype_record",
+        Exactness::ByteExact,
     )?;
     let nonvisible_surface_prototypes = surface_prototype_records(
         scan,
         &scan.surfaces.nonvisible_prototype_records,
         "novisgeom",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_surface_prototypes",
         &nonvisible_surface_prototypes,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "nonvisible_surface_prototype_record",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_surface_prototype_record",
+        Exactness::ByteExact,
     )?;
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "tabulated_cylinder_curve_replays",
         &tabulated_cylinder_curve_replays,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "tabulated_cylinder_curve_replay",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "tabulated_cylinder_curve_replay",
+        Exactness::ByteExact,
     )?;
     let curve_parameters = curve_parameter_records(scan, &scan.curves.parameters, "visibgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "curve_parameters",
         &curve_parameters,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "curve_parameter_record",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "curve_parameter_record",
+        Exactness::ByteExact,
     )?;
     let nonvisible_curve_parameters =
         curve_parameter_records(scan, &scan.curves.nonvisible_parameters, "novisgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_curve_parameters",
         &nonvisible_curve_parameters,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "nonvisible_curve_parameter_record",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_curve_parameter_record",
+        Exactness::ByteExact,
     )?;
     let fc_curve_coordinates = fc_curve_coordinate_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "fc_curve_coordinates",
         &fc_curve_coordinates,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "fc_curve_coordinates",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "fc_curve_coordinates",
+        Exactness::ByteExact,
     )?;
     let fc05_circles = fc05_circle_records(scan);
     store_arena(&mut ir, "fc05_circles", &fc05_circles)?;
@@ -30261,133 +30186,98 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     )?;
     let curve_prototypes =
         curve_prototype_records(scan, &scan.curves.prototypes, "creo:curve:prototype");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "curve_prototypes",
         &curve_prototypes,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "curve_prototype",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "curve_prototype",
+        Exactness::ByteExact,
     )?;
     let nonvisible_curve_prototypes = curve_prototype_records(
         scan,
         &scan.curves.nonvisible_prototypes,
         "creo:novisgeom:curve_prototype",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_curve_prototypes",
         &nonvisible_curve_prototypes,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "nonvisible_curve_prototype",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_curve_prototype",
+        Exactness::ByteExact,
     )?;
     let cross_section_curve_prototypes = curve_prototype_records(
         scan,
         &scan.curves.cross_section_prototypes,
         "creo:cross_section_geometry:curve_prototype",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "cross_section_curve_prototypes",
         &cross_section_curve_prototypes,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "cross_section_curve_prototype",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "cross_section_curve_prototype",
+        Exactness::ByteExact,
     )?;
     let curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.topology_rows, "visibgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "curve_topology_rows",
         &curve_topology_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "curve_topology_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "curve_topology_row",
+        Exactness::ByteExact,
     )?;
     let nonvisible_curve_topology_rows =
         curve_topology_row_records(scan, &scan.curves.nonvisible_topology_rows, "novisgeom");
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_curve_topology_rows",
         &nonvisible_curve_topology_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "nonvisible_curve_topology_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "nonvisible_curve_topology_row",
+        Exactness::ByteExact,
     )?;
     let cross_section_curve_rows = cross_section_curve_row_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "cross_section_curve_rows",
         &cross_section_curve_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "cross_section_curve_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "cross_section_curve_row",
+        Exactness::ByteExact,
     )?;
     let half_edges = half_edge_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "half_edges",
         &half_edges,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "native_half_edge",
-                Exactness::Derived,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "native_half_edge",
+        Exactness::Derived,
     )?;
     let native_loops = loop_records(scan);
     store_arena(&mut ir, "loops", &native_loops)?;
@@ -30407,21 +30297,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &scan.surfaces.parameters,
         "visibgeom",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "surface_parameters",
         &surface_parameters,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.body_offset as u64,
-                "surface_parameter_frame",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.body_offset as u64,
+        "surface_parameter_frame",
+        Exactness::ByteExact,
     )?;
     let nonvisible_surface_parameters = surface_parameter_records(
         scan,
@@ -30429,21 +30314,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &scan.surfaces.nonvisible_parameters,
         "novisgeom",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "nonvisible_surface_parameters",
         &nonvisible_surface_parameters,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.body_offset as u64,
-                "nonvisible_surface_parameter_frame",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.body_offset as u64,
+        "nonvisible_surface_parameter_frame",
+        Exactness::ByteExact,
     )?;
     let cross_section_surface_parameters = surface_parameter_records(
         scan,
@@ -30451,21 +30331,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &scan.surfaces.cross_section_parameters,
         "cross_section_geometry",
     );
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "cross_section_surface_parameters",
         &cross_section_surface_parameters,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.body_offset as u64,
-                "cross_section_surface_parameter_frame",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.body_offset as u64,
+        "cross_section_surface_parameter_frame",
+        Exactness::ByteExact,
     )?;
     let plane_local_systems = plane_local_system_records(
         scan,
@@ -30548,293 +30423,208 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         .collect::<Vec<_>>();
     store_arena(&mut ir, "pcurve_endpoints", &pcurve_endpoint_payload)?;
     let feature_definitions = feature_definition_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_definitions",
         &feature_definitions,
-        |annotations, definition| {
-            annotate(
-                annotations,
-                &definition.id,
-                &definition.source_section,
-                definition.offset as u64,
-                "feature_definition_record",
-                Exactness::ByteExact,
-            );
-        },
+        |definition| &definition.id,
+        |definition| &definition.source_section,
+        |definition| definition.offset as u64,
+        "feature_definition_record",
+        Exactness::ByteExact,
     )?;
     let feature_entities = feature_entity_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_entities",
         &feature_entities,
-        |annotations, entity| {
-            annotate(
-                annotations,
-                &entity.id,
-                "AllFeatur",
-                entity.offset as u64,
-                "feature_entity",
-                Exactness::ByteExact,
-            );
-        },
+        |entity| &entity.id,
+        |_| "AllFeatur",
+        |entity| entity.offset as u64,
+        "feature_entity",
+        Exactness::ByteExact,
     )?;
     let feature_entity_references = feature_entity_reference_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_entity_references",
         &feature_entity_references,
-        |annotations, reference| {
-            annotate(
-                annotations,
-                &reference.id,
-                "AllFeatur",
-                reference.offset as u64,
-                "feature_entity_reference",
-                Exactness::ByteExact,
-            );
-        },
+        |reference| &reference.id,
+        |_| "AllFeatur",
+        |reference| reference.offset as u64,
+        "feature_entity_reference",
+        Exactness::ByteExact,
     )?;
     let feature_entity_tables = feature_entity_table_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_entity_tables",
         &feature_entity_tables,
-        |annotations, table| {
-            annotate(
-                annotations,
-                &table.id,
-                "AllFeatur",
-                table.offset as u64,
-                "feature_entity_table",
-                Exactness::ByteExact,
-            );
-        },
+        |table| &table.id,
+        |_| "AllFeatur",
+        |table| table.offset as u64,
+        "feature_entity_table",
+        Exactness::ByteExact,
     )?;
     let feature_surface_replays = feature_surface_replay_associations(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_surface_replays",
         &feature_surface_replays,
-        |annotations, association| {
-            annotate(
-                annotations,
-                &association.id,
-                "AllFeatur",
-                association.table_offset as u64,
-                "feature_surface_replay_association",
-                Exactness::Derived,
-            );
-        },
+        |association| &association.id,
+        |_| "AllFeatur",
+        |association| association.table_offset as u64,
+        "feature_surface_replay_association",
+        Exactness::Derived,
     )?;
     let feature_geometry_tables = feature_geometry_table_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_geometry_tables",
         &feature_geometry_tables,
-        |annotations, table| {
-            annotate(
-                annotations,
-                &table.id,
-                &table.source_section,
-                table.offset as u64,
-                "feature_geometry_table",
-                Exactness::ByteExact,
-            );
-        },
+        |table| &table.id,
+        |table| &table.source_section,
+        |table| table.offset as u64,
+        "feature_geometry_table",
+        Exactness::ByteExact,
     )?;
     let feature_loop_history_entries = feature_loop_history_entry_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_loop_history_entries",
         &feature_loop_history_entries,
-        |annotations, entry| {
-            annotate(
-                annotations,
-                &entry.id,
-                &entry.source_section,
-                entry.offset as u64,
-                "feature_loop_history_entry",
-                Exactness::ByteExact,
-            );
-        },
+        |entry| &entry.id,
+        |entry| &entry.source_section,
+        |entry| entry.offset as u64,
+        "feature_loop_history_entry",
+        Exactness::ByteExact,
     )?;
     let feature_affected_ids = feature_affected_id_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_affected_ids",
         &feature_affected_ids,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_affected_ids",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_affected_ids",
+        Exactness::ByteExact,
     )?;
     let feature_replay_affected_ids = feature_replay_affected_id_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_replay_affected_ids",
         &feature_replay_affected_ids,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_replay_affected_ids",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_replay_affected_ids",
+        Exactness::ByteExact,
     )?;
     let surface_merge_replay_affected_ids = surface_merge_replay_affected_id_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "surface_merge_replay_affected_ids",
         &surface_merge_replay_affected_ids,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "surface_merge_replay_affected_ids",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "surface_merge_replay_affected_ids",
+        Exactness::ByteExact,
     )?;
     let feature_loop_restore_directions = feature_loop_restore_direction_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_loop_restore_directions",
         &feature_loop_restore_directions,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_loop_restore_direction",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_loop_restore_direction",
+        Exactness::ByteExact,
     )?;
     let feature_revolution_extents = feature_revolution_extent_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_revolution_extents",
         &feature_revolution_extents,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_revolution_extent",
-                Exactness::Derived,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_revolution_extent",
+        Exactness::Derived,
     )?;
     let feature_rows = feature_row_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_rows",
         &feature_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_row",
+        Exactness::ByteExact,
     )?;
     let depdb_recipe_rows = depdb_recipe_row_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "depdb_recipe_rows",
         &depdb_recipe_rows,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "depdb_recipe_row",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "depdb_recipe_row",
+        Exactness::ByteExact,
     )?;
     let feature_choices = feature_choice_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_choices",
         &feature_choices,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_choice",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_choice",
+        Exactness::ByteExact,
     )?;
     let feature_choice_fields = feature_choice_field_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_choice_fields",
         &feature_choice_fields,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                &record.source_section,
-                record.offset as u64,
-                "feature_choice_field",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |record| &record.source_section,
+        |record| record.offset as u64,
+        "feature_choice_field",
+        Exactness::ByteExact,
     )?;
     let sketches = sketch_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "sketches",
         &sketches,
-        |annotations, sketch| {
-            annotate(
-                annotations,
-                &sketch.id,
-                &sketch.source_section,
-                sketch.offset as u64,
-                "feature_sketch",
-                Exactness::Derived,
-            );
-        },
+        |sketch| &sketch.id,
+        |sketch| &sketch.source_section,
+        |sketch| sketch.offset as u64,
+        "feature_sketch",
+        Exactness::Derived,
     )?;
     // Bespoke annotation: the source offset comes from the parallel scan rows, not
     // the record, so annotation zips the two before the arena is stored.
@@ -30877,21 +30667,16 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         },
     )?;
     let feature_reference_names = feature_reference_name_records(scan);
-    emit_arena(
+    emit_uniform(
         &mut ir,
         &mut annotations,
         "feature_reference_names",
         &feature_reference_names,
-        |annotations, record| {
-            annotate(
-                annotations,
-                &record.id,
-                "MdlRefInfo",
-                record.offset as u64,
-                "feature_reference_name",
-                Exactness::ByteExact,
-            );
-        },
+        |record| &record.id,
+        |_| "MdlRefInfo",
+        |record| record.offset as u64,
+        "feature_reference_name",
+        Exactness::ByteExact,
     )?;
     if let Some(family_table) = family_table_record(scan) {
         annotate(

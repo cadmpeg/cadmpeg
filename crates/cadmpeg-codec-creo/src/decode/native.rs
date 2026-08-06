@@ -159,3 +159,38 @@ where
     }
     store_arena(ir, key, records)
 }
+
+/// Emit an arena whose provenance comes entirely from each record's own fields.
+///
+/// Most arenas annotate one note per record from a record identity, a source
+/// stream, and a source offset, all read off the record itself, under an
+/// arena-wide tag and exactness. This is that case: `id`, `stream`, and `offset`
+/// select the fields, and the remaining arguments are the per-arena constants.
+/// Sites whose provenance is not a function of the record alone stay on
+/// [`emit_arena`].
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Each argument is one axis of per-arena variation."
+)]
+pub(super) fn emit_uniform<T: Serialize>(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    key: &str,
+    records: &[T],
+    id: fn(&T) -> &str,
+    stream: fn(&T) -> &str,
+    offset: fn(&T) -> u64,
+    tag: &str,
+    exactness: Exactness,
+) -> Result<(), CodecError> {
+    emit_arena(ir, annotations, key, records, |annotations, record| {
+        annotate(
+            annotations,
+            id(record),
+            stream(record),
+            offset(record),
+            tag,
+            exactness,
+        );
+    })
+}
