@@ -664,13 +664,28 @@ pub(crate) fn resolved_surface_carrier(surface: &B5Surface) -> Option<ResolvedPc
         })
 }
 
+/// Resolve a pcurve support carrier with the graph context required by exact
+/// constructed surfaces such as surface-of-revolution records.
+pub(crate) fn resolved_surface_carrier_in_graph(
+    graph: &B5Graph,
+    surface_object_id: u32,
+) -> Option<ResolvedPcurveSurface> {
+    let surface = graph.surfaces.get(&surface_object_id)?;
+    resolved_surface_carrier(surface).or_else(|| {
+        resolved_surface_geometry(graph, surface_object_id).map(ResolvedPcurveSurface::Geometry)
+    })
+}
+
 /// Lower one decoded degree-5 UV jet through its resolved native chart.
 #[must_use]
 pub(crate) fn resolved_object_stream_pcurve(
     pcurve: &crate::families::a5a8::records::A8Pcurve,
     surface: &B5Surface,
+    graph: Option<&B5Graph>,
 ) -> Option<ResolvedObjectStreamPcurve> {
-    let carrier = resolved_surface_carrier(surface)?;
+    let carrier = graph
+        .and_then(|graph| resolved_surface_carrier_in_graph(graph, pcurve.support_id))
+        .or_else(|| resolved_surface_carrier(surface))?;
     let (knots, control_points) = crate::nurbs::quintic_jet_bspline(
         pcurve.degree,
         &pcurve.knots,
@@ -1103,7 +1118,8 @@ mod tests {
     use super::vertices::transfer_vertex_tolerances;
     use super::{
         build_plan, curve_on_parameter_range, native_pcurve_parameter_range,
-        referenced_surface_ids, transfer, CurvePlan, SurfacePlan,
+        referenced_surface_ids, resolved_surface_carrier_in_graph, transfer, CurvePlan,
+        ResolvedPcurveSurface, SurfacePlan,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
@@ -2262,6 +2278,10 @@ mod tests {
                 },
             )]),
         };
+        assert!(matches!(
+            resolved_surface_carrier_in_graph(&graph, 10),
+            Some(ResolvedPcurveSurface::Geometry(SurfaceGeometry::Nurbs(_)))
+        ));
         let plan = build_plan(&graph, &UnknownId("catia:test-payload".to_string()))
             .expect("closed revolution graph");
         let curve = plan.edge_curve_plan.get(&30).expect("revolution isocurve");
