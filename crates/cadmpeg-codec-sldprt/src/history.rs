@@ -4216,6 +4216,65 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn cosmetic_thread_inherits_one_threaded_hole_major_diameter() {
+        let mut hole = feature("hole", Some("10"), 0);
+        hole.input_class = Some("moHoleWzd_c".into());
+        hole.properties
+            .insert("DissectableChildren".into(), "11".into());
+
+        let mut profile = feature("profile", Some("11"), 1);
+        profile.kind = "Sketch".into();
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile.parameters = [
+            ("bore".into(), "<MOD-DIAM>2.5".into()),
+            ("drill depth".into(), "7.5".into()),
+            ("major".into(), "<MOD-DIAM>3".into()),
+            ("thread depth".into(), "6".into()),
+            ("angle".into(), "118°".into()),
+        ]
+        .into();
+        profile.content = ["bore", "drill depth", "major", "thread depth", "angle"]
+            .into_iter()
+            .map(|name| FeatureContent::Dimension(name.into()))
+            .collect();
+
+        let mut thread = feature("thread", Some("12"), 2);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        let thread_id = thread.id.clone();
+        let hole_id = hole.id.clone();
+        let mut history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![hole, profile, thread],
+        };
+        let mut lane = feature_input_lane("lane", None);
+        lane.surface_selections
+            .push(crate::records::FeatureInputSurfaceSelection {
+                id: "selection".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: 0,
+                object_name_ref: "thread-name".into(),
+                feature_ref: thread_id,
+                producer_feature_refs: vec![hole_id.clone()],
+                terminal_feature_ref: Some(hole_id),
+                components: Vec::new(),
+            });
+
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(
+            std::slice::from_mut(&mut history),
+            &[lane],
+        );
+        assert_eq!(
+            history.features[2].parameters.get("D2"),
+            Some(&"<MOD-DIAM>3mm".to_string())
+        );
+    }
+
+    #[test]
     fn profile_consumers_require_a_regeneration_profile() {
         let mut definition = FeatureDefinition::Extrude {
             profile: ProfileRef::Native("sketch-native".into()),
@@ -8064,6 +8123,24 @@ fn project_hole(
     }
 }
 
+pub(crate) fn threaded_hole_major_diameter(
+    feature: &Feature,
+    features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
+) -> Option<f64> {
+    if classify(feature) != Some(FeatureClass::Hole) {
+        return None;
+    }
+    let FeatureDefinition::Hole {
+        kind: HoleKind::Threaded { major_diameter, .. },
+        ..
+    } = project_hole(feature, features_by_source, history_features)
+    else {
+        return None;
+    };
+    (major_diameter.0.is_finite() && major_diameter.0 > 0.0).then_some(major_diameter.0)
+}
+
 #[derive(Debug, Clone, PartialEq)]
 struct HoleProfileConstruction {
     diameter: Length,
@@ -9730,6 +9807,10 @@ pub(crate) fn enrich_history_semantic(
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
+        crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);
+    } else {
+        crate::resolved_features::holes::
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(histories, lanes);
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
@@ -9791,6 +9872,11 @@ pub(crate) fn project_configuration_design_states(
             &ir.model.features,
         );
         enrich_history_parameters_semantic(&mut projection, scoped_lanes);
+        crate::resolved_features::holes::
+            enrich_history_cosmetic_thread_diameters_without_hole_constructions(
+                &mut projection,
+                scoped_lanes,
+            );
         crate::pmi::enrich_history_parameters_with_features(
             &mut projection,
             pmi_dimensions,
