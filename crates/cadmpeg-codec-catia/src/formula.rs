@@ -994,7 +994,7 @@ fn parameter_properties(parameter_type: &'static str) -> BTreeMap<String, String
     BTreeMap::from([("value_type".to_string(), parameter_type.to_string())])
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FormulaDimension {
     length: i32,
     angle: i32,
@@ -1093,8 +1093,63 @@ impl EvaluatedFormulaScalar {
 #[derive(Clone)]
 enum EvaluatedFormulaValue {
     Scalar(EvaluatedFormulaScalar),
-    Boolean(bool),
+    Boolean(EvaluatedFormulaBoolean),
     String(EvaluatedFormulaString),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EvaluatedFormulaBoolean {
+    Known(bool),
+    Unknown,
+}
+
+impl EvaluatedFormulaBoolean {
+    fn known(value: bool) -> Self {
+        Self::Known(value)
+    }
+
+    fn unknown() -> Self {
+        Self::Unknown
+    }
+
+    fn value(self) -> bool {
+        match self {
+            Self::Known(value) => value,
+            Self::Unknown => false,
+        }
+    }
+
+    fn known_value(self) -> Option<bool> {
+        match self {
+            Self::Known(value) => Some(value),
+            Self::Unknown => None,
+        }
+    }
+
+    fn is_known(self) -> bool {
+        matches!(self, Self::Known(_))
+    }
+
+    fn not(self) -> Self {
+        self.known_value()
+            .map_or(Self::Unknown, |value| Self::Known(!value))
+    }
+
+    fn and(self, right: Self) -> Self {
+        match (self.known_value(), right.known_value()) {
+            (Some(false), _) | (_, Some(false)) => Self::Known(false),
+            (Some(true), Some(true)) => Self::Known(true),
+            _ => Self::Unknown,
+        }
+    }
+
+    fn or(self, right: Self) -> Self {
+        match (self.known_value(), right.known_value()) {
+            (Some(true), _) | (_, Some(true)) => Self::Known(true),
+            (Some(false), Some(false)) => Self::Known(false),
+            _ => Self::Unknown,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1146,7 +1201,7 @@ impl EvaluatedFormulaValue {
                 integral: Some(true),
                 known_value: Some(*value as f64),
             }),
-            ParameterValue::Boolean(value) => Self::Boolean(*value),
+            ParameterValue::Boolean(value) => Self::Boolean(EvaluatedFormulaBoolean::known(*value)),
             ParameterValue::String(value) => Self::String(EvaluatedFormulaString::known(value)),
         }
     }
@@ -1158,7 +1213,7 @@ impl EvaluatedFormulaValue {
         }
     }
 
-    fn boolean(self) -> Option<bool> {
+    fn boolean(self) -> Option<EvaluatedFormulaBoolean> {
         match self {
             Self::Boolean(value) => Some(value),
             Self::Scalar(_) | Self::String(_) => None,
@@ -1185,7 +1240,9 @@ impl EvaluatedFormulaValue {
         match evaluation {
             TypedParameterEvaluation::Unset => true,
             TypedParameterEvaluation::Value(value) => match (self, value) {
-                (Self::Boolean(left), ParameterValue::Boolean(right)) => left == right,
+                (Self::Boolean(left), ParameterValue::Boolean(right)) => {
+                    left.known_value() == Some(*right)
+                }
                 (Self::String(left), ParameterValue::String(right)) => left.value == *right,
                 (
                     Self::Scalar(left),
@@ -1279,20 +1336,77 @@ impl FormulaExpressionParser<'_, '_> {
         self.at += 1;
         let predicate = predicate.boolean()?;
         let evaluate = self.evaluate;
-        self.evaluate = evaluate && predicate;
+        let static_check = self.static_check;
+        self.evaluate = evaluate && predicate.value();
+        self.static_check = static_check && (!predicate.is_known() || predicate.value());
         let when_true = self.conditional(Self::nested_depth(depth)?)?;
         self.skip_whitespace();
         (self.peek()? == b';').then_some(())?;
         self.at += 1;
-        self.evaluate = evaluate && !predicate;
+        self.evaluate = evaluate && !predicate.value();
+        self.static_check = static_check && (!predicate.is_known() || !predicate.value());
         let when_false = self.conditional(Self::nested_depth(depth)?)?;
         self.evaluate = evaluate;
+        self.static_check = static_check;
         Self::same_value_type(&when_true, &when_false)?;
-        Some(if !evaluate || predicate {
-            when_true
+        if evaluate {
+            return Some(if predicate.value() {
+                when_true
+            } else {
+                when_false
+            });
+        }
+        Some(if let Some(predicate) = predicate.known_value() {
+            if predicate {
+                when_true
+            } else {
+                when_false
+            }
         } else {
-            when_false
+            Self::merge_static_values(&when_true, &when_false)?
         })
+    }
+
+    fn merge_static_values(
+        left: &EvaluatedFormulaValue,
+        right: &EvaluatedFormulaValue,
+    ) -> Option<EvaluatedFormulaValue> {
+        match (left, right) {
+            (EvaluatedFormulaValue::Scalar(left), EvaluatedFormulaValue::Scalar(right))
+                if left.dimension == right.dimension =>
+            {
+                Some(EvaluatedFormulaValue::Scalar(EvaluatedFormulaScalar {
+                    value: 0.0,
+                    dimension: left.dimension,
+                    integral: match (left.integral, right.integral) {
+                        (Some(left), Some(right)) if left == right => Some(left),
+                        _ => None,
+                    },
+                    known_value: match (left.known_value, right.known_value) {
+                        (Some(left), Some(right)) if left == right => Some(left),
+                        _ => None,
+                    },
+                }))
+            }
+            (EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => Some(
+                EvaluatedFormulaValue::Boolean(match (left.known_value(), right.known_value()) {
+                    (Some(left), Some(right)) if left == right => {
+                        EvaluatedFormulaBoolean::known(left)
+                    }
+                    _ => EvaluatedFormulaBoolean::unknown(),
+                }),
+            ),
+            (EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
+                Some(EvaluatedFormulaValue::String(
+                    if left.known && right.known && left.value == right.value {
+                        EvaluatedFormulaString::known(&left.value)
+                    } else {
+                        EvaluatedFormulaString::unknown()
+                    },
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn same_value_type(left: &EvaluatedFormulaValue, right: &EvaluatedFormulaValue) -> Option<()> {
@@ -1340,12 +1454,19 @@ impl FormulaExpressionParser<'_, '_> {
                 return Some(value);
             }
             let evaluate = self.evaluate;
+            let static_check = self.static_check;
             let left = value.boolean()?;
-            self.evaluate = evaluate && !left;
+            self.evaluate = evaluate && !left.value();
+            self.static_check = static_check && (!left.is_known() || !left.value());
             let right = self.conjunction(depth)?;
             let right = right.boolean()?;
             self.evaluate = evaluate;
-            value = EvaluatedFormulaValue::Boolean(if evaluate { left || right } else { false });
+            self.static_check = static_check;
+            value = EvaluatedFormulaValue::Boolean(if evaluate {
+                EvaluatedFormulaBoolean::known(left.value() || right.value())
+            } else {
+                left.or(right)
+            });
         }
     }
 
@@ -1357,12 +1478,19 @@ impl FormulaExpressionParser<'_, '_> {
                 return Some(value);
             }
             let evaluate = self.evaluate;
+            let static_check = self.static_check;
             let left = value.boolean()?;
-            self.evaluate = evaluate && left;
+            self.evaluate = evaluate && left.value();
+            self.static_check = static_check && (!left.is_known() || left.value());
             let right = self.comparison(depth)?;
             let right = right.boolean()?;
             self.evaluate = evaluate;
-            value = EvaluatedFormulaValue::Boolean(if evaluate { left && right } else { false });
+            self.static_check = static_check;
+            value = EvaluatedFormulaValue::Boolean(if evaluate {
+                EvaluatedFormulaBoolean::known(left.value() && right.value())
+            } else {
+                left.and(right)
+            });
         }
     }
 
@@ -1377,35 +1505,48 @@ impl FormulaExpressionParser<'_, '_> {
         };
         self.at += operator.len();
         let right = self.sum(depth)?;
-        let value = match (operator, left, right) {
+        let (value, known) = match (operator, left, right) {
             ("==", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                left == right
+                (
+                    left.value() == right.value(),
+                    left.is_known() && right.is_known(),
+                )
             }
             ("<>", EvaluatedFormulaValue::Boolean(left), EvaluatedFormulaValue::Boolean(right)) => {
-                left != right
+                (
+                    left.value() != right.value(),
+                    left.is_known() && right.is_known(),
+                )
             }
             ("==", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
-                left.value == right.value
+                (left.value == right.value, left.known && right.known)
             }
             ("<>", EvaluatedFormulaValue::String(left), EvaluatedFormulaValue::String(right)) => {
-                left.value != right.value
+                (left.value != right.value, left.known && right.known)
             }
             (
                 operator,
                 EvaluatedFormulaValue::Scalar(left),
                 EvaluatedFormulaValue::Scalar(right),
-            ) if left.dimension == right.dimension => match operator {
-                "==" => left.value == right.value,
-                "<>" => left.value != right.value,
-                ">=" => left.value >= right.value,
-                "<=" => left.value <= right.value,
-                ">" => left.value > right.value,
-                "<" => left.value < right.value,
-                _ => unreachable!(),
-            },
+            ) if left.dimension == right.dimension => (
+                match operator {
+                    "==" => left.value == right.value,
+                    "<>" => left.value != right.value,
+                    ">=" => left.value >= right.value,
+                    "<=" => left.value <= right.value,
+                    ">" => left.value > right.value,
+                    "<" => left.value < right.value,
+                    _ => unreachable!(),
+                },
+                left.known_value.is_some() && right.known_value.is_some(),
+            ),
             _ => return None,
         };
-        Some(EvaluatedFormulaValue::Boolean(value))
+        Some(EvaluatedFormulaValue::Boolean(if known {
+            EvaluatedFormulaBoolean::known(value)
+        } else {
+            EvaluatedFormulaBoolean::unknown()
+        }))
     }
 
     fn sum(&mut self, depth: usize) -> Option<EvaluatedFormulaValue> {
@@ -1611,7 +1752,7 @@ impl FormulaExpressionParser<'_, '_> {
         self.skip_whitespace();
         if self.consume_keyword("not") {
             let value = self.unary(Self::nested_depth(depth)?)?.boolean()?;
-            return Some(EvaluatedFormulaValue::Boolean(!value));
+            return Some(EvaluatedFormulaValue::Boolean(value.not()));
         }
         match self.peek()? {
             b'+' => {
@@ -1695,10 +1836,14 @@ impl FormulaExpressionParser<'_, '_> {
                 .map(EvaluatedFormulaValue::String);
         }
         if self.consume_keyword("true") {
-            return Some(EvaluatedFormulaValue::Boolean(true));
+            return Some(EvaluatedFormulaValue::Boolean(
+                EvaluatedFormulaBoolean::known(true),
+            ));
         }
         if self.consume_keyword("false") {
-            return Some(EvaluatedFormulaValue::Boolean(false));
+            return Some(EvaluatedFormulaValue::Boolean(
+                EvaluatedFormulaBoolean::known(false),
+            ));
         }
         if self.peek()? == b'(' {
             self.at += 1;
@@ -1808,8 +1953,12 @@ impl FormulaExpressionParser<'_, '_> {
                 ) => {
                     let start = self.string_index(*start)?;
                     EvaluatedFormulaValue::Scalar(if self.evaluate {
-                        let index =
-                            Self::search_string(&value.value, &needle.value, start, *forward)?;
+                        let index = Self::search_string(
+                            &value.value,
+                            &needle.value,
+                            start,
+                            forward.value(),
+                        )?;
                         finite_scalar(index as f64)?
                     } else {
                         static_integral_result(0.0, FormulaDimension::SCALAR)
@@ -2535,7 +2684,9 @@ fn static_formula_value(source_type: &str) -> Option<EvaluatedFormulaValue> {
             integral: Some(true),
             known_value: None,
         })),
-        "Boolean" => Some(EvaluatedFormulaValue::Boolean(false)),
+        "Boolean" => Some(EvaluatedFormulaValue::Boolean(
+            EvaluatedFormulaBoolean::unknown(),
+        )),
         "String" => Some(EvaluatedFormulaValue::String(
             EvaluatedFormulaString::unknown(),
         )),
@@ -2695,6 +2846,11 @@ mod parser_tests {
             ("#4_", static_formula_value("String").expect("string type")),
         ]);
 
+        let unknown_predicate = evaluate_formula_expression_with_mode("#3_ > 1", &bindings, false)
+            .and_then(EvaluatedFormulaValue::boolean)
+            .expect("Boolean comparison type");
+        assert_eq!(unknown_predicate.known_value(), None);
+
         let length = evaluate_formula_expression_with_mode("#4_.Length()", &bindings, false)
             .and_then(EvaluatedFormulaValue::scalar)
             .expect("string length type");
@@ -2728,6 +2884,28 @@ mod parser_tests {
         ] {
             assert!(
                 evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                "{expression}"
+            );
+        }
+
+        for expression in [
+            "false and (1 / 0 > 2)",
+            "true or (1 / 0 > 2)",
+            "false ? 1 / 0 ; 5",
+            "true ? 5 ; 1 / 0",
+        ] {
+            assert!(
+                evaluate_formula_expression_with_mode(expression, &bindings, false).is_some(),
+                "{expression}"
+            );
+        }
+        for expression in [
+            "#3_ > 1 and (1 / 0 > 2)",
+            "#3_ > 1 ? 5 ; 1 / 0",
+            "false ? 1 / 0 ; 1mm",
+        ] {
+            assert!(
+                evaluate_formula_expression_with_mode(expression, &bindings, false).is_none(),
                 "{expression}"
             );
         }
@@ -2921,26 +3099,31 @@ mod parser_tests {
         assert!(
             evaluate_formula_expression("(3 > 2) and (1mm <= 2mm)", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value)
                 .is_some_and(|value| value)
         );
         assert_eq!(
             evaluate_formula_expression("false or true and false", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean),
+                .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value),
             Some(false)
         );
         assert_eq!(
             evaluate_formula_expression("1mm == 1cm", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean),
+                .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value),
             Some(false)
         );
         assert_eq!(
             evaluate_formula_expression("true <> false", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean),
+                .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value),
             Some(true)
         );
         assert_eq!(
             evaluate_formula_expression("not false and false or not (1 > 2)", &bindings)
-                .and_then(EvaluatedFormulaValue::boolean),
+                .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value),
             Some(true)
         );
         for expression in ["not 1", "not \"false\"", "notable", "not"] {
@@ -2970,7 +3153,7 @@ mod parser_tests {
                 .expect("lazy expression is complete");
             match value {
                 EvaluatedFormulaValue::Boolean(value) => {
-                    assert_eq!(value, expected, "{expression}");
+                    assert_eq!(value.value(), expected, "{expression}");
                 }
                 EvaluatedFormulaValue::Scalar(value) => {
                     assert_eq!(
@@ -3114,6 +3297,7 @@ mod parser_tests {
         assert!(
             evaluate_formula_expression("\"Cilas Evans\" == #1_", &bindings)
                 .and_then(EvaluatedFormulaValue::boolean)
+                .map(EvaluatedFormulaBoolean::value)
                 .is_some_and(|value| value)
         );
         assert_eq!(
