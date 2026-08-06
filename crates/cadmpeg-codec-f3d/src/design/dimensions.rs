@@ -640,6 +640,17 @@ fn project_all_dimension_constraints(
             let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
             let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
             let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+                .or_else(|| {
+                    annotation_offset_dimension_definition(
+                        frame,
+                        parameter,
+                        &parameter_id,
+                        scope,
+                        curves,
+                        &projected,
+                        linear_tolerance,
+                    )
+                })
                 .unwrap_or_else(|| {
                     let operands = frame
                         .operands
@@ -2876,6 +2887,92 @@ fn radial_dimension_definition_at_tolerance(
             entity: entity.id.clone(),
             parameter,
         }
+    })
+}
+
+/// Resolve a single-curve linear annotation that governs an offset pair.
+///
+/// Fusion stores this form without a generic sketch-relation record. The
+/// source curve has a null secondary identity, the generated result has a
+/// non-null secondary identity, and the annotation's evaluated parameter
+/// selects the unique parallel or concentric offset result. Requiring all
+/// three facts avoids assigning an arbitrary offset when the sketch contains
+/// several generated curves.
+pub(crate) fn annotation_offset_dimension_definition(
+    frame: &DesignDimensionAnnotationFrame,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    scope: &str,
+    curves: &[SketchCurveIdentity],
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+
+    if !parameter.source_kind.starts_with("Linear Dimension")
+        || !design_dimension_unit(parameter)
+        || !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+        || frame.operands.len() != 2
+        || frame.return_members.len() != 1
+    {
+        return None;
+    }
+    let [source_operand, other_operand] = frame.operands.as_slice() else {
+        return None;
+    };
+    let source_record_index = match (
+        source_operand.geometry_record_index,
+        other_operand.geometry_record_index,
+    ) {
+        (0, result) | (result, 0) if result != 0 => result,
+        _ => return None,
+    };
+    if frame.return_members != [source_record_index] {
+        return None;
+    }
+    curves.iter().find(|curve| {
+        native_stream(&curve.id) == Some(scope)
+            && curve.record_index == source_record_index
+            && curve.owner_reference == Some(frame.owner_reference)
+            && curve.secondary_id == 0
+    })?;
+    let source = projected.get(&(scope, source_record_index))?;
+    let expected = parameter.evaluated_value * 10.0;
+    if !expected.is_finite() {
+        return None;
+    }
+    let matches = curves
+        .iter()
+        .filter(|curve| {
+            native_stream(&curve.id) == Some(scope)
+                && curve.record_index != source_record_index
+                && curve.owner_reference == Some(frame.owner_reference)
+                && curve.secondary_id != 0
+        })
+        .filter_map(|curve| {
+            let result = projected.get(&(scope, curve.record_index))?;
+            let distance = sketch_curve_offset(&source.geometry, &result.geometry)?;
+            let tolerance =
+                linear_tolerance.max(1.0e-9 * (1.0 + distance.abs().max(expected.abs())));
+            (distance.abs() > 1.0e-9 && (distance.abs() - expected.abs()).abs() <= tolerance)
+                .then_some((result, distance))
+        })
+        .collect::<Vec<_>>();
+    let [(result, distance)] = matches.as_slice() else {
+        return None;
+    };
+    let parameter_factor = offset_parameter_factor(distance.abs(), expected)?;
+    Some(Definition::Offset {
+        pairs: vec![SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: distance.is_sign_negative(),
+        }],
+        distance: Length(distance.abs()),
+        parameter: Some(parameter_id.clone()),
+        parameter_factor: Some(parameter_factor),
     })
 }
 

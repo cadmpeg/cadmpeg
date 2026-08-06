@@ -115,7 +115,8 @@ use crate::records::{
     DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignCircularPatternConstruction,
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
     DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
     DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
@@ -13473,6 +13474,161 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         .resolved_return_members
         .extend([curve(1, 10), curve(3, 30)]);
     assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
+}
+
+#[test]
+fn single_curve_annotation_projects_parameterized_offset() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let sketch = SketchId("generated:sketch#offset".into());
+    let source_curve_id = format!("{stream}:sketch-curve#10");
+    let result_curve_id = format!("{stream}:sketch-curve#11");
+    let curve = |id: String, record_index, primary_id, secondary_id| SketchCurveIdentity {
+        id,
+        record_index,
+        owner_reference: Some(100),
+        class_tag: "262".into(),
+        byte_offset: 0,
+        geometry_offset: 0,
+        entity_genesis: None,
+        primary_id,
+        secondary_id,
+        geometry: None,
+    };
+    let source_curve = curve(source_curve_id.clone(), 10, 20, 0);
+    let result_curve = curve(result_curve_id.clone(), 11, 21, 7);
+    let entity = |id: &str, native_ref: String, start, end| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(native_ref),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line { start, end },
+    };
+    let source = entity(
+        "source",
+        source_curve_id,
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+    );
+    let result = entity(
+        "result",
+        result_curve_id,
+        Point2::new(0.0, -2.0),
+        Point2::new(10.0, -2.0),
+    );
+    let parameter = DesignParameter {
+        id: format!("{stream}:design-parameter#12"),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 12,
+        family_discriminator: Some(6),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 0,
+        owner_record_index: Some(13),
+        expression: "2 mm".into(),
+        expression_offset: 0,
+        source_kind: "Linear Dimension-2".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("mm".into()),
+        unit_offset: Some(0),
+        name: "d1".into(),
+        name_offset: 0,
+        evaluated_value: 0.2,
+        evaluated_value_offset: 0,
+    };
+    let frame = DesignDimensionAnnotationFrame {
+        id: format!("{stream}:design-dimension-annotation-frame#14"),
+        companion_record_index: Some(15),
+        governing_companion_record_index: 15,
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 14,
+        frame_length: 100,
+        operands: vec![
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: 0,
+                geometry_reference_offset: 0,
+                role: 3,
+                role_offset: 0,
+            },
+            DesignDimensionAnnotationOperand {
+                geometry_record_index: 10,
+                geometry_reference_offset: 0,
+                role: 2,
+                role_offset: 0,
+            },
+        ],
+        entity_genesis: 0x80,
+        annotation_bytes: Vec::new(),
+        annotation_byte_offset: 0,
+        governing_owner_record_index: 13,
+        governing_owner_reference_offset: 0,
+        return_members: vec![10],
+        return_member_offsets: vec![0],
+        paired_class_tag: "256".into(),
+        paired_byte_offset: 0,
+        owner_reference: 100,
+        owner_reference_offset: 0,
+    };
+    let parameter_id = ParameterId("generated:parameter#offset".into());
+    let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
+
+    let definition = crate::design::dimensions::annotation_offset_dimension_definition(
+        &frame,
+        &parameter,
+        &parameter_id,
+        stream,
+        &[source_curve, result_curve],
+        &projected,
+        1.0e-6,
+    )
+    .expect("single-curve annotation offset");
+    assert!(matches!(
+        definition,
+        SketchConstraintDefinition::Offset {
+            pairs,
+            distance: Length(distance),
+            parameter: Some(actual_parameter),
+            parameter_factor: Some(1.0),
+        } if pairs.as_slice() == [cadmpeg_ir::sketches::SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+            source_reversed: true,
+        }] && (distance - 2.0).abs() <= 1.0e-9
+            && actual_parameter == parameter_id
+    ));
+
+    let duplicate_curve_id = format!("{stream}:sketch-curve#12");
+    let duplicate_curve = curve(duplicate_curve_id.clone(), 12, 22, 8);
+    let duplicate = entity(
+        "duplicate",
+        duplicate_curve_id,
+        Point2::new(2.0, -2.0),
+        Point2::new(8.0, -2.0),
+    );
+    let projected_with_duplicate = HashMap::from([
+        ((stream, 10), &source),
+        ((stream, 11), &result),
+        ((stream, 12), &duplicate),
+    ]);
+    assert!(
+        crate::design::dimensions::annotation_offset_dimension_definition(
+            &frame,
+            &parameter,
+            &parameter_id,
+            stream,
+            &[
+                curve(format!("{stream}:sketch-curve#10"), 10, 20, 0),
+                curve(format!("{stream}:sketch-curve#11"), 11, 21, 7),
+                duplicate_curve
+            ],
+            &projected_with_duplicate,
+            1.0e-6,
+        )
+        .is_none()
+    );
 }
 
 #[test]
