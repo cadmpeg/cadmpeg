@@ -6744,6 +6744,51 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 }
 
 #[test]
+fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"338");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    bytes.resize(228, 0);
+    bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+    bytes[24] = 0;
+    bytes[26..30].copy_from_slice(&4u32.to_le_bytes());
+    bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
+    bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+    bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
+    let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
+    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    for reference in references {
+        bytes.push(1);
+        bytes.extend_from_slice(&reference.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    lp_utf16(&mut bytes, "CoilPrimitive");
+    let mut tail = [0; 88];
+    tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"259");
+    bytes.extend_from_slice(&6644u32.to_le_bytes());
+    let header = DesignRecordHeader {
+        id: "generated:scope-header#0".into(),
+        record_index: 6644,
+        class_tag: "338".into(),
+        byte_offset: 0,
+    };
+
+    let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
+        .expect("compact Coil new-body scope");
+    assert_eq!(scope.frame_length, 442);
+    assert_eq!(scope.kind, "CoilPrimitive");
+    assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::NewBody));
+    assert_eq!(scope.history_state_id, Some(3));
+    assert_eq!(scope.previous_history_state_id, None);
+    assert_eq!(scope.previous_history_state_id_offset, 0);
+}
+
+#[test]
 fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
     let scope = |frame_length: usize, operation: u32| {
         let reference_members: [u32; 10] =

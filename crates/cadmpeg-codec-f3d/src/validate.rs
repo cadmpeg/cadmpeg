@@ -1616,7 +1616,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     )
                 })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
-            && scope
+            && match scope
                 .paired_byte_offset
                 .checked_sub(scope.feature_ordinal_offset)
                 .and_then(|tail_length| usize::try_from(tail_length).ok())
@@ -1625,12 +1625,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         &scope.kind,
                         tail_length,
                     )
-                })
-                .is_some_and(|offset| {
+                }) {
+                Some(offset) => {
                     scope.previous_history_state_id_offset
                         == scope.feature_ordinal_offset.saturating_add(offset as u64)
-                })
-            && scope.history_state_id.is_some() == scope.previous_history_state_id.is_some()
+                        && scope.history_state_id.is_some()
+                            == scope.previous_history_state_id.is_some()
+                }
+                None => {
+                    scope.previous_history_state_id.is_none()
+                        && scope.previous_history_state_id_offset == 0
+                }
+            }
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()

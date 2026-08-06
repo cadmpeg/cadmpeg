@@ -3725,10 +3725,10 @@ pub(crate) fn parameter_scope_candidate_headers(
 }
 
 pub(crate) fn parameter_scope_tail_length_is_valid(kind: &str, tail_length: usize) -> bool {
-    if kind == "CopyPasteBodies" {
-        tail_length == 110
-    } else {
-        matches!(tail_length, 72 | 76 | 77 | 78 | 87)
+    match kind {
+        "CopyPasteBodies" => tail_length == 110,
+        "CoilPrimitive" => matches!(tail_length, 72 | 76 | 77 | 78 | 87 | 88),
+        _ => matches!(tail_length, 72 | 76 | 77 | 78 | 87),
     }
 }
 
@@ -3738,6 +3738,7 @@ pub(crate) fn parameter_scope_previous_history_offset(
 ) -> Option<usize> {
     match (kind, tail_length) {
         ("CopyPasteBodies", 110) => Some(53),
+        ("CoilPrimitive", 88) => None,
         (_, 72 | 76) => Some(30),
         (_, 77 | 78) => Some(31),
         (_, 87) => Some(41),
@@ -3755,7 +3756,7 @@ pub(crate) fn parse_parameter_scope(
     let (paired_class_tag, _) =
         lp_ascii_filtered(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let mut candidates = Vec::new();
-    for tail_length in [72, 76, 77, 78, 87, 110] {
+    for tail_length in [72, 76, 77, 78, 87, 88, 110] {
         let Some(end) = paired_at.checked_sub(tail_length) else {
             continue;
         };
@@ -3787,11 +3788,15 @@ pub(crate) fn parse_parameter_scope(
         state_id => Some(i64::from(state_id)),
     };
     let previous_history_state_id_offset =
-        kind_end.checked_add(parameter_scope_previous_history_offset(kind, *tail_length)?)?;
-    let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
-        u32::MAX => None,
-        state_id => Some(i64::from(state_id)),
-    };
+        match parameter_scope_previous_history_offset(kind, *tail_length) {
+            Some(offset) => Some(kind_end.checked_add(offset)?),
+            None => None,
+        };
+    let previous_history_state_id =
+        previous_history_state_id_offset.and_then(|offset| match u32_at(bytes, offset)? {
+            u32::MAX => None,
+            state_id => Some(i64::from(state_id)),
+        });
     let mut reference_tables = Vec::new();
     for count_at in start + 11..reference_table_end {
         let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
@@ -3929,7 +3934,9 @@ pub(crate) fn parse_parameter_scope(
         history_state_id,
         history_state_id_offset: u64::try_from(history_state_id_offset).ok()?,
         previous_history_state_id,
-        previous_history_state_id_offset: u64::try_from(previous_history_state_id_offset).ok()?,
+        previous_history_state_id_offset: previous_history_state_id_offset
+            .and_then(|offset| u64::try_from(offset).ok())
+            .unwrap_or_default(),
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
