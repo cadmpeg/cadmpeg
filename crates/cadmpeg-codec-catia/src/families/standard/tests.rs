@@ -6221,6 +6221,23 @@ fn exact_mesh_occurrences_complete_duplicate_face_slot() {
 }
 
 #[test]
+fn ambiguous_mesh_occurrences_defer_duplicate_face_slot() {
+    let run = |face| MeshEdgeRun {
+        edge: 0,
+        face,
+        cycle: 0,
+        start: 0,
+        segment_count: 1,
+        reversed: false,
+    };
+
+    let faces = resolve_edge_faces_from_runs(&[[1, 1]], &[run(1), run(5), run(6)])
+        .expect("ambiguous occurrences remain a deferred face domain");
+
+    assert_eq!(faces, vec![[1, 1]]);
+}
+
+#[test]
 fn equivalent_edge_rows_share_one_incidence_assignment_gauge() {
     let rows = vec![
         EdgeRow {

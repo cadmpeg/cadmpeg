@@ -230,14 +230,22 @@ fn standard_mesh_analysis(bytes: &[u8]) -> Option<StandardMeshAnalysis> {
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
+        // Each width is an independent grammar candidate. A malformed or
+        // ambiguous candidate must not mask a complete candidate at another
+        // width.
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
-        let cycles = trims
+        let Some(cycles) = trims
             .iter()
             .map(|trim| boundary_cycles(&trim.triangles))
-            .collect::<Option<Vec<_>>>()?;
-        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(occurrences) = mesh_edge_occurrences(&edge_rows, &cycles) else {
+            continue;
+        };
         solutions.push((cycles, occurrences));
     }
     let [(cycles, occurrences)] = <[_; 1]>::try_from(solutions).ok()?;
@@ -538,7 +546,13 @@ pub(crate) fn resolve_edge_faces_from_runs(
         if faces[0] != faces[1] || occurrences.len() < 2 {
             continue;
         }
-        if occurrences.len() != 2 || !occurrences.contains(&faces[0]) {
+        // Repeated row handles can match more than one face. The occurrence
+        // set is then a domain, not a serialized face assignment; retain the
+        // duplicate slot for native ownership and endpoint closure to resolve.
+        if occurrences.len() > 2 {
+            continue;
+        }
+        if !occurrences.contains(&faces[0]) {
             return None;
         }
         faces[1] = *occurrences.iter().find(|face| **face != faces[0])?;

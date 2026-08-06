@@ -363,6 +363,10 @@ current scores require those matrices and representative fixtures.
   to an otherwise equivalent edge-identity gauge; line and spline rows remain
   separate curve families, and incomplete relations and cardinality mismatches
   remain unresolved.
+- Repeated standard edge-row handles that match more than two face occurrences
+  retain a deferred face domain. Native edge ownership and complete endpoint-
+  closed trim assignment must select the repeated incidence before topology
+  transfer.
 - A standard binary32 cylinder, cone, sphere, or torus face carrier is refined
   to its complete consolidated binary64 frame when quantization selects exactly
   one same-family record. One exact carrier may refine repeated face carriers;
