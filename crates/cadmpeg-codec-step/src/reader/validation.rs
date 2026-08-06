@@ -28,10 +28,18 @@ pub(super) fn decode(
     geometry: &GeometryResult,
     ir: &mut CadIr,
 ) -> ValidationResult {
+    if !exchange.has_entity("PROPERTY_DEFINITION")
+        || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
+    {
+        return ValidationResult {
+            typed_records: BTreeSet::new(),
+            notes: Vec::new(),
+            warnings: Vec::new(),
+        };
+    }
     let representations = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
+        .filter_map(|(id, record)| {
             if !matches!(
                 record.simple_name(),
                 Some("REPRESENTATION" | "SHAPE_REPRESENTATION")
@@ -42,9 +50,8 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let properties = exchange
-        .records
-        .iter()
-        .filter_map(|(&id, record)| {
+        .entities("PROPERTY_DEFINITION")
+        .filter_map(|(id, record)| {
             if record.simple_name() == Some("PROPERTY_DEFINITION")
                 && record
                     .parameter(0)?
@@ -70,10 +77,7 @@ pub(super) fn decode(
     let mut notes = Vec::new();
     let mut warnings = Vec::new();
 
-    for (&relation_id, relation) in &exchange.records {
-        if relation.simple_name() != Some("PROPERTY_DEFINITION_REPRESENTATION") {
-            continue;
-        }
+    for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
         let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
             continue;
         };
@@ -128,20 +132,22 @@ pub(super) fn decode(
         }
     }
     let mut referenced_validation_points = BTreeSet::new();
-    for (&record_id, record) in &exchange.records {
-        if validation_representations.contains(&record_id) {
-            continue;
-        }
-        for value in record
-            .partials
-            .iter()
-            .flat_map(|partial| &partial.parameters)
-        {
-            collect_validation_references(
-                value,
-                &validation_points,
-                &mut referenced_validation_points,
-            );
+    if !validation_points.is_empty() {
+        for (&record_id, record) in &exchange.records {
+            if validation_representations.contains(&record_id) {
+                continue;
+            }
+            for value in record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+            {
+                collect_validation_references(
+                    value,
+                    &validation_points,
+                    &mut referenced_validation_points,
+                );
+            }
         }
     }
     ir.model.points.retain(|point| {

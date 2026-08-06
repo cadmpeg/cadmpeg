@@ -8,9 +8,9 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::lex::{lex, BinaryValue, LexError, Token, TokenKind};
+use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
@@ -113,14 +113,19 @@ pub struct Exchange {
     entity_ids: EntityIndex,
 }
 
+type EntityUnionCache = Mutex<HashMap<Vec<String>, Arc<[u64]>>>;
+
 #[derive(Debug, Default)]
-struct EntityIndex(OnceLock<HashMap<String, Vec<u64>>>);
+struct EntityIndex(
+    OnceLock<HashMap<String, Vec<u64>>>,
+    OnceLock<EntityUnionCache>,
+);
 
 const EMPTY_ENTITY_IDS: &[u64] = &[];
 
 enum EntityIdIter<'a> {
     Borrowed(std::slice::Iter<'a, u64>),
-    Owned(std::vec::IntoIter<u64>),
+    Shared { ids: Arc<[u64]>, at: usize },
 }
 
 impl Iterator for EntityIdIter<'_> {
@@ -129,7 +134,11 @@ impl Iterator for EntityIdIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         match self {
             Self::Borrowed(ids) => ids.next().copied(),
-            Self::Owned(ids) => ids.next(),
+            Self::Shared { ids, at } => {
+                let id = ids.get(*at).copied();
+                *at += usize::from(id.is_some());
+                id
+            }
         }
     }
 }
@@ -163,6 +172,30 @@ impl Exchange {
         })
     }
 
+    fn entity_unions(&self) -> &EntityUnionCache {
+        self.entity_ids.1.get_or_init(|| Mutex::new(HashMap::new()))
+    }
+
+    pub(crate) fn has_entity(&self, name: &str) -> bool {
+        self.entity_ids().contains_key(name)
+    }
+
+    pub(crate) fn has_entity_matching(&self, matches: impl Fn(&str) -> bool) -> bool {
+        self.entity_ids().keys().any(|name| matches(name))
+    }
+
+    pub(crate) fn matching_entity_ids(&self, matches: impl Fn(&str) -> bool) -> Vec<u64> {
+        let mut ids = self
+            .entity_ids()
+            .iter()
+            .filter(|(name, _)| matches(name))
+            .flat_map(|(_, ids)| ids.iter().copied())
+            .collect::<Vec<_>>();
+        ids.sort_unstable();
+        ids.dedup();
+        ids
+    }
+
     pub(crate) fn entities(&self, name: &str) -> impl Iterator<Item = (u64, &RawRecord)> {
         self.entity_ids()
             .get(name)
@@ -182,22 +215,37 @@ impl Exchange {
                 .map_or(EMPTY_ENTITY_IDS, Vec::as_slice);
             EntityIdIter::Borrowed(ids.iter())
         } else {
-            let capacity = names
+            let mut key = names
                 .iter()
-                .filter_map(|name| self.entity_ids().get(*name))
-                .map(Vec::len)
-                .sum();
-            let mut ids = Vec::with_capacity(capacity);
-            ids.extend(
-                names
-                    .iter()
-                    .filter_map(|name| self.entity_ids().get(*name))
-                    .flatten()
-                    .copied(),
-            );
-            ids.sort_unstable();
-            ids.dedup();
-            EntityIdIter::Owned(ids.into_iter())
+                .map(|name| (*name).to_owned())
+                .collect::<Vec<_>>();
+            key.sort_unstable();
+            key.dedup();
+            let mut unions = self
+                .entity_unions()
+                .lock()
+                .expect("entity index lock poisoned");
+            let ids = unions
+                .entry(key.clone())
+                .or_insert_with(|| {
+                    let capacity = key
+                        .iter()
+                        .filter_map(|name| self.entity_ids().get(name))
+                        .map(Vec::len)
+                        .sum();
+                    let mut ids = Vec::with_capacity(capacity);
+                    ids.extend(
+                        key.iter()
+                            .filter_map(|name| self.entity_ids().get(name))
+                            .flatten()
+                            .copied(),
+                    );
+                    ids.sort_unstable();
+                    ids.dedup();
+                    Arc::from(ids.into_boxed_slice())
+                })
+                .clone();
+            EntityIdIter::Shared { ids, at: 0 }
         };
         ids.filter_map(|id| self.records.get(&id).map(|record| (id, record)))
     }
@@ -240,23 +288,26 @@ pub struct ParseDiagnostic {
 
 /// Parse one complete clear-text exchange structure and resolve DATA references.
 pub fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+    let mut lexer = Lexer::new(input);
     Parser {
-        tokens: lex(input)?,
-        at: 0,
+        current: lexer.next_token()?,
+        lexer,
+        last_end: 0,
         depth: 0,
         diagnostics: Vec::new(),
     }
     .exchange()
 }
 
-struct Parser {
-    tokens: Vec<Token>,
-    at: usize,
+struct Parser<'a> {
+    lexer: Lexer<'a>,
+    current: Option<Token>,
+    last_end: usize,
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
 }
 
-impl Parser {
+impl Parser<'_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
         self.name("ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -273,7 +324,7 @@ impl Parser {
         self.punct(&TokenKind::Semicolon)?;
         let mut anchors = Vec::new();
         if self.peek_name("ANCHOR") {
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
                 let TokenKind::Resource(name) = self.next_kind()? else {
@@ -284,12 +335,12 @@ impl Parser {
                 self.punct(&TokenKind::Semicolon)?;
                 anchors.push(AnchorEntry { name, value });
             }
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
         if self.peek_name("REFERENCE") {
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
                 let TokenKind::Resource(name) = self.next_kind()? else {
@@ -302,13 +353,13 @@ impl Parser {
                 self.punct(&TokenKind::Semicolon)?;
                 reference_entries.push(ReferenceEntry { name, uri });
             }
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut data = Vec::new();
         let mut records = BTreeMap::new();
         while self.peek_name("DATA") {
-            self.at += 1;
+            self.next_kind()?;
             let parameters = if self.peek(&TokenKind::LParen) {
                 self.parameters()?
             } else {
@@ -333,15 +384,15 @@ impl Parser {
         }
         let signature = if self.peek_name("SIGNATURE") {
             let start = self.current_offset();
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                self.at += 1;
-                if self.at >= self.tokens.len() {
+                if self.current.is_none() {
                     return self.err("unterminated SIGNATURE section");
                 }
+                self.next_kind()?;
             }
-            self.at += 1;
+            self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             Some(start..self.previous_end())
         } else {
@@ -349,7 +400,7 @@ impl Parser {
         };
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
-        if self.at != self.tokens.len() {
+        if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
         if !anchors.is_empty() {
@@ -420,12 +471,12 @@ impl Parser {
         };
         self.punct(&TokenKind::Equals)?;
         let partials = if self.peek(&TokenKind::LParen) {
-            self.at += 1;
+            self.next_kind()?;
             let mut parts = Vec::new();
             while !self.peek(&TokenKind::RParen) {
                 parts.push(self.partial()?);
             }
-            self.at += 1;
+            self.next_kind()?;
             let mut canonical_names = parts
                 .iter()
                 .map(|part| part.name.clone())
@@ -488,13 +539,13 @@ impl Parser {
         self.punct(&TokenKind::LParen)?;
         let mut values = Vec::new();
         if self.peek(&TokenKind::RParen) {
-            self.at += 1;
+            self.next_kind()?;
             return Ok(values);
         }
         loop {
             values.push(self.value()?);
             if self.peek(&TokenKind::Comma) {
-                self.at += 1;
+                self.next_kind()?;
             } else {
                 break;
             }
@@ -559,30 +610,28 @@ impl Parser {
         }
     }
     fn peek(&self, expected: &TokenKind) -> bool {
-        self.tokens
-            .get(self.at)
-            .is_some_and(|t| std::mem::discriminant(&t.kind) == std::mem::discriminant(expected))
+        self.current.as_ref().is_some_and(|token| {
+            std::mem::discriminant(&token.kind) == std::mem::discriminant(expected)
+        })
     }
     fn peek_name(&self, expected: &str) -> bool {
-        matches!(self.tokens.get(self.at).map(|t| &t.kind), Some(TokenKind::Name(name)) if name == expected)
+        matches!(self.current.as_ref().map(|token| &token.kind), Some(TokenKind::Name(name)) if name == expected)
     }
     fn next_kind(&mut self) -> Result<TokenKind, ParseError> {
-        let Some(token) = self.tokens.get_mut(self.at) else {
+        let Some(token) = self.current.take() else {
             return self.err("unexpected end of input");
         };
-        self.at += 1;
-        Ok(std::mem::replace(&mut token.kind, TokenKind::Omitted))
+        self.last_end = token.span.end;
+        self.current = self.lexer.next_token()?;
+        Ok(token.kind)
     }
     fn current_offset(&self) -> usize {
-        self.tokens
-            .get(self.at)
-            .map_or_else(|| self.previous_end(), |t| t.span.start)
+        self.current
+            .as_ref()
+            .map_or(self.last_end, |token| token.span.start)
     }
     fn previous_end(&self) -> usize {
-        self.at
-            .checked_sub(1)
-            .and_then(|i| self.tokens.get(i))
-            .map_or(0, |t| t.span.end)
+        self.last_end
     }
     fn err<T>(&self, message: &str) -> Result<T, ParseError> {
         Self::err_at(self.current_offset(), message)
@@ -712,6 +761,24 @@ mod tests {
         let (untouched, _) = parse(source).expect("required invariant");
         assert_eq!(indexed.entities("POINT").count(), 1);
         assert_eq!(indexed, untouched);
+    }
+
+    #[test]
+    fn entity_unions_are_ordered_unique_and_name_order_independent() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = parse(source).expect("required invariant");
+
+        let forward = exchange
+            .entities_any(&["A", "B"])
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+        let reverse = exchange
+            .entities_any(&["B", "A"])
+            .map(|(id, _)| id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(forward, vec![1, 2]);
+        assert_eq!(reverse, forward);
     }
 
     #[test]

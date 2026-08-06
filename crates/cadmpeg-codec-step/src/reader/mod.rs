@@ -112,7 +112,6 @@ fn decode_exchange_mode(
     let dependencies = dependencies::decode(exchange);
     let carrier_index = index::CarrierIndex::from_ir(&ir);
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
-    let carrier_index = index::CarrierIndex::from_ir(&ir);
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
     geometry::associate_free_geometric_set_members(
