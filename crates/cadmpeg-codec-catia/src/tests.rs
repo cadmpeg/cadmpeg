@@ -18446,7 +18446,7 @@ fn decode_rejects_a_conditional_with_different_branch_dimensions() {
 }
 
 #[test]
-fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
+fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(
@@ -18455,7 +18455,7 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
                     false,
                     &[("#1_", "LENGTH", "Width", "#1_ /2", 12.0)],
                     "LENGTH",
-                    Some(13.0),
+                    None,
                     "#1_ /2+1mm",
                     (&[0xfe], Some(0)),
                 ),
@@ -18463,8 +18463,8 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
             &DecodeOptions::default(),
         )
         .expect("decode unset formula input");
-    let [input] = decoded.ir.model.parameters.as_slice() else {
-        panic!("only the independently typed unset input")
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("unset formula parameters")
     };
 
     assert_eq!(input.name, "Width");
@@ -18472,6 +18472,10 @@ fn decode_transfers_an_unset_typed_formula_input_without_deriving_the_output() {
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(output.value, None);
+    assert_eq!(output.expression, "#1_ /2+1mm");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.properties["value_type"], "LENGTH");
 }
 
 #[test]
@@ -18504,6 +18508,37 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert_eq!(input.properties["value_type"], parameter_type);
         assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     }
+}
+
+#[test]
+fn decode_transfers_an_unset_string_formula_result_without_evaluation() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(
+                standard_catpart_with_typed_formula_inputs_and_object_payload(
+                    4,
+                    false,
+                    &[("#1_", "String", "Value", "#1_", 1.0)],
+                    "String",
+                    None,
+                    "#1_",
+                    (&[0xfe], Some(0)),
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset String formula result");
+    let [input, output] = decoded.ir.model.parameters.as_slice() else {
+        panic!("unset String formula parameters")
+    };
+
+    assert_eq!(input.value, None);
+    assert_eq!(input.properties["value_type"], "String");
+    assert_eq!(output.value, None);
+    assert_eq!(output.expression, "#1_");
+    assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
+    assert_eq!(output.properties["value_type"], "String");
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]

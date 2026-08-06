@@ -139,7 +139,9 @@ current scores require those matrices and representative fixtures.
 - Complete numeric parameters and formula relations transfer when their type,
   owner, evaluation state, expression, and dependency identities resolve
   exactly. Typed unset inputs transfer independently while preventing formula
-  evaluation. Each formula relation retains typed expression and output
+  evaluation; a complete formula still transfers its typed expression and
+  dependencies as an unset result when its output is unset. Each formula
+  relation retains typed expression and output
   incidences with their payload-relative byte offsets, stored identities,
   same-graph entities, and entity classes; the output also retains terminal-null
   state. Coverage distinguishes resolved, terminal-null, unresolved, classified,
