@@ -2140,8 +2140,19 @@ impl FormulaExpressionParser<'_, '_> {
             else {
                 return None;
             };
-            let (unit_dimension, unit_scale) = formula_unit(&unit.value)?;
-            if value.dimension != unit_dimension || digits.dimension != FormulaDimension::SCALAR {
+            if !matches!(
+                value.dimension,
+                FormulaDimension::LENGTH | FormulaDimension::ANGLE
+            ) || digits.dimension != FormulaDimension::SCALAR
+            {
+                return None;
+            }
+            let unit_spec = formula_unit(&unit.value);
+            if let Some((unit_dimension, _)) = unit_spec {
+                if value.dimension != unit_dimension {
+                    return None;
+                }
+            } else if self.evaluate || (self.static_check && unit.known) {
                 return None;
             }
             if (self.static_check || self.evaluate) && !digits.satisfies_source_type("Integer") {
@@ -2162,6 +2173,7 @@ impl FormulaExpressionParser<'_, '_> {
                     known_value: None,
                 }));
             }
+            let (_, unit_scale) = unit_spec?;
             if digits.value < 0.0 || digits.value > f64::from(i32::MAX) {
                 return None;
             }
@@ -2949,6 +2961,22 @@ mod parser_tests {
                 .and_then(EvaluatedFormulaValue::scalar)
                 .is_some_and(|value| value.dimension == FormulaDimension::LENGTH)
         );
+        assert!(
+            evaluate_formula_expression_with_mode("round(#1_, #4_, #2_)", &bindings, false)
+                .and_then(EvaluatedFormulaValue::scalar)
+                .is_some_and(|value| value.dimension == FormulaDimension::LENGTH)
+        );
+        assert!(evaluate_formula_expression_with_mode(
+            "#3_ > 1 ? round(#1_, #4_, #2_) ; 5mm",
+            &bindings,
+            false,
+        )
+        .and_then(EvaluatedFormulaValue::scalar)
+        .is_some_and(|value| value.dimension == FormulaDimension::LENGTH));
+        assert!(
+            evaluate_formula_expression_with_mode("round(#3_, #4_, #2_)", &bindings, false)
+                .is_none()
+        );
     }
 
     #[test]
@@ -3189,6 +3217,7 @@ mod parser_tests {
             "true ? 5 ; \"not a number\".ToReal()",
             "true ? \"selected\" ; \"text\" - \"\"",
             "true ? 5mm ; round(12.3mm,\"mm\",-1)",
+            "true ? 5mm ; round(12.3mm,\"unknown\",1)",
         ] {
             assert!(
                 evaluate_formula_expression(expression, &bindings).is_some(),
