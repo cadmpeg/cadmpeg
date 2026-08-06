@@ -1395,7 +1395,8 @@ pub(crate) fn try_decode_standard(
             StandardSurfaceProcedure::Offset {
                 parameter_bounds, ..
             } => Some(parameter_record_bounds(*parameter_bounds)),
-            StandardSurfaceProcedure::RollingBall { .. } => None,
+            StandardSurfaceProcedure::RollingBall { .. }
+            | StandardSurfaceProcedure::Revolution(_) => None,
         };
         let (source, carrier, definition, exactness) = match procedure {
             StandardSurfaceProcedure::RollingBall {
@@ -1509,6 +1510,37 @@ pub(crate) fn try_decode_standard(
                     carrier,
                     definition,
                     Exactness::ByteExact,
+                )
+            }
+            StandardSurfaceProcedure::Revolution(revolution) => {
+                let directrix_id = CurveId(format!("catia:standard:revolution-profile#{tag}"));
+                annotate(
+                    &mut annotations,
+                    &directrix_id,
+                    "object_stream_b5_03_2d",
+                    0,
+                    "profile_curve",
+                    Exactness::Derived,
+                );
+                annotations.derived(&directrix_id, "geometry");
+                ir.model.curves.push(Curve {
+                    id: directrix_id.clone(),
+                    geometry: CurveGeometry::Nurbs(revolution.directrix.clone()),
+                    source_object: None,
+                });
+                (
+                    "object_stream_b5_03_2d",
+                    tag,
+                    ProceduralSurfaceDefinition::Revolution {
+                        directrix: directrix_id,
+                        axis_origin: revolution.axis_origin,
+                        axis_direction: revolution.axis_direction,
+                        angular_interval: revolution.angular_interval,
+                        parameter_interval: Some(revolution.parameter_interval),
+                        transposed: false,
+                        revision_form: None,
+                    },
+                    Exactness::Derived,
                 )
             }
         };
@@ -1999,6 +2031,7 @@ pub(crate) enum StandardSurfaceProcedure {
         parameter_bounds: [[f64; 2]; 2],
     },
     Extrusion(Box<crate::families::b5::transfer::ResolvedExtrusionSurface>),
+    Revolution(Box<crate::families::b5::transfer::ResolvedRevolutionSurface>),
 }
 
 #[derive(PartialEq)]
@@ -2076,28 +2109,44 @@ pub(crate) fn standard_object_evidence_from_streams(
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
             };
-            let Some(carrier) = targeted_graph
+            let evidence = targeted_graph
                 .as_ref()
                 .and_then(|graph| {
-                    crate::families::b5::transfer::resolved_surface_carrier_in_graph(
-                        graph, surface_id,
-                    )
+                    crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id)
+                        .map(|revolution| {
+                            StandardSurfaceEvidence::Procedural(
+                                StandardSurfaceProcedure::Revolution(Box::new(revolution)),
+                            )
+                        })
                 })
-                .or_else(|| crate::families::b5::transfer::resolved_surface_carrier(surface))
-            else {
+                .or_else(|| {
+                    targeted_graph
+                        .as_ref()
+                        .and_then(|graph| {
+                            crate::families::b5::transfer::resolved_surface_carrier_in_graph(
+                                graph, surface_id,
+                            )
+                        })
+                        .or_else(|| {
+                            crate::families::b5::transfer::resolved_surface_carrier(surface)
+                        })
+                        .map(|carrier| match carrier {
+                            crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(
+                                geometry,
+                            ) => StandardSurfaceEvidence::Geometry(geometry),
+                            crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
+                                carrier_object_id,
+                                definition,
+                            } => StandardSurfaceEvidence::Procedural(
+                                StandardSurfaceProcedure::RollingBall {
+                                    carrier_object_id,
+                                    definition: *definition,
+                                },
+                            ),
+                        })
+                });
+            let Some(evidence) = evidence else {
                 continue;
-            };
-            let evidence = match carrier {
-                crate::families::b5::transfer::ResolvedPcurveSurface::Geometry(geometry) => {
-                    StandardSurfaceEvidence::Geometry(geometry)
-                }
-                crate::families::b5::transfer::ResolvedPcurveSurface::RollingBall {
-                    carrier_object_id,
-                    definition,
-                } => StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall {
-                    carrier_object_id,
-                    definition: *definition,
-                }),
             };
             merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
         }
@@ -2228,6 +2277,9 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .filter_map(|(&tag, evidence)| match evidence.as_ref()? {
                 StandardSurfaceEvidence::Geometry(geometry) => Some((tag, geometry.clone())),
+                StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(
+                    revolution,
+                )) => Some((tag, revolution.geometry.clone())),
                 StandardSurfaceEvidence::Procedural(_) => None,
             })
             .collect(),
@@ -2253,10 +2305,11 @@ pub(crate) fn standard_object_evidence_from_streams(
                                     .get(&side.surface_object_id)
                                     .and_then(Option::as_ref)
                                     == Some(&crate::families::b5::transfer::ResolvedOffsetSupport::Geometry(
-                                        side.surface.clone(),
-                                    ))
+                                    side.surface.clone(),
+                                ))
                             })
                         }
+                        StandardSurfaceProcedure::Revolution(_) => true,
                     };
                     valid.then_some((tag, procedure))
                 }
@@ -2303,6 +2356,12 @@ fn standard_surface_evidence(
                         definition,
                     })
                 })
+        })
+        .or_else(|| {
+            crate::families::b5::transfer::resolved_revolution_surface(graph, surface_id)
+                .map(Box::new)
+                .map(StandardSurfaceProcedure::Revolution)
+                .map(StandardSurfaceEvidence::Procedural)
         })
         .or_else(|| {
             crate::families::b5::transfer::resolved_surface_geometry(graph, surface_id)
@@ -2359,6 +2418,7 @@ fn merge_standard_procedure_supports(
                     .or_insert(Some(support));
             }
         }
+        StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(_)) => {}
         StandardSurfaceEvidence::Geometry(_)
         | StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::RollingBall { .. }) => {}
     }
@@ -6421,8 +6481,12 @@ mod route_tests {
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, standard_spline_line,
         standard_successor_endpoint_pairs, standard_successor_endpoint_points,
-        unique_native_identity_points, witness_arc_end, StandardEdgeSupport,
+        standard_surface_evidence, unique_native_identity_points, witness_arc_end,
+        StandardEdgeSupport, StandardSurfaceEvidence, StandardSurfaceProcedure,
     };
+
+    use crate::families::b5::graph::{B5Graph, B5Profile, B5Surface};
+    use crate::tests::{append_b5_record, b5_closed_triangle_stream, le_f64};
 
     use crate::families::standard::records::{
         StandardCurveGeometry, StandardCurveSupport, StandardFaceBounds,
@@ -6493,6 +6557,126 @@ mod route_tests {
             evidence.surface_geometries.get(&10),
             Some(SurfaceGeometry::Plane { origin, .. }) if *origin == Point3::new(0.0, 0.0, 0.0)
         ));
+    }
+
+    #[test]
+    fn targeted_surface_evidence_retains_revolution_construction() {
+        let angular_range = [0.0, std::f64::consts::PI];
+        let graph = B5Graph {
+            complete: true,
+            faces: Vec::new(),
+            face_records: BTreeMap::new(),
+            loops: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::from([(
+                10,
+                B5Surface::Revolution {
+                    profile_curve: 11,
+                    axis_origin: [0.0, 0.0, 0.0],
+                    reference_x: [1.0, 0.0, 0.0],
+                    reference_y: [0.0, 1.0, 0.0],
+                    axis_direction: [0.0, 0.0, 1.0],
+                    profile_range: [-1.0, 1.0],
+                    angular_range,
+                    angular_scale: 1.0,
+                },
+            )]),
+            surface_aliases: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            extrusion_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            edges: BTreeMap::new(),
+            vertex_incidence_links: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::new(),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::from([(
+                11,
+                B5Profile::Line {
+                    point: [2.0, 0.0, 0.0],
+                    direction: [0.0, 0.0, 1.0],
+                    parameter_range: [-1.0, 1.0],
+                },
+            )]),
+        };
+
+        let evidence = standard_surface_evidence(&graph, 10).expect("revolution evidence");
+        let StandardSurfaceEvidence::Procedural(StandardSurfaceProcedure::Revolution(revolution)) =
+            evidence
+        else {
+            panic!("surface-of-revolution evidence must retain its construction");
+        };
+        let revolution = *revolution;
+        assert!(matches!(revolution.geometry, SurfaceGeometry::Nurbs(_)));
+        assert_eq!(revolution.angular_interval, angular_range);
+        assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
+        assert_eq!(revolution.directrix.control_points.len(), 2);
+    }
+
+    #[test]
+    fn object_evidence_exports_revolution_cache_and_construction() {
+        let mut stream = b5_closed_triangle_stream();
+        let mut profile = vec![0; 73];
+        profile[0] = 0x80;
+        for (offset, value) in [
+            (1usize, 2.0f64),
+            (9, 0.0),
+            (17, 0.0),
+            (25, 0.0),
+            (33, 0.0),
+            (41, 1.0),
+        ] {
+            profile[offset..offset + 8].copy_from_slice(&le_f64(value));
+        }
+        profile[49..57].copy_from_slice(&le_f64(1.0));
+        profile[57..65].copy_from_slice(&le_f64(-1.0));
+        profile[65..73].copy_from_slice(&le_f64(1.0));
+        append_b5_record(&mut stream, 0x0e, 110, &profile);
+
+        let mut revolution = vec![0; 176];
+        revolution[0] = 0x81;
+        revolution[1] = 0x38;
+        revolution[2..5].copy_from_slice(&[110, 0, 0]);
+        revolution[29..37].copy_from_slice(&le_f64(1.0));
+        revolution[61..69].copy_from_slice(&le_f64(1.0));
+        revolution[93..101].copy_from_slice(&le_f64(1.0));
+        for (offset, value) in [
+            (101usize, 0.0f64),
+            (109, std::f64::consts::PI),
+            (117, -1.0),
+            (125, 1.0),
+            (135, 1.0),
+            (143, 1.0),
+            (151, 1.0),
+            (159, 0.0),
+            (168, std::f64::consts::PI),
+        ] {
+            revolution[offset..offset + 8].copy_from_slice(&le_f64(value));
+        }
+        revolution[133..135].copy_from_slice(&[0x05, 0x05]);
+        revolution[167] = 0x01;
+        append_b5_record(&mut stream, 0x2d, 120, &revolution);
+
+        let evidence =
+            standard_object_evidence_from_streams([stream], &HashSet::from([120]), &HashSet::new());
+        assert!(matches!(
+            evidence.surface_geometries.get(&120),
+            Some(SurfaceGeometry::Nurbs(_))
+        ));
+        let Some(StandardSurfaceProcedure::Revolution(revolution)) =
+            evidence.procedural_surfaces.get(&120)
+        else {
+            panic!("object evidence must retain revolution construction");
+        };
+        assert_eq!(revolution.angular_interval, [0.0, std::f64::consts::PI]);
+        assert_eq!(revolution.parameter_interval, [-1.0, 1.0]);
+        assert_eq!(revolution.directrix.control_points.len(), 2);
     }
 
     #[test]

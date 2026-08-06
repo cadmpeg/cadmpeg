@@ -621,6 +621,51 @@ pub(crate) fn resolved_surface_geometry(
     (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
 }
 
+/// Exact neutral geometry and construction of a surface-of-revolution carrier.
+#[derive(Clone, PartialEq)]
+pub(crate) struct ResolvedRevolutionSurface {
+    /// Exact NURBS cache of the revolution result.
+    pub(crate) geometry: SurfaceGeometry,
+    /// Exact profile curve used as the revolution directrix.
+    pub(crate) directrix: NurbsCurve,
+    /// Point on the revolution axis.
+    pub(crate) axis_origin: Point3,
+    /// Unit revolution-axis direction.
+    pub(crate) axis_direction: Vector3,
+    /// Angular interval in radians.
+    pub(crate) angular_interval: [f64; 2],
+    /// Native profile parameter interval.
+    pub(crate) parameter_interval: [f64; 2],
+}
+
+/// Resolve a surface-of-revolution carrier while retaining its exact
+/// procedural construction alongside the cache geometry.
+pub(crate) fn resolved_revolution_surface(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<ResolvedRevolutionSurface> {
+    let surface = graph.surfaces.get(&surface_id)?;
+    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let SurfacePlan {
+        geometry,
+        procedure,
+    } = surfaces::neutral_surface(surface, graph, surface_id, &payload);
+    let SurfaceProcedure::Revolution(plan) = procedure? else {
+        return None;
+    };
+    if !matches!(&geometry, SurfaceGeometry::Nurbs(_)) {
+        return None;
+    }
+    Some(ResolvedRevolutionSurface {
+        geometry,
+        directrix: plan.directrix,
+        axis_origin: plan.axis_origin,
+        axis_direction: plan.axis_direction,
+        angular_interval: plan.angular_interval,
+        parameter_interval: plan.parameter_interval,
+    })
+}
+
 #[derive(Clone, PartialEq)]
 /// One object-stream pcurve lowered with its exact resolved support carrier.
 pub(crate) struct ResolvedObjectStreamPcurve {
