@@ -248,6 +248,7 @@ struct DesignProjectionGaps {
     native_decals: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
+    unresolved_parameter_owners: usize,
     untyped_parameter_units: usize,
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
@@ -659,6 +660,26 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .design_parameters
             .iter()
             .filter(|parameter| !projected_parameter_refs.contains(parameter.id.as_str()))
+            .count(),
+        unresolved_parameter_owners: native
+            .design_parameters
+            .iter()
+            .filter(|parameter| {
+                let Some(owner_record_index) = parameter.owner_record_index else {
+                    return false;
+                };
+                let Some(stream) = crate::ids::native_stream(&parameter.id) else {
+                    return true;
+                };
+                !native.design_parameter_owners.iter().any(|owner| {
+                    crate::ids::native_stream(&owner.id) == Some(stream)
+                        && owner.record_index == owner_record_index
+                        && native.design_parameter_scopes.iter().any(|scope| {
+                            crate::ids::native_stream(&scope.id) == Some(stream)
+                                && scope.record_index == owner.scope_record_index
+                        })
+                })
+            })
             .count(),
         untyped_parameter_units: crate::design::feature_project::untyped_parameter_unit_count(
             &native.design_parameters,
@@ -1072,6 +1093,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} decoded Design parameter(s) have no neutral parameter.",
             gaps.unprojected_parameters
+        ),
+    );
+    push(
+        gaps.unresolved_parameter_owners,
+        format!(
+            "{} decoded Design parameter owner binding(s) have no recognized feature scope.",
+            gaps.unresolved_parameter_owners
         ),
     );
     push(
@@ -4727,6 +4755,7 @@ mod tests {
                 native_decals: 0,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,
+                unresolved_parameter_owners: 1,
                 untyped_parameter_units: 1,
                 unresolved_expression_dependencies: 0,
                 unprojected_history_dependencies: 0,

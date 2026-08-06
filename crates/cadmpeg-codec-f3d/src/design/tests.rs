@@ -16195,7 +16195,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
 }
 
 #[test]
-fn owned_parameter_without_a_projected_scope_stays_native_only() {
+fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     let mut parameter = parse_design_parameter(&parameter_record(
         Some(44),
         "60 mm",
@@ -16213,7 +16213,17 @@ fn owned_parameter_without_a_projected_scope_stays_native_only() {
     let (features, parameters) =
         project_parameter_design(&[parameter], &[owner], &[], &[], &[], &[], &[], &[]);
     assert!(features.is_empty());
-    assert!(parameters.is_empty());
+    let [parameter] = parameters.as_slice() else {
+        panic!("expected the parameter to remain in the neutral model");
+    };
+    assert_eq!(parameter.owner, None);
+    assert_eq!(
+        parameter
+            .properties
+            .get("owner_record_index")
+            .map(String::as_str),
+        Some("44")
+    );
 }
 
 #[test]

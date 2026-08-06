@@ -1049,27 +1049,32 @@ pub fn project_parameter_design_with_edge_identities(
     features.sort_by_key(|feature| feature.id.clone());
     assign_feature_ordinals(&mut features);
 
+    let unresolved_owner_parameter_ids = native
+        .iter()
+        .filter_map(|parameter| {
+            let owner_record_index = parameter.owner_record_index?;
+            let stream = native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM);
+            let owner_is_bound = owners_by_index
+                .get(&(stream, owner_record_index))
+                .is_some_and(|owner| scope_ids.contains_key(&(stream, owner.scope_record_index)));
+            (!owner_is_bound).then(|| neutral_parameter_id(parameter))
+        })
+        .collect::<HashSet<_>>();
     let mut parameters = native
         .iter()
-        .filter(|parameter| {
-            parameter.owner_record_index.is_none_or(|owner| {
-                owners_by_index
-                    .get(&(
-                        native_stream(&parameter.id).unwrap_or(ids::DEFAULT_STREAM),
-                        owner,
-                    ))
-                    .is_some_and(|owner| {
-                        scope_ids.contains_key(&(
-                            native_stream(&owner.id).unwrap_or(ids::DEFAULT_STREAM),
-                            owner.scope_record_index,
-                        ))
-                    })
-            })
-        })
         .map(|parameter| {
             let mut properties = BTreeMap::new();
             if parameter.kind != DesignParameterKind::User {
                 properties.insert("source_kind".into(), parameter.source_kind.clone());
+            }
+            if unresolved_owner_parameter_ids.contains(&neutral_parameter_id(parameter)) {
+                properties.insert(
+                    "owner_record_index".into(),
+                    parameter
+                        .owner_record_index
+                        .expect("unresolved owner id has an owner record")
+                        .to_string(),
+                );
             }
             let value = match parameter.unit.as_deref() {
                 Some(unit) if design_length_unit(unit) => Some(ParameterValue::Length(Length(
@@ -1184,6 +1189,9 @@ pub fn project_parameter_design_with_edge_identities(
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let consumer_owner = parameter.owner.clone();
+        if unresolved_owner_parameter_ids.contains(&parameter.id) {
+            continue;
+        }
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| {
@@ -3262,6 +3270,57 @@ mod form_tests {
                 201,
             ),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn retains_parameter_when_owner_frame_has_no_scope_binding() {
+        let parameter = crate::records::DesignParameter {
+            id: "f3d:Design/BulkStream.dat:design-parameter#7".into(),
+            byte_offset: 0,
+            class_tag: "301".into(),
+            record_index: 7,
+            family_discriminator: None,
+            family_discriminator_offset: None,
+            source_ordinal: 0,
+            owner_record_index: Some(8),
+            expression: "12.5 mm".into(),
+            expression_offset: 0,
+            source_kind: "AlongDistance".into(),
+            source_kind_offset: 0,
+            kind: crate::records::DesignParameterKind::Feature,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: "distance".into(),
+            name_offset: 0,
+            evaluated_value: 1.25,
+            evaluated_value_offset: 0,
+        };
+        let scope = crate::records::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#9",
+            "Unsupported",
+            9,
+        );
+
+        let (_, parameters) =
+            super::project_parameter_design(&[parameter], &[], &[scope], &[], &[], &[], &[], &[]);
+
+        let [parameter] = parameters.as_slice() else {
+            panic!("expected one retained parameter");
+        };
+        assert_eq!(parameter.owner, None);
+        assert_eq!(
+            parameter
+                .properties
+                .get("owner_record_index")
+                .map(String::as_str),
+            Some("8")
+        );
+        assert_eq!(
+            parameter.value,
+            Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(12.5)
+            ))
         );
     }
 }
