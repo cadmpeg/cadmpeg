@@ -73,11 +73,9 @@ pub(super) fn decode(
     let vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange);
     let oriented = oriented_defs(exchange);
+    let shells = shell_defs(exchange);
     let point_positions = carrier_index;
-    for (&vertex_id, vertex) in &exchange.records {
-        if !has_type(vertex, "VERTEX_POINT") {
-            continue;
-        }
+    for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
             result.warnings.push(format!(
                 "VERTEX_POINT #{vertex_id} has no resolvable point carrier"
@@ -156,10 +154,7 @@ pub(super) fn decode(
             ));
         }
     }
-    for (&model, record) in &exchange.records {
-        if !has_type(record, "SHELL_BASED_WIREFRAME_MODEL") {
-            continue;
-        }
+    for (model, record) in exchange.entities("SHELL_BASED_WIREFRAME_MODEL") {
         let scope_root = named_refs(record, "SHELL_BASED_WIREFRAME_MODEL", 1)
             .into_iter()
             .flatten()
@@ -215,20 +210,14 @@ pub(super) fn decode(
         .map(|pcurve| pcurve.id.clone())
         .collect::<BTreeSet<_>>();
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
-    for (&id, record) in &exchange.records {
-        if ![
-            "SHELL_BASED_SURFACE_MODEL",
-            "FACE_BASED_SURFACE_MODEL",
-            "FACETED_BREP",
-            "MANIFOLD_SOLID_BREP",
-            "BREP_WITH_VOIDS",
-        ]
-        .iter()
-        .any(|name| has_type(record, name))
-        {
-            continue;
-        }
-        let Some(key) = root_key(record, exchange) else {
+    for (id, record) in exchange.entities_any(&[
+        "SHELL_BASED_SURFACE_MODEL",
+        "FACE_BASED_SURFACE_MODEL",
+        "FACETED_BREP",
+        "MANIFOLD_SOLID_BREP",
+        "BREP_WITH_VOIDS",
+    ]) {
+        let Some(key) = root_key(record, exchange, &shells) else {
             result.warnings.push(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
             ));
@@ -257,6 +246,7 @@ pub(super) fn decode(
             &vertices,
             &edges,
             &oriented,
+            &shells,
             &decoded_pcurves,
             point_positions,
             scope_root,
@@ -318,10 +308,7 @@ pub(super) fn decode(
             }
         }
     }
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
-            continue;
-        }
+    for (id, record) in exchange.entities("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
             result.warnings.push(format!(
@@ -360,7 +347,11 @@ pub(super) fn decode(
             result.typed_records.append(&mut built.typed);
         }
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&[
+        "SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_SHAPE_REPRESENTATION",
+        "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
+    ]) {
         if !matches!(
             record.simple_name(),
             Some(
@@ -391,7 +382,11 @@ pub(super) fn decode(
             &mut result.typed_records,
         );
     }
-    for (&id, record) in &exchange.records {
+    for (id, record) in exchange.entities_any(&[
+        "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_SHAPE_REPRESENTATION",
+        "SHAPE_REPRESENTATION",
+    ]) {
         if !matches!(
             record.simple_name(),
             Some(
@@ -1012,9 +1007,8 @@ struct OrientedDef {
 
 fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
     exchange
-        .records
-        .iter()
-        .filter_map(|(&id, r)| {
+        .entities("VERTEX_POINT")
+        .filter_map(|(id, r)| {
             if !has_type(r, "VERTEX_POINT") {
                 return None;
             }
@@ -1028,22 +1022,37 @@ fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
         .collect()
 }
 fn edge_defs(exchange: &Exchange) -> BTreeMap<u64, EdgeDef> {
-    exchange
-        .records
-        .iter()
-        .filter_map(|(&id, _)| {
-            edge_def_for(id, exchange, &mut BTreeSet::new()).map(|edge| (id, edge))
-        })
-        .collect()
+    let mut edges = BTreeMap::new();
+    let mut cache = BTreeMap::new();
+    let mut active = BTreeSet::new();
+    for (id, _) in exchange.entities_any(&[
+        "EDGE_CURVE",
+        "SEAM_EDGE",
+        "ORIENTED_EDGE",
+        "SUBEDGE",
+        "EDGE",
+    ]) {
+        if let Some(edge) = edge_def_for(id, exchange, &mut active, &mut cache) {
+            edges.insert(id, edge);
+        }
+    }
+    edges
 }
 
-fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<EdgeDef> {
+fn edge_def_for(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    cache: &mut BTreeMap<u64, Option<EdgeDef>>,
+) -> Option<EdgeDef> {
+    if let Some(edge) = cache.get(&id) {
+        return edge.clone();
+    }
     if !active.insert(id) {
         return None;
     }
-    let record = exchange.records.get(&id)?;
-    let result = match most_specific(
-        record,
+    let result = (|| match most_specific(
+        exchange.records.get(&id)?,
         &[
             "EDGE_CURVE",
             "SEAM_EDGE",
@@ -1053,6 +1062,7 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
         ],
     )? {
         "EDGE_CURVE" => {
+            let record = exchange.records.get(&id)?;
             let (start, end) = edge_vertices(record)?;
             Some(EdgeDef {
                 start,
@@ -1064,6 +1074,7 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
             })
         }
         "EDGE" => {
+            let record = exchange.records.get(&id)?;
             let (start, end) = edge_vertices(record)?;
             Some(EdgeDef {
                 start,
@@ -1075,9 +1086,10 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
             })
         }
         "SUBEDGE" => {
+            let record = exchange.records.get(&id)?;
             let (start, end) = edge_vertices(record)?;
             let parent = subedge_parent(record)?;
-            let parent_def = edge_def_for(parent, exchange, active)?;
+            let parent_def = edge_def_for(parent, exchange, active, cache)?;
             Some(EdgeDef {
                 start,
                 end,
@@ -1088,8 +1100,9 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
             })
         }
         "ORIENTED_EDGE" | "SEAM_EDGE" => {
+            let record = exchange.records.get(&id)?;
             let element = oriented_edge_reference(record)?;
-            let element_def = edge_def_for(element, exchange, active)?;
+            let element_def = edge_def_for(element, exchange, active, cache)?;
             let forward = oriented_edge_forward(record)?;
             Some(EdgeDef {
                 start: element_def.start,
@@ -1114,8 +1127,9 @@ fn edge_def_for(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opt
             })
         }
         _ => None,
-    };
+    })();
     active.remove(&id);
+    cache.insert(id, result.clone());
     result
 }
 
@@ -1144,9 +1158,8 @@ fn edge_curve_id_reported(
 }
 fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
     exchange
-        .records
-        .iter()
-        .filter_map(|(&id, r)| {
+        .entities_any(&["ORIENTED_EDGE", "SEAM_EDGE"])
+        .filter_map(|(id, r)| {
             if !has_type(r, "ORIENTED_EDGE") && !has_type(r, "SEAM_EDGE") {
                 return None;
             }
@@ -1494,15 +1507,20 @@ fn root_shell_steps(root: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
     None
 }
 
-fn root_key(root: &RawRecord, exchange: &Exchange) -> Option<RootKey> {
+fn root_key(
+    root: &RawRecord,
+    exchange: &Exchange,
+    shell_definitions: &BTreeMap<u64, ShellDef>,
+) -> Option<RootKey> {
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
     for shell in root_shell_steps(root, exchange)? {
         let key = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             Some((shell, Some(true)))
         } else {
-            resolve_shell(shell, exchange, &mut BTreeSet::new())
-                .map(|(resolved_shell, forward)| (resolved_shell, Some(forward)))
+            shell_definitions
+                .get(&shell)
+                .map(|definition| (definition.base, Some(definition.forward)))
                 .or(Some((shell, None)))
         };
         if key.as_ref().is_some_and(|(_, forward)| forward.is_some()) {
@@ -1528,6 +1546,7 @@ fn build(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
+    shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
     point_positions: &CarrierIndex,
     scope_root: bool,
@@ -1557,6 +1576,7 @@ fn build(
             vdefs,
             edefs,
             odefs,
+            shell_definitions,
             decoded_pcurves,
             point_positions,
             &shell_steps,
@@ -1584,9 +1604,8 @@ fn build(
         let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
         } else {
-            let mut typed = BTreeSet::new();
-            match resolve_shell(shell_reference, exchange, &mut typed) {
-                Some((shell_step, _)) => shell_step,
+            match shell_definitions.get(&shell_reference) {
+                Some(definition) => definition.base,
                 None => {
                     failure.get_or_insert(BuildFailure {
                         record_id: shell_reference,
@@ -1617,6 +1636,7 @@ fn build(
             vdefs,
             edefs,
             odefs,
+            shell_definitions,
             decoded_pcurves,
             point_positions,
             &[shell_reference],
@@ -1651,6 +1671,7 @@ fn build_one(
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
+    shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
     point_positions: &CarrierIndex,
     shell_steps: &[u64],
@@ -1706,7 +1727,7 @@ fn build_one(
             (shell_reference, true)
         } else {
             require_carrier(
-                resolve_shell(shell_reference, exchange, &mut typed),
+                shell_def_for(shell_reference, shell_definitions, &mut typed),
                 failure,
                 shell_reference,
                 "shell carrier",
@@ -2280,7 +2301,9 @@ fn build_one(
             shell_reference
         } else {
             require_carrier(
-                resolve_shell(shell_reference, exchange, &mut BTreeSet::new()),
+                shell_definitions
+                    .get(&shell_reference)
+                    .map(|definition| (definition.base, definition.forward)),
                 failure,
                 shell_reference,
                 "shell carrier",
@@ -2522,33 +2545,84 @@ fn associated_pcurves(
         .collect()
 }
 
-fn resolve_shell(
+#[derive(Clone)]
+struct ShellDef {
+    base: u64,
+    forward: bool,
+    typed: BTreeSet<u64>,
+}
+
+fn shell_defs(exchange: &Exchange) -> BTreeMap<u64, ShellDef> {
+    let mut cache = BTreeMap::<u64, Option<ShellDef>>::new();
+    let mut active = BTreeSet::new();
+    for (id, _) in exchange.entities_any(&[
+        "ORIENTED_OPEN_SHELL",
+        "ORIENTED_CLOSED_SHELL",
+        "OPEN_SHELL",
+        "CLOSED_SHELL",
+    ]) {
+        shell_def_cached(id, exchange, &mut active, &mut cache);
+    }
+    cache
+        .into_iter()
+        .filter_map(|(id, definition)| definition.map(|definition| (id, definition)))
+        .collect()
+}
+
+fn shell_def_cached(
     reference: u64,
     exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    cache: &mut BTreeMap<u64, Option<ShellDef>>,
+) -> Option<ShellDef> {
+    if let Some(definition) = cache.get(&reference) {
+        return definition.clone();
+    }
+    if !active.insert(reference) {
+        return None;
+    }
+    let result = (|| {
+        let record = exchange.records.get(&reference)?;
+        match most_specific(
+            record,
+            &[
+                "ORIENTED_OPEN_SHELL",
+                "ORIENTED_CLOSED_SHELL",
+                "OPEN_SHELL",
+                "CLOSED_SHELL",
+            ],
+        )? {
+            "OPEN_SHELL" | "CLOSED_SHELL" => Some(ShellDef {
+                base: reference,
+                forward: true,
+                typed: BTreeSet::new(),
+            }),
+            "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
+                let shell_type =
+                    most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
+                let element = named_reference(record, shell_type, 1, 0)?;
+                let orientation = named_logical(record, shell_type, 2, 0)?;
+                let mut definition = shell_def_cached(element, exchange, active, cache)?;
+                definition.forward = definition.forward == orientation;
+                definition.typed.insert(reference);
+                Some(definition)
+            }
+            _ => None,
+        }
+    })();
+    active.remove(&reference);
+    cache.insert(reference, result.clone());
+    result
+}
+
+fn shell_def_for(
+    reference: u64,
+    shells: &BTreeMap<u64, ShellDef>,
     typed: &mut BTreeSet<u64>,
 ) -> Option<(u64, bool)> {
-    let record = exchange.records.get(&reference)?;
-    match most_specific(
-        record,
-        &[
-            "ORIENTED_OPEN_SHELL",
-            "ORIENTED_CLOSED_SHELL",
-            "OPEN_SHELL",
-            "CLOSED_SHELL",
-        ],
-    )? {
-        "OPEN_SHELL" | "CLOSED_SHELL" => Some((reference, true)),
-        "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
-            typed.insert(reference);
-            let shell_type =
-                most_specific(record, &["ORIENTED_OPEN_SHELL", "ORIENTED_CLOSED_SHELL"])?;
-            let element = named_reference(record, shell_type, 1, 0)?;
-            let orientation = named_logical(record, shell_type, 2, 0)?;
-            let (base, element_orientation) = resolve_shell(element, exchange, typed)?;
-            Some((base, element_orientation == orientation))
-        }
-        _ => None,
-    }
+    let definition = shells.get(&reference)?;
+    typed.extend(definition.typed.iter().copied());
+    Some((definition.base, definition.forward))
 }
 
 #[derive(Default)]

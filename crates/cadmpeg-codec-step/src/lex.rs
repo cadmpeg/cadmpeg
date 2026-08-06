@@ -70,29 +70,44 @@ pub struct LexError {
 
 /// Tokenize one complete clear-text exchange structure.
 pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
-    let mut lexer = Lexer { input, at: 0 };
+    let mut lexer = Lexer::new(input);
     let mut tokens = Vec::new();
-    while lexer.skip_trivia()? {
-        tokens.push(lexer.token()?);
-        if matches!(
-            tokens.last().map(|token| &token.kind),
-            Some(TokenKind::Semicolon)
-        ) && matches!(
-            tokens.get(tokens.len().saturating_sub(2)).map(|token| &token.kind),
-            Some(TokenKind::Name(name)) if name == "SIGNATURE"
-        ) {
-            lexer.skip_signature_payload()?;
-        }
+    while let Some(token) = lexer.next_token()? {
+        tokens.push(token);
     }
     Ok(tokens)
 }
 
-struct Lexer<'a> {
+pub(crate) struct Lexer<'a> {
     input: &'a [u8],
     at: usize,
+    previous_was_signature: bool,
 }
 
-impl Lexer<'_> {
+impl<'a> Lexer<'a> {
+    pub(crate) fn new(input: &'a [u8]) -> Self {
+        Self {
+            input,
+            at: 0,
+            previous_was_signature: false,
+        }
+    }
+
+    pub(crate) fn next_token(&mut self) -> Result<Option<Token>, LexError> {
+        if !self.skip_trivia()? {
+            return Ok(None);
+        }
+        let token = self.token()?;
+        let skip_signature =
+            self.previous_was_signature && matches!(&token.kind, TokenKind::Semicolon);
+        self.previous_was_signature =
+            matches!(&token.kind, TokenKind::Name(name) if name == "SIGNATURE");
+        if skip_signature {
+            self.skip_signature_payload()?;
+        }
+        Ok(Some(token))
+    }
+
     fn skip_signature_payload(&mut self) -> Result<(), LexError> {
         let start = self.at;
         let tail = &self.input[start..];

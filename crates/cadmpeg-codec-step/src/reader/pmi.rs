@@ -21,11 +21,16 @@ pub(super) struct PmiResult {
 }
 
 pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut CadIr) -> PmiResult {
+    if !exchange.has_entity_matching(is_pmi_entity_name) {
+        return PmiResult {
+            typed_records: BTreeSet::new(),
+            warnings: Vec::new(),
+        };
+    }
     let aspects = exchange
-        .records
-        .iter()
+        .entities_any(&["SHAPE_ASPECT", "DATUM_FEATURE", "DATUM"])
         .filter(|(_, record)| is_shape_aspect(record))
-        .map(|(&id, _)| id)
+        .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
@@ -34,10 +39,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     let characteristic_values =
         characteristic_values(exchange, geometry.length_scale, geometry.plane_angle_scale);
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DATUM") {
         let identification = record
             .parameters()
             .iter()
@@ -55,10 +57,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.insert(id);
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DATUM_SYSTEM") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DATUM_SYSTEM") {
         let constituents = record
             .parameters()
             .iter()
@@ -103,7 +102,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.extend(datum_records);
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(|name| dimension_kind(Some(name)).is_some()) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(mut kind) = dimension_kind(record.simple_name()) else {
             continue;
         };
@@ -149,10 +151,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.insert(id);
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("PLUS_MINUS_TOLERANCE") {
-            continue;
-        }
+    for (id, record) in exchange.entities("PLUS_MINUS_TOLERANCE") {
         let refs = record
             .parameters()
             .iter()
@@ -236,7 +235,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(|name| tolerance_kind(Some(name)).is_some()) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(tolerance) = record
             .partials
             .iter()
@@ -303,10 +305,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }));
     }
 
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
         let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
             continue;
         };
@@ -321,7 +320,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }
     }
 
-    for (&id, record) in &exchange.records {
+    for id in exchange.matching_entity_ids(is_presentation_annotation) {
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
         let Some(name) = record.simple_name() else {
             continue;
         };
@@ -369,13 +371,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed.extend(text_records);
         typed.extend(placement_records);
     }
-    for (&id, record) in &exchange.records {
-        if matches!(
-            record.simple_name(),
-            Some("DRAUGHTING_MODEL" | "ANNOTATION_PLANE" | "DRAUGHTING_CALLOUT")
-        ) {
-            typed.insert(id);
-        }
+    for (id, _) in
+        exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
+    {
+        typed.insert(id);
     }
 
     let targeted_aspects = ir
@@ -401,10 +400,7 @@ fn mark_characteristic_representations(
     annotations: &BTreeMap<u64, usize>,
     typed: &mut BTreeSet<u64>,
 ) {
-    for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-            continue;
-        }
+    for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let record_references = record
             .parameters()
             .iter()
@@ -683,6 +679,24 @@ fn pmi_id(id: u64) -> PmiId {
     PmiId(format!("step:presentation:pmi#{id}"))
 }
 
+fn is_pmi_entity_name(name: &str) -> bool {
+    matches!(
+        name,
+        "SHAPE_ASPECT"
+            | "DATUM_FEATURE"
+            | "DATUM"
+            | "DATUM_SYSTEM"
+            | "PLUS_MINUS_TOLERANCE"
+            | "DRAUGHTING_MODEL_ITEM_ASSOCIATION"
+            | "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"
+            | "DRAUGHTING_MODEL"
+            | "ANNOTATION_PLANE"
+            | "DRAUGHTING_CALLOUT"
+    ) || dimension_kind(Some(name)).is_some()
+        || tolerance_kind(Some(name)).is_some()
+        || is_presentation_annotation(name)
+}
+
 fn is_shape_aspect(record: &RawRecord) -> bool {
     matches!(
         record.simple_name(),
@@ -745,11 +759,7 @@ fn characteristic_values(
     angle_scale: f64,
 ) -> BTreeMap<u64, Vec<PmiValue>> {
     let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
-    for record in exchange
-        .records
-        .values()
-        .filter(|record| record.simple_name() == Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"))
-    {
+    for (_, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
             exchange
                 .records
