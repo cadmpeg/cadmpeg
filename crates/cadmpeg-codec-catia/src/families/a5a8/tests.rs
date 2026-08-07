@@ -469,6 +469,21 @@ fn surface_parsers_accept_finite_large_control_points() {
 }
 
 #[test]
+fn a5_surface_parser_rejects_nonfinite_and_repeated_distinct_knots() {
+    let mut nonfinite_u = a5_surface_stream();
+    nonfinite_u[11..19].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_u).is_empty());
+
+    let mut repeated_u = a5_surface_stream();
+    repeated_u[19..27].copy_from_slice(&le_f64(0.0));
+    assert!(crate::families::a5a8::records::a5_surfaces(&repeated_u).is_empty());
+
+    let mut nonfinite_v = a5_surface_stream();
+    nonfinite_v[30..38].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite_v).is_empty());
+}
+
+#[test]
 fn consolidated_surface_parser_reads_width2_frame() {
     let surfaces = crate::families::a5a8::records::a5_surfaces(&a6_surface_stream());
     assert_eq!(surfaces.len(), 1);

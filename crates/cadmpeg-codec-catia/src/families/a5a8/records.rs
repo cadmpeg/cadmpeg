@@ -1163,11 +1163,11 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
     let v_distinct = f64_values(data, &mut at, v_distinct_count, end)?;
     let mode = *data.get(at)?;
     at += 1;
-    let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
-    let (v_knots, v_count) = a5_knots(&v_distinct, v_degree)?;
-    if !monotonic(&u_distinct) || !monotonic(&v_distinct) {
+    if !strictly_increasing_finite(&u_distinct) || !strictly_increasing_finite(&v_distinct) {
         return None;
     }
+    let (u_knots, u_count) = a5_knots(&u_distinct, u_degree)?;
+    let (v_knots, v_count) = a5_knots(&v_distinct, v_degree)?;
     let poles = crate::nurbs_surface_control_count(u_count as usize, v_count as usize)?;
     if at.checked_add(poles.checked_mul(24)?)? > end {
         return None;
@@ -1405,6 +1405,10 @@ fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>
 
 fn monotonic(values: &[f64]) -> bool {
     values.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+fn strictly_increasing_finite(values: &[f64]) -> bool {
+    values.iter().all(|value| value.is_finite()) && values.windows(2).all(|pair| pair[0] < pair[1])
 }
 
 fn a5_int(byte: u8) -> Option<u32> {
