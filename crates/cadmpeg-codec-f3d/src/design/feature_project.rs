@@ -12,6 +12,7 @@ use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOff
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
+    resolved_edge_treatment_group,
 };
 use crate::design::face_resolve::{
     design_angle, resolved_body_recipe_shape, resolved_direct_face_selection, resolved_face_group,
@@ -1512,7 +1513,7 @@ fn project_fillet_arm(
                         .map_or_else(
                             || EdgeSelection::Native(assignment.id.clone()),
                             |group| {
-                                resolved_edge_group(
+                                resolved_edge_treatment_group(
                                     group,
                                     construction_groups,
                                     edge_operands,
@@ -3472,7 +3473,7 @@ fn project_variable_fillet(
     let (points, tangency_weight) = variable_fillet_law(parameters)?;
     Some(FeatureDefinition::Fillet {
         groups: vec![FilletGroup {
-            edges: resolved_edge_group(
+            edges: resolved_edge_treatment_group(
                 group,
                 construction_groups,
                 edge_operands,
@@ -3758,7 +3759,7 @@ fn project_chamfer(
             let edge_group = edge_groups.get(index).copied();
             ChamferGroup {
                 edges: match edge_group {
-                    Some(group) => resolved_edge_group(
+                    Some(group) => resolved_edge_treatment_group(
                         group,
                         construction_groups,
                         edge_operands,
@@ -3814,7 +3815,7 @@ fn project_fixed_chamfer(
     };
     Some(FeatureDefinition::Chamfer {
         groups: vec![ChamferGroup {
-            edges: resolved_edge_group(
+            edges: resolved_edge_treatment_group(
                 group,
                 construction_groups,
                 edge_operands,

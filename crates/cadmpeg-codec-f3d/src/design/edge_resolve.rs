@@ -17,6 +17,55 @@ pub(crate) fn resolved_edge_group(
     feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
 ) -> cadmpeg_ir::features::EdgeSelection {
+    resolved_edge_group_with_transition_chain(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+        treatment_radius,
+        false,
+    )
+}
+
+/// Resolve an edge-treatment group with the exact transition chain available
+/// to Fillet and Chamfer operations.
+pub(crate) fn resolved_edge_treatment_group(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    treatment_radius: Option<f64>,
+) -> cadmpeg_ir::features::EdgeSelection {
+    resolved_edge_group_with_transition_chain(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        previous_state_id,
+        feature_id,
+        treatment_radius,
+        true,
+    )
+}
+
+// The wrappers preserve the resolver's established seven inputs and add one
+// explicit mode bit so transition-chain proof cannot broaden generic edge
+// selection. Keep that scope visible at this single dispatch boundary.
+#[allow(clippy::too_many_arguments)]
+fn resolved_edge_group_with_transition_chain(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    treatment_radius: Option<f64>,
+    allow_edge_treatment_transition_chain: bool,
+) -> cadmpeg_ir::features::EdgeSelection {
     use cadmpeg_ir::features::EdgeSelection;
 
     let feature_key = feature_id
@@ -181,16 +230,28 @@ pub(crate) fn resolved_edge_group(
             (!edges.is_empty()).then_some(edges)
         })
         .flatten();
-    let identity_group_transition_slots = identity_matches.as_ref().and_then(|operands| {
-        let first = operands.first()?;
+    let identity_group_transition_slots = identity_matches.as_ref().and_then(|identity_operands| {
+        let first = identity_operands.first()?;
         let mut edges = first.transition_edge_candidates.clone();
         edges.sort_unstable();
         edges.dedup();
         let is_memberwise_selection = edges.len() == group.members.len()
-            && operands.iter().all(|operand| {
+            && identity_operands.iter().all(|operand| {
                 if !operand.compact_layout {
                     return false;
                 }
+                let mut candidate = operand.transition_edge_candidates.clone();
+                candidate.sort_unstable();
+                candidate.dedup();
+                candidate == edges
+            });
+        let is_full_layout_edge_treatment_chain = allow_edge_treatment_transition_chain
+            && treatment_radius.is_none()
+            && group.members.len() > 1
+            && identity_operands
+                .iter()
+                .all(|operand| !operand.compact_layout)
+            && identity_operands.iter().all(|operand| {
                 let mut candidate = operand.transition_edge_candidates.clone();
                 candidate.sort_unstable();
                 candidate.dedup();
@@ -200,21 +261,47 @@ pub(crate) fn resolved_edge_group(
         // selected chain. Its transition candidates are already restricted to
         // deleted edges between the treatment face and its surviving support
         // faces, so the chain does not need one identity record per edge.
-        let is_single_member_chain = group.members.len() == 1 && operands.len() == 1;
-        (!edges.is_empty() && (is_memberwise_selection || is_single_member_chain)).then_some(edges)
+        let is_single_member_chain = group.members.len() == 1 && identity_operands.len() == 1;
+        (!edges.is_empty()
+            && (is_memberwise_selection
+                || is_full_layout_edge_treatment_chain
+                || is_single_member_chain))
+            .then_some(edges)
     });
-    let identity_radius_slots = treatment_radius.and_then(|radius| {
-        radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
-    });
-    let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
-        !operands.is_empty()
-            && (operands.iter().all(|operand| {
-                operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
-            }) || identity_transition_slots.is_some()
-                || identity_group_transition_slots.is_some()
-                || identity_radius_slots.is_some())
-    });
-    let recipe_corroborates_identity_transition =
+    let is_full_layout_edge_treatment_group = allow_edge_treatment_transition_chain
+        && treatment_radius.is_none()
+        && group.members.len() > 1
+        && identity_group_transition_slots.is_some()
+        && identity_matches.as_ref().is_some_and(|identity_operands| {
+            identity_operands
+                .iter()
+                .all(|operand| !operand.compact_layout)
+        });
+    let recipe_supports_transition_chain = |chain: &[i64]| {
+        let member_operands = group
+            .members
+            .iter()
+            .map(|member| {
+                let mut matches = operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                });
+                let operand = matches.next()?;
+                matches.next().is_none().then_some(operand)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(member_operands) = member_operands else {
+            return false;
+        };
+        transition_chain_is_supported_by_recipe(chain, group.members.len(), member_operands)
+    };
+    let identity_transition_is_supported = if is_full_layout_edge_treatment_group {
+        !has_concrete_recipe_evidence
+            || identity_group_transition_slots
+                .as_ref()
+                .is_some_and(|chain| recipe_supports_transition_chain(chain))
+    } else {
         identity_transition_slots.as_ref().is_some_and(|slots| {
             group.members.len() == 1
                 && operands
@@ -230,11 +317,23 @@ pub(crate) fn resolved_edge_group(
                                 || operand.deleted_boundary_edge_slots.contains(slot)
                         })
                     })
-        });
+        })
+    };
+    let identity_radius_slots = treatment_radius.and_then(|radius| {
+        radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
+    });
+    let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
+        !operands.is_empty()
+            && (operands.iter().all(|operand| {
+                operand.resolved_edge_slot.is_some() || !operand.resolved_edge_slots.is_empty()
+            }) || identity_transition_slots.is_some()
+                || identity_group_transition_slots.is_some()
+                || identity_radius_slots.is_some())
+    });
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         !has_recipe_operands
             || (has_complete_identity_selection
-                && (!has_concrete_recipe_evidence || recipe_corroborates_identity_transition))
+                && (!has_concrete_recipe_evidence || identity_transition_is_supported))
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
@@ -582,6 +681,53 @@ pub(crate) fn resolved_hem_edge_slot(
         return Some(*edge);
     }
     previous_state_id.and_then(|_| hem_transition_edge_slot(operand))
+}
+
+/// Check recipe evidence before an exact edge-treatment transition chain
+/// replaces persistent recipe or identity context.
+///
+/// Changed and deleted recipe boundaries are hard evidence. A deleted edge
+/// proven by a recipe but absent from the treatment chain contradicts that
+/// chain. A member with deleted boundaries must also share at least one edge
+/// with the chain. When any member has changed or deleted boundary evidence,
+/// every edge in the exact chain must occur in the group's combined recipe
+/// boundary set.
+fn transition_chain_is_supported_by_recipe<'a>(
+    chain: &[i64],
+    member_count: usize,
+    operands: impl IntoIterator<Item = &'a DesignEdgeOperand>,
+) -> bool {
+    let operands = operands.into_iter().collect::<Vec<_>>();
+    if operands.len() != member_count {
+        return false;
+    }
+    let mut all_recipe_edges = Vec::new();
+    for operand in &operands {
+        let resolved = resolved_edge_operand(operand);
+        if let Some(edge) = resolved {
+            if operand.deleted_boundary_edge_slots.contains(&edge) && !chain.contains(&edge) {
+                return false;
+            }
+        }
+        if !operand.deleted_boundary_edge_slots.is_empty()
+            && !operand
+                .deleted_boundary_edge_slots
+                .iter()
+                .any(|edge| chain.contains(edge))
+        {
+            return false;
+        }
+        all_recipe_edges.extend(
+            operand
+                .changed_boundary_edge_slots
+                .iter()
+                .chain(&operand.deleted_boundary_edge_slots)
+                .copied(),
+        );
+    }
+    all_recipe_edges.sort_unstable();
+    all_recipe_edges.dedup();
+    all_recipe_edges.is_empty() || chain.iter().all(|edge| all_recipe_edges.contains(edge))
 }
 
 fn hem_transition_edge_slot(operand: &DesignEdgeOperand) -> Option<i64> {
@@ -1679,7 +1825,7 @@ pub(crate) fn project_fixed_fillet(
                 | RadiusSpec::Variable { .. }
                 | RadiusSpec::Unresolved { .. } => None,
             };
-            let edges = resolved_edge_group(
+            let edges = resolved_edge_treatment_group(
                 edge_group,
                 construction_groups,
                 edge_operands,
@@ -1705,10 +1851,12 @@ pub(crate) fn project_fixed_fillet(
 mod radius_identity_tests {
     use super::{
         project_fixed_fillet, radius_edge_identity_group_candidates, resolved_edge_group,
+        resolved_edge_treatment_group, transition_chain_is_supported_by_recipe,
         unique_hem_transition_edge_candidate,
     };
     use crate::records::{
-        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignParameterScope,
+        DesignConstructionOperandGroup, DesignEdgeIdentityOperand, DesignEdgeOperand,
+        DesignParameterScope,
     };
 
     fn identity(record_index: u32, candidates: &[(i64, f64)]) -> DesignEdgeIdentityOperand {
@@ -1873,6 +2021,91 @@ mod radius_identity_tests {
                         "f3d:history-input:edge#6:fillet:7:19".into()
                     ),
                 ]
+        ));
+    }
+
+    #[test]
+    fn edge_treatment_full_layout_group_projects_complete_transition_chain() {
+        let mut selection_group = group(2, 10);
+        selection_group.members = vec![10, 11];
+        selection_group.member_offsets = vec![0, 0];
+        let mut first = identity(10, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+        first.compact_layout = false;
+        let mut second = identity(11, &[(17, 0.0), (18, 0.0), (19, 0.0)]);
+        second.compact_layout = false;
+        second.group_member_ordinal = 1;
+        let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+
+        assert!(matches!(
+            resolved_edge_treatment_group(
+                &selection_group,
+                std::slice::from_ref(&selection_group),
+                &[],
+                &[first, second],
+                Some(7),
+                &feature_id,
+                None,
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:18".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:19".into()
+                    ),
+                ]
+        ));
+    }
+
+    fn recipe_edge_operand(
+        record_index: u32,
+        changed_boundary_edge_slots: &[i64],
+        deleted_boundary_edge_slots: &[i64],
+    ) -> DesignEdgeOperand {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:edge-operand#{record_index}"),
+            "scope_record_index": 1,
+            "scope_reference_ordinal": 0,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "297",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "259",
+            "recipe_record_index": record_index + 3,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [],
+            "changed_boundary_edge_slots": changed_boundary_edge_slots,
+            "deleted_boundary_edge_slots": deleted_boundary_edge_slots,
+            "next_record_index": record_index + 4,
+            "next_byte_offset": 0,
+        }))
+        .expect("edge recipe operand")
+    }
+
+    #[test]
+    fn edge_treatment_chain_requires_complete_recipe_boundary_coverage() {
+        let first = recipe_edge_operand(10, &[17], &[17]);
+        let second = recipe_edge_operand(11, &[], &[]);
+        assert!(!transition_chain_is_supported_by_recipe(
+            &[17, 18],
+            2,
+            [&first, &second],
+        ));
+
+        let first = recipe_edge_operand(10, &[17, 18], &[17]);
+        assert!(transition_chain_is_supported_by_recipe(
+            &[17, 18],
+            2,
+            [&first, &second],
         ));
     }
 
