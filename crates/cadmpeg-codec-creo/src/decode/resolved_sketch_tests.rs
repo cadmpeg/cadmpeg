@@ -2662,6 +2662,17 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
     let mut conflicting = table.clone();
     conflicting.entries[3].related_entity_id = Some(101);
     assert_eq!(feature_surface_transitions(17, &[conflicting], &rows), None);
+    let mut wrong_predecessor_class = table.clone();
+    wrong_predecessor_class.entries[0].class_id = 219;
+    wrong_predecessor_class
+        .entries
+        .push(entry(999, 214, Some(888)));
+    wrong_predecessor_class.entry_ids.push(999);
+    wrong_predecessor_class.non_surface_entity_ids.push(999);
+    assert_eq!(
+        feature_surface_transitions(17, &[wrong_predecessor_class], &rows),
+        None
+    );
     assert_eq!(
         surface_transition_dependencies(17, std::slice::from_ref(&table), &rows),
         [3, 4]

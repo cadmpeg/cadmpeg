@@ -17524,7 +17524,8 @@ fn feature_surface_transitions(
             return None;
         }
         let mut matches = output_table.entries.iter().filter(|predecessor| {
-            predecessor.entity_id == intermediate_id
+            predecessor.class_id == 214
+                && predecessor.entity_id == intermediate_id
                 && predecessor.related_entity_state == Some(0)
                 && output_table
                     .non_surface_entity_ids
