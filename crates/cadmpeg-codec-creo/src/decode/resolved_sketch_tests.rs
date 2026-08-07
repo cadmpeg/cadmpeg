@@ -1593,6 +1593,14 @@ fn native_curve_families_accept_only_their_defined_loci() {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
+    let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
+        point: SketchLocus::Center(SketchEntityId("line".to_string())),
+        entity: SketchEntityId("bounded".to_string()),
+    };
+    assert!(!sketch_constraint_loci_compatible(
+        &incompatible_midpoint,
+        &geometry
+    ));
 }
 
 #[test]
@@ -9309,7 +9317,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .definition,
         SketchConstraintDefinition::Vertical { .. }
     ));
-    assert_eq!(
+    assert!(matches!(
         section_skamp_constraints_for_geometry(
             &opaque_line,
             &SketchId("creo:model:sketch#917".into()),
@@ -9331,13 +9339,8 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[1]
         .0
         .definition,
-        SketchConstraintDefinition::Midpoint {
-            point: SketchLocus::Center(SketchEntityId(
-                "creo:featdefs:sketch_entity#917:100".to_string()
-            )),
-            entity: SketchEntityId("creo:featdefs:sketch_entity#917:101".to_string()),
-        }
-    );
+        SketchConstraintDefinition::Native { .. }
+    ));
     let mut opaque_family_collision = opaque_point.clone();
     opaque_family_collision
         .segments

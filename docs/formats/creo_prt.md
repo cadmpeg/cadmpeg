@@ -1502,6 +1502,9 @@ complete native incidence row. Defined incidence type, flag, and locus-sense
 patterns retain their neutral constraint kind when disabled; saved coordinates
 and unresolved carrier geometry are not required to satisfy an inactive
 equation.
+Every neutral definition, active or inactive, requires each selected locus to
+match the emitted entity family. An incompatible candidate remains a native
+incidence record.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint. Sense `4` selects an arc or

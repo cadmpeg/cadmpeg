@@ -11420,11 +11420,13 @@ fn section_skamp_constraints_for_geometry(
             } else {
                 native_constraint()?
             };
-            if active
-                && geometry.is_some_and(|geometry| {
-                    !sketch_constraint_loci_compatible(&constraint_definition, geometry)
-                })
-            {
+            if geometry.is_some_and(|geometry| {
+                !sketch_constraint_loci_compatible_with_policy(
+                    &constraint_definition,
+                    geometry,
+                    !active,
+                )
+            }) {
                 constraint_definition = native_constraint()?;
             }
             Some((
@@ -11453,9 +11455,18 @@ fn section_skamp_constraints_for_geometry(
         .collect()
 }
 
+#[cfg(test)]
 fn sketch_constraint_loci_compatible(
     definition: &SketchConstraintDefinition,
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
+) -> bool {
+    sketch_constraint_loci_compatible_with_policy(definition, geometry, false)
+}
+
+fn sketch_constraint_loci_compatible_with_policy(
+    definition: &SketchConstraintDefinition,
+    geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
+    allow_unknown_native_endpoints: bool,
 ) -> bool {
     let locus_compatible = |locus: &SketchLocus| {
         let entity = match locus {
@@ -11473,10 +11484,11 @@ fn sketch_constraint_loci_compatible(
                 ) && !matches!(
                         geometry,
                         SketchGeometry::Native { native_kind }
-                            if !matches!(
+                            if !(matches!(
                                 native_kind.as_str(),
                                 "bounded_curve" | "line" | "arc" | "spline"
-                            )
+                            ) || allow_unknown_native_endpoints
+                                && native_kind == "solver_only_section_entity")
                 )
             }
             SketchLocus::Center(_) => {
