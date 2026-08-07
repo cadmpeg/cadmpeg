@@ -19,8 +19,8 @@ use cadmpeg_ir::features::{
     HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
     PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SweepMode, Termination, VariableRadius,
-    VertexSelection, WrapMode,
+    ScaleCenter, ScaleFactors, SketchSpace, SurfaceExtension, SweepMode, Termination, TrimRegion,
+    VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
@@ -2490,13 +2490,50 @@ mod history_reference_tests {
         surface_extrude.input_class = Some("moExtruRefSurface_c".into());
         surface_extrude.parameters.insert("D1".into(), "3mm".into());
 
+        let mut offset_surface = feature("offset-surface", Some("6"), 5);
+        offset_surface.kind = "Surface-Offset".into();
+        offset_surface.input_class = Some("moOffsetRefSurface_c".into());
+
+        let mut knit_surface = feature("knit-surface", Some("7"), 6);
+        knit_surface.kind = "Surface-Knit".into();
+        knit_surface.input_class = Some("moSewRefSurface_c".into());
+
+        let mut filled_surface = feature("filled-surface", Some("8"), 7);
+        filled_surface.kind = "Surface-Fill".into();
+        filled_surface.input_class = Some("moFillRefSurface_c".into());
+
+        let mut trim_surface = feature("trim-surface", Some("9"), 8);
+        trim_surface.kind = "Surface-Trim".into();
+        trim_surface.input_class = Some("moTrimRefSurface_c".into());
+
+        let mut extend_surface = feature("extend-surface", Some("10"), 9);
+        extend_surface.kind = "Surface-Extend".into();
+        extend_surface.input_class = Some("moExtendRefSurface_c".into());
+
+        let mut draft = feature("draft", Some("11"), 10);
+        draft.kind = "Draft".into();
+        draft.input_class = Some("moDraft_c".into());
+        draft.parameters.insert("D1".into(), "3deg".into());
+
         let projected = project_features(&[FeatureHistory {
             id: "history".into(),
             part_name: None,
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![dome, rib, surface_loft, cut_loft, surface_extrude],
+            features: vec![
+                dome,
+                rib,
+                surface_loft,
+                cut_loft,
+                surface_extrude,
+                offset_surface,
+                knit_surface,
+                filled_surface,
+                trim_surface,
+                extend_surface,
+                draft,
+            ],
         }]);
 
         assert!(matches!(
@@ -2538,6 +2575,59 @@ mod history_reference_tests {
                 solid: Some(false),
                 ..
             }
+        ));
+        assert!(matches!(
+            projected[5].definition,
+            FeatureDefinition::OffsetSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None,
+            }
+        ));
+        assert!(matches!(
+            projected[6].definition,
+            FeatureDefinition::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: None,
+                create_solid: None,
+                gap_tolerance: None,
+            }
+        ));
+        assert!(matches!(
+            projected[7].definition,
+            FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Unresolved),
+                support_faces: FaceSelection::Unresolved,
+                continuity: None,
+                merge_result: None,
+                ..
+            }
+        ));
+        assert!(matches!(
+            projected[8].definition,
+            FeatureDefinition::TrimSurface {
+                faces: FaceSelection::Unresolved,
+                tool: PathRef::Unresolved(_),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            }
+        ));
+        assert!(matches!(
+            projected[9].definition,
+            FeatureDefinition::ExtendSurface {
+                faces: FaceSelection::Unresolved,
+                distance: None,
+                method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+            }
+        ));
+        assert!(matches!(
+            projected[10].definition,
+            FeatureDefinition::Draft {
+                faces: FaceSelection::Unresolved,
+                neutral_plane: FaceSelection::Unresolved,
+                pull_direction: None,
+                angle: Some(Angle(value)),
+                outward: None,
+                ..
+            } if (value - std::f64::consts::PI / 60.0).abs() < 1e-12
         ));
     }
 
@@ -6683,20 +6773,19 @@ fn project_definition(
     } else if class == Some(FeatureClass::Thicken) {
         project_thicken(feature)
     } else if class == Some(FeatureClass::OffsetSurface) {
-        project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_offset_surface(feature)
     } else if class == Some(FeatureClass::KnitSurface) {
-        project_knit_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_knit_surface(feature)
     } else if class == Some(FeatureClass::FilledSurface) {
-        project_filled_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_filled_surface(feature)
     } else if class == Some(FeatureClass::TrimSurface) {
         project_trim_surface(feature, native_by_source)
-            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::ExtendSurface) {
-        project_extend_surface(feature).unwrap_or_else(|| native_definition(feature))
+        project_extend_surface(feature)
     } else if class == Some(FeatureClass::RuledSurface) {
         project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Draft) {
-        project_draft(feature).unwrap_or_else(|| native_definition(feature))
+        project_draft(feature)
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
@@ -8767,91 +8856,122 @@ fn project_thicken(feature: &Feature) -> FeatureDefinition {
     }
 }
 
-fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::OffsetSurface {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Some(Length(parse_length_mm(
-            feature
-                .parameters
-                .get("Distance")
-                .or_else(|| feature.parameters.get("D1"))?,
-        )?)),
-    })
+fn project_offset_surface(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::OffsetSurface {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        distance: feature
+            .parameters
+            .get("Distance")
+            .or_else(|| feature.parameters.get("D1"))
+            .and_then(|value| parse_length_mm(value))
+            .map(Length),
+    }
 }
 
-fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_knit_surface(feature: &Feature) -> FeatureDefinition {
     let gap_tolerance = match feature.parameters.get("GapTolerance") {
-        Some(value) => Some(parse_length_mm(value).filter(|value| *value >= 0.0)?),
+        Some(value) => parse_length_mm(value)
+            .filter(|value| *value >= 0.0)
+            .map(Length),
         None => None,
     };
-    Some(FeatureDefinition::KnitSurface {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        merge_entities: Some(
-            feature
-                .properties
-                .get("MergeEntities")
-                .and_then(|value| parse_bool(value))
-                .unwrap_or(true),
-        ),
-        create_solid: Some(
-            feature
-                .properties
-                .get("CreateSolid")
-                .and_then(|value| parse_bool(value))
-                .unwrap_or(false),
-        ),
-        gap_tolerance: gap_tolerance.map(Length),
-    })
+    FeatureDefinition::KnitSurface {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        merge_entities: feature
+            .properties
+            .get("MergeEntities")
+            .and_then(|value| parse_bool(value)),
+        create_solid: feature
+            .properties
+            .get("CreateSolid")
+            .and_then(|value| parse_bool(value)),
+        gap_tolerance,
+    }
 }
 
-fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let continuity =
-        crate::feature_schema::parse_surface_continuity(feature.properties.get("Continuity")?)?;
-    Some(FeatureDefinition::FilledSurface {
-        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(EdgeSelection::Native(
-            feature.properties.get("Boundary")?.clone(),
-        )),
-        support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
-        continuity: Some(continuity),
-        boundary_continuities: Vec::new(),
-        merge_result: Some(
+fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
+    let continuity = feature
+        .properties
+        .get("Continuity")
+        .and_then(|value| crate::feature_schema::parse_surface_continuity(value));
+    FeatureDefinition::FilledSurface {
+        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
             feature
                 .properties
-                .get("MergeResult")
-                .and_then(|value| parse_bool(value))
-                .unwrap_or(false),
+                .get("Boundary")
+                .cloned()
+                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         ),
-    })
+        support_faces: feature
+            .properties
+            .get("SupportFaces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        continuity,
+        boundary_continuities: Vec::new(),
+        merge_result: feature
+            .properties
+            .get("MergeResult")
+            .and_then(|value| parse_bool(value)),
+    }
 }
 
 fn project_trim_surface(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
-) -> Option<FeatureDefinition> {
-    let tool = feature.properties.get("Tool")?;
-    let tool = native_by_source
-        .get(tool.as_str())
-        .map_or_else(|| tool.clone(), |id| (*id).to_string());
-    let keep = crate::feature_schema::parse_trim_region(feature.properties.get("Keep")?)?;
-    Some(FeatureDefinition::TrimSurface {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        tool: PathRef::Native(tool),
-        keep,
-    })
+) -> FeatureDefinition {
+    let tool = feature.properties.get("Tool").map_or_else(
+        || PathRef::Unresolved(format!("{}:tool", feature.id)),
+        |tool| {
+            PathRef::Native(
+                native_by_source
+                    .get(tool.as_str())
+                    .map_or_else(|| tool.clone(), |id| (*id).to_string()),
+            )
+        },
+    );
+    FeatureDefinition::TrimSurface {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        tool,
+        keep: feature
+            .properties
+            .get("Keep")
+            .and_then(|value| crate::feature_schema::parse_trim_region(value))
+            .unwrap_or(TrimRegion::Unresolved),
+    }
 }
 
-fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
-    let method = crate::feature_schema::parse_surface_extension(feature.properties.get("Method")?)?;
-    Some(FeatureDefinition::ExtendSurface {
-        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Some(Length(parse_positive_length_mm(
-            feature
-                .parameters
-                .get("Distance")
-                .or_else(|| feature.parameters.get("D1"))?,
-        )?)),
-        method,
-    })
+fn project_extend_surface(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::ExtendSurface {
+        faces: feature
+            .properties
+            .get("Faces")
+            .cloned()
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+        distance: feature
+            .parameters
+            .get("Distance")
+            .or_else(|| feature.parameters.get("D1"))
+            .and_then(|value| parse_positive_length_mm(value))
+            .map(Length),
+        method: feature
+            .properties
+            .get("Method")
+            .and_then(|value| crate::feature_schema::parse_surface_extension(value))
+            .unwrap_or(SurfaceExtension::Unresolved),
+    }
 }
 
 fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
@@ -8885,12 +9005,13 @@ fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     })
 }
 
-fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
-    let pull_direction = parse_vector3(feature.properties.get("Direction")?)?;
-    if !(pull_direction.norm().is_finite() && pull_direction.norm() > 0.0) {
-        return None;
-    }
-    Some(FeatureDefinition::Draft {
+fn project_draft(feature: &Feature) -> FeatureDefinition {
+    let pull_direction = feature
+        .properties
+        .get("Direction")
+        .and_then(|value| parse_vector3(value))
+        .filter(|direction| direction.norm().is_finite() && direction.norm() > 0.0);
+    FeatureDefinition::Draft {
         faces: feature
             .properties
             .get("Faces")
@@ -8902,7 +9023,7 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         parting_tool: None,
-        pull_direction: Some(pull_direction),
+        pull_direction,
         pull_plane: None,
         angle: feature
             .parameters
@@ -8914,7 +9035,7 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .properties
             .get("Outward")
             .and_then(|value| parse_bool(value)),
-    })
+    }
 }
 
 fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {

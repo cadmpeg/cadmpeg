@@ -8,7 +8,7 @@ use crate::records::{
     Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
     FeatureInputSurfaceSelection,
 };
-use cadmpeg_ir::features::{FeatureId, Length};
+use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureId, Length};
 use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -298,6 +298,67 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
             ..
         } if faces == std::slice::from_ref(&topology_face.id)
     ));
+}
+
+#[test]
+fn compact_surface_selection_binds_surface_operation_face_slot() {
+    let mut signature = [0; 12];
+    signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
+    let mut features = vec![cadmpeg_ir::features::Feature {
+        id: FeatureId("operation".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+        },
+        native_ref: Some("operation-native".into()),
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: vec![FeatureInputSurfaceSelection {
+            id: "selection".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 12,
+            object_name_ref: "name".into(),
+            feature_ref: "operation-native".into(),
+            producer_feature_refs: Vec::new(),
+            terminal_feature_ref: None,
+            components: vec![FeatureInputComponentPathEntry {
+                instance: Some(1),
+                type_signature: signature,
+                local_id: Some(7),
+            }],
+        }],
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    project_compact_surface_selections(&mut features, &[], &[lane]);
+
+    let FeatureDefinition::OffsetSurface { faces, .. } = &features[0].definition else {
+        panic!("expected offset surface");
+    };
+    assert!(matches!(faces, FaceSelection::Native(value) if value.contains(":7")));
 }
 
 #[test]

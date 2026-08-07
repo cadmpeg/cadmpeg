@@ -642,6 +642,16 @@ pub(crate) fn project_compact_surface_selections(
             matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &mut feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
+            FeatureDefinition::Shell { removed_faces, .. } => SelectionSlot::Face(removed_faces),
+            FeatureDefinition::OffsetSurface { faces, .. }
+            | FeatureDefinition::KnitSurface { faces, .. }
+            | FeatureDefinition::TrimSurface { faces, .. }
+            | FeatureDefinition::ExtendSurface { faces, .. }
+            | FeatureDefinition::Dome { faces, .. } => SelectionSlot::Face(faces),
+            FeatureDefinition::FilledSurface { support_faces, .. } => {
+                SelectionSlot::Face(support_faces)
+            }
+            FeatureDefinition::Draft { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:

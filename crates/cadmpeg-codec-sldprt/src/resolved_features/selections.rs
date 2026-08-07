@@ -16,7 +16,7 @@ use super::terminations::{
     compact_termination_reference_path_at,
 };
 use super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
-use crate::classification::{native_object_class, NativeClassKind};
+use crate::classification::{native_object_class, FeatureClass, NativeClassKind};
 use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
@@ -453,6 +453,9 @@ pub(super) fn compact_surface_selections(
                     inline_mirror_surface_paths(&lane.native_payload, start, end, prefix)
                 }))
                 .collect(),
+            NativeClassKind::Operation(operation) => {
+                operation_surface_selection_candidates(operation, lane, start, end)
+            }
             _ => continue,
         };
         if kind != NativeClassKind::MirrorPattern && candidates.len() != 1 {
@@ -484,6 +487,84 @@ pub(super) fn compact_surface_selections(
         }
     }
     result
+}
+
+fn operation_surface_selection_candidates(
+    operation: FeatureClass,
+    lane: &FeatureInputLane,
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    if !matches!(
+        operation,
+        FeatureClass::Dome
+            | FeatureClass::Shell
+            | FeatureClass::OffsetSurface
+            | FeatureClass::KnitSurface
+            | FeatureClass::FilledSurface
+            | FeatureClass::TrimSurface
+            | FeatureClass::ExtendSurface
+            | FeatureClass::Draft
+            | FeatureClass::DeleteFace
+            | FeatureClass::MoveFace
+    ) {
+        return Vec::new();
+    }
+
+    let surface_classes = lane
+        .classes
+        .iter()
+        .filter(|class| {
+            class.name == "moCompSurfaceBody_c"
+                && usize::try_from(class.offset)
+                    .ok()
+                    .is_some_and(|offset| (start..end).contains(&offset))
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = if let [surface_class] = surface_classes.as_slice() {
+        let Some(class_offset) = usize::try_from(surface_class.offset).ok() else {
+            return Vec::new();
+        };
+        let Some(token_offset) = class_offset.checked_add(6 + surface_class.name.len()) else {
+            return Vec::new();
+        };
+        let Some(token) = lane.native_payload.get(token_offset..token_offset + 2) else {
+            return Vec::new();
+        };
+        (start..end.saturating_sub(105))
+            .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
+            .filter_map(|offset| {
+                let marker = offset + 103;
+                compact_surface_selection_at(&lane.native_payload, marker)
+                    .map(|components| (marker, components))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+
+    candidates.extend(
+        lane.classes
+            .iter()
+            .filter(|class| {
+                class.name == "moCompFace_c"
+                    && usize::try_from(class.offset)
+                        .ok()
+                        .is_some_and(|offset| (start..end).contains(&offset))
+            })
+            .filter_map(|class| {
+                let class_offset = usize::try_from(class.offset).ok()?;
+                let body = class_offset.checked_add(6 + class.name.len())?;
+                component_face_reference_at(&lane.native_payload, body)
+            }),
+    );
+    candidates.sort_by_key(|(offset, _)| *offset);
+    candidates.dedup();
+    if candidates.len() == 1 {
+        candidates
+    } else {
+        Vec::new()
+    }
 }
 
 pub(super) fn history_features_with_object_sources(
