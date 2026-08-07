@@ -3761,6 +3761,84 @@ fn writer_round_trips_rigid_body_placements() {
 }
 
 #[test]
+fn decode_applies_canonical_cartesian_operator_to_mapped_body() {
+    let transform = cadmpeg_ir::transform::Transform {
+        rows: [
+            [0.0, -1.0, 0.0, 15.0],
+            [1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 2.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    let mut ir = unit_cube();
+    ir.model.bodies[0].transform = Some(transform);
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write placed body");
+    let mut source = String::from_utf8(output).expect("STEP output is UTF-8");
+
+    let mapped_line = source
+        .lines()
+        .find(|line| line.contains("MAPPED_ITEM('cadmpeg body placement'"))
+        .expect("mapped body item");
+    let target = mapped_line
+        .trim_end_matches(';')
+        .trim_end_matches(')')
+        .rsplit_once(',')
+        .and_then(|(_, reference)| reference.strip_prefix('#'))
+        .expect("mapped target reference")
+        .parse::<u64>()
+        .expect("mapped target id");
+    let target_line = source
+        .lines()
+        .find(|line| {
+            line.split_once('=')
+                .is_some_and(|(id, _)| id.trim() == format!("#{target}"))
+        })
+        .expect("mapped target record");
+    let parameters = target_line
+        .split_once('(')
+        .and_then(|(_, value)| value.strip_suffix(");"))
+        .expect("mapped target parameters")
+        .split(',')
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 4, "unexpected placement target");
+    let origin = parameters[1];
+    let axis_z = parameters[2];
+    let axis_x = parameters[3];
+    let next_id = source
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('#')
+                .and_then(|line| line.split_once('='))
+                .and_then(|(id, _)| id.trim().parse::<u64>().ok())
+        })
+        .max()
+        .expect("STEP entity ids")
+        + 1;
+    let axis_y = format!("#{next_id}");
+    let replacement = format!(
+        "#{target}=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',{axis_x},{axis_y},{origin},1.,{axis_z});"
+    );
+    source = source.replace(target_line, &replacement);
+    let insert_at = source.rfind("ENDSEC;").expect("data section terminator");
+    source.insert_str(
+        insert_at,
+        &format!(
+            "#{next_id}=DIRECTION('',({},{},{}));\n",
+            transform.rows[0][1], transform.rows[1][1], transform.rows[2][1]
+        ),
+    );
+
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode mapped body with canonical operator");
+    assert_eq!(decoded.ir.model.bodies[0].transform, Some(transform));
+}
+
+#[test]
 fn writer_declares_each_supported_target_schema_exactly() {
     for schema in [
         StepSchema::Ap203Edition1,
@@ -4298,6 +4376,48 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
         .unwrap();
     assert_eq!(child.transform.rows[0][3], 40.0);
     assert_eq!(child.transform.rows[1][3], 5.0);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21");
+    let mut source = String::from_utf8(bytes.to_vec()).expect("fixture is UTF-8");
+    source = source.replace(
+        "#30=CARTESIAN_POINT('',(0.,0.,0.));",
+        "#30=CARTESIAN_POINT('',(10.,0.,0.));",
+    );
+    source = source.replace(
+        "#33=DIRECTION('',(1.,0.,0.));",
+        "#33=DIRECTION('',(1.,0.,0.));\n#36=DIRECTION('',(0.,1.,0.));",
+    );
+    source = source.replace(
+        "#35=AXIS2_PLACEMENT_3D('',#31,#32,#33);",
+        "#35=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',#33,#36,#31,2.,#32);",
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode canonical mapped-item assembly");
+
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
+        .expect("mapped child occurrence");
+    assert_eq!(child.transform.rows[0], [2.0, 0.0, 0.0, 20.0]);
+    assert_eq!(child.transform.rows[1], [0.0, 2.0, 0.0, 5.0]);
+    assert_eq!(child.transform.rows[2], [0.0, 0.0, 2.0, 0.0]);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

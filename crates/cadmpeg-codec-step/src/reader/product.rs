@@ -402,12 +402,7 @@ fn apply_body_placements(
         if assembly_representations.contains(&representation) {
             continue;
         }
-        let Some(transform) = geometry
-            .placements
-            .get(&origin)
-            .zip(geometry.placements.get(&target))
-            .map(|(from, to)| between(*from, *to))
-        else {
+        let Some(transform) = mapped_item_transform(origin, target, geometry) else {
             warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
             continue;
         };
@@ -720,9 +715,26 @@ fn mapped_item_placement(
     geometry: &GeometryResult,
 ) -> Option<(u64, Transform)> {
     let (representation, origin, target) = mapped_item_definition(item, exchange)?;
-    let from = geometry.placements.get(&origin)?;
-    let to = geometry.placements.get(&target)?;
-    Some((representation, between(*from, *to)))
+    Some((
+        representation,
+        mapped_item_transform(origin, target, geometry)?,
+    ))
+}
+
+fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) -> Option<Transform> {
+    let from = geometry
+        .placements
+        .get(&origin)
+        .copied()
+        .map(placement_transform)
+        .or_else(|| geometry.transformation_operators.get(&origin).copied())?;
+    let to = geometry
+        .placements
+        .get(&target)
+        .copied()
+        .map(placement_transform)
+        .or_else(|| geometry.transformation_operators.get(&target).copied())?;
+    Some(to.compose(from.try_inverse_affine()?))
 }
 
 fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
@@ -782,6 +794,20 @@ fn between(from: (Point3, Vector3, Vector3), to: (Point3, Vector3, Vector3)) -> 
                 .map(|column| rotation[row][column] * source[column])
                 .sum::<f64>();
     }
+    Transform { rows }
+}
+
+fn placement_transform((origin, z_axis, x_axis): (Point3, Vector3, Vector3)) -> Transform {
+    let placement_basis = basis(z_axis, x_axis);
+    let mut rows = Transform::identity().rows;
+    for row in 0..3 {
+        for column in 0..3 {
+            rows[row][column] = placement_basis[row][column];
+        }
+    }
+    rows[0][3] = origin.x;
+    rows[1][3] = origin.y;
+    rows[2][3] = origin.z;
     Transform { rows }
 }
 fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {

@@ -33,6 +33,7 @@ pub(super) struct GeometryResult {
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    pub transformation_operators: BTreeMap<u64, Transform>,
     pub length_scale: f64,
     pub plane_angle_scale: f64,
 }
@@ -1489,6 +1490,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         warnings,
         losses,
         placements,
+        transformation_operators,
         length_scale: scale,
         plane_angle_scale: angle_scale,
     }
@@ -2104,6 +2106,22 @@ fn entity_parameters<'a>(record: &'a RawRecord, name: &str) -> Option<&'a [Value
 
 fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
     record.partial(name)?.parameters.get(index)
+}
+
+fn transformation_parameter<'a>(
+    record: &'a RawRecord,
+    name: &str,
+    index: usize,
+) -> Option<&'a Value> {
+    let parameters = &record.partial(name)?.parameters;
+    let (attribute_count, offset) = match (name, parameters.len()) {
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", 6) => (5, 1),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_3D", 8) => (5, 3),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", 5) => (4, 1),
+        ("CARTESIAN_TRANSFORMATION_OPERATOR_2D", 7) => (4, 3),
+        _ => return None,
+    };
+    (index < attribute_count).then(|| &parameters[offset + index])
 }
 
 fn entity_type<'a>(record: &RawRecord, names: &[&'a str]) -> Option<&'a str> {
@@ -4199,23 +4217,23 @@ fn cartesian_transformation_operator(
     points: &BTreeMap<u64, Point3>,
     directions: &BTreeMap<u64, Vector3>,
 ) -> Option<Transform> {
-    let axis_x = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 1)?
+    let axis_x = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 0)?
         .reference()
         .and_then(|id| directions.get(&id).copied())?;
-    let axis_y = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
+    let axis_y = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 1)?
         .reference()
         .and_then(|id| directions.get(&id).copied())?;
-    let origin = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 3)?
+    let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
-    let scale = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 4) {
+    let scale = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 3) {
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
-    let axis_z = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 5) {
+    let axis_z = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 4) {
         Some(Value::Reference(id)) => directions.get(id).copied()?,
         Some(Value::Omitted | Value::Derived) | None => normalize(cross(axis_x, axis_y))?,
         Some(_) => return None,
@@ -4250,20 +4268,20 @@ fn cartesian_transformation_operator_2d(
     points: &BTreeMap<u64, Point2>,
     directions: &BTreeMap<u64, Point2>,
 ) -> Option<Transform2> {
-    let axis1 = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 1) {
+    let axis1 = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 0) {
         Some(Value::Reference(id)) => directions.get(id).copied()?,
         Some(Value::Omitted | Value::Derived) | None => Point2::new(1.0, 0.0),
         Some(_) => return None,
     };
-    let axis2 = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2) {
+    let axis2 = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 1) {
         Some(Value::Reference(id)) => directions.get(id).copied()?,
         Some(Value::Omitted | Value::Derived) | None => Point2::new(-axis1.v, axis1.u),
         Some(_) => return None,
     };
-    let origin = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 3)?
+    let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
-    let scale = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 4) {
+    let scale = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 3) {
         Some(Value::Omitted | Value::Derived) | None => 1.0,
         Some(value) => value.number()?,
     };

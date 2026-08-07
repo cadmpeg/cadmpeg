@@ -312,7 +312,10 @@ placement once. A mapped occurrence uses a
 `PRODUCT_DEFINITION_SHAPE` whose definition is the
 `NEXT_ASSEMBLY_USAGE_OCCURRENCE`; its
 `SHAPE_DEFINITION_REPRESENTATION` contains the mapped item that identifies the
-child representation and its target placement. Reused source topology roots
+child representation and its target placement. A mapped item target may be an
+`AXIS2_PLACEMENT_3D` or a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`; the mapped
+transform is the target transform composed with the inverse mapping-origin
+transform. Reused source topology roots
 reuse their committed body identity. Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
 unresolved placement.
