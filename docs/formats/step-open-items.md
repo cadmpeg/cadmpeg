@@ -213,17 +213,6 @@ complete solid and reports the failed STEP carrier.
 **Need.** We need measured loss rates and an IR design before changing the
 atomic-solid invariant.
 
-### TP-06. Implicit face-plane orientation
-
-**Question.** Which winding rule defines the normal of an implicit face plane,
-and how does it compose with `ORIENTED_FACE` bound reversal?
-
-**Known.** The decoder derives a plane from non-collinear boundary points and
-composes explicit face and bound orientation.
-
-**Need.** We need a winding-based rule that uses the outer loop only and a
-degeneracy threshold for nearly collinear points.
-
 ### TP-07. Pcurve recursion and normalization
 
 **Question.** What normalization and recursion guard rules apply to cyclic

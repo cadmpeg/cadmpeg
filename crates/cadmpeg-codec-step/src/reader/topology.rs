@@ -2766,61 +2766,73 @@ fn implicit_face_points(
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
-) -> Vec<Point3> {
-    let mut points = Vec::new();
-    for &bound_step in bounds {
-        let Some(bound) = exchange.records.get(&bound_step) else {
-            continue;
-        };
-        let Some(loop_step) = named_reference(
-            bound,
-            if has_type(bound, "FACE_OUTER_BOUND") {
-                "FACE_OUTER_BOUND"
-            } else {
-                "FACE_BOUND"
-            },
-            1,
-            0,
-        ) else {
-            continue;
-        };
-        let Some(loop_record) = exchange.records.get(&loop_step) else {
-            continue;
-        };
-        let candidates = if has_type(loop_record, "POLY_LOOP") {
-            named_refs(loop_record, "POLY_LOOP", 1)
-                .unwrap_or_default()
-                .into_iter()
-                .collect::<Vec<_>>()
-        } else if has_type(loop_record, "VERTEX_LOOP") {
-            named_reference(loop_record, "VERTEX_LOOP", 1, 0)
-                .into_iter()
-                .collect::<Vec<_>>()
-        } else if has_type(loop_record, "EDGE_LOOP") {
-            named_refs(loop_record, "EDGE_LOOP", 1)
-                .unwrap_or_default()
-                .into_iter()
-                .filter_map(|oriented_step| odefs.get(&oriented_step))
-                .filter_map(|oriented| edefs.get(&oriented.edge))
-                .flat_map(|edge| [edge.start, edge.end])
-                .collect::<Vec<_>>()
+) -> Option<Vec<Point3>> {
+    let outer = bounds.iter().copied().find(|bound_step| {
+        exchange
+            .records
+            .get(bound_step)
+            .is_some_and(|bound| has_type(bound, "FACE_OUTER_BOUND"))
+    });
+    let candidates = outer.map_or_else(|| bounds.to_vec(), |bound| vec![bound]);
+
+    candidates.into_iter().find_map(|bound_step| {
+        let bound = exchange.records.get(&bound_step)?;
+        let bound_type = if has_type(bound, "FACE_OUTER_BOUND") {
+            "FACE_OUTER_BOUND"
+        } else if has_type(bound, "FACE_BOUND") {
+            "FACE_BOUND"
         } else {
-            Vec::new()
+            return None;
         };
-        for vertex_or_point in candidates {
+        let loop_step = named_reference(bound, bound_type, 1, 0)?;
+        let loop_record = exchange.records.get(&loop_step)?;
+        let bound_forward = named_logical(bound, bound_type, 2, 0)?;
+        let mut point_steps = if has_type(loop_record, "POLY_LOOP") {
+            named_refs(loop_record, "POLY_LOOP", 1)?
+        } else if has_type(loop_record, "EDGE_LOOP") {
+            let oriented_steps = named_refs(loop_record, "EDGE_LOOP", 1)?;
+            let mut directed_edges = Vec::with_capacity(oriented_steps.len());
+            for oriented_step in oriented_steps {
+                let oriented = odefs.get(&oriented_step)?;
+                let edge = edefs.get(&oriented.edge)?;
+                let directed = if oriented.forward {
+                    (edge.start, edge.end)
+                } else {
+                    (edge.end, edge.start)
+                };
+                directed_edges.push(directed);
+            }
+            if !bound_forward {
+                directed_edges.reverse();
+                for (start, end) in &mut directed_edges {
+                    std::mem::swap(start, end);
+                }
+            }
+            directed_edges.into_iter().map(|(start, _)| start).collect()
+        } else {
+            return None;
+        };
+        if !bound_forward && has_type(loop_record, "POLY_LOOP") {
+            point_steps.reverse();
+        }
+        let mut points = Vec::with_capacity(point_steps.len());
+        for point_step in point_steps {
             let point_step = vdefs
-                .get(&vertex_or_point)
-                .map_or(vertex_or_point, |vertex| vertex.point);
-            let Some(point) = point_positions.get(point_step).copied() else {
-                continue;
-            };
-            if !points.contains(&point) {
+                .get(&point_step)
+                .map_or(point_step, |vertex| vertex.point);
+            let point = point_positions.get(point_step).copied()?;
+            if points.last().is_none_or(|previous| *previous != point) {
                 points.push(point);
             }
         }
-    }
-    points
+        if points.len() > 1 && points.first() == points.last() {
+            points.pop();
+        }
+        (points.len() >= 3).then_some(points)
+    })
 }
+
+const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn implicit_face_plane(
     bounds: &[u64],
@@ -2830,25 +2842,48 @@ fn implicit_face_plane(
     odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
-    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions);
+    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions)?;
     let origin = *points.first()?;
-    for (index, &point) in points.iter().enumerate().skip(1) {
-        let u = point.vector_from(origin);
-        for &other in points.iter().skip(index + 1) {
-            let v = other.vector_from(origin);
-            let Some(u_axis) = u.unit() else {
-                continue;
-            };
-            if let Some(normal) = u.cross(v).unit() {
-                return Some(SurfaceGeometry::Plane {
-                    origin,
-                    normal,
-                    u_axis,
-                });
-            }
-        }
+    let relative_points = points
+        .iter()
+        .map(|point| point.vector_from(origin))
+        .collect::<Vec<_>>();
+    let scale = relative_points
+        .iter()
+        .map(Vector3::norm)
+        .fold(0.0, f64::max);
+    if !scale.is_finite() || scale <= f64::EPSILON {
+        return None;
     }
-    None
+    let mut area_normal = Vector3::new(0.0, 0.0, 0.0);
+    for (current, next) in relative_points
+        .iter()
+        .zip(relative_points.iter().cycle().skip(1))
+        .take(relative_points.len())
+    {
+        area_normal = area_normal + current.cross(*next);
+    }
+    let area = area_normal.norm();
+    if !area.is_finite() || area <= IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE * scale * scale {
+        return None;
+    }
+    let normal = area_normal.unit()?;
+    let u_axis = relative_points
+        .iter()
+        .zip(relative_points.iter().cycle().skip(1))
+        .take(relative_points.len())
+        .find_map(|(current, next)| {
+            let edge = *next - *current;
+            let projected = edge - normal.scale(edge.dot(normal));
+            (projected.norm() > f64::EPSILON)
+                .then(|| projected.unit())
+                .flatten()
+        })?;
+    Some(SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    })
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {

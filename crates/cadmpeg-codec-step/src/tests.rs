@@ -1516,10 +1516,88 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
 
     assert_eq!(decoded.ir.model.bodies.len(), 1);
     assert_eq!(decoded.ir.model.faces.len(), 1);
-    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
-        surface.id.as_str() == "step:data:surface#implicit-face-29"
-            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
-    }));
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_uses_the_outer_loop_only() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#70=CARTESIAN_POINT('',(2.,2.,0.));\n#71=CARTESIAN_POINT('',(2.,3.,0.));\n#72=CARTESIAN_POINT('',(3.,2.,0.));\n#73=POLY_LOOP('',(#70,#71,#72));\n#74=FACE_BOUND('',#73,.F.);\n#29=FACE('',(#74,#26));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode base face with a hole");
+
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_keeps_base_orientation_across_oriented_face() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#26));",
+        )
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#34));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=ORIENTED_FACE('',#29,.F.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode oriented base face");
+
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
+        .expect("implicit face plane");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("implicit face did not produce a plane");
+    };
+    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(
+        decoded.ir.model.faces[0].sense,
+        cadmpeg_ir::topology::Sense::Forward
+    );
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

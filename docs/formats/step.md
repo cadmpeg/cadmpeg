@@ -257,10 +257,17 @@ remain shared when their owner scope is unambiguous.
 
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or a
 `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
-vertex-only boundary. A base `FACE` with a valid non-collinear `POLY_LOOP`
-derives an implicit plane from the loop points. A base `EDGE` emits a curve-less
-CADIR edge when both endpoint vertices have point carriers. A base `VERTEX` whose
-point carrier is absent makes its containing member mandatory and
+vertex-only boundary. A base `FACE` without an explicit surface derives an
+implicit plane from the first `FACE_OUTER_BOUND` in source order, or from the
+first valid boundary when no outer bound is declared. The selected loop keeps
+its ordered points and applies `FACE_BOUND.orientation`; its signed polygon
+area defines the plane normal, and its first non-degenerate edge defines the
+u-axis. A ring whose signed area is at most `1e-12` times the square of its
+largest point displacement is degenerate and does not produce a plane. An
+`ORIENTED_FACE` keeps the base plane carrier orientation and composes its
+reversal through face sense and boundary traversal. A base `EDGE` emits a
+curve-less CADIR edge when both endpoint vertices have point carriers. A base
+`VERTEX` whose point carrier is absent makes its containing member mandatory and
 unrepresentable. Sheet and wire members containing that vertex are omitted;
 the solid-root transaction rejects it. A geometric set with surface members
 forms a sheet carrier. Curve-only and point-only sets remain standalone
