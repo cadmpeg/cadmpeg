@@ -2262,14 +2262,66 @@ fn build_one(
             face_ids.push(fid);
             typed.insert(face_step);
         }
-        shells.push(Shell {
-            id: sid.clone(),
-            region: rid.clone(),
-            faces: face_ids,
-            wire_edges: vec![],
-            free_vertices: vec![],
-        });
-        region.shells.push(sid);
+        let mut component_edge_vertices = BTreeMap::new();
+        for (used_shell, edge_id) in &used_e {
+            if *used_shell != shell_step {
+                continue;
+            }
+            let Some(edge) = edefs.get(edge_id) else {
+                continue;
+            };
+            let (start, end) = if edge.same {
+                (edge.start, edge.end)
+            } else {
+                (edge.end, edge.start)
+            };
+            component_edge_vertices.insert(
+                scoped_edge_id(*edge_id, id, shell_step, scope_edges, scope_root).0,
+                (
+                    scoped_vertex_id(start, id, shell_step, scope_edges, scope_root).0,
+                    scoped_vertex_id(end, id, shell_step, scope_edges, scope_root).0,
+                ),
+            );
+        }
+        for ((used_shell, edge_id), (start, end)) in &poly_edges {
+            if *used_shell != shell_step {
+                continue;
+            }
+            component_edge_vertices.insert(
+                edge_id.0.clone(),
+                (
+                    scoped_poly_vertex_id(*start, id, shell_step, scope_edges, scope_root).0,
+                    scoped_poly_vertex_id(*end, id, shell_step, scope_edges, scope_root).0,
+                ),
+            );
+        }
+        for (component_index, component) in
+            connected_face_components(&face_ids, &loops, &coedges, &component_edge_vertices)
+                .into_iter()
+                .enumerate()
+        {
+            let component_shell = if component_index == 0 {
+                sid.clone()
+            } else {
+                ShellId(format!("{}-component-{component_index}", sid.0))
+            };
+            let component_faces = component
+                .into_iter()
+                .map(|face_index| {
+                    let face_id = face_ids[face_index].clone();
+                    faces[face_index].shell = component_shell.clone();
+                    face_id
+                })
+                .collect();
+            shells.push(Shell {
+                id: component_shell.clone(),
+                region: rid.clone(),
+                faces: component_faces,
+                wire_edges: vec![],
+                free_vertices: vec![],
+            });
+            region.shells.push(component_shell);
+        }
         typed.insert(shell_step);
     }
     for (shell_step, edge_id) in used_e {
@@ -2407,6 +2459,89 @@ fn build_one(
         built.shell_sources.insert(shell_step);
     }
     Some(built)
+}
+
+/// Partition a source shell into connected IR shells before committing it.
+///
+/// STEP shell records can contain several disconnected face components. The
+/// IR shell invariant is stricter: every face must be reachable through a
+/// shared edge or vertex. Keep the source body and region, but split only the
+/// shell boundary so every decoded face remains available without weakening
+/// validation.
+fn connected_face_components(
+    face_ids: &[FaceId],
+    loops: &[Loop],
+    coedges: &[Coedge],
+    edge_vertices: &BTreeMap<String, (String, String)>,
+) -> Vec<Vec<usize>> {
+    let face_indices = face_ids
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let coedge_edges = coedges
+        .iter()
+        .map(|coedge| (coedge.id.0.clone(), coedge.edge.0.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut faces_by_edge = BTreeMap::<String, BTreeSet<usize>>::new();
+    let mut faces_by_vertex = BTreeMap::<String, BTreeSet<usize>>::new();
+    for loop_ in loops {
+        let Some(&face_index) = face_indices.get(&loop_.face.0) else {
+            continue;
+        };
+        for coedge_id in &loop_.coedges {
+            let Some(edge_id) = coedge_edges.get(&coedge_id.0) else {
+                continue;
+            };
+            faces_by_edge
+                .entry(edge_id.clone())
+                .or_default()
+                .insert(face_index);
+            if let Some((start, end)) = edge_vertices.get(edge_id) {
+                faces_by_vertex
+                    .entry(start.clone())
+                    .or_default()
+                    .insert(face_index);
+                faces_by_vertex
+                    .entry(end.clone())
+                    .or_default()
+                    .insert(face_index);
+            }
+        }
+        for vertex_use in &loop_.vertex_uses {
+            faces_by_vertex
+                .entry(vertex_use.vertex.0.clone())
+                .or_default()
+                .insert(face_index);
+        }
+    }
+
+    let mut neighbors = vec![BTreeSet::new(); face_ids.len()];
+    for group in faces_by_edge.values().chain(faces_by_vertex.values()) {
+        for &face in group {
+            neighbors[face].extend(group.iter().copied().filter(|other| *other != face));
+        }
+    }
+    let mut reached = BTreeSet::new();
+    let mut components = Vec::new();
+    for start in 0..face_ids.len() {
+        if !reached.insert(start) {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut pending = vec![start];
+        while let Some(face) = pending.pop() {
+            component.push(face);
+            for &neighbor in &neighbors[face] {
+                if reached.insert(neighbor) {
+                    pending.push(neighbor);
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    components
 }
 
 fn shell_identity(root_id: u64, shell_step: u64, scope_root: bool) -> ShellId {
