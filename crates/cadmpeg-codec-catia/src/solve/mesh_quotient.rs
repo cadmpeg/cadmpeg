@@ -6802,18 +6802,18 @@ where
     let Some((mesh_quotient, completed_edge_candidates)) = (|| {
         let mut mesh_quotient =
             initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
+        let mut propagated_quotient = mesh_quotient.clone();
+        match propagate_common_ordered_face_quotients(
+            &mesh_domains,
+            edge_candidates,
+            &mut propagated_quotient,
+            budget,
+        ) {
+            Some(()) => mesh_quotient = propagated_quotient,
+            None if budget.exhausted() => {}
+            None => return None,
+        }
         let completed_edge_candidates = if edge_candidates.iter().any(Vec::is_empty) {
-            let mut propagated_quotient = mesh_quotient.clone();
-            match propagate_common_ordered_face_quotients(
-                &mesh_domains,
-                edge_candidates,
-                &mut propagated_quotient,
-                budget,
-            ) {
-                Some(()) => mesh_quotient = propagated_quotient,
-                None if budget.exhausted() => {}
-                None => return None,
-            }
             propagate_common_boundary_components(
                 &mesh_domains,
                 edge_candidates,
