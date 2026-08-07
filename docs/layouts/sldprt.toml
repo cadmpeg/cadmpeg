@@ -1463,7 +1463,7 @@ section = "2"
 anchor = "The legacy prefix has a 140-byte single-incidence profile-point record"
 size = 140
 endianness = "little"
-note = "The record emits a point. Native code 1 uses link-state 2 in this layout."
+note = "The record emits a point. The fixed layout includes the single-incidence and shared-f32 variants with their complete identity trailers."
 
 [[record.field]]
 name = "marker"
@@ -1606,11 +1606,11 @@ source = "spec"
 anchor = "a nonzero, non-null u32 identity at marker +128"
 
 [[record.field]]
-name = "trailer_separator"
+name = "trailer_middle"
 offset = 132
 type = "bytes[4]"
 source = "spec"
-anchor = "four zero bytes at marker +132"
+anchor = "A paired trailer can also use the marker +128 identity and zero bytes at marker +132 through +135"
 
 [[record.field]]
 name = "identity_second"

@@ -37,7 +37,9 @@ use super::endpoints::{
     unique_arc_center_marker, wide_coordinate_roster_full_circle,
 };
 use super::holes::{feature_input_sketch_frame, sketch_feature_frames};
-use super::markers::{inline_arc_coordinates, marker_is_geometry_locus};
+use super::markers::{
+    inline_arc_coordinates, legacy_140_profile_point_variant_coordinates, marker_is_geometry_locus,
+};
 use super::projections::bind_circular_profile_by_dimension;
 use super::reference_geometry::reference_plane_frame_key;
 use super::relation_loci::same_dimension_length;
@@ -760,6 +762,15 @@ pub(crate) fn project_marker_backed_sketches(
                             point.1 as f64 * QUANTUM,
                         ))
                     };
+                    let is_recovered_legacy_profile_point = |endpoint: &SketchInputEntity| {
+                        usize::try_from(endpoint.offset).ok().is_some_and(|offset| {
+                            legacy_140_profile_point_variant_coordinates(
+                                &lane.native_payload,
+                                offset,
+                            )
+                            .is_some()
+                        })
+                    };
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             let point = project(marker)?;
@@ -824,15 +835,31 @@ pub(crate) fn project_marker_backed_sketches(
                                     &markers_by_id,
                                     &object_markers,
                                 );
-                                if let [start, end] = endpoints.as_slice() {
-                                    let (Some(start), Some(end)) = (project(start), project(end))
+                                if let [start_marker, end_marker] = endpoints.as_slice() {
+                                    let (Some(start), Some(end)) =
+                                        (project(start_marker), project(end_marker))
                                     else {
                                         return None;
                                     };
                                     if start == end {
-                                        return None;
+                                        if is_recovered_legacy_profile_point(start_marker)
+                                            || is_recovered_legacy_profile_point(end_marker)
+                                        {
+                                            // A zero-length line is not valid IR geometry. Preserve
+                                            // the marker whose endpoint collapsed because a newly
+                                            // recognized profile point supplied its coordinates.
+                                            SketchGeometry::Native {
+                                                native_kind: format!(
+                                                    "sldprt:marker-geometry:{}",
+                                                    marker.kind.native_code()
+                                                ),
+                                            }
+                                        } else {
+                                            return None;
+                                        }
+                                    } else {
+                                        SketchGeometry::Line { start, end }
                                     }
-                                    SketchGeometry::Line { start, end }
                                 } else if let Some([start, end]) =
                                     extended_declared_inline_line_endpoints(
                                         &lane.native_payload,

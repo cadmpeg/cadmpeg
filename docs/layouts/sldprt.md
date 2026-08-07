@@ -483,7 +483,7 @@ Unstated regions:
 
 Spec §2 · layout: byte offsets · size: 140 B
 
-The record emits a point. Native code 1 uses link-state 2 in this layout.
+The record emits a point. The fixed layout includes the single-incidence and shared-f32 variants with their complete identity trailers.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -507,7 +507,7 @@ The record emits a point. Native code 1 uses link-state 2 in this layout.
 | 90 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +90 |
 | 96 | 32 | `trailer_prefix` | `bytes[32]` | little | spec | zero bytes from marker +96 through +127 |
 | 128 | 4 | `identity_first` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +128 |
-| 132 | 4 | `trailer_separator` | `bytes[4]` | little | spec | four zero bytes at marker +132 |
+| 132 | 4 | `trailer_middle` | `bytes[4]` | little | spec | A paired trailer can also use the marker +128 identity and zero bytes at marker +132 through +135 |
 | 136 | 4 | `identity_second` | `u32` | little | spec | a distinct nonzero, non-null u32 identity at marker +136 |
 
 ## `extended_scaled_146_profile_point`
