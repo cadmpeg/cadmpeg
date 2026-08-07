@@ -375,7 +375,8 @@ datum feature. A complex dimension uses its dimensional partial for its kind
 and all inherited partials for its name, targets, and characteristic value.
 Geometric tolerances read their name and magnitude from the
 `GEOMETRIC_TOLERANCE` partial when the tolerance is complex. Presentation PMI
-retains annotation identity and placement. `PLUS_MINUS_TOLERANCE` carries
+retains annotation identity, text, and placement across inherited annotation
+partials. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.

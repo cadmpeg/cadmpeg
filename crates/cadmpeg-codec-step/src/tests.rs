@@ -5185,6 +5185,43 @@ fn decode_transfers_ap242_presentation_pmi() {
     ));
 }
 
+#[test]
+fn complex_presentation_annotation_inherits_text_and_placement() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_presentation_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=TEXT_LITERAL('inspect surface',#6,'left',.RIGHT.,$);",
+        "#7=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('') TEXT_LITERAL('inspect surface',#6,'left',.RIGHT.,$));",
+    )
+    .replace(
+        "#8=ANNOTATION_TEXT_OCCURRENCE('surface note',(),#7);",
+        "#8=(ANNOTATION_TEXT_OCCURRENCE() ANNOTATION_OCCURRENCE() DRAUGHTING_ANNOTATION_OCCURRENCE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('surface note') MAPPED_ITEM(#7,#7));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex presentation PMI");
+
+    assert_eq!(result.ir.model.pmi.len(), 1);
+    let PmiDefinition::Presentation {
+        ref text,
+        ref placement,
+        ..
+    } = result.ir.model.pmi[0].definition
+    else {
+        panic!("complex annotation occurrence is not presentation PMI")
+    };
+    assert_eq!(result.ir.model.pmi[0].name.as_deref(), Some("surface note"));
+    assert_eq!(text.as_deref(), Some("inspect surface"));
+    let transform = placement.as_ref().expect("annotation placement");
+    assert_eq!(transform.rows[0][3], 10.0);
+    assert_eq!(transform.rows[1][3], 20.0);
+    assert_eq!(transform.rows[2][3], 30.0);
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");

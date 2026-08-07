@@ -416,11 +416,16 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
-        let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
+        let Some(definition) = named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 2)
+            .and_then(ValueExt::reference)
+        else {
             continue;
         };
         if annotations.contains_key(&definition) {
-            for item in record.parameter(4).into_iter().flat_map(references) {
+            for item in named_parameter(record, "DRAUGHTING_MODEL_ITEM_ASSOCIATION", 4)
+                .into_iter()
+                .flat_map(references)
+            {
                 presentation_semantics
                     .entry(item)
                     .or_default()
@@ -434,26 +439,22 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        let Some(name) = record.simple_name() else {
+        let Some(name) = presentation_annotation_name(record) else {
             continue;
         };
-        if !is_presentation_annotation(name) {
-            continue;
-        }
         let mut text_records = BTreeSet::new();
         let text = find_annotation_text(id, exchange, &mut text_records, &mut losses, 0);
         let mut placement_records = BTreeSet::new();
-        let placement = record
-            .parameters()
+        let parameters = all_parameters(record).collect::<Vec<_>>();
+        let placement = parameters
             .iter()
-            .flat_map(references)
+            .flat_map(|value| references(value))
             .find_map(|reference| {
                 find_placement(reference, exchange, geometry, &mut placement_records, 0)
             });
-        let mut semantics = record
-            .parameters()
+        let mut semantics = parameters
             .iter()
-            .flat_map(references)
+            .flat_map(|value| references(value))
             .filter(|reference| annotations.contains_key(reference))
             .map(pmi_id)
             .collect::<Vec<_>>();
@@ -469,15 +470,18 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
-                decode_text(
-                    value,
-                    &mut losses,
-                    id,
-                    "presentation annotation name",
-                    LossKind::MetadataNotTransferred,
-                )
-            }),
+            named_parameter(record, name, 0)
+                .or_else(|| named_parameter(record, "REPRESENTATION_ITEM", 0))
+                .or_else(|| record.parameter(0))
+                .and_then(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "presentation annotation name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                }),
             Vec::new(),
             PmiDefinition::Presentation {
                 text,
@@ -710,6 +714,19 @@ fn is_presentation_annotation(name: &str) -> bool {
         )
 }
 
+fn presentation_annotation_name(record: &RawRecord) -> Option<&str> {
+    record.partials.iter().find_map(|partial| {
+        is_presentation_annotation(&partial.name).then_some(partial.name.as_str())
+    })
+}
+
+fn all_parameters(record: &RawRecord) -> impl Iterator<Item = &Value> {
+    record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+}
+
 fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
@@ -721,23 +738,20 @@ fn find_annotation_text(
         return None;
     }
     let record = exchange.records.get(&id)?;
-    if matches!(
-        record.simple_name(),
-        Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
-    ) {
-        return record.parameter(0).and_then(|value| {
-            decode_text(
-                value,
-                losses,
-                id,
-                "PMI annotation text",
-                LossKind::MetadataNotTransferred,
-            )
-        });
+    if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
+        .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
+    {
+        if let Some(text) = decode_text(
+            value,
+            losses,
+            id,
+            "PMI annotation text",
+            LossKind::MetadataNotTransferred,
+        ) {
+            return Some(text);
+        }
     }
-    record
-        .parameters()
-        .iter()
+    all_parameters(record)
         .flat_map(references)
         .find_map(|reference| find_annotation_text(reference, exchange, visited, losses, depth + 1))
 }
@@ -770,11 +784,7 @@ fn find_placement(
     if !visited.insert(id) {
         return None;
     }
-    exchange
-        .records
-        .get(&id)?
-        .parameters()
-        .iter()
+    all_parameters(exchange.records.get(&id)?)
         .flat_map(references)
         .find_map(|reference| find_placement(reference, exchange, geometry, visited, depth + 1))
 }

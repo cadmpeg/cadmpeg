@@ -99,10 +99,11 @@ pub(super) fn decode(
     };
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
     for (&id, record) in &exchange.records {
-        if record.simple_name() != Some("INVISIBILITY") {
+        if !has_partial(record, "INVISIBILITY") {
             continue;
         }
-        let Some(items) = record.parameter(0).and_then(ValueExt::list) else {
+        let Some(items) = partial_parameter(record, "INVISIBILITY", 0).and_then(ValueExt::list)
+        else {
             warnings.push(format!("INVISIBILITY #{id} has no item set"));
             continue;
         };
@@ -129,18 +130,20 @@ pub(super) fn decode(
         }
     }
     for (&layer_id, layer) in &exchange.records {
-        if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
+        if !has_partial(layer, "PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
         }
-        let Some(name) = layer.parameter(0).and_then(|value| {
-            decode_text(
-                value,
-                &mut losses,
-                layer_id,
-                "presentation layer name",
-                LossKind::MetadataNotTransferred,
-            )
-        }) else {
+        let Some(name) =
+            partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    layer_id,
+                    "presentation layer name",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
+        else {
             warnings.push(format!(
                 "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has no name"
             ));
@@ -152,8 +155,7 @@ pub(super) fn decode(
             ));
             continue;
         }
-        let description = layer
-            .parameter(1)
+        let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
                 decode_text(
                     value,
@@ -164,8 +166,7 @@ pub(super) fn decode(
                 )
             })
             .filter(|value| !value.is_empty());
-        let items = layer
-            .parameter(2)
+        let items = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 2)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
@@ -385,8 +386,7 @@ fn collect_invisible_body_ids(
         .iter()
         .any(|partial| partial.name == "PRESENTATION_LAYER_ASSIGNMENT")
     {
-        record
-            .parameter(2)
+        partial_parameter(record, "PRESENTATION_LAYER_ASSIGNMENT", 2)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
@@ -396,7 +396,12 @@ fn collect_invisible_body_ids(
         partial.name == "REPRESENTATION" || partial.name == "PRESENTATION_REPRESENTATION"
     }) {
         record
-            .parameter(1)
+            .partials
+            .iter()
+            .find(|partial| {
+                partial.name == "REPRESENTATION" || partial.name == "PRESENTATION_REPRESENTATION"
+            })
+            .and_then(|partial| partial.parameters.get(1))
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
@@ -437,16 +442,18 @@ fn expand_style_targets(
     let Some(record) = exchange.records.get(&id) else {
         return vec![id];
     };
-    if !matches!(
-        record.simple_name(),
-        Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
-    ) {
+    let Some(set_name) = record.partials.iter().find_map(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
+        )
+        .then_some(partial.name.as_str())
+    }) else {
         active.remove(&id);
         return vec![id];
-    }
+    };
     typed.insert(id);
-    let targets = record
-        .parameter(1)
+    let targets = partial_parameter(record, set_name, 1)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
@@ -626,50 +633,54 @@ fn presentation_item_one(
             surface: SurfaceId(surface),
         };
     }
-    match exchange.records.get(&id).and_then(RecordExt::simple_name) {
-        Some("PRODUCT")
-            if entity_ids
-                .products
-                .contains(&format!("step:product:product#{id}")) =>
-        {
-            PresentationItem::Product {
-                product: ProductDefinitionId(format!("step:product:product#{id}")),
-            }
-        }
-        Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
-            if entity_ids
-                .occurrences
-                .contains(&format!("step:product:occurrence#{id}")) =>
-        {
-            PresentationItem::Occurrence {
-                occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
-            }
-        }
-        Some(name)
-            if (name == "DATUM"
-                || name == "DATUM_SYSTEM"
-                || name.starts_with("DIMENSIONAL_")
-                || name.ends_with("_TOLERANCE"))
-                && entity_ids
-                    .pmi
-                    .contains(&format!("step:presentation:pmi#{id}")) =>
-        {
-            PresentationItem::Pmi {
-                annotation: PmiId(format!("step:presentation:pmi#{id}")),
-            }
-        }
-        Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET")
-            if entity_ids
-                .tessellations
-                .contains(&format!("step:tessellation:mesh#{id}")) =>
-        {
-            PresentationItem::Tessellation {
-                tessellation: format!("step:tessellation:mesh#{id}"),
-            }
-        }
-        _ => PresentationItem::Source {
+    let Some(record) = exchange.records.get(&id) else {
+        return PresentationItem::Source {
             source_id: format!("#{id}"),
-        },
+        };
+    };
+    let has = |name: &str| has_partial(record, name);
+    if has("PRODUCT")
+        && entity_ids
+            .products
+            .contains(&format!("step:product:product#{id}"))
+    {
+        PresentationItem::Product {
+            product: ProductDefinitionId(format!("step:product:product#{id}")),
+        }
+    } else if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+        && entity_ids
+            .occurrences
+            .contains(&format!("step:product:occurrence#{id}"))
+    {
+        PresentationItem::Occurrence {
+            occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
+        }
+    } else if record.partials.iter().any(|partial| {
+        (partial.name == "DATUM"
+            || partial.name == "DATUM_SYSTEM"
+            || partial.name.starts_with("DIMENSIONAL_")
+            || partial.name.ends_with("_TOLERANCE"))
+            && entity_ids
+                .pmi
+                .contains(&format!("step:presentation:pmi#{id}"))
+    }) {
+        PresentationItem::Pmi {
+            annotation: PmiId(format!("step:presentation:pmi#{id}")),
+        }
+    } else if (has("TRIANGULATED_FACE")
+        || has("COMPLEX_TRIANGULATED_FACE")
+        || has("TRIANGULATED_SURFACE_SET"))
+        && entity_ids
+            .tessellations
+            .contains(&format!("step:tessellation:mesh#{id}"))
+    {
+        PresentationItem::Tessellation {
+            tessellation: format!("step:tessellation:mesh#{id}"),
+        }
+    } else {
+        PresentationItem::Source {
+            source_id: format!("#{id}"),
+        }
     }
 }
 
@@ -927,6 +938,19 @@ fn references(value: &Value) -> Vec<u64> {
         _ => Vec::new(),
     }
 }
+
+fn has_partial(record: &RawRecord, name: &str) -> bool {
+    record.partials.iter().any(|partial| partial.name == name)
+}
+
+fn partial_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == name)
+        .and_then(|partial| partial.parameters.get(index))
+}
+
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn parameters(&self) -> &[Value];
