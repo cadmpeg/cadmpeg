@@ -17367,10 +17367,23 @@ fn chamfer_constant_distance(scan: &ContainerScan, feature_id: u32) -> Option<f6
         _ => return None,
     };
     let planes = placed_planes(scan);
-    let support_planes = affected_ids
+    let unplaced_affected_plane = affected_ids.iter().any(|id| {
+        scan.surfaces
+            .rows
+            .iter()
+            .any(|row| row.id == *id && row.kind == crate::surface::SurfaceKind::Plane)
+            && !planes.contains_key(id)
+    });
+    (!unplaced_affected_plane).then_some(())?;
+    let support_plane_ids = affected_ids
         .iter()
-        .map(|id| planes.get(id).copied())
-        .collect::<Option<Vec<_>>>()?;
+        .copied()
+        .filter(|id| planes.contains_key(id))
+        .collect::<BTreeSet<_>>();
+    let support_planes = support_plane_ids
+        .into_iter()
+        .filter_map(|id| planes.get(&id).copied())
+        .collect::<Vec<_>>();
     equal_distance_chamfer_setback(&cones, &support_planes)
 }
 

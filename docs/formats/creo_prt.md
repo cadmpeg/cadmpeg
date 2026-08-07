@@ -2242,7 +2242,10 @@ surfaces with zero apex radius and a half-angle of pi/4. Each cone axis points
 from its apex toward the affected support plane. The chamfer setback is the
 smallest positive axial distance from each apex to an affected plane whose
 normal is parallel to the cone axis. Every generated cone yields the same
-setback.
+setback. Only affected identifiers that resolve to model surface-plane
+carriers participate in the support-plane set; other affected geometry
+identifiers do not select support planes. Every recognized affected model
+plane must have one unambiguous placement.
 An agreed `edgs_affected` identifier selects the B-rep edge with the same
 `crv_array` curve identifier when that edge is present in the transferred body.
 When that global edge is absent, the unique `crv_array` topology row with the

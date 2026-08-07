@@ -74,6 +74,26 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
             offset: 10,
             body_offset: 11,
         });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 31,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 3,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 31,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 98,
+        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 3,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 98,
+    });
     scan.planes
         .positional_frames
         .push(crate::surface::OutlinePlane {
@@ -93,7 +113,20 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
         });
 
     assert_eq!(chamfer_constant_distance(&scan, 914), Some(0.5));
-    scan.features.affected_ids[0].ids.push(99);
+    scan.features.affected_ids[0].ids.extend([98, 99]);
+    assert_eq!(chamfer_constant_distance(&scan, 914), Some(0.5));
+
+    scan.features.affected_ids[0].ids.push(32);
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 32,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 3,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 32,
+    });
     assert_eq!(chamfer_constant_distance(&scan, 914), None);
 }
 
