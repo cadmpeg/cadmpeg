@@ -366,6 +366,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let forward_entities = marker
                 .links
                 .iter()
+                .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
                 .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
                 .collect::<Vec<_>>();

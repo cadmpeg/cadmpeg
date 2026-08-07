@@ -26,8 +26,13 @@ pub(super) fn linked_single_arc_entity(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
-    if marker.links.is_empty()
-        || marker.links.iter().any(|link| {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    if links.is_empty()
+        || links.iter().any(|link| {
             !matches!(
                 markers_by_id
                     .get(link.entity_ref.as_str())
@@ -67,12 +72,17 @@ pub(super) fn linked_midpoint_operands(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
-    let [first, second] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    let [first, second] = links.as_slice() else {
         return None;
     };
     let mut point = None;
     let mut entity = None;
-    for link in [first, second] {
+    for link in [*first, *second] {
         let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
         let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
         match linked_marker.kind {
@@ -116,7 +126,11 @@ pub(super) fn linked_single_entities(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<Vec<SketchEntityId>> {
     let mut result = Vec::new();
-    for link in &marker.links {
+    for link in marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+    {
         let entities = marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
         let [entity] = entities.as_slice() else {
             return None;

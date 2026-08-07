@@ -1161,6 +1161,50 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
 }
 
 #[test]
+fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::ArcAngle90);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "ignored-arc".into(),
+        },
+        SketchInputLink {
+            local_id: 9,
+            entity_ref: "operand-arc".into(),
+        },
+    ];
+    let mut ignored_arc = marker("ignored-arc", None);
+    ignored_arc.kind = SketchInputKind::Arc;
+    let mut operand_arc = marker("operand-arc", None);
+    operand_arc.kind = SketchInputKind::Arc;
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (ignored_arc.id.as_str(), &ignored_arc),
+        (operand_arc.id.as_str(), &operand_arc),
+    ]);
+    let loci = HashMap::from([
+        (
+            ignored_arc.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("ignored-entity".into()))],
+        ),
+        (
+            operand_arc.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("operand-entity".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::ArcAngle {
+            entity: SketchEntityId("operand-entity".into()),
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        })
+    );
+}
+
+#[test]
 fn self_identifying_forward_link_is_not_a_relation_locus() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
