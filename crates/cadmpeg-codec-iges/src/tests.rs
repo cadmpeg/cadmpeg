@@ -5041,6 +5041,18 @@ fn asymmetric_parameter_domain_surface_file() -> Vec<u8> {
     }])
 }
 
+fn alternate_asymmetric_parameter_domain_surface_file() -> Vec<u8> {
+    owned_test_file(&[OwnedTestEntity {
+        entity_type: 128,
+        form: 0,
+        label: "SURFACE".into(),
+        status: "00010000",
+        parameters:
+            "128,1,1,1,1,0,0,1,0,0,0,0,1,1,-2,-2,2,2,1,1,1,1,0,0,0,0,1,0,0,1,0,1,0,1,0,-2,1,2;"
+                .into(),
+    }])
+}
+
 #[test]
 fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let result = IgesCodec
@@ -5117,6 +5129,22 @@ fn decode_accepts_asymmetric_nurbs_surface_parameter_domains() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(asymmetric_parameter_domain_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_accepts_bounded_alternate_nurbs_surface_parameter_domains() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(alternate_asymmetric_parameter_domain_surface_file()),
             &DecodeOptions::default(),
         )
         .unwrap();

@@ -976,17 +976,18 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        let u_start = ranges[0];
-        let u_end = ranges[1];
-        let v_start = ranges[2];
-        let v_end = ranges[3];
-        if u_start > u_end
-            || v_start > v_end
-            || u_start < u_knots[u_degree_usize]
-            || u_end > u_knots[u_count]
-            || v_start < v_knots[v_degree_usize]
-            || v_end > v_knots[v_count]
-        {
+        let range_is_bounded = |[u_start, u_end, v_start, v_end]: [f64; 4]| {
+            u_start <= u_end
+                && v_start <= v_end
+                && u_start >= u_knots[u_degree_usize]
+                && u_end <= u_knots[u_count]
+                && v_start >= v_knots[v_degree_usize]
+                && v_end <= v_knots[v_count]
+        };
+        let standard_ranges = [ranges[0], ranges[1], ranges[2], ranges[3]];
+        // Keep a bounded compatibility path for producers that place V0 before U1.
+        let alternate_ranges = [ranges[0], ranges[2], ranges[1], ranges[3]];
+        if !range_is_bounded(standard_ranges) && !range_is_bounded(alternate_ranges) {
             losses.push(entity_loss(
                 entry,
                 "surface parameter ranges lie outside their knot domains",
