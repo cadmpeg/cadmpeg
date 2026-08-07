@@ -8,7 +8,8 @@ use super::{
 };
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
+    FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
+    SketchRelationKind,
 };
 use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
@@ -236,7 +237,7 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
     assert_eq!(ambiguous.len(), 2);
 
     let mut missing = entities[..1].to_vec();
-    let mut missing_lane = lane;
+    let mut missing_lane = lane.clone();
     missing_lane.relation_instances[0].operands[0].entity_ref = None;
     project_relation_point_dimensioned_circles(
         &mut missing,
@@ -245,6 +246,84 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         std::slice::from_ref(&missing_lane),
     );
     assert_eq!(missing.len(), 1);
+
+    let mut implicit_lane = lane.clone();
+    implicit_lane.relation_instances[0].operands[0].entity_ref = None;
+    implicit_lane.sketch_entities.extend([
+        SketchInputEntity {
+            id: "implicit-center".into(),
+            parent: "lane".into(),
+            feature_ref: Some(feature_ref.into()),
+            ordinal: 1,
+            offset: 20,
+            object_index: Some(1),
+            local_id: Some(0),
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([0.0, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        },
+        SketchInputEntity {
+            id: "implicit-relation".into(),
+            parent: "lane".into(),
+            feature_ref: Some(feature_ref.into()),
+            ordinal: 2,
+            offset: 25,
+            object_index: Some(1),
+            local_id: None,
+            kind: SketchInputKind::Relation(SketchRelationKind::Distance),
+            state_value: Some(1.0),
+            coordinates_m: None,
+            links: vec![
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "implicit-center".into(),
+                },
+                SketchInputLink {
+                    local_id: 0,
+                    entity_ref: "implicit-center".into(),
+                },
+            ],
+            link_selector: None,
+        },
+        SketchInputEntity {
+            id: "implicit-radial".into(),
+            parent: "lane".into(),
+            feature_ref: Some(feature_ref.into()),
+            ordinal: 3,
+            offset: 30,
+            object_index: Some(2),
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: Some(1.0),
+            coordinates_m: Some([0.002, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        },
+    ]);
+    let mut implicit_entities = vec![SketchEntity {
+        id: SketchEntityId("implicit-center".into()),
+        sketch: entities[0].sketch.clone(),
+        construction: true,
+        native_ref: Some("implicit-center".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(3.0, 4.0),
+        },
+    }];
+    project_relation_point_dimensioned_circles(
+        &mut implicit_entities,
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&parameter),
+        std::slice::from_ref(&implicit_lane),
+    );
+    assert!(matches!(
+        implicit_entities.get(1).map(|entity| &entity.geometry),
+        Some(SketchGeometry::Circle { center, radius: Length(2.0) })
+            if *center == Point2::new(3.0, 4.0)
+    ));
 }
 
 #[test]

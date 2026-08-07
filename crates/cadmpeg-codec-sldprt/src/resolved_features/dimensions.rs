@@ -300,18 +300,6 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let ([operand] | [_, operand]) = relation.operands.as_slice() else {
                 continue;
             };
-            let Some(marker_id) = operand.entity_ref.as_deref() else {
-                continue;
-            };
-            let Some(marker) = markers_by_id.get(marker_id).copied() else {
-                continue;
-            };
-            if !matches!(
-                marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            ) {
-                continue;
-            }
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
@@ -325,6 +313,28 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let Some(radius) = radial_dimension_radius(parameter) else {
                 continue;
             };
+            let marker_id = operand.entity_ref.as_deref().or_else(|| {
+                implicit_circle_marker(
+                    lanes,
+                    relation.feature_ref.as_str(),
+                    operand.kind,
+                    operand.entity_index,
+                    radius,
+                )
+                .map(|(marker, _)| marker.id.as_str())
+            });
+            let Some(marker_id) = marker_id else {
+                continue;
+            };
+            let Some(marker) = markers_by_id.get(marker_id).copied() else {
+                continue;
+            };
+            if !matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                continue;
+            }
             let centers = entities
                 .iter()
                 .filter(|entity| {
