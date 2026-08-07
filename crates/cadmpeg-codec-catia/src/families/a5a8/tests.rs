@@ -5,9 +5,11 @@
 
 use crate::tests::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_pcurve_stream, a5_rational_surface_stream,
-    a5_surface_stream, a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream,
-    a8_elided_surface_stream, a8_freeform_curve_stream, a8_inline_tail_surface_stream,
-    a8_pcurve_stream, a8_rational_surface_stream, a8_surface_stream, a8_surface_tail, le_f64,
+    a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail, a5_surface_short_tail,
+    a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail, a6_freeform_curve_stream,
+    a6_pcurve_stream, a6_surface_stream, a8_elided_surface_stream, a8_freeform_curve_stream,
+    a8_inline_tail_surface_stream, a8_pcurve_stream, a8_rational_surface_stream, a8_surface_stream,
+    a8_surface_tail, le_f64,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -565,11 +567,42 @@ fn a5_surface_parser_rejects_zero_tail_codes_without_underflow() {
         let mut malformed = a5_surface_stream();
         let tail = malformed
             .windows(4)
-            .position(|window| window == [0x05, 0x01, 0x05, 0x01])
+            .position(|window| window == [0x05, 0x05, 0x05, 0x05])
             .expect("surface tail");
         malformed[tail + index] = 0;
         assert!(crate::families::a5a8::records::a5_surfaces(&malformed).is_empty());
     }
+}
+
+#[test]
+fn a5_surface_parser_accepts_each_structured_tail_variant() {
+    for tail in [
+        a5_surface_short_tail(),
+        a5_surface_tail(),
+        a5_surface_extrapolated_short_tail(),
+        a5_surface_extrapolated_tail(),
+    ] {
+        let surfaces =
+            crate::families::a5a8::records::a5_surfaces(&a5_surface_stream_with_tail(&tail));
+        assert_eq!(surfaces.len(), 1, "tail length {}", tail.len());
+    }
+}
+
+#[test]
+fn a5_surface_parser_rejects_unclosed_or_nonfinite_tail_data() {
+    let mut trailing = a5_surface_stream();
+    trailing.push(0);
+    let payload_len = u32::try_from(trailing.len() - 8).unwrap();
+    trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_surfaces(&trailing).is_empty());
+
+    let mut nonfinite = a5_surface_stream();
+    let tail = nonfinite
+        .windows(4)
+        .position(|window| window == [0x05, 0x05, 0x05, 0x05])
+        .expect("surface tail");
+    nonfinite[tail + 4..tail + 12].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::a5_surfaces(&nonfinite).is_empty());
 }
 
 #[test]

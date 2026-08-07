@@ -422,6 +422,8 @@ Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c` or `0x08 0x09`), 
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
+The A5 surface tail is length-closed and has one of three forms. Each begins with `05 <u_code:4n+1> 05 <v_code:4n+1>`, eight finite f64 values `<u_min,u_max,v_min,v_max,coef_u,shift_u,coef_v,shift_v>` with `u_min<u_max`, `v_min<v_max`, and nonzero `coef_u` and `coef_v`, then three flags. The 133-byte form uses flags `01 01 01`, seven finite continuation f64 values that are all zero, and suffix `01 00 01 00 07 07`. The 141-byte form uses eight continuation f64 values and suffix `01 00 01 00 07 07` with flags `01 01 01`, or suffix `09 00 09 00 07 07` with flags `05 05 01`. The 142-byte form uses flags `05 05 01`, eight finite continuation f64 values, and suffix `09 00 09 01 <4n+1> 07 07`. The frame ends after the suffix.
+
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
 
 ### 6.2 `a5 03 32` freeform 3D curve / rolling-ball fillet

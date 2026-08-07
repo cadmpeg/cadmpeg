@@ -280,6 +280,63 @@ fn valid_a8_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
         && zero_x == 0.0
 }
 
+fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
+    let Some(tail_len) = end.checked_sub(at) else {
+        return false;
+    };
+    let continuation_bytes = match tail_len {
+        133 => 56,
+        141 | 142 => 64,
+        _ => return false,
+    };
+    let Some(tail) = data.get(at..end) else {
+        return false;
+    };
+    if tail[0] != 0x05
+        || tail[2] != 0x05
+        || tail[1] % 4 != 1
+        || tail[3] % 4 != 1
+        || !matches!(tail[68..71], [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01])
+    {
+        return false;
+    }
+    let Some(parameters) = read_f64_array::<8>(tail, 4) else {
+        return false;
+    };
+    if parameters.iter().any(|value| !value.is_finite())
+        || parameters[0] >= parameters[1]
+        || parameters[2] >= parameters[3]
+        || parameters[4] == 0.0
+        || parameters[6] == 0.0
+    {
+        return false;
+    }
+    let continuation_start = 71;
+    let continuation_end = continuation_start + continuation_bytes;
+    let continuation = tail[continuation_start..continuation_end]
+        .chunks_exact(8)
+        .map(|bytes| f64::from_le_bytes(bytes.try_into().expect("eight-byte f64")))
+        .collect::<Vec<_>>();
+    if continuation.iter().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let suffix = &tail[continuation_end..];
+    match (tail_len, &tail[68..71]) {
+        (133 | 141, [0x01, 0x01, 0x01]) => {
+            continuation.iter().all(|value| *value == 0.0)
+                && suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
+        }
+        (141, [0x05, 0x05, 0x01]) => suffix == [0x09, 0x00, 0x09, 0x00, 0x07, 0x07],
+        (142, [0x05, 0x05, 0x01]) => {
+            suffix.len() == 7
+                && suffix[..4] == [0x09, 0x00, 0x09, 0x01]
+                && suffix[4] % 4 == 1
+                && suffix[5..] == [0x07, 0x07]
+        }
+        _ => false,
+    }
+}
+
 fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize, v_knots: &[f64]) -> Option<usize> {
     if closed_a8_child_run(data, at, end) {
         return Some(at);
@@ -1264,10 +1321,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
         )?),
         _ => return None,
     };
-    // The structured tail is the false-positive gate for this unlength-framed family.
-    if at + 4 > end
-        || !matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
-    {
+    if !valid_a5_surface_tail(data, at, end) {
         return None;
     }
     Some(FreeformSurface {

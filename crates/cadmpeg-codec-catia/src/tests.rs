@@ -3248,6 +3248,22 @@ pub(crate) fn a6_surface_stream() -> Vec<u8> {
 }
 
 fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
+    a5_surface_record_with_tail(poles, &a5_surface_tail())
+}
+
+pub(crate) fn a5_surface_stream_with_tail(tail: &[u8]) -> Vec<u8> {
+    a5_surface_record_with_tail(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 1.0, 1.0],
+        ],
+        tail,
+    )
+}
+
+fn a5_surface_record_with_tail(poles: [[f64; 3]; 4], tail: &[u8]) -> Vec<u8> {
     let mut record = Vec::new();
     record.extend_from_slice(&[0xa5, 0x03, 0x34]);
     record.extend_from_slice(&0u32.to_le_bytes());
@@ -3264,11 +3280,55 @@ fn a5_surface_stream_with_poles(poles: [[f64; 3]; 4]) -> Vec<u8> {
             record.extend_from_slice(&le_f64(value));
         }
     }
-    record.extend_from_slice(&[0x05, 0x01, 0x05, 0x01]);
-    record.extend(std::iter::repeat_n(0u8, 64));
+    record.extend_from_slice(tail);
     let payload_len = u32::try_from(record.len() - 8).unwrap();
     record[3..7].copy_from_slice(&payload_len.to_le_bytes());
     record
+}
+
+fn a5_surface_parameter_tail(flags: [u8; 3], continuation: &[f64], suffix: &[u8]) -> Vec<u8> {
+    let mut tail = vec![0x05, 0x05, 0x05, 0x05];
+    for value in [0.0f64, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0] {
+        tail.extend_from_slice(&le_f64(value));
+    }
+    tail.extend_from_slice(&flags);
+    for value in continuation {
+        tail.extend_from_slice(&le_f64(*value));
+    }
+    tail.extend_from_slice(suffix);
+    tail
+}
+
+pub(crate) fn a5_surface_short_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x01, 0x01, 0x01],
+        &[0.0; 7],
+        &[0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x01, 0x01, 0x01],
+        &[0.0; 8],
+        &[0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_extrapolated_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x05, 0x05, 0x01],
+        &[0.25, 0.5, 0.25, 0.75, 0.5, 0.75, 0.5, 1.0],
+        &[0x09, 0x00, 0x09, 0x01, 0x05, 0x07, 0x07],
+    )
+}
+
+pub(crate) fn a5_surface_extrapolated_short_tail() -> Vec<u8> {
+    a5_surface_parameter_tail(
+        [0x05, 0x05, 0x01],
+        &[0.25, 0.5, 0.25, 0.75, 0.5, 0.75, 0.5, 1.0],
+        &[0x09, 0x00, 0x09, 0x00, 0x07, 0x07],
+    )
 }
 
 pub(crate) fn a5_rational_surface_stream() -> Vec<u8> {
