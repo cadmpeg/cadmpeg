@@ -416,6 +416,37 @@ Unstated regions:
 - `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_104_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 104 B
+
+Distinct endpoint indices define a minor arc; equal endpoint indices use the extended full-circle layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | A second extended-prefix kind `0` geometry-locus 104-byte bounded-arc form |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` geometry-locus |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry-locus 104-byte bounded-arc form |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector bytes `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | endpoint indices at marker +56 and +58 are zero-based positions |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | endpoint indices at marker +56 and +58 are zero-based positions |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` at marker +72 |
+| 76 | 2 | `center_index` | `u16` | little | spec | u16 center index at marker +76 |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells |
+| 94 | 2 | `terminator` | `u16` | little | spec | marker +94 is zero u16 |
+| 96 | 8 | `trailer_identities` | `u32[2]` | little | spec | two u32 trailer identities are at marker +96 and +100 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_terminal_164_wide_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 164 B

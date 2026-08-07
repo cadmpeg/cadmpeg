@@ -1095,6 +1095,7 @@ pub(crate) fn project_marker_backed_sketches(
                                         .map(|[u, v]| {
                                             Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
                                         });
+                                        let roster_center_witness = roster_center.is_some();
                                         let candidates = object_markers
                                             .iter()
                                             .copied()
@@ -1151,7 +1152,16 @@ pub(crate) fn project_marker_backed_sketches(
                                                 center.0 as f64 * QUANTUM,
                                                 center.1 as f64 * QUANTUM,
                                             );
-                                            return minor_arc_geometry(start, end, center, QUANTUM);
+                                            // The three transformed points are quantized independently.
+                                            // Allow two quanta when the record supplies the center directly.
+                                            let tolerance = if roster_center_witness {
+                                                QUANTUM * 2.0
+                                            } else {
+                                                QUANTUM
+                                            };
+                                            let geometry =
+                                                minor_arc_geometry(start, end, center, tolerance);
+                                            return geometry;
                                         }
                                     }
                                     let [start_marker, end_marker] = endpoints.as_slice() else {

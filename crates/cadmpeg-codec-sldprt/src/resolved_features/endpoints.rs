@@ -1889,9 +1889,11 @@ pub(super) fn coordinate_roster_arc_center(
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
         && sketch_marker_prefix_at(payload, offset.saturating_add(92));
     let extended_compact_104 = extended_compact_104_indexed_arc(payload, offset);
+    let extended_geometry_104 = extended_geometry_104_indexed_arc(payload, offset);
     if !current_wide
         && !extended_wide
         && !extended_compact_104
+        && !extended_geometry_104
         && legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_none()
     {
         return None;
@@ -1905,7 +1907,11 @@ pub(super) fn coordinate_roster_arc_center(
             return Some(center);
         }
     }
-    let endpoint_offset = if extended_compact_104 { 56 } else { 64 };
+    let endpoint_offset = if extended_compact_104 || extended_geometry_104 {
+        56
+    } else {
+        64
+    };
     let first_index = usize::from(u16::from_le_bytes(
         payload
             .get(offset + endpoint_offset..offset + endpoint_offset + 2)?
@@ -1918,7 +1924,13 @@ pub(super) fn coordinate_roster_arc_center(
             .try_into()
             .ok()?,
     ));
-    let center_index = first_index.min(second_index).checked_sub(1)?;
+    let center_index = if extended_geometry_104 {
+        usize::from(u16::from_le_bytes(
+            payload.get(offset + 76..offset + 78)?.try_into().ok()?,
+        ))
+    } else {
+        first_index.min(second_index).checked_sub(1)?
+    };
     let first = resolved_endpoints[0].coordinates_m?;
     let second = resolved_endpoints[1].coordinates_m?;
     let roster = |include_relations: bool| {
@@ -4107,6 +4119,28 @@ pub(super) fn extended_compact_104_indexed_arc(payload: &[u8], offset: usize) ->
         && sketch_marker_prefix_at(payload, offset.saturating_add(104))
 }
 
+fn extended_geometry_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload.get(offset + 72..offset + 76) == Some(&1i32.to_le_bytes())
+        && payload.get(offset + 78..offset + 94)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+}
+
 pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) -> bool {
     let current_compact_84 = payload.get(offset..offset + SKETCH_MARKER.len())
         == Some(SKETCH_MARKER)
@@ -4141,6 +4175,7 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
             .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
         && sketch_marker_prefix_at(payload, offset.saturating_add(84));
     let extended_compact = extended_compact_104_indexed_arc(payload, offset);
+    let extended_geometry = extended_geometry_104_indexed_arc(payload, offset);
     let current_wide = payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
         && wide_indexed_curve_endpoint_indices(payload, offset).is_some()
@@ -4153,6 +4188,7 @@ pub(super) fn indexed_arc_uses_coordinate_center(payload: &[u8], offset: usize) 
     current_compact_84
         || extended_compact_84
         || extended_compact
+        || extended_geometry
         || current_wide
         || extended_wide
         || legacy_referenced_wide_arc_endpoint_indices(payload, offset).is_some()
