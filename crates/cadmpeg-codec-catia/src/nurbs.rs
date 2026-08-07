@@ -24,13 +24,62 @@ fn finite_vector3(vector: Vector3) -> bool {
         .all(f64::is_finite)
 }
 
-fn finite_nurbs_curve(nurbs: &NurbsCurve) -> bool {
-    nurbs.knots.iter().copied().all(f64::is_finite)
+fn valid_nurbs_curve(nurbs: &NurbsCurve) -> bool {
+    let Some(degree) = usize::try_from(nurbs.degree).ok() else {
+        return false;
+    };
+    let Some(expected_knot_count) = nurbs
+        .control_points
+        .len()
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    degree > 0
+        && nurbs.control_points.len() > degree
+        && nurbs.knots.len() == expected_knot_count
+        && nurbs.knots.iter().copied().all(f64::is_finite)
+        && nurbs.knots.windows(2).all(|pair| pair[0] <= pair[1])
         && nurbs.control_points.iter().copied().all(finite_point3)
-        && nurbs
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.iter().copied().all(f64::is_finite))
+        && nurbs.weights.as_ref().is_none_or(|weights| {
+            weights.len() == nurbs.control_points.len()
+                && weights
+                    .iter()
+                    .copied()
+                    .all(|weight| weight.is_finite() && weight != 0.0)
+        })
+}
+
+fn valid_pcurve_nurbs(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> bool {
+    let Some(degree) = usize::try_from(degree).ok() else {
+        return false;
+    };
+    let Some(expected_knot_count) = control_points
+        .len()
+        .checked_add(degree)
+        .and_then(|count| count.checked_add(1))
+    else {
+        return false;
+    };
+    degree > 0
+        && control_points.len() > degree
+        && knots.len() == expected_knot_count
+        && knots.iter().copied().all(f64::is_finite)
+        && knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && control_points.iter().copied().all(finite_point2)
+        && weights.is_none_or(|weights| {
+            weights.len() == control_points.len()
+                && weights
+                    .iter()
+                    .copied()
+                    .all(|weight| weight.is_finite() && weight > 0.0)
+        })
 }
 
 /// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
@@ -66,12 +115,7 @@ pub(crate) fn reverse_pcurve_geometry(
             weights,
             periodic,
         } => {
-            if !knots.iter().copied().all(f64::is_finite)
-                || !control_points.iter().copied().all(finite_point2)
-                || weights
-                    .as_ref()
-                    .is_some_and(|values| values.iter().copied().any(|value| !value.is_finite()))
-            {
+            if !valid_pcurve_nurbs(*degree, knots, control_points, weights.as_deref()) {
                 return None;
             }
             let sum = range[0] + range[1];
@@ -179,7 +223,7 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Nurbs(nurbs) => {
-            if !finite_nurbs_curve(nurbs) {
+            if !valid_nurbs_curve(nurbs) {
                 return None;
             }
             let sum = range[0] + range[1];
@@ -452,7 +496,7 @@ pub(crate) fn circular_helix_cache(
         periodic: false,
     };
     if !fit_tolerance.is_finite()
-        || !finite_nurbs_curve(&curve)
+        || !valid_nurbs_curve(&curve)
         || !curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
     {
         return None;
@@ -583,7 +627,10 @@ pub(crate) fn nurbs_surface_isocurve(
         || !surface.control_points.iter().copied().all(finite_point3)
         || surface.weights.as_ref().is_some_and(|weights| {
             weights.len() != surface.control_points.len()
-                || weights.iter().copied().any(|weight| !weight.is_finite())
+                || weights
+                    .iter()
+                    .copied()
+                    .any(|weight| !weight.is_finite() || weight == 0.0)
         })
     {
         return None;
@@ -913,6 +960,12 @@ mod tests {
             true,
         )
         .is_none());
+        assert!(nurbs_surface_isocurve(
+            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![0.0; 4])),
+            0.5,
+            true,
+        )
+        .is_none());
     }
 
     #[test]
@@ -1042,5 +1095,23 @@ mod tests {
             direction: Point2::new(1.0, 0.0),
         };
         assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
+
+        let malformed_pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            weights: Some(vec![1.0]),
+            periodic: false,
+        };
+        assert!(reverse_pcurve_geometry(&malformed_pcurve, [0.0, 1.0]).is_none());
+
+        let zero_weight_curve = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: Some(vec![1.0, 0.0]),
+            periodic: false,
+        });
+        assert!(reverse_curve_geometry(&zero_weight_curve, [0.0, 1.0]).is_none());
     }
 }
