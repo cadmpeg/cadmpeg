@@ -2065,6 +2065,10 @@ The `qlts_affected` array is the ordered roster of every quilt participating in
 the merge, including the base input. Each quilt identifier occupies the
 feature-generated entity namespace and joins to its generating feature through
 the equal identifier of a class-`200` entry.
+For each joined quilt, the generating feature's unique class-`100` entry with
+the same entity identifier supplies the corresponding table surface identifier.
+That surface identifier must resolve to exactly one surface row owned by the
+generating feature; otherwise the quilt remains a native selection.
 In a compact class-`946` replay row, an `f7 150` anchor precedes the counted
 removed-entity array and its `01 e3` close. The affected-geometry and
 affected-edge arrays follow, then `f0 f7 153`, the affected-quilt array, and a

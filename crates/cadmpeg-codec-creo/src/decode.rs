@@ -17530,14 +17530,72 @@ fn knit_operand_entity_ids(
         .map(|ids| (ids, "surface_merge_entities"))
 }
 
-fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrFeatureDefinition {
+fn knit_operand_surface_ids(
+    scan: &ContainerScan,
+    feature_id: u32,
+    quilt_ids: &[u32],
+) -> Option<Vec<u32>> {
+    let producers = feature_entity_producers(&scan.features.entity_tables);
+    let surface_ids = quilt_ids
+        .iter()
+        .map(|quilt_id| {
+            let mut owners = producers.get(quilt_id)?.iter().copied();
+            let producer = owners.next()?;
+            if owners.next().is_some() || producer == feature_id {
+                return None;
+            }
+            let matching_entries = scan
+                .features
+                .entity_tables
+                .iter()
+                .filter(|table| table.feature_id == Some(producer) && table.table_class_id == 100)
+                .flat_map(|table| table.entries.iter())
+                .filter(|entry| entry.entity_id == *quilt_id)
+                .collect::<Vec<_>>();
+            let [entry] = matching_entries.as_slice() else {
+                return None;
+            };
+            let surface = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.class_id)?;
+            (surface.feature_id == producer).then_some(entry.class_id)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
+}
+
+fn knit_surface_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+) -> IrFeatureDefinition {
     let faces = knit_operand_entity_ids(scan, feature_id).map_or(
         FaceSelection::Unresolved,
-        |(ids, namespace)| {
-            FaceSelection::Native(format!(
+        |(quilt_ids, namespace)| {
+            let native = format!(
                 "creo:allfeatur:{namespace}#{feature_id}:{}",
-                ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
-            ))
+                quilt_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            let available_features = ir
+                .model
+                .features
+                .iter()
+                .map(|feature| feature.id.clone())
+                .collect::<BTreeSet<_>>();
+            let generated =
+                knit_operand_surface_ids(scan, feature_id, &quilt_ids).and_then(|surface_ids| {
+                    generated_surface_face_refs(
+                        &surface_ids,
+                        &scan.surfaces.rows,
+                        &available_features,
+                    )
+                });
+            match generated {
+                Some(faces) => FaceSelection::Generated { faces, native },
+                None => FaceSelection::Native(native),
+            }
         },
     );
     IrFeatureDefinition::KnitSurface {
@@ -17780,7 +17838,7 @@ fn schema_feature_definition(
         return thicken_feature_definition(scan, ir, feature_id);
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return knit_surface_feature_definition(scan, feature_id);
+        return knit_surface_feature_definition(scan, ir, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
@@ -18216,7 +18274,7 @@ fn schema_feature_definition(
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
     if schema_class == 946 {
-        return knit_surface_feature_definition(scan, feature_id);
+        return knit_surface_feature_definition(scan, ir, feature_id);
     }
     if schema_class == 979 && kind == "PRT_CSYS_DEF" {
         let definitions = scan
@@ -18493,7 +18551,7 @@ fn named_feature_definition(
         return Some(thicken_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(knit_surface_feature_definition(scan, feature_id));
+        return Some(knit_surface_feature_definition(scan, ir, feature_id));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
