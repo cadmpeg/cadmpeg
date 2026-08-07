@@ -329,7 +329,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
         .collect::<Option<_>>()?;
     let loops: HashMap<u32, RawLoop> = records
         .iter()
-        .filter(|record| record.class == 0x09 && record.payload.len() != 43)
+        .filter(|record| record.class == 0x09)
         .map(|record| parse_loop(record).map(|loop_| (record.id, loop_)))
         .collect::<Option<_>>()?;
     let raw_faces: Vec<RawFace> = records
@@ -951,10 +951,64 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_jet_pcurve, solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds,
-        E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+        parse_jet_pcurve, parse_topology, solve_absolute_orientation, solve_loop_chain,
+        E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
     };
     use std::collections::BTreeMap;
+
+    fn append_e5_record(bytes: &mut Vec<u8>, class: u8, id: u32, payload: &[u8]) {
+        bytes.extend_from_slice(&[0xe5, 0x0d, 0x03, class, 0]);
+        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(payload);
+    }
+
+    #[test]
+    fn topology_accepts_a_valid_43_byte_loop_payload() {
+        let mut bytes = Vec::new();
+        for vertex in [10, 11, 12] {
+            append_e5_record(&mut bytes, 0xfe, vertex, &[]);
+        }
+        for (edge, start, end) in [(110, 10, 11), (111, 11, 12), (112, 12, 10)] {
+            append_e5_record(
+                &mut bytes,
+                0xff,
+                edge,
+                &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80],
+            );
+        }
+        for pcurve in [100, 101, 102] {
+            let mut payload = vec![0x81, 0x18, 0x02, 0x01];
+            for value in [0.0_f64, 0.0, 1.0, 0.0, 0.0, 1.0] {
+                payload.extend_from_slice(&value.to_le_bytes());
+            }
+            append_e5_record(&mut bytes, 0x96, pcurve, &payload);
+        }
+
+        let mut loop_payload = vec![0x87];
+        for reference in [100, 110, 101, 111, 102, 112] {
+            loop_payload.extend_from_slice(&[0x08, reference]);
+        }
+        loop_payload.extend_from_slice(&[0x18, 0x02, 0x01, 0x83]);
+        for _ in 0..13 {
+            loop_payload.extend_from_slice(&1_i16.to_le_bytes());
+        }
+        assert_eq!(loop_payload.len(), 43);
+        append_e5_record(&mut bytes, 0x09, 40, &loop_payload);
+        append_e5_record(&mut bytes, 0xc8, 258, &[]);
+        append_e5_record(
+            &mut bytes,
+            0x00,
+            60,
+            &[0x82, 0x18, 0x02, 0x01, 0x08, 40, 0x01, 0x00],
+        );
+
+        let topology = parse_topology(&bytes).expect("closed E5 topology");
+        assert_eq!(topology.faces[0].surface, 258);
+        assert_eq!(topology.faces[0].loops[0].edge_uses, [110, 111, 112]);
+        assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+    }
 
     #[test]
     fn jet_range_trailer_is_scale_relative_and_knots_are_finite() {
