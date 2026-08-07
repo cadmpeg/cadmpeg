@@ -32321,8 +32321,8 @@ fn build_report(
             severity: Severity::Info,
             message: format!(
                 "Transferred {topology_bound_plane_count} model-space plane carrier(s) from \
-                 circle, ellipse, or line boundary carriers or three or more non-collinear \
-                 solved boundary vertices of the same native face."
+                 circle, ellipse, or line boundary carriers, coplanar NURBS control nets, or \
+                 three or more non-collinear solved boundary vertices of the same native face."
             ),
             provenance: None,
         });
