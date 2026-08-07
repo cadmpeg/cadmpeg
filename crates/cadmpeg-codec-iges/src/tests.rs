@@ -9311,15 +9311,20 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         });
         let start = positions[index];
         let end_position = positions[end];
+        let pcurve_end = if index == 0 {
+            Point2::new(
+                start.x.midpoint(end_position.x),
+                start.y.midpoint(end_position.y),
+            )
+        } else {
+            Point2::new(end_position.x, end_position.y)
+        };
         ir.model.pcurves.push(Pcurve {
             id: pcurve_ids[index].clone(),
             geometry: PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
-                    Point2::new(start.x, start.y),
-                    Point2::new(end_position.x, end_position.y),
-                ],
+                control_points: vec![Point2::new(start.x, start.y), pcurve_end],
                 weights: None,
                 periodic: false,
             },
@@ -9328,6 +9333,34 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             parameter_range: Some([0.0, 1.0]),
             fit_tolerance: None,
         });
+        let mut pcurve_uses = vec![cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_ids[index].clone(),
+            isoparametric: Some(false),
+            parameter_range: None,
+        }];
+        if index == 0 {
+            let midpoint = pcurve_end;
+            let split_pcurve_id = PcurveId("pcurve#sheet:split".into());
+            ir.model.pcurves.push(Pcurve {
+                id: split_pcurve_id.clone(),
+                geometry: PcurveGeometry::Nurbs {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![midpoint, Point2::new(end_position.x, end_position.y)],
+                    weights: None,
+                    periodic: false,
+                },
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: Some([0.0, 1.0]),
+                fit_tolerance: None,
+            });
+            pcurve_uses.push(cadmpeg_ir::topology::PcurveUse {
+                pcurve: split_pcurve_id,
+                isoparametric: Some(false),
+                parameter_range: None,
+            });
+        }
         ir.model.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
@@ -9336,11 +9369,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
             previous: coedge_ids[(index + 3) % 4].clone(),
             radial_next: coedge_ids[index].clone(),
             sense: Sense::Forward,
-            pcurves: vec![cadmpeg_ir::topology::PcurveUse {
-                pcurve: pcurve_ids[index].clone(),
-                isoparametric: Some(false),
-                parameter_range: None,
-            }],
+            pcurves: pcurve_uses,
             use_curve: None,
             use_curve_parameter_range: None,
         });

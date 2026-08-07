@@ -1998,15 +1998,15 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                         coedge.id
                     )));
                 }
-                if trimmed && first_pcurve_count != 1 {
-                    return Err(CodecError::NotImplemented(format!(
-                        "IGES Type 144 requires exactly one parameter curve per coedge ({})",
-                        loop_.id
-                    )));
-                }
                 if !trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
                     return Err(CodecError::NotImplemented(format!(
                         "IGES Type 141 requires consistent parameter-curve presence per loop ({})",
+                        loop_.id
+                    )));
+                }
+                if trimmed && coedge.pcurves.is_empty() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES Type 144 requires parameter curves for every coedge ({})",
                         loop_.id
                     )));
                 }
@@ -2332,7 +2332,12 @@ fn curve_on_surface_entity(
             index
         };
         model_children.push(model_index);
-        for pcurve_use in &coedge.pcurves {
+        let pcurve_uses = if coedge.sense == Sense::Forward {
+            coedge.pcurves.iter().collect::<Vec<_>>()
+        } else {
+            coedge.pcurves.iter().rev().collect::<Vec<_>>()
+        };
+        for pcurve_use in pcurve_uses {
             let pcurve = ir
                 .model
                 .pcurves
