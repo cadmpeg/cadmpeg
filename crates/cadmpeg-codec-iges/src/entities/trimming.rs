@@ -51,19 +51,8 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
     })
 }
 
-fn close(left: Point3, right: Point3) -> bool {
-    let scale = left
-        .x
-        .abs()
-        .max(left.y.abs())
-        .max(left.z.abs())
-        .max(right.x.abs())
-        .max(right.y.abs())
-        .max(right.z.abs())
-        .max(1.0);
-    (left.x - right.x).abs() <= scale * 1.0e-10
-        && (left.y - right.y).abs() <= scale * 1.0e-10
-        && (left.z - right.z).abs() <= scale * 1.0e-10
+fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
+    tolerance.is_finite() && tolerance > 0.0 && left.distance(right) <= tolerance
 }
 
 fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
@@ -86,10 +75,11 @@ fn face_vertex(
     stem: &str,
     boundary: usize,
     position: Point3,
+    tolerance: f64,
 ) -> VertexId {
     if let Some((_, id)) = vertices
         .iter()
-        .find(|(existing, _)| close(*existing, position))
+        .find(|(existing, _)| close(*existing, position, tolerance))
     {
         return id.clone();
     }
@@ -104,7 +94,7 @@ fn face_vertex(
     candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
-        tolerance: None,
+        tolerance: Some(tolerance),
     });
     vertices.push((position, vertex_id.clone()));
     vertex_id
@@ -350,6 +340,13 @@ pub(super) fn project(
         handled.insert(entry.sequence);
         let Some(factor) = global.length_factor_mm() else {
             losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(tolerance) = global.minimum_resolution_mm() else {
+            losses.push(entity_loss(
+                entry,
+                "Global minimum resolution is missing or invalid",
+            ));
             continue;
         };
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -615,7 +612,7 @@ pub(super) fn project(
             if items.iter().enumerate().any(|(index, item)| {
                 let (_, end) = traversal(item);
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
-                !close(end, next_start)
+                !close(end, next_start, tolerance)
             }) {
                 losses.push(entity_loss(
                     entry,
@@ -639,6 +636,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.start,
+                    tolerance,
                 );
                 let end_vertex = face_vertex(
                     &mut candidate,
@@ -646,6 +644,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.end,
+                    tolerance,
                 );
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
@@ -653,7 +652,7 @@ pub(super) fn project(
                     start: start_vertex,
                     end: end_vertex,
                     param_range: item.source_edge.param_range,
-                    tolerance: None,
+                    tolerance: Some(tolerance),
                 });
                 let pcurve_uses = item
                     .pcurves
@@ -722,7 +721,7 @@ pub(super) fn project(
             loops: loop_ids,
             name: None,
             color: None,
-            tolerance: None,
+            tolerance: Some(tolerance),
         });
         candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),

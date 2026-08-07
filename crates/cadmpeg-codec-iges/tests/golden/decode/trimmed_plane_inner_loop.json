@@ -281,7 +281,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D15:0:0"
+          "start": "iges:model:vertex#D15:0:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D9",
@@ -291,7 +292,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D15:1:0"
+          "start": "iges:model:vertex#D15:1:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -333,7 +335,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D15",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -621,11 +624,13 @@
         },
         {
           "id": "iges:model:vertex#D15:0:0",
-          "point": "iges:model:point#D15:0:0"
+          "point": "iges:model:point#D15:0:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D15:1:0",
-          "point": "iges:model:point#D15:1:0"
+          "point": "iges:model:point#D15:1:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D3-end",
@@ -5463,7 +5468,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "994ffe33325bd4c2c99f1b0b58c6e4a245e66fc45818777e43816dc80ded780a",
+        "document_local_sha256": "73ae036659706ecbf7e89fc97f69cb4bb76126982d741868bb383cd4718ea202",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

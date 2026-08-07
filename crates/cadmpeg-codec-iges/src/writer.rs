@@ -1429,6 +1429,16 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
         let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *curve_id) else {
             continue;
         };
+        let matching_topology_tolerance = topology_edges
+            .iter()
+            .filter(|topology_edge| {
+                topology_edge.curve.as_ref() == Some(curve_id)
+                    && topology_edge.param_range.zip(edge.param_range).is_some_and(
+                        |(topology_range, edge_range)| same_range(topology_range, edge_range),
+                    )
+            })
+            .map(|topology_edge| topology_edge_explicit_tolerance(ir, topology_edge))
+            .fold(0.0, f64::max);
         let is_model_carrier = topology_edges.iter().any(|topology_edge| {
             topology_edge.curve.as_ref() == Some(curve_id)
                 && topology_edge.param_range.zip(edge.param_range).is_some_and(
@@ -1437,11 +1447,21 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                 && vertex_position(ir, &topology_edge.start)
                     .zip(vertex_position(ir, &edge.start))
                     .is_some_and(|(topology_start, edge_start)| {
-                        same_point(topology_start, edge_start)
+                        same_point_with_tolerance(
+                            topology_start,
+                            edge_start,
+                            topology_edge_explicit_tolerance(ir, topology_edge),
+                        )
                     })
                 && vertex_position(ir, &topology_edge.end)
                     .zip(vertex_position(ir, &edge.end))
-                    .is_some_and(|(topology_end, edge_end)| same_point(topology_end, edge_end))
+                    .is_some_and(|(topology_end, edge_end)| {
+                        same_point_with_tolerance(
+                            topology_end,
+                            edge_end,
+                            topology_edge_explicit_tolerance(ir, topology_edge),
+                        )
+                    })
         });
         let is_pcurve_carrier = ir.model.pcurves.iter().any(|pcurve| {
             pcurve.parameter_range.is_some_and(|range| {
@@ -1451,10 +1471,14 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
                         .is_some_and(|edge_range| same_range(edge_range, range))
                     && vertex_position(ir, &edge.start)
                         .zip(curve_point(&curve.geometry, range[0]))
-                        .is_some_and(|(start, evaluated)| same_point(start, evaluated))
+                        .is_some_and(|(start, evaluated)| {
+                            same_point_with_tolerance(start, evaluated, matching_topology_tolerance)
+                        })
                     && vertex_position(ir, &edge.end)
                         .zip(curve_point(&curve.geometry, range[1]))
-                        .is_some_and(|(end, evaluated)| same_point(end, evaluated))
+                        .is_some_and(|(end, evaluated)| {
+                            same_point_with_tolerance(end, evaluated, matching_topology_tolerance)
+                        })
             })
         });
         if is_model_carrier || is_pcurve_carrier {
@@ -2315,6 +2339,28 @@ fn same_point(left: Point3, right: Point3) -> bool {
     same_float(left.x, right.x) && same_float(left.y, right.y) && same_float(left.z, right.z)
 }
 
+fn same_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f64) -> bool {
+    same_point(left, right)
+        || (explicit_tolerance.is_finite()
+            && explicit_tolerance > 0.0
+            && left.distance(right) <= explicit_tolerance)
+}
+
+fn topology_edge_explicit_tolerance(ir: &CadIr, edge: &Edge) -> f64 {
+    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    for vertex_id in [&edge.start, &edge.end] {
+        if let Some(vertex) = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+        {
+            tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+        }
+    }
+    tolerance
+}
+
 fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for entity in entities {
@@ -3084,7 +3130,10 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 edge.id
             ))
         })?;
-        if !close_point(start, evaluated_start) || !close_point(end, evaluated_end) {
+        let tolerance = edge_topology_tolerance(ir, edge)?;
+        if !close_point_with_tolerance(start, evaluated_start, tolerance)
+            || !close_point_with_tolerance(end, evaluated_end, tolerance)
+        {
             return Err(CodecError::Malformed(format!(
                 "IGES edge {} endpoints disagree with its curve parameter range",
                 edge.id
@@ -3092,6 +3141,25 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
         }
     }
     Ok(CurveSpan { range, start, end })
+}
+
+fn edge_topology_tolerance(ir: &CadIr, edge: &Edge) -> Result<f64, CodecError> {
+    let mut tolerance = edge.tolerance.unwrap_or(0.0);
+    for vertex_id in [&edge.start, &edge.end] {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES edge {} references missing vertex {}",
+                    edge.id, vertex_id
+                ))
+            })?;
+        tolerance = tolerance.max(vertex.tolerance.unwrap_or(0.0));
+    }
+    Ok(tolerance)
 }
 
 fn default_range(geometry: &CurveGeometry) -> Result<[f64; 2], CodecError> {
@@ -3741,6 +3809,10 @@ fn polyline_knots(parameters: &[f64]) -> Vec<f64> {
 }
 
 fn close_point(left: Point3, right: Point3) -> bool {
+    close_point_with_tolerance(left, right, 0.0)
+}
+
+fn close_point_with_tolerance(left: Point3, right: Point3, explicit_tolerance: f64) -> bool {
     let scale = left
         .x
         .abs()
@@ -3750,7 +3822,7 @@ fn close_point(left: Point3, right: Point3) -> bool {
         .max(right.y.abs())
         .max(right.z.abs())
         .max(1.0);
-    let tolerance = scale * 1.0e-8;
+    let tolerance = (scale * 1.0e-8).max(explicit_tolerance);
     (left.x - right.x).abs() <= tolerance
         && (left.y - right.y).abs() <= tolerance
         && (left.z - right.z).abs() <= tolerance

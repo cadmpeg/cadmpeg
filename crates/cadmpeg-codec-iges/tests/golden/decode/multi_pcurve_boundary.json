@@ -173,7 +173,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D11:0:0"
+          "start": "iges:model:vertex#D11:0:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -214,7 +215,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D11",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -431,7 +433,8 @@
       "vertices": [
         {
           "id": "iges:model:vertex#D11:0:0",
-          "point": "iges:model:point#D11:0:0"
+          "point": "iges:model:point#D11:0:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D3-end",
@@ -4315,7 +4318,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "b216d0367915f84fd496edbdd73c1c4fd37e36fa4dbd274cbdd1d250f180100e",
+        "document_local_sha256": "93431839a18c3d641f4e290797deb33ff8d1ea3d9e43e0bf9070678f2813e881",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

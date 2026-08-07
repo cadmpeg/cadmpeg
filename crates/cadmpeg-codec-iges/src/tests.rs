@@ -2374,6 +2374,26 @@ fn bounded_plane_file() -> Vec<u8> {
     bytes
 }
 
+fn bounded_plane_with_resolution_gap_file() -> Vec<u8> {
+    let mut bytes = bounded_plane_file();
+    let original = b"110,1,1,0,1,0,0;";
+    let replacement = b"110,1,1,0,1,0.0005,0;";
+    let start = bytes
+        .windows(original.len())
+        .position(|window| window == original)
+        .expect("bounded-plane edge parameter record");
+    let line_start = bytes[..start]
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |index| index + 1);
+    assert_eq!(start, line_start);
+    let payload_end = line_start + 64;
+    assert!(replacement.len() <= payload_end - start);
+    bytes[start..start + replacement.len()].copy_from_slice(replacement);
+    bytes[start + replacement.len()..payload_end].fill(b' ');
+    bytes
+}
+
 fn parametrically_bounded_plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -7611,6 +7631,83 @@ fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
         result.report.losses
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_accepts_a_bounded_sheet_join_within_global_resolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_with_resolution_gap_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .expect("bounded face within the declared resolution");
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .expect("bounded loop");
+    assert_eq!(loop_.coedges.len(), 4);
+    assert_eq!(face.tolerance, Some(0.001));
+    assert!(result
+        .ir
+        .model
+        .vertices
+        .iter()
+        .any(|vertex| vertex.tolerance == Some(0.001)));
+    assert!(result
+        .ir
+        .model
+        .edges
+        .iter()
+        .any(|edge| edge.tolerance == Some(0.001)));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_with_resolution_gap_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

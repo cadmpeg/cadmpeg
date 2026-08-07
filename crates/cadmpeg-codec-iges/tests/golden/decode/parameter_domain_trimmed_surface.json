@@ -27,7 +27,8 @@
           "loops": [],
           "sense": "forward",
           "shell": "iges:model:shell#D3",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -1982,7 +1983,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "df483197e1261cb4ecdfab56835cd6ed630bef1655ca084452a7de1c804888d2",
+        "document_local_sha256": "fba4d9037ad55552fdf68847d590f3dabca2ff66f9e3a34dee3a8931e536e824",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
