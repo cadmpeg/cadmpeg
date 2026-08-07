@@ -495,11 +495,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        if let Some(parent_step) = record
+        if let Some(parent_reference_step) = record
             .partial("CURVE_REPLICA")
             .and_then(|_| named_parameter(record, "CURVE_REPLICA", 1))
             .and_then(Value::reference)
         {
+            let Some(parent_step) = curve_carrier_record(parent_reference_step, exchange) else {
+                continue;
+            };
             let Some(operator_step) =
                 named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
             else {
@@ -546,9 +549,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         }
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
-            let Some((basis_step, sense, master_representation)) =
+            let Some((basis_reference_step, sense, master_representation)) =
                 trimmed_curve_attributes(parameters)
             else {
+                continue;
+            };
+            let Some(basis_step) = curve_carrier_record(basis_reference_step, exchange) else {
                 continue;
             };
             if !carrier_index.curves.contains_key(&basis_step) {
@@ -566,7 +572,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 continue;
             };
             let linear_parameter_scale =
-                line_parameter_scale(exchange, basis_step, scale, &mut losses);
+                line_parameter_scale(exchange, basis_reference_step, scale, &mut losses);
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
@@ -647,7 +653,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         let Some(parameters) = entity_parameters(record, "OFFSET_CURVE_3D") else {
             continue;
         };
-        let source_step = parameters.get(1).and_then(Value::reference);
+        let source_reference_step = parameters.get(1).and_then(Value::reference);
+        let source_step =
+            source_reference_step.and_then(|source| curve_carrier_record(source, exchange));
         let source = source_step.map(|source| CurveId(format!("step:data:curve#{source}")));
         let distance = parameters.get(2).and_then(Value::number);
         let self_intersect = parameters

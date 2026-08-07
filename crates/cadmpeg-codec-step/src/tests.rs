@@ -1916,6 +1916,37 @@ fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
 }
 
 #[test]
+fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=TRIMMED_CURVE('',#57,(0.),(1.),.T.,.PARAMETER.);\n#71=GEOMETRIC_SET('',(#70));\n#72=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#71),#2);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode surface-curve trim");
+
+    assert!(decoded.ir.model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#70"
+            && matches!(curve.geometry, CurveGeometry::Line { .. })
+    }));
+    assert!(decoded.ir.model.procedural_curves.iter().any(|curve| {
+        curve.curve.as_str() == "step:data:curve#70"
+            && matches!(
+                &curve.definition,
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { source, .. }
+                    if source.as_str() == "step:data:curve#16"
+            )
+    }));
+    assert!(decoded.report.losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("TRIMMED_CURVE #70 has invalid or unresolved basis/trim selectors")
+    }));
+}
+
+#[test]
 fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

@@ -208,7 +208,8 @@ inherits the parent's parameter range and parameterization; its transformation
 changes model-space location and dimensions only. Deferred curve dependencies
 resolve by graph fixpoint, including forward and nested replicas. Composite-
 curve segments retain order, same-sense, transition continuity, and carrier
-identity.
+identity. A curve construction that references a `SURFACE_CURVE` uses its
+3D `curve_3d` carrier for geometry and parameterization.
 
 Bounded-surface boundaries use `BOUNDARY_CURVE` or a degenerate pcurve. A
 `BOUNDARY_CURVE` is a closed composite curve on its bounded surface. Its
