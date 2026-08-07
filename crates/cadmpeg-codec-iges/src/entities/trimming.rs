@@ -136,6 +136,41 @@ pub(super) fn pcurve_geometry(
     ))
 }
 
+fn pcurves_agree(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    pcurves: &[(PcurveGeometry, [f64; 2])],
+    expected_start: Point3,
+    expected_end: Point3,
+    tolerance: f64,
+) -> bool {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let mapped = pcurves
+        .iter()
+        .map(|(geometry, range)| {
+            let start = evaluation::pcurve(geometry, range[0]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+            })?;
+            let end = evaluation::pcurve(geometry, range[1]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+            })?;
+            Some((start, end))
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(mapped) = mapped else {
+        return false;
+    };
+    mapped
+        .first()
+        .is_some_and(|(start, _)| close(*start, expected_start, tolerance))
+        && mapped
+            .last()
+            .is_some_and(|(_, end)| close(*end, expected_end, tolerance))
+        && mapped
+            .windows(2)
+            .all(|pair| close(pair[0].1, pair[1].0, tolerance))
+}
+
 pub(super) struct TrimmingProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -321,11 +356,12 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
+            let require_carrier_agreement = !pcurves.is_empty();
             segments.push(BoundarySegment {
                 model_curve,
                 pcurves,
                 sense,
-                require_carrier_agreement: false,
+                require_carrier_agreement,
             });
             index += 3 + pcurve_count;
         }
@@ -557,33 +593,21 @@ pub(super) fn project(
                     break;
                 };
                 if segment.require_carrier_agreement {
-                    let agrees = pcurves.len() == 1
-                        && global.minimum_resolution_mm().is_some_and(|tolerance| {
-                            let (geometry, range) = &pcurves[0];
-                            let index = cadmpeg_ir::index::ModelIndex::new(ir);
-                            let mapped_start =
-                                evaluation::pcurve(geometry, range[0]).and_then(|uv| {
-                                    cadmpeg_ir::eval::model_surface_point_by_id(
-                                        &index,
-                                        &surface_id,
-                                        uv.u,
-                                        uv.v,
-                                    )
-                                });
-                            let mapped_end =
-                                evaluation::pcurve(geometry, range[1]).and_then(|uv| {
-                                    cadmpeg_ir::eval::model_surface_point_by_id(
-                                        &index,
-                                        &surface_id,
-                                        uv.u,
-                                        uv.v,
-                                    )
-                                });
-                            mapped_start.is_some_and(|point| {
-                                evaluation::distance(point, start) <= tolerance
-                            }) && mapped_end
-                                .is_some_and(|point| evaluation::distance(point, end) <= tolerance)
-                        });
+                    let (expected_start, expected_end) = if segment.sense == Sense::Forward {
+                        (start, end)
+                    } else {
+                        (end, start)
+                    };
+                    let agrees = global.minimum_resolution_mm().is_some_and(|tolerance| {
+                        pcurves_agree(
+                            ir,
+                            &surface_id,
+                            &pcurves,
+                            expected_start,
+                            expected_end,
+                            tolerance,
+                        )
+                    });
                     if !agrees {
                         losses.push(entity_loss(
                             entry,

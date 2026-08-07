@@ -4894,6 +4894,12 @@ fn explicit_cylinder_seam_file() -> Vec<u8> {
 }
 
 fn multi_pcurve_boundary_file() -> Vec<u8> {
+    multi_pcurve_boundary_file_with_first_pcurve(
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,1,0,0,1,0,0,1;",
+    )
+}
+
+fn multi_pcurve_boundary_file_with_first_pcurve(first_pcurve: &str) -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 108,
@@ -4914,7 +4920,7 @@ fn multi_pcurve_boundary_file() -> Vec<u8> {
             form: 1,
             label: "PCURVE1".into(),
             status: "00010500",
-            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,1,1,0,0,1,0,0,1;".into(),
+            parameters: first_pcurve.into(),
         },
         OwnedTestEntity {
             entity_type: 126,
@@ -5203,6 +5209,28 @@ fn decode_preserves_ordered_type_141_pcurve_collections() {
         "{:#?}",
         result.report.losses
     );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_disagreeing_type_141_pcurve_collections() {
+    let shifted = "126,1,1,1,0,1,0,0,0,1,1,1,1,0.1,0,0,1,1,0,0,1,0,0,1;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(multi_pcurve_boundary_file_with_first_pcurve(shifted)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.id.0 != "iges:model:body#D11"));
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("curve-on-surface carriers disagree beyond the minimum resolution")));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
