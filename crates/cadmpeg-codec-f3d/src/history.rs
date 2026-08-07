@@ -999,6 +999,33 @@ pub(crate) fn bind_feature_body_selections(
             }
             continue;
         }
+        if let FeatureDefinition::Coil {
+            result: cadmpeg_ir::features::CoilResult::Boolean { targets, .. },
+            ..
+        } = &mut feature.definition
+        {
+            if let Some(previous_state_id) = scope.previous_history_state_id {
+                bind_body_recipe_body_selection(
+                    targets,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
+            } else {
+                bind_direct_body_recipe_body_selection(
+                    targets,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                    bodies,
+                    regions,
+                    shells,
+                );
+            }
+            continue;
+        }
         let (bodies, proof) = match &mut feature.definition {
             FeatureDefinition::MoveBody { bodies, .. } => {
                 (bodies, BodySelectionProof::TopologyStableRevision)
@@ -1262,6 +1289,69 @@ fn bind_body_recipe_body_selection(
             .map(|slot| crate::ids::history_input_body_id(&prefix, slot))
             .collect(),
         native: group_id.clone(),
+    };
+}
+
+fn bind_direct_body_recipe_body_selection(
+    selection: &mut cadmpeg_ir::features::BodySelection,
+    scope: &crate::records::DesignParameterScope,
+    groups: &[crate::records::DesignConstructionOperandGroup],
+    operands: &[crate::records::DesignBodyRecipeOperand],
+    bodies: &[cadmpeg_ir::topology::Body],
+    regions: &[cadmpeg_ir::topology::Region],
+    shells: &[cadmpeg_ir::topology::Shell],
+) {
+    use cadmpeg_ir::features::BodySelection;
+
+    let BodySelection::Native(group_id) = selection else {
+        return;
+    };
+    let stream = crate::ids::native_stream(&scope.id);
+    let mut matching_groups = groups.iter().filter(|group| {
+        group.id == *group_id
+            && group.scope_record_index == scope.record_index
+            && matches!(
+                group.role,
+                0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+            )
+            && crate::ids::native_stream(&group.id) == stream
+    });
+    let Some(group) = matching_groups.next() else {
+        return;
+    };
+    if matching_groups.next().is_some() || group.members.is_empty() {
+        return;
+    }
+
+    let mut selected = Vec::with_capacity(group.members.len());
+    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        let Ok(ordinal) = u32::try_from(ordinal) else {
+            return;
+        };
+        let mut matching_operands = operands.iter().filter(|operand| {
+            operand.owner.group() == Some((group.record_index, ordinal))
+                && operand.record_index == record_index
+                && crate::ids::native_stream(&operand.id) == stream
+        });
+        let Some(operand) = matching_operands.next() else {
+            return;
+        };
+        if matching_operands.next().is_some() {
+            return;
+        }
+        let Some(body) = unique_external_body_candidate(operand, None, bodies, regions, shells)
+        else {
+            return;
+        };
+        if selected.contains(&body) {
+            return;
+        }
+        selected.push(body);
+    }
+
+    *selection = BodySelection::Resolved {
+        bodies: selected,
+        native: group.id.clone(),
     };
 }
 
@@ -6356,6 +6446,122 @@ mod tests {
                 &shells,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn direct_body_recipe_selection_resolves_compact_coil_target() {
+        use cadmpeg_ir::features::BodySelection;
+        use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
+        use cadmpeg_ir::topology::{Body, BodyKind, Region, Shell};
+
+        let scope = crate::records::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            "CoilPrimitive",
+            10,
+        );
+        let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
+        let group = crate::records::DesignConstructionOperandGroup {
+            id: group_id.into(),
+            scope_record_index: 10,
+            scope_reference_ordinal: 0,
+            record_index: 20,
+            byte_offset: 0,
+            class_tag: "280".into(),
+            members: vec![21],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![0],
+            frame: crate::records::DesignConstructionOperandGroupFrame {
+                member_count_offset: 0,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 0,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 0,
+                variant: false,
+            },
+            role: 0x0000_0008_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 0,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 0,
+        };
+        let operand = crate::records::DesignBodyRecipeOperand {
+            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+            scope_record_index: 10,
+            owner: crate::records::DesignBodyRecipeOperandOwner::Group {
+                group_record_index: 20,
+                group_member_ordinal: 0,
+            },
+            record_index: 21,
+            byte_offset: 0,
+            class_tag: "384".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            references: vec![crate::records::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 0,
+                form: 33,
+                form_offset: 0,
+                candidate_faces: vec![FaceId("f3d:brep:entity#7".into())],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 22,
+            nested_record_index_offset: 0,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
+            resolved_face_slot: None,
+            resolved_body_slot: None,
+            next_record_index: 24,
+            next_byte_offset: 0,
+        };
+        let body = Body {
+            id: BodyId("f3d:brep:body#1".into()),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId("region#1".into())],
+            transform: None,
+            name: None,
+            color: None,
+            visible: Some(true),
+        };
+        let region = Region {
+            id: RegionId("region#1".into()),
+            body: body.id.clone(),
+            shells: vec![ShellId("shell#1".into())],
+        };
+        let shell = Shell {
+            id: ShellId("shell#1".into()),
+            region: region.id.clone(),
+            faces: vec![FaceId("f3d:brep:entity#7".into())],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        };
+        let mut selection = BodySelection::Native(group_id.into());
+        super::bind_direct_body_recipe_body_selection(
+            &mut selection,
+            &scope,
+            &[group],
+            &[operand],
+            &[body],
+            &[region],
+            &[shell],
+        );
+        assert_eq!(
+            selection,
+            BodySelection::Resolved {
+                bodies: vec![BodyId("f3d:brep:body#1".into())],
+                native: group_id.into(),
+            }
         );
     }
 
