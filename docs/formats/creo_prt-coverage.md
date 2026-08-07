@@ -49,6 +49,10 @@ fixtures, claims above L1 remain unproven.
   cap p-curves, side p-curves, and edge-parameter derivation. Spline profiles
   preserve their intrinsic NURBS degree, knot vector, control points, weights,
   cap p-curves, edge parameter domains, and ruled side surfaces.
+- Full-turn revolutions accept interpolation-spline profile entities and
+  preserve their oriented directrix degree, intrinsic knot domain, poles,
+  weights, periodic flag, exact angular NURBS surface, constant-parameter
+  endpoint p-curves, and face sense.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier

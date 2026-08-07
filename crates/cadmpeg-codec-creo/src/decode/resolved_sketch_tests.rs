@@ -12731,6 +12731,107 @@ fn full_revolution_uses_exact_quadratic_circle_poles() {
 }
 
 #[test]
+fn revolved_spline_profile_preserves_intrinsic_surface_domain_and_boundary_sense() {
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 1,
+        feature_id: Some(2),
+        origin: [0.0, 0.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 0,
+    };
+    let axis = RevolutionAxis {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(0.0, 1.0, 0.0),
+    };
+    let spline = SketchGeometry::Nurbs {
+        degree: 2,
+        knots: vec![2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0],
+        control_points: vec![
+            Point2::new(2.0, 0.0),
+            Point2::new(3.0, 0.75),
+            Point2::new(3.0, 1.25),
+            Point2::new(2.0, 2.0),
+        ],
+        weights: Some(vec![1.0, 0.75, 0.75, 1.0]),
+        periodic: false,
+    };
+    let segment = (spline.clone(), false, [2.0, 0.0], [2.0, 2.0]);
+    let surface =
+        revolved_brep_surface(&transform, &spline, false, axis).expect("revolved spline surface");
+    let SurfaceGeometry::Nurbs(surface) = &surface else {
+        panic!("spline revolution must retain a NURBS surface");
+    };
+
+    assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
+    assert_eq!((surface.u_count, surface.v_count), (4, 9));
+    assert_eq!(surface.u_knots, [2.0, 2.0, 2.0, 3.0, 5.0, 5.0, 5.0]);
+    assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(surface.control_points[1], Point3::new(2.0, 0.0, -2.0));
+    assert_eq!(surface.control_points[9], Point3::new(3.0, 0.75, 0.0));
+    assert_eq!(
+        surface.weights.as_ref().expect("rational surface weights")[10],
+        0.75 * std::f64::consts::FRAC_1_SQRT_2
+    );
+
+    let start_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Nurbs(surface.clone()),
+        axis,
+        segment.2,
+        true,
+    )
+    .expect("start boundary pcurve");
+    let end_pcurve = revolution_profile_boundary_pcurve(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Nurbs(surface.clone()),
+        axis,
+        segment.3,
+        false,
+    )
+    .expect("end boundary pcurve");
+    for (pcurve, expected_u) in [(start_pcurve, 2.0), (end_pcurve, 5.0)] {
+        assert_eq!(
+            cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("pcurve start"),
+            cadmpeg_ir::math::Point2::new(expected_u, 0.0)
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("pcurve end"),
+            cadmpeg_ir::math::Point2::new(expected_u, std::f64::consts::TAU)
+        );
+    }
+
+    let forward_sense = revolution_face_sense(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Nurbs(surface.clone()),
+        axis,
+        1.0,
+    )
+    .expect("forward face sense");
+    let reverse_sense = revolution_face_sense(
+        &transform,
+        &segment,
+        &SurfaceGeometry::Nurbs(surface.clone()),
+        axis,
+        -1.0,
+    )
+    .expect("reverse face sense");
+    assert_ne!(forward_sense, reverse_sense);
+
+    let reversed = revolved_brep_surface(&transform, &spline, true, axis)
+        .expect("reversed revolved spline surface");
+    let SurfaceGeometry::Nurbs(reversed) = reversed else {
+        panic!("reversed spline revolution must retain a NURBS surface");
+    };
+    assert_eq!(reversed.u_knots, [2.0, 2.0, 2.0, 4.0, 5.0, 5.0, 5.0]);
+    assert_eq!(reversed.control_points[0], Point3::new(2.0, 2.0, 0.0));
+}
+
+#[test]
 fn planar_loop_containment_selects_one_outer_boundary() {
     let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
         face_id,

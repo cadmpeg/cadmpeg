@@ -2580,8 +2580,9 @@ positions, weights alternating `1` and `sqrt(2)/2`, four quarter-turn spans,
 and doubled internal quarter-turn knots. Its directrix direction retains the
 directrix degree, knots, poles, and weights.
 
-Evaluating one closed line/arc profile through a full turn produces one face
-per oriented profile entity. A profile vertex off the revolution axis produces
+Evaluating one closed line/arc/interpolation-spline profile through a full turn
+produces one face per oriented profile entity. A profile vertex off the
+revolution axis produces
 one closed circular edge with one seam vertex; the preceding and following
 faces form its two radial uses. A profile vertex on the axis collapses and
 produces no edge. Each face has one singleton loop for each off-axis endpoint.
@@ -2591,7 +2592,13 @@ axial, polar, or tube parameter; a planar boundary is an exact rational
 quadratic circle. A spindle-torus boundary retains the signed ring branch, so
 a negative ring shifts azimuth by π instead of reflecting the trim. Face sense
 is the analytic carrier normal aligned to the outward side of the oriented
-section profile.
+section profile. An interpolation-spline profile entity produces a NURBS side
+face. Its directrix direction retains the oriented spline degree, intrinsic
+knot domain, poles, weights, and periodic flag; its angular direction is the
+exact full-turn quadratic construction defined above. Each spline endpoint
+boundary is a constant-`u` pcurve from `v = 0` through `v = 2π`, with `u`
+equal to that endpoint's intrinsic spline parameter. Its face sense uses the
+evaluated directrix tangent and the oriented profile area.
 
 A complete positional pcurve row stores endpoint A and endpoint B in each of
 the two adjacent face parameter frames. A uniquely identified labeled

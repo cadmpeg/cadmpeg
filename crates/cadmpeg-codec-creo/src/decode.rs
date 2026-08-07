@@ -8407,6 +8407,46 @@ fn revolution_boundary_pcurve(
     }
 }
 
+fn revolved_brep_surface(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SketchGeometry,
+    reversed: bool,
+    axis: RevolutionAxis,
+) -> Option<SurfaceGeometry> {
+    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
+        return Some(SurfaceGeometry::Nurbs(revolved_nurbs_surface(
+            &placed_section_nurbs(transform, &directrix),
+            axis,
+        )?));
+    }
+    revolved_section_surface(transform, geometry, axis)
+}
+
+fn revolution_profile_boundary_pcurve(
+    transform: &crate::placement::FeatureSectionTransform,
+    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    surface: &SurfaceGeometry,
+    axis: RevolutionAxis,
+    section_point: [f64; 2],
+    at_start: bool,
+) -> Option<PcurveGeometry> {
+    if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
+        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let parameter = if at_start { lower } else { upper };
+        return Some(line_pcurve(
+            [parameter, 0.0],
+            [parameter, std::f64::consts::TAU],
+        ));
+    }
+    revolution_boundary_pcurve(
+        surface,
+        section_point_in_model(transform, section_point),
+        axis,
+    )
+}
+
 fn revolution_face_sense(
     transform: &crate::placement::FeatureSectionTransform,
     segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
@@ -8414,7 +8454,21 @@ fn revolution_face_sense(
     axis: RevolutionAxis,
     profile_area: f64,
 ) -> Option<Sense> {
-    let (point, tangent) = if let Some((center, radius, start, delta)) = profile_arc(segment) {
+    let is_nurbs = matches!(segment.0, SketchGeometry::Nurbs { .. });
+    let (point, tangent, pcurve_parameter, u_epsilon) = if is_nurbs {
+        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let parameter = lower + (upper - lower) * 0.5;
+        let carrier = CurveGeometry::Nurbs(nurbs);
+        let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
+        let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
+        (
+            [point.x, point.y],
+            [tangent.x, tangent.y],
+            0.5,
+            (upper - lower).abs() * 1e-6,
+        )
+    } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
         let angle = start + 0.5 * delta;
         (
             [
@@ -8422,6 +8476,8 @@ fn revolution_face_sense(
                 center[1] + radius * angle.sin(),
             ],
             [-delta.signum() * angle.sin(), delta.signum() * angle.cos()],
+            0.0,
+            1e-6,
         )
     } else {
         (
@@ -8430,6 +8486,8 @@ fn revolution_face_sense(
                 0.5 * (segment.2[1] + segment.3[1]),
             ],
             [segment.3[0] - segment.2[0], segment.3[1] - segment.2[1]],
+            0.0,
+            1e-6,
         )
     };
     let outward = if profile_area.is_sign_positive() {
@@ -8441,13 +8499,19 @@ fn revolution_face_sense(
         outward[0] * transform.u_axis[index] + outward[1] * transform.v_axis[index]
     }))?;
     let model_point = section_point_in_model(transform, point);
-    let pcurve = revolution_boundary_pcurve(surface, model_point, axis)?;
-    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0)?;
-    let epsilon = 1e-6;
-    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - epsilon, uv.v)?;
-    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + epsilon, uv.v)?;
-    let before_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - epsilon)?;
-    let after_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + epsilon)?;
+    let pcurve = if is_nurbs {
+        let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+        let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+        let parameter = lower + (upper - lower) * 0.5;
+        line_pcurve([parameter, 0.0], [parameter, std::f64::consts::TAU])
+    } else {
+        revolution_boundary_pcurve(surface, model_point, axis)?
+    };
+    let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, pcurve_parameter)?;
+    let before_u = cadmpeg_ir::eval::surface_point(surface, uv.u - u_epsilon, uv.v)?;
+    let after_u = cadmpeg_ir::eval::surface_point(surface, uv.u + u_epsilon, uv.v)?;
+    let before_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v - 1e-6)?;
+    let after_v = cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v + 1e-6)?;
     let du = [
         after_u.x - before_u.x,
         after_u.y - before_u.y,
@@ -8519,33 +8583,34 @@ fn transfer_resolved_revolution_breps(
             .collect::<Vec<_>>();
         let surface_geometries = profile
             .iter()
-            .map(|(geometry, _, _, _)| revolved_section_surface(transform, geometry, axis))
+            .map(|(geometry, reversed, _, _)| {
+                revolved_brep_surface(transform, geometry, *reversed, axis)
+            })
             .collect::<Option<Vec<_>>>();
         let Some(surface_geometries) = surface_geometries else {
             continue;
         };
-        let boundaries_are_complete =
-            profile
-                .iter()
-                .enumerate()
-                .all(|(index, (_, _, start, end))| {
-                    let next = (index + 1) % profile.len();
-                    (vertex_curves[index].is_some() || vertex_curves[next].is_some())
-                        && [
-                            (*start, vertex_curves[index].is_some()),
-                            (*end, vertex_curves[next].is_some()),
-                        ]
-                        .into_iter()
-                        .all(|(section_point, present)| {
-                            !present
-                                || revolution_boundary_pcurve(
-                                    &surface_geometries[index],
-                                    section_point_in_model(transform, section_point),
-                                    axis,
-                                )
-                                .is_some()
-                        })
-                });
+        let boundaries_are_complete = profile.iter().enumerate().all(|(index, segment)| {
+            let next = (index + 1) % profile.len();
+            (vertex_curves[index].is_some() || vertex_curves[next].is_some())
+                && [
+                    (segment.2, vertex_curves[index].is_some(), true),
+                    (segment.3, vertex_curves[next].is_some(), false),
+                ]
+                .into_iter()
+                .all(|(section_point, present, at_start)| {
+                    !present
+                        || revolution_profile_boundary_pcurve(
+                            transform,
+                            segment,
+                            &surface_geometries[index],
+                            axis,
+                            section_point,
+                            at_start,
+                        )
+                        .is_some()
+                })
+        });
         if !boundaries_are_complete {
             continue;
         }
@@ -8649,9 +8714,15 @@ fn transfer_resolved_revolution_breps(
                     next
                 };
                 let radial_boundary = if boundary == "start" { "end" } else { "start" };
-                let point = section_point_in_model(transform, section_point);
-                let pcurve_geometry = revolution_boundary_pcurve(&surface_geometry, point, axis)
-                    .expect("revolution boundary was prevalidated");
+                let pcurve_geometry = revolution_profile_boundary_pcurve(
+                    transform,
+                    &profile[index],
+                    &surface_geometry,
+                    axis,
+                    section_point,
+                    boundary == "start",
+                )
+                .expect("revolution boundary was prevalidated");
                 let pcurve = add_extrusion_pcurve(
                     ir,
                     annotations,
