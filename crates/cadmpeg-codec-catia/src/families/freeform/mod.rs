@@ -84,6 +84,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     let object_frames = crate::families::b5::graph::object_stream_frames(&scan.data);
     let object_records =
         crate::families::b5::graph::records_from_frames(&scan.data, &object_frames);
+    let consolidated_records = crate::wire::records::consolidated_records(&scan.data);
     let mut b5_graph = crate::families::b5::graph::parse_from_records(
         &scan.data,
         &object_records,
@@ -181,12 +182,18 @@ pub(crate) fn try_decode_freeform_surfaces(
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = b5_graph
         .is_none()
-        .then(|| freeform_surface_carriers(&scan.data));
-    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves(&scan.data);
+        .then(|| freeform_surface_carriers(&scan.data, &consolidated_records));
+    let b2_nurbs_curves = crate::families::b2::records::b2_nurbs_curves_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
     let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
     let a5_nurbs_curve_count = a5_nurbs_curves.len();
-    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles(&scan.data);
+    let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
     let b2_spatial_circle_count = b2_spatial_circles.len();
     if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
         && crate::families::a5a8::records::a8_freeform_curves(&scan.data).is_empty()
@@ -220,7 +227,7 @@ pub(crate) fn try_decode_freeform_surfaces(
     if !topology_transferred {
         let surfaces = fallback_surfaces
             .take()
-            .unwrap_or_else(|| freeform_surface_carriers(&scan.data));
+            .unwrap_or_else(|| freeform_surface_carriers(&scan.data, &consolidated_records));
         for (index, surface) in surfaces.iter().enumerate() {
             let id = SurfaceId(format!("catia:a8:surf#{index}"));
             annotate(
@@ -239,7 +246,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         }
     }
     append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
-    append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data);
+    append_consolidated_line_profiles(&mut ir, &mut annotations, &scan.data, &consolidated_records);
     let mut standalone_wires = Vec::new();
     for curve in b2_nurbs_curves {
         let id = CurveId(format!("catia:b2:nurbs-curve#{}", ir.model.curves.len()));
@@ -643,10 +650,15 @@ fn attach_standalone_wires(
     true
 }
 
-fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
+fn freeform_surface_carriers(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<FreeformSurfaceCarrier> {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data)
         .into_iter()
-        .chain(crate::families::a5a8::records::a5_surfaces(data))
+        .chain(crate::families::a5a8::records::a5_surfaces_from_records(
+            data, records,
+        ))
         .map(|surface| {
             let (source_object, source_tag) = freeform_surface_source(&surface);
             FreeformSurfaceCarrier {
@@ -658,7 +670,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
         })
         .collect::<Vec<_>>();
     surfaces.extend(
-        crate::families::b2::records::b2_cylinders(data)
+        crate::families::b2::records::b2_cylinders_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -668,7 +680,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_embedded_cylinders(data)
+        crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -678,7 +690,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_cones(data)
+        crate::families::b2::records::b2_cones_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -688,7 +700,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_spheres(data)
+        crate::families::b2::records::b2_spheres_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -698,7 +710,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<FreeformSurfaceCarrier> {
             }),
     );
     surfaces.extend(
-        crate::families::b2::records::b2_tori(data)
+        crate::families::b2::records::b2_tori_from_records(data, records)
             .into_iter()
             .map(|surface| FreeformSurfaceCarrier {
                 pos: surface.pos,
@@ -730,8 +742,9 @@ fn append_consolidated_line_profiles(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
 ) {
-    for (index, line) in crate::families::b2::records::b2_line_profiles(data)
+    for (index, line) in crate::families::b2::records::b2_line_profiles_from_records(data, records)
         .into_iter()
         .enumerate()
     {
@@ -791,7 +804,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    let offsets = crate::families::b2::records::b2_offset_supports(data);
+    let offsets = crate::families::b2::records::b2_offset_supports_from_records(data, records);
     let bindings = crate::families::b2::records::offset_support_carriers(&offsets, &surfaces);
     for (offset, carrier) in offsets
         .iter()
@@ -842,7 +855,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    append_consolidated_line_profiles(ir, annotations, data);
+    append_consolidated_line_profiles(ir, annotations, data, records);
 
     for guide in crate::families::a5a8::records::a5_guide_curves(data) {
         let points = guide
@@ -2354,7 +2367,8 @@ mod tests {
         let mut bytes = crate::tests::b2_cylinder_stream();
         bytes.extend_from_slice(&crate::tests::b2_embedded_cylinder_stream());
 
-        let carriers = freeform_surface_carriers(&bytes);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert_eq!(carriers.len(), 2);
         assert!(carriers[0].source_tag.starts_with("b2_03_28:"));
         assert!(carriers[1].source_tag.starts_with("b2_03_60:"));
@@ -2792,7 +2806,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_spheres() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_sphere_stream());
+        let bytes = crate::tests::b2_sphere_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -2812,7 +2828,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_exact_consolidated_tori() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_torus_stream());
+        let bytes = crate::tests::b2_torus_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]
@@ -2833,7 +2851,9 @@ mod tests {
 
     #[test]
     fn freeform_fallback_retains_range_origin_cylinder_carriers() {
-        let carriers = freeform_surface_carriers(&crate::tests::b2_range_origin_cylinder_stream());
+        let bytes = crate::tests::b2_range_origin_cylinder_stream();
+        let records = crate::wire::records::consolidated_records(&bytes);
+        let carriers = freeform_surface_carriers(&bytes, &records);
         assert!(matches!(
             carriers.as_slice(),
             [carrier]

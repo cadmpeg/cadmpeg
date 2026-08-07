@@ -5,9 +5,11 @@
 
 use crate::nurbs::{expand_knots, pole_count};
 use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_24};
+#[cfg(any(test, feature = "fuzzing"))]
+use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    a_family_frames, a_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
-    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
+    a_family_frames, a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame,
+    ConsolidatedPcurve, ConsolidatedRecord,
 };
 use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
@@ -1063,6 +1065,7 @@ pub fn a8_surface_from_external_grid(
 
 /// Decode consolidated `a5 03 34` NURBS surface carriers.  This family uses
 /// implicit clamped multiplicities instead of the explicit `a8` vectors.
+#[cfg(any(test, feature = "fuzzing"))]
 pub fn a5_surfaces(data: &[u8]) -> Vec<FreeformSurface> {
     let records = consolidated_records(data);
     a5_surfaces_from_records(data, &records)

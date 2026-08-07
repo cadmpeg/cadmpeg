@@ -16,9 +16,11 @@ use crate::wire::bytes::persistent_ref;
 use crate::wire::bytes::{
     allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
 };
+#[cfg(test)]
+use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
-    b_family_frames, b_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
-    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
+    b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    ConsolidatedRecord,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -1048,6 +1050,7 @@ pub struct B2SpatialCircle {
 
 /// Decode length-closed `b2/b3/b4 03 0f` spatial circles.
 #[must_use]
+#[cfg(test)]
 pub fn b2_spatial_circles(data: &[u8]) -> Vec<B2SpatialCircle> {
     let records = consolidated_records(data);
     b2_spatial_circles_from_records(data, &records)
@@ -1104,6 +1107,7 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
 /// so the control-point and weight cardinalities are both `degree + 1`. The two
 /// knot limits occur twice and the second pair must reproduce the first pair.
 #[must_use]
+#[cfg(test)]
 pub fn b2_nurbs_curves(data: &[u8]) -> Vec<B2NurbsCurve> {
     let records = consolidated_records(data);
     b2_nurbs_curves_from_records(data, &records)
@@ -1388,6 +1392,7 @@ pub struct B2EmbeddedCylinder {
 
 /// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
 #[must_use]
+#[cfg(test)]
 pub fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
     let records = consolidated_records(data);
     b2_embedded_cylinders_from_records(data, &records)
@@ -1455,9 +1460,18 @@ pub(crate) fn b2_embedded_cylinders_from_records(
 
 /// Decode `b2 03 30` construction-use wrappers.
 #[must_use]
+#[cfg(test)]
 pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
+    let records = consolidated_records(data);
+    b2_construction_uses_from_records(data, &records)
+}
+
+pub(crate) fn b2_construction_uses_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2ConstructionUse> {
     let mut out = Vec::new();
-    for frame in b_family_frames(data, 0x30) {
+    for frame in b_family_frames_from_records(records, 0x30) {
         let pos = frame.pos;
         let payload = frame.payload;
         if frame.header_token != 5 || data.get(payload) != Some(&0x05) {
@@ -1503,6 +1517,7 @@ pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
 
 /// Decode `b2 03 29` analytic cone charts.
 #[must_use]
+#[cfg(test)]
 pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
     let records = consolidated_records(data);
     b2_cones_from_records(data, &records)
@@ -1705,6 +1720,7 @@ pub(crate) fn b2_resolved_revolutions_from_records(
 
 /// Decode exact B-family metric line profiles.
 #[must_use]
+#[cfg(test)]
 pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
     let records = consolidated_records(data);
     b2_line_profiles_from_records(data, &records)
@@ -1741,6 +1757,7 @@ pub(crate) fn b2_line_profiles_from_records(
 
 /// Decode `b2 03 2b` doubly periodic torus charts.
 #[must_use]
+#[cfg(test)]
 pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
     let records = consolidated_records(data);
     b2_tori_from_records(data, &records)
@@ -1820,6 +1837,7 @@ pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) 
 
 /// Decode `b2 03 2a` radius-scaled sphere charts.
 #[must_use]
+#[cfg(test)]
 pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
     let records = consolidated_records(data);
     b2_spheres_from_records(data, &records)
@@ -1980,6 +1998,7 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
 
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
+#[cfg(test)]
 pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
     let records = consolidated_records(data);
     b2_cylinders_from_records(data, &records)
@@ -2252,8 +2271,17 @@ pub(crate) fn b2_edge_parameters_from_records(
 
 /// Decode `b2 03 31` offset-surface constructors.
 #[must_use]
+#[cfg(test)]
 pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
-    let mut offsets = b_family_frames(data, 0x31)
+    let records = consolidated_records(data);
+    b2_offset_supports_from_records(data, &records)
+}
+
+pub(crate) fn b2_offset_supports_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2OffsetSupport> {
+    let mut offsets = b_family_frames_from_records(records, 0x31)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -2283,7 +2311,7 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
         })
         .collect::<Vec<_>>();
     offsets.extend(
-        b2_construction_uses(data)
+        b2_construction_uses_from_records(data, records)
             .into_iter()
             .filter_map(|construction| {
                 if construction.kind != 0x01 {

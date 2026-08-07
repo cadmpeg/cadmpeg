@@ -666,6 +666,46 @@ fn indexed_native_record_decoders_match_one_shot_wrappers() {
             .map(|record| record.pos)
             .collect(),
     );
+
+    let bytes = b2_construction_use_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let construction_signature = |record: &crate::families::b2::records::B2ConstructionUse| {
+        (
+            record.pos,
+            record.support_id,
+            record.distance,
+            record.kind,
+            record.domain,
+        )
+    };
+    assert_eq!(
+        crate::families::b2::records::b2_construction_uses(&bytes)
+            .iter()
+            .map(construction_signature)
+            .collect::<Vec<_>>(),
+        crate::families::b2::records::b2_construction_uses_from_records(&bytes, &records)
+            .iter()
+            .map(construction_signature)
+            .collect::<Vec<_>>()
+    );
+    let offset_signature = |record: &crate::families::b2::records::B2OffsetSupport| {
+        (
+            record.pos,
+            record.support_id,
+            record.distance,
+            record.domain,
+        )
+    };
+    assert_eq!(
+        crate::families::b2::records::b2_offset_supports(&bytes)
+            .iter()
+            .map(offset_signature)
+            .collect::<Vec<_>>(),
+        crate::families::b2::records::b2_offset_supports_from_records(&bytes, &records)
+            .iter()
+            .map(offset_signature)
+            .collect::<Vec<_>>()
+    );
 }
 
 #[test]
