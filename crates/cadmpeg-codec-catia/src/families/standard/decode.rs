@@ -2149,7 +2149,9 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut limit_curves = Vec::<NurbsCurve>::new();
     for stream in streams {
         merge_standard_limit_curves(&mut limit_curves, &stream);
-        let face_surfaces = crate::families::b5::graph::face_surface_references(&stream);
+        let frames = crate::families::b5::graph::object_stream_frames(&stream);
+        let face_surfaces =
+            crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);
         let surface_bindings = tags
             .iter()
             .map(|&tag| (tag, tag))
@@ -2164,9 +2166,13 @@ pub(crate) fn standard_object_evidence_from_streams(
             .iter()
             .map(|(_, surface_id)| *surface_id)
             .collect::<HashSet<_>>();
-        let targeted_surfaces =
-            crate::families::b5::graph::targeted_surfaces(&stream, &requested_surfaces);
-        let targeted_graph = crate::families::b5::graph::targeted_geometry_graph(&stream);
+        let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            &stream,
+            &requested_surfaces,
+            &frames,
+        );
+        let targeted_graph =
+            crate::families::b5::graph::targeted_geometry_graph_from_frames(&stream, &frames);
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
                 continue;
@@ -2218,8 +2224,9 @@ pub(crate) fn standard_object_evidence_from_streams(
                 merge_standard_surface_evidence(&mut surface_candidates, object_id, evidence);
             }
         }
-        let edge_pcurves =
-            crate::families::b5::graph::edge_support_pcurve_references(&stream, edge_tags);
+        let edge_pcurves = crate::families::b5::graph::edge_support_pcurve_references_from_frames(
+            &stream, edge_tags, &frames,
+        );
         let requested_pcurves = edge_pcurves
             .values()
             .flatten()
@@ -2252,8 +2259,11 @@ pub(crate) fn standard_object_evidence_from_streams(
             .filter_map(Option::as_ref)
             .map(|pcurve| pcurve.support_id)
             .collect::<HashSet<_>>();
-        let targeted_surfaces =
-            crate::families::b5::graph::targeted_surfaces(&stream, &surface_ids);
+        let targeted_surfaces = crate::families::b5::graph::targeted_surfaces_from_frames(
+            &stream,
+            &surface_ids,
+            &frames,
+        );
         for (edge, references) in edge_pcurves {
             let sides = references.map(|reference| {
                 let pcurve = pcurves.get(&reference)?.as_ref()?;
@@ -2284,7 +2294,7 @@ pub(crate) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(evidence));
         }
-        let Some(graph) = crate::families::b5::graph::parse(&stream) else {
+        let Some(graph) = crate::families::b5::graph::parse_from_frames(&stream, &frames) else {
             continue;
         };
         let mut stream_edge_faces = HashMap::<u32, HashSet<u32>>::new();

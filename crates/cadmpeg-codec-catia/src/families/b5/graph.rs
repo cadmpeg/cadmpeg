@@ -571,12 +571,12 @@ pub struct B5Record {
 }
 
 #[derive(Clone, Copy)]
-struct ObjectFrame {
-    start: usize,
-    end: usize,
-    family: u8,
-    class: u8,
-    object_id: u32,
+pub(crate) struct ObjectFrame {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) family: u8,
+    pub(crate) class: u8,
+    pub(crate) object_id: u32,
 }
 
 /// A resolved `b5 03 5f` face node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
@@ -670,6 +670,10 @@ impl B5Loop {
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     parse_records(bytes, &records(bytes), true)
+}
+
+pub(crate) fn parse_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Option<B5Graph> {
+    parse_records(bytes, &records_from_frames(bytes, frames), true)
 }
 
 fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> Option<B5Graph> {
@@ -1396,13 +1400,23 @@ pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
 /// Return the ordered pcurve pair owned by each requested native edge's
 /// class-`23` curve-support wrapper.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn edge_support_pcurve_references(
     bytes: &[u8],
     edge_ids: &HashSet<u32>,
 ) -> BTreeMap<u32, [u32; 2]> {
+    let frames = object_stream_frames(bytes);
+    edge_support_pcurve_references_from_frames(bytes, edge_ids, &frames)
+}
+
+pub(crate) fn edge_support_pcurve_references_from_frames(
+    bytes: &[u8],
+    edge_ids: &HashSet<u32>,
+    frames: &[ObjectFrame],
+) -> BTreeMap<u32, [u32; 2]> {
     let mut edge_wrappers = HashMap::<u32, Option<u32>>::new();
     let mut wrappers = HashMap::<u32, Option<[u32; 2]>>::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         let header = if frame.family == 0xa8 { 11 } else { 8 };
         let record = B5Record {
             offset: frame.start,
@@ -1443,12 +1457,10 @@ pub(crate) fn edge_support_pcurve_references(
         .collect()
 }
 
-/// Resolve only the requested surface identities through exact class-`37`
-/// result-carrier links and class-`2e`/`38` aliases.
-#[must_use]
-pub(crate) fn targeted_surfaces(
+pub(crate) fn targeted_surfaces_from_frames(
     bytes: &[u8],
     object_ids: &HashSet<u32>,
+    frames: &[ObjectFrame],
 ) -> BTreeMap<u32, B5Surface> {
     let mut resolved = HashMap::<u32, Option<B5Surface>>::new();
     for surface in crate::families::a5a8::records::resolved_a8_surfaces(bytes) {
@@ -1465,7 +1477,7 @@ pub(crate) fn targeted_surfaces(
         .map(|header| (header.object_id, header))
         .collect::<HashMap<_, _>>();
     let mut records = HashMap::<u32, Option<B5Record>>::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         if !is_surface_class(frame.class) {
             continue;
         }
@@ -1517,9 +1529,18 @@ pub(crate) fn targeted_surfaces(
 /// Resolve the unique length-closed geometry construction frames independently
 /// of the dominant topology run.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn targeted_geometry_graph(bytes: &[u8]) -> Option<B5Graph> {
+    let frames = object_stream_frames(bytes);
+    targeted_geometry_graph_from_frames(bytes, &frames)
+}
+
+pub(crate) fn targeted_geometry_graph_from_frames(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> Option<B5Graph> {
     let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         if !is_targeted_geometry_class(frame.family, frame.class) {
             continue;
         }
@@ -4089,7 +4110,11 @@ fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let frames = object_stream_frames(bytes);
-    let mut records = framed_records(bytes, &frames);
+    records_from_frames(bytes, &frames)
+}
+
+fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
+    let mut records = framed_records(bytes, frames);
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
     let mut admitted = HashSet::new();
@@ -4099,7 +4124,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             break;
         }
         let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-        for frame in &frames {
+        for frame in frames {
             if !pending.contains(&frame.object_id)
                 || !is_reference_dependency_class(frame.family, frame.class)
             {
@@ -4200,7 +4225,7 @@ pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
         .collect()
 }
 
-fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
+pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
     fn walk(
         bytes: &[u8],
         base: usize,
@@ -4466,9 +4491,18 @@ pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<
 }
 
 /// Read each face's leading surface reference independently of its loop grammar.
+#[cfg(test)]
 pub(crate) fn face_surface_references(bytes: &[u8]) -> Vec<(u32, u32)> {
+    let frames = object_stream_frames(bytes);
+    face_surface_references_from_frames(bytes, &frames)
+}
+
+pub(crate) fn face_surface_references_from_frames(
+    bytes: &[u8],
+    frames: &[ObjectFrame],
+) -> Vec<(u32, u32)> {
     let mut references = Vec::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x5f {
             continue;
         }
@@ -6862,6 +6896,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![(0xb5, 0x5f, 8), (0xb5, 0x5e, 9)]
         );
+    }
+
+    #[test]
+    fn indexed_frame_parse_matches_one_shot_parse() {
+        let bytes = crate::tests::b5_closed_triangle_stream();
+        let frames = object_stream_frames(&bytes);
+
+        assert_eq!(parse(&bytes), parse_from_frames(&bytes, &frames));
     }
 
     fn a8_class21_test_payload() -> Vec<u8> {
