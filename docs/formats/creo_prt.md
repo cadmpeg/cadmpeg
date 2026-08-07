@@ -1650,6 +1650,9 @@ by sense `2`, `3`, or `4`. Exactly one operand pairing must supply a bounded
 target and a point locus; zero or two pairings retain the native incidence.
 Operand order does not change these roles. A circle is not a bounded midpoint
 target.
+An unresolved centered type-47 construction line remains a native line carrier,
+but its sense-four center is a valid midpoint locus. This center role does not
+establish line coordinates or any other line geometry.
 A two-item type-37 incidence with two sense-zero operands binds a projected
 reference entity to the regular profile entity copied from it. The reference
 entity identifier immediately precedes the profile entity identifier. The

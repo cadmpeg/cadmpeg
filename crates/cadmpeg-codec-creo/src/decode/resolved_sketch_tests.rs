@@ -1877,6 +1877,7 @@ fn native_curve_families_accept_only_their_defined_loci() {
     let point = SketchEntityId("point".to_string());
     let bounded = SketchEntityId("bounded".to_string());
     let line = SketchEntityId("line".to_string());
+    let reference_line = SketchEntityId("reference_line".to_string());
     let circle = SketchEntityId("circle".to_string());
     let geometry = BTreeMap::from([
         (
@@ -1898,6 +1899,12 @@ fn native_curve_families_accept_only_their_defined_loci() {
             },
         ),
         (
+            reference_line.clone(),
+            SketchGeometry::Native {
+                native_kind: "reference_line".to_string(),
+            },
+        ),
+        (
             circle.clone(),
             SketchGeometry::Native {
                 native_kind: "circle".to_string(),
@@ -1916,8 +1923,16 @@ fn native_curve_families_accept_only_their_defined_loci() {
         loci: vec![SketchLocus::Start(line), SketchLocus::Start(circle)],
     };
     assert!(!sketch_constraint_loci_compatible(&incompatible, &geometry));
-    let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
+    let centered_midpoint = SketchConstraintDefinition::Midpoint {
         point: SketchLocus::Center(SketchEntityId("line".to_string())),
+        entity: SketchEntityId("bounded".to_string()),
+    };
+    assert!(sketch_constraint_loci_compatible(
+        &centered_midpoint,
+        &geometry
+    ));
+    let incompatible_midpoint = SketchConstraintDefinition::Midpoint {
+        point: SketchLocus::Center(reference_line),
         entity: SketchEntityId("bounded".to_string()),
     };
     assert!(!sketch_constraint_loci_compatible(
