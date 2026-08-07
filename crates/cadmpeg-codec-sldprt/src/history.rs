@@ -2,7 +2,8 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::classification::{
-    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+    classify, classify_type_token, classify_xml_element, native_object_class,
+    principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
@@ -1217,6 +1218,16 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
                 || feature_family(feature, "Thicken")
                 || feature_family(feature, "Thickness")
                 || feature_input_class(feature, NativeClassKind::Thicken)
+                || matches!(
+                    classify(feature),
+                    Some(
+                        FeatureClass::Dome
+                            | FeatureClass::Rib
+                            | FeatureClass::OffsetSurface
+                            | FeatureClass::ExtendSurface
+                            | FeatureClass::RuledSurface
+                    )
+                )
                 || is_offset_plane(feature)
                 || cosmetic_thread
         }
@@ -2452,6 +2463,82 @@ mod history_reference_tests {
             } if reference == &projected[0].id
         ));
         assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+    }
+
+    #[test]
+    fn native_operation_identity_selects_surface_and_solid_projectors() {
+        let mut dome = feature("dome", Some("1"), 0);
+        dome.kind = "Dome".into();
+        dome.input_class = Some("moDome_c".into());
+        dome.parameters.insert("D1".into(), "2mm".into());
+
+        let mut rib = feature("rib", Some("2"), 1);
+        rib.kind = "Rib".into();
+        rib.input_class = Some("moRib_c".into());
+        rib.parameters.insert("D1".into(), "1mm".into());
+
+        let mut surface_loft = feature("surface-loft", Some("3"), 2);
+        surface_loft.kind = "Surface-Loft".into();
+        surface_loft.input_class = Some("moBlendRefSurface_c".into());
+
+        let mut cut_loft = feature("cut-loft", Some("4"), 3);
+        cut_loft.kind = "Cut-Loft".into();
+        cut_loft.input_class = Some("moBlendCut_c".into());
+
+        let mut surface_extrude = feature("surface-extrude", Some("5"), 4);
+        surface_extrude.kind = "Surface-Extrude".into();
+        surface_extrude.input_class = Some("moExtruRefSurface_c".into());
+        surface_extrude.parameters.insert("D1".into(), "3mm".into());
+
+        let projected = project_features(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![dome, rib, surface_loft, cut_loft, surface_extrude],
+        }]);
+
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Dome {
+                height: Some(Length(2.0)),
+                ..
+            }
+        ));
+        assert!(matches!(
+            projected[1].definition,
+            FeatureDefinition::Rib {
+                construction: RibConstruction {
+                    thickness: Some(Length(1.0)),
+                    ..
+                },
+                ..
+            }
+        ));
+        assert!(matches!(
+            projected[2].definition,
+            FeatureDefinition::Loft {
+                solid: false,
+                op: BooleanOp::Unresolved,
+                ..
+            }
+        ));
+        assert!(matches!(
+            projected[3].definition,
+            FeatureDefinition::Loft {
+                solid: true,
+                op: BooleanOp::Cut,
+                ..
+            }
+        ));
+        assert!(matches!(
+            projected[4].definition,
+            FeatureDefinition::Extrude {
+                solid: Some(false),
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -6990,6 +7077,10 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
 
 fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.xml_tag.eq_ignore_ascii_case(family)
+        || feature.kind.eq_ignore_ascii_case(family)
+        || classify_type_token(family)
+            .or_else(|| classify_xml_element(family))
+            .is_some_and(|expected| classify(feature) == Some(expected))
 }
 
 /// Reject a neutral edit that retargets an existing native record to an
@@ -7302,7 +7393,14 @@ fn project_extrude(
         extent,
         op,
         direction_source: None,
-        solid: Some(true),
+        solid: Some(!matches!(
+            feature
+                .input_class
+                .as_deref()
+                .map(native_object_class)
+                .map(|class| class.kind),
+            Some(NativeClassKind::SurfaceExtrusion)
+        )),
         face_maker: None,
         inner_wire_taper: None,
         length_along_profile_normal: None,
@@ -7717,6 +7815,7 @@ fn project_rib(feature: &Feature, native_by_source: &HashMap<&str, &str>) -> Fea
             thickness: feature
                 .parameters
                 .get("Thickness")
+                .or_else(|| feature.parameters.get("D1"))
                 .and_then(|value| parse_positive_length_mm(value))
                 .map(Length),
             side: feature
@@ -7769,13 +7868,31 @@ fn project_loft(
             .properties
             .get("Operation")
             .and_then(|operation| parse_boolean_op(operation))
+            .or_else(|| {
+                matches!(
+                    feature
+                        .input_class
+                        .as_deref()
+                        .map(native_object_class)
+                        .map(|class| class.kind),
+                    Some(NativeClassKind::LoftCut)
+                )
+                .then_some(BooleanOp::Cut)
+            })
             .or_else(|| loft_op(&feature.kind))
             .unwrap_or(BooleanOp::Unresolved),
         closed: feature
             .properties
             .get("Closed")
             .map_or(Some(false), |closed| parse_bool(closed))?,
-        solid: true,
+        solid: !matches!(
+            feature
+                .input_class
+                .as_deref()
+                .map(native_object_class)
+                .map(|class| class.kind),
+            Some(NativeClassKind::SurfaceLoft)
+        ),
         ruled: false,
         max_degree: None,
         check_compatibility: None,
@@ -7820,13 +7937,11 @@ fn project_sweep(
         || feature.kind == "Surface-Sweep"
     {
         SweepMode::Surface
-    } else if feature_input_class(feature, NativeClassKind::Sweep) {
+    } else if feature_input_class(feature, NativeClassKind::Sweep)
+        || feature_input_class(feature, NativeClassKind::SweepCut)
+    {
         SweepMode::Solid {
-            op: feature
-                .properties
-                .get("Operation")
-                .and_then(|value| parse_boolean_op(value))
-                .unwrap_or(BooleanOp::Unresolved),
+            op: feature_sweep_operation(feature),
         }
     } else if let Some(op) = feature
         .properties
@@ -7873,16 +7988,44 @@ fn project_sweep(
     })
 }
 
+fn feature_sweep_operation(feature: &Feature) -> BooleanOp {
+    feature
+        .properties
+        .get("Operation")
+        .and_then(|value| parse_boolean_op(value))
+        .or_else(|| {
+            matches!(
+                feature
+                    .input_class
+                    .as_deref()
+                    .map(native_object_class)
+                    .map(|class| class.kind),
+                Some(NativeClassKind::SweepCut)
+            )
+            .then_some(BooleanOp::Cut)
+        })
+        .or_else(|| {
+            feature
+                .kind
+                .eq_ignore_ascii_case("Cut-Sweep")
+                .then_some(BooleanOp::Cut)
+        })
+        .unwrap_or(BooleanOp::Unresolved)
+}
+
 fn pattern_form(feature: &Feature) -> Option<PatternForm> {
     let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
-        "linear" | "linearpattern" => Some(PatternForm::Linear),
-        "circular" | "circularpattern" => Some(PatternForm::Circular),
+        "linear" | "linearpattern" | "lpattern" => Some(PatternForm::Linear),
+        "circular" | "circularpattern" | "cirpattern" => Some(PatternForm::Circular),
         "crvpattern" | "curvepattern" | "curvedrivenpattern" => Some(PatternForm::CurveDriven),
         "mirror" => Some(PatternForm::Mirror),
         _ => None,
     };
     if feature_input_class(feature, NativeClassKind::LinearPattern) {
         return Some(PatternForm::Linear);
+    }
+    if feature_input_class(feature, NativeClassKind::CircularPattern) {
+        return Some(PatternForm::Circular);
     }
     if feature_input_class(feature, NativeClassKind::CurvePattern) {
         return Some(PatternForm::CurveDriven);
@@ -8628,7 +8771,10 @@ fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::OffsetSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         distance: Some(Length(parse_length_mm(
-            feature.parameters.get("Distance")?,
+            feature
+                .parameters
+                .get("Distance")
+                .or_else(|| feature.parameters.get("D1"))?,
         )?)),
     })
 }
@@ -8699,7 +8845,10 @@ fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::ExtendSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         distance: Some(Length(parse_positive_length_mm(
-            feature.parameters.get("Distance")?,
+            feature
+                .parameters
+                .get("Distance")
+                .or_else(|| feature.parameters.get("D1"))?,
         )?)),
         method,
     })
@@ -8707,7 +8856,10 @@ fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
 
 fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     let distance = Length(parse_positive_length_mm(
-        feature.parameters.get("Distance")?,
+        feature
+            .parameters
+            .get("Distance")
+            .or_else(|| feature.parameters.get("D1"))?,
     )?);
     let mode = match feature
         .properties
@@ -8755,6 +8907,7 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
         angle: feature
             .parameters
             .get("Angle")
+            .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_angle_rad(value))
             .map(Angle),
         outward: feature
@@ -8794,7 +8947,7 @@ fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
         .get("Mode")
         .map_or(feature.kind.as_str(), String::as_str);
     match value.to_ascii_lowercase().as_str() {
-        "delete" | "deletebody" => Some(BodyRetentionMode::DeleteSelected),
+        "delete" | "deletebody" | "body-delete" => Some(BodyRetentionMode::DeleteSelected),
         "keep" | "keepbody" => Some(BodyRetentionMode::KeepSelected),
         _ if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") => {
             Some(BodyRetentionMode::DeleteSelected)
@@ -8922,6 +9075,7 @@ fn project_dome(feature: &Feature) -> FeatureDefinition {
         height: feature
             .parameters
             .get("Height")
+            .or_else(|| feature.parameters.get("D1"))
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length),
         elliptical: feature

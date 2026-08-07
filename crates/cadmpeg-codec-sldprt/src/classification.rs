@@ -55,7 +55,10 @@ pub(crate) enum FeatureClass {
 /// Semantic kind of a serialized native object class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeClassKind {
+    /// A native modeling operation identified by its semantic feature family.
+    Operation(FeatureClass),
     Extrusion,
+    SurfaceExtrusion,
     Fillet,
     Chamfer,
     OriginProfileFeature,
@@ -66,11 +69,16 @@ pub(crate) enum NativeClassKind {
     ReferenceAxis,
     Thicken,
     Sweep,
+    SweepCut,
     SweepReferenceSurface,
+    Loft,
+    LoftCut,
+    SurfaceLoft,
     Helix,
     HoleWizard,
     Revolution,
     LinearPattern,
+    CircularPattern,
     CurvePattern,
     MirrorPattern,
     Combine,
@@ -105,6 +113,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
     let (kind, role, feature, tree_node) = match name {
         "moExtrusion_c" | "moICE_c" | "moCut_c" => (
             NativeClassKind::Extrusion,
+            Feature,
+            Some(FeatureClass::Extrude),
+            None,
+        ),
+        "moExtruRefSurface_c" => (
+            NativeClassKind::SurfaceExtrusion,
             Feature,
             Some(FeatureClass::Extrude),
             None,
@@ -169,10 +183,34 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Sweep),
             None,
         ),
+        "moSweepCut_c" => (
+            NativeClassKind::SweepCut,
+            Feature,
+            Some(FeatureClass::Sweep),
+            None,
+        ),
         "moSweepRefSurface_c" => (
             NativeClassKind::SweepReferenceSurface,
             Feature,
             Some(FeatureClass::Sweep),
+            None,
+        ),
+        "moBlend_c" => (
+            NativeClassKind::Loft,
+            Feature,
+            Some(FeatureClass::Loft),
+            None,
+        ),
+        "moBlendCut_c" => (
+            NativeClassKind::LoftCut,
+            Feature,
+            Some(FeatureClass::Loft),
+            None,
+        ),
+        "moBlendRefSurface_c" => (
+            NativeClassKind::SurfaceLoft,
+            Feature,
+            Some(FeatureClass::Loft),
             None,
         ),
         "moHelix_c" => (
@@ -195,6 +233,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         ),
         "moLPattern_c" => (
             NativeClassKind::LinearPattern,
+            Feature,
+            Some(FeatureClass::Pattern),
+            None,
+        ),
+        "moCirPattern_c" => (
+            NativeClassKind::CircularPattern,
             Feature,
             Some(FeatureClass::Pattern),
             None,
@@ -223,6 +267,22 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::DeleteBody),
             None,
         ),
+        "moDome_c" => operation_class(FeatureClass::Dome),
+        "moRib_c" => operation_class(FeatureClass::Rib),
+        "moShell_c" => operation_class(FeatureClass::Shell),
+        "moDraft_c" => operation_class(FeatureClass::Draft),
+        "moOffsetRefSurface_c" => operation_class(FeatureClass::OffsetSurface),
+        "moSewRefSurface_c" => operation_class(FeatureClass::KnitSurface),
+        "moFillRefSurface_c" => operation_class(FeatureClass::FilledSurface),
+        "moTrimRefSurface_c" => operation_class(FeatureClass::TrimSurface),
+        "moExtendRefSurface_c" => operation_class(FeatureClass::ExtendSurface),
+        "moRuledSrfFromEdge_c" => operation_class(FeatureClass::RuledSurface),
+        "moSurfCut_c" => operation_class(FeatureClass::CutWithSurface),
+        "moDelFace_c" => operation_class(FeatureClass::DeleteFace),
+        "moMoveFace_c" => operation_class(FeatureClass::MoveFace),
+        "moMoveCopyBody_c" => operation_class(FeatureClass::MoveBody),
+        "VarFillet_c" => operation_class(FeatureClass::Fillet),
+        "moRefPoint_c" => operation_class(FeatureClass::ReferencePoint),
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
         "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
@@ -353,6 +413,22 @@ fn tree_node_class(
     )
 }
 
+fn operation_class(
+    feature: FeatureClass,
+) -> (
+    NativeClassKind,
+    FeatureInputClassRole,
+    Option<FeatureClass>,
+    Option<FeatureTreeNodeRole>,
+) {
+    (
+        NativeClassKind::Operation(feature),
+        FeatureInputClassRole::Feature,
+        Some(feature),
+        None,
+    )
+}
+
 fn relation_class(
     family: FeatureInputRelationFamily,
 ) -> (
@@ -448,7 +524,7 @@ fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
     native_object_class(class?).feature
 }
 
-fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
+pub(crate) fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
     Some(match tag {
         "Sketch" => FeatureClass::Sketch,
         "Plane" | "ReferencePlane" => FeatureClass::ReferencePlane,
@@ -492,16 +568,33 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
     })
 }
 
-fn classify_type_token(kind: &str) -> Option<FeatureClass> {
+pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
     Some(match kind {
-        "BossExtrude" | "CutExtrude" => FeatureClass::Extrude,
+        "BossExtrude" | "CutExtrude" | "Extrude" | "Surface-Extrude" => FeatureClass::Extrude,
         "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
-        "Surface-Sweep" => FeatureClass::Sweep,
+        "Surface-Sweep" | "Sweep" | "Cut-Sweep" => FeatureClass::Sweep,
         "Thicken" | "Thickness" => FeatureClass::Thicken,
         "LinearPattern" | "CircularPattern" | "CrvPattern" | "CurvePattern"
-        | "CurveDrivenPattern" | "Mirror" => FeatureClass::Pattern,
-        "BossLoft" | "CutLoft" | "BoundaryBoss" | "BoundaryCut" => FeatureClass::Loft,
-        "Body-Delete/Keep " | "Body-Delete/Keep" => FeatureClass::DeleteBody,
+        | "CurveDrivenPattern" | "CirPattern" | "Mirror" => FeatureClass::Pattern,
+        "BossLoft" | "CutLoft" | "BoundaryBoss" | "BoundaryCut" | "Loft" | "Cut-Loft"
+        | "Surface-Loft" => FeatureClass::Loft,
+        "Body-Delete" | "Body-Delete/Keep " | "Body-Delete/Keep" => FeatureClass::DeleteBody,
+        "Body-Move/Copy" => FeatureClass::MoveBody,
+        "Dome" => FeatureClass::Dome,
+        "Rib" => FeatureClass::Rib,
+        "Shell" => FeatureClass::Shell,
+        "Draft" => FeatureClass::Draft,
+        "Surface-Offset" => FeatureClass::OffsetSurface,
+        "Surface-Knit" => FeatureClass::KnitSurface,
+        "Surface-Fill" => FeatureClass::FilledSurface,
+        "Surface-Trim" => FeatureClass::TrimSurface,
+        "Surface-Extend" => FeatureClass::ExtendSurface,
+        "Ruled Surface" => FeatureClass::RuledSurface,
+        "SurfaceCut" => FeatureClass::CutWithSurface,
+        "DeleteFace" => FeatureClass::DeleteFace,
+        "Move Face" => FeatureClass::MoveFace,
+        "VarFillet" => FeatureClass::Fillet,
+        "3DPoint" => FeatureClass::ReferencePoint,
         _ => return None,
     })
 }
@@ -563,12 +656,72 @@ mod tests {
             ("moRevCut_c", FeatureClass::Revolve),
             ("moRefAxis_c", FeatureClass::ReferenceAxis),
             ("moMirrorPattern_c", FeatureClass::Pattern),
+            ("moDome_c", FeatureClass::Dome),
+            ("moRib_c", FeatureClass::Rib),
+            ("moBlendRefSurface_c", FeatureClass::Loft),
+            ("moExtruRefSurface_c", FeatureClass::Extrude),
+            ("moCirPattern_c", FeatureClass::Pattern),
         ] {
             assert_eq!(
                 classify(&feature("Feature", "localized", "localized", Some(class))),
                 Some(expected),
                 "{class}"
             );
+        }
+    }
+
+    #[test]
+    fn operation_tokens_classify_generic_feature_elements() {
+        for (kind, expected) in [
+            ("Dome", FeatureClass::Dome),
+            ("Rib", FeatureClass::Rib),
+            ("Surface-Trim", FeatureClass::TrimSurface),
+            ("Surface-Knit", FeatureClass::KnitSurface),
+            ("Surface-Fill", FeatureClass::FilledSurface),
+            ("Surface-Extend", FeatureClass::ExtendSurface),
+            ("Surface-Offset", FeatureClass::OffsetSurface),
+            ("SurfaceCut", FeatureClass::CutWithSurface),
+            ("Body-Move/Copy", FeatureClass::MoveBody),
+            ("3DPoint", FeatureClass::ReferencePoint),
+        ] {
+            assert_eq!(
+                classify(&feature("Feature", "localized", kind, None)),
+                Some(expected),
+                "{kind}"
+            );
+        }
+    }
+
+    #[test]
+    fn operation_class_taxonomy_preserves_family_identity() {
+        for (name, kind, feature) in [
+            (
+                "moDome_c",
+                NativeClassKind::Operation(FeatureClass::Dome),
+                FeatureClass::Dome,
+            ),
+            ("moBlendCut_c", NativeClassKind::LoftCut, FeatureClass::Loft),
+            (
+                "moBlendRefSurface_c",
+                NativeClassKind::SurfaceLoft,
+                FeatureClass::Loft,
+            ),
+            (
+                "moExtruRefSurface_c",
+                NativeClassKind::SurfaceExtrusion,
+                FeatureClass::Extrude,
+            ),
+            (
+                "moCirPattern_c",
+                NativeClassKind::CircularPattern,
+                FeatureClass::Pattern,
+            ),
+        ] {
+            let class = native_object_class(name);
+            assert_eq!(class.kind, kind, "{name}");
+            assert_eq!(class.role, FeatureInputClassRole::Feature, "{name}");
+            assert_eq!(class.feature, Some(feature), "{name}");
+            assert_eq!(class.tree_node, None, "{name}");
         }
     }
 
