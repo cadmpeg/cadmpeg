@@ -4,19 +4,21 @@
 use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::operands::{
-    parse_construction_operand_group, ConstructionOperandGroupParse,
+    parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
+    parse_face_operand, ConstructionOperandGroupParse,
 };
 use crate::design::decode::sketch::{
-    next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
+    identity_matrix, next_indexed_record_offset, valid_sketch_transform, IndexedRecordOffsets,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    DesignAssemblyAlignment, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
-    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignBendPosition,
-    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineOperation, DesignComponentInsertConstruction,
-    DesignComponentOccurrence, DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
+    ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyOperandFrame,
+    DesignAssemblyOperandPath, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
+    DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineOperation,
+    DesignComponentInsertConstruction, DesignComponentOccurrence,
+    DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
     DesignEdgeFlangeHeightExtent, DesignEdgeFlangeOperation, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue,
@@ -45,6 +47,7 @@ pub fn decode_parameter_scopes(
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
     component_occurrences: &[DesignComponentOccurrence],
+    recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -129,6 +132,7 @@ pub fn decode_parameter_scopes(
             }
             scope.hole_construction =
                 exact_hole_construction(bytes, &records, &scope, &stream_types);
+            scope.coil_placement = exact_coil_placement(bytes, &records, &scope, recipes);
             scope.solid_primitive =
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
@@ -4538,6 +4542,7 @@ pub(crate) fn parse_parameter_scope(
         coil_section_placement_offset,
         coil_clockwise,
         coil_clockwise_offset,
+        coil_placement: None,
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
@@ -4663,6 +4668,179 @@ struct CoilDiscriminators {
     section_placement_offset: Option<u64>,
     clockwise: bool,
     clockwise_offset: Option<u64>,
+}
+
+/// Decode the two ordered placement carriers of the compact eight-reference
+/// Coil form.
+///
+/// The first carrier is a nested support-selection frame. It may carry either
+/// a persistent support identity or a face recipe. The second is a rigid frame
+/// whose identity form omits the matrix and therefore has a
+/// 213-byte span; its explicit form has the same fixed envelope plus 128 matrix
+/// bytes and a 341-byte span. A malformed or ambiguous carrier leaves the
+/// complete placement native.
+fn exact_coil_placement(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignCoilPlacement> {
+    if scope.kind != "CoilPrimitive"
+        || !matches!(scope.frame_length, 432 | 442)
+        || scope.reference_members.len() != 8
+    {
+        return None;
+    }
+    let selection_record_index = scope.reference_members[0];
+    let transform_record_index = scope.reference_members[1];
+    let selection_frames = records.frames(selection_record_index).collect::<Vec<_>>();
+    let [(selection_start, _)] = selection_frames.as_slice() else {
+        return None;
+    };
+    let selection_start = *selection_start;
+    let (selection_class_tag, selection_after_tag) =
+        lp_ascii_filtered(bytes, selection_start, 3..=3, u8::is_ascii_digit)?;
+    if selection_after_tag != selection_start.checked_add(7)?
+        || u32_at(bytes, selection_after_tag)? != selection_record_index
+    {
+        return None;
+    }
+    let transform_frames = records.frames(transform_record_index).collect::<Vec<_>>();
+    let [(transform_start, transform_paired)] = transform_frames.as_slice() else {
+        return None;
+    };
+    let transform_start = *transform_start;
+    let transform_paired = *transform_paired;
+    let (transform_class_tag, transform_after_tag) =
+        lp_ascii_filtered(bytes, transform_start, 3..=3, u8::is_ascii_digit)?;
+    if transform_after_tag != transform_start.checked_add(7)?
+        || u32_at(bytes, transform_after_tag)? != transform_record_index
+    {
+        return None;
+    }
+    let frame_length = transform_paired.checked_sub(transform_start)?;
+    let (transform, transform_offset) = match frame_length {
+        213 if bytes.get(transform_start + 55) == Some(&1)
+            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
+            && bytes.get(transform_start + 65) == Some(&1) =>
+        {
+            (identity_matrix(), None)
+        }
+        341 if bytes.get(transform_start + 55) == Some(&1)
+            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
+            && bytes.get(transform_start + 65) == Some(&0) =>
+        {
+            let values = f64s_at(bytes, transform_start.checked_add(66)?, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.into_iter().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            (
+                transform,
+                Some(u64::try_from(transform_start.checked_add(66)?).ok()?),
+            )
+        }
+        _ => return None,
+    };
+    if !valid_right_handed_coil_transform(&transform) {
+        return None;
+    }
+    let selection = parse_entity_selection_frame(
+        bytes,
+        selection_record_index,
+        u64::try_from(selection_start).ok()?,
+        &selection_class_tag,
+    )
+    .map(|selection| DesignCoilSelection::Persistent {
+        asset_id: selection.asset_id,
+        context_id: selection.context_id,
+        identity_record_index: selection.identity_record_index,
+        primary_identity: selection.primary_identity,
+        secondary_identity: selection.secondary_identity,
+    })
+    .or_else(|| {
+        exact_coil_face_selection(
+            bytes,
+            scope,
+            selection_record_index,
+            selection_start,
+            &selection_class_tag,
+            transform_start,
+            recipes,
+        )
+    })?;
+    Some(DesignCoilPlacement {
+        selection_record_index,
+        selection_record_byte_offset: u64::try_from(selection_start).ok()?,
+        selection_class_tag,
+        selection,
+        transform_record_index,
+        transform_record_byte_offset: u64::try_from(transform_start).ok()?,
+        transform_class_tag,
+        transform,
+        transform_offset,
+    })
+}
+
+fn exact_coil_face_selection(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    selection_record_index: u32,
+    selection_start: usize,
+    selection_class_tag: &str,
+    transform_start: usize,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignCoilSelection> {
+    let prefix = parse_entity_selection_prefix(bytes, selection_start, selection_record_index)?;
+    let header = DesignRecordHeader {
+        id: scope.id.clone(),
+        byte_offset: u64::try_from(selection_start).ok()?,
+        class_tag: selection_class_tag.to_owned(),
+        record_index: selection_record_index,
+    };
+    let face = parse_face_operand(
+        bytes,
+        scope,
+        0,
+        None,
+        Some(u64::try_from(transform_start).ok()?),
+        &header,
+        recipes,
+    )?;
+    if face.next_byte_offset != u64::try_from(transform_start).ok()? {
+        return None;
+    }
+    let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
+    Some(DesignCoilSelection::FaceRecipe {
+        asset_id: prefix.asset_id,
+        context_id: prefix.context_id,
+        recipe_record_index: face.recipe_record_index,
+        recipe_record_byte_offset: face.recipe_record_byte_offset,
+        recipe_id: recipe.id.clone(),
+        recipe_kind: recipe.kind,
+        design_id: recipe.design_id.clone(),
+        design_selector: recipe.design_selector,
+    })
+}
+
+fn valid_right_handed_coil_transform(transform: &[[f64; 4]; 4]) -> bool {
+    if !valid_sketch_transform(transform) {
+        return false;
+    }
+    let radial = [transform[0][0], transform[1][0], transform[2][0]];
+    let tangent = [transform[0][1], transform[1][1], transform[2][1]];
+    let axis = [transform[0][2], transform[1][2], transform[2][2]];
+    let cross = [
+        radial[1] * tangent[2] - radial[2] * tangent[1],
+        radial[2] * tangent[0] - radial[0] * tangent[2],
+        radial[0] * tangent[1] - radial[1] * tangent[0],
+    ];
+    cross
+        .into_iter()
+        .zip(axis)
+        .map(|(left, right)| left * right)
+        .sum::<f64>()
+        > 1.0 - 1.0e-10
 }
 
 fn exact_coil_discriminators(
@@ -5950,11 +6128,15 @@ mod mirror_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        exact_hole_construction, exact_pattern_identity_wrapper, exact_work_point_position,
-        parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
+        exact_coil_placement, exact_hole_construction, exact_pattern_identity_wrapper,
+        exact_work_point_position, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
+        POINT_DATA_TYPE_GUID,
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
-    use crate::records::{DesignParameterScope, DesignRecordHeader};
+    use crate::records::{
+        ConstructionRecipe, ConstructionRecipeKind, DesignCoilSelection, DesignParameterScope,
+        DesignRecordHeader,
+    };
     use std::collections::HashMap;
 
     fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
@@ -5963,6 +6145,240 @@ mod tests {
         for unit in units {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
+    }
+
+    fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn compact_coil_placement_fixture(
+        matrix: Option<[[f64; 4]; 4]>,
+    ) -> (Vec<u8>, DesignParameterScope, usize) {
+        let mut bytes = Vec::new();
+        let selection_record_index = 100;
+        let transform_record_index = 200;
+        indexed_header(&mut bytes, *b"333", selection_record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&(selection_record_index + 3).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
+        lp_utf16(&mut bytes, "22222222-2222-4222-8222-222222222222");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        indexed_header(&mut bytes, *b"265", selection_record_index);
+        indexed_header(&mut bytes, *b"301", selection_record_index + 1);
+        indexed_header(&mut bytes, *b"446", selection_record_index + 2);
+        indexed_header(&mut bytes, *b"429", selection_record_index + 3);
+        bytes.extend_from_slice(&[0; 18]);
+        bytes.extend_from_slice(&1331u64.to_le_bytes());
+        bytes.extend_from_slice(&183u64.to_le_bytes());
+        indexed_header(&mut bytes, *b"311", selection_record_index + 4);
+
+        let transform_start = bytes.len();
+        indexed_header(&mut bytes, *b"270", transform_record_index);
+        let frame_length = if matrix.is_some() { 341 } else { 213 };
+        bytes.resize(transform_start + frame_length, 0);
+        bytes[transform_start + 55] = 1;
+        if let Some(matrix) = matrix {
+            bytes[transform_start + 65] = 0;
+            for (ordinal, value) in matrix.into_iter().flatten().enumerate() {
+                let offset = transform_start + 66 + ordinal * 8;
+                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+            }
+        } else {
+            bytes[transform_start + 65] = 1;
+        }
+        indexed_header(&mut bytes, *b"259", transform_record_index);
+
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#42",
+            "CoilPrimitive",
+            42,
+        );
+        scope.frame_length = 442;
+        scope.reference_members = vec![
+            selection_record_index,
+            transform_record_index,
+            300,
+            301,
+            302,
+            303,
+            304,
+            305,
+        ];
+        (bytes, scope, transform_start)
+    }
+
+    fn compact_coil_face_selection_fixture(
+    ) -> (Vec<u8>, DesignParameterScope, Vec<ConstructionRecipe>) {
+        let mut bytes = Vec::new();
+        let selection_record_index = 100;
+        let transform_record_index = 200;
+        indexed_header(&mut bytes, *b"333", selection_record_index);
+        bytes.extend_from_slice(&[0; 12]);
+        bytes.push(1);
+        bytes.extend_from_slice(&(selection_record_index + 3).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 3]);
+        lp_utf16(&mut bytes, "11111111-1111-4111-8111-111111111111");
+        lp_utf16(&mut bytes, "22222222-2222-4222-8222-222222222222");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        indexed_header(&mut bytes, *b"265", selection_record_index);
+        indexed_header(&mut bytes, *b"301", selection_record_index + 1);
+        indexed_header(&mut bytes, *b"446", selection_record_index + 2);
+        indexed_header(&mut bytes, *b"429", selection_record_index + 3);
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        let recipe_byte_offset = bytes.len();
+        bytes.extend_from_slice(b"face_recipe_data");
+        bytes.extend_from_slice(&0i32.to_le_bytes());
+        bytes.extend_from_slice(&(-1i32).to_le_bytes());
+        let transform_start = bytes.len();
+
+        indexed_header(&mut bytes, *b"270", transform_record_index);
+        bytes.resize(transform_start + 341, 0);
+        bytes[transform_start + 55] = 1;
+        bytes[transform_start + 65] = 0;
+        let transform: [[f64; 4]; 4] = [
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.7],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let offset = transform_start + 66 + ordinal * 8;
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"259", transform_record_index);
+
+        let stream = "f3d:Design/BulkStream.dat";
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#42",
+            "CoilPrimitive",
+            42,
+        );
+        scope.frame_length = 432;
+        scope.reference_members = vec![
+            selection_record_index,
+            transform_record_index,
+            300,
+            301,
+            302,
+            303,
+            304,
+            305,
+        ];
+        let recipes = vec![ConstructionRecipe {
+            id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
+            byte_offset: recipe_byte_offset as u64,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Face,
+            design_id: Some("body".into()),
+            design_id_offset: None,
+            design_selector: None,
+            recipe_index: 0,
+            record_index: 103,
+        }];
+        (bytes, scope, recipes)
+    }
+
+    #[test]
+    fn compact_coil_placement_accepts_identity_and_matrix_frames() {
+        let explicit = [
+            [-1.0, 0.0, 0.0, 0.0],
+            [0.0, -1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.7],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (ordinal, (matrix, expected_offset)) in [(None, None), (Some(explicit), Some(66))]
+            .into_iter()
+            .enumerate()
+        {
+            let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(matrix);
+            scope.frame_length = if ordinal == 0 { 432 } else { 442 };
+            let records = IndexedRecordOffsets::build(&bytes);
+            let placement = exact_coil_placement(&bytes, &records, &scope, &[])
+                .expect("compact Coil placement");
+            assert_eq!(placement.selection_record_index, 100);
+            assert_eq!(placement.transform_record_index, 200);
+            assert_eq!(
+                placement.selection,
+                DesignCoilSelection::Persistent {
+                    asset_id: "11111111-1111-4111-8111-111111111111".into(),
+                    context_id: "22222222-2222-4222-8222-222222222222".into(),
+                    identity_record_index: 103,
+                    primary_identity: 1331,
+                    secondary_identity: Some(183),
+                }
+            );
+            assert_eq!(
+                placement.transform_offset,
+                expected_offset.map(|offset| (transform_start + offset) as u64)
+            );
+            assert_eq!(
+                placement.transform,
+                matrix.unwrap_or([
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ])
+            );
+        }
+    }
+
+    #[test]
+    fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
+        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(Some([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.7],
+            [0.0, 0.0, 0.0, 1.0],
+        ]));
+        let matrix_value_offset = transform_start + 66 + 10 * 8;
+        bytes[matrix_value_offset..matrix_value_offset + 8]
+            .copy_from_slice(&(-1.0f64).to_le_bytes());
+        assert_eq!(
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+            None
+        );
+
+        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(None);
+        bytes[transform_start + 65] = 0;
+        assert_eq!(
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+            None
+        );
+    }
+
+    #[test]
+    fn compact_coil_placement_accepts_face_recipe_selection() {
+        let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
+        let placement = exact_coil_placement(
+            &bytes,
+            &IndexedRecordOffsets::build(&bytes),
+            &scope,
+            &recipes,
+        )
+        .expect("compact Coil face placement");
+        assert_eq!(
+            placement.selection,
+            DesignCoilSelection::FaceRecipe {
+                asset_id: "11111111-1111-4111-8111-111111111111".into(),
+                context_id: "22222222-2222-4222-8222-222222222222".into(),
+                recipe_record_index: 103,
+                recipe_record_byte_offset: recipes[0].byte_offset - 15,
+                recipe_id: recipes[0].id.clone(),
+                recipe_kind: ConstructionRecipeKind::Face,
+                design_id: Some("body".into()),
+                design_selector: None,
+            }
+        );
     }
 
     #[test]

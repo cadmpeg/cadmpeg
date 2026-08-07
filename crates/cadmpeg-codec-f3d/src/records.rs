@@ -812,6 +812,74 @@ pub enum DesignCoilSectionPlacement {
     Outside,
 }
 
+/// Selection carrier used by a compact Coil placement.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignCoilSelection {
+    /// Nested entity-selection frame with one or two persistent identities.
+    Persistent {
+        /// Asset UUID qualifying the persistent selection namespace.
+        asset_id: String,
+        /// Context UUID qualifying the persistent selection namespace.
+        context_id: String,
+        /// Indexed nested record carrying the persistent identity pair.
+        identity_record_index: u32,
+        /// First persistent identity value.
+        primary_identity: u64,
+        /// Second persistent identity value in the expanded form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secondary_identity: Option<u64>,
+    },
+    /// Face construction recipe carried by a placement selection frame.
+    FaceRecipe {
+        /// Asset UUID qualifying the recipe selection namespace.
+        asset_id: String,
+        /// Context UUID qualifying the recipe selection namespace.
+        context_id: String,
+        /// Indexed record containing the face recipe.
+        recipe_record_index: u32,
+        /// Byte offset of the face recipe record header.
+        recipe_record_byte_offset: u64,
+        /// Native construction-recipe arena identity.
+        recipe_id: String,
+        /// Exact face-recipe family.
+        recipe_kind: ConstructionRecipeKind,
+        /// Design entity id carried by the recipe, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        design_id: Option<String>,
+        /// Selector following the recipe's Design entity id, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        design_selector: Option<ConstructionRecipeSelector>,
+    },
+}
+
+/// Exact placement construction carried by a compact Coil scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCoilPlacement {
+    /// First ordered placement-construction reference.
+    pub selection_record_index: u32,
+    /// Byte offset of the support selection frame header.
+    pub selection_record_byte_offset: u64,
+    /// Dynamic class tag of the support selection frame.
+    pub selection_class_tag: String,
+    /// Exact selection semantics carried by the first placement reference.
+    pub selection: DesignCoilSelection,
+    /// Second ordered placement-construction reference: the frame carrier.
+    pub transform_record_index: u32,
+    /// Byte offset of the frame carrier header.
+    pub transform_record_byte_offset: u64,
+    /// Dynamic class tag of the frame carrier.
+    pub transform_class_tag: String,
+    /// Row-major local-to-model rigid transform. Matrix values are in source
+    /// centimetres for the translation column.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the matrix, or absent for the encoded identity form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform_offset: Option<u64>,
+}
+
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1604,6 +1672,9 @@ pub struct DesignParameterScope {
     /// Byte offset of the Coil direction enum, when the form stores one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_clockwise_offset: Option<u64>,
+    /// Exact placement construction carried by a compact Coil scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_placement: Option<DesignCoilPlacement>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
@@ -2134,6 +2205,7 @@ impl DesignParameterScope {
             coil_section_placement_offset: None,
             coil_clockwise: None,
             coil_clockwise_offset: None,
+            coil_placement: None,
             feature_ordinal: 0,
             feature_ordinal_offset: 0,
             history_state_id: None,

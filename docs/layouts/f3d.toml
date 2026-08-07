@@ -7,7 +7,7 @@ spec = "docs/formats/f3d.md"
 endianness = "little"
 note = """
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
-the ten-reference `CoilPrimitive` prologue and matrix block, and the
+the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, and the
 sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
@@ -647,6 +647,198 @@ offset = 0
 type = "f64[16]"
 source = "spec"
 anchor = "stores a finite 16-value f64 matrix at offset 77"
+
+[[record]]
+name = "coil_compact_persistent_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The persistent prefix stores zero bytes at offsets 11 through 20"
+size = 40
+note = "Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed selection header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "The persistent prefix stores zero bytes at offsets 11 through 20."
+
+[[record.field]]
+name = "nested_selection_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "u8 `1` at offset 21"
+
+[[record.field]]
+name = "nested_record_index"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the nested record index at offset 22"
+
+[[record.gap]]
+offset = 26
+size = 6
+note = "The persistent prefix stores zero bytes at offsets 26 through 31."
+
+[[record.field]]
+name = "asset_presence"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 32"
+
+[[record.field]]
+name = "asset_uuid_length"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the asset UUID's UTF-16 code-unit count at offset 36"
+
+[[record]]
+name = "coil_compact_face_selection_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its prefix stores zero bytes at offsets 11 through 22"
+size = 42
+note = "Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed selection header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 12
+note = "Its prefix stores zero bytes at offsets 11 through 22."
+
+[[record.field]]
+name = "nested_selection_marker"
+offset = 23
+type = "u8"
+source = "spec"
+anchor = "u8 `1` at offset 23"
+
+[[record.field]]
+name = "nested_record_index"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "the nested record index at offset 24"
+
+[[record.gap]]
+offset = 28
+size = 6
+note = "Its prefix stores zero bytes at offsets 28 through 33."
+
+[[record.field]]
+name = "asset_presence"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "u8 `1` at offset 34"
+
+[[record.gap]]
+offset = 35
+size = 3
+note = "Its prefix stores zero bytes at offsets 35 through 37."
+
+[[record.field]]
+name = "asset_uuid_length"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "the asset UUID's UTF-16 code-unit count at offset 38"
+
+[[record]]
+name = "coil_compact_placement_identity_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The identity carrier is 213 bytes to its same-index paired header"
+size = 213
+note = "Offsets are relative to the second ordered placement carrier's indexed header. The identity form omits the matrix block."
+
+[[record.gap]]
+offset = 0
+size = 55
+note = "The fixed placement envelope precedes the identity marker block."
+
+[[record.field]]
+name = "placement_marker"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "Its marker at offset 55 is u8 `1`"
+
+[[record.field]]
+name = "identity_zero_run"
+offset = 56
+type = "bytes[9]"
+source = "spec"
+anchor = "stores zero bytes at offsets 56 through 64"
+
+[[record.field]]
+name = "identity_marker"
+offset = 65
+type = "u8"
+source = "spec"
+anchor = "stores u8 `1` at offset 65"
+
+[[record.gap]]
+offset = 66
+size = 147
+note = "The identity form omits the explicit matrix block and retains the remaining carrier bytes natively."
+
+[[record]]
+name = "coil_compact_placement_matrix_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The explicit carrier is 341 bytes to its same-index paired header"
+size = 341
+note = "Offsets are relative to the second ordered placement carrier's indexed header. The matrix is row-major and its translation values are in centimetres."
+
+[[record.gap]]
+offset = 0
+size = 55
+note = "The fixed placement envelope precedes the explicit marker block."
+
+[[record.field]]
+name = "placement_marker"
+offset = 55
+type = "u8"
+source = "spec"
+anchor = "Its marker at offset 55 is u8 `1`"
+
+[[record.field]]
+name = "explicit_zero_run"
+offset = 56
+type = "bytes[9]"
+source = "spec"
+anchor = "stores zero bytes at offsets 56 through 64"
+
+[[record.field]]
+name = "explicit_form_marker"
+offset = 65
+type = "u8"
+source = "spec"
+anchor = "stores u8 `0` at offset 65"
+
+[[record.field]]
+name = "matrix"
+offset = 66
+type = "f64[16]"
+source = "spec"
+anchor = "stores 16 row-major f64 values at offset 66"
+
+[[record.gap]]
+offset = 194
+size = 147
+note = "The carrier tail is not assigned a semantic field."
 
 # --- Not tabulated ---------------------------------------------------------
 

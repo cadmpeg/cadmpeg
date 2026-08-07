@@ -3158,6 +3158,7 @@ fn extend_related_design_records(
         &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_component_occurrences,
+        &native.construction_recipes,
     )?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
@@ -4697,6 +4698,7 @@ mod tests {
             coil_section_placement_offset: None,
             coil_clockwise: None,
             coil_clockwise_offset: None,
+            coil_placement: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -4869,6 +4871,7 @@ mod tests {
             coil_section_placement_offset: None,
             coil_clockwise: None,
             coil_clockwise_offset: None,
+            coil_placement: None,
             feature_ordinal: record_index,
             feature_ordinal_offset: 0,
             history_state_id: current,

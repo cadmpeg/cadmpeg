@@ -6304,11 +6304,26 @@ fn project_coil(
         },
         _ => return None,
     };
+    let placement = scope.coil_placement.as_ref().map_or_else(
+        || CoilPlacement::Native {
+            native_ref: scope.id.clone(),
+        },
+        |placement| {
+            let transform = &placement.transform;
+            CoilPlacement::Explicit {
+                origin: Point3::new(
+                    transform[0][3] * 10.0,
+                    transform[1][3] * 10.0,
+                    transform[2][3] * 10.0,
+                ),
+                axis: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                radial: Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
+            }
+        },
+    );
     Some(FeatureDefinition::Coil {
         construction: CoilConstruction {
-            placement: CoilPlacement::Native {
-                native_ref: scope.id.clone(),
-            },
+            placement,
             diameter,
             extent,
             section,

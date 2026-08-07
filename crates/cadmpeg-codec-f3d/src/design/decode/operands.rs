@@ -1855,16 +1855,93 @@ pub(crate) fn parse_entity_selection_operand(
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignEntitySelectionOperand> {
-    let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 21)? != [0; 10]
-        || bytes.get(start + 21) != Some(&1)
-        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
-        || bytes.get(start + 26..start + 32)? != [0; 6]
-        || u32_at(bytes, start + 32)? != 1
+    let frame = parse_entity_selection_frame(
+        bytes,
+        header.record_index,
+        header.byte_offset,
+        &header.class_tag,
+    )?;
+    Some(DesignEntitySelectionOperand {
+        id: String::new(),
+        scope_record_index: group.scope_record_index,
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index: frame.record_index,
+        byte_offset: frame.byte_offset,
+        class_tag: frame.class_tag,
+        asset_id: frame.asset_id,
+        asset_id_offset: frame.asset_id_offset,
+        context_id: frame.context_id,
+        context_id_offset: frame.context_id_offset,
+        identity_record_index: frame.identity_record_index,
+        identity_record_offset: frame.identity_record_offset,
+        primary_identity: frame.primary_identity,
+        primary_identity_offset: frame.primary_identity_offset,
+        secondary_identity: frame.secondary_identity,
+        secondary_identity_offset: frame.secondary_identity_offset,
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
+        resolved_edge_slot: None,
+        next_record_index: frame.next_record_index,
+        next_byte_offset: frame.next_byte_offset,
+    })
+}
+
+/// Persistent identity payload shared by entity-selection consumers that do
+/// not belong to a construction-operand group.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EntitySelectionFrame {
+    pub(crate) record_index: u32,
+    pub(crate) byte_offset: u64,
+    pub(crate) class_tag: String,
+    pub(crate) asset_id: String,
+    pub(crate) asset_id_offset: u64,
+    pub(crate) context_id: String,
+    pub(crate) context_id_offset: u64,
+    pub(crate) identity_record_index: u32,
+    pub(crate) identity_record_offset: u64,
+    pub(crate) primary_identity: u64,
+    pub(crate) primary_identity_offset: u64,
+    pub(crate) secondary_identity: Option<u64>,
+    pub(crate) secondary_identity_offset: Option<u64>,
+    pub(crate) next_record_index: u32,
+    pub(crate) next_byte_offset: u64,
+}
+
+pub(crate) struct EntitySelectionPrefix {
+    pub(crate) asset_id: String,
+    pub(crate) asset_id_offset: u64,
+    pub(crate) context_id: String,
+    pub(crate) context_id_offset: u64,
+    pub(crate) after_context_id: usize,
+}
+
+pub(crate) fn parse_entity_selection_prefix(
+    bytes: &[u8],
+    start: usize,
+    record_index: u32,
+) -> Option<EntitySelectionPrefix> {
+    // Persistent selections use a ten-byte prelude and a u32 presence value.
+    // Face-recipe selections add two prelude bytes, encode presence as one
+    // byte, and add three zero bytes before the first UTF-16 length.
+    let asset_start = if bytes.get(start + 11..start + 21)? == [0; 10]
+        && bytes.get(start + 21) == Some(&1)
+        && u32_at(bytes, start + 22)? == record_index.checked_add(3)?
+        && bytes.get(start + 26..start + 32)? == [0; 6]
+        && u32_at(bytes, start + 32)? == 1
     {
+        start.checked_add(36)?
+    } else if bytes.get(start + 11..start + 23)? == [0; 12]
+        && bytes.get(start + 23) == Some(&1)
+        && u32_at(bytes, start + 24)? == record_index.checked_add(3)?
+        && bytes.get(start + 28..start + 34)? == [0; 6]
+        && bytes.get(start + 34) == Some(&1)
+    {
+        start.checked_add(38)?
+    } else {
         return None;
-    }
-    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
+    };
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
@@ -1873,16 +1950,34 @@ pub(crate) fn parse_entity_selection_operand(
     {
         return None;
     }
-    let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
+    Some(EntitySelectionPrefix {
+        asset_id,
+        asset_id_offset: u64::try_from(asset_start.checked_add(4)?).ok()?,
+        context_id,
+        context_id_offset: u64::try_from(after_asset_id.checked_add(4)?).ok()?,
+        after_context_id,
+    })
+}
+
+/// Parse the nested persistent-entity frame without assigning group ownership.
+pub(crate) fn parse_entity_selection_frame(
+    bytes: &[u8],
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &str,
+) -> Option<EntitySelectionFrame> {
+    let start = usize::try_from(byte_offset).ok()?;
+    let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
+    let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
     let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
     let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
     let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
     let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
     let expected = [
-        header.record_index,
-        header.record_index.checked_add(1)?,
-        header.record_index.checked_add(2)?,
-        header.record_index.checked_add(3)?,
+        record_index,
+        record_index.checked_add(1)?,
+        record_index.checked_add(2)?,
+        record_index.checked_add(3)?,
     ];
     for (offset, expected) in [paired_at, nested_one_at, nested_two_at, identity_at]
         .into_iter()
@@ -1898,7 +1993,7 @@ pub(crate) fn parse_entity_selection_operand(
     let (primary_identity_offset, secondary_identity_offset) =
         if bytes.get(identity_at + 11..identity_at + 29)? == [0; 18]
             && identity_at.checked_add(45)? == next_at
-            && next_record_index == header.record_index.checked_add(4)?
+            && next_record_index == record_index.checked_add(4)?
         {
             (
                 identity_at.checked_add(29)?,
@@ -1911,28 +2006,21 @@ pub(crate) fn parse_entity_selection_operand(
         } else {
             return None;
         };
-    Some(DesignEntitySelectionOperand {
-        id: String::new(),
-        scope_record_index: group.scope_record_index,
-        group_record_index: group.record_index,
-        group_member_ordinal,
-        record_index: header.record_index,
-        byte_offset: header.byte_offset,
-        class_tag: header.class_tag.clone(),
-        asset_id,
-        asset_id_offset: u64::try_from(start + 40).ok()?,
-        context_id,
-        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
-        identity_record_index: header.record_index.checked_add(3)?,
+    Some(EntitySelectionFrame {
+        record_index,
+        byte_offset,
+        class_tag: class_tag.to_owned(),
+        asset_id: prefix.asset_id,
+        asset_id_offset: prefix.asset_id_offset,
+        context_id: prefix.context_id,
+        context_id_offset: prefix.context_id_offset,
+        identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
         primary_identity: read_u64(bytes, primary_identity_offset)?,
         primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
         secondary_identity: secondary_identity_offset.and_then(|offset| read_u64(bytes, offset)),
         secondary_identity_offset: secondary_identity_offset
             .and_then(|offset| u64::try_from(offset).ok()),
-        historical_edge_candidates: Vec::new(),
-        historical_face_candidates: Vec::new(),
-        resolved_edge_slot: None,
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })

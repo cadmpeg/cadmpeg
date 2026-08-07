@@ -8,7 +8,7 @@ Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
-the ten-reference `CoilPrimitive` prologue and matrix block, and the
+the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, and the
 sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
@@ -219,6 +219,80 @@ The block begins at primary indexed scope offset 77. Its final row is `(0, 0, 0,
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 128 | `matrix` | `f64[16]` | little | spec | stores a finite 16-value f64 matrix at offset 77 |
+
+## `coil_compact_persistent_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 21 | 1 | `nested_selection_marker` | `u8` | little | spec | u8 `1` at offset 21 |
+| 22 | 4 | `nested_record_index` | `u32` | little | spec | the nested record index at offset 22 |
+| 32 | 4 | `asset_presence` | `u32` | little | spec | u32 `1` at offset 32 |
+| 36 | 4 | `asset_uuid_length` | `u32` | little | spec | the asset UUID's UTF-16 code-unit count at offset 36 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed selection header occupies the first 11 bytes.
+- `11..21` (10 B): The persistent prefix stores zero bytes at offsets 11 through 20.
+- `26..32` (6 B): The persistent prefix stores zero bytes at offsets 26 through 31.
+
+## `coil_compact_face_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the first placement selection header. The asset and context UUID payloads follow the fixed UTF-16 length fields and therefore have variable length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 23 | 1 | `nested_selection_marker` | `u8` | little | spec | u8 `1` at offset 23 |
+| 24 | 4 | `nested_record_index` | `u32` | little | spec | the nested record index at offset 24 |
+| 34 | 1 | `asset_presence` | `u8` | little | spec | u8 `1` at offset 34 |
+| 38 | 4 | `asset_uuid_length` | `u32` | little | spec | the asset UUID's UTF-16 code-unit count at offset 38 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed selection header occupies the first 11 bytes.
+- `11..23` (12 B): Its prefix stores zero bytes at offsets 11 through 22.
+- `28..34` (6 B): Its prefix stores zero bytes at offsets 28 through 33.
+- `35..38` (3 B): Its prefix stores zero bytes at offsets 35 through 37.
+
+## `coil_compact_placement_identity_frame`
+
+Spec §3.1 · layout: byte offsets · size: 213 B
+
+Offsets are relative to the second ordered placement carrier's indexed header. The identity form omits the matrix block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `placement_marker` | `u8` | little | spec | Its marker at offset 55 is u8 `1` |
+| 56 | 9 | `identity_zero_run` | `bytes[9]` | little | spec | stores zero bytes at offsets 56 through 64 |
+| 65 | 1 | `identity_marker` | `u8` | little | spec | stores u8 `1` at offset 65 |
+
+Unstated regions:
+
+- `0..55` (55 B): The fixed placement envelope precedes the identity marker block.
+- `66..213` (147 B): The identity form omits the explicit matrix block and retains the remaining carrier bytes natively.
+
+## `coil_compact_placement_matrix_frame`
+
+Spec §3.1 · layout: byte offsets · size: 341 B
+
+Offsets are relative to the second ordered placement carrier's indexed header. The matrix is row-major and its translation values are in centimetres.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 55 | 1 | `placement_marker` | `u8` | little | spec | Its marker at offset 55 is u8 `1` |
+| 56 | 9 | `explicit_zero_run` | `bytes[9]` | little | spec | stores zero bytes at offsets 56 through 64 |
+| 65 | 1 | `explicit_form_marker` | `u8` | little | spec | stores u8 `0` at offset 65 |
+| 66 | 128 | `matrix` | `f64[16]` | little | spec | stores 16 row-major f64 values at offset 66 |
+
+Unstated regions:
+
+- `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
+- `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
 ## `edge_flange_fixed_operation_section`
 
