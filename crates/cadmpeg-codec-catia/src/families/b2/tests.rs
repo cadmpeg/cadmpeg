@@ -6,8 +6,8 @@
 use crate::tests::{
     a5_surface_stream, b2_circle_stream, b2_cone_face_stream, b2_cone_stream,
     b2_construction_use_stream, b2_counted_61_stream, b2_cylinder_stream, b2_edge_node_stream,
-    b2_edge_parameter_stream, b2_embedded_cylinder_stream, b2_group_stream,
-    b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_link_5f_stream,
+    b2_edge_parameter_stream, b2_edge_parameter_stream_for, b2_embedded_cylinder_stream,
+    b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_link_5f_stream,
     b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
     b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
@@ -872,6 +872,18 @@ fn b2_edge_parameter_parser_validates_repeated_range_packet() {
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].range, [2.0, 7.0]);
     assert_eq!(packets[0].tolerance, 1e-6);
+}
+
+#[test]
+fn b2_edge_parameter_parser_rejects_nonincreasing_ranges() {
+    assert!(
+        crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream_for(7.0, 2.0))
+            .is_empty()
+    );
+    assert!(
+        crate::families::b2::records::b2_edge_parameters(&b2_edge_parameter_stream_for(2.0, 2.0))
+            .is_empty()
+    );
 }
 
 #[test]

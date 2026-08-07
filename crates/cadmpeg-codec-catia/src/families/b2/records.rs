@@ -2266,6 +2266,7 @@ pub(crate) fn b2_edge_parameters_from_records(
             continue;
         };
         if values.iter().all(|v| v.is_finite())
+            && values[0] < values[1]
             && values[0] == values[3]
             && values[0] == values[6]
             && values[1] == values[4]

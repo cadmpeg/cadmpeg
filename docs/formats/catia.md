@@ -492,7 +492,7 @@ When these clamped NURBS or bounded spatial-circle carriers are the complete geo
 - **`b2/b3/b4 03 5f` link:** payload `82 <width-coded target> 03 05`. The target uses the compact integer grammar; its encoded width determines the payload length.
 - **Owner allocation link:** when a `5f` link is immediately followed by a `62` owner packet, the owner's final identity equals `5f.target + 1` (the fixed nine-reference form uses its ninth identity). Both checked successor identity and framed adjacency are required; an intervening record breaks the link.
 - **`b2/b3/b4 03 3b`** has width-coded header token `5`, a reference-and-control program beginning `85` and ending `03 11`, then finite f64 angular scale and cone half-angle. The half-angle lies strictly between zero and π/2. Complete frames retain their own identity when nested inside a wider consolidated payload. The immediately following contiguous run of class-`18` records is the chart's ordered parameter-space point run when every record in the run satisfies the parameter-space grammar. One unrecognized record makes the complete run opaque.
-- **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.
+- **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine finite f64 values with `lo<hi`. The repeated range is the native parameter interval shared by the two preceding pcurves.
 
 ### 6.5 `b2 03 19/28/29/31/30/60` support and construction records
 
