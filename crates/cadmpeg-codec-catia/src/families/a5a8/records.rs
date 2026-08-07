@@ -494,18 +494,23 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
         distinct_knots.push(f64_le(data, at)?);
         at += 8;
     }
-    if distinct_knots.windows(2).any(|pair| pair[0] >= pair[1]) || data.get(at) != Some(&0x01) {
+    if distinct_knots.iter().any(|knot| !knot.is_finite())
+        || distinct_knots.windows(2).any(|pair| pair[0] >= pair[1])
+        || data.get(at) != Some(&0x01)
+    {
         return None;
     }
     at += 1;
     let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
     let control_points = (0..control_count)
         .map(|_| {
-            let point = Point3::new(
-                f64_le(data, at)?,
-                f64_le(data, at + 8)?,
-                f64_le(data, at + 16)?,
-            );
+            let x = f64_le(data, at)?;
+            let y = f64_le(data, at + 8)?;
+            let z = f64_le(data, at + 16)?;
+            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                return None;
+            }
+            let point = Point3::new(x, y, z);
             at += 24;
             Some(point)
         })

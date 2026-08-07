@@ -792,6 +792,17 @@ fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
 }
 
 #[test]
+fn a5_nurbs_curve_parser_rejects_nonfinite_knots_and_control_points() {
+    let mut nonfinite_knot = a5_nurbs_curve_stream();
+    nonfinite_knot[11..19].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_knot).is_empty());
+
+    let mut nonfinite_control_point = a5_nurbs_curve_stream();
+    nonfinite_control_point[36..44].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::a5a8::records::a5_nurbs_curves(&nonfinite_control_point).is_empty());
+}
+
+#[test]
 fn a5_nurbs_curve_parser_rejects_broken_frame_invariants() {
     let valid = a5_nurbs_curve_stream();
     for offset in [8, 9, 10, 27, 35, 252, 253, 254, 262, 270, 278, 286, 287] {
