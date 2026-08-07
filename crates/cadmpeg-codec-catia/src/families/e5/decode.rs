@@ -1756,6 +1756,11 @@ pub(crate) fn e5_boundary_curve(
     endpoints: [Point3; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
+    let finite_vector = |vector: Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+    };
     if let (
         SurfaceGeometry::Plane {
             origin,
@@ -1799,18 +1804,32 @@ pub(crate) fn e5_boundary_curve(
     ) = (surface, native_pcurve, pcurve)
     {
         let v_axis = (*normal).cross(*u_axis);
+        let control_points = control_points
+            .iter()
+            .map(|point| {
+                (*origin)
+                    .translated(*u_axis, point.u)
+                    .translated(v_axis, point.v)
+            })
+            .collect::<Vec<_>>();
+        if !finite_point(*origin)
+            || !finite_vector(*normal)
+            || !finite_vector(*u_axis)
+            || !finite_vector(v_axis)
+            || !range.into_iter().all(f64::is_finite)
+            || !knots.iter().copied().all(f64::is_finite)
+            || !control_points.iter().copied().all(finite_point)
+            || weights
+                .as_ref()
+                .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
+        {
+            return None;
+        }
         return Some((
             CurveGeometry::Nurbs(NurbsCurve {
                 degree: *degree,
                 knots: knots.clone(),
-                control_points: control_points
-                    .iter()
-                    .map(|point| {
-                        (*origin)
-                            .translated(*u_axis, point.u)
-                            .translated(v_axis, point.v)
-                    })
-                    .collect(),
+                control_points,
                 weights: weights.clone(),
                 periodic: *periodic,
             }),
@@ -2599,6 +2618,43 @@ mod route_tests {
             nurbs.control_points.last(),
             Some(&Point3::new(2.0, 4.0, 3.0))
         );
+    }
+
+    #[test]
+    fn e5_plane_jet_boundary_rejects_nonfinite_world_poles() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(f64::MAX, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let native = E5Pcurve::Jet {
+            surface: 0,
+            degree: 1,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            points: Vec::new(),
+            first_derivatives: Vec::new(),
+            second_derivatives: Vec::new(),
+            range: [0.0, 1.0],
+        };
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 1.0],
+            control_points: vec![Point2::new(f64::MAX, 0.0), Point2::new(f64::MAX, 1.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert!(e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(f64::MAX, 1.0, 0.0)
+            ],
+        )
+        .is_none());
     }
 
     #[test]
