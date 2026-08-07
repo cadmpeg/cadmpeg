@@ -2506,6 +2506,33 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         )));
     }
     let mut native_entities = namespace.arenas.get("entities").into_iter().flatten();
+    for record in native_entities.clone().filter(|record| {
+        let entity_type = record.field("entity_type").and_then(|value| value.as_i64());
+        let form = record.field("form").and_then(|value| value.as_i64());
+        matches!(entity_type, Some(100 | 102 | 104 | 110 | 112 | 126 | 130))
+            || (entity_type == Some(106) && matches!(form, Some(1..=3 | 11..=13 | 63)))
+    }) {
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return Err(CodecError::Malformed(
+                "IGES native curve entity has no directory sequence".into(),
+            ));
+        };
+        let object_id = format!("D{sequence}");
+        if !ir.model.curves.iter().any(|curve| {
+            curve
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.format == "iges" && source.object_id == object_id)
+        }) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer cannot preserve native curve entity {object_id} without neutral geometry"
+            )));
+        }
+    }
     let has_native_surface = native_entities.clone().any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),

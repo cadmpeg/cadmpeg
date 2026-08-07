@@ -8522,6 +8522,34 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 }
 
 #[test]
+fn encode_refuses_a_native_curve_without_neutral_geometry() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir;
+    ir.model.curves.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.bodies.clear();
+    ir.model.regions.clear();
+    ir.model.shells.clear();
+
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &ir,
+        fidelity: None,
+    }) else {
+        panic!("native curve was silently omitted from semantic output")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("native curve entity D1 without neutral geometry"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encode_regenerates_supported_analytic_and_spline_curves() {
     let fixtures = [
         ("circle", circular_arc_file()),
