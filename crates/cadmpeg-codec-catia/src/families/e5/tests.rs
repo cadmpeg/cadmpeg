@@ -34,15 +34,9 @@ fn e5_circle_parser_reads_framed_carrier() {
     ));
 
     let mut small = e5_circle_stream();
-    small[86..94].copy_from_slice(&f64::MIN_POSITIVE.to_le_bytes());
+    small[86..94].copy_from_slice(&f64::from_bits(1).to_le_bytes());
     assert_eq!(crate::families::e5::records::e5_circles(&small).len(), 1);
-    assert!(matches!(
-        crate::families::e5::records::e5_surfaces(&small)[0].geometry,
-        SurfaceGeometry::Cylinder {
-            radius: f64::MIN_POSITIVE,
-            ..
-        }
-    ));
+    assert!(crate::families::e5::records::e5_surfaces(&small).is_empty());
 
     let mut zero = e5_circle_stream();
     zero[86..94].copy_from_slice(&0.0_f64.to_le_bytes());
@@ -250,6 +244,11 @@ fn e5_surface_parser_reads_framed_torus() {
             ..
         }
     ));
+
+    let mut tiny = e5_torus_stream();
+    tiny[110..118].copy_from_slice(&f64::from_bits(1).to_le_bytes());
+    tiny[118..126].copy_from_slice(&f64::from_bits(1).to_le_bytes());
+    assert!(crate::families::e5::records::e5_surfaces(&tiny).is_empty());
 }
 
 #[test]

@@ -250,11 +250,15 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
     for record in e5_records(data) {
         let pos = record.pos;
         let decoded = match record.class {
-            0xc9 => e5_cylinder(data, pos).map(|geometry| {
+            0xc9 => e5_cylinder(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Cylinder { radius, .. } = geometry else {
                     unreachable!()
                 };
-                (geometry, [1.0 / radius, 1.0])
+                let parameter_scale = [1.0 / radius, 1.0];
+                parameter_scale
+                    .into_iter()
+                    .all(f64::is_finite)
+                    .then_some((geometry, parameter_scale))
             }),
             0xca => e5_cone(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Cone { half_angle, .. } = geometry else {
@@ -270,7 +274,7 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                     && parameter_scale.into_iter().all(f64::is_finite))
                 .then_some((geometry, parameter_scale))
             }),
-            0xcc => e5_torus(data, pos).map(|geometry| {
+            0xcc => e5_torus(data, pos).and_then(|geometry| {
                 let SurfaceGeometry::Torus {
                     major_radius,
                     minor_radius,
@@ -279,7 +283,11 @@ pub fn e5_surfaces(data: &[u8]) -> Vec<E5Surface> {
                 else {
                     unreachable!()
                 };
-                (geometry, [1.0 / major_radius, 1.0 / minor_radius])
+                let parameter_scale = [1.0 / major_radius, 1.0 / minor_radius];
+                parameter_scale
+                    .into_iter()
+                    .all(f64::is_finite)
+                    .then_some((geometry, parameter_scale))
             }),
             _ => None,
         };
