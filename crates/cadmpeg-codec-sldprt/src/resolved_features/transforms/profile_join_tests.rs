@@ -2697,6 +2697,90 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
 }
 
 #[test]
+fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
+    let sketch = SketchId("sketch".into());
+    let mut first = marker("first-point", Some([0.0, 0.01]));
+    first.kind = SketchInputKind::Point;
+    let mut second = marker("second-point", Some([0.02, 0.01]));
+    second.kind = SketchInputKind::Point;
+    let mut relation = marker("horizontal", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.local_id = Some(7);
+    relation.object_index = Some(6);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (relation.id.as_str(), &relation),
+    ]);
+    let first_entity = SketchEntity {
+        id: SketchEntityId("first-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(first.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(0.0, 10.0),
+        },
+    };
+    let second_entity = SketchEntity {
+        id: SketchEntityId("second-entity".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(second.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(20.0, 10.0),
+        },
+    };
+    let entities = vec![first_entity.clone(), second_entity.clone()];
+    let definition = typed_marker_relation_definition_in_sketch(
+        &relation,
+        &sketch,
+        &entities,
+        &markers,
+        &HashMap::new(),
+    )
+    .expect("typed horizontal point relation");
+    assert_eq!(
+        definition,
+        SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(first_entity.id.clone()),
+            second: SketchLocus::Entity(second_entity.id.clone()),
+        }
+    );
+    assert!(!marker_relation_is_inactive(
+        &relation,
+        &definition,
+        &entities
+    ));
+
+    let mut ambiguous_entities = entities.clone();
+    ambiguous_entities.push(first_entity);
+    assert!(matches!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &sketch,
+            &ambiguous_entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Native { .. })
+    ));
+}
+
+#[test]
 fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     let sketch = SketchId("sketch".into());
     let entities = [

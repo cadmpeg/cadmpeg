@@ -25,7 +25,7 @@ use super::transforms::{locus_entity, locus_key, marker_entities, sketch_entity_
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
-use crate::records::{SketchInputEntity, SketchInputKind};
+use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
@@ -123,6 +123,60 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     let Some(kind) = kind else {
         return Some(native());
     };
+    if matches!(kind, Horizontal | Vertical)
+        && relation_owner_markers(marker, markers_by_id).is_empty()
+    {
+        // Point targets disambiguate these operands when a local/object index
+        // happens to collide with the relation handle's index.
+        let point_links = marker
+            .links
+            .iter()
+            .filter(|link| {
+                link.entity_ref != marker.id
+                    && !matches!(
+                        markers_by_id
+                            .get(link.entity_ref.as_str())
+                            .map(|linked| linked.kind),
+                        Some(SketchInputKind::Relation(_))
+                    )
+            })
+            .collect::<Vec<_>>();
+        if let [first_link, second_link] = point_links.as_slice() {
+            let point_entity = |link: &SketchInputLink| {
+                let linked = markers_by_id.get(link.entity_ref.as_str())?;
+                if !matches!(
+                    linked.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                ) {
+                    return None;
+                }
+                let mut candidates = sketch_entities.iter().filter(|entity| {
+                    entity.sketch == *sketch
+                        && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                });
+                let entity = candidates.next()?;
+                candidates.next().is_none().then(|| entity.id.clone())
+            };
+            if let (Some(first), Some(second)) =
+                (point_entity(first_link), point_entity(second_link))
+            {
+                if first != second {
+                    return Some(if kind == Horizontal {
+                        SketchConstraintDefinition::HorizontalPoints {
+                            first: SketchLocus::Entity(first),
+                            second: SketchLocus::Entity(second),
+                        }
+                    } else {
+                        SketchConstraintDefinition::VerticalPoints {
+                            first: SketchLocus::Entity(first),
+                            second: SketchLocus::Entity(second),
+                        }
+                    });
+                }
+            }
+        }
+    }
     Some(match kind {
         Horizontal | Vertical | Fixed => {
             if matches!(kind, Horizontal | Vertical) {
