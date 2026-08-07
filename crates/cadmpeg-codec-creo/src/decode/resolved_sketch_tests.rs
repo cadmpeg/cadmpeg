@@ -2283,6 +2283,113 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
 }
 
 #[test]
+fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 942,
+            kind: "Surface".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Surface id 942".to_string()),
+            stored_name_bytes: Some(b"Surface id 942".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            root_schema_class: Some(942),
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 942,
+            name: "Extrude 1".to_string(),
+            name_bytes: b"Extrude 1".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+    scan.features
+        .section_transforms
+        .push(crate::placement::FeatureSectionTransform {
+            definition_id: 1,
+            feature_id: Some(942),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 1.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            offset: 0,
+        });
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(942),
+            table_class_id: 29,
+            entry_ids: vec![31, 32, 33],
+            surface_ids: vec![31, 32, 33],
+            non_surface_entity_ids: Vec::new(),
+            entries: vec![
+                entry(31, 204, None),
+                entry(32, 203, None),
+                entry(33, 200, Some(11)),
+            ],
+            offset: 0,
+        });
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 942,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    scan.surfaces.rows.extend([row(31), row(32), row(33)]);
+    let plane = |id, z| Surface {
+        id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, z),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([plane(31, 2.0), plane(32, 8.0)]);
+
+    assert!(matches!(
+        schema_feature_definition(&scan, &ir, 942, 942, "Surface"),
+        IrFeatureDefinition::Extrude {
+            direction: cadmpeg_ir::features::ExtrudeDirection::Explicit(direction),
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(6.0),
+                    },
+                    ..
+                }
+            },
+            op: BooleanOp::NewBody,
+            solid: Some(false),
+            ..
+        } if direction == Vector3::new(0.0, 0.0, 1.0)
+    ));
+}
+
+#[test]
 fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(numbered_feature_name_has_family("Thicken 1", "Thicken"));
     assert!(numbered_feature_name_has_family("Thicken 12", "Thicken"));

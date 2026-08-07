@@ -17886,7 +17886,9 @@ fn schema_feature_definition(
         };
     }
     let recipe = feature_recipe(scan, feature_id);
-    if section_sweep_allows_linear_extrusion(schema_class, recipe) {
+    if section_sweep_allows_linear_extrusion(schema_class, recipe)
+        || feature_is_sheet_extrusion(scan, feature_id)
+    {
         let transforms = scan
             .features
             .section_transforms
@@ -18090,15 +18092,9 @@ fn schema_feature_definition(
         }
         return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
     }
-    if schema_class == 942 && feature_is_sheet_extrusion(scan, feature_id) {
-        return extrude_feature_definition_with_profile(
-            scan,
-            ir,
-            feature_id,
-            BooleanOp::Unresolved,
-        );
-    }
-    if numbered_feature_name_has_family(kind, "Extrude") {
+    if numbered_feature_name_has_family(kind, "Extrude")
+        && !feature_is_sheet_extrusion(scan, feature_id)
+    {
         return extrude_feature_definition_with_profile(
             scan,
             ir,
