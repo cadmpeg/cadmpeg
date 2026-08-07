@@ -4381,6 +4381,24 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
 }
 
 #[test]
+fn mapped_presentation_does_not_report_body_placement_loss() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.));
+#2=DIRECTION('',(1.,0.));
+#3=AXIS2_PLACEMENT_2D('',#1,#2);
+#4=REPRESENTATION_MAP(#3,#5);
+#5=PRESENTATION_VIEW('',(),#6);
+#6=REPRESENTATION_CONTEXT('','');
+#7=CARTESIAN_POINT('',(10.,0.));
+#8=AXIS2_PLACEMENT_2D('',#7,#2);
+#9=MAPPED_ITEM('',#4,#8);",
+    );
+    assert!(!result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("MAPPED_ITEM #9 has no resolved body placement")));
+}
+
+#[test]
 fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
     let bytes = include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21");
     let mut source = String::from_utf8(bytes.to_vec()).expect("fixture is UTF-8");

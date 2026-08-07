@@ -402,18 +402,22 @@ fn apply_body_placements(
         if assembly_representations.contains(&representation) {
             continue;
         }
-        let Some(transform) = mapped_item_transform(origin, target, geometry) else {
-            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
-            continue;
-        };
-        for body in representation_bodies(
+        let bodies = representation_bodies(
             representation,
             exchange,
             topology,
             &mut representation_cache,
             &mut BTreeSet::new(),
             0,
-        ) {
+        );
+        if bodies.is_empty() {
+            continue;
+        }
+        let Some(transform) = mapped_item_transform(origin, target, geometry) else {
+            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
+            continue;
+        };
+        for body in bodies {
             if let Some(index) = body_indices.get(&body) {
                 ir.model.bodies[*index].transform = Some(transform);
             }
