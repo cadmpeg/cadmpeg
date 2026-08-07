@@ -7631,6 +7631,26 @@ fn hidden_body_geometry_and_visibility_round_trip() {
 }
 
 #[test]
+fn unsupported_invisibility_relation_is_retained_as_opaque() {
+    let decoded = decode_inline(
+        "#1=INVISIBILITY((#2));
+         #2=STYLED_ITEM('',(),#3);
+         #3=GEOMETRIC_CURVE_SET('',());",
+    );
+
+    assert!(decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:invisibility#1"));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("INVISIBILITY #1 targets unsupported item #2")
+    }));
+}
+
+#[test]
 fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube();
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {

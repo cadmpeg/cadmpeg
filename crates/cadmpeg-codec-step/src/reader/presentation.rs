@@ -106,12 +106,10 @@ pub(super) fn decode(
             warnings.push(format!("INVISIBILITY #{id} has no item set"));
             continue;
         };
+        let mut supported = true;
         for target in items.iter().filter_map(ValueExt::reference) {
-            let body_ids = topology
-                .body_by_root
-                .get(&target)
-                .cloned()
-                .unwrap_or_else(|| vec![BodyId(format!("step:data:body#{target}"))]);
+            let (body_ids, target_supported) =
+                invisible_body_ids(target, exchange, topology, &body_indices);
             let mut hidden = false;
             for body_id in body_ids {
                 if let Some(index) = body_indices.get(&body_id.0) {
@@ -119,13 +117,16 @@ pub(super) fn decode(
                     hidden = true;
                 }
             }
-            if !hidden {
+            if !target_supported || !hidden {
                 warnings.push(format!(
                     "INVISIBILITY #{id} targets unsupported item #{target}"
                 ));
+                supported = false;
             }
         }
-        typed.insert(id);
+        if supported {
+            typed.insert(id);
+        }
     }
     for (&layer_id, layer) in &exchange.records {
         if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
@@ -318,6 +319,109 @@ pub(super) fn decode(
         warnings,
         losses,
     }
+}
+
+fn invisible_body_ids(
+    id: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    body_indices: &BTreeMap<String, usize>,
+) -> (Vec<BodyId>, bool) {
+    let mut body_ids = BTreeSet::new();
+    let mut active = BTreeSet::new();
+    let supported = collect_invisible_body_ids(
+        id,
+        exchange,
+        topology,
+        body_indices,
+        &mut active,
+        &mut body_ids,
+    );
+    (body_ids.into_iter().collect(), supported)
+}
+
+fn collect_invisible_body_ids(
+    id: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    body_indices: &BTreeMap<String, usize>,
+    active: &mut BTreeSet<u64>,
+    body_ids: &mut BTreeSet<BodyId>,
+) -> bool {
+    if !active.insert(id) {
+        return false;
+    }
+    if let Some(ids) = topology.body_by_root.get(&id) {
+        body_ids.extend(ids.iter().cloned());
+        active.remove(&id);
+        return !ids.is_empty();
+    }
+    let fallback = BodyId(format!("step:data:body#{id}"));
+    if body_indices.contains_key(&fallback.0) {
+        body_ids.insert(fallback);
+        active.remove(&id);
+        return true;
+    }
+
+    let Some(record) = exchange.records.get(&id) else {
+        active.remove(&id);
+        return false;
+    };
+    let references = if record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "STYLED_ITEM")
+        || record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
+    {
+        styled_item_parts(record)
+            .and_then(|parts| parts.target.reference())
+            .into_iter()
+            .collect::<Vec<_>>()
+    } else if record
+        .partials
+        .iter()
+        .any(|partial| partial.name == "PRESENTATION_LAYER_ASSIGNMENT")
+    {
+        record
+            .parameter(2)
+            .and_then(ValueExt::list)
+            .into_iter()
+            .flatten()
+            .filter_map(ValueExt::reference)
+            .collect::<Vec<_>>()
+    } else if record.partials.iter().any(|partial| {
+        partial.name == "REPRESENTATION" || partial.name == "PRESENTATION_REPRESENTATION"
+    }) {
+        record
+            .parameter(1)
+            .and_then(ValueExt::list)
+            .into_iter()
+            .flatten()
+            .filter_map(ValueExt::reference)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if references.is_empty() {
+        active.remove(&id);
+        return false;
+    }
+    let mut supported = true;
+    for reference in references {
+        supported &= collect_invisible_body_ids(
+            reference,
+            exchange,
+            topology,
+            body_indices,
+            active,
+            body_ids,
+        );
+    }
+    active.remove(&id);
+    supported
 }
 
 fn expand_style_targets(
