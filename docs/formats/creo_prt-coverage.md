@@ -43,9 +43,9 @@ fixtures, claims above L1 remain unproven.
   do not affect solved geometry.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
-  extrusions also accept a closed single full-turn arc section; its `2π` sweep
-  remains a complete circular profile through area and edge-parameter
-  derivation.
+  extrusions also accept a closed one-entity circle section and a closed single
+  full-turn arc section; both preserve the complete circular profile through
+  area, cap p-curves, side p-curves, and edge-parameter derivation.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier

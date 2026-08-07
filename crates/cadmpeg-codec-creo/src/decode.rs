@@ -7282,6 +7282,15 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
                 center.v + radius.0 * end_angle.0.sin(),
             ],
         )),
+        SketchGeometry::Circle { center, radius }
+            if center.u.is_finite()
+                && center.v.is_finite()
+                && radius.0.is_finite()
+                && radius.0 > 0.0 =>
+        {
+            let seam = [center.u + radius.0, center.v];
+            Some((seam, seam))
+        }
         _ => None,
     }
 }
@@ -7452,6 +7461,10 @@ fn extrusion_cap_pcurve(
             };
             circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
         }
+        SketchGeometry::Circle { center, radius } => {
+            let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
+            circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
+        }
         _ => line_pcurve(start, end),
     }
 }
@@ -7474,6 +7487,7 @@ fn extrusion_side_uvs(
             end_angle,
             ..
         } => [start_angle.0, end_angle.0],
+        SketchGeometry::Circle { .. } => oriented_full_turn_angles(reversed),
         _ => [0.0, (end[0] - start[0]).hypot(end[1] - start[1])],
     };
     [
@@ -7491,16 +7505,19 @@ fn extrusion_profile_signed_area(
         .iter()
         .map(|(geometry, reversed, start, end)| {
             let chord = start[0].mul_add(end[1], -(start[1] * end[0]));
-            let SketchGeometry::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } = geometry
-            else {
-                return chord;
+            let (center, radius, start_angle, end_angle) = match geometry {
+                SketchGeometry::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => (center, radius, start_angle.0, end_angle.0),
+                SketchGeometry::Circle { center, radius } => {
+                    (center, radius, 0.0, std::f64::consts::TAU)
+                }
+                _ => return chord,
             };
-            let forward_sweep = forward_arc_sweep(start_angle.0, end_angle.0);
+            let forward_sweep = forward_arc_sweep(start_angle, end_angle);
             let sweep = if *reversed {
                 -forward_sweep
             } else {
@@ -7570,6 +7587,42 @@ fn resolved_sketch_profiles(
     Some(profiles)
 }
 
+fn profile_arc(
+    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+) -> Option<([f64; 2], f64, f64, f64)> {
+    let (center, radius, start, forward_delta) = match &segment.0 {
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => (
+            [center.u, center.v],
+            radius.0,
+            (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
+            forward_arc_sweep(start_angle.0, end_angle.0),
+        ),
+        SketchGeometry::Circle { center, radius } => {
+            ([center.u, center.v], radius.0, 0.0, std::f64::consts::TAU)
+        }
+        _ => return None,
+    };
+    let delta = if segment.1 {
+        -forward_delta
+    } else {
+        forward_delta
+    };
+    Some((center, radius, start, delta))
+}
+
+fn oriented_full_turn_angles(reversed: bool) -> [f64; 2] {
+    if reversed {
+        [std::f64::consts::TAU, 0.0]
+    } else {
+        [0.0, std::f64::consts::TAU]
+    }
+}
+
 fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f64) -> bool {
     let orient = |a: [f64; 2], b: [f64; 2], point: [f64; 2]| {
         (b[0] - a[0]).mul_add(point[1] - a[1], -((b[1] - a[1]) * (point[0] - a[0])))
@@ -7603,32 +7656,6 @@ fn segments_intersect(first: [[f64; 2]; 2], second: [[f64; 2]; 2], tolerance: f6
         || (orientations[1].abs() <= first_cross_tolerance && on_segment(first, second[1]))
         || (orientations[2].abs() <= second_cross_tolerance && on_segment(second, first[0]))
         || (orientations[3].abs() <= second_cross_tolerance && on_segment(second, first[1]))
-}
-
-fn profile_arc(
-    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
-) -> Option<([f64; 2], f64, f64, f64)> {
-    let SketchGeometry::Arc {
-        center,
-        radius,
-        start_angle,
-        end_angle,
-    } = &segment.0
-    else {
-        return None;
-    };
-    let forward_delta = forward_arc_sweep(start_angle.0, end_angle.0);
-    let delta = if segment.1 {
-        -forward_delta
-    } else {
-        forward_delta
-    };
-    Some((
-        [center.u, center.v],
-        radius.0,
-        (segment.2[1] - center.v).atan2(segment.2[0] - center.u),
-        delta,
-    ))
 }
 
 fn point_on_profile_arc(point: [f64; 2], arc: ([f64; 2], f64, f64, f64), tolerance: f64) -> bool {
@@ -8917,6 +8944,9 @@ fn transfer_resolved_extrusion_breps(
                             ..
                         } => Some(
                             oriented_arc_parameterization(*reversed, start_angle.0, end_angle.0).1,
+                        ),
+                        SketchGeometry::Circle { .. } => Some(
+                            oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,
                         ),
                         _ => None,
                     };

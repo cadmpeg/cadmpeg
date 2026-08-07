@@ -1819,6 +1819,99 @@ fn full_turn_arc_remains_a_closed_extrusion_profile() {
 }
 
 #[test]
+fn circle_remains_a_closed_extrusion_profile() {
+    let sketch_id = SketchId("creo:model:sketch#circle".to_string());
+    let entity_id = SketchEntityId("creo:model:sketch_entity#circle".to_string());
+    let circle = SketchGeometry::Circle {
+        center: Point2::new(1.0, -2.0),
+        radius: Length(3.0),
+    };
+    let seam = [4.0, -2.0];
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        profiles: vec![vec![SketchEntityUse {
+            entity: entity_id.clone(),
+            reversed: false,
+        }]],
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity {
+        id: entity_id,
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: circle.clone(),
+    });
+
+    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("one circle profile");
+    assert_eq!(profiles, vec![vec![(circle.clone(), false, seam, seam)]]);
+    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
+    assert_eq!(ordered, profiles);
+    assert!((area - 9.0 * std::f64::consts::PI).abs() < 1e-12);
+
+    for reversed in [false, true] {
+        let pcurve = extrusion_cap_pcurve(&circle, reversed, seam, seam);
+        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
+        let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
+        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");
+        assert!((first.u - seam[0]).abs() < 1e-12);
+        assert!((first.v - seam[1]).abs() < 1e-12);
+        assert!((middle.u - (1.0 - 3.0)).abs() < 1e-12);
+        assert!((middle.v + 2.0).abs() < 1e-12);
+        assert!((last.u - seam[0]).abs() < 1e-12);
+        assert!((last.v - seam[1]).abs() < 1e-12);
+        assert_eq!(
+            extrusion_side_uvs(
+                &circle,
+                reversed,
+                seam,
+                seam,
+                ExtrusionSpan {
+                    lower: -1.0,
+                    upper: 2.0,
+                },
+            )[0],
+            [
+                [oriented_full_turn_angles(reversed)[0], -1.0],
+                [oriented_full_turn_angles(reversed)[1], -1.0],
+            ]
+        );
+        assert_eq!(
+            profile_arc(&(circle.clone(), reversed, seam, seam)),
+            Some((
+                [1.0, -2.0],
+                3.0,
+                0.0,
+                if reversed {
+                    -std::f64::consts::TAU
+                } else {
+                    std::f64::consts::TAU
+                },
+            ))
+        );
+    }
+    assert!(point_on_profile_arc(
+        seam,
+        profile_arc(&(circle, false, seam, seam)).expect("circle arc"),
+        1e-9,
+    ));
+    assert_eq!(
+        oriented_full_turn_angles(false),
+        [0.0, std::f64::consts::TAU]
+    );
+    assert_eq!(
+        oriented_full_turn_angles(true),
+        [std::f64::consts::TAU, 0.0]
+    );
+}
+
+#[test]
 fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
         let mut points = [
