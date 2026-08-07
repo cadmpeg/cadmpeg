@@ -5156,6 +5156,7 @@ fn generated_arc_cylinder_extent(
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
+        .filter(|entry| entry.class_id == 200)
     {
         let Some(source_id) = entry.source_entity_id else {
             continue;
@@ -9185,6 +9186,7 @@ fn sketch_profiles_cover_generated_extrusion_sides(
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
+        .filter(|entry| entry.class_id == 200)
         .filter_map(|entry| {
             let external_id = entry.source_entity_id?;
             scan.surfaces

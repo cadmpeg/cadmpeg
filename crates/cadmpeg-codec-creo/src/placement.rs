@@ -56,6 +56,7 @@ fn generated_cylinder_section_transform(
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.entries)
+        .filter(|entry| entry.class_id == 200)
     {
         let Some(external_id) = entry.source_entity_id else {
             continue;
@@ -1950,6 +1951,11 @@ mod tests {
         assert!(
             generated_cylinder_section_transform(&definition, &divergent_sources, &tables)
                 .is_none()
+        );
+        let mut wrong_class = tables.clone();
+        wrong_class[0].entries[0].class_id = 201;
+        assert!(
+            generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none()
         );
     }
 
