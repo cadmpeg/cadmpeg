@@ -3805,6 +3805,9 @@ pub struct DesignFaceRecipeStructure {
     pub prelude: [i32; 2],
     /// Two ordered topology side clauses.
     pub sides: [DesignTopologyRecipeSide; 2],
+    /// Optional six-word postlude following the two side clauses.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub postlude: Vec<i32>,
 }
 
 /// Local-to-model placement frame referenced by a Design sketch scope.

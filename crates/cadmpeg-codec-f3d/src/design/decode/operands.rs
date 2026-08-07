@@ -3047,8 +3047,12 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
     }
     (0..remaining.len())
         .filter(|entry_count_at| {
-            *entry_count_at == 1 && remaining.first() == Some(&0)
-                || *entry_count_at > 0 && remaining.get(entry_count_at - 1) == Some(&-1)
+            let payload_prefix = &remaining[..*entry_count_at];
+            let complete_payload_prefix = payload_prefix == [0]
+                || (payload_prefix.len() > 1 && payload_prefix.last() == Some(&-1));
+            complete_payload_prefix
+                && ((*entry_count_at == 1 && remaining.first() == Some(&0))
+                    || (*entry_count_at > 0 && remaining.get(entry_count_at - 1) == Some(&-1)))
         })
         .filter_map(|entry_count_at| {
             let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;
@@ -3083,15 +3087,23 @@ pub(crate) fn face_recipe_structure(
     let remaining = recipe_delimiter(remaining)?;
     let structures = edge_recipe_side_sequences(remaining, 2)
         .into_iter()
-        .filter_map(|(sides, tail)| matches!(tail, [] | [-1 | 0]).then(|| sides.try_into().ok())?)
-        .collect::<Vec<[_; 2]>>();
-    let [sides] = structures.as_slice() else {
+        .filter_map(|(sides, tail)| {
+            let postlude = match tail {
+                [] | [-1 | 0] => Vec::new(),
+                [-1, _, -1, 0, 0, -1] => tail.to_vec(),
+                _ => return None,
+            };
+            Some((sides.try_into().ok()?, postlude))
+        })
+        .collect::<Vec<([DesignTopologyRecipeSide; 2], Vec<i32>)>>();
+    let [(sides, postlude)] = structures.as_slice() else {
         return None;
     };
     Some(crate::records::DesignFaceRecipeStructure {
         root,
         prelude: [first_prelude, second_prelude],
         sides: sides.clone(),
+        postlude: postlude.clone(),
     })
 }
 

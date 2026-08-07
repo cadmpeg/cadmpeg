@@ -12,7 +12,7 @@ use crate::records::{
 };
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) fn resolved_face_group(
     group: &DesignConstructionOperandGroup,
@@ -275,12 +275,19 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
     else {
         return None;
     };
-    (operand.recipe_nodes.len() == header_value
-        && operand
+    if operand.recipe_nodes.is_empty()
+        || !operand
             .recipe_nodes
             .iter()
-            .all(|node| node.recipe_structure.is_some()))
-    .then_some(header_value)
+            .all(|node| node.recipe_structure.is_some())
+    {
+        return None;
+    }
+    let boundary_edge_count =
+        unique_preceding_face_boundaries(&operand.historical_support_contexts)
+            .and_then(|boundaries| boundary_edge_count(&boundaries));
+    (operand.recipe_nodes.len() == header_value || boundary_edge_count == Some(header_value))
+        .then_some(header_value)
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
@@ -400,41 +407,93 @@ fn bounded_face_candidate_by_boundary_cardinality(
     let mut candidates = contexts
         .iter()
         .filter_map(|context| {
-            let mut faces = context.preceding_face_slots.clone();
-            faces.sort_unstable();
-            faces.dedup();
-            if faces.is_empty()
-                || faces.len() != context.preceding_face_boundaries.len()
-                || !faces.iter().all(|face| {
-                    context
-                        .preceding_face_boundaries
-                        .iter()
-                        .any(|boundary| boundary.face_slot == *face)
-                })
-            {
-                return None;
-            }
-            let boundary_edge_count =
-                context
-                    .preceding_face_boundaries
-                    .iter()
-                    .try_fold(0usize, |total, face| {
-                        face.loops.iter().try_fold(total, |total, loop_| {
-                            (!loop_.edge_slots.is_empty()
-                                && loop_.edge_slots.len() == loop_.coedge_slots.len())
-                            .then(|| total.checked_add(loop_.edge_slots.len()))
-                            .flatten()
-                        })
-                    })?;
+            let boundaries = valid_preceding_face_boundaries(context)?;
+            let boundary_edge_count = boundary_edge_count(&boundaries)?;
+            let faces = boundaries
+                .iter()
+                .map(|boundary| boundary.face_slot)
+                .collect::<Vec<_>>();
             (boundary_edge_count == header_value).then_some(faces)
         })
         .collect::<Vec<_>>();
+    if let Some(boundaries) = unique_preceding_face_boundaries(contexts) {
+        if boundary_edge_count(&boundaries) == Some(header_value) {
+            candidates.push(
+                boundaries
+                    .iter()
+                    .map(|boundary| boundary.face_slot)
+                    .collect(),
+            );
+        }
+    }
     candidates.sort_unstable();
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
         return None;
     };
     Some(candidate.clone())
+}
+
+fn valid_preceding_face_boundaries(
+    context: &crate::records::DesignHistoricalFaceSupportContext,
+) -> Option<Vec<&crate::records::DesignHistoricalFaceBoundaryContext>> {
+    let mut expected_faces = context.preceding_face_slots.clone();
+    expected_faces.sort_unstable();
+    expected_faces.dedup();
+    if expected_faces.is_empty() {
+        return None;
+    }
+    let mut boundaries = context.preceding_face_boundaries.iter().collect::<Vec<_>>();
+    if boundaries.iter().any(|boundary| boundary.loops.is_empty()) {
+        return None;
+    }
+    boundaries.sort_unstable_by_key(|boundary| boundary.face_slot);
+    if boundaries
+        .windows(2)
+        .any(|pair| pair[0].face_slot == pair[1].face_slot)
+        || boundaries
+            .iter()
+            .map(|boundary| boundary.face_slot)
+            .collect::<Vec<_>>()
+            != expected_faces
+    {
+        return None;
+    }
+    Some(boundaries)
+}
+
+fn unique_preceding_face_boundaries(
+    contexts: &[crate::records::DesignHistoricalFaceSupportContext],
+) -> Option<Vec<&crate::records::DesignHistoricalFaceBoundaryContext>> {
+    let mut active_faces = HashSet::new();
+    let mut boundaries_by_face = HashMap::new();
+    for context in contexts {
+        if !active_faces.insert(context.active_face_slot) {
+            return None;
+        }
+        for boundary in valid_preceding_face_boundaries(context)? {
+            if let Some(previous) = boundaries_by_face.insert(boundary.face_slot, boundary) {
+                if previous != boundary {
+                    return None;
+                }
+            }
+        }
+    }
+    let mut boundaries = boundaries_by_face.into_values().collect::<Vec<_>>();
+    boundaries.sort_unstable_by_key(|boundary| boundary.face_slot);
+    (!boundaries.is_empty()).then_some(boundaries)
+}
+
+fn boundary_edge_count(
+    boundaries: &[&crate::records::DesignHistoricalFaceBoundaryContext],
+) -> Option<usize> {
+    boundaries.iter().try_fold(0usize, |total, boundary| {
+        boundary.loops.iter().try_fold(total, |total, loop_| {
+            (!loop_.edge_slots.is_empty() && loop_.edge_slots.len() == loop_.coedge_slots.len())
+                .then(|| total.checked_add(loop_.edge_slots.len()))
+                .flatten()
+        })
+    })
 }
 
 fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option<i64> {
@@ -809,6 +868,10 @@ mod tests {
         assert_eq!(
             bounded_face_candidate_by_boundary_cardinality(12, &contexts),
             Some(vec![100])
+        );
+        assert_eq!(
+            bounded_face_candidate_by_boundary_cardinality(20, &contexts),
+            Some(vec![100, 101, 102])
         );
     }
 
