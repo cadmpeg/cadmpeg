@@ -4546,6 +4546,12 @@ fn bind_face_selection(
     {
         return;
     }
+    if let Some(resolved) = crate::design::face_resolve::resolved_historical_split_face_target_group(
+        scope, group, operands,
+    ) {
+        *selection = resolved;
+        return;
+    }
     let Some(stream) = crate::ids::native_stream(&scope.id) else {
         return;
     };

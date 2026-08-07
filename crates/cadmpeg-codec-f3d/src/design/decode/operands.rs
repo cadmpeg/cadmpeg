@@ -3006,6 +3006,30 @@ fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
     matches!(words.first(), Some(-1 | 0)).then(|| &words[1..])
 }
 
+fn complete_recipe_payload_prefix(prefix: &[i32]) -> bool {
+    if prefix == [0] {
+        return true;
+    }
+    let mut remaining = prefix;
+    let mut field_count = 0;
+    while !remaining.is_empty() {
+        let Some(delimiter_at) = remaining.iter().position(|word| *word == -1) else {
+            return false;
+        };
+        let field = &remaining[..delimiter_at];
+        if field.is_empty() || field[0] <= 0 || field.iter().any(|word| *word < 0) {
+            return false;
+        }
+        remaining = &remaining[delimiter_at + 1..];
+        if !matches!(remaining.get(..3), Some([0, 0, -1])) {
+            return false;
+        }
+        remaining = &remaining[3..];
+        field_count += 1;
+    }
+    field_count > 0
+}
+
 fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyRecipeSide, &[i32])> {
     let Some(field_count) = words
         .first()
@@ -3048,11 +3072,7 @@ fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyReci
     (0..remaining.len())
         .filter(|entry_count_at| {
             let payload_prefix = &remaining[..*entry_count_at];
-            let complete_payload_prefix = payload_prefix == [0]
-                || (payload_prefix.len() > 1 && payload_prefix.last() == Some(&-1));
-            complete_payload_prefix
-                && ((*entry_count_at == 1 && remaining.first() == Some(&0))
-                    || (*entry_count_at > 0 && remaining.get(entry_count_at - 1) == Some(&-1)))
+            complete_recipe_payload_prefix(payload_prefix)
         })
         .filter_map(|entry_count_at| {
             let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;

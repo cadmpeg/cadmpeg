@@ -158,11 +158,63 @@ pub(crate) fn resolved_historical_face_group(
     group: &DesignConstructionOperandGroup,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let faces = historical_face_group_slots(group, operands, false)?;
+    historical_face_selection(scope, group, faces)
+}
+
+fn historical_face_selection(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    faces: Vec<i64>,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
     let previous_state_id = scope.previous_history_state_id?;
+    let feature = neutral_feature_id(scope);
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    Some(FaceSelection::Historical {
+        state: feature_input_topology_id(&feature, previous_state_id),
+        faces: faces
+            .into_iter()
+            .map(|face| {
+                ids::history_input_face_id(
+                    &ids::history_input_prefix(feature_key, previous_state_id),
+                    face,
+                )
+            })
+            .collect(),
+        native: group.id.clone(),
+    })
+}
+
+/// Resolve `SplitFace` target groups whose bounded-face member run contains
+/// complete topology-context recipes without their own active persistent
+/// candidate. Such members describe the face-recipe topology graph; they do
+/// not add a target face. Every non-context member must still prove its
+/// preceding face slots, and at least one member must contribute a face.
+pub(crate) fn resolved_historical_split_face_target_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    if scope.kind != "SplitFace" || group.role != 0x0000_0010_0000_0000 {
+        return None;
+    }
+    let faces = historical_face_group_slots(group, operands, true)?;
+    historical_face_selection(scope, group, faces)
+}
+
+fn historical_face_group_slots(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+    allow_split_face_context_members: bool,
+) -> Option<Vec<i64>> {
     let stream = native_stream(&group.id)?;
     let mut faces = Vec::with_capacity(group.members.len());
+    let mut contributing_members = 0;
     for (ordinal, record_index) in group.members.iter().enumerate() {
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
@@ -176,35 +228,67 @@ pub(crate) fn resolved_historical_face_group(
         if matches.next().is_some() {
             return None;
         }
-        if operand.resolved_face_slots.is_empty() {
-            return None;
-        }
-        for face in &operand.resolved_face_slots {
-            if !faces.contains(face) {
-                faces.push(*face);
+        let member_slots = if operand.resolved_face_slots.is_empty() {
+            if allow_split_face_context_members {
+                if let Some(slots) = split_face_complete_candidate_slots(operand) {
+                    Some(slots)
+                } else if is_split_face_context_member(operand) {
+                    continue;
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        } else {
+            Some(operand.resolved_face_slots.clone())
+        }?;
+        contributing_members += 1;
+        for face in member_slots {
+            if !faces.contains(&face) {
+                faces.push(face);
             }
         }
     }
-    (!faces.is_empty()).then(|| {
-        let feature = neutral_feature_id(scope);
-        let feature_key = feature
-            .0
-            .split_once('#')
-            .map_or(feature.0.as_str(), |(_, key)| key);
-        FaceSelection::Historical {
-            state: feature_input_topology_id(&feature, previous_state_id),
-            faces: faces
-                .into_iter()
-                .map(|face| {
-                    ids::history_input_face_id(
-                        &ids::history_input_prefix(feature_key, previous_state_id),
-                        face,
-                    )
-                })
-                .collect(),
-            native: group.id.clone(),
-        }
-    })
+    (contributing_members > 0 && !faces.is_empty()).then_some(faces)
+}
+
+fn split_face_complete_candidate_slots(operand: &DesignFaceOperand) -> Option<Vec<i64>> {
+    complete_counted_face_recipe(operand)?;
+    let faces = resolved_face_operand(operand)?;
+    let slots = faces
+        .iter()
+        .map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<Option<Vec<_>>>()?;
+    let preceding = operand
+        .preceding_candidate_faces
+        .iter()
+        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<HashSet<_>>();
+    (!slots.is_empty() && slots.iter().all(|slot| preceding.contains(slot))).then_some(slots)
+}
+
+fn is_split_face_context_member(operand: &DesignFaceOperand) -> bool {
+    operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+        && crate::design::decode::operands::face_recipe_program_kind(&operand.recipe_program)
+            .is_some_and(|kind| {
+                matches!(
+                    kind,
+                    crate::design::decode::operands::FaceRecipeProgramKind::Counted { .. }
+                )
+            })
+        && !operand.recipe_nodes.is_empty()
+        && operand
+            .recipe_nodes
+            .iter()
+            .all(|node| node.recipe_structure.is_some())
+        && face_operand_candidates(operand).is_empty()
+        && operand.alternate_selector_candidate_faces.is_empty()
+        && operand.preceding_candidate_faces.is_empty()
+        && operand.changed_candidate_faces.is_empty()
+        && operand.recipe_references.iter().any(|reference| {
+            !reference.candidate_faces.is_empty() || !reference.alternate_selector_faces.is_empty()
+        })
 }
 
 fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {

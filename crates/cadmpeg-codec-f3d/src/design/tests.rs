@@ -86,7 +86,9 @@ use crate::design::edge_resolve::{
     feature_input_topology_id, partial_historical_edge_selection,
     resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
 };
-use crate::design::face_resolve::resolved_face_group;
+use crate::design::face_resolve::{
+    resolved_face_group, resolved_historical_split_face_target_group,
+};
 use crate::design::feature_project::{
     project_combine, project_extrude, project_parameter_design, project_split,
     untyped_parameter_unit_count,
@@ -11137,6 +11139,12 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ])
     .expect("face-node payload prefix grammar");
     assert_eq!(unambiguous_payload_face.sides[0].entries.len(), 2);
+    let ambiguous_extended_payload_face =
+        crate::design::decode::operands::face_recipe_structure(&[
+            0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, -1, 1, 1, 1, 1, 1, 1, 1, 1, -1, 3,
+            0, -1, 1, -1, 0, -1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
+        ]);
+    assert!(ambiguous_extended_payload_face.is_none());
     let mut referenced_headers = structured.clone();
     referenced_headers.sides[0].header_value = 2;
     referenced_headers.sides[1].header_value = 3;
@@ -11808,7 +11816,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     operand.alternate_selector_candidate_faces.clear();
     operand.resolved_face_slots = vec![50];
-    let mut ambiguous = [operand.clone(), operand];
+    let mut ambiguous = [operand.clone(), operand.clone()];
     assert!(
         !crate::design::face_resolve::retain_face_operand_resolution(
             &group,
@@ -11816,6 +11824,71 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             &FaceId("f3d:brep:entity#50".into()),
         )
     );
+
+    let split_structure = crate::design::decode::operands::face_recipe_structure(&[
+        0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
+    ])
+    .expect("split-face context recipe structure");
+    let mut split_scope = face_scope.clone();
+    split_scope.kind = "SplitFace".into();
+    split_scope.previous_history_state_id = Some(49);
+    let mut split_group = group.clone();
+    split_group.scope_reference_ordinal = 2;
+    split_group.role = 0x0000_0010_0000_0000;
+    split_group.members = vec![operand.record_index, operand.record_index + 1];
+    let mut split_selected = operand.clone();
+    split_selected.group_record_index = Some(split_group.record_index);
+    split_selected.group_member_ordinal = Some(0);
+    split_selected.resolved_face_slots = vec![50];
+    for node in &mut split_selected.recipe_nodes {
+        node.recipe_structure = Some(split_structure.clone());
+    }
+    let mut split_context = split_selected.clone();
+    split_context.record_index += 1;
+    split_context.group_member_ordinal = Some(1);
+    split_context.candidate_faces.clear();
+    split_context.unreferenced_candidate_faces.clear();
+    split_context.alternate_selector_candidate_faces.clear();
+    split_context.preceding_candidate_faces.clear();
+    split_context.changed_candidate_faces.clear();
+    split_context.resolved_face_slots.clear();
+    assert!(matches!(
+        resolved_historical_split_face_target_group(
+            &split_scope,
+            &split_group,
+            &[split_selected.clone(), split_context.clone()],
+        ),
+        Some(FaceSelection::Historical { state, faces, native })
+            if state == feature_input_topology_id(&crate::ids::neutral_feature_id(&split_scope), 49)
+                && faces.len() == 1
+                && faces[0].0.ends_with(":49:50")
+                && native == split_group.id
+    ));
+    let mut candidate_context = split_context.clone();
+    candidate_context.candidate_faces = vec![FaceId("f3d:brep:entity#50".into())];
+    candidate_context.unreferenced_candidate_faces = candidate_context.candidate_faces.clone();
+    candidate_context.preceding_candidate_faces = candidate_context.candidate_faces.clone();
+    candidate_context
+        .recipe_nodes
+        .push(candidate_context.recipe_nodes[0].clone());
+    candidate_context.recipe_program = vec![0, -1, 2];
+    assert!(resolved_historical_split_face_target_group(
+        &split_scope,
+        &split_group,
+        &[split_selected.clone(), candidate_context],
+    )
+    .is_some());
+    let mut unresolved_context = split_context;
+    for reference in &mut unresolved_context.recipe_references {
+        reference.candidate_faces.clear();
+        reference.alternate_selector_faces.clear();
+    }
+    assert!(resolved_historical_split_face_target_group(
+        &split_scope,
+        &split_group,
+        &[split_selected, unresolved_context],
+    )
+    .is_none());
 }
 
 #[test]

@@ -14,7 +14,8 @@ use crate::design::edge_resolve::{
 };
 use crate::design::face_resolve::{
     design_angle, resolved_body_recipe_shape, resolved_direct_face_selection, resolved_face_group,
-    resolved_historical_face_group, resolved_profile_face_group, valid_chamfer_spec,
+    resolved_historical_face_group, resolved_historical_split_face_target_group,
+    resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -1954,12 +1955,13 @@ fn project_face_selection(
 ) -> cadmpeg_ir::features::FaceSelection {
     let historical = crate::history::effective_scope_previous_history_state_id(scope, histories)
         .and_then(|previous_state_id| {
-            if scope.previous_history_state_id == Some(previous_state_id) {
-                return resolved_historical_face_group(scope, group, face_operands);
-            }
             let mut effective_scope = scope.clone();
-            effective_scope.previous_history_state_id = Some(previous_state_id);
-            resolved_historical_face_group(&effective_scope, group, face_operands)
+            if scope.previous_history_state_id != Some(previous_state_id) {
+                effective_scope.previous_history_state_id = Some(previous_state_id);
+            }
+            resolved_historical_face_group(&effective_scope, group, face_operands).or_else(|| {
+                resolved_historical_split_face_target_group(&effective_scope, group, face_operands)
+            })
         });
     historical
         .or_else(|| resolved_face_group(group, face_operands))
