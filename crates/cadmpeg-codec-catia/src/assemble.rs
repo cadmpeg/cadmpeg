@@ -257,27 +257,76 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
     pcurve_origin: Point2,
     pcurve_direction: Point2,
 ) -> Option<[f64; 2]> {
+    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
+    let finite_vector = |vector: Vector3| {
+        [vector.x, vector.y, vector.z]
+            .into_iter()
+            .all(f64::is_finite)
+    };
+    if !finite_point(center)
+        || !finite_point(start)
+        || !finite_point(end)
+        || !finite_vector(axis)
+        || !finite_vector(ref_direction)
+        || !pcurve_origin.u.is_finite()
+        || !pcurve_origin.v.is_finite()
+        || !pcurve_direction.u.is_finite()
+        || !pcurve_direction.v.is_finite()
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return None;
+    }
     let tangent = axis.cross(ref_direction);
+    if !finite_vector(tangent)
+        || tangent.x.hypot(tangent.y).hypot(tangent.z) == 0.0
+        || ref_direction
+            .x
+            .hypot(ref_direction.y)
+            .hypot(ref_direction.z)
+            == 0.0
+    {
+        return None;
+    }
     let angle = |point: Point3| {
         let offset = point.vector_from(center);
         offset.dot(tangent).atan2(offset.dot(ref_direction))
     };
     let start = angle(start);
-    let short_end = unwrap_angle(angle(end), start);
+    let end = angle(end);
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+    let short_end = unwrap_angle(end, start);
+    if !short_end.is_finite() {
+        return None;
+    }
     let delta = short_end - start;
-    if delta == 0.0 {
+    if !delta.is_finite() || delta == 0.0 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
-    let surface_midpoint = cadmpeg_ir::eval::surface_point(
-        surface,
+    if !long_end.is_finite() {
+        return None;
+    }
+    let midpoint_uv = Point2::new(
         pcurve_origin.u + 0.5 * pcurve_direction.u,
         pcurve_origin.v + 0.5 * pcurve_direction.v,
-    )?;
+    );
+    if !midpoint_uv.u.is_finite() || !midpoint_uv.v.is_finite() {
+        return None;
+    }
+    let surface_midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
+    if !finite_point(surface_midpoint) {
+        return None;
+    }
     let candidates = [short_end, long_end]
         .into_iter()
         .filter(|end| {
             let parameter = 0.5 * (start + end);
+            if !parameter.is_finite() {
+                return false;
+            }
             let circle_midpoint = Point3::new(
                 center.x
                     + radius * (parameter.cos() * ref_direction.x + parameter.sin() * tangent.x),
@@ -286,12 +335,15 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
                 center.z
                     + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
             );
-            circle_midpoint.distance_squared(surface_midpoint).sqrt() <= 2e-3
+            if !finite_point(circle_midpoint) {
+                return false;
+            }
+            let distance_squared = circle_midpoint.distance_squared(surface_midpoint);
+            distance_squared.is_finite() && distance_squared.sqrt() <= 2e-3
         })
         .collect::<Vec<_>>();
-    <[f64; 1]>::try_from(candidates)
-        .ok()
-        .map(|[end]| [start, end])
+    let [end] = <[f64; 1]>::try_from(candidates).ok()?;
+    (end.is_finite() && end != start).then_some([start, end])
 }
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
@@ -838,6 +890,65 @@ mod route_tests {
         )
         .expect("tiny circle branch");
         assert_eq!(range, [0.0, sweep]);
+    }
+
+    #[test]
+    fn surface_circle_branch_rejects_nonfinite_or_degenerate_inputs() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let args = || {
+            (
+                Point3::new(0.0, 0.0, 0.0),
+                1.0,
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+            )
+        };
+        let (center, radius, axis, ref_direction, start, end, pcurve_origin, pcurve_direction) =
+            args();
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            Point3::new(f64::NAN, center.y, center.z),
+            radius,
+            axis,
+            ref_direction,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            center,
+            0.0,
+            axis,
+            ref_direction,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
+        assert!(circle_parameter_range_from_surface_branch(
+            &surface,
+            center,
+            radius,
+            axis,
+            axis,
+            start,
+            end,
+            pcurve_origin,
+            pcurve_direction,
+        )
+        .is_none());
     }
 
     #[test]
