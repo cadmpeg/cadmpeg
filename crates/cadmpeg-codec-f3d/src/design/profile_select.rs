@@ -12,7 +12,7 @@ use crate::design::geometry::{
 };
 use crate::ids::{
     self, native_stream, neutral_sketch_curve_id, neutral_sketch_id, neutral_sketch_point_id,
-    neutral_spatial_sketch_id,
+    neutral_spatial_sketch_curve_id, neutral_spatial_sketch_id,
 };
 use crate::records::{
     DesignConstructionOperandGroup, DesignEntityHeader, DesignEntitySelectionOperand,
@@ -1735,7 +1735,158 @@ pub(crate) struct LoftSketchResolution<'a> {
     pub(crate) entity_selection_operands: &'a [DesignEntitySelectionOperand],
     pub(crate) placements: &'a [DesignSketchPlacement],
     pub(crate) curve_identities: &'a [SketchCurveIdentity],
+    pub(crate) sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    pub(crate) sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
+    pub(crate) spatial_sketch_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+}
+
+/// Resolve one ordered Loft guide or centerline group whose members select
+/// curves from a Sketch.
+///
+/// The source identity pair is only meaningful with its owning Sketch
+/// identity. Require the complete member run, one-to-one record ownership,
+/// shared selection namespace, a unique placement, and a unique neutral curve
+/// for every member before exposing the path as typed geometry.
+fn resolved_loft_entity_selection_path(
+    group: &DesignConstructionOperandGroup,
+    resolution: &LoftSketchResolution<'_>,
+) -> Option<cadmpeg_ir::features::PathRef> {
+    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if !matches!(group.role, 0x5_0000_0000 | 0x7_0000_0000) || group.members.is_empty() {
+        return None;
+    }
+    let stream = native_stream(&group.id)?;
+    let mut selected_operands = Vec::with_capacity(group.members.len());
+    let mut member_records = HashSet::with_capacity(group.members.len());
+    let mut primary_identity = None;
+    let mut asset_id = None;
+    let mut context_id = None;
+    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        if !member_records.insert(record_index) {
+            return None;
+        }
+        let mut matches = resolution
+            .entity_selection_operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index == record_index
+            });
+        let operand = matches.next()?;
+        if matches.next().is_some() || operand.secondary_identity.is_none() {
+            return None;
+        }
+        if let Some(expected) = primary_identity {
+            if expected != operand.primary_identity {
+                return None;
+            }
+        } else {
+            primary_identity = Some(operand.primary_identity);
+        }
+        if let Some(expected) = asset_id {
+            if expected != operand.asset_id.as_str() {
+                return None;
+            }
+        } else {
+            asset_id = Some(operand.asset_id.as_str());
+        }
+        if let Some(expected) = context_id {
+            if expected != operand.context_id.as_str() {
+                return None;
+            }
+        } else {
+            context_id = Some(operand.context_id.as_str());
+        }
+        selected_operands.push(operand);
+    }
+    let primary_identity = primary_identity?;
+    let mut placements = resolution.placements.iter().filter(|placement| {
+        native_stream(&placement.id) == Some(stream) && placement.entity_suffix == primary_identity
+    });
+    let placement = placements.next()?;
+    if placements.next().is_some() {
+        return None;
+    }
+
+    let mut curve_ids = Vec::with_capacity(selected_operands.len());
+    let mut selected_curve_identities = HashSet::with_capacity(selected_operands.len());
+    for operand in &selected_operands {
+        let owner_reference = u32::try_from(operand.primary_identity).ok()?;
+        let secondary_identity = operand.secondary_identity?;
+        let mut curves = resolution.curve_identities.iter().filter(|curve| {
+            native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(owner_reference)
+                && curve.primary_id == secondary_identity
+        });
+        let curve = curves.next()?;
+        if curves.next().is_some()
+            || !selected_curve_identities.insert((curve.primary_id, curve.secondary_id))
+        {
+            return None;
+        }
+        curve_ids.push((curve.primary_id, curve.secondary_id));
+    }
+
+    let spatial_sketch = neutral_spatial_sketch_id(placement);
+    if resolution
+        .spatial_sketches
+        .iter()
+        .any(|sketch| sketch.id == spatial_sketch)
+    {
+        let selections = curve_ids
+            .iter()
+            .map(|(primary, secondary)| {
+                neutral_spatial_sketch_curve_id(&spatial_sketch, *primary, *secondary)
+            })
+            .collect::<HashSet<_>>();
+        if selections.len() != curve_ids.len()
+            || selections.iter().any(|curve| {
+                !resolution
+                    .spatial_sketch_entities
+                    .iter()
+                    .any(|entity| entity.sketch == spatial_sketch && entity.id == *curve)
+            })
+        {
+            return None;
+        }
+        return Some(PathRef::SpatialSketchSelection {
+            sketch: spatial_sketch,
+            selections: selected_operands
+                .iter()
+                .map(|operand| operand.id.clone())
+                .collect(),
+        });
+    }
+
+    let sketch = neutral_sketch_id(placement);
+    if !resolution
+        .sketches
+        .iter()
+        .any(|candidate| candidate.id == sketch)
+    {
+        return None;
+    }
+    let curves = curve_ids
+        .into_iter()
+        .map(|(primary, secondary)| neutral_sketch_curve_id(&sketch, primary, secondary))
+        .collect::<Vec<_>>();
+    if curves.iter().any(|curve| {
+        !resolution.sketch_entities.iter().any(|entity| {
+            entity.sketch == sketch
+                && entity.id == *curve
+                && !matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+    }) {
+        return None;
+    }
+    Some(PathRef::SketchCurves { sketch, curves })
 }
 
 pub(crate) fn bind_loft_sketch_selections(
@@ -1798,7 +1949,14 @@ pub(crate) fn bind_loft_sketch_selections(
             ProfileRef::Sketch(neutral_sketch_id(placement)),
         );
     }
-    let mut resolved_spatial_paths = HashMap::new();
+    let mut resolved_entity_paths = HashMap::new();
+    for group in groups.iter().filter(|group| {
+        matches!(group.role, 0x5_0000_0000 | 0x7_0000_0000) && !group.members.is_empty()
+    }) {
+        if let Some(path) = resolved_loft_entity_selection_path(group, resolution) {
+            resolved_entity_paths.insert(group.id.clone(), path);
+        }
+    }
     for group in groups
         .iter()
         .filter(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)
@@ -1860,20 +2018,16 @@ pub(crate) fn bind_loft_sketch_selections(
             group.id.clone(),
             ProfileRef::SpatialSketchSelection {
                 sketch: spatial_sketch.clone(),
-                selections: selections.clone(),
-            },
-        );
-        resolved_spatial_paths.insert(
-            group.id.clone(),
-            PathRef::SpatialSketchSelection {
-                sketch: spatial_sketch,
                 selections,
             },
         );
     }
     for feature in features {
         let FeatureDefinition::Loft {
-            sections, guides, ..
+            sections,
+            guides,
+            centerline,
+            ..
         } = &mut feature.definition
         else {
             continue;
@@ -1890,10 +2044,233 @@ pub(crate) fn bind_loft_sketch_selections(
             let PathRef::Native(native) = guide else {
                 continue;
             };
-            if let Some(path) = resolved_spatial_paths.get(native) {
+            if let Some(path) = resolved_entity_paths.get(native) {
                 *guide = path.clone();
+            }
+        }
+        if let Some(PathRef::Native(native)) = centerline.as_ref() {
+            if let Some(path) = resolved_entity_paths.get(native) {
+                *centerline = Some(path.clone());
             }
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolved_loft_entity_selection_path, LoftSketchResolution};
+    use crate::ids::{neutral_sketch_curve_id, neutral_sketch_id};
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
+        DesignEntitySelectionOperand, DesignSketchPlacement, SketchCurveIdentity,
+    };
+    use cadmpeg_ir::features::PathRef;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry, SketchPlacement};
+
+    fn group() -> DesignConstructionOperandGroup {
+        DesignConstructionOperandGroup {
+            id: "stream:group".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".into(),
+            members: vec![10, 11],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![0, 0],
+            frame: DesignConstructionOperandGroupFrame {
+                member_count_offset: 0,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 0,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 0,
+                variant: false,
+            },
+            role: 0x5_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 0,
+            paired_class_tag: "277".into(),
+            paired_byte_offset: 0,
+        }
+    }
+
+    fn operand(
+        record_index: u32,
+        ordinal: u32,
+        secondary_identity: u64,
+    ) -> DesignEntitySelectionOperand {
+        DesignEntitySelectionOperand {
+            id: format!("stream:operand-{record_index}"),
+            scope_record_index: 7,
+            group_record_index: 9,
+            group_member_ordinal: ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "277".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            identity_record_index: record_index + 1,
+            identity_record_offset: 0,
+            primary_identity: 42,
+            primary_identity_offset: 0,
+            secondary_identity: Some(secondary_identity),
+            secondary_identity_offset: Some(0),
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: record_index + 2,
+            next_byte_offset: 0,
+        }
+    }
+
+    fn placement() -> DesignSketchPlacement {
+        DesignSketchPlacement {
+            id: "stream:placement".into(),
+            scope_record_index: Some(7),
+            entity_id: "Sketch:42".into(),
+            entity_suffix: 42,
+            byte_offset: 0,
+            class_tag: "277".into(),
+            record_index: 20,
+            frame_length: 0,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: None,
+            paired_class_tag: "277".into(),
+            paired_byte_offset: 0,
+            member_run_head: false,
+        }
+    }
+
+    fn curve(record_index: u32, primary_id: u64, secondary_id: u64) -> SketchCurveIdentity {
+        SketchCurveIdentity {
+            id: format!("stream:curve-{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            class_tag: "450".into(),
+            byte_offset: 0,
+            geometry_offset: 0,
+            entity_genesis: None,
+            primary_id,
+            secondary_id,
+            geometry: None,
+        }
+    }
+
+    fn planar_resolution<'a>(
+        operands: &'a [DesignEntitySelectionOperand],
+        placements: &'a [DesignSketchPlacement],
+        curve_identities: &'a [SketchCurveIdentity],
+        sketches: &'a [Sketch],
+        sketch_entities: &'a [SketchEntity],
+    ) -> LoftSketchResolution<'a> {
+        LoftSketchResolution {
+            entities: &[],
+            entity_selection_operands: operands,
+            placements,
+            curve_identities,
+            sketches,
+            sketch_entities,
+            spatial_sketches: &[],
+            spatial_sketch_entities: &[],
+        }
+    }
+
+    #[test]
+    fn loft_multi_member_planar_entity_path_preserves_order_and_requires_complete_proof() {
+        let placement = placement();
+        let sketch = neutral_sketch_id(&placement);
+        let curves = [curve(30, 100, 101), curve(31, 200, 201)];
+        let sketch_entities = [
+            SketchEntity {
+                id: neutral_sketch_curve_id(&sketch, 100, 101),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: neutral_sketch_curve_id(&sketch, 200, 201),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(1.0, 0.0),
+                    end: Point2::new(1.0, 1.0),
+                },
+            },
+        ];
+        let sketches = [Sketch {
+            id: sketch.clone(),
+            name: None,
+            configuration: None,
+            placement: SketchPlacement::Unresolved,
+            profiles: Vec::new(),
+            native_ref: None,
+        }];
+        let group = group();
+        let operands = [operand(10, 0, 100), operand(11, 1, 200)];
+        let placement_list = [placement];
+        let resolution = planar_resolution(
+            &operands,
+            &placement_list,
+            &curves,
+            &sketches,
+            &sketch_entities,
+        );
+        assert_eq!(
+            resolved_loft_entity_selection_path(&group, &resolution),
+            Some(PathRef::SketchCurves {
+                sketch: sketch.clone(),
+                curves: vec![
+                    neutral_sketch_curve_id(&sketch, 100, 101),
+                    neutral_sketch_curve_id(&sketch, 200, 201),
+                ],
+            })
+        );
+
+        let mut mixed_operands = operands.to_vec();
+        mixed_operands[1].primary_identity = 43;
+        let mixed_resolution = planar_resolution(
+            &mixed_operands,
+            &placement_list,
+            &curves,
+            &sketches,
+            &sketch_entities,
+        );
+        assert!(resolved_loft_entity_selection_path(&group, &mixed_resolution).is_none());
+
+        let incomplete_resolution = planar_resolution(
+            &operands,
+            &placement_list,
+            &curves[..1],
+            &sketches,
+            &sketch_entities,
+        );
+        assert!(resolved_loft_entity_selection_path(&group, &incomplete_resolution).is_none());
+    }
 }

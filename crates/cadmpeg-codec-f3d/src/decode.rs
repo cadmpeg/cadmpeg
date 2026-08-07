@@ -1636,7 +1636,10 @@ fn finish_model_decode<'a>(
             entity_selection_operands: &native.design_entity_selection_operands,
             placements: &native.design_sketch_placements,
             curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
         &mut ir.model.features,
     )?;
@@ -2167,7 +2170,10 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             entity_selection_operands: &native.design_entity_selection_operands,
             placements: &native.design_sketch_placements,
             curve_identities: &native.sketch_curve_identities,
+            sketches: &ir.model.sketches,
+            sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
         &mut ir.model.features,
     )?;
