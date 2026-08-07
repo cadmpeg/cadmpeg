@@ -570,8 +570,11 @@ fn geometric_set_omissions(
     set_ids
         .into_iter()
         .filter_map(|set_id| exchange.records.get(&set_id))
-        .filter(|set| has_type(set, "GEOMETRIC_SET") || has_type(set, "GEOMETRIC_CURVE_SET"))
-        .flat_map(|set| set.parameter(1).and_then(refs).unwrap_or_default())
+        .filter_map(|set| {
+            let set_type = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"])?;
+            Some(named_refs(set, set_type, 1).unwrap_or_default())
+        })
+        .flatten()
         .filter(|member| {
             !carrier_index.points.contains_key(member)
                 && !carrier_index.curves.contains_key(member)
