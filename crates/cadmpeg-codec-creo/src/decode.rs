@@ -20815,6 +20815,16 @@ fn analytic_curve_plane(geometry: &CurveGeometry) -> Option<PlaneEquation> {
             [center.x, center.y, center.z],
             normalized([axis.x, axis.y, axis.z])?,
         ),
+        CurveGeometry::Nurbs(nurbs) => {
+            valid_positive_nurbs_curve(nurbs)?;
+            let plane = topology_bound_plane(
+                nurbs
+                    .control_points
+                    .iter()
+                    .map(|point| [point.x, point.y, point.z]),
+            )?;
+            (plane.origin, plane.normal)
+        }
         _ => return None,
     };
     Some(PlaneEquation { origin, normal })
@@ -20827,13 +20837,56 @@ struct BoundaryLine {
 }
 
 fn analytic_boundary_line(geometry: &CurveGeometry) -> Option<BoundaryLine> {
-    let CurveGeometry::Line { origin, direction } = geometry else {
-        return None;
+    let (origin, direction) = match geometry {
+        CurveGeometry::Line { origin, direction } => (
+            [origin.x, origin.y, origin.z],
+            normalized([direction.x, direction.y, direction.z])?,
+        ),
+        CurveGeometry::Nurbs(nurbs) => {
+            (nurbs.degree == 1 && !nurbs.periodic).then_some(())?;
+            valid_positive_nurbs_curve(nurbs)?;
+            let first = *nurbs.control_points.first()?;
+            let last = *nurbs.control_points.last()?;
+            let origin = [first.x, first.y, first.z];
+            let direction = normalized([last.x - first.x, last.y - first.y, last.z - first.z])?;
+            let scale = nurbs
+                .control_points
+                .iter()
+                .flat_map(|point| [point.x, point.y, point.z])
+                .map(f64::abs)
+                .fold(1.0, f64::max);
+            nurbs
+                .control_points
+                .iter()
+                .map(|point| {
+                    let relative = [
+                        point.x - origin[0],
+                        point.y - origin[1],
+                        point.z - origin[2],
+                    ];
+                    let residual = cross(relative, direction);
+                    dot(residual, residual).sqrt()
+                })
+                .all(|residual| residual <= 1e-9 * scale)
+                .then_some(())?;
+            (origin, direction)
+        }
+        _ => return None,
     };
-    Some(BoundaryLine {
-        origin: [origin.x, origin.y, origin.z],
-        direction: normalized([direction.x, direction.y, direction.z])?,
-    })
+    Some(BoundaryLine { origin, direction })
+}
+
+fn valid_positive_nurbs_curve(nurbs: &NurbsCurve) -> Option<()> {
+    nurbs_intrinsic_parameter_range(nurbs)?;
+    nurbs
+        .weights
+        .as_ref()
+        .is_none_or(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
+        })
+        .then_some(())
 }
 
 fn topology_bound_line_plane(lines: &[BoundaryLine]) -> Option<PlaneEquation> {

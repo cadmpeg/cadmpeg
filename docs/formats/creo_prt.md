@@ -1995,6 +1995,15 @@ An analytic carrier pair transfers its sole intersection-curve candidate when ed
 
 Every uniquely identified transferred analytic surface is available to the native topology solver as its model-space carrier. This includes planes derived from feature geometry even when the plane has no independently complete row-local placement frame.
 
+A transferred NURBS boundary curve supplies a face plane when its complete knot
+and control-point record has no weight lane or a finite positive weight lane
+and the control net contains three non-collinear coplanar points. A non-periodic degree-one NURBS
+boundary supplies a boundary line when every control point is collinear with
+its first and last points and it has no weight lane or a finite positive weight
+lane. Invalid,
+degenerate, non-coplanar, or non-collinear control nets do not supply a plane
+or line.
+
 A plane with any two cylinder, cone, or sphere carriers restricts both carrier
 quadrics to conics in an orthonormal plane chart. The determinant of their
 quadratic Sylvester matrix is a polynomial of degree at most four in one chart
