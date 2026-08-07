@@ -5150,13 +5150,15 @@ fn generated_arc_cylinder_extent(
     let feature_id = definition.owner_feature_id?;
     definition.segments.as_ref()?.is_complete().then_some(())?;
     let mut surface_ids = BTreeSet::new();
-    for entry in scan
+    for (_, entry) in scan
         .features
         .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200)
+        .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
+        .filter(|(table, entry)| {
+            entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
+        })
     {
         let Some(source_id) = entry.source_entity_id else {
             continue;
@@ -9185,8 +9187,11 @@ fn sketch_profiles_cover_generated_extrusion_sides(
         .entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200)
+        .flat_map(|table| {
+            table.entries.iter().filter(move |entry| {
+                entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
+            })
+        })
         .filter_map(|entry| {
             let external_id = entry.source_entity_id?;
             scan.surfaces

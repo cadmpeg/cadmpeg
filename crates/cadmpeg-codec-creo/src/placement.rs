@@ -52,11 +52,13 @@ fn generated_cylinder_section_transform(
     let points = definition.variables.as_ref()?.reconciled_points();
     points.1.is_empty().then_some(())?;
     let mut correspondences = Vec::<([f64; 2], [f64; 3], [f64; 3], usize)>::new();
-    for entry in entity_tables
+    for (_, entry) in entity_tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
-        .flat_map(|table| &table.entries)
-        .filter(|entry| entry.class_id == 200)
+        .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
+        .filter(|(table, entry)| {
+            entry.class_id == 200 && table.surface_ids.contains(&entry.entity_id)
+        })
     {
         let Some(external_id) = entry.source_entity_id else {
             continue;
@@ -191,6 +193,10 @@ fn generated_planar_section_transform(
             table.entries.len() >= 4
                 && table.entries[0].class_id == 204
                 && table.entries[1].class_id == 203
+                && table
+                    .entries
+                    .iter()
+                    .all(|entry| table.surface_ids.contains(&entry.entity_id))
                 && table.entries[2..]
                     .iter()
                     .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
@@ -1956,6 +1962,11 @@ mod tests {
         wrong_class[0].entries[0].class_id = 201;
         assert!(
             generated_cylinder_section_transform(&definition, &sources, &wrong_class).is_none()
+        );
+        let mut non_surface = tables;
+        non_surface[0].surface_ids.pop();
+        assert!(
+            generated_cylinder_section_transform(&definition, &sources, &non_surface).is_none()
         );
     }
 
