@@ -20,6 +20,15 @@ use super::topology::TopologyResult;
 
 const MAX_OCCURRENCES: usize = 100_000;
 const MAX_ASSEMBLY_DEPTH: usize = 256;
+const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
+    "PRODUCT_DEFINITION_FORMATION",
+    "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
+    "FINAL_SOLUTION",
+];
+const PRODUCT_DEFINITION_TYPES: &[&str] = &[
+    "PRODUCT_DEFINITION",
+    "PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS",
+];
 
 pub(super) struct ProductResult {
     pub typed_records: BTreeSet<u64>,
@@ -37,40 +46,30 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let formations = exchange
-        .entities_any(&[
-            "PRODUCT_DEFINITION_FORMATION",
-            "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
-        ])
+        .entities_any(PRODUCT_DEFINITION_FORMATION_TYPES)
         .filter_map(|(id, record)| {
-            if !matches!(
-                record.simple_name(),
-                Some(
-                    "PRODUCT_DEFINITION_FORMATION"
-                        | "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"
-                )
-            ) {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            let parameters = product_definition_formation_parameters(record)?;
+            Some((id, parameters.get(2)?.reference()?))
         })
         .collect::<BTreeMap<_, _>>();
     let definitions = exchange
-        .entities("PRODUCT_DEFINITION")
+        .entities_any(PRODUCT_DEFINITION_TYPES)
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION") {
-                return None;
-            }
-            Some((id, *formations.get(&record.parameter(2)?.reference()?)?))
+            let parameters = product_definition_parameters(record)?;
+            Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
     let shape_bindings = shape_bindings(exchange, &definitions, topology);
 
     for (step_id, record) in exchange.entities("PRODUCT") {
-        if record.simple_name() != Some("PRODUCT") {
+        let Some(parameters) = record
+            .partial("PRODUCT")
+            .map(|partial| partial.parameters.as_slice())
+        else {
             continue;
-        }
-        let product_id = record
-            .parameter(0)
+        };
+        let product_id = parameters
+            .first()
             .and_then(|value| {
                 decode_text(
                     value,
@@ -81,8 +80,8 @@ pub(super) fn decode(
                 )
             })
             .unwrap_or_else(|| format!("#{step_id}"));
-        let name = record
-            .parameter(1)
+        let name = parameters
+            .get(1)
             .and_then(|value| {
                 decode_text(
                     value,
@@ -824,6 +823,32 @@ fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
 }
 fn product_ir_id(id: u64) -> ProductDefinitionId {
     ProductDefinitionId(format!("step:product:product#{id}"))
+}
+
+fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value]> {
+    if let Some(partial) = record.partial("PRODUCT_DEFINITION_FORMATION") {
+        return Some(partial.parameters.as_slice());
+    }
+    match record.simple_name() {
+        Some("PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE" | "FINAL_SOLUTION") => record
+            .partials
+            .first()
+            .map(|partial| partial.parameters.as_slice()),
+        _ => None,
+    }
+}
+
+fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
+    if let Some(partial) = record.partial("PRODUCT_DEFINITION") {
+        return Some(partial.parameters.as_slice());
+    }
+    match record.simple_name() {
+        Some("PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS") => record
+            .partials
+            .first()
+            .map(|partial| partial.parameters.as_slice()),
+        _ => None,
+    }
 }
 
 trait RecordExt {

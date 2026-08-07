@@ -337,6 +337,12 @@ reuse their committed body identity. Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
 unresolved placement.
 
+Product definitions and product-definition formations use the inherited base
+attribute prefix. A direct subtype carries that prefix in its own parameter
+list. A multiple-inheritance complex instance uses the parameters of its
+`PRODUCT_DEFINITION` or `PRODUCT_DEFINITION_FORMATION` partial. Product
+records use the parameters of their `PRODUCT` partial.
+
 A shape representation contains at least one representation item. The two
 items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations
 connected by its representation relationship. An occurrence placement belongs

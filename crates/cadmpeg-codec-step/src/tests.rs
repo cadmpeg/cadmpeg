@@ -4457,7 +4457,7 @@ fn unresolved_occurrence_transform_is_reported_as_error() {
 #5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
 #6=PRODUCT_DEFINITION('parent','',#4,#5);
 #7=PRODUCT('C','child','',(#2));
-#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#8=FINAL_SOLUTION('','',#7,'complete');
 #9=PRODUCT_DEFINITION('child','',#8,#5);
 #10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','child instance','',#6,#9,$);",
     );
@@ -5601,6 +5601,40 @@ fn ap203_specified_source_formations_build_occurrence_tree() {
             record.id.0.contains("product_definition_formation")
                 || record.id.0.contains("next_assembly_usage_occurrence")
         }));
+}
+
+#[test]
+fn product_definition_subtypes_preserve_assembly_occurrences() {
+    use cadmpeg_ir::products::OccurrenceParent;
+
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION_WITH_ASSOCIATED_DOCUMENTS('root definition','',#4,#5,(#15));
+#7=PRODUCT('CHILD','Child part','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('child definition','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('occ-1','Placed child','',#6,#9,$);
+#15=DOCUMENT('manual','assembly manual','');",
+    );
+
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
+        .expect("subtype-backed child occurrence");
+    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("NAUO #10 references an unresolved child definition")
+    }));
 }
 
 #[test]
