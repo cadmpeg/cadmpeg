@@ -4993,6 +4993,75 @@ fn decode_transfers_ap242_semantic_pmi() {
 }
 
 #[test]
+fn complex_datum_feature_remains_a_dimension_target() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=(COMPOSITE_SHAPE_ASPECT() DATUM_FEATURE() SHAPE_ASPECT('feature','',#5,.T.));
+#10=DIMENSIONAL_SIZE(#6,'width');
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimension = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("width"))
+        .expect("complex datum feature dimension");
+    assert!(matches!(
+        &dimension.definition,
+        PmiDefinition::Dimension { .. }
+    ));
+    assert_eq!(
+        dimension.targets,
+        vec![PmiTarget::ShapeAspect {
+            source_id: "#6".into()
+        }]
+    );
+}
+
+#[test]
+fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
+
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT($));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance");
+    let tolerance = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            magnitude: cadmpeg_ir::PmiValue {
+                value: 0.05,
+                quantity: PmiQuantity::Length,
+            },
+            ..
+        }
+    ));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("FLATNESS_TOLERANCE+GEOMETRIC_TOLERANCE")
+    }));
+}
+
+#[test]
 fn reversed_step_ellipse_axes_are_canonicalized() {
     use cadmpeg_ir::geometry::CurveGeometry;
 

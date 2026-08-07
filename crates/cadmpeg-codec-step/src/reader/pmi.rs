@@ -347,8 +347,9 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             losses: &mut losses,
         };
         let magnitude = record
-            .parameters()
+            .partials
             .iter()
+            .flat_map(|partial| partial.parameters.iter())
             .find_map(|value| measure(value, exchange, &mut measurements));
         let Some(magnitude) = magnitude else {
             warnings.push(format!(
@@ -377,15 +378,17 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
-                decode_text(
-                    value,
-                    &mut losses,
-                    id,
-                    "geometric tolerance name",
-                    LossKind::MetadataNotTransferred,
-                )
-            }),
+            named_parameter(record, "GEOMETRIC_TOLERANCE", 0)
+                .or_else(|| record.parameter(0))
+                .and_then(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "geometric tolerance name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                }),
             targets(refs.iter().copied().filter(|id| aspects.contains(id))),
             PmiDefinition::GeometricTolerance {
                 tolerance,
@@ -807,10 +810,20 @@ fn is_pmi_entity_name(name: &str) -> bool {
 }
 
 fn is_shape_aspect(record: &RawRecord) -> bool {
-    matches!(
-        record.simple_name(),
-        Some("SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM")
-    )
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SHAPE_ASPECT" | "DATUM_FEATURE" | "DATUM"
+        )
+    })
+}
+
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == name)
+        .and_then(|partial| partial.parameters.get(index))
 }
 
 fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
