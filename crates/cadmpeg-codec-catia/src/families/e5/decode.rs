@@ -289,7 +289,18 @@ pub(crate) fn solve_e5_plane_frame(
     points: &[Point3],
     expected_normal: Option<Vector3>,
 ) -> Option<(Vector3, Vector3)> {
-    if topology.vertex_refs.len() != points.len() {
+    if !origin.into_iter().all(f64::is_finite)
+        || topology.vertex_refs.len() != points.len()
+        || points
+            .iter()
+            .copied()
+            .any(|point| ![point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        || expected_normal.is_some_and(|normal| {
+            ![normal.x, normal.y, normal.z]
+                .into_iter()
+                .all(f64::is_finite)
+        })
+    {
         return None;
     }
     let point_by_ref: HashMap<u32, Point3> = topology
@@ -447,7 +458,15 @@ pub(crate) fn solve_e5_plane_frame(
         let Some(v_axis) = unit_vector(v_axis) else {
             continue;
         };
-        if residual > 2e-3 || u_axis.dot(v_axis).abs() > 1e-6 {
+        let orthogonality = u_axis.dot(v_axis);
+        if ![u_axis.x, u_axis.y, u_axis.z, v_axis.x, v_axis.y, v_axis.z]
+            .into_iter()
+            .all(f64::is_finite)
+            || !residual.is_finite()
+            || !orthogonality.is_finite()
+            || residual > 2e-3
+            || orthogonality.abs() > 1e-6
+        {
             continue;
         }
         let Some(normal) = unit_vector(Vector3::new(
@@ -457,7 +476,16 @@ pub(crate) fn solve_e5_plane_frame(
         )) else {
             continue;
         };
-        if expected_normal.is_some_and(|expected| normal.dot(expected).abs() < 1.0 - 1e-6) {
+        if ![normal.x, normal.y, normal.z]
+            .into_iter()
+            .all(f64::is_finite)
+        {
+            continue;
+        }
+        if expected_normal.is_some_and(|expected| {
+            let alignment = normal.dot(expected);
+            !alignment.is_finite() || alignment.abs() < 1.0 - 1e-6
+        }) {
             continue;
         }
         if !candidates
@@ -526,6 +554,14 @@ pub(crate) fn fit_e5_plane_axes(
     origin: [f64; 3],
     pairs: &[([f64; 2], Point3)],
 ) -> Option<(Vector3, Vector3, f64)> {
+    if !origin.into_iter().all(f64::is_finite)
+        || pairs.iter().any(|(uv, point)| {
+            !uv.iter().copied().all(f64::is_finite)
+                || ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
+        })
+    {
+        return None;
+    }
     let uv_scale = pairs
         .iter()
         .flat_map(|(uv, _)| uv.iter())
@@ -595,6 +631,9 @@ pub(crate) fn fit_e5_plane_axes(
             .sqrt(),
         );
     }
+    if !residual.is_finite() {
+        return None;
+    }
     Some((
         Vector3::new(u[0], u[1], u[2]),
         Vector3::new(v[0], v[1], v[2]),
@@ -607,6 +646,17 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
     pairs: &[([f64; 2], Point3)],
     normal: Vector3,
 ) -> Option<(Vector3, Vector3, f64)> {
+    if !origin.into_iter().all(f64::is_finite)
+        || ![normal.x, normal.y, normal.z]
+            .into_iter()
+            .all(f64::is_finite)
+        || pairs.iter().any(|(uv, point)| {
+            !uv.iter().copied().all(f64::is_finite)
+                || ![point.x, point.y, point.z].into_iter().all(f64::is_finite)
+        })
+    {
+        return None;
+    }
     let (uv, point) = pairs.iter().find(|(uv, _)| {
         let norm = uv[0].hypot(uv[1]);
         norm.is_finite() && norm != 0.0
@@ -639,7 +689,7 @@ pub(crate) fn fit_rank_one_e5_plane_axes(
         q[1] * mapped_q.z + q[0] * mapped_r.z,
     );
     let residual = plane_frame_residual(origin, pairs, u_axis, v_axis);
-    Some((u_axis, v_axis, residual))
+    residual.is_finite().then_some((u_axis, v_axis, residual))
 }
 
 pub(crate) fn plane_frame_residual(
@@ -2337,6 +2387,14 @@ mod route_tests {
             .expect("17-segment plane frame");
         assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-8);
         assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-8);
+        assert!(solve_e5_plane_frame(
+            100,
+            [0.0, 0.0, 0.0],
+            &topology,
+            &points,
+            Some(Vector3::new(f64::NAN, 0.0, 1.0)),
+        )
+        .is_none());
     }
 
     #[test]
