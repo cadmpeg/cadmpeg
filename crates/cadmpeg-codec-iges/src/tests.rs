@@ -9076,6 +9076,108 @@ fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
 }
 
 #[test]
+fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(
+        report.losses.iter().all(|loss| matches!(
+            loss.code,
+            cadmpeg_ir::LossKind::PassthroughRecordOmitted
+                | cadmpeg_ir::LossKind::PreservedSourceUnavailable
+        )),
+        "{:#?}",
+        report.losses
+    );
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let body = round_trip
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .unwrap();
+    let region = round_trip
+        .ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    let shell = round_trip
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[0])
+        .unwrap();
+    assert_eq!(shell.faces.len(), 3);
+    let shared_edge = round_trip
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| {
+            round_trip
+                .ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .count()
+                == 3
+        })
+        .unwrap();
+    let shared_uses = round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == shared_edge.id)
+        .collect::<Vec<_>>();
+    assert_eq!(shared_uses.len(), 3);
+    let shared_use_ids = shared_uses
+        .iter()
+        .map(|coedge| coedge.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut current = shared_uses[0];
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..3 {
+        assert!(visited.insert(current.id.clone()));
+        assert!(shared_use_ids.contains(&current.radial_next));
+        current = round_trip
+            .ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.id == current.radial_next)
+            .unwrap();
+    }
+    assert_eq!(current.id, shared_uses[0].id);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
     let decoded = IgesCodec
         .decode(

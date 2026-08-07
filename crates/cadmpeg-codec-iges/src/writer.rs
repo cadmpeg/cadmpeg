@@ -712,11 +712,6 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                 "IGES edge {edge_id} radial ring does not cover every use"
             )));
         }
-        if ring.len() > 2 {
-            return Err(CodecError::NotImplemented(format!(
-                "IGES B-rep writer does not encode non-manifold edge {edge_id}"
-            )));
-        }
         let senses = ring
             .iter()
             .map(|coedge_id| {
