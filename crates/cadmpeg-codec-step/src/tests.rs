@@ -4903,12 +4903,46 @@ fn trimmed_curve_prefers_the_point_under_cartesian_master() {
         })
         .expect("Cartesian-master trimmed curve");
     assert_eq!(parameter_range[0], 0.0);
-    assert!((parameter_range[1] + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((parameter_range[1] - 3.0 * std::f64::consts::PI / 2.0).abs() < 1.0e-12);
     assert!(result.report.losses.iter().all(|loss| {
         !loss
             .message
             .contains("fell back to a parameter trim selector")
     }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
+    let result = decode_inline(
+        "#20=CARTESIAN_POINT('',(0.,0.,0.));
+#21=DIRECTION('',(0.,0.,1.));
+#22=DIRECTION('',(1.,0.,0.));
+#23=AXIS2_PLACEMENT_3D('',#20,#21,#22);
+#24=CIRCLE('',#23,1.);
+#40=TRIMMED_CURVE('',#24,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.F.,.PARAMETER.);
+#41=GEOMETRIC_CURVE_SET('',(#40));
+#42=SHAPE_REPRESENTATION('',(#41),$);",
+    );
+    let parameter_range = result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(|curve| match &curve.definition {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range, ..
+            } if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
+                Some(*parameter_range)
+            }
+            _ => None,
+        })
+        .expect("opposed-sense trimmed curve");
+    assert!((parameter_range[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!((parameter_range[1] - std::f64::consts::TAU).abs() < 1.0e-12);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

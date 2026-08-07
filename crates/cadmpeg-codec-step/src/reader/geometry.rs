@@ -508,6 +508,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             let Some((start, end)) = start.zip(end) else {
                 continue;
             };
+            let parameter_range = trimmed_curve_parameter_range(&geometry, start, end, sense);
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -519,7 +520,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 curve: curve.clone(),
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis,
-                    parameter_range: if sense { [start, end] } else { [end, start] },
+                    parameter_range,
                 },
                 cache_fit_tolerance: Some(0.0),
             });
@@ -2447,6 +2448,44 @@ fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Opti
         _ => (None, None),
     };
     select_trim_parameter(parameter, cartesian, context)
+}
+
+fn trimmed_curve_parameter_range(
+    geometry: &CurveGeometry,
+    start: f64,
+    end: f64,
+    sense: bool,
+) -> [f64; 2] {
+    let mut start = start;
+    let mut end = end;
+    // A closed STEP curve may cross its parameter seam. Move the endpoint
+    // that follows the declared traversal onto the next parameter branch
+    // before projecting the directed trim onto the IR's ordered interval.
+    if let Some(period) = curve_parameter_period(geometry) {
+        if sense && end < start {
+            end += period;
+        } else if !sense && start < end {
+            start += period;
+        }
+    }
+    let range = if sense { [start, end] } else { [end, start] };
+    if range[0] <= range[1] {
+        range
+    } else {
+        [range[1], range[0]]
+    }
+}
+
+fn curve_parameter_period(geometry: &CurveGeometry) -> Option<f64> {
+    let period = match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => std::f64::consts::TAU,
+        CurveGeometry::Nurbs(curve) if curve.periodic => {
+            let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
+            upper - lower
+        }
+        _ => return None,
+    };
+    (period.is_finite() && period > 0.0).then_some(period)
 }
 
 fn is_parameter_trim_value(value: &Value) -> bool {
