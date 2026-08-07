@@ -204,6 +204,7 @@
       "parameters": [],
       "pcurves": [
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -3577,7 +3578,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "8803ddc4c5a12b22ec112227c8b994e16be001be51d5174b4a5c85013447f78c",
+        "document_local_sha256": "095a9effe07a28a3e9c5d18e000c7ca2eb322c0dab86a924d935c7a5809520d5",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

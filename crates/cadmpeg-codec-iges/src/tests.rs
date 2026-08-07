@@ -874,6 +874,54 @@ fn heterogeneous_composite_curve_file() -> Vec<u8> {
     ])
 }
 
+fn mixed_degree_composite_pcurve_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 0,
+            label: "CUBIC".into(),
+            status: "00010000",
+            parameters: "126,3,3,1,0,1,0,0,0,0,0,1,1,1,1,1,1,1,1,0,0,0,0,1,0,1,1,0,1,0,0,0,1;"
+                .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "BCURVE".into(),
+            status: "00010500",
+            parameters: "102,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "BOUNDARY".into(),
+            status: "00010000",
+            parameters: "142,0,1,7,7,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,1,1,0,9;".into(),
+        },
+    ])
+}
+
 #[test]
 fn decode_concatenates_ordered_composite_curve_children() {
     let result = IgesCodec
@@ -962,6 +1010,62 @@ fn decode_preserves_heterogeneous_composite_curve_children() {
         segments[1].transition,
         cadmpeg_ir::geometry::CompositeCurveTransition::Continuous
     ));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_mixed_degree_composite_pcurve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(mixed_degree_composite_pcurve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D7")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+        panic!("expected an elevated cubic composite cache");
+    };
+    assert_eq!(nurbs.degree, 3);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge
+                .curve
+                .as_ref()
+                .is_some_and(|id| id.0 == "iges:model:curve#D7"))
+            .and_then(|edge| edge.param_range),
+        Some([0.0, 2.0])
+    );
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D11")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert_eq!(face.loops.len(), 1);
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert!(matches!(
+        result.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs { degree: 3, .. }
+    ));
+    assert_eq!(result.ir.model.pcurves[0].fit_tolerance, Some(0.001));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

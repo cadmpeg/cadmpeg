@@ -123,6 +123,7 @@ fn project_pcurve_uses(
     uses: &[(bool, u32)],
     surface: &cadmpeg_ir::geometry::SurfaceGeometry,
     factor: f64,
+    fit_tolerance: Option<f64>,
     id_stem: &str,
 ) -> Option<Vec<PcurveUse>> {
     uses.iter()
@@ -136,7 +137,7 @@ fn project_pcurve_uses(
                 wrapper_reversed: None,
                 native_tail_flags: None,
                 parameter_range: Some(range),
-                fit_tolerance: None,
+                fit_tolerance,
             });
             Some(PcurveUse {
                 pcurve: id,
@@ -780,6 +781,7 @@ pub(super) fn project(
                                 pcurves,
                                 &support_geometry,
                                 factor,
+                                global.minimum_resolution_mm(),
                                 &format!(
                                     "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
                                 ),
@@ -905,6 +907,7 @@ pub(super) fn project(
                             pcurves,
                             &support_geometry,
                             factor,
+                            global.minimum_resolution_mm(),
                             &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
                         ) else {
                             valid = false;

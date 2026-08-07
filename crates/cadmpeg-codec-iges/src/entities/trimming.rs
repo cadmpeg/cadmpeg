@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-local trimmed-surface projection.
 
+use super::composite::bounded_nurbs_for_curve;
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
@@ -117,12 +118,19 @@ pub(super) fn pcurve_geometry(
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
     let curve = ir.model.curves.iter().find(|curve| curve.id == curve_id)?;
-    let range = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&curve_id))?
-        .param_range?;
+    let (nurbs, range) = match &curve.geometry {
+        CurveGeometry::Nurbs(nurbs) => {
+            let range = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.curve.as_ref() == Some(&curve_id))?
+                .param_range?;
+            (nurbs.clone(), range)
+        }
+        CurveGeometry::Composite { .. } => bounded_nurbs_for_curve(ir, &curve_id)?,
+        _ => return None,
+    };
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
@@ -134,23 +142,20 @@ pub(super) fn pcurve_geometry(
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };
-    match &curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => Some((
-            PcurveGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots.clone(),
-                control_points: nurbs
-                    .control_points
-                    .iter()
-                    .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
-                    .collect(),
-                weights: nurbs.weights.clone(),
-                periodic: nurbs.periodic,
-            },
-            range,
-        )),
-        _ => None,
-    }
+    Some((
+        PcurveGeometry::Nurbs {
+            degree: nurbs.degree,
+            knots: nurbs.knots,
+            control_points: nurbs
+                .control_points
+                .iter()
+                .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
+                .collect(),
+            weights: nurbs.weights,
+            periodic: nurbs.periodic,
+        },
+        range,
+    ))
 }
 
 pub(super) struct TrimmingProjection {
@@ -662,12 +667,12 @@ pub(super) fn project(
                             wrapper_reversed: None,
                             native_tail_flags: None,
                             parameter_range: Some(parameter_range),
-                            fit_tolerance: None,
+                            fit_tolerance: global.minimum_resolution_mm(),
                         });
                         PcurveUse {
                             pcurve: id,
                             isoparametric: None,
-                                    parameter_range: None,
+                            parameter_range: None,
                         }
                     })
                     .collect();
