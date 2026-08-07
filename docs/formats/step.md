@@ -306,8 +306,14 @@ including `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, uses the same
 source-root-to-body map. Occurrence transforms compose once from the
 product-definition relationship into model space. Mapped representations and
 context-dependent relationships that identify one placement apply that
-placement once. Reused source topology roots reuse their committed body
-identity.
+placement once. A mapped occurrence uses a
+`PRODUCT_DEFINITION_SHAPE` whose definition is the
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE`; its
+`SHAPE_DEFINITION_REPRESENTATION` contains the mapped item that identifies the
+child representation and its target placement. Reused source topology roots
+reuse their committed body identity. Repeated child uses without an
+occurrence-specific shape representation remain ambiguous and report the
+unresolved placement.
 
 A shape representation contains at least one representation item. The two
 items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations

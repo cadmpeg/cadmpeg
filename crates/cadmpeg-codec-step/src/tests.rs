@@ -4038,6 +4038,37 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
 }
 
 #[test]
+fn decode_builds_repeated_occurrence_placements_from_their_shape_representations() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_occurrence_mapped_assembly.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode occurrence-mapped assembly");
+
+    let mut children = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.name.is_some())
+        .collect::<Vec<_>>();
+    children.sort_by(|left, right| left.name.cmp(&right.name));
+    assert_eq!(children.len(), 2);
+    assert_eq!(children[0].name.as_deref(), Some("First child"));
+    assert_eq!(children[0].transform.rows[0][3], 25.0);
+    assert_eq!(children[0].transform.rows[1][3], 0.0);
+    assert_eq!(children[1].name.as_deref(), Some("Second child"));
+    assert_eq!(children[1].transform.rows[0][3], -10.0);
+    assert_eq!(children[1].transform.rows[1][3], 4.0);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_transfers_ap242_one_based_tessellation_indices() {
     let bytes = include_bytes!("../tests/fixtures/ap242_tessellation.p21");
     let result = StepCodec::default()
