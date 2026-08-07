@@ -1339,9 +1339,12 @@ fn attach_feature_operations(
             ))
         })
         .collect::<BTreeMap<_, _>>();
-    let simple_hole_operations =
-        simple_hole_operations(simple_hole_templates, simple_hole_construction_groups)
-            .unwrap_or_default();
+    let simple_hole_operations = simple_hole_operations(
+        simple_hole_templates,
+        simple_hole_construction_groups,
+        &operation_positions,
+    )
+    .unwrap_or_default();
     let (hole_outputs, simple_hole_diameters) =
         match hole_body_projection(ir, &simple_hole_operations, &explicit_simple_hole_outputs) {
             Some(projection) => (projection.outputs, projection.diameters),
@@ -4538,6 +4541,7 @@ fn native_feature_parameters(
 fn simple_hole_operations(
     templates: &[crate::native::features::FeatureSimpleHoleTemplate],
     groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
+    operation_positions: &BTreeMap<&str, usize>,
 ) -> Option<Vec<String>> {
     let template_operations = templates
         .iter()
@@ -4550,8 +4554,21 @@ fn simple_hole_operations(
     if template_operations.len() != templates.len() || template_operations.is_empty() {
         return None;
     }
+    let mut ordered_templates = templates.iter().collect::<Vec<_>>();
+    if ordered_templates
+        .iter()
+        .any(|template| !operation_positions.contains_key(template.operation_label.as_str()))
+    {
+        return None;
+    }
+    ordered_templates.sort_by(|first, second| {
+        operation_positions
+            .get(first.operation_label.as_str())
+            .cmp(&operation_positions.get(second.operation_label.as_str()))
+            .then_with(|| first.operation_label.cmp(&second.operation_label))
+    });
     Some(match groups {
-        [] => templates
+        [] => ordered_templates
             .iter()
             .map(|template| template.operation_label.clone())
             .collect::<Vec<_>>(),
@@ -4563,6 +4580,13 @@ fn simple_hole_operations(
                 .collect::<BTreeSet<_>>();
             if group_operations.len() != group.operation_labels.len()
                 || template_operations != group_operations
+                || group
+                    .operation_labels
+                    .iter()
+                    .any(|operation| !operation_positions.contains_key(operation.as_str()))
+                || group.operation_labels.windows(2).any(|pair| {
+                    operation_positions[pair[0].as_str()] >= operation_positions[pair[1].as_str()]
+                })
             {
                 return None;
             }
@@ -5983,10 +6007,54 @@ mod tests {
         groups: &[crate::native::features::FeatureSimpleHoleConstructionGroup],
         outputs: &BTreeMap<String, Vec<BodyId>>,
     ) -> BTreeMap<String, Length> {
-        let Some(operations) = simple_hole_operations(templates, groups) else {
+        let operation_positions = templates
+            .iter()
+            .enumerate()
+            .map(|(position, template)| (template.operation_label.as_str(), position))
+            .collect::<BTreeMap<_, _>>();
+        let Some(operations) = simple_hole_operations(templates, groups, &operation_positions)
+        else {
             return BTreeMap::new();
         };
         hole_diameters_for_operations(ir, &operations, outputs)
+    }
+
+    #[test]
+    fn ungrouped_simple_holes_follow_authoritative_history_order() {
+        use crate::native::features::{
+            FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
+            SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
+        };
+
+        let template = |operation_label: &str| FeatureSimpleHoleTemplate {
+            id: format!("template-{operation_label}"),
+            operation_label: operation_label.to_string(),
+            payload_string: format!("payload-{operation_label}"),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Simple,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::Chamfer,
+            end_treatment: SimpleHoleEndTreatment::Chamfer,
+        };
+        let templates = vec![template("operation#newer"), template("operation#older")];
+        let operation_positions =
+            BTreeMap::from([("operation#older", 0usize), ("operation#newer", 1usize)]);
+        assert_eq!(
+            simple_hole_operations(&templates, &[], &operation_positions),
+            Some(vec!["operation#older".into(), "operation#newer".into()])
+        );
+
+        let unordered_group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            operation_labels: vec!["operation#newer".into(), "operation#older".into()],
+            scalar_lanes: vec!["lane-newer".into(), "lane-older".into()],
+            block_references: vec!["blocks-newer".into(), "blocks-older".into()],
+        };
+        assert!(
+            simple_hole_operations(&templates, &[unordered_group], &operation_positions,).is_none()
+        );
     }
 
     #[test]
