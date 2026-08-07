@@ -2946,24 +2946,80 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_datum_modifiers(&mut self, source: &[String]) -> Option<String> {
+        const SIMPLE: &[&str] = &[
+            "free_state",
+            "basic",
+            "translation",
+            "least_material_requirement",
+            "maximum_material_requirement",
+            "point",
+            "line",
+            "plane",
+            "orientation",
+            "any_cross_section",
+            "any_longitudinal_section",
+            "contacting_feature",
+            "distance_variable",
+            "degree_of_freedom_constraint_x",
+            "degree_of_freedom_constraint_y",
+            "degree_of_freedom_constraint_z",
+            "degree_of_freedom_constraint_u",
+            "degree_of_freedom_constraint_v",
+            "degree_of_freedom_constraint_w",
+            "minor_diameter",
+            "major_diameter",
+            "pitch_diameter",
+        ];
+        const WITH_VALUE: &[&str] = &[
+            "circular_or_cylindrical",
+            "spherical",
+            "distance",
+            "projected",
+        ];
+        enum Modifier {
+            Simple(String),
+            WithValue { kind: String, value: f64 },
+        }
+        let parsed = source
+            .iter()
+            .map(|modifier| {
+                if let Some((kind, value)) = modifier.split_once(':') {
+                    let kind = kind.to_ascii_lowercase();
+                    let value = value.parse::<f64>().ok()?;
+                    if !value.is_finite() {
+                        return None;
+                    }
+                    WITH_VALUE
+                        .contains(&kind.as_str())
+                        .then_some(Modifier::WithValue { kind, value })
+                } else {
+                    let modifier = modifier.to_ascii_lowercase();
+                    SIMPLE
+                        .contains(&modifier.as_str())
+                        .then_some(Modifier::Simple(modifier))
+                }
+            })
+            .collect::<Option<Vec<_>>>()?;
         let mut modifiers = Vec::with_capacity(source.len());
-        for modifier in source {
-            if let Some((kind, value)) = modifier.split_once(':') {
-                let value = value.parse::<f64>().ok()?;
-                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
-                    value,
-                    quantity: cadmpeg_ir::PmiQuantity::Length,
-                });
-                modifiers.push(
-                    self.emitter
-                        .emit(
-                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
-                            &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
-                        )
-                        .to_string(),
-                );
-            } else {
-                modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+        for modifier in parsed {
+            match modifier {
+                Modifier::WithValue { kind, value } => {
+                    let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                        value,
+                        quantity: cadmpeg_ir::PmiQuantity::Length,
+                    });
+                    modifiers.push(
+                        self.emitter
+                            .emit(
+                                "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
+                                &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
+                            )
+                            .to_string(),
+                    );
+                }
+                Modifier::Simple(modifier) => {
+                    modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+                }
             }
         }
         Some(modifiers.join(","))

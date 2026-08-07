@@ -7209,6 +7209,61 @@ fn rejected_step_write_detects_incomplete_datum_system() {
 }
 
 #[test]
+fn step_writer_rejects_unknown_datum_reference_modifiers() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .ir;
+    let system = ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .expect("datum system");
+    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
+        unreachable!()
+    };
+    references[0].modifiers.push("unknown_modifier".into());
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report-mode STEP write");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::PmiOmitted));
+    assert!(!String::from_utf8_lossy(&output).contains(".UNKNOWN_MODIFIER."));
+    assert!(!String::from_utf8_lossy(&output).contains("DATUM_REFERENCE_MODIFIER_WITH_VALUE"));
+
+    let mut strict_output = Vec::new();
+    assert!(matches!(
+        write_step(
+            &ir,
+            &mut strict_output,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                unsupported: StepUnsupportedPolicy::Reject,
+                ..StepWriteOptions::default()
+            }
+        ),
+        Err(StepError::Unsupported(_))
+    ));
+    assert!(strict_output.is_empty());
+}
+
+#[test]
 fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
     use cadmpeg_ir::pmi::PmiDefinition;
     use cadmpeg_ir::presentation::PresentationItem;
