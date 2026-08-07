@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered composite-curve projection.
 
-use super::curve_conversion::circular_arc_nurbs;
+use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
 use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::parameter::ParameterRecord;
@@ -340,6 +340,32 @@ fn bounded_nurbs_for_id(
             radius,
         } => Some((
             circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?,
+            interval,
+        )),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => Some((
+            elliptical_arc_nurbs(
+                *center,
+                *axis,
+                *major_direction,
+                *major_radius,
+                *minor_radius,
+                interval,
+            )?,
+            interval,
+        )),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => Some((
+            parabolic_arc_nurbs(*vertex, *axis, *major_direction, *focal_distance, interval)?,
             interval,
         )),
         _ => None,

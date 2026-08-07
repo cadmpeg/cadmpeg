@@ -992,7 +992,7 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
 }
 
 #[test]
-fn decode_preserves_heterogeneous_composite_curve_children() {
+fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() {
     let result = IgesCodec
         .decode(
             &mut Cursor::new(heterogeneous_composite_curve_file()),
@@ -1007,17 +1007,11 @@ fn decode_preserves_heterogeneous_composite_curve_children() {
         .iter()
         .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
-    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &composite.geometry
-    else {
-        panic!("expected a neutral composite carrier");
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &composite.geometry else {
+        panic!("expected an exact heterogeneous composite carrier");
     };
-    assert_eq!(segments.len(), 2);
-    assert_eq!(segments[0].curve.0, "iges:model:curve#D1");
-    assert_eq!(segments[1].curve.0, "iges:model:curve#D3");
-    assert!(matches!(
-        segments[1].transition,
-        cadmpeg_ir::geometry::CompositeCurveTransition::Continuous
-    ));
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.control_points.len(), 5);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -1789,6 +1783,32 @@ fn surface_of_revolution_file() -> Vec<u8> {
     bytes
 }
 
+fn ellipse_surface_of_revolution_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 104,
+            form: 0,
+            label: "ELLIPSE".into(),
+            status: "00010000",
+            parameters: "104,0.25,0,1,0,0,-1,0,2,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 120,
+            form: 0,
+            label: "REVOLVE".into(),
+            status: "00000000",
+            parameters: "120,1,3,0,1.5707963267948966;".into(),
+        },
+    ])
+}
+
 fn trimmed_surface_of_revolution_file() -> Vec<u8> {
     let angle = 0.3_f64;
     let pcurve = format!(
@@ -1920,6 +1940,39 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!((point.y - expected).abs() < 1.0e-12);
     assert!((point.z - 1.0).abs() < 1.0e-12);
     assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(ellipse_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected an exact rational ellipse revolution cache");
+    };
+    let point = cadmpeg_ir::eval::nurbs_surface_point(
+        surface,
+        std::f64::consts::FRAC_PI_4,
+        std::f64::consts::FRAC_PI_4,
+    )
+    .expect("ellipse revolution evaluates");
+    assert!((point.x - 0.5).abs() < 1.0e-12);
+    assert!((point.y - 1.5).abs() < 1.0e-12);
+    assert!(point.z.abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
