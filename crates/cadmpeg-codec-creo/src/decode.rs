@@ -5108,7 +5108,27 @@ fn feature_plane_equations(
         .collect()
 }
 
-fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f64; 3], [f64; 3])> {
+type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);
+
+/// Resolve one uniquely identified plane row to its unique complete outline.
+fn feature_outline_plane(
+    scan: &ContainerScan,
+    feature_id: u32,
+    surface_id: u32,
+) -> Option<FeatureOutlinePlane> {
+    let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
+    (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
+        .then_some(())?;
+    let plane = crate::surface::unique_outline_plane(&scan.planes.outlines, surface_id)?;
+    Some((surface_id, plane.origin, plane.normal))
+}
+
+/// Collect every same-feature plane row only when all rows have complete,
+/// unambiguous outlines. Partial collections cannot establish ordered caps.
+fn feature_outline_planes(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<Vec<FeatureOutlinePlane>> {
     scan.surfaces
         .rows
         .iter()
@@ -5118,19 +5138,7 @@ fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f
         .map(|row| row.id)
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .filter_map(|id| {
-            crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
-            let outlines = scan
-                .planes
-                .outlines
-                .iter()
-                .filter(|plane| plane.surface_id == id)
-                .collect::<Vec<_>>();
-            let [plane] = outlines.as_slice() else {
-                return None;
-            };
-            Some((id, plane.origin, plane.normal))
-        })
+        .map(|id| feature_outline_plane(scan, feature_id, id))
         .collect()
 }
 
@@ -17663,7 +17671,7 @@ fn schema_feature_definition(
             && stepped_directed.is_none())
         .then(|| counterbore_axis_placement(scan, ir, feature_id))
         .flatten();
-        let placement = hole_placement(feature_outline_planes(scan, feature_id));
+        let placement = feature_outline_planes(scan, feature_id).and_then(hole_placement);
         let compact_cylinder_id = compact_simple_hole_cylinder_id(
             feature_id,
             &scan.features.entity_tables,
@@ -19306,7 +19314,7 @@ fn observed_cylinder_source_carrier(
 }
 
 fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleHoleGeometry> {
-    let cap_rows = feature_outline_planes(scan, feature_id)
+    let cap_rows = feature_outline_planes(scan, feature_id)?
         .into_iter()
         .map(|(id, origin, normal)| {
             let envelopes = scan
@@ -19536,13 +19544,7 @@ fn single_cap_circular_sweep_geometry(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
         .then_some(())?;
-    let planes = feature_outline_planes(scan, feature_id)
-        .into_iter()
-        .filter(|plane| plane.0 == cap_id.entity_id)
-        .collect::<Vec<_>>();
-    let [plane] = planes.as_slice() else {
-        return None;
-    };
+    let plane = feature_outline_plane(scan, feature_id, cap_id.entity_id)?;
     let envelopes = scan
         .planes
         .envelopes
@@ -19633,7 +19635,7 @@ fn two_cap_circular_sweep_geometry(
     else {
         return None;
     };
-    let placed_planes = feature_outline_planes(scan, feature_id);
+    let placed_planes = feature_outline_planes(scan, feature_id)?;
     let [first, second] = placed_planes.as_slice() else {
         return None;
     };

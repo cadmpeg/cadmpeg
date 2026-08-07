@@ -143,6 +143,44 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
 }
 
 #[test]
+fn hole_outline_placement_requires_complete_feature_plane_evidence() {
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 911,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let plane = |id, z| crate::surface::OutlinePlane {
+        surface_id: id,
+        origin: [0.0, 0.0, z],
+        normal: [0.0, 0.0, 1.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([row(31), row(32), row(33)]);
+    scan.planes
+        .outlines
+        .extend([plane(31, 0.0), plane(32, 5.0)]);
+
+    assert!(feature_outline_planes(&scan, 911).is_none());
+
+    scan.planes.outlines.push(plane(33, 10.0));
+    assert_eq!(
+        feature_outline_planes(&scan, 911).map(|planes| planes.len()),
+        Some(3)
+    );
+    assert!(hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")).is_none());
+
+    scan.planes.outlines.push(plane(33, 10.0));
+    assert!(feature_outline_planes(&scan, 911).is_none());
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
