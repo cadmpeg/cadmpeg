@@ -11168,6 +11168,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: Some(profile),
         sweep_profile: None,
         circular_pattern_construction: None,

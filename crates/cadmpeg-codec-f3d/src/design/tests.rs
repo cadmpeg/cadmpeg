@@ -123,8 +123,8 @@ use crate::records::{
     DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
     DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
     DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
-    DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -8788,6 +8788,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -10142,6 +10143,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -10601,6 +10603,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -16216,6 +16219,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -16288,6 +16292,10 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     );
 }
 
+#[allow(
+    clippy::large_stack_arrays,
+    reason = "This dependency fixture keeps the scope records inline to show their source order."
+)]
 #[test]
 fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
     let parameter = |owner, record_index, expression: &str, name: &str| {
@@ -16386,6 +16394,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -16583,6 +16592,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 0,
             record_index: 100,
@@ -17583,6 +17593,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -17598,11 +17609,62 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         paired_class_tag: "261".into(),
         paired_byte_offset: byte_offset + 200,
     };
-    let scopes = [
+    let mut scopes = vec![
         scope(12, 100, "Fillet"),
         scope(22, 400, "Chamfer"),
         scope(32, 700, "Hole"),
     ];
+    scopes[2].hole_construction = Some(DesignHoleConstruction {
+        point_record_index: 378,
+        point_record_byte_offset: 10,
+        position: [1.25, -2.5, 3.75],
+        position_offset: 35,
+        direction: [0.0, 0.0, 1.0],
+        direction_offset: 59,
+        point_parameters: [0.125, -0.25],
+        point_parameter_offsets: [83, 91],
+        reference_type: 19,
+        reference_type_offset: 99,
+        tangent_point_data: [-1.0, -1.0, -1.0],
+        tangent_point_data_prefix: 0,
+        tangent_point_data_offset: 104,
+        input_record_indices: vec![378],
+        input_record_offsets: vec![129],
+    });
+    scopes[2].reference_members = vec![0, 363, 0, 370, 0, 378];
+    let hole_face_operand = |record_index, scope_reference_ordinal| DesignFaceOperand {
+        id: format!("f3d:native:face-operand#{record_index}"),
+        scope_record_index: 32,
+        scope_reference_ordinal,
+        group_record_index: None,
+        group_member_ordinal: None,
+        record_index,
+        byte_offset: 1200,
+        class_tag: "297".into(),
+        paired_byte_offset: 1400,
+        paired_class_tag: "259".into(),
+        recipe_record_index: record_index + 3,
+        recipe_record_byte_offset: 1300,
+        recipe_id: format!("f3d:native:construction-recipe#{}", record_index + 3),
+        recipe_prefix_offset: 1311,
+        recipe_prefix_bytes: Vec::new(),
+        recipe_references: Vec::new(),
+        recipe_kind: ConstructionRecipeKind::BoundedFace,
+        recipe_program_offset: 1350,
+        recipe_program: vec![0, -1],
+        recipe_node_offsets: Vec::new(),
+        recipe_nodes: Vec::new(),
+        candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
+        alternate_selector_candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        historical_support_contexts: Vec::new(),
+        resolved_face_slots: vec![282],
+        next_record_index: record_index + 4,
+        next_byte_offset: 1411,
+    };
+    let hole_face_operands = [hole_face_operand(370, 3), hole_face_operand(378, 5)];
     let (features, _) = project_parameter_design(
         &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
@@ -17698,19 +17760,22 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         &[],
         &[],
         &[],
-        &[],
+        &hole_face_operands,
         &[],
     );
     assert!(matches!(
         &features[0].definition,
         FeatureDefinition::Hole {
-            face: Some(FaceSelection::Native(selection)),
+            face: Some(FaceSelection::Resolved { faces, native }),
+            position: Some(Point3 { x: 12.5, y: -25.0, z: 37.5 }),
+            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: Some(Length(4.0)),
             extent: Some(cadmpeg_ir::features::Termination::Blind { length: Length(10.0) }),
             bottom: Some(cadmpeg_ir::features::HoleBottom::Flat),
             ..
-        } if selection == &scopes[2].id
+        } if faces == &vec![FaceId(crate::ids::brep_entity_id(282))]
+            && native == &scopes[2].id
     ));
 
     hole_parameters[2].evaluated_value = 118.0_f64.to_radians();
@@ -18622,6 +18687,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -19079,6 +19145,10 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ));
 }
 
+#[allow(
+    clippy::large_stack_arrays,
+    reason = "This projection fixture keeps the scope records inline to show dependency order."
+)]
 #[test]
 fn parameter_expressions_project_feature_dependencies() {
     let parameter = |owner_record_index, record_index, name: &str, expression: &str| {
@@ -19169,6 +19239,7 @@ fn parameter_expressions_project_feature_dependencies() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -19298,6 +19369,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -20342,6 +20414,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -20582,6 +20655,10 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
+#[allow(
+    clippy::large_stack_arrays,
+    reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
+)]
 #[test]
 fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     fn append_header(bytes: &mut Vec<u8>, record_index: u32) {
@@ -20768,6 +20845,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -21521,6 +21599,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         base_flange_profile: None,

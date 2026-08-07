@@ -13,8 +13,8 @@ use crate::design::edge_resolve::{
     feature_input_topology_id, project_fixed_fillet, resolved_edge_group,
 };
 use crate::design::face_resolve::{
-    design_angle, resolved_body_recipe_shape, resolved_face_group, resolved_historical_face_group,
-    resolved_profile_face_group, valid_chamfer_spec,
+    design_angle, resolved_body_recipe_shape, resolved_direct_face_selection, resolved_face_group,
+    resolved_historical_face_group, resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -412,8 +412,8 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     })
                 }
-                Some(DesignFeatureFamily::Hole) => {
-                    project_hole(scope, &parameters).unwrap_or_else(|| FeatureDefinition::Native {
+                Some(DesignFeatureFamily::Hole) => project_hole(scope, &parameters, face_operands)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: parameters
                             .iter()
@@ -422,8 +422,7 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
-                    })
-                }
+                    }),
                 Some(DesignFeatureFamily::Split) => {
                     project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                         FeatureDefinition::Native {
@@ -5222,6 +5221,7 @@ pub(crate) fn project_boundary_fill(
 fn project_hole(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
+    face_operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, HoleBottom, HoleKind, Termination,
@@ -5287,12 +5287,32 @@ fn project_hole(
             None,
         ),
     };
+    let face = resolved_direct_face_selection(scope, face_operands)
+        .unwrap_or_else(|| FaceSelection::Native(scope.id.clone()));
+    let (position, direction) = scope
+        .hole_construction
+        .as_ref()
+        .map(|construction| {
+            (
+                Point3::new(
+                    construction.position[0] * 10.0,
+                    construction.position[1] * 10.0,
+                    construction.position[2] * 10.0,
+                ),
+                Vector3::new(
+                    construction.direction[0],
+                    construction.direction[1],
+                    construction.direction[2],
+                ),
+            )
+        })
+        .unzip();
     Some(FeatureDefinition::Hole {
         profile: None,
         profile_filter: None,
-        face: Some(FaceSelection::Native(scope.id.clone())),
-        position: None,
-        direction: None,
+        face: Some(face),
+        position,
+        direction,
         placements: Vec::new(),
         kind,
         exit_kind: None,

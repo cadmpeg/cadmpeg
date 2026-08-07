@@ -43,6 +43,55 @@ pub(crate) fn resolved_face_group(
     })
 }
 
+/// Resolve a direct scope face selection when every direct operand proves the
+/// same current face set through stable input-topology slots.
+pub(crate) fn resolved_direct_face_selection(
+    scope: &DesignParameterScope,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    use cadmpeg_ir::features::FaceSelection;
+
+    let stream = native_stream(&scope.id)?;
+    let mut matching = operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.group_record_index.is_none()
+                && operand.group_member_ordinal.is_none()
+                && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
+                && usize::try_from(operand.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&operand.record_index)
+        })
+        .collect::<Vec<_>>();
+    matching.sort_by_key(|operand| operand.scope_reference_ordinal);
+    if matching.is_empty()
+        || matching
+            .iter()
+            .any(|operand| operand.resolved_face_slots.is_empty())
+    {
+        return None;
+    }
+    let mut faces = resolved_face_operand(matching[0])?;
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    if faces.is_empty() {
+        return None;
+    }
+    for operand in &matching[1..] {
+        let mut candidate = resolved_face_operand(operand)?;
+        candidate.sort_by(|left, right| left.0.cmp(&right.0));
+        if candidate != faces {
+            return None;
+        }
+    }
+    Some(FaceSelection::Resolved {
+        faces,
+        native: scope.id.clone(),
+    })
+}
+
 /// Resolve the active faces carried by an Extrude target-shape body recipe.
 ///
 /// The native target is a whole-body recipe rather than a face recipe. Its

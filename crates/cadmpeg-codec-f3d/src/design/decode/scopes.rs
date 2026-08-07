@@ -23,14 +23,14 @@ use crate::records::{
     DesignExtrudePrologueReference, DesignExtrudeStart, DesignFixedChamferDistance,
     DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
     DesignFixedExtrudeScalar, DesignFixedFilletGroup, DesignFixedFilletParameters,
-    DesignHemOperation, DesignHemParameterOwners, DesignMirrorConstruction, DesignMoveOperation,
-    DesignParameter, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignRectangularPatternConstruction, DesignRectangularPatternInstances,
-    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignRuledSurfaceOperation,
-    DesignScaleOperation, DesignSheetMetalHeightDatum, DesignSolidPrimitive,
-    DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
-    DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
-    DesignWorkAxisConstruction,
+    DesignHemOperation, DesignHemParameterOwners, DesignHoleConstruction, DesignMirrorConstruction,
+    DesignMoveOperation, DesignParameter, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignRectangularPatternConstruction,
+    DesignRectangularPatternInstances, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
+    DesignRuledSurfaceOperation, DesignScaleOperation, DesignSheetMetalHeightDatum,
+    DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
+    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
+    DesignThreadConstruction, DesignWorkAxisConstruction,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -127,6 +127,8 @@ pub fn decode_parameter_scopes(
                 scope.work_point_reference_type = Some(frame.reference_type);
                 scope.work_point_input_record_indices = frame.input_record_indices;
             }
+            scope.hole_construction =
+                exact_hole_construction(bytes, &records, &scope, &stream_types);
             scope.solid_primitive =
                 exact_solid_primitive(bytes, &records, &scope, parameter_owners);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &records, &scope);
@@ -3930,6 +3932,142 @@ pub(crate) fn exact_work_point_position(
     candidates.pop()
 }
 
+/// Type GUID of the point-and-direction carrier selected by a `Hole` scope.
+const HOLE_POINT_DATA_TYPE_GUID: &str = "F2A7590D-6654-4674-B393-A2AEF4FEC48A";
+
+/// Decode the exact point-and-direction carrier owned by a `Hole` scope.
+///
+/// The carrier's version-four base level is distinct from the version-three
+/// `WorkPoint` level: it writes the position, direction, two construction
+/// parameters, `refType`, tangent-point data, and a counted input-reference
+/// run in that order. The type GUID and version select this layout; the
+/// dynamic class tag does not.
+pub(crate) fn exact_hole_construction(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignHoleConstruction> {
+    if scope.kind != "Hole" {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        if stream_types.get(&u64::from(*record_index)) != Some(&(HOLE_POINT_DATA_TYPE_GUID, 4)) {
+            continue;
+        }
+        for (start, paired_at) in records.frames(*record_index) {
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered(bytes, start, 0..=2000, u8::is_ascii_graphic)
+            else {
+                continue;
+            };
+            if class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                || after_tag != start + 7
+                || u32_at(bytes, after_tag) != Some(*record_index)
+            {
+                continue;
+            }
+            let Some((_name, payload_at)) =
+                lp_ascii_filtered(bytes, after_tag + 8, 0..=256, u8::is_ascii_graphic)
+            else {
+                continue;
+            };
+            if let Some(candidate) =
+                hole_construction_frame_at(bytes, start, paired_at, payload_at, *record_index)
+            {
+                candidates.push(candidate);
+            }
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn hole_construction_frame_at(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    payload_at: usize,
+    point_record_index: u32,
+) -> Option<DesignHoleConstruction> {
+    let body = bytes.get(..paired_at)?;
+    let mut cursor = payload_prologue(body, payload_at, paired_at)?;
+    let _bounding_box_index = u32_at(body, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let position_at = cursor;
+    cursor = cursor.checked_add(24)?;
+    let direction_at = cursor;
+    cursor = cursor.checked_add(24)?;
+    let point_parameters_at = cursor;
+    cursor = cursor.checked_add(16)?;
+    let reference_type_at = cursor;
+    let reference_type = u32_at(body, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    let tangent_point_data_prefix = *body.get(cursor)?;
+    cursor = cursor.checked_add(1)?;
+    let tangent_point_data_at = cursor;
+    cursor = cursor.checked_add(24)?;
+    let input_count = usize::try_from(u32_at(body, cursor)?).ok()?;
+    cursor = cursor.checked_add(4)?;
+    if input_count == 0 || input_count > paired_at.checked_sub(cursor)? {
+        return None;
+    }
+    let position: [f64; 3] = f64s_at(body, position_at, 3)?.try_into().ok()?;
+    let direction: [f64; 3] = f64s_at(body, direction_at, 3)?.try_into().ok()?;
+    let point_parameters: [f64; 2] = f64s_at(body, point_parameters_at, 2)?.try_into().ok()?;
+    let tangent_point_data: [f64; 3] = f64s_at(body, tangent_point_data_at, 3)?.try_into().ok()?;
+    let direction_norm = direction
+        .iter()
+        .map(|component| component * component)
+        .sum::<f64>();
+    if position
+        .iter()
+        .chain(direction.iter())
+        .chain(point_parameters.iter())
+        .chain(tangent_point_data.iter())
+        .any(|value| !value.is_finite())
+        || (direction_norm - 1.0).abs() > 1.0e-12
+    {
+        return None;
+    }
+    let mut input_record_indices = Vec::with_capacity(input_count);
+    let mut input_record_offsets = Vec::with_capacity(input_count);
+    for _ in 0..input_count {
+        let reference_at = cursor;
+        let reference = take_reference(body, &mut cursor)?;
+        let target = u32::try_from(reference.target?).ok()?;
+        input_record_indices.push(target);
+        input_record_offsets.push(u64::try_from(reference_at.checked_add(1)?).ok()?);
+    }
+    if cursor != paired_at {
+        return None;
+    }
+    Some(DesignHoleConstruction {
+        point_record_index,
+        point_record_byte_offset: u64::try_from(start).ok()?,
+        position,
+        position_offset: u64::try_from(position_at).ok()?,
+        direction,
+        direction_offset: u64::try_from(direction_at).ok()?,
+        point_parameters,
+        point_parameter_offsets: [
+            u64::try_from(point_parameters_at).ok()?,
+            u64::try_from(point_parameters_at.checked_add(8)?).ok()?,
+        ],
+        reference_type,
+        reference_type_offset: u64::try_from(reference_type_at).ok()?,
+        tangent_point_data,
+        tangent_point_data_prefix,
+        tangent_point_data_offset: u64::try_from(tangent_point_data_at).ok()?,
+        input_record_indices,
+        input_record_offsets,
+    })
+}
+
 pub(crate) fn exact_combine_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -4446,6 +4584,7 @@ pub(crate) fn parse_parameter_scope(
         unclosed_construction_operand_groups: Vec::new(),
         work_point_reference_type: None,
         work_point_input_record_indices: Vec::new(),
+        hole_construction: None,
         extrude_profile: None,
         sweep_profile: None,
         circular_pattern_construction: None,
@@ -5811,8 +5950,8 @@ mod mirror_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        exact_pattern_identity_wrapper, exact_work_point_position, parse_parameter_scope,
-        POINT_DATA_TYPE_GUID,
+        exact_hole_construction, exact_pattern_identity_wrapper, exact_work_point_position,
+        parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{DesignParameterScope, DesignRecordHeader};
@@ -5972,6 +6111,72 @@ mod tests {
         let scope = parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header)
             .expect("WorkPoint scope");
         (bytes, scope, position_at)
+    }
+
+    fn hole_point_stream() -> (Vec<u8>, DesignParameterScope, usize, usize) {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"282");
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&[0, 0]);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        let position_at = bytes.len();
+        for value in [1.25_f64, -2.5, 3.75] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.0_f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for value in [0.125_f64, -0.25] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&19u32.to_le_bytes());
+        bytes.push(0x7f);
+        for value in [-1.0_f64, -1.0, -1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        let input_reference_at = bytes.len();
+        bytes.push(1);
+        bytes.extend_from_slice(&378u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"259");
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+
+        let mut scope = DesignParameterScope::empty("generated:hole#0", "Hole", 12);
+        scope.reference_members.push(55);
+        (bytes, scope, position_at, input_reference_at)
+    }
+
+    #[test]
+    fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
+        let (bytes, scope, position_at, input_reference_at) = hole_point_stream();
+        let records = IndexedRecordOffsets::build(&bytes);
+        let construction = exact_hole_construction(
+            &bytes,
+            &records,
+            &scope,
+            &HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]),
+        )
+        .expect("hole point carrier");
+
+        assert_eq!(construction.point_record_index, 55);
+        assert_eq!(construction.point_record_byte_offset, 0);
+        assert_eq!(construction.position, [1.25, -2.5, 3.75]);
+        assert_eq!(construction.position_offset, position_at as u64);
+        assert_eq!(construction.direction, [0.0, 0.0, 1.0]);
+        assert_eq!(construction.direction_offset, (position_at + 24) as u64);
+        assert_eq!(construction.point_parameters, [0.125, -0.25]);
+        assert_eq!(construction.reference_type, 19);
+        assert_eq!(construction.tangent_point_data_prefix, 0x7f);
+        assert_eq!(construction.tangent_point_data, [-1.0, -1.0, -1.0]);
+        assert_eq!(construction.input_record_indices, [378]);
+        assert_eq!(
+            construction.input_record_offsets,
+            [(input_reference_at + 1) as u64]
+        );
     }
 
     #[test]

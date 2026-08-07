@@ -3542,11 +3542,11 @@ fn validate_body_recipe_operands<'a>(
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
                         == Some(&operand.record_index)
-                    && scope.combine_operation.as_ref().is_some_and(|operation| {
+                    && (scope.combine_operation.as_ref().is_some_and(|operation| {
                         operation
                             .body_selection_record_indexes
                             .contains(&operand.record_index)
-                    })
+                    }) || scope.kind == "Hole")
             }
         });
         let valid = operand.class_tag.len() == 3
@@ -4501,6 +4501,10 @@ fn validate_face_operands<'a>(
                                 ) => true,
                                 Some(design::DesignFeatureFamily::Split) => {
                                     operand.scope_reference_ordinal == 1
+                                }
+                                Some(design::DesignFeatureFamily::Hole) => {
+                                    operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
                                 }
                                 _ => false,
                             }

@@ -1509,6 +1509,47 @@ pub struct DesignWorkAxisConstruction {
     pub point_offsets: [u64; 2],
 }
 
+/// Exact point-and-direction construction carried by a `Hole` scope.
+///
+/// The native point carrier stores the coordinates in source centimetres and
+/// the direction as a unit model-space vector. The remaining fields preserve
+/// the carrier's base-level evidence so later Hole forms can bind their input
+/// records without reparsing the byte stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignHoleConstruction {
+    /// Point-data record selected by the Hole scope.
+    pub point_record_index: u32,
+    /// Byte offset of the point-data record header.
+    pub point_record_byte_offset: u64,
+    /// Hole entry position in source model centimetres.
+    pub position: [f64; 3],
+    /// Byte offset of the first position coordinate.
+    pub position_offset: u64,
+    /// Directed drilling vector in model space.
+    pub direction: [f64; 3],
+    /// Byte offset of the first direction component.
+    pub direction_offset: u64,
+    /// Two point-construction parameters carried by the point-data base level.
+    pub point_parameters: [f64; 2],
+    /// Byte offsets of the two point-construction parameters.
+    pub point_parameter_offsets: [u64; 2],
+    /// `refType` construction rule carried by the point-data record.
+    pub reference_type: u32,
+    /// Byte offset of `reference_type`.
+    pub reference_type_offset: u64,
+    /// Tangent-point data carried by the point-data base level.
+    pub tangent_point_data: [f64; 3],
+    /// Serialized byte immediately before the tangent-point data.
+    pub tangent_point_data_prefix: u8,
+    /// Byte offset of the first tangent-point component.
+    pub tangent_point_data_offset: u64,
+    /// Record indices of the counted input-reference run.
+    pub input_record_indices: Vec<u32>,
+    /// Byte offsets of the input-reference targets.
+    pub input_record_offsets: Vec<u64>,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1709,6 +1750,9 @@ pub struct DesignParameterScope {
     /// point-data record's base class level.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub work_point_input_record_indices: Vec<u32>,
+    /// Exact point-and-direction construction carried by a `Hole` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hole_construction: Option<DesignHoleConstruction>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignSketchProfileOperand>,
@@ -2140,6 +2184,7 @@ impl DesignParameterScope {
             unclosed_construction_operand_groups: Vec::new(),
             work_point_reference_type: None,
             work_point_input_record_indices: Vec::new(),
+            hole_construction: None,
             extrude_profile: None,
             sweep_profile: None,
             base_flange_profile: None,
