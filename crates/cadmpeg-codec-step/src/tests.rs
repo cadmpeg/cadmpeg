@@ -3418,6 +3418,45 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
 }
 
 #[test]
+fn distinct_roots_with_shared_topology_get_owner_scopes() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=SHELL_BASED_SURFACE_MODEL('',(#71));\n#71=OPEN_SHELL('',(#29));\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode independent roots sharing topology");
+
+    assert_eq!(
+        decoded.ir.model.bodies.len(),
+        2,
+        "{:#?}",
+        decoded.report.losses
+    );
+    assert!(decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .any(|edge| edge.id.as_str().contains("root-70")));
+    assert!(decoded
+        .ir
+        .model
+        .vertices
+        .iter()
+        .any(|vertex| vertex.id.as_str().contains("root-70")));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("conflicts with decoded topology")));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn reader_recovers_a_valid_solid_from_writer_output() {
     use cadmpeg_ir::topology::BodyKind;
 

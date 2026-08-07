@@ -267,10 +267,12 @@ pub(super) fn decode(
             }
             continue;
         }
-        let scope_root = key
-            .shell_keys
-            .iter()
-            .any(|(shell, _)| result.body_by_shell.contains_key(shell));
+        // A STEP file can define independent topology roots that reuse a
+        // global edge or vertex without reusing the shell record. CADIR
+        // identities are global, so every root after the first committed root
+        // receives an owner scope. This preserves each root when source
+        // topology ownership crosses shell boundaries.
+        let scope_root = !built_roots.is_empty();
         let outcome = build(
             id,
             record,
