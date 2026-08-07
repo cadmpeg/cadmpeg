@@ -177,7 +177,17 @@ finite half-angle converts from the representation's plane-angle unit to
 radians. A NURBS `closed` or `periodic` field uses the STEP LOGICAL domain.
 TRUE and FALSE encode the property state. UNKNOWN is a valid LOGICAL value.
 A `POLYLINE` with `n` points is the degree-one NURBS with those points as
-control points and a clamped piecewise-linear knot vector.
+control points and a clamped piecewise-linear knot vector. `UNIFORM_CURVE`,
+`QUASI_UNIFORM_CURVE`, `BEZIER_CURVE`, and the corresponding surface entities
+use default knot vectors with `control_count + degree + 1` entries in each
+parameter direction. Uniform values are consecutive integers starting at
+`-degree`, with multiplicity one. Quasi-uniform values start at zero, repeat
+each endpoint `degree + 1` times, and repeat each interior value once. Bezier
+values have endpoint multiplicity `degree + 1`, interior multiplicity `degree`,
+and a control count that forms an integral number of degree-sized spans.
+Complex `B_SPLINE_CURVE` and `B_SPLINE_SURFACE` records use the same defaults
+when one of these subtype leaves is present. Rational weight aggregates have
+the same shape as their control-point aggregates.
 
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the

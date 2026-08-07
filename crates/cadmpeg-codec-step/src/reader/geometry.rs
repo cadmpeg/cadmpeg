@@ -836,6 +836,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         "DEGENERATE_TOROIDAL_SURFACE",
         "TOROIDAL_SURFACE",
         "B_SPLINE_SURFACE_WITH_KNOTS",
+        "UNIFORM_SURFACE",
+        "QUASI_UNIFORM_SURFACE",
+        "BEZIER_SURFACE",
     ]) {
         let Some(surface_type) = entity_type(
             record,
@@ -847,6 +850,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 "DEGENERATE_TOROIDAL_SURFACE",
                 "TOROIDAL_SURFACE",
                 "B_SPLINE_SURFACE_WITH_KNOTS",
+                "UNIFORM_SURFACE",
+                "QUASI_UNIFORM_SURFACE",
+                "BEZIER_SURFACE",
             ],
         ) else {
             continue;
@@ -911,7 +917,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
-            "B_SPLINE_SURFACE_WITH_KNOTS" => {
+            "B_SPLINE_SURFACE_WITH_KNOTS"
+            | "UNIFORM_SURFACE"
+            | "QUASI_UNIFORM_SURFACE"
+            | "BEZIER_SURFACE" => {
                 nurbs_surface(record, &points, &mut warnings).map(SurfaceGeometry::Nurbs)
             }
             _ => unreachable!("surface type was selected from the dispatch list"),
@@ -3429,13 +3438,19 @@ fn nurbs_surface(
     points: &BTreeMap<u64, Point3>,
     warnings: &mut Vec<String>,
 ) -> Option<NurbsSurface> {
-    let complex = record.partials.len() > 1;
-    let base = if complex {
-        record.partial("B_SPLINE_SURFACE")?
+    let (base, offset) = if record.partials.len() > 1 {
+        (record.partial("B_SPLINE_SURFACE")?, 0)
     } else {
-        record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?
+        let base_name = [
+            "B_SPLINE_SURFACE_WITH_KNOTS",
+            "UNIFORM_SURFACE",
+            "QUASI_UNIFORM_SURFACE",
+            "BEZIER_SURFACE",
+        ]
+        .into_iter()
+        .find(|name| record.partial(name).is_some())?;
+        (record.partial(base_name)?, 1)
     };
-    let offset = usize::from(!complex);
     let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
     let v_degree = u32::try_from(base.parameters.get(offset + 1)?.integer()?).ok()?;
     let rows = base.parameters.get(offset + 2)?.list()?;
@@ -3457,20 +3472,27 @@ fn nurbs_surface(
         .flat_map(|row| row.list().expect("row shape was validated"))
         .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
         .collect::<Option<Vec<_>>>()?;
+    let surface_name = [
+        "B_SPLINE_SURFACE_WITH_KNOTS",
+        "UNIFORM_SURFACE",
+        "QUASI_UNIFORM_SURFACE",
+        "BEZIER_SURFACE",
+    ]
+    .into_iter()
+    .find(|name| record.partial(name).is_some())
+    .unwrap_or("B_SPLINE_SURFACE");
     let u_periodic = periodic_value(
         base.parameters.get(offset + 4),
-        "B_SPLINE_SURFACE_WITH_KNOTS U direction",
+        &format!("{surface_name} U direction"),
         record.id,
         warnings,
     )?;
     let v_periodic = periodic_value(
         base.parameters.get(offset + 5),
-        "B_SPLINE_SURFACE_WITH_KNOTS V direction",
+        &format!("{surface_name} V direction"),
         record.id,
         warnings,
     )?;
-    let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
-    let tail = knot_leaf.parameters.len().checked_sub(5)?;
     let expected_u = usize::try_from(u_count)
         .ok()?
         .checked_add(usize::try_from(u_degree).ok()?)?
@@ -3479,29 +3501,51 @@ fn nurbs_surface(
         .ok()?
         .checked_add(usize::try_from(v_degree).ok()?)?
         .checked_add(1)?;
-    let u_knots = expand_knots(
-        &knot_leaf.parameters[tail],
-        &knot_leaf.parameters[tail + 2],
-        expected_u,
-    )?;
-    let v_knots = expand_knots(
-        &knot_leaf.parameters[tail + 1],
-        &knot_leaf.parameters[tail + 3],
-        expected_v,
-    )?;
+    let (u_knots, v_knots) = if let Some(knot_leaf) = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")
+    {
+        let tail = knot_leaf.parameters.len().checked_sub(5)?;
+        (
+            expand_knots(
+                knot_leaf.parameters.get(tail)?,
+                knot_leaf.parameters.get(tail + 2)?,
+                expected_u,
+            )?,
+            expand_knots(
+                knot_leaf.parameters.get(tail + 1)?,
+                knot_leaf.parameters.get(tail + 3)?,
+                expected_v,
+            )?,
+        )
+    } else {
+        let kind = if record.partial("UNIFORM_SURFACE").is_some() {
+            DefaultNurbsKnotKind::Uniform
+        } else if record.partial("QUASI_UNIFORM_SURFACE").is_some() {
+            DefaultNurbsKnotKind::QuasiUniform
+        } else if record.partial("BEZIER_SURFACE").is_some() {
+            DefaultNurbsKnotKind::Bezier
+        } else {
+            return None;
+        };
+        (
+            default_nurbs_knots(usize::try_from(u_count).ok()?, u_degree, kind)?,
+            default_nurbs_knots(usize::try_from(v_count).ok()?, v_degree, kind)?,
+        )
+    };
     if u_knots.len() != expected_u || v_knots.len() != expected_v {
         return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
         let rows = leaf.parameters.first()?.list()?;
+        if rows.len() != usize::try_from(u_count).ok()? {
+            return None;
+        }
         let mut values = Vec::new();
         for row in rows {
-            values.extend(
-                row.list()?
-                    .iter()
-                    .map(Value::number)
-                    .collect::<Option<Vec<_>>>()?,
-            );
+            let row = row.list()?;
+            if row.len() != usize::try_from(v_count).ok()? {
+                return None;
+            }
+            values.extend(row.iter().map(Value::number).collect::<Option<Vec<_>>>()?);
         }
         (values.len() == control_points.len())
             .then_some(values)

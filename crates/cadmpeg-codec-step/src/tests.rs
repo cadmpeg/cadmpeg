@@ -4164,6 +4164,89 @@ fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
 }
 
 #[test]
+fn defaulted_spline_surface_subtypes_derive_axis_knot_vectors() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,0.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#4=CARTESIAN_POINT('',(0.,1.,0.));
+#5=CARTESIAN_POINT('',(1.,1.,0.));
+#6=CARTESIAN_POINT('',(2.,1.,0.));
+#10=QUASI_UNIFORM_SURFACE('quasi',1,1,((#1,#2,#3),(#4,#5,#6)),.UNSPECIFIED.,.F.,.F.,.F.);
+#11=UNIFORM_SURFACE('uniform',1,2,((#1,#2,#3),(#4,#5,#6)),.UNSPECIFIED.,.F.,.F.,.F.);
+#12=BEZIER_SURFACE('bezier',1,2,((#1,#2,#3),(#4,#5,#6)),.UNSPECIFIED.,.F.,.F.,.F.);
+#13=GEOMETRIC_SET('',(#10,#11,#12));
+#14=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#13),#15);
+#15=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let nurbs = |id: &str| {
+        result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == id)
+            .and_then(|surface| match &surface.geometry {
+                SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing NURBS surface {id}"))
+    };
+    assert_eq!(nurbs("step:data:surface#10").u_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        nurbs("step:data:surface#10").v_knots,
+        [0.0, 0.0, 1.0, 2.0, 2.0]
+    );
+    assert_eq!(nurbs("step:data:surface#11").u_knots, [-1.0, 0.0, 1.0, 2.0]);
+    assert_eq!(
+        nurbs("step:data:surface#11").v_knots,
+        [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0]
+    );
+    assert_eq!(nurbs("step:data:surface#12").u_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        nurbs("step:data:surface#12").v_knots,
+        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn complex_rational_quasi_uniform_surface_decodes_with_weight_grid() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,0.,0.));
+#3=CARTESIAN_POINT('',(0.,1.,0.));
+#4=CARTESIAN_POINT('',(1.,1.,0.));
+#5=CARTESIAN_POINT('',(0.,2.,0.));
+#6=CARTESIAN_POINT('',(1.,2.,0.));
+#7=(BOUNDED_SURFACE() B_SPLINE_SURFACE(2,1,((#1,#2),(#3,#4),(#5,#6)),.UNSPECIFIED.,.F.,.F.,.F.) QUASI_UNIFORM_SURFACE() RATIONAL_B_SPLINE_SURFACE(((1.,.5),(1.,.5),(1.,1.))) SURFACE());
+#8=GEOMETRIC_SET('',(#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#7")
+        .expect("complex rational surface");
+    let SurfaceGeometry::Nurbs(nurbs) = &surface.geometry else {
+        panic!("complex rational surface is not NURBS")
+    };
+    assert_eq!(nurbs.u_knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.v_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(
+        nurbs.weights.as_deref(),
+        Some(&[1.0, 0.5, 1.0, 0.5, 1.0, 1.0][..])
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
