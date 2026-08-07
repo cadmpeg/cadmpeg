@@ -9,7 +9,7 @@
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
-use crate::transform::Transform;
+use crate::transform::{Transform, Transform2};
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -3444,6 +3444,13 @@ pub enum PcurveGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Affine replica of a parent pcurve in the same parameter space.
+    Transformed {
+        /// Exact parent pcurve and its parameterization.
+        basis: Box<PcurveGeometry>,
+        /// Two-dimensional affine map from parent coordinates to replica coordinates.
+        transform: Transform2,
+    },
     /// Parameter restriction of an exact basis pcurve.
     Trimmed {
         /// Native parameter interval retained from the basis.
@@ -3458,6 +3465,38 @@ pub enum PcurveGeometry {
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },
+}
+
+impl PcurveGeometry {
+    /// Returns the origin and direction of a line-valued pcurve.
+    ///
+    /// Trimming and affine replicas preserve a line's parameterization. An
+    /// offset does not preserve it because the offset is evaluated from the
+    /// basis tangent, so it is deliberately excluded.
+    pub fn line_parameters(&self) -> Option<(Point2, Point2)> {
+        match self {
+            Self::Line { origin, direction } => Some((*origin, *direction)),
+            Self::Transformed { basis, transform } => {
+                let (origin, direction) = basis.line_parameters()?;
+                Some((
+                    transform.apply_point(origin),
+                    transform.apply_vector(direction),
+                ))
+            }
+            Self::Trimmed { basis, .. } => basis.line_parameters(),
+            Self::PolarHarmonic { .. }
+            | Self::PolarNurbs { .. }
+            | Self::SphericalGreatCircle { .. }
+            | Self::Circle { .. }
+            | Self::Ellipse { .. }
+            | Self::Harmonic { .. }
+            | Self::Parabola { .. }
+            | Self::Hyperbola { .. }
+            | Self::Hyperbolic { .. }
+            | Self::Nurbs { .. }
+            | Self::Offset { .. } => None,
+        }
+    }
 }
 
 /// A pcurve carrier: the 2D image of a coedge in its face's surface parameter

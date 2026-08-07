@@ -764,7 +764,7 @@ fn pcurve_parameter_seeds_on_surface(
     pcurve: &crate::geometry::Pcurve,
 ) -> Vec<f64> {
     let mut seeds = pcurve_parameter_seeds(pcurve);
-    let PcurveGeometry::Line { origin, direction } = &pcurve.geometry else {
+    let Some((origin, direction)) = pcurve.geometry.line_parameters() else {
         return seeds;
     };
     let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(context) else {
@@ -844,6 +844,7 @@ fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             parameter_range, ..
         } => Some(*parameter_range),
         PcurveGeometry::Offset { basis, .. } => pcurve_geometry_trim_range(basis),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_geometry_trim_range(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
@@ -883,6 +884,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             }
         }
         PcurveGeometry::Offset { basis, .. } => pcurve_parameter_domain(basis),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }

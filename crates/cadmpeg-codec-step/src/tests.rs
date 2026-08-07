@@ -1240,6 +1240,45 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
 }
 
 #[test]
+fn non_similarity_pcurve_replica_is_reported_and_strict_export_rejects() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sheet pcurve")
+        .ir;
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Transformed {
+        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        }),
+        transform: cadmpeg_ir::transform::Transform2 {
+            rows: [[2.0, 0.0, 0.0], [0.0, 3.0, 0.0], [0.0, 0.0, 1.0]],
+        },
+    };
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("report mode writes the representable sheet");
+    assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PcurveOmitted
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains("step:data:pcurve#56")
+    }));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    assert!(matches!(
+        write_step(&ir, &mut Vec::new(), &options),
+        Err(StepError::Unsupported(message)) if message.contains("pcurve")
+    ));
+}
+
+#[test]
 fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let mut ir = CadIr::empty(Units::default());
     let curve_id = CurveId("step:test:curve#standalone-unsupported".into());
@@ -1955,6 +1994,7 @@ fn writer_round_trips_rational_nurbs_pcurves() {
 fn writer_round_trips_every_exact_step_pcurve_family() {
     use cadmpeg_ir::geometry::PcurveGeometry;
     use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::transform::Transform2;
 
     let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
     let template = StepCodec::default()
@@ -2006,6 +2046,15 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
                 direction: Point2::new(4.0, 0.0),
             }),
         },
+        PcurveGeometry::Transformed {
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(1.0, 2.0),
+                direction: Point2::new(3.0, 4.0),
+            }),
+            transform: Transform2 {
+                rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
+            },
+        },
     ];
 
     for geometry in cases {
@@ -2013,8 +2062,16 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
         ir.model.pcurves[0].geometry = geometry.clone();
         let mut output = Vec::new();
         write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write exact pcurve");
+        let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
+        if matches!(&geometry, PcurveGeometry::Transformed { .. }) {
+            assert!(output_text.contains("CURVE_REPLICA"));
+            assert!(output_text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_2D"));
+        }
         let decoded = StepCodec::default()
-            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(output_text.into_bytes()),
+                &DecodeOptions::default(),
+            )
             .expect("decode exact pcurve");
         assert_eq!(decoded.ir.model.pcurves[0].geometry, geometry);
         assert_eq!(decoded.ir.model.bodies.len(), 1);

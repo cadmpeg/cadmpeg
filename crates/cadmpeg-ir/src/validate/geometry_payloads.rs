@@ -2052,6 +2052,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .all(|weight| weight.is_finite() && *weight > 0.0)
                     })
             }
+            crate::geometry::PcurveGeometry::Transformed { basis, transform } => {
+                transform.is_affine() && pcurve_basis_is_valid(basis)
+            }
         };
         if !valid {
             bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
@@ -2674,6 +2677,9 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         }
         PcurveGeometry::Offset { basis, distance } => {
             distance.is_finite() && pcurve_basis_is_valid(basis)
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            transform.is_affine() && pcurve_basis_is_valid(basis)
         }
     }
 }

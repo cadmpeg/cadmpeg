@@ -19,7 +19,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{PcurveUse, Point};
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::transform::{Transform, Transform2};
 use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 use cadmpeg_ir::SourceObjectAssociation;
 
@@ -231,6 +231,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
+    let mut transformation_operators2 = BTreeMap::new();
+    for (id, record) in exchange.entities("CARTESIAN_TRANSFORMATION_OPERATOR_2D") {
+        if let Some(transform) =
+            cartesian_transformation_operator_2d(record, &points2, &directions2)
+        {
+            transformation_operators2.insert(id, transform);
+            typed.insert(id);
+        } else {
+            warnings.push(format!(
+                "CARTESIAN_TRANSFORMATION_OPERATOR_2D #{id} has invalid axes, origin, or scale"
+            ));
+        }
+    }
     for (id, record) in exchange.entities("AXIS2_PLACEMENT_2D") {
         if record.partial("AXIS2_PLACEMENT_2D").is_none() {
             continue;
@@ -275,6 +288,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     &points2,
                     &vectors2,
                     &placements2,
+                    &transformation_operators2,
                     angle_scale,
                     &mut warnings,
                     &mut BTreeSet::new(),
@@ -1799,6 +1813,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             parameter_range, ..
         } => Some(*parameter_range),
         PcurveGeometry::Offset { basis, .. } => pcurve_parameter_domain(basis),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
@@ -3438,6 +3453,7 @@ fn decode_pcurve_geometry(
     points: &BTreeMap<u64, Point2>,
     vectors: &BTreeMap<u64, Point2>,
     placements: &BTreeMap<u64, (Point2, Point2, Point2)>,
+    transformations: &BTreeMap<u64, Transform2>,
     angle_scale: f64,
     warnings: &mut Vec<String>,
     active: &mut BTreeSet<u64>,
@@ -3465,6 +3481,7 @@ fn decode_pcurve_geometry(
                 "PARABOLA",
                 "HYPERBOLA",
                 "POLYLINE",
+                "CURVE_REPLICA",
                 "TRIMMED_CURVE",
                 "OFFSET_CURVE_2D",
                 "UNIFORM_CURVE",
@@ -3535,6 +3552,29 @@ fn decode_pcurve_geometry(
                 }
             }
             "POLYLINE" => polyline_pcurve(record, points)?,
+            "CURVE_REPLICA" => {
+                let basis_id = named_parameter(record, "CURVE_REPLICA", 1)?.reference()?;
+                let operator_id = named_parameter(record, "CURVE_REPLICA", 2)?.reference()?;
+                let (basis, basis_records) = decode_pcurve_geometry(
+                    basis_id,
+                    exchange,
+                    points,
+                    vectors,
+                    placements,
+                    transformations,
+                    angle_scale,
+                    warnings,
+                    active,
+                    depth + 1,
+                )?;
+                let transform = transformations.get(&operator_id).copied()?;
+                records.extend(basis_records);
+                records.insert(operator_id);
+                PcurveGeometry::Transformed {
+                    basis: Box::new(basis),
+                    transform,
+                }
+            }
             "TRIMMED_CURVE" => {
                 let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
                 let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
@@ -3544,6 +3584,7 @@ fn decode_pcurve_geometry(
                     points,
                     vectors,
                     placements,
+                    transformations,
                     angle_scale,
                     warnings,
                     active,
@@ -3584,6 +3625,7 @@ fn decode_pcurve_geometry(
                     points,
                     vectors,
                     placements,
+                    transformations,
                     angle_scale,
                     warnings,
                     active,
@@ -3680,6 +3722,7 @@ fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
             ..
         } => pcurve_nurbs_parameter_period(*degree, knots, radial_control_points.len())?,
         PcurveGeometry::Offset { basis, .. } => pcurve_parameter_period(basis)?,
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_period(basis)?,
         _ => return None,
     };
     (period.is_finite() && period > 0.0).then_some(period)
@@ -3888,6 +3931,27 @@ fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> boo
                 return false;
             }
             *distance *= u_scale;
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            if !u_scale.is_finite()
+                || !v_scale.is_finite()
+                || u_scale == 0.0
+                || v_scale == 0.0
+                || !transform.is_affine()
+            {
+                return false;
+            }
+            // The basis is converted below. Conjugate the replica map so
+            // `S * T * x` remains `S * T * S^-1 * (S * x)`.
+            let mut scaled_transform = *transform;
+            scaled_transform.rows[0][1] *= u_scale / v_scale;
+            scaled_transform.rows[0][2] *= u_scale;
+            scaled_transform.rows[1][0] *= v_scale / u_scale;
+            scaled_transform.rows[1][2] *= v_scale;
+            if !scaled_transform.is_affine() || !scale_pcurve_geometry(basis, scales) {
+                return false;
+            }
+            *transform = scaled_transform;
         }
         PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
@@ -4181,6 +4245,40 @@ fn cartesian_transformation_operator(
     })
 }
 
+fn cartesian_transformation_operator_2d(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point2>,
+    directions: &BTreeMap<u64, Point2>,
+) -> Option<Transform2> {
+    let axis1 = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 1) {
+        Some(Value::Reference(id)) => directions.get(id).copied()?,
+        Some(Value::Omitted | Value::Derived) | None => Point2::new(1.0, 0.0),
+        Some(_) => return None,
+    };
+    let axis2 = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2) {
+        Some(Value::Reference(id)) => directions.get(id).copied()?,
+        Some(Value::Omitted | Value::Derived) | None => Point2::new(-axis1.v, axis1.u),
+        Some(_) => return None,
+    };
+    let origin = named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 3)?
+        .reference()
+        .and_then(|id| points.get(&id).copied())?;
+    let scale = match named_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 4) {
+        Some(Value::Omitted | Value::Derived) | None => 1.0,
+        Some(value) => value.number()?,
+    };
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    Some(Transform2 {
+        rows: [
+            [axis1.u * scale, axis2.u * scale, origin.u],
+            [axis1.v * scale, axis2.v * scale, origin.v],
+            [0.0, 0.0, 1.0],
+        ],
+    })
+}
+
 fn scale_vector(vector: Vector3, scale: f64) -> Vector3 {
     Vector3::new(vector.x * scale, vector.y * scale, vector.z * scale)
 }
@@ -4319,6 +4417,27 @@ mod tests {
         assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));
         assert!(matches!(scaled, PcurveGeometry::Harmonic { .. }));
         for parameter in [0.0, 0.25, 1.0, 2.0] {
+            let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+            assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
+            assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn anisotropic_replica_scaling_conjugates_the_parent_map() {
+        let original = PcurveGeometry::Transformed {
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(1.0, 2.0),
+                direction: Point2::new(3.0, 4.0),
+            }),
+            transform: Transform2 {
+                rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
+            },
+        };
+        let mut scaled = original.clone();
+        assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));
+        for parameter in [0.0, 0.5, 1.0] {
             let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
             let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
             assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);

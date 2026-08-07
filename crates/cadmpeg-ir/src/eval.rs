@@ -3114,6 +3114,25 @@ fn pcurve_uv_differential_inner(
                 t,
             );
         }
+        PcurveGeometry::Transformed { basis, transform } => {
+            let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+            let point = transform.apply_point(basis.point);
+            let tangent = basis.tangent.map(|tangent| transform.apply_vector(tangent));
+            let acceleration = basis
+                .acceleration
+                .map(|acceleration| transform.apply_vector(acceleration));
+            return (point.u.is_finite()
+                && point.v.is_finite()
+                && tangent.is_none_or(|tangent| tangent.u.is_finite() && tangent.v.is_finite())
+                && acceleration.is_none_or(|acceleration| {
+                    acceleration.u.is_finite() && acceleration.v.is_finite()
+                }))
+            .then_some(PcurveDifferential {
+                point,
+                tangent,
+                acceleration,
+            });
+        }
         PcurveGeometry::Trimmed { basis, .. } => {
             return pcurve_uv_differential_inner(basis, t, depth + 1);
         }
@@ -3144,7 +3163,8 @@ mod tests {
         model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_point,
         nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_isoline,
         nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent,
-        pcurve_uv, surface_partials, surface_second_partials, IsolineDirection,
+        pcurve_uv, pcurve_uv_differential_inner, surface_partials, surface_second_partials,
+        IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -3152,7 +3172,7 @@ mod tests {
     };
     use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
-    use crate::transform::Transform;
+    use crate::transform::{Transform, Transform2};
     use crate::CadIr;
 
     #[test]
@@ -3937,6 +3957,27 @@ mod tests {
                 7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
             ))
         );
+    }
+
+    #[test]
+    fn transformed_pcurves_apply_the_map_to_all_differential_orders() {
+        let geometry = PcurveGeometry::Transformed {
+            basis: Box::new(PcurveGeometry::Parabola {
+                vertex: Point2::new(1.0, 2.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                focal_distance: 0.5,
+            }),
+            transform: Transform2 {
+                rows: [[0.0, -2.0, 10.0], [2.0, 0.0, 20.0], [0.0, 0.0, 1.0]],
+            },
+        };
+
+        assert_eq!(pcurve_uv(&geometry, 2.0), Some(Point2::new(2.0, 26.0)));
+        assert_eq!(pcurve_tangent(&geometry, 2.0), Some(Point2::new(-2.0, 4.0)));
+        let differential = pcurve_uv_differential_inner(&geometry, 2.0, 0)
+            .expect("transformed pcurve differential");
+        assert_eq!(differential.acceleration, Some(Point2::new(0.0, 2.0)));
     }
 
     #[test]

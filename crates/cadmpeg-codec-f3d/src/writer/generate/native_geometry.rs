@@ -6206,7 +6206,8 @@ fn native_pcurve_geometry(
         } => native_pcurve_geometry(basis, *parameter_range),
         PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::Offset { .. } => Err(CodecError::NotImplemented(
+        | PcurveGeometry::Offset { .. }
+        | PcurveGeometry::Transformed { .. } => Err(CodecError::NotImplemented(
             "F3D writing of this exact pcurve family is not implemented".into(),
         )),
     }

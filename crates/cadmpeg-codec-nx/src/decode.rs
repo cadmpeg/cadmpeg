@@ -8204,6 +8204,10 @@ fn reverse_pcurve_over_range(
             parameter_range: *parameter_range,
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
         }),
+        PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
+            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+            transform: *transform,
+        }),
         PcurveGeometry::Offset { distance, basis } => Some(PcurveGeometry::Offset {
             distance: -*distance,
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),

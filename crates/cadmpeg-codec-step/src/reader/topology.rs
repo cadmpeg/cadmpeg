@@ -2964,20 +2964,14 @@ fn pcurve_selection_seeds(
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
         seeds.extend([start, start + (end - start) * 0.5, end]);
     }
-    if matches!(
-        geometry,
-        PcurveGeometry::Circle { .. }
-            | PcurveGeometry::Ellipse { .. }
-            | PcurveGeometry::Harmonic { .. }
-            | PcurveGeometry::SphericalGreatCircle { .. }
-    ) {
+    if pcurve_has_angular_parameterization(geometry) {
         seeds.extend([
             std::f64::consts::FRAC_PI_2,
             std::f64::consts::PI,
             std::f64::consts::PI * 1.5,
         ]);
     }
-    if let PcurveGeometry::Line { origin, direction } = geometry {
+    if let Some((origin, direction)) = geometry.line_parameters() {
         if let Some([[u_lower, u_upper], [v_lower, v_upper]]) =
             surface_selection_parameter_domains(index, surface_id, surface)
         {
@@ -3002,6 +2996,25 @@ fn pcurve_selection_seeds(
             }
             unique
         })
+}
+
+fn pcurve_has_angular_parameterization(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => true,
+        PcurveGeometry::Offset { basis, .. }
+        | PcurveGeometry::Transformed { basis, .. }
+        | PcurveGeometry::Trimmed { basis, .. } => pcurve_has_angular_parameterization(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::Nurbs { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. } => false,
+    }
 }
 
 fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
@@ -3029,6 +3042,7 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
             }
         }
         PcurveGeometry::Offset { basis, .. } => pcurve_selection_parameter_domain(basis),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_selection_parameter_domain(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }

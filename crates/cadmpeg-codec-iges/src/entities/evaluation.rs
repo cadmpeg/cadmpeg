@@ -179,6 +179,9 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
                 )
             })
         }
+        PcurveGeometry::Transformed { basis, transform } => {
+            pcurve(basis, parameter).map(|point| transform.apply_point(point))
+        }
         PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
         | PcurveGeometry::SphericalGreatCircle { .. } => {
