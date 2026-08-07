@@ -5203,6 +5203,40 @@ fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
 }
 
 #[test]
+fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,2.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,3.,#4);
+#8=CURVE_REPLICA('',#6,#7);
+#9=TRIMMED_CURVE('',#8,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);
+#10=CARTESIAN_POINT('',(6.,0.,0.));
+#11=CARTESIAN_POINT('',(12.,0.,0.));
+#12=TRIMMED_CURVE('',#8,(#10),(#11),.T.,.CARTESIAN.);
+#13=GEOMETRIC_CURVE_SET('',(#9,#12));
+#14=SHAPE_REPRESENTATION('',(#13),$);",
+    );
+
+    for (curve_id, expected) in [("#9", [2.0, 4.0]), ("#12", [2.0, 4.0])] {
+        let construction_id = format!("step:construction:trimmed_curve{curve_id}");
+        assert!(result.ir.model.procedural_curves.iter().any(|curve| {
+            curve.id.as_str() == construction_id
+                && matches!(
+                    curve.definition,
+                    cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                        parameter_range,
+                        ..
+                    } if parameter_range == expected
+                )
+        }));
+    }
+}
+
+#[test]
 fn trimmed_curve_prefers_the_parameter_value_under_parameter_master() {
     let result = decode_inline(
         "#20=CARTESIAN_POINT('',(0.,0.,0.));
@@ -6327,6 +6361,47 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
             .map(|source| source.object_id.as_str()),
         Some("#14")
     );
+}
+
+#[test]
+fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
+    let decoded = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#6=PLANE('',#5);
+#7=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,2.,#4);
+#8=SURFACE_REPLICA('',#9,#7);
+#9=SURFACE_REPLICA('',#6,#7);
+#10=RECTANGULAR_TRIMMED_SURFACE('',#8,0.,1.,0.,1.,.T.,.T.);
+#11=GEOMETRIC_SET('',(#10));
+#12=SHAPE_REPRESENTATION('',(#11),#13);
+#13=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#10"
+            && matches!(surface.geometry, SurfaceGeometry::Transformed { .. })
+    }));
+    assert!(decoded.ir.model.procedural_surfaces.iter().any(|surface| {
+        surface.surface.as_str() == "step:data:surface#10"
+            && matches!(
+                &surface.definition,
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
+                    support,
+                    parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    u_sense: Some(true),
+                    v_sense: Some(true),
+                } if support.as_str() == "step:data:surface#8"
+            )
+    }));
+    assert!(decoded.report.losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("RECTANGULAR_TRIMMED_SURFACE #10 has invalid or unresolved")
+    }));
 }
 
 #[test]

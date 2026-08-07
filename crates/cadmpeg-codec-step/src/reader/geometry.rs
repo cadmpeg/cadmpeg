@@ -461,6 +461,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut carrier_index = CarrierIndex::from_ir(ir);
     let deferred_ids = exchange
         .entities_any(&[
+            "CURVE_REPLICA",
             "TRIMMED_CURVE",
             "COMPOSITE_CURVE",
             "BOUNDARY_CURVE",
@@ -479,6 +480,46 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
+        if let Some(parent_step) = record
+            .partial("CURVE_REPLICA")
+            .and_then(|_| named_parameter(record, "CURVE_REPLICA", 1))
+            .and_then(Value::reference)
+        {
+            let Some(operator_step) =
+                named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
+            else {
+                continue;
+            };
+            let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
+                waiting_on.entry(parent_step).or_default().push(id);
+                continue;
+            };
+            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
+                continue;
+            };
+            let Some(basis) = ir
+                .model
+                .curves
+                .get(parent_index)
+                .map(|curve| curve.geometry.clone())
+            else {
+                continue;
+            };
+            let curve_index = ir.model.curves.len();
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:data:curve#{id}")),
+                geometry: CurveGeometry::Transformed {
+                    basis: Box::new(basis),
+                    transform,
+                },
+                source_object: None,
+            });
+            carrier_index.curves.insert(id, curve_index);
+            typed.insert(id);
+            typed.insert(operator_step);
+            wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
+            continue;
+        }
         if let Some(parameters) = entity_parameters(record, "TRIMMED_CURVE") {
             let Some((basis_step, sense, master_representation)) =
                 trimmed_curve_attributes(parameters)
@@ -637,55 +678,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         carrier_index.curves.insert(id, curve_index);
         typed.insert(id);
         wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
-    }
-    let curve_replica_count = exchange.entities("CURVE_REPLICA").count();
-    for _ in 0..=curve_replica_count {
-        let mut progress = false;
-        for (id, record) in exchange.entities("CURVE_REPLICA") {
-            if carrier_index.curves.contains_key(&id) {
-                continue;
-            }
-            let Some(parent_step) =
-                named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(operator_step) =
-                named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
-                continue;
-            };
-            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
-                continue;
-            };
-            let Some(basis) = ir
-                .model
-                .curves
-                .get(parent_index)
-                .map(|curve| curve.geometry.clone())
-            else {
-                continue;
-            };
-            let curve_index = ir.model.curves.len();
-            ir.model.curves.push(Curve {
-                id: CurveId(format!("step:data:curve#{id}")),
-                geometry: CurveGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
-                },
-                source_object: None,
-            });
-            carrier_index.curves.insert(id, curve_index);
-            typed.insert(id);
-            typed.insert(operator_step);
-            progress = true;
-        }
-        if !progress {
-            break;
-        }
     }
     for (id, _) in exchange.entities("CURVE_REPLICA") {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
@@ -968,12 +960,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
+    // Surface constructors form the same kind of dependency graph as curves.
+    // Resolve replicas in the same fixpoint as trims, bounded surfaces, and
+    // offsets so a forward or nested replica cannot become an opaque carrier.
     carrier_index = CarrierIndex::from_ir(ir);
     let deferred_surface_count = exchange
         .entities_any(&[
             "CURVE_BOUNDED_SURFACE",
             "OFFSET_SURFACE",
             "RECTANGULAR_TRIMMED_SURFACE",
+            "SURFACE_REPLICA",
         ])
         .count();
     for _ in 0..=deferred_surface_count {
@@ -1182,13 +1178,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             typed.insert(id);
             progress = true;
         }
-        if !progress {
-            break;
-        }
-    }
-    let surface_replica_count = exchange.entities("SURFACE_REPLICA").count();
-    for _ in 0..=surface_replica_count {
-        let mut progress = false;
         for (id, record) in exchange.entities("SURFACE_REPLICA") {
             if carrier_index.surfaces.contains_key(&id) {
                 continue;
@@ -2885,15 +2874,23 @@ fn select_trim_parameter(
 }
 
 fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_scale: f64) -> f64 {
-    if matches!(
-        geometry,
-        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
-    ) {
-        angle_scale
-    } else if matches!(geometry, CurveGeometry::Line { .. }) {
-        linear_parameter_scale
-    } else {
-        1.0
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => angle_scale,
+        CurveGeometry::Line { .. } => linear_parameter_scale,
+        // A replica and the constructions that inherit a parent curve's
+        // parameterization keep the parent's parameter units even when their
+        // model-space dimensions change.
+        CurveGeometry::Transformed { basis, .. } => {
+            parameter_scale(basis, angle_scale, linear_parameter_scale)
+        }
+        CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. }
+        | CurveGeometry::Nurbs(_)
+        | CurveGeometry::Polyline { .. }
+        | CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Procedural { .. }
+        | CurveGeometry::Unknown { .. } => 1.0,
     }
 }
 
@@ -2903,27 +2900,66 @@ fn line_parameter_scale(
     length_scale: f64,
     losses: &mut Vec<LossNote>,
 ) -> f64 {
-    let Some(record) = exchange
-        .records
-        .get(&curve)
-        .filter(|record| record.partial("LINE").is_some())
-    else {
-        return length_scale;
-    };
-    named_parameter(record, "LINE", 2)
-        .and_then(ValueExt::reference)
-        .and_then(|vector| exchange.records.get(&vector))
-        .filter(|record| record.partial("VECTOR").is_some())
-        .and_then(|record| named_parameter(record, "VECTOR", 2))
-        .and_then(ValueExt::number)
-        .map(|magnitude| magnitude * length_scale)
-        .filter(|scale| scale.is_finite() && *scale > 0.0)
-        .unwrap_or_else(|| {
-            losses.push(unresolved_unit_loss(format!(
-                "LINE #{curve} parameter scale did not resolve; the document length scale was used"
-            )));
+    fn inherited_parent(record: &RawRecord) -> Option<u64> {
+        if record.partial("CURVE_REPLICA").is_some() {
+            return named_parameter(record, "CURVE_REPLICA", 1).and_then(ValueExt::reference);
+        }
+        if record.partial("TRIMMED_CURVE").is_some() {
+            return named_parameter(record, "TRIMMED_CURVE", 1).and_then(ValueExt::reference);
+        }
+        if record.partial("OFFSET_CURVE_3D").is_some() {
+            return named_parameter(record, "OFFSET_CURVE_3D", 1).and_then(ValueExt::reference);
+        }
+        if record.partials.iter().any(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+            )
+        }) {
+            return surface_curve_basis(record);
+        }
+        None
+    }
+
+    fn resolve(
+        exchange: &Exchange,
+        curve: u64,
+        length_scale: f64,
+        losses: &mut Vec<LossNote>,
+        visiting: &mut BTreeSet<u64>,
+    ) -> f64 {
+        if !visiting.insert(curve) {
+            return length_scale;
+        }
+        let Some(record) = exchange.records.get(&curve) else {
+            visiting.remove(&curve);
+            return length_scale;
+        };
+        let result = if record.partial("LINE").is_some() {
+            named_parameter(record, "LINE", 2)
+                .and_then(ValueExt::reference)
+                .and_then(|vector| exchange.records.get(&vector))
+                .filter(|record| record.partial("VECTOR").is_some())
+                .and_then(|record| named_parameter(record, "VECTOR", 2))
+                .and_then(ValueExt::number)
+                .map(|magnitude| magnitude * length_scale)
+                .filter(|scale| scale.is_finite() && *scale > 0.0)
+                .unwrap_or_else(|| {
+                    losses.push(unresolved_unit_loss(format!(
+                        "LINE #{curve} parameter scale did not resolve; the document length scale was used"
+                    )));
+                    length_scale
+                })
+        } else if let Some(parent) = inherited_parent(record) {
+            resolve(exchange, parent, length_scale, losses, visiting)
+        } else {
             length_scale
-        })
+        };
+        visiting.remove(&curve);
+        result
+    }
+
+    resolve(exchange, curve, length_scale, losses, &mut BTreeSet::new())
 }
 
 fn unresolved_unit_loss(message: impl Into<String>) -> LossNote {
@@ -2981,6 +3017,11 @@ fn curve_parameter_at_point(
             let domain = nurbs_curve_parameter_domain(curve)?;
             nurbs_curve_parameter_near_point(curve, point, tolerance, (domain[0] + domain[1]) * 0.5)
         }
+        CurveGeometry::Transformed { basis, transform } => curve_parameter_at_point(
+            basis,
+            transform.try_inverse_affine()?.apply_point(point),
+            tolerance,
+        ),
         _ => None,
     }
 }
