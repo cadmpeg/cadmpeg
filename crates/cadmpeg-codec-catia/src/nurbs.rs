@@ -8,7 +8,7 @@
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
 };
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 fn finite_point2(point: Point2) -> bool {
     [point.u, point.v].into_iter().all(f64::is_finite)
@@ -16,6 +16,12 @@ fn finite_point2(point: Point2) -> bool {
 
 fn finite_point3(point: Point3) -> bool {
     [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn finite_vector3(vector: Vector3) -> bool {
+    [vector.x, vector.y, vector.z]
+        .into_iter()
+        .all(f64::is_finite)
 }
 
 fn finite_nurbs_curve(nurbs: &NurbsCurve) -> bool {
@@ -337,24 +343,28 @@ pub(crate) fn circular_helix_cache(
         minor,
         pitch,
         apex_factor,
-        ..
+        axis,
     } = construction
     else {
         return None;
     };
+    let axis_norm = axis.x.hypot(axis.y).hypot(axis.z);
     let radius = major.x.hypot(major.y).hypot(major.z);
     let minor_radius = minor.x.hypot(minor.y).hypot(minor.z);
-    let frame_finite = [center.x, center.y, center.z]
-        .into_iter()
-        .chain(
-            [major, minor, pitch]
-                .into_iter()
-                .flat_map(|vector| [vector.x, vector.y, vector.z]),
-        )
-        .all(f64::is_finite);
-    let normalized_dot = (major.x / radius) * (minor.x / minor_radius)
-        + (major.y / radius) * (minor.y / minor_radius)
-        + (major.z / radius) * (minor.z / minor_radius);
+    let pitch_norm = pitch.x.hypot(pitch.y).hypot(pitch.z);
+    let frame_finite = finite_point3(*center)
+        && finite_vector3(*major)
+        && finite_vector3(*minor)
+        && finite_vector3(*pitch)
+        && finite_vector3(*axis);
+    let normalized_dot = |left: &Vector3, right: &Vector3| {
+        (left.x / left.x.hypot(left.y).hypot(left.z))
+            * (right.x / right.x.hypot(right.y).hypot(right.z))
+            + (left.y / left.x.hypot(left.y).hypot(left.z))
+                * (right.y / right.x.hypot(right.y).hypot(right.z))
+            + (left.z / left.x.hypot(left.y).hypot(left.z))
+                * (right.z / right.x.hypot(right.y).hypot(right.z))
+    };
     if !requested_tolerance.is_finite()
         || requested_tolerance <= 0.0
         || !frame_finite
@@ -362,10 +372,32 @@ pub(crate) fn circular_helix_cache(
         || radius <= 0.0
         || !minor_radius.is_finite()
         || minor_radius <= 0.0
+        || !axis_norm.is_finite()
+        || (axis_norm - 1.0).abs() > 1e-9
+        || !pitch_norm.is_finite()
         || (radius - minor_radius).abs() > 1e-9 * radius.max(minor_radius)
-        || !normalized_dot.is_finite()
-        || normalized_dot.abs() > 1e-9
+        || !angle_range.iter().copied().all(f64::is_finite)
+        || angle_range[0] >= angle_range[1]
         || *apex_factor != 0.0
+    {
+        return None;
+    }
+    let normalized_dot_major_minor = normalized_dot(major, minor);
+    let normalized_dot_major_axis = normalized_dot(major, axis);
+    let normalized_dot_minor_axis = normalized_dot(minor, axis);
+    let normalized_dot_pitch_axis = if pitch_norm == 0.0 {
+        1.0
+    } else {
+        normalized_dot(pitch, axis)
+    };
+    if !normalized_dot_major_minor.is_finite()
+        || normalized_dot_major_minor.abs() > 1e-9
+        || !normalized_dot_major_axis.is_finite()
+        || normalized_dot_major_axis.abs() > 1e-9
+        || !normalized_dot_minor_axis.is_finite()
+        || normalized_dot_minor_axis.abs() > 1e-9
+        || !normalized_dot_pitch_axis.is_finite()
+        || normalized_dot_pitch_axis.abs() < 1.0 - 1e-9
     {
         return None;
     }
@@ -379,6 +411,9 @@ pub(crate) fn circular_helix_cache(
     } else {
         2.0 * (1.0 - relative_tolerance).clamp(-1.0, 1.0).acos()
     };
+    if !max_step.is_finite() || max_step <= 0.0 {
+        return None;
+    }
     let segment_count = (sweep / max_step).ceil().max(1.0);
     if !segment_count.is_finite() || segment_count > crate::MAX_EXACT_ARC_SPANS as f64 {
         return None;
@@ -392,22 +427,38 @@ pub(crate) fn circular_helix_cache(
             } else {
                 angle_range[0] + index as f64 * step
             };
+            if !parameter.is_finite() {
+                return None;
+            }
             Some((parameter, circular_helix_point(construction, parameter)?))
         })
         .collect::<Option<Vec<_>>>()?;
+    if !samples
+        .windows(2)
+        .all(|pair| pair[0].0.is_finite() && pair[0].0 < pair[1].0)
+    {
+        return None;
+    }
     let fit_tolerance = 2.0 * radius * (step * 0.25).sin().powi(2);
     let mut knots = Vec::with_capacity(samples.len() + 2);
     knots.push(angle_range[0]);
     knots.extend(samples.iter().map(|(parameter, _)| *parameter));
     knots.push(angle_range[1]);
+    let curve = NurbsCurve {
+        degree: 1,
+        knots,
+        control_points: samples.into_iter().map(|(_, point)| point).collect(),
+        weights: None,
+        periodic: false,
+    };
+    if !fit_tolerance.is_finite()
+        || !finite_nurbs_curve(&curve)
+        || !curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+    {
+        return None;
+    }
     Some(CircularHelixCache {
-        curve: NurbsCurve {
-            degree: 1,
-            knots,
-            control_points: samples.into_iter().map(|(_, point)| point).collect(),
-            weights: None,
-            periodic: false,
-        },
+        curve,
         fit_tolerance,
     })
 }
@@ -424,12 +475,22 @@ fn circular_helix_point(construction: &ProceduralCurveDefinition, angle: f64) ->
     else {
         return None;
     };
+    if !angle.is_finite()
+        || !angle_range.iter().copied().all(f64::is_finite)
+        || angle_range[0] >= angle_range[1]
+    {
+        return None;
+    }
     let revolution_fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
-    Some(Point3::new(
+    if !revolution_fraction.is_finite() {
+        return None;
+    }
+    let point = Point3::new(
         center.x + major.x * angle.cos() + minor.x * angle.sin() + pitch.x * revolution_fraction,
         center.y + major.y * angle.cos() + minor.y * angle.sin() + pitch.y * revolution_fraction,
         center.z + major.z * angle.cos() + minor.z * angle.sin() + pitch.z * revolution_fraction,
-    ))
+    );
+    finite_point3(point).then_some(point)
 }
 
 /// Convert degree-5 position/first/second-derivative knot jets into an exact
@@ -870,6 +931,13 @@ mod tests {
         let cache = circular_helix_cache(&definition, 1.0e-4).expect("valid helix");
         assert_eq!(cache.curve.knots[1], range[0]);
         assert_eq!(cache.curve.knots[cache.curve.knots.len() - 2], range[1]);
+        assert!(cache.fit_tolerance.is_finite());
+        assert!(cache
+            .curve
+            .control_points
+            .iter()
+            .copied()
+            .all(super::finite_point3));
     }
 
     #[test]
@@ -895,6 +963,35 @@ mod tests {
         assert!(
             circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
         );
+    }
+
+    #[test]
+    fn circular_helix_cache_rejects_invalid_frame_and_output() {
+        let definition = ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(1.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 1.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 1.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        let mut non_axial_pitch = definition.clone();
+        if let ProceduralCurveDefinition::Helix { pitch, .. } = &mut non_axial_pitch {
+            *pitch = Vector3::new(1.0, 0.0, 0.0);
+        }
+        assert!(circular_helix_cache(&non_axial_pitch, 1.0e-4).is_none());
+
+        let overflowing_fit = ProceduralCurveDefinition::Helix {
+            angle_range: [0.0, 1.0],
+            center: Point3::new(0.0, 0.0, 0.0),
+            major: Vector3::new(f64::MAX, 0.0, 0.0),
+            minor: Vector3::new(0.0, f64::MAX, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 0.0),
+            apex_factor: 0.0,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        assert!(circular_helix_cache(&overflowing_fit, f64::MAX).is_none());
     }
 
     #[test]
