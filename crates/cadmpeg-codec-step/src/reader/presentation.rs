@@ -440,6 +440,7 @@ fn expand_style_targets(
         return Vec::new();
     }
     let Some(record) = exchange.records.get(&id) else {
+        active.remove(&id);
         return vec![id];
     };
     let Some(set_name) = record.partials.iter().find_map(|partial| {
@@ -751,14 +752,16 @@ fn style_depth(
     if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
         return None;
     }
-    let style = exchange.records.get(&id)?;
-    let depth = if let Some(base) = overridden_style(style) {
-        style_depth(base, exchange, active, depth + 1)?.checked_add(1)?
-    } else {
-        0
-    };
+    let result = (|| {
+        let style = exchange.records.get(&id)?;
+        if let Some(base) = overridden_style(style) {
+            style_depth(base, exchange, active, depth + 1)?.checked_add(1)
+        } else {
+            Some(0)
+        }
+    })();
     active.remove(&id);
-    Some(depth)
+    result
 }
 
 type CachedColor = Option<(u64, Color, Option<String>)>;
@@ -781,44 +784,74 @@ fn find_color(
     if !active.insert(id) {
         return None;
     }
-    let record = exchange.records.get(&id)?;
-    let name = record.simple_name()?;
-    let record_domain = if name.starts_with("SURFACE_STYLE") {
-        Some(StyleDomain::Surface)
-    } else if name == "CURVE_STYLE" {
-        Some(StyleDomain::Curve)
-    } else if name == "POINT_STYLE" {
-        Some(StyleDomain::Point)
-    } else {
-        None
-    };
-    let incompatible =
-        record_domain.is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
-    let result = if incompatible {
-        for reference in record.parameters().iter().flat_map(references) {
-            let _ = find_color(
-                reference,
-                exchange,
-                domain,
-                active,
-                cache,
-                losses,
-                depth + 1,
-            );
+    let result = (|| {
+        let record = exchange.records.get(&id)?;
+        let name = record.simple_name().or_else(|| {
+            record.partials.iter().find_map(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "COLOUR_RGB" | "DRAUGHTING_PRE_DEFINED_COLOUR"
+                )
+                .then_some(partial.name.as_str())
+            })
+        });
+        let record_domain = record.partials.iter().find_map(|partial| {
+            if partial.name.starts_with("SURFACE_STYLE") {
+                Some(StyleDomain::Surface)
+            } else if partial.name == "CURVE_STYLE" {
+                Some(StyleDomain::Curve)
+            } else if partial.name == "POINT_STYLE" {
+                Some(StyleDomain::Point)
+            } else {
+                None
+            }
+        });
+        let incompatible = record_domain
+            .is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
+        if incompatible {
+            for reference in record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .flat_map(references)
+            {
+                let _ = find_color(
+                    reference,
+                    exchange,
+                    domain,
+                    active,
+                    cache,
+                    losses,
+                    depth + 1,
+                );
+            }
+            return None;
         }
-        None
-    } else {
         match name {
-            "COLOUR_RGB" => {
-                let r = record.parameter(1)?.number()?;
-                let g = record.parameter(2)?.number()?;
-                let b = record.parameter(3)?.number()?;
+            Some("COLOUR_RGB") => {
+                let rgb = record
+                    .partials
+                    .iter()
+                    .find(|partial| partial.name == "COLOUR_RGB")?;
+                let offset = usize::from(record.partials.len() == 1);
+                let r = rgb.parameters.get(offset)?.number()?;
+                let g = rgb.parameters.get(offset + 1)?.number()?;
+                let b = rgb.parameters.get(offset + 2)?.number()?;
                 if ![r, g, b]
                     .iter()
                     .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
                 {
                     return None;
                 }
+                let name_value = if record.partials.len() == 1 {
+                    rgb.parameters.first()
+                } else {
+                    record
+                        .partials
+                        .iter()
+                        .find(|partial| partial.name == "COLOUR_SPECIFICATION")
+                        .and_then(|partial| partial.parameters.first())
+                };
                 Some((
                     id,
                     Color {
@@ -827,7 +860,7 @@ fn find_color(
                         b: b as f32,
                         a: 1.0,
                     },
-                    record.parameter(0).and_then(|value| {
+                    name_value.and_then(|value| {
                         decode_text(
                             value,
                             losses,
@@ -838,9 +871,18 @@ fn find_color(
                     }),
                 ))
             }
-            "DRAUGHTING_PRE_DEFINED_COLOUR" => {
+            Some("DRAUGHTING_PRE_DEFINED_COLOUR") => {
+                let name_value = if record.partials.len() == 1 {
+                    record.parameter(0)
+                } else {
+                    record
+                        .partials
+                        .iter()
+                        .find(|partial| partial.name == "PRE_DEFINED_ITEM")
+                        .and_then(|partial| partial.parameters.first())
+                }?;
                 let name = decode_text(
-                    record.parameter(0)?,
+                    name_value,
                     losses,
                     id,
                     "predefined colour name",
@@ -849,8 +891,9 @@ fn find_color(
                 predefined(&name).map(|color| (id, color, Some(name)))
             }
             _ => record
-                .parameters()
+                .partials
                 .iter()
+                .flat_map(|partial| partial.parameters.iter())
                 .flat_map(references)
                 .find_map(|reference| {
                     find_color(
@@ -864,7 +907,7 @@ fn find_color(
                     )
                 }),
         }
-    };
+    })();
     active.remove(&id);
     cache.insert(id, result.clone());
     result

@@ -6039,6 +6039,25 @@ fn complex_styled_item_decodes_color_and_owns_its_curve() {
 }
 
 #[test]
+fn complex_colour_rgb_inherits_name_and_components() {
+    let result = decode_inline(
+        "#1=(COLOUR_RGB(1.,0.,0.) COLOUR_SPECIFICATION('red') COLOUR());
+#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#3=STYLED_ITEM('',(#2),#4);
+#4=SOURCE_ITEM();",
+    );
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    let appearance = result
+        .ir
+        .model
+        .appearances
+        .first()
+        .expect("complex RGB appearance");
+    assert_eq!(appearance.name.as_deref(), Some("red"));
+    assert_eq!(appearance.base_color.unwrap().r, 1.0);
+}
+
+#[test]
 fn null_style_branch_does_not_suppress_a_sibling_color() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
