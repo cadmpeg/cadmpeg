@@ -4060,6 +4060,20 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
     assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
 
+    for frame_length in [300, 322, 344] {
+        let mut construction_scope = joint_origin_scope.clone();
+        construction_scope.frame_length = frame_length;
+        assert!(
+            exact_joint_origin_frame(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &construction_scope,
+            )
+            .is_none(),
+            "construction envelope {frame_length} must defer its solved frame to Assemble"
+        );
+    }
+
     let compact_joint_origin_at = bytes.len();
     let mut compact_joint_origin = vec![0; 385];
     compact_joint_origin[0..4].copy_from_slice(&3u32.to_le_bytes());

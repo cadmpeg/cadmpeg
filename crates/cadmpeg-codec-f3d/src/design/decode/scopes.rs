@@ -3547,7 +3547,7 @@ pub(crate) fn exact_joint_origin_frame(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
-    if scope.kind != "JointOrigin" {
+    if scope.kind != "JointOrigin" || matches!(scope.frame_length, 300 | 322 | 344) {
         return None;
     }
     let mut candidates = Vec::new();
