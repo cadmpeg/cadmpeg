@@ -133,7 +133,7 @@ fixtures, claims above L1 remain unproven.
   recipe effects, saved sections, and operation states retain stable native
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
-  distinct producing feature, independent of feature-row order.
+  preceding feature-generated class-200 producer.
 - Feature-local pre-rollback, post-rollback, and post-regeneration outlines
   retain each of their six exact scalar bodies independently of numeric decode.
 - Bare `Body`, `Körper`, and `Surface` operation states without a recipe,

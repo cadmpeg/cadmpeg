@@ -16086,26 +16086,19 @@ fn feature_entity_dependencies(
     tables: &[crate::feature::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
-    let producers = feature_entity_producers(tables);
-    tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
-        .flat_map(|table| table.entries.iter())
-        .filter_map(|entry| {
-            let owners = producers.get(&entry.entity_id)?;
-            let mut owners = owners.iter().copied();
-            let owner = owners.next()?;
-            if owners.next().is_some() {
-                return None;
-            }
-            (owner != feature_id).then_some(owner)
+    class_100_operand_producers(feature_id, tables)
+        .map(|operands| {
+            operands.into_iter().map(|(_, producer)| producer).fold(
+                Vec::new(),
+                |mut dependencies, dependency| {
+                    if !dependencies.contains(&dependency) {
+                        dependencies.push(dependency);
+                    }
+                    dependencies
+                },
+            )
         })
-        .fold(Vec::new(), |mut dependencies, dependency| {
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
-            dependencies
-        })
+        .unwrap_or_default()
 }
 
 fn feature_entity_producers(
@@ -17361,27 +17354,86 @@ fn filled_surface_feature_definition(
     }
 }
 
+fn class_100_operand_producers(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+) -> Option<Vec<(u32, u32)>> {
+    let consumer_tables = tables
+        .iter()
+        .enumerate()
+        .filter(|(_, table)| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .collect::<Vec<_>>();
+    let consumers = consumer_tables
+        .iter()
+        .flat_map(|(table_index, table)| {
+            table
+                .entries
+                .iter()
+                .enumerate()
+                .map(move |(entry_index, entry)| {
+                    (
+                        (table.offset, entry.offset, *table_index, entry_index),
+                        entry.entity_id,
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    if consumers.is_empty()
+        || consumers
+            .iter()
+            .map(|(_, entity_id)| entity_id)
+            .collect::<BTreeSet<_>>()
+            .len()
+            != consumers.len()
+    {
+        return None;
+    }
+    consumers
+        .into_iter()
+        .map(|(consumer_position, entity_id)| {
+            let producers = tables
+                .iter()
+                .enumerate()
+                .flat_map(|(table_index, table)| {
+                    let Some(owner) = table.feature_id else {
+                        return Vec::new();
+                    };
+                    if owner == feature_id {
+                        return Vec::new();
+                    }
+                    table
+                        .entries
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(entry_index, entry)| {
+                            let position = (table.offset, entry.offset, table_index, entry_index);
+                            (position < consumer_position
+                                && entry.class_id == 200
+                                && entry.entity_id == entity_id
+                                && entry.source_entity_id.is_some())
+                            .then_some(owner)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let [producer] = producers.as_slice() else {
+                return None;
+            };
+            Some((entity_id, *producer))
+        })
+        .collect()
+}
+
 fn knit_class_100_operand_entity_ids(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
 ) -> Option<Vec<u32>> {
-    let producers = feature_entity_producers(tables);
-    let ids = tables
-        .iter()
-        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
-        .flat_map(|table| table.entries.iter().map(|entry| entry.entity_id))
-        .collect::<Vec<_>>();
-    if ids.is_empty() || ids.iter().collect::<BTreeSet<_>>().len() != ids.len() {
-        return None;
-    }
-    ids.iter()
-        .all(|entity_id| {
-            let Some(owners) = producers.get(entity_id) else {
-                return false;
-            };
-            owners.len() == 1 && !owners.contains(&feature_id)
-        })
-        .then_some(ids)
+    class_100_operand_producers(feature_id, tables).map(|operands| {
+        operands
+            .into_iter()
+            .map(|(entity_id, _)| entity_id)
+            .collect()
+    })
 }
 
 fn knit_operand_entity_ids(
