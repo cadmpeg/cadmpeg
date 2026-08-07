@@ -1478,6 +1478,9 @@ pub(crate) fn bind_feature_face_selections(
                     body_recipe_operands,
                 );
             }
+            cadmpeg_ir::features::FeatureDefinition::SplitFace { targets, .. } => {
+                bind_face_selection(targets, scope, groups, operands);
+            }
             _ => {}
         }
     }
@@ -6400,6 +6403,169 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn split_face_targets_bind_from_a_unique_preceding_face() {
+        use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
+        use crate::records::{
+            ConstructionRecipeKind, DesignConstructionOperandGroup,
+            DesignConstructionOperandGroupFrame, DesignFaceOperand, DesignParameterScope,
+        };
+        use cadmpeg_ir::features::{
+            FaceSelection, Feature, FeatureDefinition, FeatureId, SplitFaceTool,
+        };
+        use cadmpeg_ir::ids::FaceId;
+
+        let scope_id = "f3d:Design/BulkStream.dat:scope#42".to_string();
+        let group_id = "f3d:Design/BulkStream.dat:operand-group#100".to_string();
+        let face_id = FaceId("f3d:brep:entity#7".into());
+        let mut scope = DesignParameterScope::empty(&scope_id, "SplitFace", 42);
+        scope.history_state_id = Some(2);
+        scope.previous_history_state_id = Some(1);
+
+        let group = DesignConstructionOperandGroup {
+            id: group_id.clone(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 2,
+            record_index: 100,
+            byte_offset: 1000,
+            class_tag: "297".into(),
+            members: vec![200],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![1010],
+            frame: DesignConstructionOperandGroupFrame {
+                member_count_offset: 1008,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1020,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1024,
+                variant: false,
+            },
+            role: 0x0000_0010_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 1030,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 1100,
+        };
+        let operand = DesignFaceOperand {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#200".into(),
+            scope_record_index: 42,
+            scope_reference_ordinal: 3,
+            group_record_index: Some(100),
+            group_member_ordinal: Some(0),
+            record_index: 200,
+            byte_offset: 1200,
+            class_tag: "297".into(),
+            paired_byte_offset: 1300,
+            paired_class_tag: "259".into(),
+            recipe_record_index: 203,
+            recipe_record_byte_offset: 1400,
+            recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#203".into(),
+            recipe_prefix_offset: 1411,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::Face,
+            recipe_program_offset: 1420,
+            recipe_program: Vec::new(),
+            recipe_node_offsets: Vec::new(),
+            recipe_nodes: Vec::new(),
+            candidate_faces: vec![face_id.clone()],
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: vec![face_id.clone()],
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: Vec::new(),
+            resolved_face_slots: Vec::new(),
+            next_record_index: 204,
+            next_byte_offset: 1500,
+        };
+        let state = |state_id, transition| AsmDeltaState {
+            id: format!("f3d:history:state#{state_id}"),
+            parent: "f3d:history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition,
+        };
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![
+                state(
+                    2,
+                    Some(crate::history_records::AsmHistoricalTransition {
+                        previous_state_id: Some(1),
+                        records: Default::default(),
+                        topology: Default::default(),
+                    }),
+                ),
+                state(1, None),
+            ],
+        };
+        let mut features = vec![Feature {
+            id: FeatureId("f3d:feature#42".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: Some("SplitFace".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::SplitFace {
+                targets: FaceSelection::Native(group_id.clone()),
+                tool: SplitFaceTool::Plane {
+                    plane: FeatureId("f3d:feature#plane".into()),
+                },
+            },
+            native_ref: Some(scope_id),
+        }];
+
+        super::bind_feature_face_selections(
+            &mut features,
+            &mut [],
+            &[scope],
+            &[group],
+            &[operand],
+            &[],
+            &[],
+            &[history],
+        );
+
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::SplitFace {
+                targets: FaceSelection::Resolved { faces, native },
+                ..
+            } if faces == &[face_id] && native == &group_id
+        ));
+    }
 
     #[test]
     fn history_binding_budget_charges_materialized_state_tables() {
