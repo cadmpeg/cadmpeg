@@ -229,10 +229,15 @@ pub fn terminal_feature_body_indices(
         }
     }
     for operand in operands {
-        if !matches!(
-            operation_kinds.get(operand.operation_label.as_str()),
-            Some(&("SEW" | "TRIM BODY"))
-        ) {
+        // Offset-store operands use the operation-body namespace, even when
+        // their serialized index happens to equal a segment-body identity.
+        // Only the resolved segment-binding lane can consume a segment image.
+        if operand.segment_body_bindings.is_empty()
+            || !matches!(
+                operation_kinds.get(operand.operation_label.as_str()),
+                Some(&("SEW" | "TRIM BODY"))
+            )
+        {
             continue;
         }
         let position = *positions.get(operand.operation_label.as_str())?;
@@ -1197,6 +1202,47 @@ mod tests {
         assert_eq!(
             super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
             Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_ignores_offset_store_operands() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureOperationBodyOperand, FeatureOperationLabel};
+        let labels = [FeatureOperationLabel {
+            id: "operation#0".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "TRIM BODY".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 20,
+            body_alias_object_index: 30,
+            stream_role: 0,
+            source_offset: 0,
+        }];
+        let operands = [FeatureOperationBodyOperand {
+            id: "operand#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            body_object_index: 10,
+            body_reference_ordinal: 0,
+            ordinal: 0,
+            operand_object_index: 30,
+            raw_operand_object_index: vec![30],
+            operand_data_block: Some("data-block#0".to_string()),
+            segment_body_bindings: Vec::new(),
+            source_offset: 0,
+        }];
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
+            Some([20, 30].into_iter().collect())
         );
     }
 }
