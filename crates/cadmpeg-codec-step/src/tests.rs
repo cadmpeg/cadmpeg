@@ -6101,6 +6101,38 @@ fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
 }
 
 #[test]
+fn failed_pmi_measure_branches_do_not_poison_sibling_carriers() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let mut records = String::from(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=PRODUCT_DEFINITION_SHAPE('PMI shape','',#300);
+#4=SHAPE_ASPECT('feature','',#3,.T.);
+#5=DIMENSIONAL_SIZE(#4,'width');
+#6=TOLERANCE_VALUE(#20,#100);
+#7=SHAPE_DIMENSION_REPRESENTATION('width value',(#6),#2);
+#8=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#5,#7);
+#300=UNRESOLVED_PRODUCT();
+",
+    );
+    for id in 20..280 {
+        writeln!(records, "#{id}=UNRESOLVED_MEASURE(#{next});", next = id + 1)
+            .expect("write recursive measure carrier");
+    }
+    records.push_str("#280=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.4),#1);\n");
+
+    let result = decode_inline(&records);
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 0.4).abs() < 1.0e-12
+    )));
+}
+
+#[test]
 fn repeated_subassembly_instances_each_receive_the_subtree() {
     use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 

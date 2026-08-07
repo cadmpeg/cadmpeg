@@ -1096,7 +1096,10 @@ fn measure_inner(
             if !active.insert(*id) {
                 return None;
             }
-            let record = exchange.records.get(id)?;
+            let Some(record) = exchange.records.get(id) else {
+                active.remove(id);
+                return None;
+            };
             let quantity = record
                 .partials
                 .iter()
@@ -1170,6 +1173,7 @@ fn measure_inner(
                             measure_inner(parameter, exchange, active, depth + 1, measurements)
                         })
                 });
+            active.remove(id);
             result
         }
         Value::List(values) => values
