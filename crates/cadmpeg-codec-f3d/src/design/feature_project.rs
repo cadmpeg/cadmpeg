@@ -17,7 +17,7 @@ use crate::design::edge_resolve::{
 use crate::design::face_resolve::{
     design_angle, resolved_body_recipe_shape, resolved_direct_face_selection, resolved_face_group,
     resolved_historical_face_group, resolved_historical_split_face_target_group,
-    resolved_profile_face_group, valid_chamfer_spec,
+    resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
 };
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{
@@ -4226,7 +4226,8 @@ pub(crate) fn project_fixed_loft(
             .iter()
             .map(|group| {
                 LoftSection::Profile(
-                    resolved_profile_face_group(scope, group, face_operands)
+                    resolved_loft_edge_profile_group(scope, group, edge_operands)
+                        .or_else(|| resolved_profile_face_group(scope, group, face_operands))
                         .unwrap_or_else(|| ProfileRef::Native(group.id.clone())),
                 )
             })

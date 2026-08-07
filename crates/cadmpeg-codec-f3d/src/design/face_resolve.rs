@@ -6,9 +6,9 @@ use crate::design::edge_resolve::feature_input_topology_id;
 use crate::design::feature_project::design_angle_unit;
 use crate::ids::{self, native_stream, neutral_feature_id};
 use crate::records::{
-    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignExtrudeFaceRole,
-    DesignFaceOperand, DesignParameter, DesignParameterScope, DesignSketchPlacement,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    DesignBodyRecipeOperand, DesignConstructionOperandGroup, DesignEdgeOperand,
+    DesignExtrudeFaceRole, DesignFaceOperand, DesignParameter, DesignParameterScope,
+    DesignSketchPlacement, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
 };
 use cadmpeg_core::le::f64_at;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -151,6 +151,225 @@ pub(crate) fn resolved_profile_face_group(
         faces,
         native: vec![native],
     })
+}
+
+/// Resolve a Loft section whose members use the edge-recipe envelope.
+///
+/// These members describe the selected face through a common persistent
+/// selector/token clause. The clause must identify one direct preceding face
+/// in every member, and its complete boundary must have exactly one edge per
+/// group member. Any competing common clause or incomplete topology context
+/// keeps the native group unresolved.
+pub(crate) fn resolved_loft_edge_profile_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignEdgeOperand],
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    if scope.kind != "Loft"
+        || !matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000)
+        || group.members.is_empty()
+        || !group.lost_edge_references.is_empty()
+    {
+        return None;
+    }
+    let previous_state_id = scope.previous_history_state_id?;
+    let stream = native_stream(&group.id)?;
+    let group_ordinal = usize::try_from(group.scope_reference_ordinal).ok()?;
+    let mut member_ids = HashSet::new();
+    if group
+        .members
+        .iter()
+        .any(|member| !member_ids.insert(*member))
+    {
+        return None;
+    }
+    if scope.reference_members.get(group_ordinal) != Some(&group.record_index) {
+        return None;
+    }
+    let member_operands = group
+        .members
+        .iter()
+        .enumerate()
+        .map(|(ordinal, record_index)| {
+            let scope_ordinal = group
+                .scope_reference_ordinal
+                .checked_add(1)?
+                .checked_add(u32::try_from(ordinal).ok()?)?;
+            if scope
+                .reference_members
+                .get(group_ordinal.checked_add(ordinal.checked_add(1)?)?)
+                != Some(record_index)
+            {
+                return None;
+            }
+            let mut matches = operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.record_index == *record_index
+            });
+            let operand = matches.next()?;
+            if matches.next().is_some()
+                || operand.scope_reference_ordinal != scope_ordinal
+                || operand.recipe_state_id != Some(previous_state_id)
+                || operand.recipe_structure.is_none()
+                || operand.surface_patch_recipe_structure.is_some()
+            {
+                return None;
+            }
+            Some(operand)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let face_slot = loft_edge_profile_face_slot(group.members.len(), &member_operands)?;
+    let selection = historical_face_selection(scope, group, vec![face_slot])?;
+    let cadmpeg_ir::features::FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = selection
+    else {
+        return None;
+    };
+    Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
+        state,
+        faces,
+        native: vec![native],
+    })
+}
+
+fn loft_edge_profile_face_slot(
+    member_count: usize,
+    operands: &[&DesignEdgeOperand],
+) -> Option<i64> {
+    if member_count == 0 || operands.len() != member_count {
+        return None;
+    }
+    let mut common_clauses = operands
+        .first()?
+        .recipe_references
+        .iter()
+        .filter(|reference| {
+            reference.candidate_faces.len() == 1 && reference.alternate_selector_faces.is_empty()
+        })
+        .map(|reference| {
+            (
+                reference.selector,
+                reference.token.clone(),
+                reference.design_reference,
+            )
+        })
+        .collect::<Vec<_>>();
+    common_clauses.sort_unstable();
+    common_clauses.dedup();
+    common_clauses.retain(|(selector, token, design_reference)| {
+        operands.iter().all(|operand| {
+            operand
+                .recipe_references
+                .iter()
+                .filter(|reference| {
+                    reference.selector == *selector
+                        && reference.token == *token
+                        && reference.design_reference == *design_reference
+                        && reference.candidate_faces.len() == 1
+                        && reference.alternate_selector_faces.is_empty()
+                })
+                .count()
+                == 1
+        })
+    });
+    let [(selector, token, design_reference)] = common_clauses.as_slice() else {
+        return None;
+    };
+    let evidence = operands
+        .iter()
+        .map(|operand| {
+            if operand.recipe_references.len() != operand.recipe_reference_contexts.len()
+                || operand.candidate_faces.is_empty()
+                || operand.preceding_candidate_faces.is_empty()
+                || operand.result_candidate_faces.is_empty()
+            {
+                return None;
+            }
+            let target_ordinal = operand
+                .recipe_references
+                .iter()
+                .enumerate()
+                .filter(|(_, reference)| {
+                    reference.selector == *selector
+                        && reference.token == *token
+                        && reference.design_reference == *design_reference
+                        && reference.candidate_faces.len() == 1
+                        && reference.alternate_selector_faces.is_empty()
+                })
+                .map(|(ordinal, _)| ordinal)
+                .next()?;
+            let mut target = None;
+            for (ordinal, (reference, context)) in operand
+                .recipe_references
+                .iter()
+                .zip(&operand.recipe_reference_contexts)
+                .enumerate()
+            {
+                if context.reference_ordinal != u32::try_from(ordinal).ok()? {
+                    return None;
+                }
+                let [candidate] = reference.candidate_faces.as_slice() else {
+                    return None;
+                };
+                let [preceding_face] = context.preceding_faces.as_slice() else {
+                    return None;
+                };
+                if preceding_face != candidate {
+                    return None;
+                }
+                let slot = preceding_face.0.rsplit_once('#')?.1.parse::<i64>().ok()?;
+                if !operand.preceding_candidate_faces.contains(candidate)
+                    || !operand.result_candidate_faces.contains(candidate)
+                {
+                    return None;
+                }
+                let [preceding_boundary] = context.preceding_face_boundaries.as_slice() else {
+                    return None;
+                };
+                let boundary_edge_count =
+                    boundary_edge_count(std::slice::from_ref(&preceding_boundary))?;
+                if preceding_boundary.face_slot != slot {
+                    return None;
+                }
+                let [result_face] = context.result_faces.as_slice() else {
+                    return None;
+                };
+                let [result_boundary] = context.result_face_boundaries.as_slice() else {
+                    return None;
+                };
+                if result_face != candidate || result_boundary.face_slot != slot {
+                    return None;
+                }
+                let [support_slot] = context.preceding_support_face_slots.as_slice() else {
+                    return None;
+                };
+                let [support_boundary] = context.preceding_support_face_boundaries.as_slice()
+                else {
+                    return None;
+                };
+                if *support_slot != slot || support_boundary.face_slot != slot {
+                    return None;
+                }
+                if ordinal == target_ordinal {
+                    target = Some((candidate.clone(), slot, boundary_edge_count));
+                }
+            }
+            target
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let (face, slot, boundary_edge_count) = evidence.first()?;
+    if *boundary_edge_count != member_count
+        || evidence.iter().any(|(candidate, candidate_slot, count)| {
+            candidate != face || candidate_slot != slot || count != boundary_edge_count
+        })
+    {
+        return None;
+    }
+    Some(*slot)
 }
 
 pub(crate) fn resolved_historical_face_group(
@@ -904,12 +1123,208 @@ pub(crate) fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
 mod tests {
     use super::{
         bounded_face_candidate_by_boundary_cardinality, convergent_face_support,
-        stable_face_support_set,
+        loft_edge_profile_face_slot, stable_face_support_set,
     };
     use crate::records::{
-        DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
-        DesignHistoricalFaceSupportContext,
+        DesignConstructionOperandGroup, DesignEdgeOperand, DesignEdgeRecipeReferenceContext,
+        DesignEdgeRecipeStructure, DesignHistoricalFaceBoundaryContext,
+        DesignHistoricalFaceLoopContext, DesignHistoricalFaceSupportContext, DesignParameterScope,
+        DesignRecipeReference,
     };
+    use cadmpeg_ir::ids::FaceId;
+
+    fn face(slot: i64) -> FaceId {
+        FaceId(format!("f3d:brep:entity#{slot}"))
+    }
+
+    fn boundary(slot: i64, edge_count: usize) -> DesignHistoricalFaceBoundaryContext {
+        DesignHistoricalFaceBoundaryContext {
+            face_slot: slot,
+            loops: vec![DesignHistoricalFaceLoopContext {
+                loop_slot: slot + 1_000,
+                coedge_slots: (0..edge_count)
+                    .map(|ordinal| i64::try_from(ordinal).expect("test ordinal"))
+                    .collect(),
+                edge_slots: (0..edge_count)
+                    .map(|ordinal| i64::try_from(ordinal).expect("test ordinal") + 2_000)
+                    .collect(),
+                vertex_slots: Vec::new(),
+                point_slots: Vec::new(),
+                positions: Vec::new(),
+            }],
+        }
+    }
+
+    fn reference(slot: i64, token: &str, design_reference: i64) -> DesignRecipeReference {
+        DesignRecipeReference {
+            selector: 1,
+            selector_offset: 0,
+            token: token.into(),
+            token_offset: 0,
+            design_reference,
+            design_reference_offset: 0,
+            candidate_faces: vec![face(slot)],
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        }
+    }
+
+    fn reference_context(
+        ordinal: u32,
+        slot: i64,
+        edge_count: usize,
+    ) -> DesignEdgeRecipeReferenceContext {
+        let face = face(slot);
+        let boundary = boundary(slot, edge_count);
+        let edges = boundary.loops[0].edge_slots.clone();
+        DesignEdgeRecipeReferenceContext {
+            reference_ordinal: ordinal,
+            result_faces: vec![face.clone()],
+            result_face_boundaries: vec![boundary.clone()],
+            result_shared_edge_slots: edges.clone(),
+            preceding_faces: vec![face],
+            preceding_face_boundaries: vec![boundary.clone()],
+            preceding_support_face_slots: vec![slot],
+            preceding_support_face_boundaries: vec![boundary],
+            shared_edge_slots: edges,
+            changed_shared_edge_slots: Vec::new(),
+            changed_reference_edge_slots: Vec::new(),
+        }
+    }
+
+    fn edge_operand(
+        record_index: u32,
+        target_slot: i64,
+        target_ordinal: usize,
+        target_edge_count: usize,
+        context_slot: i64,
+    ) -> DesignEdgeOperand {
+        let target_reference = reference(target_slot, "target", 308);
+        let context_reference = reference(context_slot, &format!("context-{record_index}"), 308);
+        let references = if target_ordinal == 0 {
+            vec![target_reference, context_reference]
+        } else {
+            vec![context_reference, target_reference]
+        };
+        let contexts = if target_ordinal == 0 {
+            vec![
+                reference_context(0, target_slot, target_edge_count),
+                reference_context(1, context_slot, 2),
+            ]
+        } else {
+            vec![
+                reference_context(0, context_slot, 2),
+                reference_context(1, target_slot, target_edge_count),
+            ]
+        };
+        let mut operand: DesignEdgeOperand = serde_json::from_value(serde_json::json!({
+            "id": format!("f3d:test:edge-operand#{record_index}"),
+            "scope_record_index": 1811,
+            "scope_reference_ordinal": 3 + record_index - 1,
+            "record_index": record_index,
+            "byte_offset": 0,
+            "class_tag": "376",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "260",
+            "recipe_record_index": record_index + 3,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:test:recipe",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_program_offset": 0,
+            "recipe_program": [-1, -1, 2],
+            "next_record_index": record_index + 4,
+            "next_byte_offset": 0
+        }))
+        .expect("edge recipe operand");
+        operand.recipe_references = references;
+        operand.recipe_structure = Some(DesignEdgeRecipeStructure {
+            root: 2,
+            sides: Vec::new(),
+        });
+        operand.recipe_reference_contexts = contexts;
+        operand.recipe_state_id = Some(6);
+        operand.candidate_faces = operand
+            .recipe_references
+            .iter()
+            .flat_map(|reference| reference.candidate_faces.iter().cloned())
+            .collect();
+        operand.preceding_candidate_faces = operand.candidate_faces.clone();
+        operand.result_candidate_faces = operand.candidate_faces.clone();
+        operand
+    }
+
+    fn append_reference(
+        operand: &mut DesignEdgeOperand,
+        ordinal: u32,
+        slot: i64,
+        token: &str,
+        design_reference: i64,
+        edge_count: usize,
+    ) {
+        let candidate = face(slot);
+        operand
+            .recipe_references
+            .push(reference(slot, token, design_reference));
+        operand
+            .recipe_reference_contexts
+            .push(reference_context(ordinal, slot, edge_count));
+        operand.candidate_faces.push(candidate.clone());
+        operand.preceding_candidate_faces.push(candidate.clone());
+        operand.result_candidate_faces.push(candidate);
+    }
+
+    fn loft_scope() -> DesignParameterScope {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:scope#1811",
+            "byte_offset": 0,
+            "class_tag": "272",
+            "record_index": 1811,
+            "frame_length": 0,
+            "kind": "Loft",
+            "kind_offset": 0,
+            "feature_ordinal": 1,
+            "feature_ordinal_offset": 0,
+            "history_state_id": 7,
+            "history_state_id_offset": 0,
+            "previous_history_state_id": 6,
+            "previous_history_state_id_offset": 0,
+            "reference_count_offset": 0,
+            "reference_members": [1000, 1001, 1819, 1, 2, 3],
+            "reference_member_offsets": [0, 0, 0, 0, 0, 0],
+            "paired_class_tag": "274",
+            "paired_byte_offset": 0
+        }))
+        .expect("Loft scope")
+    }
+
+    fn loft_group() -> DesignConstructionOperandGroup {
+        serde_json::from_value(serde_json::json!({
+            "id": "f3d:test:group#111045",
+            "scope_record_index": 1811,
+            "scope_reference_ordinal": 2,
+            "record_index": 1819,
+            "byte_offset": 0,
+            "class_tag": "267",
+            "members": [1, 2, 3],
+            "member_offsets": [0, 0, 0],
+            "frame": {
+                "member_count_offset": 0,
+                "opaque_index": 252,
+                "opaque_index_offset": 0,
+                "opaque_scalar": 0.0,
+                "opaque_scalar_offset": 0,
+                "variant": false
+            },
+            "role": 287_762_808_832_i64,
+            "role_offset": 0,
+            "paired_class_tag": "260",
+            "paired_byte_offset": 0
+        }))
+        .expect("Loft group")
+    }
 
     fn support(active: i64, faces: &[(i64, usize)]) -> DesignHistoricalFaceSupportContext {
         DesignHistoricalFaceSupportContext {
@@ -996,5 +1411,56 @@ mod tests {
         );
         contexts[1].preceding_face_slots = vec![12];
         assert_eq!(stable_face_support_set(&active_faces, &contexts), None);
+    }
+
+    #[test]
+    fn loft_edge_profile_requires_one_common_face_clause() {
+        let first = edge_operand(1, 100, 0, 3, 200);
+        let second = edge_operand(2, 100, 1, 3, 201);
+        let third = edge_operand(3, 100, 0, 3, 202);
+        let members = [&first, &second, &third];
+        assert_eq!(loft_edge_profile_face_slot(3, &members), Some(100));
+
+        let different_target = edge_operand(4, 101, 1, 3, 203);
+        let mismatched = [&first, &different_target, &third];
+        assert_eq!(loft_edge_profile_face_slot(3, &mismatched), None);
+
+        let mut ambiguous = first.clone();
+        append_reference(&mut ambiguous, 2, 300, "alternate", 309, 2);
+        let mut ambiguous_second = second.clone();
+        append_reference(&mut ambiguous_second, 2, 300, "alternate", 309, 2);
+        let mut ambiguous_third = third.clone();
+        append_reference(&mut ambiguous_third, 2, 300, "alternate", 309, 2);
+        let ambiguous_members = [&ambiguous, &ambiguous_second, &ambiguous_third];
+        assert_eq!(loft_edge_profile_face_slot(3, &ambiguous_members), None);
+    }
+
+    #[test]
+    fn loft_edge_profile_projects_the_proven_face_into_history() {
+        let scope = loft_scope();
+        let group = loft_group();
+        let feature = crate::ids::neutral_feature_id(&scope);
+        let feature_key = feature
+            .0
+            .split_once('#')
+            .map_or(feature.0.as_str(), |(_, key)| key);
+        let expected_state = crate::design::edge_resolve::feature_input_topology_id(&feature, 6);
+        let expected_face = crate::ids::history_input_face_id(
+            &crate::ids::history_input_prefix(feature_key, 6),
+            100,
+        );
+        let operands = vec![
+            edge_operand(1, 100, 0, 3, 200),
+            edge_operand(2, 100, 1, 3, 201),
+            edge_operand(3, 100, 0, 3, 202),
+        ];
+        assert!(matches!(
+            super::resolved_loft_edge_profile_group(&scope, &group, &operands),
+            Some(cadmpeg_ir::features::ProfileRef::HistoricalFaces {
+                state,
+                faces,
+                native,
+            }) if state == expected_state && faces == [expected_face] && native == [group.id]
+        ));
     }
 }
