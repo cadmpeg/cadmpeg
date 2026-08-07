@@ -5519,10 +5519,28 @@ pub(crate) fn standard_pcurve_geometry(
     }
 
     if let (
-        SurfaceGeometry::Plane { .. },
+        SurfaceGeometry::Plane { normal, .. },
         crate::families::standard::records::StandardCurveGeometry::Circle { center, radius },
     ) = (surface, &support.geometry)
     {
+        const CIRCLE_TOLERANCE: f64 = 2e-3;
+        let contained_carrier = point_on_surface(*center, surface)
+            && (start.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+            && (end.distance(*center) - *radius).abs() <= CIRCLE_TOLERANCE
+            && edge_curve.is_none_or(|curve| {
+                matches!(
+                    curve,
+                    CurveGeometry::Circle {
+                        axis,
+                        radius: curve_radius,
+                        ..
+                    } if axis.cross(*normal).norm() <= CIRCLE_TOLERANCE
+                        && (*curve_radius - *radius).abs() <= CIRCLE_TOLERANCE
+                )
+            });
+        if !contained_carrier {
+            return None;
+        }
         let center_uv = analytic_surface_uv(surface, *center)?;
         let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
         let range = ordered_range([range[0], unwrap_angle(range[1], range[0])]);
@@ -8722,6 +8740,104 @@ mod route_tests {
                 direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
             }
         );
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_preserves_contained_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+        let start = Point3::new(radius, 0.0, 0.0);
+        let end = Point3::new(0.0, radius, 0.0);
+        let (geometry, range) =
+            standard_pcurve_geometry(&surface, &support, start, end, None, Some(&carrier))
+                .expect("contained plane circle pcurve");
+        let mapped = range.map(|parameter| {
+            let uv = pcurve_uv(&geometry, parameter).expect("plane circle pcurve endpoint");
+            surface_point(&surface, uv.u, uv.v).expect("plane circle surface endpoint")
+        });
+        assert!(mapped[0].distance(start) <= 1e-9);
+        assert!(mapped[1].distance(end) <= 1e-9);
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_rejects_carrier_outside_face_plane() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 1.0);
+        let radius = 2.0_f64.sqrt();
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        assert!(standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            None,
+            Some(&carrier),
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn standard_plane_circle_pcurve_rejects_tilted_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius,
+        };
+        assert!(standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(0.0, radius, 0.0),
+            Point3::new(0.0, -radius, 0.0),
+            None,
+            Some(&carrier),
+        )
+        .is_none());
     }
 
     #[test]
