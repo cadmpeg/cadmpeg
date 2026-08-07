@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::{self, Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
@@ -33,6 +35,7 @@ struct Profile {
 #[derive(Debug, Serialize, Deserialize)]
 struct FixtureEvidence {
     filename: String,
+    status: DecodeStatus,
     deterministic: bool,
     native_namespace_version: Option<u32>,
     entities: EntityCounts,
@@ -71,7 +74,7 @@ struct RederivationBoundaryCount {
     fixtures: usize,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct EntityCounts {
     assets: usize,
     bodies: usize,
@@ -136,7 +139,7 @@ struct Assertion {
     required: &'static str,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct DecodedFixtureEvidence {
     canonical_sha256: String,
     native_namespace_version: Option<u32>,
@@ -150,6 +153,36 @@ struct DecodedFixtureEvidence {
     rederivation: VerificationStatus,
     rederivation_boundary: Option<RederivationBoundary>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DecodeStatus {
+    /// Both bounded worker decodes completed.
+    Complete,
+    /// At least one bounded worker reached its per-file timeout.
+    TimedOut,
+    /// At least one bounded worker failed before producing evidence.
+    Failed,
+}
+
+#[derive(Debug)]
+enum WorkerFailure {
+    TimedOut,
+    Failed(String),
+}
+
+impl std::fmt::Display for WorkerFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TimedOut => formatter.write_str("worker timed out"),
+            Self::Failed(message) => formatter.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for WorkerFailure {}
+
+const WORKER_TIMEOUT: Duration = Duration::from_secs(90);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
@@ -176,15 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: nx-profile FIXTURE_DIRECTORY OUTPUT_JSON".into());
     }
 
-    let mut paths = fs::read_dir(fixture_directory)?
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("prt"))
-        })
-        .collect::<Vec<_>>();
-    paths.sort();
+    let paths = fixture_paths(&fixture_directory)?;
     if paths.is_empty() {
         return Err("fixture directory contains no .prt files".into());
     }
@@ -194,34 +219,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_loss_codes = BTreeMap::new();
     let mut total_loss_details = BTreeMap::new();
     for path in paths {
-        let first = decode_fixture_in_worker(&path)?;
-        let second = decode_fixture_in_worker(&path)?;
-        let entities = first.entities;
-        totals.add(&entities);
-        for (code, count) in &first.loss_codes {
-            *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+        let first = decode_fixture_in_worker(&path);
+        let second = decode_fixture_in_worker(&path);
+        let status = decode_status(&first, &second);
+        let deterministic = match (first.as_ref(), second.as_ref()) {
+            (Ok(first), Ok(second)) => first.canonical_sha256 == second.canonical_sha256,
+            _ => false,
+        };
+        let filename = path
+            .strip_prefix(&fixture_directory)
+            .unwrap_or(path.as_path())
+            .to_string_lossy()
+            .into_owned();
+        if let Some(decoded) = first.as_ref().ok().or_else(|| second.as_ref().ok()) {
+            add_totals(
+                decoded,
+                &mut totals,
+                &mut total_loss_codes,
+                &mut total_loss_details,
+            );
+            fixtures.push(fixture_evidence(filename, status, deterministic, decoded));
+        } else {
+            fixtures.push(failed_fixture_evidence(filename, status));
         }
-        for (detail, count) in &first.loss_details {
-            *total_loss_details.entry(detail.clone()).or_insert(0) += count;
-        }
-        fixtures.push(FixtureEvidence {
-            filename: path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .ok_or("fixture filename is not UTF-8")?
-                .to_string(),
-            deterministic: first.canonical_sha256 == second.canonical_sha256,
-            native_namespace_version: first.native_namespace_version,
-            all_bodies_colored: first.all_bodies_colored,
-            all_faces_colored: first.all_faces_colored,
-            rederivation: first.rederivation,
-            rederivation_boundary: first.rederivation_boundary,
-            entities,
-            losses: first.losses,
-            loss_codes: first.loss_codes,
-            loss_details: first.loss_details,
-            validation_errors: first.validation_errors,
-        });
     }
 
     let gates = capability_gates(&fixtures);
@@ -232,7 +252,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 8,
+        version: 9,
         format: "nx",
         fixtures,
         totals,
@@ -246,6 +266,114 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     json.push('\n');
     fs::write(output, json)?;
     Ok(())
+}
+
+fn fixture_paths(root: &Path) -> io::Result<Vec<PathBuf>> {
+    fn visit(directory: &Path, paths: &mut Vec<PathBuf>) -> io::Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                visit(&path, paths)?;
+            } else if file_type.is_file()
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("prt"))
+            {
+                paths.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut paths = Vec::new();
+    visit(root, &mut paths)?;
+    paths.sort();
+    Ok(paths)
+}
+
+fn decode_status(
+    first: &Result<DecodedFixtureEvidence, WorkerFailure>,
+    second: &Result<DecodedFixtureEvidence, WorkerFailure>,
+) -> DecodeStatus {
+    if first.is_ok() && second.is_ok() {
+        DecodeStatus::Complete
+    } else if [first, second]
+        .into_iter()
+        .any(|result| matches!(result, Err(WorkerFailure::TimedOut)))
+    {
+        DecodeStatus::TimedOut
+    } else {
+        DecodeStatus::Failed
+    }
+}
+
+fn add_totals(
+    decoded: &DecodedFixtureEvidence,
+    totals: &mut EntityCounts,
+    total_loss_codes: &mut BTreeMap<String, usize>,
+    total_loss_details: &mut BTreeMap<String, usize>,
+) {
+    totals.add(&decoded.entities);
+    for (code, count) in &decoded.loss_codes {
+        *total_loss_codes.entry(code.clone()).or_insert(0) += count;
+    }
+    for (detail, count) in &decoded.loss_details {
+        *total_loss_details.entry(detail.clone()).or_insert(0) += count;
+    }
+}
+
+fn fixture_evidence(
+    filename: String,
+    status: DecodeStatus,
+    deterministic: bool,
+    decoded: &DecodedFixtureEvidence,
+) -> FixtureEvidence {
+    FixtureEvidence {
+        filename,
+        status,
+        deterministic,
+        native_namespace_version: decoded.native_namespace_version,
+        all_bodies_colored: decoded.all_bodies_colored,
+        all_faces_colored: decoded.all_faces_colored,
+        rederivation: decoded.rederivation,
+        rederivation_boundary: decoded.rederivation_boundary.clone(),
+        entities: decoded.entities.clone(),
+        losses: decoded.losses.clone(),
+        loss_codes: decoded.loss_codes.clone(),
+        loss_details: decoded.loss_details.clone(),
+        validation_errors: decoded.validation_errors,
+    }
+}
+
+fn failed_fixture_evidence(filename: String, status: DecodeStatus) -> FixtureEvidence {
+    let reason = match status {
+        DecodeStatus::TimedOut => "profile_worker_timeout",
+        DecodeStatus::Failed => "profile_worker_failure",
+        DecodeStatus::Complete => unreachable!("completed status has decoded evidence"),
+    };
+    FixtureEvidence {
+        filename,
+        status,
+        deterministic: false,
+        native_namespace_version: None,
+        entities: EntityCounts::default(),
+        losses: BTreeMap::new(),
+        loss_codes: BTreeMap::new(),
+        loss_details: BTreeMap::new(),
+        validation_errors: 1,
+        all_bodies_colored: false,
+        all_faces_colored: false,
+        rederivation: VerificationStatus::Missing,
+        rederivation_boundary: Some(RederivationBoundary {
+            feature: None,
+            feature_name: None,
+            feature_family: None,
+            feature_ordinal: None,
+            reason: reason.to_string(),
+        }),
+    }
 }
 
 fn rederivation_boundary_counts(fixtures: &[FixtureEvidence]) -> Vec<RederivationBoundaryCount> {
@@ -418,18 +546,45 @@ fn canonical_sha256(ir: &CadIr) -> Result<String, serde_json::Error> {
     Ok(encoded)
 }
 
-fn decode_fixture_in_worker(
-    path: &Path,
-) -> Result<DecodedFixtureEvidence, Box<dyn std::error::Error>> {
-    let output = Command::new(env::current_exe()?)
-        .arg("--decode-fixture")
-        .arg(path)
-        .output()?;
+fn decode_fixture_in_worker(path: &Path) -> Result<DecodedFixtureEvidence, WorkerFailure> {
+    let worker =
+        Command::new(env::current_exe().map_err(|error| WorkerFailure::Failed(error.to_string()))?)
+            .arg("--decode-fixture")
+            .arg(path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| WorkerFailure::Failed(error.to_string()))?;
+    let output = wait_for_worker(worker)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("NX profile worker failed for {}: {stderr}", path.display()).into());
+        return Err(WorkerFailure::Failed(format!(
+            "NX profile worker failed for {}: {stderr}",
+            path.display()
+        )));
     }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    serde_json::from_slice(&output.stdout).map_err(|error| WorkerFailure::Failed(error.to_string()))
+}
+
+fn wait_for_worker(mut worker: Child) -> Result<Output, WorkerFailure> {
+    let deadline = Instant::now() + WORKER_TIMEOUT;
+    loop {
+        if worker
+            .try_wait()
+            .map_err(|error| WorkerFailure::Failed(error.to_string()))?
+            .is_some()
+        {
+            return worker
+                .wait_with_output()
+                .map_err(|error| WorkerFailure::Failed(error.to_string()));
+        }
+        if Instant::now() >= deadline {
+            let _ = worker.kill();
+            let _ = worker.wait();
+            return Err(WorkerFailure::TimedOut);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
@@ -579,6 +734,7 @@ mod tests {
     fn fixture() -> FixtureEvidence {
         FixtureEvidence {
             filename: "fixture.prt".to_string(),
+            status: DecodeStatus::Complete,
             deterministic: true,
             native_namespace_version: Some(181),
             entities: EntityCounts::default(),
