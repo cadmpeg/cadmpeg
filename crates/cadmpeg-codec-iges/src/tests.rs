@@ -930,6 +930,31 @@ fn mixed_degree_composite_pcurve_file() -> Vec<u8> {
     ])
 }
 
+fn parametric_spline_composite_curve_file() -> Vec<u8> {
+    let values = [
+        "112", "3", "1", "3", "1", "0", "1", // Header and breakpoints.
+        "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Polynomial.
+        "1.5", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0",
+        "0", // Inconsistent terminal block.
+    ];
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 112,
+            form: 0,
+            label: "SPLINE".into(),
+            status: "00010000",
+            parameters: format!("{};", values.join(",")),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "COMPOSIT".into(),
+            status: "00000000",
+            parameters: "102,1,1;".into(),
+        },
+    ])
+}
+
 #[test]
 fn decode_concatenates_ordered_composite_curve_children() {
     let result = IgesCodec
@@ -1437,6 +1462,34 @@ fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     );
     assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 2.0]));
     assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_child() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .expect("composite curve should be projected after its spline child");
+    assert!(matches!(
+        composite.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+    ));
+    assert_eq!(result.report.losses.len(), 1);
+    assert!(result.report.losses[0]
+        .message
+        .contains("terminal derivative block disagrees with the last polynomial"));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

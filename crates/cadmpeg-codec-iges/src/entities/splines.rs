@@ -322,7 +322,6 @@ pub(super) fn project(
                 entry,
                 "terminal derivative block disagrees with the last polynomial",
             ));
-            continue;
         }
         let mut knots = vec![breakpoints[0]; 4];
         for breakpoint in &breakpoints[1..segment_count] {
