@@ -4292,13 +4292,27 @@ pub(crate) fn framed_ranges(bytes: &[u8]) -> Vec<std::ops::Range<usize>> {
 }
 
 pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
-    fn walk(
-        bytes: &[u8],
-        base: usize,
-        admit_a8: bool,
-        admit_b5: bool,
-        frames: &mut Vec<ObjectFrame>,
-    ) {
+    fn walk_b5_run(bytes: &[u8], base: usize, frames: &mut Vec<ObjectFrame>) {
+        let mut position = 0usize;
+        while position + 8 <= bytes.len() {
+            let Some((end, family, class, object_id)) = object_frame(bytes, position) else {
+                break;
+            };
+            if family != 0xb5 {
+                break;
+            }
+            frames.push(ObjectFrame {
+                start: base + position,
+                end: base + end,
+                family,
+                class,
+                object_id,
+            });
+            position = end;
+        }
+    }
+
+    fn walk(bytes: &[u8], base: usize, frames: &mut Vec<ObjectFrame>) {
         let mut position = 0usize;
         while position + 8 <= bytes.len() {
             let Some(frame) = object_frame(bytes, position) else {
@@ -4314,18 +4328,16 @@ pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
                 object_id,
             };
             match family {
-                0xa8 if admit_a8 => {
+                0xa8 => {
                     frames.push(absolute);
-                    walk(
-                        &bytes[position + 11..end],
-                        base + position + 11,
-                        false,
-                        admit_b5,
-                        frames,
-                    );
+                    if let Some(child_start) =
+                        crate::families::a5a8::records::a8_nested_b5_run_start(bytes, position, end)
+                    {
+                        walk_b5_run(&bytes[child_start..end], base + child_start, frames);
+                    }
                     position = end;
                 }
-                0xb5 if admit_b5 => {
+                0xb5 => {
                     frames.push(absolute);
                     position = end;
                 }
@@ -4335,7 +4347,7 @@ pub(crate) fn object_stream_frames(bytes: &[u8]) -> Vec<ObjectFrame> {
     }
 
     let mut frames = Vec::new();
-    walk(bytes, 0, true, true, &mut frames);
+    walk(bytes, 0, &mut frames);
     frames
 }
 
@@ -6998,6 +7010,93 @@ mod tests {
                 .map(|frame| (frame.family, frame.class, frame.object_id))
                 .collect::<Vec<_>>(),
             vec![(0xa8, 0x34, 8), (0xb5, 0x5e, 7), (0xb5, 0x5e, 9)]
+        );
+    }
+
+    #[test]
+    fn object_stream_frame_walk_ignores_marker_shaped_a8_payload_bytes() {
+        let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
+        nested_b5.extend_from_slice(&7u32.to_le_bytes());
+        nested_b5.push(0x00);
+
+        let mut payload = vec![0x00; 4];
+        payload.extend_from_slice(&nested_b5);
+        let mut wrapper = vec![0xa8, 0x03, 0x34];
+        wrapper.extend_from_slice(
+            &u32::try_from(payload.len())
+                .expect("small wrapper payload")
+                .to_le_bytes(),
+        );
+        wrapper.extend_from_slice(&8u32.to_le_bytes());
+        wrapper.extend_from_slice(&payload);
+
+        assert_eq!(
+            object_stream_frames(&wrapper)
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 8)]
+        );
+    }
+
+    #[test]
+    fn object_stream_frame_walk_requires_a_length_closed_a8_child_run() {
+        let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
+        nested_b5.extend_from_slice(&7u32.to_le_bytes());
+        nested_b5.push(0x00);
+        let mut wrapper = vec![0xa8, 0x03, 0x34];
+        let payload_len = nested_b5.len() + 1;
+        wrapper.extend_from_slice(
+            &u32::try_from(payload_len)
+                .expect("small wrapper payload")
+                .to_le_bytes(),
+        );
+        wrapper.extend_from_slice(&8u32.to_le_bytes());
+        wrapper.extend_from_slice(&nested_b5);
+        wrapper.push(0x00);
+
+        assert_eq!(
+            object_stream_frames(&wrapper)
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 8)]
+        );
+    }
+
+    #[test]
+    fn object_stream_frame_walk_ignores_marker_shaped_inline_surface_poles() {
+        let mut bytes = crate::tests::a8_surface_stream();
+        let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
+        nested_b5.extend_from_slice(&7u32.to_le_bytes());
+        nested_b5.push(0x00);
+        bytes[11 + 100..11 + 100 + nested_b5.len()].copy_from_slice(&nested_b5);
+
+        assert_eq!(
+            object_stream_frames(&bytes)
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 0xdeca_fbad)]
+        );
+    }
+
+    #[test]
+    fn object_stream_frame_walk_descends_after_inline_surface_poles() {
+        let mut bytes = crate::tests::a8_surface_stream();
+        let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
+        nested_b5.extend_from_slice(&7u32.to_le_bytes());
+        nested_b5.push(0x00);
+        bytes.extend_from_slice(&nested_b5);
+        let payload_len = u32::try_from(bytes.len() - 11).expect("small surface payload");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+        assert_eq!(
+            object_stream_frames(&bytes)
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 0xdeca_fbad), (0xb5, 0x5e, 7)]
         );
     }
 

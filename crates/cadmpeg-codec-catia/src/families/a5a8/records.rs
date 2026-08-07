@@ -159,6 +159,59 @@ fn closed_a8_child_run(data: &[u8], start: usize, end: usize) -> bool {
     at == end
 }
 
+/// Return the start of a length-closed B5 child run owned by an A8 frame.
+///
+/// Common-form surface frames may place their child run after the complete
+/// inline pole representation or after the fixed elided-pole tail. A marker
+/// shaped byte sequence elsewhere in a surface payload is payload data and is
+/// not a child run.
+pub(crate) fn a8_nested_b5_run_start(
+    data: &[u8],
+    frame_start: usize,
+    frame_end: usize,
+) -> Option<usize> {
+    let payload_start = frame_start.checked_add(11)?;
+    if frame_end > data.len() || payload_start > frame_end {
+        return None;
+    }
+    if payload_start < frame_end && closed_a8_child_run(data, payload_start, frame_end) {
+        return Some(payload_start);
+    }
+    let frame = object_stream_frame(data, frame_start)?;
+    if frame.family != 0xa8 || frame.class != 0x34 || frame.end != frame_end {
+        return None;
+    }
+    let parsed = parse_a8_surface_header(
+        data,
+        A8Frame {
+            pos: frame_start,
+            payload: payload_start,
+            end: frame_end,
+            object_id: frame.object_id,
+        },
+    )?;
+    let child_start = if parsed.header.poles_elided {
+        parsed.pole_start.checked_add(141)?
+    } else {
+        let poles = crate::nurbs_surface_control_count(
+            usize::try_from(parsed.header.u_count).ok()?,
+            usize::try_from(parsed.header.v_count).ok()?,
+        )?;
+        let pole_bytes = poles.checked_mul(24)?;
+        let weight_bytes = if parsed.header.rational {
+            poles.checked_mul(8)?
+        } else {
+            0
+        };
+        parsed
+            .pole_start
+            .checked_add(pole_bytes)?
+            .checked_add(weight_bytes)?
+    };
+    (child_start < frame_end && closed_a8_child_run(data, child_start, frame_end))
+        .then_some(child_start)
+}
+
 fn valid_a8_elided_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
     let Some(end) = at.checked_add(141) else {
         return false;
