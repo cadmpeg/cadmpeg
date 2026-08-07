@@ -7352,12 +7352,28 @@ fn oriented_arc_parameterization(reversed: bool, start: f64, end: f64) -> (f64, 
     } else {
         (1.0, start, end)
     };
+    let raw_span = raw_end - raw_start;
+    let full_turn = raw_span.is_finite()
+        && (raw_span.abs() - std::f64::consts::TAU).abs()
+            <= 1e-12 * raw_span.abs().max(std::f64::consts::TAU);
     let start = raw_start.rem_euclid(std::f64::consts::TAU);
     let mut end = raw_end.rem_euclid(std::f64::consts::TAU);
-    if end < start {
+    if end < start || (full_turn && (end - start).abs() <= 1e-12) {
         end += std::f64::consts::TAU;
     }
     (axis_sign, [start, end])
+}
+
+fn forward_arc_sweep(start: f64, end: f64) -> f64 {
+    let raw_span = end - start;
+    if raw_span.is_finite()
+        && (raw_span - std::f64::consts::TAU).abs()
+            <= 1e-12 * raw_span.abs().max(std::f64::consts::TAU)
+    {
+        std::f64::consts::TAU
+    } else {
+        raw_span.rem_euclid(std::f64::consts::TAU)
+    }
 }
 
 fn line_pcurve(start: [f64; 2], end: [f64; 2]) -> PcurveGeometry {
@@ -7484,15 +7500,15 @@ fn extrusion_profile_signed_area(
             else {
                 return chord;
             };
-            let forward_delta = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
-            let delta = if *reversed {
-                -forward_delta
+            let forward_sweep = forward_arc_sweep(start_angle.0, end_angle.0);
+            let sweep = if *reversed {
+                -forward_sweep
             } else {
-                forward_delta
+                forward_sweep
             };
             center.u.mul_add(
                 end[1] - start[1],
-                -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * delta,
+                -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
             )
         })
         .sum::<f64>();
@@ -7601,7 +7617,7 @@ fn profile_arc(
     else {
         return None;
     };
-    let forward_delta = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    let forward_delta = forward_arc_sweep(start_angle.0, end_angle.0);
     let delta = if segment.1 {
         -forward_delta
     } else {
@@ -8733,7 +8749,7 @@ fn transfer_resolved_extrusion_breps(
         if !sketch_profiles_cover_generated_extrusion_sides(scan, definition, feature_id, sketch) {
             continue;
         }
-        let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
+        let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 1) else {
             continue;
         };
         let Some((profiles, outer_area)) = ordered_extrusion_profiles(profiles) else {

@@ -1792,6 +1792,33 @@ fn extrusion_profile_area_includes_oriented_arc_sector() {
 }
 
 #[test]
+fn full_turn_arc_remains_a_closed_extrusion_profile() {
+    let profile = vec![(
+        SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::TAU),
+        },
+        false,
+        [2.0, 0.0],
+        [2.0, 0.0],
+    )];
+    let (profiles, area) = ordered_extrusion_profiles(vec![profile.clone()])
+        .expect("a full-turn arc is a closed profile");
+    assert_eq!(profiles, vec![profile]);
+    assert!((area - 4.0 * std::f64::consts::PI).abs() < 1e-12);
+    assert_eq!(
+        oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
+        [0.0, std::f64::consts::TAU]
+    );
+    assert_eq!(
+        oriented_arc_parameterization(true, 0.0, std::f64::consts::TAU).1,
+        [0.0, std::f64::consts::TAU]
+    );
+}
+
+#[test]
 fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
         let mut points = [
