@@ -9596,6 +9596,51 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
 }
 
 #[test]
+fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(multi_pcurve_boundary_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let coedge = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D11:0:0")
+        .unwrap_or_else(|| panic!("losses={:#?}", decoded.report.losses));
+    assert_eq!(coedge.pcurves.len(), 2);
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
+    assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert_eq!(round_trip.ir.model.pcurves.len(), 2);
+    let round_coedge = round_trip.ir.model.coedges.first().unwrap();
+    assert_eq!(round_coedge.pcurves.len(), 2);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     let decoded = IgesCodec
         .decode(
