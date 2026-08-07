@@ -5032,7 +5032,7 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
 #5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
 #6=SHAPE_ASPECT('feature','',#5,.T.);
 #10=(DIMENSIONAL_LOCATION() DIMENSIONAL_LOCATION_WITH_PATH(#6) DIRECTED_DIMENSIONAL_LOCATION() SHAPE_ASPECT_RELATIONSHIP('centre distance','',#6,#6));
-#13=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(5.0),#1);
+#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(5.0),#1) REPRESENTATION_ITEM('nominal value'));
 #14=SHAPE_DIMENSION_REPRESENTATION('distance value',(#13),#2);
 #15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
 #99=UNRESOLVED_PRODUCT();",
@@ -5061,6 +5061,10 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
             source_id: "#6".into()
         }]
     );
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("preserved 1 MEASURE_REPRESENTATION_ITEM instance")
+    }));
 }
 
 #[test]

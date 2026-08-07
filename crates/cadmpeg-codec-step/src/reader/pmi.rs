@@ -406,12 +406,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         );
         typed.insert(id);
         typed.extend(refs.iter().copied().filter(|reference| {
-            exchange.records.get(reference).is_some_and(|candidate| {
-                matches!(
-                    candidate.simple_name(),
-                    Some("LENGTH_MEASURE_WITH_UNIT" | "PLANE_ANGLE_MEASURE_WITH_UNIT")
-                )
-            })
+            exchange
+                .records
+                .get(reference)
+                .is_some_and(is_measure_record)
         }));
     }
 
@@ -559,17 +557,10 @@ fn mark_characteristic_representations(
                     .flat_map(|partial| &partial.parameters)
                     .flat_map(references)
                     .filter(|reference| {
-                        exchange.records.get(reference).is_some_and(|record| {
-                            matches!(
-                                record.simple_name(),
-                                Some(
-                                    "LENGTH_MEASURE_WITH_UNIT"
-                                        | "PLANE_ANGLE_MEASURE_WITH_UNIT"
-                                        | "MEASURE_WITH_UNIT"
-                                        | "MEASURE_REPRESENTATION_ITEM"
-                                )
-                            )
-                        })
+                        exchange
+                            .records
+                            .get(reference)
+                            .is_some_and(is_measure_record)
                     }),
             );
         }
@@ -853,6 +844,18 @@ fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Optio
         .iter()
         .find(|partial| partial.name == name)
         .and_then(|partial| partial.parameters.get(index))
+}
+
+fn is_measure_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "LENGTH_MEASURE_WITH_UNIT"
+                | "PLANE_ANGLE_MEASURE_WITH_UNIT"
+                | "MEASURE_WITH_UNIT"
+                | "MEASURE_REPRESENTATION_ITEM"
+        )
+    })
 }
 
 fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {

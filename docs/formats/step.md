@@ -373,6 +373,8 @@ geometry arena retains its carrier identity as the style target. Semantic PMI
 retains its shape-aspect target, including a shape-aspect partial in a complex
 datum feature. A complex dimension uses its dimensional partial for its kind
 and all inherited partials for its name, targets, and characteristic value.
+Complex measure records referenced by a characteristic representation remain
+typed measure carriers.
 Geometric tolerances read their name and magnitude from the
 `GEOMETRIC_TOLERANCE` partial when the tolerance is complex. Presentation PMI
 retains annotation identity, text, and placement across inherited annotation
