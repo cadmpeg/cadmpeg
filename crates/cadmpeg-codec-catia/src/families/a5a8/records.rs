@@ -263,6 +263,7 @@ pub struct A8Pcurve {
 
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
+#[cfg(test)]
 pub fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     let records = consolidated_records(data);
     a5_pcurves_from_records(data, &records)

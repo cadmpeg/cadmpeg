@@ -412,6 +412,7 @@ pub(crate) fn consolidated_edge_blocks_from_records(
 /// Decode complete six-record consolidated edge runs. Records separated by any
 /// other framed record do not form a run.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
     let records = consolidated_records(data);
     consolidated_topology_edge_runs_from_records(data, &records)
@@ -465,6 +466,7 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
 /// Decode adjacent `18,19,23,06,06,5e` analytic-circle edge runs. The
 /// class-`0x23` definition must close under the eight-scalar grammar.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_analytic_circle_edge_runs(
     data: &[u8],
 ) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
@@ -532,6 +534,7 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
 /// Decode adjacent `18,25,06,06,5e` edge runs whose descriptor and definition
 /// both close under their typed grammars.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
     let records = consolidated_records(data);
     consolidated_class25_edge_runs_from_records(data, &records)
@@ -591,6 +594,7 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
 /// Decode every adjacent `06,06,5e` edge-use run independently of pcurve
 /// availability. Records separated by another framed record do not form a run.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
     let records = consolidated_records(data);
     consolidated_edge_use_runs_from_records(data, &records)
@@ -729,6 +733,7 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// A carrier binds only when record identity or chart geometry determines one
 /// solution. Ambiguous candidates remain unresolved.
 #[must_use]
+#[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let records = consolidated_records(data);
     resolve_consolidated_edge_blocks_from_records(data, &records)

@@ -21,6 +21,7 @@ use crate::object_graph::{
     PayloadSubtype,
 };
 use crate::value_block;
+use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
 pub const CATIA_NATIVE_VERSION: u32 = 269;
@@ -5906,8 +5907,11 @@ impl Default for CatiaNative {
     }
 }
 
-fn consolidated_circles(bytes: &[u8]) -> Vec<CatiaConsolidatedCircle> {
-    crate::families::b2::records::b2_circles(bytes)
+fn consolidated_circles(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedCircle> {
+    crate::families::b2::records::b2_circles_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, circle)| CatiaConsolidatedCircle {
@@ -6712,38 +6716,42 @@ fn validate_legacy_entity_runs(
     Ok(())
 }
 
-fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Record> {
-    let mut records = crate::families::b2::records::b2_counted_61(bytes)
-        .into_iter()
-        .map(|record| {
-            (
-                record.pos,
-                record.header_token,
-                CatiaConsolidatedClass61Payload::Counted {
-                    references: record.references,
-                    tail: record.tail,
-                },
+fn consolidated_class61_records(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedClass61Record> {
+    let mut class61_records =
+        crate::families::b2::records::b2_counted_61_from_records(bytes, records)
+            .into_iter()
+            .map(|record| {
+                (
+                    record.pos,
+                    record.header_token,
+                    CatiaConsolidatedClass61Payload::Counted {
+                        references: record.references,
+                        tail: record.tail,
+                    },
+                )
+            })
+            .chain(
+                crate::families::b2::records::b2_long_61_from_records(bytes, records)
+                    .into_iter()
+                    .map(|record| {
+                        (
+                            record.pos,
+                            record.header_token,
+                            CatiaConsolidatedClass61Payload::Long {
+                                prefix: record.prefix,
+                                members: record.members,
+                                references: record.references,
+                                scalar: record.scalar,
+                            },
+                        )
+                    }),
             )
-        })
-        .chain(
-            crate::families::b2::records::b2_long_61(bytes)
-                .into_iter()
-                .map(|record| {
-                    (
-                        record.pos,
-                        record.header_token,
-                        CatiaConsolidatedClass61Payload::Long {
-                            prefix: record.prefix,
-                            members: record.members,
-                            references: record.references,
-                            scalar: record.scalar,
-                        },
-                    )
-                }),
-        )
-        .collect::<Vec<_>>();
-    records.sort_by_key(|(pos, _, _)| *pos);
-    records
+            .collect::<Vec<_>>();
+    class61_records.sort_by_key(|(pos, _, _)| *pos);
+    class61_records
         .into_iter()
         .enumerate()
         .map(
@@ -6757,8 +6765,11 @@ fn consolidated_class61_records(bytes: &[u8]) -> Vec<CatiaConsolidatedClass61Rec
         .collect()
 }
 
-fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
-    crate::families::b2::records::b2_groups(bytes)
+fn consolidated_groups(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedGroup> {
+    crate::families::b2::records::b2_groups_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, group)| CatiaConsolidatedGroup {
@@ -6771,14 +6782,15 @@ fn consolidated_groups(bytes: &[u8]) -> Vec<CatiaConsolidatedGroup> {
 
 fn consolidated_cone_faces(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     parameter_points: &[CatiaConsolidatedParameterPoint],
 ) -> Vec<CatiaConsolidatedConeFace> {
     let point_ids = parameter_points
         .iter()
         .map(|point| (point.byte_offset, point.id.clone()))
         .collect::<HashMap<_, _>>();
-    let class18_ends = crate::wire::records::consolidated_records(bytes)
-        .into_iter()
+    let class18_ends = records
+        .iter()
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x18
         })
@@ -6812,8 +6824,8 @@ fn consolidated_cone_faces(
         .collect()
 }
 
-fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
-    crate::families::b2::records::b2_cones(bytes)
+fn consolidated_cones(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaConsolidatedCone> {
+    crate::families::b2::records::b2_cones_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, cone)| CatiaConsolidatedCone {
@@ -6833,8 +6845,11 @@ fn consolidated_cones(bytes: &[u8]) -> Vec<CatiaConsolidatedCone> {
         .collect()
 }
 
-fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
-    crate::families::b2::records::b2_cylinders(bytes)
+fn consolidated_cylinders(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedCylinder> {
+    crate::families::b2::records::b2_cylinders_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, cylinder)| {
@@ -6887,13 +6902,14 @@ fn consolidated_cylinders(bytes: &[u8]) -> Vec<CatiaConsolidatedCylinder> {
 
 fn consolidated_embedded_cylinders(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     groups: &[CatiaConsolidatedGroup],
 ) -> Vec<CatiaConsolidatedEmbeddedCylinder> {
     let group_ids = groups
         .iter()
         .map(|group| (group.byte_offset, group.id.as_str()))
         .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_embedded_cylinders(bytes)
+    crate::families::b2::records::b2_embedded_cylinders_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, embedded)| {
@@ -6925,10 +6941,13 @@ fn consolidated_embedded_cylinders(
         .collect()
 }
 
-fn consolidated_parameter_points(bytes: &[u8]) -> Vec<CatiaConsolidatedParameterPoint> {
+fn consolidated_parameter_points(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedParameterPoint> {
     use crate::families::b2::records::B2ParameterPointPayload;
 
-    crate::families::b2::records::b2_parameter_points(bytes)
+    crate::families::b2::records::b2_parameter_points_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, point)| {
@@ -6956,8 +6975,11 @@ fn consolidated_parameter_points(bytes: &[u8]) -> Vec<CatiaConsolidatedParameter
         .collect()
 }
 
-fn consolidated_reference_lists(bytes: &[u8]) -> Vec<CatiaConsolidatedReferenceList> {
-    crate::families::b2::records::b2_reference_lists(bytes)
+fn consolidated_reference_lists(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedReferenceList> {
+    crate::families::b2::records::b2_reference_lists_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, list)| CatiaConsolidatedReferenceList {
@@ -6968,12 +6990,15 @@ fn consolidated_reference_lists(bytes: &[u8]) -> Vec<CatiaConsolidatedReferenceL
         .collect()
 }
 
-fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
-    let mut pcurves = crate::families::a5a8::records::a5_pcurves(bytes)
+fn consolidated_pcurves(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedPcurve> {
+    let mut pcurves = crate::families::a5a8::records::a5_pcurves_from_records(bytes, records)
         .into_iter()
         .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
         .chain(
-            crate::families::b2::records::b2_pcurves(bytes)
+            crate::families::b2::records::b2_pcurves_from_records(bytes, records)
                 .into_iter()
                 .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
         )
@@ -7001,17 +7026,19 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
 
 fn consolidated_revolutions(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Vec<CatiaConsolidatedRevolution> {
-    let resolved_profiles = crate::families::b2::records::b2_resolved_revolutions(bytes)
-        .into_iter()
-        .map(|resolved| (resolved.revolution.pos as u64, resolved.profile.pos as u64))
-        .collect::<HashMap<_, _>>();
+    let resolved_profiles =
+        crate::families::b2::records::b2_resolved_revolutions_from_records(bytes, records)
+            .into_iter()
+            .map(|resolved| (resolved.revolution.pos as u64, resolved.profile.pos as u64))
+            .collect::<HashMap<_, _>>();
     let circle_ids = circles
         .iter()
         .map(|circle| (circle.byte_offset, circle.id.clone()))
         .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_revolutions(bytes)
+    crate::families::b2::records::b2_revolutions_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, revolution)| CatiaConsolidatedRevolution {
@@ -7034,8 +7061,11 @@ fn consolidated_revolutions(
         .collect()
 }
 
-fn consolidated_line_profiles(bytes: &[u8]) -> Vec<CatiaConsolidatedLineProfile> {
-    crate::families::b2::records::b2_line_profiles(bytes)
+fn consolidated_line_profiles(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedLineProfile> {
+    crate::families::b2::records::b2_line_profiles_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, line)| CatiaConsolidatedLineProfile {
@@ -7048,8 +7078,11 @@ fn consolidated_line_profiles(bytes: &[u8]) -> Vec<CatiaConsolidatedLineProfile>
         .collect()
 }
 
-fn consolidated_spheres(bytes: &[u8]) -> Vec<CatiaConsolidatedSphere> {
-    crate::families::b2::records::b2_spheres(bytes)
+fn consolidated_spheres(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedSphere> {
+    crate::families::b2::records::b2_spheres_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, sphere)| CatiaConsolidatedSphere {
@@ -7066,8 +7099,8 @@ fn consolidated_spheres(bytes: &[u8]) -> Vec<CatiaConsolidatedSphere> {
         .collect()
 }
 
-fn consolidated_tori(bytes: &[u8]) -> Vec<CatiaConsolidatedTorus> {
-    crate::families::b2::records::b2_tori(bytes)
+fn consolidated_tori(bytes: &[u8], records: &[ConsolidatedRecord]) -> Vec<CatiaConsolidatedTorus> {
+    crate::families::b2::records::b2_tori_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .map(|(index, torus)| CatiaConsolidatedTorus {
@@ -7285,17 +7318,20 @@ fn zero_entity_records(bytes: &[u8]) -> Vec<CatiaZeroEntityRecord> {
         .collect()
 }
 
-fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket> {
-    let links = crate::families::b2::records::b2_linked_owners(bytes)
+fn consolidated_owner_packets(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedOwnerPacket> {
+    let links = crate::families::b2::records::b2_linked_owners_from_records(bytes, records)
         .into_iter()
         .map(|linked| (linked.owner.pos, linked.link))
         .chain(
-            crate::families::b2::records::b2_linked_counted_owners(bytes)
+            crate::families::b2::records::b2_linked_counted_owners_from_records(bytes, records)
                 .into_iter()
                 .map(|linked| (linked.owner.pos, linked.link)),
         )
         .collect::<HashMap<_, _>>();
-    let fixed = crate::families::b2::records::b2_owner_packets(bytes);
+    let fixed = crate::families::b2::records::b2_owner_packets_from_records(bytes, records);
     let fixed_positions = fixed
         .iter()
         .map(|packet| packet.pos)
@@ -7326,7 +7362,7 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
             )
         })
         .chain(
-            crate::families::b2::records::b2_counted_owners(bytes)
+            crate::families::b2::records::b2_counted_owners_from_records(bytes, records)
                 .into_iter()
                 .filter(|packet| !fixed_positions.contains(&packet.pos))
                 .map(|packet| {
@@ -7363,6 +7399,7 @@ fn consolidated_owner_packets(bytes: &[u8]) -> Vec<CatiaConsolidatedOwnerPacket>
 
 fn consolidated_edge_runs(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     pcurves: &[CatiaConsolidatedPcurve],
     nodes: &[CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedEdgeRun> {
@@ -7370,7 +7407,10 @@ fn consolidated_edge_runs(
         .iter()
         .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
         .collect::<HashMap<_, _>>();
-    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(bytes)
+    let resolved =
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            bytes, records,
+        )
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
         .collect::<HashMap<_, _>>();
@@ -7378,79 +7418,86 @@ fn consolidated_edge_runs(
         .iter()
         .map(|node| (node.byte_offset, node))
         .collect::<HashMap<_, _>>();
-    crate::families::consolidated::records::consolidated_topology_edge_runs(bytes)
-        .into_iter()
-        .filter_map(|run| {
-            if !run.edge.co_parametric || !run.identity_chain_consistent {
-                return None;
-            }
-            let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
-            Some((run, pcurve_offsets))
+    crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+        bytes, records,
+    )
+    .into_iter()
+    .filter_map(|run| {
+        if !run.edge.co_parametric || !run.identity_chain_consistent {
+            return None;
+        }
+        let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
+        Some((run, pcurve_offsets))
+    })
+    .enumerate()
+    .filter_map(|(index, (run, pcurve_offsets))| {
+        let resolved = resolved.get(&run.edge.pcurves[0].pos);
+        let node = nodes_by_offset.get(&(run.node.pos as u64))?;
+        node.uses.as_ref()?;
+        Some(CatiaConsolidatedEdgeRun {
+            id: format!("catia:consolidated:edge-run#{index}"),
+            byte_offset: pcurve_offsets[0],
+            pcurves: [
+                pcurve_ids.get(&pcurve_offsets[0])?.clone(),
+                pcurve_ids.get(&pcurve_offsets[1])?.clone(),
+            ],
+            parameter_range: run.edge.parameters.range,
+            tolerance: run.edge.parameters.tolerance,
+            node: node.id.clone(),
+            support_bindings: resolved.map_or([None, None], |resolved| {
+                resolved
+                    .supports
+                    .each_ref()
+                    .map(|binding| binding.as_ref().map(native_consolidated_support_binding))
+            }),
+            shared_loci: resolved
+                .and_then(|resolved| resolved.shared_loci.as_ref())
+                .map(|points| points.iter().map(point_coordinates).collect()),
+            endpoint_loci: resolved
+                .and_then(|resolved| resolved.endpoint_loci.as_ref())
+                .map(|points| points.map(|point| point_coordinates(&point))),
         })
-        .enumerate()
-        .filter_map(|(index, (run, pcurve_offsets))| {
-            let resolved = resolved.get(&run.edge.pcurves[0].pos);
-            let node = nodes_by_offset.get(&(run.node.pos as u64))?;
-            node.uses.as_ref()?;
-            Some(CatiaConsolidatedEdgeRun {
-                id: format!("catia:consolidated:edge-run#{index}"),
-                byte_offset: pcurve_offsets[0],
-                pcurves: [
-                    pcurve_ids.get(&pcurve_offsets[0])?.clone(),
-                    pcurve_ids.get(&pcurve_offsets[1])?.clone(),
-                ],
-                parameter_range: run.edge.parameters.range,
-                tolerance: run.edge.parameters.tolerance,
-                node: node.id.clone(),
-                support_bindings: resolved.map_or([None, None], |resolved| {
-                    resolved
-                        .supports
-                        .each_ref()
-                        .map(|binding| binding.as_ref().map(native_consolidated_support_binding))
-                }),
-                shared_loci: resolved
-                    .and_then(|resolved| resolved.shared_loci.as_ref())
-                    .map(|points| points.iter().map(point_coordinates).collect()),
-                endpoint_loci: resolved
-                    .and_then(|resolved| resolved.endpoint_loci.as_ref())
-                    .map(|points| points.map(|point| point_coordinates(&point))),
-            })
-        })
-        .collect()
+    })
+    .collect()
 }
 
 fn consolidated_edge_nodes(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     circles: &[CatiaConsolidatedCircle],
 ) -> Vec<CatiaConsolidatedEdgeNode> {
     let circle_ids = circles
         .iter()
         .map(|circle| (circle.byte_offset, circle.id.as_str()))
         .collect::<HashMap<_, _>>();
-    let frames = crate::wire::records::consolidated_records(bytes)
-        .into_iter()
+    let frames = records
+        .iter()
         .filter(|record| {
             record.family == crate::wire::records::ConsolidatedFamily::B && record.class == 0x5e
         })
         .map(|record| (record.range.start, (record.width, record.flag)))
         .collect::<HashMap<_, _>>();
-    let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs(bytes)
-        .into_iter()
-        .filter_map(|run| {
-            if !run.identity_chain_consistent {
-                return None;
-            }
-            Some((
-                run.node.pos,
-                (
-                    native_consolidated_edge_uses(&run.uses)?,
-                    run.definition.map(native_consolidated_edge_definition),
-                ),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
+    let use_runs = crate::families::consolidated::records::consolidated_edge_use_runs_from_records(
+        bytes, records,
+    )
+    .into_iter()
+    .filter_map(|run| {
+        if !run.identity_chain_consistent {
+            return None;
+        }
+        Some((
+            run.node.pos,
+            (
+                native_consolidated_edge_uses(&run.uses)?,
+                run.definition.map(native_consolidated_edge_definition),
+            ),
+        ))
+    })
+    .collect::<HashMap<_, _>>();
     let analytic_circles =
-        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs(bytes)
+        crate::families::consolidated::records::consolidated_analytic_circle_edge_runs_from_records(
+            bytes, records,
+        )
             .into_iter()
             .filter(|run| run.identity_chain_consistent)
             .filter_map(|run| {
@@ -7471,22 +7518,24 @@ fn consolidated_edge_nodes(
             })
             .collect::<HashMap<_, _>>();
     let class25_descriptors =
-        crate::families::consolidated::records::consolidated_class25_edge_runs(bytes)
-            .into_iter()
-            .filter(|run| run.identity_chain_consistent)
-            .map(|run| {
-                (
-                    run.node.pos,
-                    CatiaConsolidatedClass25Descriptor {
-                        byte_offset: run.descriptor.pos as u64,
-                        record_id: run.descriptor.record_id,
-                        control: run.descriptor.control,
-                        values: run.descriptor.values,
-                    },
-                )
-            })
-            .collect::<HashMap<_, _>>();
-    crate::families::b2::records::b2_edge_nodes(bytes)
+        crate::families::consolidated::records::consolidated_class25_edge_runs_from_records(
+            bytes, records,
+        )
+        .into_iter()
+        .filter(|run| run.identity_chain_consistent)
+        .map(|run| {
+            (
+                run.node.pos,
+                CatiaConsolidatedClass25Descriptor {
+                    byte_offset: run.descriptor.pos as u64,
+                    record_id: run.descriptor.record_id,
+                    control: run.descriptor.control,
+                    values: run.descriptor.values,
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    crate::families::b2::records::b2_edge_nodes_from_records(bytes, records)
         .into_iter()
         .enumerate()
         .filter_map(|(index, node)| {
@@ -9939,23 +9988,28 @@ impl CatiaNative {
                 })
                 .map(CatiaOuterContainerBinding::from);
         }
-        let consolidated_circles = consolidated_circles(bytes);
-        let consolidated_class61_records = consolidated_class61_records(bytes);
-        let consolidated_parameter_points = consolidated_parameter_points(bytes);
+        let consolidated_records = crate::wire::records::consolidated_records(bytes);
+        let consolidated_circles = consolidated_circles(bytes, &consolidated_records);
+        let consolidated_class61_records =
+            consolidated_class61_records(bytes, &consolidated_records);
+        let consolidated_parameter_points =
+            consolidated_parameter_points(bytes, &consolidated_records);
         let consolidated_cone_faces =
-            consolidated_cone_faces(bytes, &consolidated_parameter_points);
-        let consolidated_cones = consolidated_cones(bytes);
-        let consolidated_cylinders = consolidated_cylinders(bytes);
-        let consolidated_groups = consolidated_groups(bytes);
+            consolidated_cone_faces(bytes, &consolidated_records, &consolidated_parameter_points);
+        let consolidated_cones = consolidated_cones(bytes, &consolidated_records);
+        let consolidated_cylinders = consolidated_cylinders(bytes, &consolidated_records);
+        let consolidated_groups = consolidated_groups(bytes, &consolidated_records);
         let consolidated_embedded_cylinders =
-            consolidated_embedded_cylinders(bytes, &consolidated_groups);
-        let consolidated_line_profiles = consolidated_line_profiles(bytes);
-        let consolidated_owner_packets = consolidated_owner_packets(bytes);
-        let consolidated_pcurves = consolidated_pcurves(bytes);
-        let consolidated_reference_lists = consolidated_reference_lists(bytes);
-        let consolidated_revolutions = consolidated_revolutions(bytes, &consolidated_circles);
-        let consolidated_spheres = consolidated_spheres(bytes);
-        let consolidated_tori = consolidated_tori(bytes);
+            consolidated_embedded_cylinders(bytes, &consolidated_records, &consolidated_groups);
+        let consolidated_line_profiles = consolidated_line_profiles(bytes, &consolidated_records);
+        let consolidated_owner_packets = consolidated_owner_packets(bytes, &consolidated_records);
+        let consolidated_pcurves = consolidated_pcurves(bytes, &consolidated_records);
+        let consolidated_reference_lists =
+            consolidated_reference_lists(bytes, &consolidated_records);
+        let consolidated_revolutions =
+            consolidated_revolutions(bytes, &consolidated_records, &consolidated_circles);
+        let consolidated_spheres = consolidated_spheres(bytes, &consolidated_records);
+        let consolidated_tori = consolidated_tori(bytes, &consolidated_records);
         let zero_entity_records = zero_entity_records(bytes);
         let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
@@ -9980,9 +10034,14 @@ impl CatiaNative {
             zero_entity_support_runs(parsed_zero_entity_support_runs, &zero_entity_records);
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, &zero_entity_records);
-        let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes, &consolidated_circles);
-        let consolidated_edge_runs =
-            consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
+        let mut consolidated_edge_nodes =
+            consolidated_edge_nodes(bytes, &consolidated_records, &consolidated_circles);
+        let consolidated_edge_runs = consolidated_edge_runs(
+            bytes,
+            &consolidated_records,
+            &consolidated_pcurves,
+            &consolidated_edge_nodes,
+        );
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&mut consolidated_edge_nodes);
         Self {

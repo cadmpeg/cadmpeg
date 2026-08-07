@@ -508,6 +508,167 @@ fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {
 }
 
 #[test]
+fn indexed_native_record_decoders_match_one_shot_wrappers() {
+    let compare = |name: &str, one_shot: Vec<usize>, indexed: Vec<usize>| {
+        assert_eq!(indexed, one_shot, "indexed decoder changed for {name}");
+    };
+
+    let bytes = b2_reference_list_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "reference lists",
+        crate::families::b2::records::b2_reference_lists(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_reference_lists_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "owner packets",
+        crate::families::b2::records::b2_owner_packets(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_width_coded_owner_packet_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "width-coded owner packets",
+        crate::families::b2::records::b2_owner_packets(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_counted_61_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "counted class 61",
+        crate::families::b2::records::b2_counted_61(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_counted_61_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_long_61_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "long class 61",
+        crate::families::b2::records::b2_long_61(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_long_61_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_link_5f_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "class 5f links",
+        crate::families::b2::records::b2_links_5f(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_links_5f_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_linked_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::b2::records::b2_linked_owners_from_records(&bytes, &records),
+        crate::families::b2::records::b2_linked_owners(&bytes)
+    );
+
+    let bytes = b2_linked_counted_owner_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::b2::records::b2_linked_counted_owners_from_records(&bytes, &records),
+        crate::families::b2::records::b2_linked_counted_owners(&bytes)
+    );
+
+    let bytes = b2_parameter_point_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "parameter points",
+        crate::families::b2::records::b2_parameter_points(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_parameter_points_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_line_profile_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "line profiles",
+        crate::families::b2::records::b2_line_profiles(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_line_profiles_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_spatial_circle_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "spatial circles",
+        crate::families::b2::records::b2_spatial_circles(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_spatial_circles_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+
+    let bytes = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    let records = crate::wire::records::consolidated_records(&bytes);
+    compare(
+        "NURBS curves",
+        crate::families::b2::records::b2_nurbs_curves(&bytes)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+        crate::families::b2::records::b2_nurbs_curves_from_records(&bytes, &records)
+            .into_iter()
+            .map(|record| record.pos)
+            .collect(),
+    );
+}
+
+#[test]
 fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
     let mut stream = b2_torus_stream();
     stream[5 + 6 * 8..5 + 7 * 8].copy_from_slice(&1.0f64.to_le_bytes());
