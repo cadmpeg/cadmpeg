@@ -8,7 +8,7 @@ use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -117,20 +117,7 @@ pub(super) fn pcurve_geometry(
     factor: f64,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let curve = ir.model.curves.iter().find(|curve| curve.id == curve_id)?;
-    let (nurbs, range) = match &curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => {
-            let range = ir
-                .model
-                .edges
-                .iter()
-                .find(|edge| edge.curve.as_ref() == Some(&curve_id))?
-                .param_range?;
-            (nurbs.clone(), range)
-        }
-        CurveGeometry::Composite { .. } => bounded_nurbs_for_curve(ir, &curve_id)?,
-        _ => return None,
-    };
+    let (nurbs, range) = bounded_nurbs_for_curve(ir, &curve_id)?;
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),

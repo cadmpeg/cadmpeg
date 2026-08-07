@@ -2098,6 +2098,46 @@ fn trimmed_plane_file() -> Vec<u8> {
     bytes
 }
 
+fn trimmed_circle_pcurve_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 108,
+            form: 0,
+            label: "PLANE".into(),
+            status: "00010000",
+            parameters: "108,0,0,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: "100,0,0,0,0.5,0.5,0.5,0.5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: "100,0,0,0,0.5,0.5,0.5,0.5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "ON_SURF".into(),
+            status: "00010000",
+            parameters: "142,0,1,5,3,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,1,1,0,7;".into(),
+        },
+    ])
+}
+
 fn model_curve_only_trimmed_plane_file() -> Vec<u8> {
     let mut bytes = trimmed_plane_file();
     let parameter = b"142,0,1,5,3,3;";
@@ -7454,6 +7494,46 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .unwrap();
     assert_eq!(coedge.radial_next, coedge.id);
     assert!(!coedge.pcurves.is_empty());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_a_trimmed_sheet_from_a_native_circle_pcurve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_circle_pcurve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D9")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert_eq!(coedge.pcurves.len(), 1);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
