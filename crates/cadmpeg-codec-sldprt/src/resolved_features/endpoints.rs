@@ -46,6 +46,7 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_compact_96_selected_axis_endpoint_indices,
     extended_compact_indexed_curve_endpoint_indices,
     legacy_compact_104_profile_line_endpoint_indices,
+    legacy_104_profile_line_endpoint_indices,
     compact_legacy_curve_endpoint_indices,
     compact_legacy_code_one_line_endpoint_indices,
     compact_legacy_short_role_two_curve_endpoint_indices,
@@ -3206,6 +3207,9 @@ pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -
     if packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some() {
         return Some(48);
     }
+    if legacy_104_profile_line_endpoint_indices(payload, offset).is_some() {
+        return Some(56);
+    }
     if legacy_compact_84_profile_line_uses_point_roster(payload, offset) {
         return Some(56);
     }
@@ -3614,6 +3618,55 @@ pub(super) fn legacy_compact_104_profile_line_endpoint_indices(
     }
     one_based_u16_endpoint_pair(payload, offset, 56)
         .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
+pub(super) fn legacy_104_profile_line_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || marker_native_code(payload, offset) != Some(1)
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&[0; 4])
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 78..offset + 94)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 94..offset + 96) != Some(&[0x04, 0x00])
+        || payload.get(offset + 96..offset + 100) != Some(&[0; 4])
+        || payload
+            .get(offset + 100..offset + 104)
+            .and_then(|next| next.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_none_or(|next| matches!(next, 0 | u32::MAX))
+        || !sketch_marker_prefix_at(payload, offset.checked_add(104)?)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        Some(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        ))
+    };
+    let [Some(first), Some(second)] = [endpoint(56), endpoint(58)] else {
+        return None;
+    };
+    (first != second && first != u16::MAX && second != u16::MAX)
+        .then(|| [u32::from(first) + 1, u32::from(second) + 1])
 }
 
 pub(super) fn current_compact_104_profile_line(payload: &[u8], offset: usize) -> bool {
