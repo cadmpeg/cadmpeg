@@ -548,7 +548,7 @@ fn a5_weight_program_reads_independent_palindromic_rows() {
     bytes.extend([1.0, 0.8].into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
         Some(vec![
             1.0, 0.8, 0.8, 1.0, 0.9, 0.65, 0.65, 0.9, 0.9, 0.65, 0.65, 0.9, 1.0, 0.8, 0.8, 1.0,
         ])
@@ -566,10 +566,21 @@ fn a5_weight_program_reads_zero_prefixed_complete_grid() {
     bytes.extend(expected.into_iter().flat_map(le_f64));
     let mut at = 0;
     assert_eq!(
-        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4),
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 4, 4, bytes.len()),
         Some(expected.to_vec())
     );
     assert_eq!(at, bytes.len());
+}
+
+#[test]
+fn a5_weight_program_does_not_cross_frame_boundary() {
+    let mut bytes = vec![0x00];
+    bytes.extend([1.0, 2.0, 3.0, 4.0].into_iter().flat_map(le_f64));
+    bytes.extend([0u8; 8]);
+    let mut at = 0;
+    assert!(
+        crate::families::a5a8::records::a5_weights(&bytes, &mut at, 2, 2, 1 + 3 * 8,).is_none()
+    );
 }
 
 #[test]

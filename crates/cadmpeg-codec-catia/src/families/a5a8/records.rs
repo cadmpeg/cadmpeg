@@ -1244,6 +1244,7 @@ fn a5_surface(data: &[u8], frame: ConsolidatedFrame) -> Option<FreeformSurface> 
             &mut at,
             u_count as usize,
             v_count as usize,
+            end,
         )?),
         _ => return None,
     };
@@ -1492,11 +1493,12 @@ pub(super) fn a5_weights(
     at: &mut usize,
     rows: usize,
     cols: usize,
+    end: usize,
 ) -> Option<Vec<f64>> {
     let count = rows.checked_mul(cols)?;
     if bytes.get(*at) == Some(&0x00) {
         *at += 1;
-        return f64_values(bytes, at, count, bytes.len()).filter(|weights| {
+        return f64_values(bytes, at, count, end).filter(|weights| {
             weights
                 .iter()
                 .all(|weight| weight.is_finite() && *weight != 0.0)
@@ -1518,7 +1520,7 @@ pub(super) fn a5_weights(
                 return None;
             }
             *at += 3;
-            let seed = f64_values(bytes, at, seed_count, bytes.len())?;
+            let seed = f64_values(bytes, at, seed_count, end)?;
             let mut row = seed.clone();
             row.extend(seed[..cols / 2].iter().rev().copied());
             if row.len() != cols {
