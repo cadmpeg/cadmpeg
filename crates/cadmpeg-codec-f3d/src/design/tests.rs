@@ -489,6 +489,242 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn dispatcher_projects_remaining_operand_feature_scopes() {
+    use crate::records::{
+        DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
+        DesignConstructionOperandGroupFrame, DesignCopyPasteBodiesOperation,
+        DesignCopyPasteComponentOperation,
+    };
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, SheetMetalThicknessSide};
+
+    let stream = "f3d:native";
+    let group = |scope_record_index: u32,
+                 scope_reference_ordinal: u32,
+                 record_index: u32,
+                 members: &[u32],
+                 role: u64| {
+        DesignConstructionOperandGroup {
+            id: format!("{stream}:construction-group#{record_index}"),
+            scope_record_index,
+            scope_reference_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "264".into(),
+            members: members.to_vec(),
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![0; members.len()],
+            frame: DesignConstructionOperandGroupFrame {
+                member_count_offset: 0,
+                auxiliary_record_indices: Vec::new(),
+                auxiliary_record_offsets: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_record_indices: Vec::new(),
+                trailing_record_offsets: Vec::new(),
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 0,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 0,
+                variant: false,
+            },
+            role,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 0,
+            paired_class_tag: "264".into(),
+            paired_byte_offset: 0,
+        }
+    };
+
+    let mut base_flange =
+        DesignParameterScope::empty(&format!("{stream}:scope#base-flange"), "BaseFlange", 10);
+    base_flange.base_flange_operation = Some(DesignBaseFlangeOperation {
+        thickness: 0.2,
+        thickness_offset: 0,
+        profile_group_record_index: 100,
+        profile_record_index: 101,
+        thickness_record_index: 102,
+        settings_record_index: 103,
+    });
+    base_flange.base_flange_profile = Some(DesignSketchProfileOperand {
+        scope_reference_ordinal: 1,
+        record_index: 101,
+        byte_offset: 0,
+        class_tag: "377".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 0,
+        entity_id: format!("{stream}:sketch#7"),
+        entity_suffix: 7,
+        entity_reference_offset: 0,
+        paired_class_tag: "264".into(),
+        paired_byte_offset: 0,
+    });
+
+    let mut remove_body =
+        DesignParameterScope::empty(&format!("{stream}:scope#remove-body"), "RemoveBody", 20);
+    remove_body.reference_members = vec![200];
+
+    let mut surface_stitch = DesignParameterScope::empty(
+        &format!("{stream}:scope#surface-stitch"),
+        "SurfaceStitch",
+        30,
+    );
+    surface_stitch.reference_members = vec![300, 301, 302, 303];
+    surface_stitch.surface_stitch_operation = Some(DesignSurfaceStitchOperation {
+        gap_tolerance: 0.01,
+        gap_tolerance_offset: 0,
+        tolerance_record_index: 302,
+        settings_record_index: 303,
+    });
+
+    let mut copy_paste =
+        DesignParameterScope::empty(&format!("{stream}:scope#copy-paste"), "CopyPaste", 40);
+    copy_paste.copy_paste_component_operation = Some(DesignCopyPasteComponentOperation {
+        relation_record_index: 401,
+        source_occurrence_record_index: 402,
+        copied_occurrence_record_index: 403,
+        component_guid: "component".into(),
+        source_occurrence_guid: "source-occurrence".into(),
+        copied_occurrence_guid: "copied-occurrence".into(),
+        source_transform: identity_matrix(),
+        source_transform_offset: 0,
+        copied_transform: identity_matrix(),
+        copied_transform_offset: 0,
+    });
+
+    let mut copy_paste_bodies = DesignParameterScope::empty(
+        &format!("{stream}:scope#copy-paste-bodies"),
+        "CopyPasteBodies",
+        50,
+    );
+    copy_paste_bodies.copy_paste_bodies_operation = Some(DesignCopyPasteBodiesOperation {
+        body_group_record_index: 501,
+        body_group_class_tag: "264".into(),
+        body_group_byte_offset: 0,
+        body_operand_record_indices: vec![502],
+        body_operand_record_offsets: vec![0],
+        relation_record_index: 503,
+        relation_class_tag: "264".into(),
+        relation_byte_offset: 0,
+        source_body_entity_suffixes: vec![11],
+        source_body_entity_suffix_offsets: vec![0],
+        copied_body_entity_suffixes: vec![12],
+        copied_body_entity_suffix_offsets: vec![0],
+    });
+
+    let mut base_feature =
+        DesignParameterScope::empty(&format!("{stream}:scope#base-feature"), "Base Feature", 60);
+    base_feature.base_feature_construction = Some(DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes: vec![21],
+        body_entity_suffix_offsets: vec![0],
+        body_entity_fields: vec![[0; 6]],
+        body_reference_records: vec![601],
+        body_reference_record_offsets: vec![0],
+        body_reference_fields: vec![[0; 6]],
+        repeated_reference_fields: Vec::new(),
+        metadata_record: 602,
+        metadata_record_offset: 0,
+        metadata_field: vec![0, 0],
+        result_records: vec![603],
+        result_record_offsets: vec![0],
+        result_fields: vec![[0; 6]],
+    });
+
+    let scopes = vec![
+        base_flange,
+        remove_body,
+        surface_stitch,
+        copy_paste,
+        copy_paste_bodies,
+        base_feature,
+    ];
+    let groups = vec![
+        group(10, 0, 100, &[101], 0x0000_0041_0000_0000),
+        group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
+        group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
+    ];
+    let placement = DesignSketchPlacement {
+        id: format!("{stream}:placement#7"),
+        scope_record_index: None,
+        entity_id: format!("{stream}:sketch#7"),
+        entity_suffix: 7,
+        byte_offset: 0,
+        class_tag: "264".into(),
+        record_index: 700,
+        frame_length: 0,
+        transform: identity_matrix(),
+        transform_offset: None,
+        paired_class_tag: "264".into(),
+        paired_byte_offset: 0,
+        member_run_head: false,
+    };
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        &scopes,
+        &groups,
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    );
+    let definition = |kind: &str| {
+        features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some(kind))
+            .map_or_else(
+                || panic!("missing dispatched {kind} feature"),
+                |feature| feature.definition.clone(),
+            )
+    };
+
+    assert_eq!(
+        definition("BaseFlange"),
+        FeatureDefinition::SheetMetalBaseFlange {
+            profile: ProfileRef::Sketch(neutral_sketch_id(&placement)),
+            thickness: Length(2.0),
+            side: SheetMetalThicknessSide::Forward,
+        }
+    );
+    assert_eq!(
+        definition("RemoveBody"),
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Native(groups[1].id.clone()),
+            mode: BodyRetentionMode::DeleteSelected,
+        }
+    );
+    assert_eq!(
+        definition("SurfaceStitch"),
+        FeatureDefinition::KnitSurface {
+            faces: FaceSelection::Native(scopes[2].id.clone()),
+            merge_entities: Some(true),
+            create_solid: Some(true),
+            gap_tolerance: Some(Length(0.1)),
+        }
+    );
+    assert_eq!(
+        definition("CopyPaste"),
+        FeatureDefinition::InsertComponent {
+            occurrence: crate::ids::neutral_component_occurrence_id("copied-occurrence"),
+        }
+    );
+    assert_eq!(
+        definition("CopyPasteBodies"),
+        FeatureDefinition::InsertBodies {
+            bodies: BodySelection::Native(scopes[4].id.clone()),
+        }
+    );
+    assert_eq!(
+        definition("Base Feature"),
+        FeatureDefinition::BaseFeature {
+            bodies: BodySelection::Native(scopes[5].id.clone()),
+        }
+    );
+}
+
+#[test]
 fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
