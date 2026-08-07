@@ -200,6 +200,38 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
 }
 
 #[test]
+fn boolean_target_history_attaches_the_target_writer_dependency() {
+    let result = decode(boolean_target_body_lineage_prt());
+    let older = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000001")
+        })
+        .expect("older native body writer");
+    let newer = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000000")
+        })
+        .expect("Boolean target writer");
+    assert!(older.dependencies.is_empty());
+    assert_eq!(
+        newer.dependencies.as_slice(),
+        std::slice::from_ref(&older.id)
+    );
+    assert_eq!(result.ir.model.feature_result_topologies.len(), 2);
+    assert_valid(&result);
+}
+
+#[test]
 fn document_pipeline_retains_configurations_attributes_external_links_and_opaque_assets() {
     let document = decode(prt_with_arrangements());
     assert_eq!(document.ir.model.attributes.len(), 1);

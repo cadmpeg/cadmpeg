@@ -1456,6 +1456,13 @@ fn attach_feature_operations(
             .clone();
         let mut dependencies = Vec::new();
         if let Some(operation) = booleans.get(label.id.as_str()) {
+            if let Some(writer) =
+                body_writer_history.native_writer(canonical_body(operation.target_object_index))
+            {
+                if !dependencies.contains(writer) {
+                    dependencies.push(writer.clone());
+                }
+            }
             for body in &operation.tool_object_indices {
                 if let Some(writer) = body_writer_history.native_writer(canonical_body(*body)) {
                     if !dependencies.contains(writer) {

@@ -518,6 +518,22 @@ pub(crate) fn offset_store_primary_body_lineage_prt() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// A synthetic history whose Boolean target reuses the native body identity
+/// written by the preceding operation. The Boolean payload has no separate
+/// primary-body field, so its target must supply the primary lineage edge.
+pub(crate) fn boolean_target_body_lineage_prt() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[0xff, 0xff, 0xff, 0xff];
+    let boolean_payload = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00".to_vec();
+    let primary_body = vec![0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
+    let operations = [
+        (input_slots, "UNITE", boolean_payload),
+        (input_slots, "EXTRUDE", primary_body),
+    ];
+    let store_records: [&[u8]; 0] = [];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 pub(crate) fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
