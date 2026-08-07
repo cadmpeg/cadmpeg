@@ -81,6 +81,34 @@ impl B5Graph {
     pub(crate) fn canonical_surface_id(&self, object_id: u32) -> Option<u32> {
         canonical_surface_id(&self.surface_aliases, object_id)
     }
+
+    /// Return native edge identities proven to belong to the closed B-rep.
+    ///
+    /// A structurally parseable class-`5e` allocation is a physical edge only
+    /// when a resolved face loop references it.  An incomplete graph cannot
+    /// prove that the retained loop set is exhaustive, so callers must use
+    /// their unresolved-association fallback in that case.
+    #[must_use]
+    pub(crate) fn referenced_edge_vertex_references(&self) -> Option<BTreeMap<u32, [u32; 2]>> {
+        if !self.complete {
+            return None;
+        }
+        let referenced_edges = self
+            .loops
+            .values()
+            .flat_map(|loop_| loop_.edges.iter().copied())
+            .collect::<HashSet<_>>();
+        Some(
+            referenced_edges
+                .into_iter()
+                .filter_map(|object_id| {
+                    self.edges
+                        .get(&object_id)
+                        .map(|edge| (object_id, edge.vertices))
+                })
+                .collect(),
+        )
+    }
 }
 
 /// Follow one surface identity through a direct alias map.
@@ -7987,6 +8015,40 @@ mod tests {
             edge_vertex_references(&bytes),
             BTreeMap::from([(17, [15, 21])])
         );
+    }
+
+    #[test]
+    fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
+        let mut graph = parse(&crate::tests::b5_closed_triangle_stream()).expect("B5 graph");
+        assert!(graph.complete);
+        graph.edges.insert(
+            301,
+            B5Edge {
+                object_id: 301,
+                support: 600,
+                vertices: [10, 11],
+                parameter_incidences: [20, 21],
+                terminal_control: 0x01,
+            },
+        );
+        graph.edges.insert(
+            900,
+            B5Edge {
+                object_id: 900,
+                support: 601,
+                vertices: [12, 13],
+                parameter_incidences: [22, 23],
+                terminal_control: 0x01,
+            },
+        );
+
+        assert_eq!(
+            graph.referenced_edge_vertex_references(),
+            Some(BTreeMap::from([(301, [10, 11])]))
+        );
+
+        graph.complete = false;
+        assert_eq!(graph.referenced_edge_vertex_references(), None);
     }
 
     #[test]

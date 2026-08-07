@@ -3243,9 +3243,13 @@ fn attach_standard_topology(
             .map_or(edge, |candidate| edge_classes[candidate]);
         edge_classes.push(class);
     }
-    let native_edges = crate::families::b5::graph::edge_vertex_references(source);
+    let topology_graph = crate::families::b5::graph::parse(source);
+    let native_edges = topology_graph
+        .as_ref()
+        .and_then(crate::families::b5::graph::B5Graph::referenced_edge_vertex_references)
+        .unwrap_or_else(|| crate::families::b5::graph::edge_vertex_references(source));
     let graph_endpoint_pairs = standard_native_graph_endpoint_pairs(
-        source,
+        topology_graph.as_ref(),
         &supports,
         &native_edges,
         &ir.model.points,
@@ -5121,7 +5125,7 @@ pub(crate) fn standard_circle_endpoint_candidates(
 /// matches take precedence; otherwise an unused native edge may contribute
 /// only when its logical point pair is unique inside the row's geometric domain.
 pub(crate) fn standard_native_graph_endpoint_pairs(
-    source: &[u8],
+    graph: Option<&crate::families::b5::graph::B5Graph>,
     supports: &[crate::families::standard::records::StandardCurveSupport],
     native_edges: &BTreeMap<u32, [u32; 2]>,
     points: &[Point],
@@ -5130,7 +5134,7 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
     if supports.len() != endpoint_candidates.len() {
         return None;
     }
-    let graph = crate::families::b5::graph::parse(source)?;
+    let graph = graph?;
     let identity_points = unique_native_identity_points(
         &graph.logical_vertex_refs,
         &graph.logical_vertex_points,
