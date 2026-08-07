@@ -3993,134 +3993,6 @@ fn validate_standard_topology(
     Some(edge_vertices)
 }
 
-fn strictly_inside_planar_polygon(point: Point2, polygon: &[Point2], tolerance: f64) -> bool {
-    let mut inside = false;
-    for (left, right) in polygon
-        .iter()
-        .zip(polygon.iter().cycle().skip(1))
-        .take(polygon.len())
-    {
-        let edge_u = right.u - left.u;
-        let edge_v = right.v - left.v;
-        let point_u = point.u - left.u;
-        let point_v = point.v - left.v;
-        let edge_length = edge_u.hypot(edge_v);
-        let cross = edge_u * point_v - edge_v * point_u;
-        let dot = point_u * (point.u - right.u) + point_v * (point.v - right.v);
-        if edge_length > 0.0
-            && cross.abs() <= tolerance * edge_length
-            && dot <= tolerance * tolerance
-        {
-            return false;
-        }
-        if (left.v > point.v) != (right.v > point.v) {
-            let intersection = left.u + (point.v - left.v) * edge_u / (right.v - left.v);
-            if intersection > point.u {
-                inside = !inside;
-            }
-        }
-    }
-    inside
-}
-
-fn classify_planar_boundary_roles(
-    surface: &SurfaceGeometry,
-    boundaries: &[Vec<Point3>],
-) -> Vec<LoopBoundaryRole> {
-    let unspecified = || vec![LoopBoundaryRole::Unspecified; boundaries.len()];
-    if boundaries.len() == 1 {
-        return vec![LoopBoundaryRole::Outer];
-    }
-    let SurfaceGeometry::Plane {
-        origin,
-        normal,
-        u_axis,
-    } = surface
-    else {
-        return unspecified();
-    };
-    let Some(normal) = normal.unit() else {
-        return unspecified();
-    };
-    let Some(u_axis) = u_axis.unit() else {
-        return unspecified();
-    };
-    if normal.dot(u_axis).abs() > 1e-8 {
-        return unspecified();
-    }
-    let Some(v_axis) = normal.cross(u_axis).unit() else {
-        return unspecified();
-    };
-    let polygons = boundaries
-        .iter()
-        .map(|boundary| {
-            (boundary.len() >= 3).then(|| {
-                boundary
-                    .iter()
-                    .map(|point| {
-                        let offset = point.vector_from(*origin);
-                        Point2::new(offset.dot(u_axis), offset.dot(v_axis))
-                    })
-                    .collect::<Vec<_>>()
-            })
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(polygons) = polygons else {
-        return unspecified();
-    };
-    let coordinate_scale = polygons
-        .iter()
-        .flat_map(|polygon| polygon.iter())
-        .flat_map(|point| [point.u.abs(), point.v.abs()])
-        .fold(1.0, f64::max);
-    let coordinate_tolerance = 1e-10 * coordinate_scale;
-    let area_tolerance = coordinate_tolerance * coordinate_scale;
-    let areas = polygons
-        .iter()
-        .map(|polygon| {
-            polygon
-                .iter()
-                .zip(polygon.iter().cycle().skip(1))
-                .map(|(left, right)| left.u * right.v - right.u * left.v)
-                .sum::<f64>()
-                * 0.5
-        })
-        .collect::<Vec<_>>();
-    if areas
-        .iter()
-        .any(|area| !area.is_finite() || area.abs() <= area_tolerance)
-    {
-        return unspecified();
-    }
-    let Some((outer, outer_area)) = areas
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
-    else {
-        return unspecified();
-    };
-    let outer_area = outer_area.abs();
-    if areas
-        .iter()
-        .enumerate()
-        .any(|(index, area)| index != outer && outer_area - area.abs() <= area_tolerance)
-    {
-        return unspecified();
-    }
-
-    if polygons.iter().enumerate().any(|(index, polygon)| {
-        index != outer
-            && polygon.iter().any(|point| {
-                !strictly_inside_planar_polygon(*point, &polygons[outer], coordinate_tolerance)
-            })
-    }) {
-        return unspecified();
-    }
-    let mut roles = vec![LoopBoundaryRole::Inner; boundaries.len()];
-    roles[outer] = LoopBoundaryRole::Outer;
-    roles
-}
-
 fn standard_boundary_roles(
     ir: &CadIr,
     bindings: &[(SurfaceId, bool, usize)],
@@ -4165,7 +4037,7 @@ fn standard_boundary_roles(
     else {
         return vec![LoopBoundaryRole::Unspecified; face_topology.boundaries.len()];
     };
-    classify_planar_boundary_roles(&surface.geometry, &boundaries)
+    crate::boundary_roles::classify_planar_boundary_roles(&surface.geometry, &boundaries)
 }
 
 /// Emits the edge, loop, coedge, and pcurve IR layers for the solved topology.
@@ -9326,47 +9198,6 @@ mod route_tests {
         assert!((origin.v - latitude).abs() < 1e-12);
         assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
         assert!(direction.v.abs() < 1e-12);
-    }
-}
-
-#[cfg(test)]
-mod boundary_role_tests {
-    use super::classify_planar_boundary_roles;
-    use cadmpeg_ir::geometry::SurfaceGeometry;
-    use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::LoopBoundaryRole;
-
-    fn plane() -> SurfaceGeometry {
-        SurfaceGeometry::Plane {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
-        }
-    }
-
-    fn square(min: f64, max: f64) -> Vec<Point3> {
-        vec![
-            Point3::new(min, min, 0.0),
-            Point3::new(max, min, 0.0),
-            Point3::new(max, max, 0.0),
-            Point3::new(min, max, 0.0),
-        ]
-    }
-
-    #[test]
-    fn planar_boundary_roles_use_containment_not_serialized_order() {
-        assert_eq!(
-            classify_planar_boundary_roles(&plane(), &[square(-1.0, 1.0), square(-5.0, 5.0)]),
-            vec![LoopBoundaryRole::Inner, LoopBoundaryRole::Outer]
-        );
-    }
-
-    #[test]
-    fn planar_boundary_roles_decline_disjoint_cycles() {
-        assert_eq!(
-            classify_planar_boundary_roles(&plane(), &[square(-1.0, 1.0), square(5.0, 7.0)]),
-            vec![LoopBoundaryRole::Unspecified, LoopBoundaryRole::Unspecified]
-        );
     }
 }
 

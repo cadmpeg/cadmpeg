@@ -502,6 +502,13 @@ current scores require those matrices and representative fixtures.
   triple supply the source-native edge- and pcurve-occurrence senses; transfer
   requires the oriented edge occurrences to close cyclically and retains
   pcurve direction in each coedge use.
+  A transferred face with one closed loop derives `outer`. A planar face with
+  multiple loops derives one `outer` and `inner` for the remaining loops only
+  when every occurrence has a finite line pcurve whose lifted endpoints agree
+  with the serialized edge endpoints, one unique largest polygon strictly
+  contains every other polygon, and no boundary is degenerate or touching.
+  Curved, non-planar, disjoint, overlapping, nested-hole, and ambiguous
+  arrangements retain `unspecified` boundary roles.
   Object-stream edges require exactly five references and one admitted terminal
   control, with no residual bytes. The resolved graph retains the support,
   ordered vertex and parameter-incidence identities, and exact terminal control;

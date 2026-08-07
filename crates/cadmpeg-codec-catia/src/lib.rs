@@ -44,6 +44,7 @@
 pub(crate) mod analytic;
 mod appearance;
 pub(crate) mod assemble;
+mod boundary_roles;
 pub(crate) mod catalog;
 pub(crate) mod container;
 pub(crate) mod coverage;
