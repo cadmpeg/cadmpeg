@@ -7101,6 +7101,25 @@ mod tests {
     }
 
     #[test]
+    fn object_stream_frame_walk_descends_after_inline_surface_tail() {
+        let mut bytes = crate::tests::a8_inline_tail_surface_stream();
+        let mut nested_b5 = vec![0xb5, 0x03, 0x5e, 0x01];
+        nested_b5.extend_from_slice(&7u32.to_le_bytes());
+        nested_b5.push(0x00);
+        bytes.extend_from_slice(&nested_b5);
+        let payload_len = u32::try_from(bytes.len() - 11).expect("small surface payload");
+        bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+        assert_eq!(
+            object_stream_frames(&bytes)
+                .iter()
+                .map(|frame| (frame.family, frame.class, frame.object_id))
+                .collect::<Vec<_>>(),
+            vec![(0xa8, 0x34, 0xdeca_fbad), (0xb5, 0x5e, 7)]
+        );
+    }
+
+    #[test]
     fn framed_records_ignore_marker_shaped_bytes_inside_b5_payloads() {
         let mut nested_a8 = vec![0xa8, 0x03, 0x62];
         nested_a8.extend_from_slice(&0u32.to_le_bytes());

@@ -6,8 +6,8 @@
 use crate::tests::{
     a5_freeform_curve_stream, a5_guide_curve_stream, a5_pcurve_stream, a5_rational_surface_stream,
     a5_surface_stream, a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream,
-    a8_elided_surface_stream, a8_freeform_curve_stream, a8_pcurve_stream,
-    a8_rational_surface_stream, a8_surface_stream, le_f64,
+    a8_elided_surface_stream, a8_freeform_curve_stream, a8_inline_tail_surface_stream,
+    a8_pcurve_stream, a8_rational_surface_stream, a8_surface_stream, a8_surface_tail, le_f64,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -51,6 +51,42 @@ fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes).len(), 1);
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_valid_tail_after_inline_poles() {
+    let bytes = a8_inline_tail_surface_stream();
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        .try_into()
+        .expect("one inline-tail surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8].x, 8.0);
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_valid_tail_after_inline_weights() {
+    let mut bytes = a8_rational_surface_stream();
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [surface] = crate::families::a5a8::records::a8_surfaces(&bytes)
+        .try_into()
+        .expect("one inline-weight-tail surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.weights, Some(vec![2.0; 9]));
+}
+
+#[test]
+fn a8_surface_parser_rejects_a_malformed_tail_after_inline_poles() {
+    let mut bytes = a8_inline_tail_surface_stream();
+    let tail_start = bytes.len() - 141;
+    bytes[tail_start + 68] = 0;
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
 }
 
 #[test]

@@ -510,7 +510,7 @@ Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <pay
 
 For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increasing distinct U knots and multiplicities, V degree/flags, finite strictly increasing distinct V knots and multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
-The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. Its byte layout is:
+The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The inline-pole form may place the same tail immediately after its XYZ pole grid and optional rational weight grid. An inline-pole frame may also end after that grid or weight grid without the tail. Its byte layout is:
 
 | Tail offset | Width | Value |
 | --- | ---: | --- |
@@ -530,7 +530,7 @@ The elided-pole form places the fixed 141-byte range/affine/extrapolation tail i
 | `+71` | 64 | zero bytes |
 | `+135` | 6 | `01 00 01 00 07 07` |
 
-The byte after that tail is the end of the `a8` frame or the first owned A/B-family child record. It carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. Grid cardinality comes from the elided surface header. A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation.
+The byte after the tail, or after an inline grid when no tail is present, is the end of the `a8` frame or the first owned A/B-family child record. The elided form carries no inline XYZ pole grid or rational-weight grid. Its external pole allocation is an unframed `nu×nv` XYZ grid, followed by the rational-weight grid when `mode=0x05`, occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame. Grid cardinality comes from the elided surface header. A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation.
 
 **In-stream object-id resolver:** `a8 <frame_flag>` and `b5 <frame_flag>` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 

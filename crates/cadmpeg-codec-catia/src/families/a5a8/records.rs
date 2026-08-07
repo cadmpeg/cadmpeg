@@ -190,7 +190,7 @@ pub(crate) fn a8_nested_b5_run_start(
             object_id: frame.object_id,
         },
     )?;
-    let child_start = if parsed.header.poles_elided {
+    let suffix_start = if parsed.header.poles_elided {
         parsed.pole_start.checked_add(141)?
     } else {
         let poles = crate::nurbs_surface_control_count(
@@ -208,11 +208,16 @@ pub(crate) fn a8_nested_b5_run_start(
             .checked_add(pole_bytes)?
             .checked_add(weight_bytes)?
     };
-    (child_start < frame_end && closed_a8_child_run(data, child_start, frame_end))
-        .then_some(child_start)
+    let child_start = a8_surface_suffix_start(
+        data,
+        suffix_start,
+        frame_end,
+        &parsed.header.v_distinct_knots,
+    )?;
+    (child_start < frame_end).then_some(child_start)
 }
 
-fn valid_a8_elided_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
+fn valid_a8_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
     let Some(end) = at.checked_add(141) else {
         return false;
     };
@@ -273,6 +278,17 @@ fn valid_a8_elided_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
         && zero_w == 0.0
         && one_v == 1.0
         && zero_x == 0.0
+}
+
+fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize, v_knots: &[f64]) -> Option<usize> {
+    if closed_a8_child_run(data, at, end) {
+        return Some(at);
+    }
+    let tail_end = at.checked_add(141)?;
+    (tail_end <= end
+        && valid_a8_surface_tail(data, at, v_knots)
+        && closed_a8_child_run(data, tail_end, end))
+    .then_some(tail_end)
 }
 
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
@@ -1320,7 +1336,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     }
     let tail_end = at.checked_add(141)?;
     let poles_elided = tail_end <= end
-        && valid_a8_elided_tail(data, at, &v_distinct)
+        && valid_a8_surface_tail(data, at, &v_distinct)
         && closed_a8_child_run(data, tail_end, end);
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
@@ -1392,9 +1408,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     } else {
         Vec::new()
     };
-    if !closed_a8_child_run(data, pole_start, end) {
-        return None;
-    }
+    a8_surface_suffix_start(data, pole_start, end, &v_distinct_knots)?;
     Some(FreeformSurface {
         pos,
         identity: FreeformSurfaceIdentity::Object(object_id),

@@ -1066,9 +1066,7 @@ pub(crate) fn a8_surface_stream() -> Vec<u8> {
     record
 }
 
-pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
-    let mut bytes = a8_surface_stream();
-    bytes.truncate(59);
+pub(crate) fn a8_surface_tail() -> Vec<u8> {
     let mut tail = vec![0; 141];
     tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
     for (offset, value) in [
@@ -1085,7 +1083,21 @@ pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
     }
     tail[68..71].copy_from_slice(&[0x01, 0x01, 0x01]);
     tail[135..141].copy_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x07, 0x07]);
-    bytes.extend_from_slice(&tail);
+    tail
+}
+
+pub(crate) fn a8_inline_tail_surface_stream() -> Vec<u8> {
+    let mut bytes = a8_surface_stream();
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    bytes
+}
+
+pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    bytes.extend_from_slice(&a8_surface_tail());
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
