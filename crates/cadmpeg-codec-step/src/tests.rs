@@ -4827,6 +4827,35 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
 }
 
 #[test]
+fn complex_validation_measure_carrier_is_decoded() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#42=REPRESENTATION('surface area',(#43),#2);",
+        "#42=(REPRESENTATION('surface area',(#43),#2) SHAPE_REPRESENTATION());",
+    )
+    .replace(
+        "#43=MEASURE_REPRESENTATION_ITEM('surface area measure',AREA_MEASURE(50.),#44);",
+        "#43=(MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(AREA_MEASURE(50.),#44) REPRESENTATION_ITEM('surface area measure'));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex validation measure");
+
+    assert!(result.report.notes.iter().any(|note| {
+        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
+    }));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("geometric validation property #41 has an unsupported value")
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn complex_tessellated_face_retains_its_surface_carrier() {
     let source = String::from_utf8(
         include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),

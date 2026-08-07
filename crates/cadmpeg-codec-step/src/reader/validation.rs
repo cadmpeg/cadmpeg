@@ -45,19 +45,25 @@ pub(super) fn decode(
     let representations = exchange
         .entities_any(&["REPRESENTATION", "SHAPE_REPRESENTATION"])
         .filter_map(|(id, record)| {
-            if !matches!(
-                record.simple_name(),
-                Some("REPRESENTATION" | "SHAPE_REPRESENTATION")
-            ) {
-                return None;
-            }
-            Some((id, record.parameter(1)?.list()?.first()?.reference()?))
+            let representation = record
+                .partial("REPRESENTATION")
+                .or_else(|| record.partial("SHAPE_REPRESENTATION"))?;
+            Some((
+                id,
+                representation
+                    .parameters
+                    .get(1)
+                    .and_then(ValueExt::list)?
+                    .first()?
+                    .reference()?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let properties = exchange
         .entities("PROPERTY_DEFINITION")
         .filter_map(|(id, record)| {
-            let name = record.parameter(0).and_then(|value| {
+            let property = record.partial("PROPERTY_DEFINITION")?;
+            let name = property.parameters.first().and_then(|value| {
                 decode_text(
                     value,
                     &mut losses,
@@ -66,13 +72,12 @@ pub(super) fn decode(
                     LossKind::MetadataNotTransferred,
                 )
             })?;
-            if record.simple_name() == Some("PROPERTY_DEFINITION")
-                && name.eq_ignore_ascii_case("geometric validation property")
-            {
+            if name.eq_ignore_ascii_case("geometric validation property") {
                 Some((
                     id,
-                    record
-                        .parameter(1)
+                    property
+                        .parameters
+                        .get(1)
                         .and_then(|value| {
                             decode_text(
                                 value,
@@ -97,13 +102,17 @@ pub(super) fn decode(
     let mut warnings = Vec::new();
 
     for (relation_id, relation) in exchange.entities("PROPERTY_DEFINITION_REPRESENTATION") {
-        let Some(property_id) = relation.parameter(0).and_then(ValueExt::reference) else {
+        let Some(relation) = relation.partial("PROPERTY_DEFINITION_REPRESENTATION") else {
+            continue;
+        };
+        let Some(property_id) = relation.parameters.first().and_then(ValueExt::reference) else {
             continue;
         };
         let Some(description) = properties.get(&property_id) else {
             continue;
         };
-        let Some(representation_id) = relation.parameter(1).and_then(ValueExt::reference) else {
+        let Some(representation_id) = relation.parameters.get(1).and_then(ValueExt::reference)
+        else {
             continue;
         };
         let Some(&item_id) = representations.get(&representation_id) else {
@@ -124,7 +133,7 @@ pub(super) fn decode(
         }
         validation_representations.insert(representation_id);
         typed.extend([property_id, relation_id, representation_id, item_id]);
-        if let Some(unit) = item.parameter(2).and_then(ValueExt::reference) {
+        if let Some(unit) = measure_unit(item) {
             collect_unit_records(unit, exchange, &mut typed);
         }
         let (kind, expected_text, actual) = match expected {
@@ -187,8 +196,8 @@ fn expected_value(
     scale: f64,
     losses: &mut Vec<LossNote>,
 ) -> Option<Expected> {
-    if record.simple_name() == Some("CARTESIAN_POINT") {
-        let values = record.parameter(1)?.list()?;
+    if let Some(point) = record.partial("CARTESIAN_POINT") {
+        let values = point.parameters.get(1)?.list()?;
         if values.len() != 3 {
             return None;
         }
@@ -198,42 +207,41 @@ fn expected_value(
             values[2].number()? * scale,
         )));
     }
-    if record.simple_name() != Some("MEASURE_REPRESENTATION_ITEM") {
-        return None;
-    }
-    match record.parameter(1)? {
-        Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
-            value.number()? * measure_scale(record, exchange, scale, 2, losses),
-        )),
-        Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
-            value.number()? * measure_scale(record, exchange, scale, 3, losses),
-        )),
-        _ => None,
-    }
+    record.partial("MEASURE_REPRESENTATION_ITEM")?;
+    let (kind, value) = record
+        .partials
+        .iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .find_map(area_or_volume_measure)?;
+    let scale = measure_scale(record, exchange, scale, kind, losses);
+    Some(match kind {
+        "AREA_MEASURE" => Expected::Area(value * scale),
+        "VOLUME_MEASURE" => Expected::Volume(value * scale),
+        _ => return None,
+    })
 }
 
 fn measure_scale(
     record: &RawRecord,
     exchange: &Exchange,
     fallback: f64,
-    order: i32,
+    kind: &str,
     losses: &mut Vec<LossNote>,
 ) -> f64 {
-    record
-        .parameter(2)
-        .and_then(ValueExt::reference)
+    measure_unit(record)
         .and_then(|unit| exchange.records.get(&unit))
         .and_then(|unit| {
-            if unit.simple_name() != Some("DERIVED_UNIT") {
-                return None;
-            }
-            unit.parameter(0)?
+            let derived = unit.partial("DERIVED_UNIT")?;
+            derived
+                .parameters
+                .first()?
                 .list()?
                 .iter()
                 .try_fold(1.0, |scale, element| {
                     let element = exchange.records.get(&element.reference()?)?;
-                    let base = element.parameter(0)?.reference()?;
-                    let exponent = element.parameter(1)?.number()?;
+                    let element = element.partial("DERIVED_UNIT_ELEMENT")?;
+                    let base = element.parameters.first()?.reference()?;
+                    let exponent = element.parameters.get(1)?.number()?;
                     let base =
                         super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
                     Some(scale * base.powf(exponent))
@@ -244,12 +252,41 @@ fn measure_scale(
                 code: LossKind::GeometryNotTransferred,
                 severity: Severity::Error,
                 message: format!(
-                    "geometric validation measure #{} unit scale did not resolve; the document length scale was used",
-                    record.id
+                    "geometric validation {kind} measure #{} unit scale did not resolve; the document length scale was used",
+                    record.id,
                 ),
                 provenance: None,
             });
-            fallback.powi(order)
+            fallback.powi(if kind == "AREA_MEASURE" { 2 } else { 3 })
+        })
+}
+
+fn area_or_volume_measure(value: &Value) -> Option<(&str, f64)> {
+    match value {
+        Value::Typed(kind, value) if matches!(kind.as_str(), "AREA_MEASURE" | "VOLUME_MEASURE") => {
+            Some((kind.as_str(), value.number()?))
+        }
+        Value::Typed(_, value) => area_or_volume_measure(value),
+        Value::List(values) => values.iter().find_map(area_or_volume_measure),
+        _ => None,
+    }
+}
+
+fn measure_unit(record: &RawRecord) -> Option<u64> {
+    record
+        .partial("MEASURE_WITH_UNIT")
+        .and_then(|partial| {
+            partial
+                .parameters
+                .iter()
+                .rev()
+                .find_map(ValueExt::reference)
+        })
+        .or_else(|| {
+            record
+                .partial("MEASURE_REPRESENTATION_ITEM")
+                .and_then(|partial| partial.parameters.get(2))
+                .and_then(ValueExt::reference)
         })
 }
 
@@ -258,11 +295,12 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>)
     let Some(record) = exchange.records.get(&id) else {
         return;
     };
-    if record.simple_name() != Some("DERIVED_UNIT") {
+    let Some(derived) = record.partial("DERIVED_UNIT") else {
         return;
-    }
-    for element in record
-        .parameter(0)
+    };
+    for element in derived
+        .parameters
+        .first()
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
@@ -272,7 +310,8 @@ fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>)
         if let Some(base) = exchange
             .records
             .get(&element)
-            .and_then(|record| record.parameter(0))
+            .and_then(|record| record.partial("DERIVED_UNIT_ELEMENT"))
+            .and_then(|record| record.parameters.first())
             .and_then(ValueExt::reference)
         {
             typed.insert(base);
@@ -415,15 +454,11 @@ fn collect_validation_references(
 }
 
 trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
 }
 impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
+        self.partials.iter().find(|partial| partial.name == name)
     }
 }
 trait ValueExt {
