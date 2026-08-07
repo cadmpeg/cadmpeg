@@ -44,12 +44,12 @@ use super::{
     legacy_coordinate_roster_selected_axis_endpoint_indices,
     legacy_direct_compact_selected_axis_endpoint_indices,
     legacy_long_profile_line_endpoint_indices, legacy_referenced_wide_arc_endpoint_indices,
-    legacy_state_five_curve_endpoint_indices, legacy_state_one_profile_line_uses_point_roster,
-    legacy_terminal_profile_endpoint_offset, legacy_undetailed_profile_line,
-    legacy_unlocated_geometry_handle, marker_is_selected_construction_line,
-    packed_legacy_curve_endpoint_indices, relation_reference_curve_record,
-    roster_curve_endpoint_markers, unique_arc_center_marker, wide_direct_line_endpoint_markers,
-    wide_indexed_curve_endpoint_indices,
+    legacy_state_five_curve_endpoint_indices, legacy_state_one_84_profile_line_uses_point_roster,
+    legacy_state_one_profile_line_uses_point_roster, legacy_terminal_profile_endpoint_offset,
+    legacy_undetailed_profile_line, legacy_unlocated_geometry_handle,
+    marker_is_selected_construction_line, packed_legacy_curve_endpoint_indices,
+    relation_reference_curve_record, roster_curve_endpoint_markers, unique_arc_center_marker,
+    wide_direct_line_endpoint_markers, wide_indexed_curve_endpoint_indices,
 };
 use crate::records::{
     FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
@@ -4063,6 +4063,92 @@ fn legacy_state_one_profile_line_uses_zero_based_point_roster() {
     payload[offset + 100..offset + 104].copy_from_slice(&42u32.to_le_bytes());
     payload[offset + 96..offset + 100].fill(0xff);
     assert!(!legacy_state_one_profile_line_uses_point_roster(
+        &payload, offset
+    ));
+}
+
+#[test]
+fn legacy_state_one_84_profile_line_uses_zero_based_point_roster() {
+    let offset = 4;
+    let mut payload = vec![0; offset + 84 + LEGACY_SKETCH_MARKER.len()];
+    payload[..offset].copy_from_slice(&41u32.to_le_bytes());
+    payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+    payload[offset + 5..offset + 13].fill(0xff);
+    payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[offset + 17..offset + 21].copy_from_slice(&1u32.to_le_bytes());
+    payload[offset + 23..offset + 31]
+        .copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[offset + 31..offset + 39]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00]);
+    payload[offset + 39..offset + 48].fill(0);
+    payload[offset + 48..offset + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[offset + 56..offset + 60].copy_from_slice(&[1, 0, 2, 0]);
+    payload[offset + 60..offset + 64].copy_from_slice(&1u32.to_le_bytes());
+    payload[offset + 64..offset + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[offset + 72..offset + 76].fill(0);
+    payload[offset + 76..offset + 80].copy_from_slice(&7u32.to_le_bytes());
+    payload[offset + 80..offset + 84].copy_from_slice(&42u32.to_le_bytes());
+    payload[offset + 84..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+    let entity = |id: &str, entity_offset, coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset: entity_offset,
+        object_index: None,
+        local_id: None,
+        kind: if coordinates_m.is_some() {
+            SketchInputKind::Point
+        } else {
+            SketchInputKind::LineOrCircle
+        },
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", offset as u64, None);
+    let first = entity("first", 10, Some([0.0, 0.0]));
+    let second = entity("second", 20, Some([1.0, 0.0]));
+    let third = entity("third", 30, Some([1.0, 1.0]));
+    let markers = [&curve, &first, &second, &third];
+
+    for selector in [[0x00, 0x00, 0x44, 0x00], [0x00, 0x00, 0x84, 0x00]] {
+        payload[offset + 35..offset + 39].copy_from_slice(&selector);
+        assert!(legacy_state_one_84_profile_line_uses_point_roster(
+            &payload, offset
+        ));
+    }
+    assert_eq!(
+        coordinate_roster_endpoint_offset(&payload, offset),
+        Some(56)
+    );
+    assert_eq!(
+        roster_curve_endpoint_markers(&payload, &curve, &markers)
+            .iter()
+            .map(|endpoint| endpoint.id.as_str())
+            .collect::<Vec<_>>(),
+        ["second", "third"]
+    );
+
+    payload[offset + 35..offset + 39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+    assert!(!legacy_state_one_84_profile_line_uses_point_roster(
+        &payload, offset
+    ));
+    payload[offset + 35..offset + 39].copy_from_slice(&[0x00, 0x00, 0x44, 0x00]);
+    payload[offset + 76..offset + 80].fill(0);
+    assert!(!legacy_state_one_84_profile_line_uses_point_roster(
+        &payload, offset
+    ));
+    payload[offset + 76..offset + 80].copy_from_slice(&7u32.to_le_bytes());
+    payload[offset + 80..offset + 84].copy_from_slice(&43u32.to_le_bytes());
+    assert!(!legacy_state_one_84_profile_line_uses_point_roster(
+        &payload, offset
+    ));
+    payload[offset + 80..offset + 84].copy_from_slice(&42u32.to_le_bytes());
+    payload[offset + 84..].fill(0);
+    assert!(!legacy_state_one_84_profile_line_uses_point_roster(
         &payload, offset
     ));
 }
