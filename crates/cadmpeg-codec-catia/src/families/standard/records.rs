@@ -725,7 +725,14 @@ fn axis_from_xy(ax: f32, ay: f32, signed: f32) -> Option<Vector3> {
 
 fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let norm = vector.x.hypot(vector.y).hypot(vector.z);
-    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
+    if !norm.is_finite() || norm == 0.0 {
+        return None;
+    }
+    let unit = vector.scale(1.0 / norm);
+    [unit.x, unit.y, unit.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(unit)
 }
 
 fn f32_le(bytes: &[u8], at: usize) -> f32 {
@@ -759,5 +766,6 @@ mod tests {
             Some(Vector3::new(1.0, 0.0, 0.0))
         );
         assert_eq!(unit_vector(Vector3::new(0.0, 0.0, 0.0)), None);
+        assert_eq!(unit_vector(Vector3::new(f64::from_bits(1), 0.0, 0.0)), None);
     }
 }

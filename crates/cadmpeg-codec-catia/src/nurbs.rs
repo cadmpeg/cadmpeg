@@ -467,6 +467,10 @@ fn quintic_jet_bspline_nd<const N: usize>(
         || points.len() != knots.len()
         || first.len() != knots.len()
         || second.len() != knots.len()
+        || !knots.iter().copied().all(f64::is_finite)
+        || !points.iter().flatten().copied().all(f64::is_finite)
+        || !first.iter().flatten().copied().all(f64::is_finite)
+        || !second.iter().flatten().copied().all(f64::is_finite)
     {
         return None;
     }
@@ -496,6 +500,11 @@ fn quintic_jet_bspline_nd<const N: usize>(
             p1,
         ]);
         full_knots.extend([knots[index + 1]; 6]);
+    }
+    if !full_knots.iter().copied().all(f64::is_finite)
+        || !controls.iter().flatten().copied().all(f64::is_finite)
+    {
+        return None;
     }
     Some((full_knots, controls))
 }
@@ -646,7 +655,7 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::{
-        circular_helix_cache, nurbs_surface_isocurve, reverse_curve_geometry,
+        circular_helix_cache, nurbs_surface_isocurve, quintic_jet_bspline, reverse_curve_geometry,
         reverse_helix_definition, reverse_pcurve_geometry,
     };
 
@@ -824,6 +833,26 @@ mod tests {
         assert!(
             circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
         );
+    }
+
+    #[test]
+    fn quintic_jet_rejects_nonfinite_control_net() {
+        assert!(quintic_jet_bspline(
+            5,
+            &[0.0, 10.0],
+            &[[0.0, 0.0], [1.0, 0.0]],
+            &[[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]],
+        )
+        .is_none());
+        assert!(quintic_jet_bspline(
+            5,
+            &[0.0, 1.0],
+            &[[f64::NAN, 0.0], [1.0, 0.0]],
+            &[[1.0, 0.0], [1.0, 0.0]],
+            &[[0.0, 0.0], [0.0, 0.0]],
+        )
+        .is_none());
     }
 
     #[test]

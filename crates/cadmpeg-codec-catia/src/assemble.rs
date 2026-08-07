@@ -296,7 +296,14 @@ pub(crate) fn circle_parameter_range_from_surface_branch(
 
 pub(crate) fn unit_vector(vector: Vector3) -> Option<Vector3> {
     let norm = vector.x.hypot(vector.y).hypot(vector.z);
-    (norm.is_finite() && norm != 0.0).then(|| vector.scale(1.0 / norm))
+    if !norm.is_finite() || norm == 0.0 {
+        return None;
+    }
+    let unit = vector.scale(1.0 / norm);
+    [unit.x, unit.y, unit.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(unit)
 }
 
 /// Counts of each typed analytic surface kind decoded.
@@ -675,7 +682,13 @@ pub(crate) fn rational_pcurve_arc(
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
     let span = range[1] - range[0];
-    if !radius.is_finite() || radius <= 0.0 || !span.is_finite() || span == 0.0 {
+    if !center.into_iter().all(f64::is_finite)
+        || !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || !radius.is_finite()
+        || radius <= 0.0
+        || !span.is_finite()
+    {
         return None;
     }
     let segment_count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil();
@@ -717,6 +730,15 @@ pub(crate) fn rational_pcurve_arc(
         }
     }
     knots.extend([range[1]; 3]);
+    if !knots.iter().copied().all(f64::is_finite)
+        || !control_points
+            .iter()
+            .copied()
+            .all(|point| [point.u, point.v].into_iter().all(f64::is_finite))
+        || !weights.iter().copied().all(f64::is_finite)
+    {
+        return None;
+    }
     Some(PcurveGeometry::Nurbs {
         degree: 2,
         knots,
@@ -789,6 +811,13 @@ mod route_tests {
     }
 
     #[test]
+    fn rational_pcurve_arc_rejects_nonfinite_construction() {
+        assert!(rational_pcurve_arc([f64::NAN, 0.0], 1.0, [0.0, 1.0]).is_none());
+        assert!(rational_pcurve_arc([0.0, 0.0], f64::MAX, [0.0, 1.0]).is_none());
+        assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [1.0, 0.0]).is_none());
+    }
+
+    #[test]
     fn surface_circle_branch_preserves_tiny_nonzero_sweep() {
         let sweep = 1e-200_f64;
         let surface = SurfaceGeometry::Plane {
@@ -830,6 +859,14 @@ mod route_tests {
         );
         assert_eq!(
             crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)),
+            None
+        );
+        assert_eq!(
+            crate::assemble::unit_vector(cadmpeg_ir::math::Vector3::new(
+                f64::from_bits(1),
+                0.0,
+                0.0,
+            )),
             None
         );
     }
