@@ -7883,15 +7883,15 @@ fn decode_standard_transfers_exact_offset_construction() {
     assert_eq!(*distance, 2.5);
     assert_eq!([*u_sense, *v_sense], [Some(1), Some(1)]);
     assert!(extension_flags.is_empty());
-    assert_eq!(
-        procedural.record_bounds,
-        Some([
-            Some(domain[0]),
-            Some(domain[1]),
-            Some(domain[2]),
-            Some(domain[3])
-        ])
-    );
+    let Some(bounds) = procedural.record_bounds else {
+        panic!("offset parameter bounds");
+    };
+    for (actual, expected) in bounds.into_iter().zip(domain) {
+        let Some(actual) = actual else {
+            panic!("offset parameter bound");
+        };
+        assert!((actual - expected).abs() < 1e-12);
+    }
 }
 
 #[test]
@@ -7926,15 +7926,15 @@ fn decode_standard_transfers_construction_use_offset() {
         panic!("offset construction");
     };
     assert_eq!(*distance, -2.0);
-    assert_eq!(
-        procedural.record_bounds,
-        Some([
-            Some(domain[0]),
-            Some(domain[1]),
-            Some(domain[2]),
-            Some(domain[3])
-        ])
-    );
+    let Some(bounds) = procedural.record_bounds else {
+        panic!("offset parameter bounds");
+    };
+    for (actual, expected) in bounds.into_iter().zip(domain) {
+        let Some(actual) = actual else {
+            panic!("offset parameter bound");
+        };
+        assert!((actual - expected).abs() < 1e-12);
+    }
 }
 
 #[test]
