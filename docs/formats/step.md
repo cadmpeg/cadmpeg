@@ -252,6 +252,10 @@ independent-member salvage rule. A `SURFACE_CURVE` with a star or non-reference
 basis keeps its edge occurrence without a CADIR curve and produces a loss; the
 decoder does not fabricate a curve carrier. A pcurve on a plane scales both
 parameter axes and all length-valued 2D geometry by the document length unit.
+A surface-curve carrier and its pcurve represent the same point set but may
+use different parameterizations; its edge vertices determine the occurrence
+interval when no explicit trim is present. The carrier's own NURBS domain is
+not an edge trim.
 
 The writer records each omitted shell, face, loop, and edge relation as a
 topology-transfer loss. Omitted outer shells, void shells, and outer bounds

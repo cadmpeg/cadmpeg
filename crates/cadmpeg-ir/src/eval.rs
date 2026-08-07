@@ -1442,12 +1442,7 @@ pub fn model_curve_parameter_near_point(
     let index = crate::index::ModelIndex::new(ir);
     let curve = index.curves(&curve_id.0)?;
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
-        return direct_curve_parameter_near_point(
-            &curve.geometry,
-            point,
-            seed,
-            ir.tolerances.linear,
-        );
+        return curve_parameter_near_point(&curve.geometry, point, seed, ir.tolerances.linear);
     }
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
         unreachable!("direct carriers return before procedural inversion");
@@ -1566,6 +1561,16 @@ pub fn model_curve_parameter_near_point(
     candidates
         .into_iter()
         .min_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()))
+}
+
+/// Invert a direct curve carrier near a caller-selected parameter seed.
+pub(crate) fn curve_parameter_near_point(
+    geometry: &CurveGeometry,
+    point: Point3,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    direct_curve_parameter_near_point(geometry, point, seed, tolerance)
 }
 
 fn direct_curve_parameter_near_point(

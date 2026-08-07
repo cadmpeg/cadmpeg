@@ -7,9 +7,12 @@
 )]
 
 use super::*;
-use crate::eval::{curve_point, model_curve_point_by_id, pcurve_uv, surface_point};
+use crate::eval::{
+    curve_parameter_near_point, curve_point, model_curve_point_by_id, pcurve_tangent, pcurve_uv,
+    surface_partials, surface_point,
+};
 use crate::geometry::PcurveGeometry;
-use crate::math::Point3;
+use crate::math::{Point3, Vector3};
 use crate::topology::Sense;
 
 use crate::units::COINCIDENCE_TOLERANCE;
@@ -394,6 +397,12 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// Pcurve parameter sign and direction are independent of edge sense, so
 /// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.0.as_str(), &curve.geometry))
+        .collect::<HashMap<_, _>>();
     let surfaces = ir
         .model
         .surfaces
@@ -487,7 +496,14 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 (Some([t0, _]), Some([_, t1])) => Some(vec![[t0, t1]]),
                 _ => None,
             }
-        };
+        }
+        .or_else(|| {
+            let curve_geometry = edge
+                .curve
+                .as_ref()
+                .and_then(|curve| curves.get(curve.0.as_str()).copied());
+            edge_pcurve_parameter_ranges(ir, geometry, curve_geometry, *start, *end, first, last)
+        });
         let Some(intervals) = intervals else {
             continue;
         };
@@ -535,9 +551,11 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
 /// same edge with the opposite sign, and a stored use interval can wrap a
 /// periodic pcurve's seam, so no single interval is authoritative. The stored
-/// range, the edge interval (in either sign), and the pcurve's intrinsic
-/// parameter extremes are all candidates; the check takes the closest image.
-/// An unbounded line without a stored range or edge interval is skipped.
+/// range and the edge interval (in either sign) are candidates; the check takes
+/// the closest image. An untrimmed carrier domain is not an edge interval: the
+/// STEP edge may select any sub-interval of that carrier through its vertices.
+/// Such an interval is recovered independently from the shared 3D curve by
+/// `edge_pcurve_parameter_ranges`.
 fn pcurve_parameter_ranges(
     pcurve: &crate::geometry::Pcurve,
     pcurve_range: Option<[f64; 2]>,
@@ -550,36 +568,222 @@ fn pcurve_parameter_ranges(
     if let Some([start, end]) = edge_range {
         ranges.extend([[start, end], [-start, -end]]);
     }
-    if let Some(extremes) = pcurve_parameter_extremes(pcurve) {
-        ranges.push(extremes);
+    ranges.extend(pcurve_parameter_extremes(pcurve));
+    if !ranges.is_empty() {
+        if let Some(domain) = pcurve_parameter_domain(&pcurve.geometry) {
+            ranges.push(domain);
+        }
     }
     (!ranges.is_empty()).then_some(ranges)
 }
 
-/// The parameter extremes over which a pcurve is checked. Ordinary NURBS
-/// carriers use their knot domain because some native range fields are
-/// independent metadata. Polar NURBS carriers use their explicit trim range,
-/// falling back to the knot domain. Other analytic carriers have no intrinsic
-/// finite extent here.
-fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
-    match &pcurve.geometry {
-        PcurveGeometry::PolarNurbs { knots, .. } => pcurve
-            .parameter_range
-            .or_else(|| Some([*knots.first()?, *knots.last()?])),
-        PcurveGeometry::SphericalGreatCircle { .. } => pcurve.parameter_range,
-        geometry => pcurve_geometry_parameter_extremes(geometry),
+/// Recover an edge interval from its mapped pcurve when the STEP topology does
+/// not carry an explicit parameter range. The 3D and surface-space carriers
+/// can use different native parameterizations, so solve the mapped pcurve at
+/// each vertex instead of copying a parameter from one carrier to the other.
+/// A direct conic solve remains as a fallback for surfaces without a usable
+/// mapped inverse. Several seeds preserve the correct branch for periodic
+/// carriers.
+fn edge_pcurve_parameter_ranges(
+    ir: &CadIr,
+    surface_geometry: &crate::geometry::SurfaceGeometry,
+    curve_geometry: Option<&crate::geometry::CurveGeometry>,
+    start: Point3,
+    end: Point3,
+    first: &crate::geometry::Pcurve,
+    last: &crate::geometry::Pcurve,
+) -> Option<Vec<[f64; 2]>> {
+    let start_parameters = pcurve_parameter_seeds(first)
+        .into_iter()
+        .filter_map(|seed| {
+            mapped_pcurve_parameter_near_point(
+                surface_geometry,
+                &first.geometry,
+                start,
+                seed,
+                ir.tolerances.linear,
+            )
+        });
+    let start_parameters = unique_finite(start_parameters);
+    let end_parameters = pcurve_parameter_seeds(last).into_iter().filter_map(|seed| {
+        mapped_pcurve_parameter_near_point(
+            surface_geometry,
+            &last.geometry,
+            end,
+            seed,
+            ir.tolerances.linear,
+        )
+    });
+    let end_parameters = unique_finite(end_parameters);
+    let ranges = start_parameters
+        .iter()
+        .copied()
+        .flat_map(|start| end_parameters.iter().copied().map(move |end| [start, end]))
+        .collect::<Vec<_>>();
+    if !ranges.is_empty() {
+        return Some(ranges);
     }
+
+    let curve_geometry = curve_geometry?;
+    if !matches!(
+        curve_geometry,
+        crate::geometry::CurveGeometry::Circle { .. }
+            | crate::geometry::CurveGeometry::Ellipse { .. }
+            | crate::geometry::CurveGeometry::Parabola { .. }
+            | crate::geometry::CurveGeometry::Hyperbola { .. }
+    ) {
+        return None;
+    }
+    let seeds = pcurve_parameter_seeds(first)
+        .into_iter()
+        .chain(pcurve_parameter_seeds(last))
+        .collect::<Vec<_>>();
+    let start_parameters = seeds.iter().filter_map(|&seed| {
+        curve_parameter_near_point(curve_geometry, start, seed, ir.tolerances.linear)
+    });
+    let start_parameters = unique_finite(start_parameters);
+    let end_parameters = seeds.iter().filter_map(|&seed| {
+        curve_parameter_near_point(curve_geometry, end, seed, ir.tolerances.linear)
+    });
+    let end_parameters = unique_finite(end_parameters);
+    let ranges = start_parameters
+        .into_iter()
+        .flat_map(|start| end_parameters.iter().copied().map(move |end| [start, end]))
+        .collect::<Vec<_>>();
+    (!ranges.is_empty()).then_some(ranges)
 }
 
-fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
-        PcurveGeometry::Nurbs { knots, .. } | PcurveGeometry::PolarNurbs { knots, .. } => {
-            Some([*knots.first()?, *knots.last()?])
+/// Find a pcurve parameter whose mapped surface point is near a topology
+/// vertex. Newton steps use the pcurve tangent pushed through the surface
+/// partials; a short backtracking search keeps the iteration on the selected
+/// branch of a periodic or rational carrier.
+fn mapped_pcurve_parameter_near_point(
+    surface_geometry: &crate::geometry::SurfaceGeometry,
+    pcurve_geometry: &PcurveGeometry,
+    target: Point3,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    if !seed.is_finite() || !tolerance.is_finite() || tolerance < 0.0 {
+        return None;
+    }
+    let domain = pcurve_parameter_domain(pcurve_geometry);
+    let clamp_to_domain =
+        |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
+    let evaluate = |parameter: f64| {
+        let uv = pcurve_uv(pcurve_geometry, parameter)?;
+        let point = surface_point(surface_geometry, uv.u, uv.v)?;
+        let tangent_uv = pcurve_tangent(pcurve_geometry, parameter)?;
+        let partials = surface_partials(surface_geometry, uv.u, uv.v)?;
+        let tangent = Vector3::new(
+            partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
+            partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
+            partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
+        );
+        Some((point, tangent))
+    };
+    let mismatch = |point: Point3| distance(point, target);
+    let mut parameter = clamp_to_domain(seed);
+    for _ in 0..32 {
+        let (point, tangent) = evaluate(parameter)?;
+        let error = mismatch(point);
+        if error.is_finite() && error <= tolerance {
+            return Some(parameter);
         }
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= f64::EPSILON {
+            return None;
+        }
+        let residual = point.vector_from(target);
+        let step = residual.dot(tangent) / denominator;
+        if !step.is_finite() {
+            return None;
+        }
+        let mut candidate = clamp_to_domain(parameter - step);
+        let mut candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
+        for _ in 0..12 {
+            if candidate_error <= error {
+                break;
+            }
+            candidate = clamp_to_domain(0.5 * (candidate + parameter));
+            candidate_error = evaluate(candidate).map(|(point, _)| mismatch(point))?;
+        }
+        if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
+            return None;
+        }
+        parameter = candidate;
+    }
+    None
+}
+
+fn unique_finite(values: impl IntoIterator<Item = f64>) -> Vec<f64> {
+    let mut unique = Vec::new();
+    for value in values {
+        if value.is_finite() && !unique.contains(&value) {
+            unique.push(value);
+        }
+    }
+    unique
+}
+
+fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
+    let mut seeds = vec![0.0];
+    if let Some(range) = pcurve.parameter_range {
+        seeds.extend(range);
+    }
+    if let Some([start, end]) = pcurve_parameter_domain(&pcurve.geometry) {
+        seeds.extend([start, start + (end - start) * 0.5, end]);
+    }
+    unique_finite(seeds)
+}
+
+/// Explicit trim metadata, if the pcurve carrier itself supplies it. A raw
+/// NURBS knot domain is deliberately excluded: it bounds the carrier, not the
+/// edge occurrence.
+fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
+    pcurve
+        .parameter_range
+        .or_else(|| pcurve_geometry_trim_range(&pcurve.geometry))
+}
+
+fn pcurve_geometry_trim_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
         PcurveGeometry::Trimmed {
             parameter_range, ..
         } => Some(*parameter_range),
-        PcurveGeometry::Offset { basis, .. } => pcurve_geometry_parameter_extremes(basis),
+        PcurveGeometry::Offset { basis, .. } => pcurve_geometry_trim_range(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::Nurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => None,
+    }
+}
+
+fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => nurbs_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => nurbs_parameter_domain(*degree, knots, radial_control_points.len()),
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_domain(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }
@@ -592,16 +796,35 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
     }
 }
 
+fn nurbs_parameter_domain(
+    degree: u32,
+    knots: &[f64],
+    control_point_count: usize,
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    if control_point_count <= degree
+        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
+    {
+        return None;
+    }
+    let start = *knots.get(degree)?;
+    let end = *knots.get(control_point_count)?;
+    (start.is_finite() && end.is_finite() && start < end).then_some([start, end])
+}
+
 #[cfg(test)]
 mod tests {
-    use super::check_procedural_support_consistency;
+    use super::{
+        check_procedural_support_consistency, pcurve_parameter_domain, pcurve_parameter_ranges,
+    };
     use crate::document::CadIr;
     use crate::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
         ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
     };
     use crate::ids::{CurveId, ProceduralCurveId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
+    use crate::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense, Vertex};
     use crate::units::Units;
 
     fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
@@ -692,6 +915,108 @@ mod tests {
         ir
     }
 
+    fn untrimmed_surface_curve() -> CadIr {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.extend([
+            crate::topology::Point {
+                id: "point-start".into(),
+                position: Point3::new(0.0, 1.0, 0.0),
+                source_object: None,
+            },
+            crate::topology::Point {
+                id: "point-end".into(),
+                position: Point3::new(-1.0, 0.0, 0.0),
+                source_object: None,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: "vertex-start".into(),
+                point: "point-start".into(),
+                tolerance: None,
+            },
+            Vertex {
+                id: "vertex-end".into(),
+                point: "point-end".into(),
+                tolerance: None,
+            },
+        ]);
+        ir.model.curves.push(Curve {
+            id: "curve".into(),
+            geometry: CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+            },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: "edge".into(),
+            curve: Some("curve".into()),
+            start: "vertex-start".into(),
+            end: "vertex-end".into(),
+            param_range: None,
+            tolerance: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: "surface".into(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.pcurves.push(Pcurve {
+            id: "pcurve".into(),
+            geometry: PcurveGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                radius: 1.0,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+        ir.model.coedges.push(Coedge {
+            id: "coedge".into(),
+            owner_loop: "loop".into(),
+            edge: "edge".into(),
+            next: "coedge".into(),
+            previous: "coedge".into(),
+            radial_next: "coedge".into(),
+            sense: Sense::Forward,
+            pcurves: vec![PcurveUse {
+                pcurve: "pcurve".into(),
+                isoparametric: None,
+                parameter_range: None,
+            }],
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+        ir.model.loops.push(Loop {
+            id: "loop".into(),
+            face: "face".into(),
+            boundary_role: LoopBoundaryRole::Outer,
+            coedges: vec!["coedge".into()],
+            vertex_uses: Vec::new(),
+        });
+        ir.model.faces.push(Face {
+            id: "face".into(),
+            shell: "shell".into(),
+            surface: "surface".into(),
+            sense: Sense::Forward,
+            loops: vec!["loop".into()],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        ir
+    }
+
     #[test]
     fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
         let mut findings = Vec::new();
@@ -732,5 +1057,66 @@ mod tests {
         assert!(findings
             .iter()
             .any(|finding| finding.message.contains("support side 0")));
+    }
+
+    #[test]
+    fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
+        let ir = untrimmed_surface_curve();
+        let mut findings = Vec::new();
+        super::check_pcurve_surface_consistency(&ir, &mut findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+
+        let mut mismatched = ir;
+        let PcurveGeometry::Circle { radius, .. } = &mut mismatched.model.pcurves[0].geometry
+        else {
+            unreachable!();
+        };
+        *radius = 2.0;
+        super::check_pcurve_surface_consistency(&mismatched, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert!(findings[0].message.contains("pcurve mapped through"));
+    }
+
+    #[test]
+    fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
+        let mut ir = untrimmed_surface_curve();
+        ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
+            periodic: false,
+        };
+        let mut findings = Vec::new();
+        super::check_pcurve_surface_consistency(&ir, &mut findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
+        let pcurve = Pcurve {
+            id: "pcurve".into(),
+            geometry: PcurveGeometry::Nurbs {
+                degree: 2,
+                knots: vec![-1.0, 0.0, 0.0, 1.0, 1.0, 2.0],
+                control_points: vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(2.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        };
+        assert_eq!(pcurve_parameter_domain(&pcurve.geometry), Some([0.0, 1.0]));
+        assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
     }
 }
