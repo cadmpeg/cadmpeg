@@ -4,7 +4,7 @@
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
 //! CADIR, validates and compares CADIR models, projects report and CADIR JSON
-//! through `query`, and writes CADIR, STEP AP214, IGES 5.3, `.FCStd`, `.f3d`, or
+//! through `query`, and writes CADIR, STEP AP214, IGES 5.1/5.2/5.3, `.FCStd`, `.f3d`, or
 //! `.sldprt` output. See the package README for workflows, format limits, loss
 //! reporting, and exit-status semantics.
 
@@ -54,12 +54,16 @@ enum IgesTarget {
     /// IGES 5.2 Fixed ASCII.
     #[value(name = "5.2", alias = "v5.2", alias = "v5_2")]
     V5_2,
+    /// IGES 5.1 Fixed ASCII.
+    #[value(name = "5.1", alias = "v5.1", alias = "v5_1")]
+    V5_1,
 }
 
 impl IgesTarget {
     const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
         cadmpeg_codec_iges::IgesWriteOptions {
             version: match self {
+                Self::V5_1 => cadmpeg_codec_iges::IgesVersion::V5_1,
                 Self::V5_3 => cadmpeg_codec_iges::IgesVersion::V5_3,
                 Self::V5_2 => cadmpeg_codec_iges::IgesVersion::V5_2,
             },

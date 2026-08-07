@@ -2,7 +2,7 @@
 
 `cadmpeg` inspects native CAD containers, decodes supported model data into
 CADIR, validates and compares CADIR models, and exports CADIR, STEP Part 21
-(AP203, AP214, or AP242), and bounded IGES 5.2 or 5.3 Fixed ASCII. It also writes
+(AP203, AP214, or AP242), and bounded IGES 5.1, 5.2, or 5.3 Fixed ASCII. It also writes
 supported `.FCStd`, `.f3d`, `.sldprt`, and `.3dm` models.
 
 Native codecs transfer different subsets of geometry, topology, design intent,
@@ -46,7 +46,8 @@ cadmpeg convert bracket.f3d -o bracket.igs --iges-target 5.3
 `--reject-step-losses` refuses STEP output before writing when any STEP loss
 note would be reported.
 
-`--iges-target 5.2` or `5.3` selects the IGES target. The default is `5.3`.
+`--iges-target 5.1`, `5.2`, or `5.3` selects the IGES target. The default is
+`5.3`.
 
 The output extension selects `step`, `iges`, `fcstd`, `f3d`, `sldprt`, `rhino`, or
 `cadir`. Pass `--format` (alias `--to`) when the filename does not identify

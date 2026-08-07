@@ -1,7 +1,7 @@
 # cadmpeg-codec-iges
 
-`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.2 and 5.3 Fixed ASCII
-files through `CadIr`.
+`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
+Fixed ASCII files through `CadIr`.
 
 Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 for the Fixed ASCII mechanical/document envelope.

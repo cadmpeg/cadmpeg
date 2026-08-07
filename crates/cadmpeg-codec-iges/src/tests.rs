@@ -7854,42 +7854,42 @@ fn encode_replays_an_unchanged_iges_source_image() {
 }
 
 #[test]
-fn encode_emits_and_decodes_the_requested_iges_5_2_target() {
-    let mut ir = CadIr::empty(Units::default());
-    ir.model.points.push(Point {
-        id: PointId("point#5.2".into()),
-        source_object: None,
-        position: Point3::new(4.0, 5.0, 6.0),
-    });
-    let encoder = IgesEncoder::new(IgesWriteOptions {
-        version: IgesVersion::V5_2,
-    });
-    let plan = encoder
-        .plan(EncodeInput {
-            ir: &ir,
-            fidelity: None,
-        })
-        .unwrap();
-    let mut written = Vec::new();
-    let report = plan.write_to(&mut written).unwrap();
-    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+fn encode_emits_and_decodes_the_requested_legacy_iges_targets() {
+    for (version, name) in [(IgesVersion::V5_1, "5.1"), (IgesVersion::V5_2, "5.2")] {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId(format!("point#{name}")),
+            source_object: None,
+            position: Point3::new(4.0, 5.0, 6.0),
+        });
+        let encoder = IgesEncoder::new(IgesWriteOptions { version });
+        let plan = encoder
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap();
+        let mut written = Vec::new();
+        let report = plan.write_to(&mut written).unwrap();
+        assert!(report.losses.is_empty(), "{name}: {:#?}", report.losses);
 
-    let decoded = IgesCodec
-        .decode(
-            &mut Cursor::new(written.as_slice()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert_eq!(
-        decoded.ir.source.as_ref().unwrap().attributes["iges_version"],
-        "5.2"
-    );
-    assert_eq!(decoded.ir.model.points.len(), 1);
-    assert!(
-        decoded.report.losses.is_empty(),
-        "{:#?}",
-        decoded.report.losses
-    );
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(written.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            decoded.ir.source.as_ref().unwrap().attributes["iges_version"],
+            name
+        );
+        assert_eq!(decoded.ir.model.points.len(), 1);
+        assert!(
+            decoded.report.losses.is_empty(),
+            "{name}: {:#?}",
+            decoded.report.losses
+        );
+    }
 }
 
 #[test]
@@ -8240,35 +8240,39 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
 }
 
 #[test]
-fn fixed_ascii_5_2_decodes_under_the_supported_profile() {
-    let mut bytes = point_file();
-    let version = bytes
-        .windows(b",11,0,".len())
-        .position(|window| window == b",11,0,")
-        .unwrap();
-    bytes[version + 1..version + 3].copy_from_slice(b"10");
+fn fixed_ascii_5_1_and_5_2_decode_under_the_supported_profile() {
+    for (encoded_version, version_name) in [(b"09", "5.1"), (b"10", "5.2")] {
+        let mut bytes = point_file();
+        let version = bytes
+            .windows(b",11,0,".len())
+            .position(|window| window == b",11,0,")
+            .unwrap();
+        bytes[version + 1..version + 3].copy_from_slice(encoded_version);
 
-    let summary = IgesCodec
-        .inspect(
-            &mut Cursor::new(bytes.clone()),
-            &cadmpeg_core::decode::InspectOptions::default(),
-        )
-        .unwrap();
-    assert!(summary.notes.contains(&"iges_version=5.2".into()));
-    let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes["iges_version"],
-        "5.2"
-    );
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert!(
-        result.report.losses.is_empty(),
-        "{:#?}",
-        result.report.losses
-    );
-    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+        let summary = IgesCodec
+            .inspect(
+                &mut Cursor::new(bytes.clone()),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap();
+        assert!(summary
+            .notes
+            .contains(&format!("iges_version={version_name}")));
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            result.ir.source.as_ref().unwrap().attributes["iges_version"],
+            version_name
+        );
+        assert_eq!(result.ir.model.points.len(), 1);
+        assert!(
+            result.report.losses.is_empty(),
+            "{version_name}: {:#?}",
+            result.report.losses
+        );
+        assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+    }
 }
 
 #[test]
