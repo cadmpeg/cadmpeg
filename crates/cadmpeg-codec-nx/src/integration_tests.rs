@@ -211,8 +211,18 @@ fn boolean_target_history_attaches_the_target_writer_dependency() {
             feature.native_ref.as_deref()
                 == Some("nx:feature-history:operation-label#0000000000-0000000001")
         })
-        .expect("older native body writer");
-    let newer = result
+        .expect("Boolean target writer");
+    let oldest = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            feature.native_ref.as_deref()
+                == Some("nx:feature-history:operation-label#0000000000-0000000002")
+        })
+        .expect("oldest native body writer");
+    let followup = result
         .ir
         .model
         .features
@@ -221,13 +231,17 @@ fn boolean_target_history_attaches_the_target_writer_dependency() {
             feature.native_ref.as_deref()
                 == Some("nx:feature-history:operation-label#0000000000-0000000000")
         })
-        .expect("Boolean target writer");
-    assert!(older.dependencies.is_empty());
+        .expect("follow-up native body writer");
+    assert!(oldest.dependencies.is_empty());
     assert_eq!(
-        newer.dependencies.as_slice(),
+        older.dependencies.as_slice(),
+        std::slice::from_ref(&oldest.id)
+    );
+    assert_eq!(
+        followup.dependencies.as_slice(),
         std::slice::from_ref(&older.id)
     );
-    assert_eq!(result.ir.model.feature_result_topologies.len(), 2);
+    assert_eq!(result.ir.model.feature_result_topologies.len(), 3);
     assert_valid(&result);
 }
 

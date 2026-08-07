@@ -2685,6 +2685,19 @@ fn attach_feature_operations(
             .then_some(offset_store_primary_body)
             .flatten();
         body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
+        if let Some(operation) = (!deletes_body)
+            .then(|| booleans.get(label.id.as_str()))
+            .flatten()
+        {
+            // A Boolean target writes its selected body image even when the
+            // operation has no separate primary-body field.
+            body_writer_history.record_writer(
+                Some(canonical_body(operation.target_object_index)),
+                None,
+                &[],
+                &id,
+            );
+        }
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,

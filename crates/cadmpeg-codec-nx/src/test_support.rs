@@ -519,13 +519,15 @@ pub(crate) fn offset_store_primary_body_lineage_prt() -> Vec<u8> {
 }
 
 /// A synthetic history whose Boolean target reuses the native body identity
-/// written by the preceding operation. The Boolean payload has no separate
-/// primary-body field, so its target must supply the primary lineage edge.
+/// written by the preceding operation and is then consumed by a later
+/// operation. The Boolean payload has no separate primary-body field, so its
+/// target must supply both writer transitions.
 pub(crate) fn boolean_target_body_lineage_prt() -> Vec<u8> {
     let input_slots: &'static [u8] = &[0xff, 0xff, 0xff, 0xff];
     let boolean_payload = b"\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00".to_vec();
     let primary_body = vec![0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
     let operations = [
+        (input_slots, "EXTRUDE", primary_body.clone()),
         (input_slots, "UNITE", boolean_payload),
         (input_slots, "EXTRUDE", primary_body),
     ];
