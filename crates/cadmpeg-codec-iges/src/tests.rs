@@ -848,6 +848,32 @@ fn mixed_analytic_composite_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn heterogeneous_composite_curve_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 104,
+            form: 0,
+            label: "ELLIPSE".into(),
+            status: "00010000",
+            parameters: "104,0.25,0,1,0,0,-1,0,2,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "LINE".into(),
+            status: "00010000",
+            parameters: "110,0,1,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "COMPOSIT".into(),
+            status: "00000000",
+            parameters: "102,2,1,3;".into(),
+        },
+    ])
+}
+
 #[test]
 fn decode_concatenates_ordered_composite_curve_children() {
     let result = IgesCodec
@@ -905,6 +931,42 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
         std::f64::consts::FRAC_1_SQRT_2
     );
     assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_heterogeneous_composite_curve_children() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(heterogeneous_composite_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Composite { segments, .. } = &composite.geometry
+    else {
+        panic!("expected a neutral composite carrier");
+    };
+    assert_eq!(segments.len(), 2);
+    assert_eq!(segments[0].curve.0, "iges:model:curve#D1");
+    assert_eq!(segments[1].curve.0, "iges:model:curve#D3");
+    assert!(matches!(
+        segments[1].transition,
+        cadmpeg_ir::geometry::CompositeCurveTransition::Continuous
+    ));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
