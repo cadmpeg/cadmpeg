@@ -4,7 +4,7 @@ use super::compact_reference_planes::principal_sketch_frame;
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
     marker_profile_curve_role, minor_arc_geometry, one_based_u16_endpoint_pair,
-    wide_indexed_curve_endpoint_indices,
+    unique_arc_center_marker, wide_indexed_curve_endpoint_indices,
 };
 use super::markers::{
     compact_legacy_marker_body, finite_coordinate_pair, marker_native_code, sketch_marker_prefix_at,
@@ -668,7 +668,7 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         .filter_map(|entity| match entity.geometry {
             SketchGeometry::Point { position } => Some((
                 entity.sketch.clone(),
-                entity.native_ref.as_deref()?,
+                entity.native_ref.clone()?,
                 entity
                     .native_ref
                     .as_deref()?
@@ -715,6 +715,41 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
         })
         .collect::<Vec<_>>();
     for (index, geometry) in roster_replacements {
+        entities[index].geometry = geometry;
+    }
+    // A unique center witness remains unambiguous when record order does not place it
+    // between the endpoint witnesses.
+    let unique_center_replacements = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| {
+            if !matches!(
+                entity.geometry,
+                SketchGeometry::Native { ref native_kind }
+                    if native_kind == "sldprt:marker-geometry:2"
+            ) {
+                return None;
+            }
+            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
+                return None;
+            };
+            let (Some(start), Some(end)) =
+                (points.get(start_ref.as_str()), points.get(end_ref.as_str()))
+            else {
+                return None;
+            };
+            let candidates = point_records
+                .iter()
+                .filter(|(sketch, reference, ..)| {
+                    sketch == &entity.sketch && reference != start_ref && reference != end_ref
+                })
+                .map(|(_, _, _, center)| *center)
+                .collect::<Vec<_>>();
+            let center = unique_arc_center_marker(*start, *end, &candidates, tolerance)?;
+            minor_arc_geometry(*start, *end, center, tolerance).map(|geometry| (index, geometry))
+        })
+        .collect::<Vec<_>>();
+    for (index, geometry) in unique_center_replacements {
         entities[index].geometry = geometry;
     }
     let arcs = entities
