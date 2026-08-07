@@ -8609,6 +8609,66 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
 }
 
 #[test]
+fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(decoded.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(decoded.ir.model.procedural_curves.len(), 2);
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::LossKind::ProceduralReduced
+                && loss.message.contains("1 procedural surface definition(s)")
+                && loss.message.contains("2 procedural curve definition(s)")
+        }),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        report.losses.iter().all(|loss| {
+            matches!(
+                loss.code,
+                cadmpeg_ir::LossKind::PassthroughRecordOmitted
+                    | cadmpeg_ir::LossKind::PreservedSourceUnavailable
+                    | cadmpeg_ir::LossKind::ProceduralReduced
+            )
+        }),
+        "{:#?}",
+        report.losses
+    );
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.surfaces.len(), 1);
+    assert!(round_trip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_pointer_defined_analytic_surfaces() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.extend([

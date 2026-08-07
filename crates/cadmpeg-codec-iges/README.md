@@ -46,9 +46,11 @@ an explicit target version. The semantic writer supports standalone points,
 finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
 surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and
 bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face
-sheet bodies. It validates topology ownership, edge spans, radial incidence,
-and supported surface and pcurve geometry before output. Unsupported neutral
-or native content is refused. Edited source documents may report
+sheet bodies. Exact solved carriers for procedural surfaces and curves are
+regenerated as neutral geometry and reported as `procedural_reduced`. It
+validates topology ownership, edge spans, radial incidence, and supported
+surface and pcurve geometry before output. Unsupported neutral or native
+content is refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
 occurrence-expansion records that are not regenerated.
 

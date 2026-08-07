@@ -185,7 +185,8 @@ struct Synthesis {
 
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
     reject_unsupported_model(ir)?;
-    let losses = reject_unsupported_native(ir)?;
+    let mut losses = procedural_reduction_losses(ir)?;
+    losses.extend(reject_unsupported_native(ir)?);
 
     let mut entities = if has_brep_topology(ir) {
         brep_entities(ir)?
@@ -316,6 +317,79 @@ fn has_brep_topology(ir: &CadIr) -> bool {
             .find(|shell| shell.faces.iter().any(|face_id| face_id == &face.id))
             .is_some_and(|shell| shell.faces.len() > 1)
     })
+}
+
+fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    for procedural in &ir.model.procedural_surfaces {
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES procedural surface {} references missing solved surface {}",
+                    procedural.id, procedural.surface
+                ))
+            })?;
+        if !matches!(
+            &surface.geometry,
+            SurfaceGeometry::Plane { .. }
+                | SurfaceGeometry::Nurbs(_)
+                | SurfaceGeometry::Cylinder { .. }
+                | SurfaceGeometry::Cone { .. }
+                | SurfaceGeometry::Sphere { .. }
+                | SurfaceGeometry::Torus { .. }
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES procedural surface {} has no writable solved carrier",
+                procedural.id
+            )));
+        }
+    }
+    for procedural in &ir.model.procedural_curves {
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == procedural.curve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES procedural curve {} references missing solved curve {}",
+                    procedural.id, procedural.curve
+                ))
+            })?;
+        let geometry = flatten_curve(&curve.geometry)?;
+        if !matches!(
+            geometry,
+            CurveGeometry::Line { .. }
+                | CurveGeometry::Circle { .. }
+                | CurveGeometry::Ellipse { .. }
+                | CurveGeometry::Parabola { .. }
+                | CurveGeometry::Hyperbola { .. }
+                | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Polyline { .. }
+        ) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES procedural curve {} has no writable solved carrier",
+                procedural.id
+            )));
+        }
+    }
+    let surface_count = ir.model.procedural_surfaces.len();
+    let curve_count = ir.model.procedural_curves.len();
+    if surface_count == 0 && curve_count == 0 {
+        return Ok(Vec::new());
+    }
+    Ok(vec![
+        LossNote::new(
+            LossKind::ProceduralReduced,
+            format!(
+                "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
+            ),
+        )
+        .with_severity(Severity::Info),
+    ])
 }
 
 fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
@@ -2279,11 +2353,6 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
 
 fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
     let unsupported = [
-        (
-            "procedural_surfaces",
-            !ir.model.procedural_surfaces.is_empty(),
-        ),
-        ("procedural_curves", !ir.model.procedural_curves.is_empty()),
         ("subds", !ir.model.subds.is_empty()),
         ("assets", !ir.model.assets.is_empty()),
         ("features", !ir.model.features.is_empty()),
@@ -2397,15 +2466,22 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                         | 106
                         | 108
                         | 110
+                        | 112
+                        | 114
                         | 116
+                        | 118
+                        | 120
+                        | 122
                         | 123
                         | 124
                         | 126
                         | 128
+                        | 130
                         | 141
                         | 142
                         | 143
                         | 144
+                        | 140
                         | 190
                         | 192
                         | 194
@@ -2433,7 +2509,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let has_native_surface = native_entities.clone().any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(108 | 128 | 190 | 192 | 194 | 196 | 198)
+            Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     });
     let has_native_topology = native_entities.any(|record| {
