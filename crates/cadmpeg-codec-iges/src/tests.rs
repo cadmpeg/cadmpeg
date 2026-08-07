@@ -8860,6 +8860,21 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
 }
 
 #[test]
+fn encode_refuses_an_empty_source_less_model() {
+    let ir = CadIr::empty(Units::default());
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &ir,
+        fidelity: None,
+    }) else {
+        panic!("empty semantic output was accepted")
+    };
+    assert!(
+        error.to_string().contains("refuses an empty model"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encode_refuses_a_native_curve_without_neutral_geometry() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())

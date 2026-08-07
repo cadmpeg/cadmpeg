@@ -251,6 +251,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         entities
     };
     resolve_entity_references(&mut entities)?;
+    if entities.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "IGES semantic writer refuses an empty model".into(),
+        ));
+    }
 
     let counts = entity_counts(&entities);
     Ok(Synthesis {
