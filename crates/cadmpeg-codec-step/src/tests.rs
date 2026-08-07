@@ -5226,6 +5226,45 @@ fn complex_presentation_annotation_inherits_text_and_placement() {
     assert_eq!(transform.rows[2][3], 30.0);
 }
 
+#[test]
+fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_presentation_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=TEXT_LITERAL('inspect surface',#6,'left',.RIGHT.,$);",
+        "#7=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('') TEXT_LITERAL('inspect surface',#6,'left',.RIGHT.,$));",
+    )
+    .replace(
+        "#8=ANNOTATION_TEXT_OCCURRENCE('surface note',(),#7);",
+        "#8=(TESSELLATED_GEOMETRIC_SET((#11)) ANNOTATION_TEXT_OCCURRENCE() ANNOTATION_OCCURRENCE() DRAUGHTING_ANNOTATION_OCCURRENCE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('surface note') MAPPED_ITEM(#7,#7));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#11=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('tess carrier') TESSELLATED_GEOMETRIC_SET((#12)) TESSELLATED_ITEM());\n#12=TESSELLATED_CURVE_SET('tess curve',#13,((1,2)));\n#13=COORDINATES_LIST('',((0.,0.,0.),(1.,0.,0.)));\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode presentation graph with tessellated carrier");
+
+    let unknowns = result
+        .ir
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .expect("STEP unknown records");
+    for id in [11, 12, 13] {
+        assert!(
+            unknowns
+                .iter()
+                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+            "tessellated carrier #{id} was consumed without a neutral representation"
+        );
+    }
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");

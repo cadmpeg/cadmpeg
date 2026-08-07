@@ -441,14 +441,20 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             continue;
         };
         let mut text_records = BTreeSet::new();
-        let text = find_annotation_text(id, exchange, &mut text_records, &mut losses, 0);
-        let mut placement_records = BTreeSet::new();
+        let text = find_annotation_text(
+            id,
+            exchange,
+            &mut BTreeSet::new(),
+            &mut text_records,
+            &mut losses,
+            0,
+        );
         let parameters = all_parameters(record).collect::<Vec<_>>();
         let placement = parameters
             .iter()
             .flat_map(|value| references(value))
             .find_map(|reference| {
-                find_placement(reference, exchange, geometry, &mut placement_records, 0)
+                find_placement(reference, exchange, geometry, &mut BTreeSet::new(), 0)
             });
         let mut semantics = parameters
             .iter()
@@ -489,7 +495,6 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         );
         typed.insert(id);
         typed.extend(text_records);
-        typed.extend(placement_records);
     }
     for (id, _) in
         exchange.entities_any(&["DRAUGHTING_MODEL", "ANNOTATION_PLANE", "DRAUGHTING_CALLOUT"])
@@ -722,6 +727,7 @@ fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    used: &mut BTreeSet<u64>,
     losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<String> {
@@ -739,12 +745,15 @@ fn find_annotation_text(
             "PMI annotation text",
             LossKind::MetadataNotTransferred,
         ) {
+            used.insert(id);
             return Some(text);
         }
     }
     all_parameters(record)
         .flat_map(references)
-        .find_map(|reference| find_annotation_text(reference, exchange, visited, losses, depth + 1))
+        .find_map(|reference| {
+            find_annotation_text(reference, exchange, visited, used, losses, depth + 1)
+        })
 }
 
 fn find_placement(

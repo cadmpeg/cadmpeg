@@ -378,7 +378,9 @@ typed measure carriers.
 Geometric tolerances read their name and magnitude from the
 `GEOMETRIC_TOLERANCE` partial when the tolerance is complex. Presentation PMI
 retains annotation identity, text, and placement across inherited annotation
-partials. `PLUS_MINUS_TOLERANCE` carries
+partials. A presentation graph search types only the text carrier it consumes;
+unmodeled tessellated annotation carriers remain named opaque records with
+their source links. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.
