@@ -5106,7 +5106,7 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     .expect("fixture is UTF-8")
     .replace(
         "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
-        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT($));",
+        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT($) FLATNESS_TOLERANCE());",
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5145,7 +5145,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     .expect("fixture is UTF-8")
     .replace(
         "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
-        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)));",
+        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)) FLATNESS_TOLERANCE());",
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

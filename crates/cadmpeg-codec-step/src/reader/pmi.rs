@@ -340,7 +340,17 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(tolerance) = record
             .partials
             .iter()
-            .find_map(|partial| tolerance_kind(Some(&partial.name)))
+            .find_map(|partial| {
+                (partial.name != "GEOMETRIC_TOLERANCE")
+                    .then(|| tolerance_kind(Some(&partial.name)))
+                    .flatten()
+            })
+            .or_else(|| {
+                record
+                    .partials
+                    .iter()
+                    .find_map(|partial| tolerance_kind(Some(&partial.name)))
+            })
         else {
             continue;
         };
