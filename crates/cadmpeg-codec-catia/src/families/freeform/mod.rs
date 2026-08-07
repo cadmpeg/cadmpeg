@@ -754,9 +754,12 @@ pub(crate) fn append_freeform_surface_pools(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
 ) -> ConsolidatedCurveBindingCounts {
     let mut surfaces = crate::families::a5a8::records::resolved_a8_surfaces(data);
-    surfaces.extend(crate::families::a5a8::records::a5_surfaces(data));
+    surfaces.extend(crate::families::a5a8::records::a5_surfaces_from_records(
+        data, records,
+    ));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {
         let (source_object, source_tag) = freeform_surface_source(surface);
@@ -964,7 +967,14 @@ pub(crate) fn append_freeform_surface_pools(
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
-    append_resolved_consolidated_surface_curves(ir, annotations, data, &surfaces, &carrier_ids)
+    append_resolved_consolidated_surface_curves(
+        ir,
+        annotations,
+        data,
+        records,
+        &surfaces,
+        &carrier_ids,
+    )
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -1076,35 +1086,38 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
     freeform_surfaces: &[crate::families::a5a8::records::FreeformSurface],
     freeform_surface_ids: &[SurfaceId],
 ) -> ConsolidatedCurveBindingCounts {
-    let standalone = crate::families::b2::records::b2_cylinders(data)
+    let standalone = crate::families::b2::records::b2_cylinders_from_records(data, records)
         .into_iter()
         .map(|cylinder| (cylinder.pos, cylinder))
         .collect::<HashMap<_, _>>();
-    let embedded = crate::families::b2::records::b2_embedded_cylinders(data)
+    let embedded = crate::families::b2::records::b2_embedded_cylinders_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<HashMap<_, _>>();
-    let cones = crate::families::b2::records::b2_cones(data)
+    let cones = crate::families::b2::records::b2_cones_from_records(data, records)
         .into_iter()
         .map(|cone| (cone.pos, cone))
         .collect::<HashMap<_, _>>();
-    let spheres = crate::families::b2::records::b2_spheres(data)
+    let spheres = crate::families::b2::records::b2_spheres_from_records(data, records)
         .into_iter()
         .map(|sphere| (sphere.pos, sphere))
         .collect::<HashMap<_, _>>();
-    let tori = crate::families::b2::records::b2_tori(data)
+    let tori = crate::families::b2::records::b2_tori_from_records(data, records)
         .into_iter()
         .map(|torus| (torus.pos, torus))
         .collect::<HashMap<_, _>>();
     let complete_runs =
-        crate::families::consolidated::records::consolidated_topology_edge_runs(data)
-            .into_iter()
-            .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
-            .map(|run| (run.edge.pcurves[0].pos, run))
-            .collect::<HashMap<_, _>>();
+        crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
+            data, records,
+        )
+        .into_iter()
+        .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
+        .map(|run| (run.edge.pcurves[0].pos, run))
+        .collect::<HashMap<_, _>>();
 
     let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
     let point_positions = ir
@@ -1226,7 +1239,11 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     let mut attached_curves = HashSet::new();
     let mut binding_counts = ConsolidatedCurveBindingCounts::default();
 
-    for resolved in crate::families::consolidated::records::resolve_consolidated_edge_blocks(data) {
+    for resolved in
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            data, records,
+        )
+    {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
             continue;
         };
@@ -2299,10 +2316,12 @@ mod tests {
     #[test]
     fn rolling_ball_pool_retains_both_exact_limiting_curves() {
         let mut ir = CadIr::empty(Units::default());
+        let bytes = crate::tests::a5_freeform_curve_stream();
         append_freeform_surface_pools(
             &mut ir,
             &mut AnnotationBuilder::new(),
-            &crate::tests::a5_freeform_curve_stream(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
         );
 
         assert!(matches!(
@@ -2566,6 +2585,7 @@ mod tests {
             &mut ir,
             &mut AnnotationBuilder::new(),
             &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
             &[],
             &[],
         );

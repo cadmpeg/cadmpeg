@@ -1688,7 +1688,7 @@ pub(crate) fn try_decode_standard(
             &consolidated_revolutions,
         );
     let consolidated_curve_bindings =
-        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
+        append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data, &consolidated_records);
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
 

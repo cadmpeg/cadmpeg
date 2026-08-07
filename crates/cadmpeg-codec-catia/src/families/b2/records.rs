@@ -270,8 +270,17 @@ pub struct B2EdgeNode {
 
 /// Decode class-`0x06` payloads and their settled terminal sense codes.
 #[must_use]
+#[cfg(test)]
 pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
-    b_family_frames(data, 0x06)
+    let records = consolidated_records(data);
+    b2_use_metadata_from_records(data, &records)
+}
+
+pub(crate) fn b2_use_metadata_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2UseMetadata> {
+    b_family_frames_from_records(records, 0x06)
         .into_iter()
         .map(|frame| {
             let payload = data[frame.payload..frame.end].to_vec();
@@ -332,7 +341,15 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
 /// references, and one terminal byte.
 #[must_use]
 pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
-    b_family_frames(data, 0x5e)
+    let records = consolidated_records(data);
+    b2_edge_nodes_from_records(data, &records)
+}
+
+pub(crate) fn b2_edge_nodes_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2EdgeNode> {
+    b_family_frames_from_records(records, 0x5e)
         .into_iter()
         .filter_map(|frame| {
             let token_start = frame.pos.checked_add(4)?;
@@ -778,9 +795,11 @@ pub fn b2_parameter_points(data: &[u8]) -> Vec<B2ParameterPoint> {
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.
-#[must_use]
-pub fn b2_class25_descriptors(data: &[u8]) -> Vec<B2Class25Descriptor> {
-    b_family_frames(data, 0x18)
+pub(crate) fn b2_class25_descriptors_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Class25Descriptor> {
+    b_family_frames_from_records(records, 0x18)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -2084,9 +2103,18 @@ pub(crate) fn circle_range_is_within_full_turn(radius: f64, range: [f64; 2]) -> 
 
 /// Decode structurally repeated `b2 03 23` edge-range packets.
 #[must_use]
+#[cfg(test)]
 pub fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
+    let records = consolidated_records(data);
+    b2_edge_parameters_from_records(data, &records)
+}
+
+pub(crate) fn b2_edge_parameters_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2EdgeParameters> {
     let mut out = Vec::new();
-    for frame in b_family_frames(data, 0x23) {
+    for frame in b_family_frames_from_records(records, 0x23) {
         let pos = frame.pos;
         if frame.end - frame.payload != 0x4e {
             continue;
@@ -2216,7 +2244,15 @@ pub fn offset_support_carriers(
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.
 #[must_use]
 pub fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
-    b_family_frames(data, 0x20)
+    let records = consolidated_records(data);
+    b2_pcurves_from_records(data, &records)
+}
+
+pub(crate) fn b2_pcurves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedPcurve> {
+    b_family_frames_from_records(records, 0x20)
         .into_iter()
         .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()

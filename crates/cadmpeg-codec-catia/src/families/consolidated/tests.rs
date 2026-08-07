@@ -69,6 +69,32 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
 }
 
 #[test]
+fn indexed_resolver_matches_the_one_shot_resolver_identity() {
+    let bytes = a5_cylinder_bound_edge_stream();
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let signature =
+        |blocks: &[crate::families::consolidated::records::ResolvedConsolidatedEdgeBlock]| {
+            blocks
+                .iter()
+                .map(|block| {
+                    (
+                        block.block.pcurves[0].pos,
+                        block.block.pcurves[1].pos,
+                        block.block.parameters.pos,
+                        block.supports.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+    let one_shot = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    let indexed =
+        crate::families::consolidated::records::resolve_consolidated_edge_blocks_from_records(
+            &bytes, &records,
+        );
+    assert_eq!(signature(&indexed), signature(&one_shot));
+}
+
+#[test]
 fn consolidated_edge_definition_decodes_general_scalar_layout() {
     use crate::families::consolidated::records::ConsolidatedEdgeDefinitionData;
 

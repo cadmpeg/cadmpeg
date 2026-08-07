@@ -15,19 +15,24 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::HashMap;
 
-use crate::families::a5a8::records::{a5_pcurves, a5_surfaces, FreeformSurface};
+use crate::families::a5a8::records::{
+    a5_pcurves_from_records, a5_surfaces_from_records, FreeformSurface,
+};
 use crate::families::b2::records::{
-    b2_circles, b2_class25_descriptors, b2_cone_point, b2_cones, b2_cylinder_point, b2_cylinders,
-    b2_edge_nodes, b2_edge_parameters, b2_embedded_cylinders, b2_pcurves, b2_sphere_geometry,
-    b2_spheres, b2_tori, b2_torus_geometry, b2_use_metadata, point_distance, B2Circle,
-    B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2EmbeddedCylinder,
-    B2Sphere, B2Torus, B2UseMetadata,
+    b2_circles_from_records, b2_class25_descriptors_from_records, b2_cone_point,
+    b2_cones_from_records, b2_cylinder_point, b2_cylinders_from_records,
+    b2_edge_nodes_from_records, b2_edge_parameters_from_records,
+    b2_embedded_cylinders_from_records, b2_pcurves_from_records, b2_sphere_geometry,
+    b2_spheres_from_records, b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records,
+    point_distance, B2Circle, B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode,
+    B2EdgeParameters, B2EmbeddedCylinder, B2Sphere, B2Torus, B2UseMetadata,
 };
 use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
 };
 use crate::wire::records::{
     consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedPcurve,
+    ConsolidatedRecord,
 };
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
@@ -355,17 +360,26 @@ struct ConsolidatedCarriers<'a> {
 /// Group ordered pairs of same-family class-`0x20` pcurves followed by one
 /// B-family class-`0x23` range packet.
 #[must_use]
+#[cfg(test)]
 pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
-    let pcurves = a5_pcurves(data)
+    let records = consolidated_records(data);
+    consolidated_edge_blocks_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_edge_blocks_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedEdgeBlock> {
+    let pcurves = a5_pcurves_from_records(data, records)
         .into_iter()
-        .chain(b2_pcurves(data))
+        .chain(b2_pcurves_from_records(data, records))
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let parameters = b2_edge_parameters(data)
+    let parameters = b2_edge_parameters_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(3)
         .filter_map(|window| {
             let [first_record, second_record, parameter_record] = window else {
@@ -399,15 +413,23 @@ pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
 /// other framed record do not form a run.
 #[must_use]
 pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
-    let edges = consolidated_edge_blocks(data)
+    let records = consolidated_records(data);
+    consolidated_topology_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_topology_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedTopologyEdgeRun> {
+    let edges = consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|edge| (edge.pcurves[0].pos, edge))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(6)
         .filter_map(|window| {
             let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
@@ -446,15 +468,23 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
 pub fn consolidated_analytic_circle_edge_runs(
     data: &[u8],
 ) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
-    let circles = b2_circles(data)
+    let records = consolidated_records(data);
+    consolidated_analytic_circle_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedAnalyticCircleEdgeRun> {
+    let circles = b2_circles_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(6)
         .filter_map(|window| {
             let [parameter, circle, definition, use0, use1, node] = window else {
@@ -503,15 +533,23 @@ pub fn consolidated_analytic_circle_edge_runs(
 /// both close under their typed grammars.
 #[must_use]
 pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25EdgeRun> {
-    let descriptors = b2_class25_descriptors(data)
+    let records = consolidated_records(data);
+    consolidated_class25_edge_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_class25_edge_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedClass25EdgeRun> {
+    let descriptors = b2_class25_descriptors_from_records(data, records)
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    let use_runs = consolidated_edge_use_runs(data)
+    let use_runs = consolidated_edge_use_runs_from_records(data, records)
         .into_iter()
         .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    records
         .windows(5)
         .filter_map(|window| {
             let [descriptor, definition, use0, use1, node] = window else {
@@ -554,15 +592,22 @@ pub fn consolidated_class25_edge_runs(data: &[u8]) -> Vec<ConsolidatedClass25Edg
 /// availability. Records separated by another framed record do not form a run.
 #[must_use]
 pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
-    let uses = b2_use_metadata(data)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let nodes = b2_edge_nodes(data)
-        .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
     let records = consolidated_records(data);
+    consolidated_edge_use_runs_from_records(data, &records)
+}
+
+pub(crate) fn consolidated_edge_use_runs_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ConsolidatedEdgeUseRun> {
+    let uses = b2_use_metadata_from_records(data, records)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes_from_records(data, records)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
     records
         .windows(3)
         .enumerate()
@@ -685,14 +730,22 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// solution. Ambiguous candidates remain unresolved.
 #[must_use]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
-    let points = object_stream_vertices(data);
-    let embedded = b2_embedded_cylinders(data);
-    let standalone = b2_cylinders(data);
-    let circles = b2_circles(data);
-    let cones = b2_cones(data);
-    let spheres = b2_spheres(data);
-    let tori = b2_tori(data);
-    let surfaces = a5_surfaces(data);
+    let records = consolidated_records(data);
+    resolve_consolidated_edge_blocks_from_records(data, &records)
+}
+
+pub(crate) fn resolve_consolidated_edge_blocks_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<ResolvedConsolidatedEdgeBlock> {
+    let points = object_stream_vertices_from_records(data, records);
+    let embedded = b2_embedded_cylinders_from_records(data, records);
+    let standalone = b2_cylinders_from_records(data, records);
+    let circles = b2_circles_from_records(data, records);
+    let cones = b2_cones_from_records(data, records);
+    let spheres = b2_spheres_from_records(data, records);
+    let tori = b2_tori_from_records(data, records);
+    let surfaces = a5_surfaces_from_records(data, records);
     let carriers = ConsolidatedCarriers {
         cylinders: &standalone,
         embedded_cylinders: &embedded,
@@ -701,7 +754,7 @@ pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidated
         tori: &tori,
         nurbs_surfaces: &surfaces,
     };
-    consolidated_edge_blocks(data)
+    consolidated_edge_blocks_from_records(data, records)
         .into_iter()
         .map(|block| {
             let mut supports = std::array::from_fn(|side| {
@@ -1100,9 +1153,17 @@ fn pcurve_endpoints_match_vertices(
 /// vertices.
 #[must_use]
 pub(crate) fn object_stream_vertices(data: &[u8]) -> Vec<Point3> {
-    let mut ranges = consolidated_records(data)
-        .into_iter()
-        .map(|record| record.range)
+    let records = consolidated_records(data);
+    object_stream_vertices_from_records(data, &records)
+}
+
+pub(crate) fn object_stream_vertices_from_records(
+    data: &[u8],
+    records: &[crate::wire::records::ConsolidatedRecord],
+) -> Vec<Point3> {
+    let mut ranges = records
+        .iter()
+        .map(|record| record.range.clone())
         .chain(crate::families::b5::graph::framed_ranges(data))
         .collect::<Vec<_>>();
     if ranges.is_empty() {
