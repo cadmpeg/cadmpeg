@@ -3591,6 +3591,17 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
     )]);
     assert!(sketch_constraint_loci_compatible(&definition, &native_arc));
 
+    let native_line = BTreeMap::from([(
+        entity.clone(),
+        SketchGeometry::Native {
+            native_kind: "line".into(),
+        },
+    )]);
+    assert!(!sketch_constraint_loci_compatible(
+        &definition,
+        &native_line
+    ));
+
     let resolved = BTreeMap::from([(
         entity,
         SketchGeometry::Circle {

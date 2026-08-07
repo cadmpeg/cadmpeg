@@ -12114,6 +12114,13 @@ fn sketch_constraint_loci_compatible_with_policy(
     geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
     allow_unknown_native_endpoints: bool,
 ) -> bool {
+    let native_line_center_allowed = matches!(
+        definition,
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::Center(_),
+            ..
+        }
+    );
     let locus_compatible = |locus: &SketchLocus| {
         let entity = match locus {
             SketchLocus::Entity(entity)
@@ -12146,8 +12153,9 @@ fn sketch_constraint_loci_compatible_with_policy(
                 ) || matches!(
                     geometry,
                     SketchGeometry::Native { native_kind }
-                        // A centered type-47 row retains its center on a native line.
-                        if matches!(native_kind.as_str(), "circle" | "arc" | "line")
+                        if matches!(native_kind.as_str(), "circle" | "arc")
+                            // A centered type-47 row retains its center on a native line.
+                            || native_line_center_allowed && native_kind == "line"
                 )
             }
         })
