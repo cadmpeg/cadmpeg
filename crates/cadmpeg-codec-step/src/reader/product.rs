@@ -401,7 +401,7 @@ fn apply_body_placements(
         if assembly_representations.contains(&representation) {
             continue;
         }
-        let bodies = representation_bodies(
+        let bodies = super::topology::representation_bodies(
             representation,
             exchange,
             topology,
@@ -476,7 +476,7 @@ fn shape_binding(
     let definition = *pds.get(&record.parameter(0)?.reference()?)?;
     let product = *definitions.get(&definition)?;
     let representation = record.parameter(1)?.reference()?;
-    let bodies = representation_bodies(
+    let bodies = super::topology::representation_bodies(
         representation,
         exchange,
         topology,
@@ -485,75 +485,6 @@ fn shape_binding(
         0,
     );
     Some((product, bodies))
-}
-
-fn representation_bodies(
-    representation: u64,
-    exchange: &Exchange,
-    topology: &TopologyResult,
-    cache: &mut BTreeMap<u64, Vec<BodyId>>,
-    active: &mut BTreeSet<u64>,
-    depth: usize,
-) -> Vec<BodyId> {
-    if let Some(bodies) = cache.get(&representation) {
-        return bodies.clone();
-    }
-    if depth >= 256 {
-        return Vec::new();
-    }
-    if let Some(bodies) = topology.body_by_root.get(&representation) {
-        let bodies = bodies.clone();
-        cache.insert(representation, bodies.clone());
-        return bodies;
-    }
-    if !active.insert(representation) {
-        return Vec::new();
-    }
-    let bodies = exchange
-        .records
-        .get(&representation)
-        .and_then(|record| record.parameter(1))
-        .and_then(ValueExt::list)
-        .into_iter()
-        .flatten()
-        .filter_map(ValueExt::reference)
-        .flat_map(|item| {
-            let Some(record) = exchange.records.get(&item) else {
-                return Vec::new();
-            };
-            if super::topology::is_body_representation(record) {
-                return topology
-                    .body_by_root
-                    .get(&item)
-                    .cloned()
-                    .unwrap_or_default();
-            }
-            if record.simple_name() == Some("MAPPED_ITEM") {
-                let mapped_representation = record
-                    .parameter(1)
-                    .and_then(ValueExt::reference)
-                    .and_then(|map| exchange.records.get(&map))
-                    .and_then(|map| map.parameter(1))
-                    .and_then(ValueExt::reference);
-                if let Some(mapped_representation) = mapped_representation {
-                    return representation_bodies(
-                        mapped_representation,
-                        exchange,
-                        topology,
-                        cache,
-                        active,
-                        depth + 1,
-                    );
-                }
-            }
-            Vec::new()
-        })
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    active.remove(&representation);
-    cache.insert(representation, bodies.clone());
-    bodies
 }
 
 fn definition_representations(

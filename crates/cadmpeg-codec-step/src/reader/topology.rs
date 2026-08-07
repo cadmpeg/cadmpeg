@@ -46,20 +46,84 @@ fn topology_commit_error(context: &str, error: &DraftError) -> String {
     }
 }
 
-/// Returns the STEP representation families that produce a neutral topology body.
-pub(super) fn is_body_representation(record: &RawRecord) -> bool {
-    [
-        "SHELL_BASED_SURFACE_MODEL",
-        "FACE_BASED_SURFACE_MODEL",
-        "FACETED_BREP",
-        "MANIFOLD_SOLID_BREP",
-        "BREP_WITH_VOIDS",
-        "SHELL_BASED_WIREFRAME_MODEL",
-        "EDGE_BASED_WIREFRAME_MODEL",
-        "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
-    ]
-    .iter()
-    .any(|name| has_type(record, name))
+/// Resolve the bodies represented by a representation item graph.
+///
+/// A representation can contain a body root directly or contain mapped items
+/// whose representation map points at another representation.  Keep this
+/// traversal shared by topology classification and product placement so both
+/// consumers apply the same graph and cycle rules.
+pub(super) fn representation_bodies(
+    representation: u64,
+    exchange: &Exchange,
+    topology: &TopologyResult,
+    cache: &mut BTreeMap<u64, Vec<BodyId>>,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+) -> Vec<BodyId> {
+    if let Some(bodies) = cache.get(&representation) {
+        return bodies.clone();
+    }
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+        return Vec::new();
+    }
+    if let Some(bodies) = topology.body_by_root.get(&representation) {
+        let bodies = bodies.clone();
+        cache.insert(representation, bodies.clone());
+        return bodies;
+    }
+    if !active.insert(representation) {
+        return Vec::new();
+    }
+    let bodies = exchange
+        .records
+        .get(&representation)
+        .and_then(representation_items)
+        .into_iter()
+        .flatten()
+        .flat_map(|item| {
+            let Some(record) = exchange.records.get(&item) else {
+                return Vec::new();
+            };
+            if let Some(bodies) = topology.body_by_root.get(&item) {
+                return bodies.clone();
+            }
+            if !has_type(record, "MAPPED_ITEM") {
+                return Vec::new();
+            }
+            let Some(mapped_representation) = mapped_representation(record, exchange) else {
+                return Vec::new();
+            };
+            representation_bodies(
+                mapped_representation,
+                exchange,
+                topology,
+                cache,
+                active,
+                depth + 1,
+            )
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    active.remove(&representation);
+    cache.insert(representation, bodies.clone());
+    bodies
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    named_refs(record, "REPRESENTATION", 1).or_else(|| {
+        record
+            .simple_name()
+            .and_then(|name| named_refs(record, name, 1))
+    })
+}
+
+fn mapped_representation(record: &RawRecord, exchange: &Exchange) -> Option<u64> {
+    let map = named_reference(record, "MAPPED_ITEM", 1, 0)?;
+    exchange
+        .records
+        .get(&map)
+        .and_then(|map| named_reference(map, "REPRESENTATION_MAP", 1, 1))
 }
 
 pub(super) fn decode(
@@ -242,6 +306,7 @@ pub(super) fn decode(
         .map(|pcurve| pcurve.id.clone())
         .collect::<BTreeSet<_>>();
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
+    let mut representation_cache = BTreeMap::new();
     for (id, record) in exchange.entities_any(&[
         "SHELL_BASED_SURFACE_MODEL",
         "FACE_BASED_SURFACE_MODEL",
@@ -428,24 +493,33 @@ pub(super) fn decode(
     }
     for (id, record) in exchange.entities_any(&[
         "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_REPRESENTATION",
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "SHAPE_REPRESENTATION",
     ]) {
-        if !matches!(
-            record.simple_name(),
-            Some(
-                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "SHAPE_REPRESENTATION"
-            )
-        ) {
+        if most_specific(
+            record,
+            &[
+                "MANIFOLD_SURFACE_SHAPE_REPRESENTATION",
+                "ADVANCED_BREP_REPRESENTATION",
+                "ADVANCED_BREP_SHAPE_REPRESENTATION",
+                "SHAPE_REPRESENTATION",
+            ],
+        )
+        .is_none()
+        {
             continue;
         }
-        if record.parameter(1).and_then(refs).is_some_and(|items| {
-            items
-                .iter()
-                .any(|item| result.body_by_root.contains_key(item))
-        }) {
+        let has_body = !representation_bodies(
+            id,
+            exchange,
+            &result,
+            &mut representation_cache,
+            &mut BTreeSet::new(),
+            0,
+        )
+        .is_empty();
+        if has_body {
             result.typed_records.insert(id);
         }
     }

@@ -6107,6 +6107,83 @@ fn standalone_geometry_uses_general_shape_representation() {
 }
 
 #[test]
+fn advanced_brep_representation_reuses_its_committed_solid_body() {
+    let source = export(&unit_cube()).replace(
+        "ADVANCED_BREP_SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_REPRESENTATION",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode advanced B-rep representation");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(!result
+        .ir
+        .native_unknowns("step")
+        .unwrap()
+        .iter()
+        .any(|record| record.id.0.contains("advanced_brep_representation")));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn advanced_brep_mapped_representation_reuses_its_committed_solid_body() {
+    let mut source = export(&unit_cube()).replace(
+        "ADVANCED_BREP_SHAPE_REPRESENTATION",
+        "ADVANCED_BREP_REPRESENTATION",
+    );
+    let representation_line = source
+        .lines()
+        .find(|line| line.contains("ADVANCED_BREP_REPRESENTATION("))
+        .expect("written advanced B-rep representation");
+    let representation = representation_line
+        .split_once('=')
+        .and_then(|(id, _)| id.trim().strip_prefix('#'))
+        .and_then(|id| id.parse::<u64>().ok())
+        .expect("advanced B-rep representation id");
+    let context = representation_line
+        .split_once('=')
+        .and_then(|(_, record)| record.strip_suffix(';'))
+        .and_then(|record| record.strip_suffix(')'))
+        .and_then(|record| record.rsplit_once(','))
+        .map(|(_, context)| context.trim())
+        .expect("advanced B-rep representation context");
+    let next_id = source
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('#')
+                .and_then(|line| line.split_once('='))
+                .and_then(|(id, _)| id.trim().parse::<u64>().ok())
+        })
+        .max()
+        .expect("written STEP entity")
+        + 1;
+    let map = next_id;
+    let mapped_item = next_id + 1;
+    let mapped_representation = next_id + 2;
+    let records = format!(
+        "#{map}=REPRESENTATION_MAP($,#{representation});\n\
+#{mapped_item}=MAPPED_ITEM('',#{map},$);\n\
+#{mapped_representation}=(ADVANCED_BREP_REPRESENTATION() REPRESENTATION('mapped',(#{mapped_item}),{context}) REPRESENTATION_ITEM('mapped'));\n"
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(end, &records);
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode mapped advanced B-rep representation");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("ADVANCED_BREP_REPRESENTATION instance(s) as named opaque STEP records")
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;

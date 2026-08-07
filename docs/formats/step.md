@@ -321,8 +321,12 @@ unsupported policy rejects output when any topology-transfer loss exists.
 
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
-including `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, uses the same
-source-root-to-body map. Occurrence transforms compose once from the
+including `ADVANCED_BREP_REPRESENTATION` and
+`GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION`, uses the same
+source-root-to-body map. An `ADVANCED_BREP_REPRESENTATION` is typed when its
+items resolve directly or through a mapped representation to committed
+topology roots. Occurrence
+transforms compose once from the
 product-definition relationship into model space. Mapped representations and
 context-dependent relationships that identify one placement apply that
 placement once. A mapped occurrence uses a
