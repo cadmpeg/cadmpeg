@@ -499,7 +499,7 @@ fn retain_unowned_pcurves(
         .count();
     ir.model
         .pcurves
-        .retain(|pcurve| retains_carrier(&pcurve.id.0, &removed_closure, &protected));
+        .retain(|pcurve| owned.contains(&pcurve.id.0));
     ir.model
         .points
         .retain(|point| retains_carrier(&point.id.0, &removed_closure, &protected));
@@ -515,7 +515,9 @@ fn retain_unowned_pcurves(
     ir.model
         .procedural_surfaces
         .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
-    typed_records.retain(|id| !removed_closure.contains(id) || protected.contains(id));
+    typed_records.retain(|id| {
+        !unowned.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
+    });
     let protected_pcurves = unowned.iter().filter(|id| protected.contains(id)).count();
     let opaque_pcurves = unowned.len() - protected_pcurves;
     warnings.push(format!(

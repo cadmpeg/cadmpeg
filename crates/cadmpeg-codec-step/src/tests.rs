@@ -1740,7 +1740,7 @@ fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
 }
 
 #[test]
-fn a_protected_unowned_pcurve_survives_retention() {
+fn a_protected_unowned_pcurve_stays_opaque() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -1759,7 +1759,7 @@ fn a_protected_unowned_pcurve_survives_retention() {
         .model
         .pcurves
         .iter()
-        .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#69"));
+        .all(|pcurve| { pcurve.id.as_str() != "step:data:pcurve#69" }));
     assert!(decoded
         .report
         .losses
@@ -1774,7 +1774,7 @@ fn a_protected_unowned_pcurve_survives_retention() {
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
-        .all(|record| record.id.0 != "step:data:pcurve#69"));
+        .any(|record| record.id.0 == "step:data:pcurve#69"));
 }
 
 #[test]
