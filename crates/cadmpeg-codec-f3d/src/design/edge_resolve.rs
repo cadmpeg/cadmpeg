@@ -186,8 +186,7 @@ pub(crate) fn resolved_edge_group(
         let mut edges = first.transition_edge_candidates.clone();
         edges.sort_unstable();
         edges.dedup();
-        (!edges.is_empty()
-            && edges.len() == group.members.len()
+        let is_memberwise_selection = edges.len() == group.members.len()
             && operands.iter().all(|operand| {
                 if !operand.compact_layout {
                     return false;
@@ -196,8 +195,13 @@ pub(crate) fn resolved_edge_group(
                 candidate.sort_unstable();
                 candidate.dedup();
                 candidate == edges
-            }))
-        .then_some(edges)
+            });
+        // A single persistent edge-treatment member denotes the complete
+        // selected chain. Its transition candidates are already restricted to
+        // deleted edges between the treatment face and its surviving support
+        // faces, so the chain does not need one identity record per edge.
+        let is_single_member_chain = group.members.len() == 1 && operands.len() == 1;
+        (!edges.is_empty() && (is_memberwise_selection || is_single_member_chain)).then_some(edges)
     });
     let identity_radius_slots = treatment_radius.and_then(|radius| {
         radius_edge_identity_group_candidates(identity_matches.as_ref()?, radius)
@@ -1839,6 +1843,36 @@ mod radius_identity_tests {
                 },
                 tangency_weight: Some(1.0),
             }] if edges.len() == 2
+        ));
+    }
+
+    #[test]
+    fn sole_full_layout_identity_group_projects_fixed_fillet_transition_chain() {
+        let group = group(2, 10);
+        let mut identity = identity(10, &[(17, 3.0), (19, 3.0)]);
+        identity.compact_layout = false;
+        identity.treatment_radius_candidates.clear();
+        let feature_id = cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into());
+
+        assert!(matches!(
+            resolved_edge_group(
+                &group,
+                std::slice::from_ref(&group),
+                &[],
+                &[identity],
+                Some(7),
+                &feature_id,
+                Some(3.0),
+            ),
+            cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
+                if edges == [
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:7:19".into()
+                    ),
+                ]
         ));
     }
 
