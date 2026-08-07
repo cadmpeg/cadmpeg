@@ -10071,6 +10071,159 @@ fn encode_regenerates_decoded_non_manifold_sheet_without_source_bytes() {
 }
 
 #[test]
+fn encode_places_a_brep_outer_loop_first_when_face_storage_is_reordered() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Sheet)
+        .unwrap();
+    let region_id = body.regions[0].clone();
+    let region = decoded
+        .ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == region_id)
+        .unwrap();
+    let shell_id = region.shells[0].clone();
+    let shell = decoded
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == shell_id)
+        .unwrap();
+    let target_face_id = shell.faces[0].clone();
+    let moved_face_id = shell.faces[2].clone();
+    let outer_loop_id = decoded
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == target_face_id)
+        .unwrap()
+        .loops[0]
+        .clone();
+    let moved_loop_id = decoded
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == moved_face_id)
+        .unwrap()
+        .loops[0]
+        .clone();
+
+    decoded
+        .ir
+        .model
+        .faces
+        .iter_mut()
+        .find(|face| face.id == target_face_id)
+        .unwrap()
+        .loops = vec![moved_loop_id.clone(), outer_loop_id.clone()];
+    decoded
+        .ir
+        .model
+        .faces
+        .retain(|face| face.id != moved_face_id);
+    decoded
+        .ir
+        .model
+        .shells
+        .iter_mut()
+        .find(|shell| shell.id == shell_id)
+        .unwrap()
+        .faces
+        .retain(|face_id| *face_id != moved_face_id);
+    let moved_loop = decoded
+        .ir
+        .model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == moved_loop_id)
+        .unwrap();
+    moved_loop.face = target_face_id;
+    moved_loop.boundary_role = LoopBoundaryRole::Inner;
+
+    let emitted_loop_ids = decoded
+        .ir
+        .model
+        .faces
+        .iter()
+        .flat_map(|face| face.loops.iter().cloned())
+        .collect::<Vec<_>>();
+    let outer_loop_index = emitted_loop_ids
+        .iter()
+        .position(|loop_id| *loop_id == outer_loop_id)
+        .unwrap();
+    let moved_loop_index = emitted_loop_ids
+        .iter()
+        .position(|loop_id| *loop_id == moved_loop_id)
+        .unwrap();
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let entities = &round_trip.ir.native.namespace("iges").unwrap().arenas["entities"];
+    let loop_sequences = entities
+        .iter()
+        .filter(|entity| entity.field("entity_type") == Some(510.into()))
+        .count();
+    assert_eq!(loop_sequences, 2);
+    let loop_sequences = entities
+        .iter()
+        .filter(|entity| entity.field("entity_type") == Some(508.into()))
+        .map(|entity| {
+            entity
+                .field("directory_sequence")
+                .unwrap()
+                .as_i64()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let face_parameters = entities
+        .iter()
+        .filter(|entity| entity.field("entity_type") == Some(510.into()))
+        .find_map(|entity| {
+            let parameters = entity.field("parameters")?;
+            let values = parameters.as_array()?;
+            (values.get(2)?["value"]["value"].as_i64() == Some(2)).then_some(parameters)
+        })
+        .unwrap();
+    let face = face_parameters.as_array().unwrap();
+    assert_eq!(face[3]["value"]["value"].as_i64(), Some(1));
+    assert_eq!(
+        face[4]["value"]["value"].as_i64(),
+        Some(loop_sequences[outer_loop_index])
+    );
+    assert_eq!(
+        face[5]["value"]["value"].as_i64(),
+        Some(loop_sequences[moved_loop_index])
+    );
+    assert!(round_trip.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
     let decoded = IgesCodec
         .decode(
