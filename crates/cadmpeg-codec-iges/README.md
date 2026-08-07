@@ -3,7 +3,7 @@
 `cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
-Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
+Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 for the Fixed ASCII mechanical/document envelope.
 
 ## Install
@@ -42,7 +42,7 @@ and inspected by name and refused for semantic decode.
 
 `IgesCodec` replays an unchanged decoded source image byte for byte when its
 retained source record and document baseline are intact. `IgesEncoder` accepts
-an explicit target version. The semantic writer supports standalone points,
+an explicit target version. The L9 semantic writer supports standalone points,
 finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
 surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and
 bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face
@@ -50,9 +50,10 @@ sheet bodies. Exact solved carriers for procedural surfaces and curves are
 regenerated as neutral geometry and reported as `procedural_reduced`. It
 validates topology ownership, edge spans, radial incidence, and supported
 surface and pcurve geometry before output. Unsupported neutral or native
-content is refused. Edited source documents may report
+content is explicitly refused. Edited source documents may report
 `passthrough_record_omitted` losses for native direction, display, or
-occurrence-expansion records that are not regenerated.
+occurrence-expansion records that are not regenerated. The independent
+FreeCAD gate is [`scripts/verify-iges-freecad.py`](../../scripts/verify-iges-freecad.py).
 
 ## Data model
 
