@@ -3503,7 +3503,7 @@ fn lift_pcurve_endpoints(
     control_points: &[[f64; 2]],
 ) -> Option<[[f64; 3]; 2]> {
     let endpoints = [*control_points.first()?, *control_points.last()?];
-    match surface {
+    let lifted = match surface {
         B5Surface::UnresolvedNurbs { .. }
         | B5Surface::Unknown { .. }
         | B5Surface::RollingBall { .. } => None,
@@ -3640,7 +3640,13 @@ fn lift_pcurve_endpoints(
             evaluate_nurbs(surface, endpoints[0][0], endpoints[0][1])?,
             evaluate_nurbs(surface, endpoints[1][0], endpoints[1][1])?,
         ]),
-    }
+    };
+    lifted.filter(|points| {
+        points
+            .iter()
+            .flatten()
+            .all(|coordinate| coordinate.is_finite())
+    })
 }
 
 fn evaluate_nurbs(surface: &NurbsSurface, u: f64, v: f64) -> Option<[f64; 3]> {

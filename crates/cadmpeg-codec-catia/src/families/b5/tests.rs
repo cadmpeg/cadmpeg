@@ -109,6 +109,23 @@ fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
 }
 
 #[test]
+fn b5_pcurve_lift_rejects_nonfinite_world_endpoints() {
+    let mut bytes = b5_closed_triangle_stream();
+    bytes[9..17].copy_from_slice(&f64::MAX.to_le_bytes());
+    bytes[8 + 89..8 + 97].copy_from_slice(&0.0f64.to_le_bytes());
+    bytes[8 + 97..8 + 105].copy_from_slice(&f64::MAX.to_le_bytes());
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        600,
+        &b5_isoparametric_line_pcurve_payload(100, f64::MAX, [0.0, 1.0]),
+    );
+
+    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    assert!(graph.pcurves[&600].lifted_endpoints.is_none());
+}
+
+#[test]
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
     bytes[7..11].copy_from_slice(&0x1234u32.to_le_bytes());
