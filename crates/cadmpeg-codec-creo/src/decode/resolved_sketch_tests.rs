@@ -496,6 +496,33 @@ fn surface_merge_quilt_roster_links_every_unique_generator() {
         surface_merge_quilt_ids(&[], std::slice::from_ref(&replay), 416),
         Some([103, 192, 329].as_slice())
     );
+    let wrong_class = crate::feature::FeatureEntityTable {
+        feature_id: Some(175),
+        table_class_id: 67,
+        entry_ids: vec![192],
+        entries: vec![crate::feature::FeatureEntityTableEntry {
+            entity_id: 192,
+            class_id: 201,
+            source_entity_id: Some(175),
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        }],
+        surface_ids: Vec::new(),
+        non_surface_entity_ids: vec![192],
+        offset: 0,
+    };
+    assert_eq!(
+        surface_merge_entity_dependencies(
+            &[],
+            std::slice::from_ref(&replay),
+            &[producer(97, 103), wrong_class, producer(312, 329)],
+            416,
+        ),
+        [97, 312]
+    );
 }
 
 #[test]

@@ -16111,7 +16111,7 @@ fn feature_entity_producers(
             table
                 .entries
                 .iter()
-                .filter(|entry| entry.source_entity_id.is_some())
+                .filter(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
                 .map(move |entry| (entry.entity_id, owner))
         })
         .fold(
