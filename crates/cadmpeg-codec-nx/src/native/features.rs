@@ -3221,9 +3221,15 @@ pub fn feature_simple_hole_repeated_scalar_lane_block_references(
 
 /// Group distinct simple-hole operations that address the same four construction blocks.
 pub fn feature_simple_hole_construction_groups(
+    labels: &[FeatureOperationLabel],
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Vec<FeatureSimpleHoleConstructionGroup> {
+    let chronological_positions = feature_operation_chronological_labels(labels)
+        .into_iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
     let mut lanes_by_operation = BTreeMap::<&str, Vec<_>>::new();
     for lane in lanes {
         lanes_by_operation
@@ -3257,8 +3263,22 @@ pub fn feature_simple_hole_construction_groups(
             if ambiguous_groups.contains(&key) {
                 return None;
             }
+            let operation_position =
+                |reference: &FeatureSimpleHoleRepeatedScalarLaneBlockReferences| {
+                    chronological_positions
+                        .get(reference.operation_label.as_str())
+                        .copied()
+                };
+            if members
+                .iter()
+                .any(|(reference, _)| operation_position(reference).is_none())
+            {
+                return None;
+            }
             members.sort_by(|(first, _), (second, _)| {
-                first.operation_label.cmp(&second.operation_label)
+                operation_position(first)
+                    .cmp(&operation_position(second))
+                    .then_with(|| first.operation_label.cmp(&second.operation_label))
             });
             if members.len() < 2
                 || members
@@ -3268,12 +3288,17 @@ pub fn feature_simple_hole_construction_groups(
                 return None;
             }
             let first = members[0].0;
-            let key = first
+            let id_anchor = members
+                .iter()
+                .map(|(reference, _)| *reference)
+                .min_by(|first, second| first.operation_label.cmp(&second.operation_label))
+                .expect("a group has at least two members");
+            let id_key = id_anchor
                 .operation_label
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
             Some(FeatureSimpleHoleConstructionGroup {
-                id: format!("nx:feature-history:simple-hole-construction-group#{key}"),
+                id: format!("nx:feature-history:simple-hole-construction-group#{id_key}"),
                 first_data_blocks: first.first_data_blocks.clone(),
                 second_data_blocks: first.second_data_blocks.clone(),
                 operation_labels: members
@@ -10639,8 +10664,18 @@ mod tests {
     #[test]
     fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         use super::{
-            feature_simple_hole_construction_groups, FeatureSimpleHoleRepeatedScalarLane,
+            feature_simple_hole_construction_groups, FeatureOperationLabel,
+            FeatureSimpleHoleRepeatedScalarLane,
             FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
+        };
+        let label = |id: &str, ordinal: u32| FeatureOperationLabel {
+            id: id.into(),
+            section_link: "section#1".into(),
+            ordinal,
+            value: "SIMPLE HOLE".into(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
         };
         let lane = |operation: &str| FeatureSimpleHoleRepeatedScalarLane {
             id: format!("lane-{operation}"),
@@ -10671,26 +10706,36 @@ mod tests {
             reference("operation#1-3", "block-4"),
             reference("operation#1-2", "block-4"),
         ];
-        let groups = feature_simple_hole_construction_groups(&lanes, &references);
+        // The native label arena is newest-first. The group must reverse that
+        // source order, rather than infer history from operation-label text.
+        let labels = [
+            label("operation#1-2", 0),
+            label("operation#1-3", 1),
+            label("operation#1-4", 2),
+        ];
+        let groups = feature_simple_hole_construction_groups(&labels, &lanes, &references);
         assert_eq!(groups.len(), 1);
         assert_eq!(
             groups[0].operation_labels,
-            ["operation#1-2", "operation#1-3"]
+            ["operation#1-3", "operation#1-2"]
         );
         assert_eq!(
             groups[0].scalar_lanes,
-            ["lane-operation#1-2", "lane-operation#1-3"]
+            ["lane-operation#1-3", "lane-operation#1-2"]
         );
         assert_eq!(
             groups[0].block_references,
-            ["reference-operation#1-2", "reference-operation#1-3"]
+            ["reference-operation#1-3", "reference-operation#1-2"]
         );
 
         let duplicate_references = [
             reference("operation#1-2", "block-4"),
             reference("operation#1-2", "block-4"),
         ];
-        assert!(feature_simple_hole_construction_groups(&lanes, &duplicate_references).is_empty());
+        assert!(
+            feature_simple_hole_construction_groups(&labels, &lanes, &duplicate_references)
+                .is_empty()
+        );
 
         let duplicate_lanes = [
             lane("operation#1-2"),
@@ -10703,10 +10748,24 @@ mod tests {
             reference("operation#1-3", "block-4"),
             reference("operation#1-4", "block-4"),
         ];
-        assert!(
-            feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references)
-                .is_empty()
-        );
+        assert!(feature_simple_hole_construction_groups(
+            &labels,
+            &duplicate_lanes,
+            &shared_references
+        )
+        .is_empty());
+
+        let unknown_lanes = [lane("operation#1-8"), lane("operation#1-9")];
+        let unknown_references = [
+            reference("operation#1-8", "block-4"),
+            reference("operation#1-9", "block-4"),
+        ];
+        assert!(feature_simple_hole_construction_groups(
+            &labels,
+            &unknown_lanes,
+            &unknown_references
+        )
+        .is_empty());
     }
 
     #[test]

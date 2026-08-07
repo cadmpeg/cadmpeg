@@ -407,6 +407,7 @@ impl NativeModel {
         let feature_simple_hole_repeated_scalar_lane_block_references =
             feature_simple_hole_repeated_scalar_lane_block_references(container);
         let feature_simple_hole_construction_groups = feature_simple_hole_construction_groups(
+            &feature_operation_labels,
             &feature_simple_hole_repeated_scalar_lanes,
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
