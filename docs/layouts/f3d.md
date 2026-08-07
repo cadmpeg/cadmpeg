@@ -195,6 +195,29 @@ Offsets are relative to the member's indexed header. The UUID payloads occupy 36
 | 185 | 1 | `tail_slot_marker` | `u8` | little | spec | an optional-slot marker |
 | 186 | 4 | `tail_slot_value` | `u32` | little | spec | followed by u32 zero |
 
+## `coil_compact_scope_discriminators`
+
+Spec §3.1 · layout: byte offsets · size: 111 B
+
+Offsets are relative to the primary indexed scope header. The ordered reference table and scope trailer follow this fixed discriminator block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 20 | 4 | `operation` | `u32` | little | spec | Offset 20 value `1` creates a new body |
+| 24 | 1 | `clockwise` | `u8` | little | spec | offset 24 is the clockwise Boolean |
+| 26 | 4 | `structural_constant` | `u32` | little | spec | offset 26 is u32 `4` |
+| 30 | 4 | `extent` | `u32` | little | spec | Offset 30 selects the driving dimensions |
+| 92 | 4 | `section_placement` | `u32` | little | spec | Offset 92 selects the section position |
+| 107 | 4 | `section_shape` | `u32` | little | spec | Offset 107 selects the section shape |
+
+Unstated regions:
+
+- `11..20` (9 B): The scope framing precedes the fixed Coil discriminators.
+- `25..26` (1 B): The structural constant starts at offset 26.
+- `34..92` (58 B): The scope reference table and parameter-specific lanes follow the extent discriminator.
+- `96..107` (11 B): The fixed discriminator block retains the section-shape lane at offset 107.
+
 ## `coil_long_scope_fixed_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 52 B

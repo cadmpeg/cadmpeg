@@ -584,6 +584,83 @@ source = "spec"
 anchor = "followed by u32 zero"
 
 [[record]]
+name = "coil_compact_scope_discriminators"
+kind = "byte"
+section = "3.1"
+anchor = "`CoilPrimitive` is the compact Coil dialect."
+size = 111
+note = "Offsets are relative to the primary indexed scope header. The ordered reference table and scope trailer follow this fixed discriminator block."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.gap]]
+offset = 11
+size = 9
+note = "The scope framing precedes the fixed Coil discriminators."
+
+[[record.field]]
+name = "operation"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "Offset 20 value `1` creates a new body"
+
+[[record.field]]
+name = "clockwise"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "offset 24 is the clockwise Boolean"
+
+[[record.gap]]
+offset = 25
+size = 1
+note = "The structural constant starts at offset 26."
+
+[[record.field]]
+name = "structural_constant"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "offset 26 is u32 `4`"
+
+[[record.field]]
+name = "extent"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "Offset 30 selects the driving dimensions"
+
+[[record.gap]]
+offset = 34
+size = 58
+note = "The scope reference table and parameter-specific lanes follow the extent discriminator."
+
+[[record.field]]
+name = "section_placement"
+offset = 92
+type = "u32"
+source = "spec"
+anchor = "Offset 92 selects the section position"
+
+[[record.gap]]
+offset = 96
+size = 11
+note = "The fixed discriminator block retains the section-shape lane at offset 107."
+
+[[record.field]]
+name = "section_shape"
+offset = 107
+type = "u32"
+source = "spec"
+anchor = "Offset 107 selects the section shape"
+
+[[record]]
 name = "coil_long_scope_fixed_prologue"
 kind = "byte"
 section = "3.1"

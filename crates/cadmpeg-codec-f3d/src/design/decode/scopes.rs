@@ -4676,8 +4676,7 @@ struct CoilDiscriminators {
     clockwise_offset: Option<u64>,
 }
 
-/// Decode the two ordered placement carriers of the compact eight-reference
-/// Coil form.
+/// Decode the two ordered placement carriers of a compact Coil form.
 ///
 /// The first carrier is a nested support-selection frame. It may carry either
 /// a persistent support identity or a face recipe. The second is a rigid frame
@@ -4693,11 +4692,13 @@ fn exact_coil_placement(
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignCoilPlacement> {
-    if scope.kind != "CoilPrimitive"
-        || !matches!(scope.frame_length, 432 | 442)
-        || scope.reference_members.len() != 8
-    {
+    if scope.kind != "CoilPrimitive" {
         return None;
+    }
+    match (scope.frame_length, scope.reference_members.len()) {
+        (411, 7) if matches!(scope.coil_extent, Some(DesignCoilExtent::Spiral)) => {}
+        (432 | 442, 8) => {}
+        _ => return None,
     }
     let selection_record_index = scope.reference_members[0];
     let transform_record_index = scope.reference_members[1];
@@ -6185,8 +6186,8 @@ mod tests {
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignCoilSelection, DesignParameterScope,
-        DesignRecordHeader,
+        ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
+        DesignParameterScope, DesignRecordHeader,
     };
     use std::collections::HashMap;
 
@@ -6273,6 +6274,14 @@ mod tests {
         bytes.extend_from_slice(&scope.record_index.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&paired);
+        (bytes, scope, transform_start)
+    }
+
+    fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+        let (bytes, mut scope, transform_start) = compact_coil_placement_fixture(None);
+        scope.frame_length = 411;
+        scope.reference_members.pop();
+        scope.coil_extent = Some(DesignCoilExtent::Spiral);
         (bytes, scope, transform_start)
     }
 
@@ -6415,6 +6424,30 @@ mod tests {
         assert_eq!(
             placement.transform_record_byte_offset,
             transform_start as u64
+        );
+    }
+
+    #[test]
+    fn compact_coil_spiral_placement_accepts_seven_reference_form() {
+        let (bytes, scope, transform_start) = compact_coil_spiral_placement_fixture();
+        let placement =
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+                .expect("seven-reference compact Coil spiral placement");
+        assert_eq!(placement.selection_record_index, 100);
+        assert_eq!(placement.transform_record_index, 200);
+        assert_eq!(
+            placement.transform_record_byte_offset,
+            transform_start as u64
+        );
+    }
+
+    #[test]
+    fn compact_coil_seven_reference_form_requires_spiral_extent() {
+        let (bytes, mut scope, _) = compact_coil_spiral_placement_fixture();
+        scope.coil_extent = Some(DesignCoilExtent::RevolutionsHeight);
+        assert_eq!(
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+            None
         );
     }
 
