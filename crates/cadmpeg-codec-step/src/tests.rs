@@ -1740,6 +1740,39 @@ fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
 }
 
 #[test]
+fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#53=VECTOR('',#52,1.);",
+            "#53=VECTOR('',#52,10.);",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=TRIMMED_CURVE('',#71,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(0.)),.F.,.PARAMETER.);\n#71=LINE('',#51,#53);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode opposed-sense pcurve trim");
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("trimmed pcurve");
+    assert!(matches!(
+        &pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Trimmed {
+            parameter_range: [start, end],
+            ..
+        } if *start == 0.0 && *end == 1.0
+    ));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn a_protected_unowned_pcurve_stays_opaque() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

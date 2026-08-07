@@ -3184,7 +3184,7 @@ fn decode_pcurve_geometry(
                     pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)? * scale;
                 records.extend(basis_records);
                 PcurveGeometry::Trimmed {
-                    parameter_range: if sense { [start, end] } else { [end, start] },
+                    parameter_range: trimmed_pcurve_parameter_range(&basis, start, end, sense),
                     basis: Box::new(basis),
                 }
             }
@@ -3253,6 +3253,64 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
         _ => None,
     }
     .filter(|value| value.is_finite())
+}
+
+fn trimmed_pcurve_parameter_range(
+    geometry: &PcurveGeometry,
+    start: f64,
+    end: f64,
+    sense: bool,
+) -> [f64; 2] {
+    let mut start = start;
+    let mut end = end;
+    // Closed STEP pcurves use cyclic parameter branches. Move the endpoint
+    // that follows the declared traversal before projecting to an ordered
+    // basis interval; non-closed malformed input still gets a valid interval.
+    if let Some(period) = pcurve_parameter_period(geometry) {
+        if sense && end < start {
+            end += period;
+        } else if !sense && start < end {
+            start += period;
+        }
+    }
+    let range = if sense { [start, end] } else { [end, start] };
+    if range[0] <= range[1] {
+        range
+    } else {
+        [range[1], range[0]]
+    }
+}
+
+fn pcurve_parameter_period(geometry: &PcurveGeometry) -> Option<f64> {
+    let period = match geometry {
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. } => std::f64::consts::TAU,
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            periodic: true,
+            ..
+        } => pcurve_nurbs_parameter_period(*degree, knots, control_points.len())?,
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            periodic: true,
+            ..
+        } => pcurve_nurbs_parameter_period(*degree, knots, radial_control_points.len())?,
+        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_period(basis)?,
+        _ => return None,
+    };
+    (period.is_finite() && period > 0.0).then_some(period)
+}
+
+fn pcurve_nurbs_parameter_period(degree: u32, knots: &[f64], count: usize) -> Option<f64> {
+    let degree = usize::try_from(degree).ok()?;
+    let lower = *knots.get(degree)?;
+    let upper = *knots.get(count)?;
+    (lower.is_finite() && upper.is_finite() && upper > lower).then_some(upper - lower)
 }
 
 fn surface_parameter_scales(
