@@ -8369,6 +8369,110 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         saved_section: None,
         offset: 0,
     };
+    let mut point_row_symmetry = definition.clone();
+    point_row_symmetry.variables = Some(crate::feature::FeatureVariableTable {
+        declared_count: 0,
+        entity_ref: None,
+        rows: Vec::new(),
+        points: vec![
+            crate::feature::FeatureSectionPoint {
+                point_id: 4,
+                u: Some(1.0),
+                v: Some(1.0),
+            },
+            crate::feature::FeatureSectionPoint {
+                point_id: 6,
+                u: Some(0.0),
+                v: Some(0.0),
+            },
+            crate::feature::FeatureSectionPoint {
+                point_id: 7,
+                u: None,
+                v: None,
+            },
+        ],
+        offset: 90,
+    });
+    let segments = point_row_symmetry.segments.as_mut().expect("segments");
+    segments.point_rows = vec![
+        crate::feature::FeaturePointSegment {
+            point_id: 4,
+            external_id: 18,
+            offset: 91,
+        },
+        crate::feature::FeaturePointSegment {
+            point_id: 6,
+            external_id: 19,
+            offset: 92,
+        },
+        crate::feature::FeaturePointSegment {
+            point_id: 7,
+            external_id: 20,
+            offset: 93,
+        },
+    ];
+    segments.declared_count = 8;
+    let relations = point_row_symmetry.relations.as_mut().expect("relations");
+    relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 94,
+        kind: 14,
+        flags: 0,
+        status: 1,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 18,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 19,
+                sense: 4,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 20,
+                sense: 4,
+            },
+        ],
+        offset: 94,
+    }];
+    relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        resolved_section_points(&point_row_symmetry).get(&7),
+        Some(&[2.0, 2.0])
+    );
+    let mut circle_center_symmetry = point_row_symmetry.clone();
+    circle_center_symmetry
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .push(crate::feature::FeatureSectionPoint {
+            point_id: 8,
+            u: Some(0.0),
+            v: Some(0.0),
+        });
+    let segments = circle_center_symmetry.segments.as_mut().expect("segments");
+    segments.circle_rows = vec![crate::feature::FeatureCircleSegment {
+        center_id: 8,
+        radius_ref: 101,
+        external_id: 21,
+        offset: 95,
+    }];
+    segments.declared_count = 9;
+    circle_center_symmetry
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[1]
+        .entity_id = 21;
+    assert_eq!(
+        resolved_section_points(&circle_center_symmetry).get(&7),
+        Some(&[2.0, 2.0])
+    );
     let mut projected_copy = definition.clone();
     projected_copy.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
         declared_count: None,

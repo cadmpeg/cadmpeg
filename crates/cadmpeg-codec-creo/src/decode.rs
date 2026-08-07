@@ -3942,6 +3942,9 @@ fn section_skamp_point_entity_id(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<u32> {
+    if let Some(point) = unique_point_segment(definition, item.entity_id) {
+        return (item.sense == 0).then_some(point.point_id);
+    }
     let segment = unique_section_skamp_segment(definition, item.entity_id)?;
     (item.sense == 0 && segment.kind == crate::feature::FeatureSegmentKind::Point)
         .then_some(segment.point_ids[0])
@@ -3959,7 +3962,16 @@ fn section_skamp_selected_point_id(
             _ => None,
         };
     }
+    if let Some(point) = unique_point_segment(definition, item.entity_id) {
+        return matches!(item.sense, 0 | 4).then_some(point.point_id);
+    }
+    if let Some(circle) = unique_circle_segment(definition, item.entity_id) {
+        return (item.sense == 4).then_some(circle.center_id);
+    }
     let segment = unique_section_skamp_segment(definition, item.entity_id)?;
+    if segment.kind == crate::feature::FeatureSegmentKind::Point {
+        return matches!(item.sense, 0 | 4).then_some(segment.point_ids[0]);
+    }
     match item.sense {
         2 => Some(segment.point_ids[0]),
         3 => Some(segment.point_ids[1]),
