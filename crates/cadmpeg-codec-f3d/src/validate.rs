@@ -5478,6 +5478,8 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
     let mut sketch_point_identities = HashSet::new();
     let mut sketch_geometry_records = HashSet::new();
+    // An unresolved owner is not one shared sketch. Enforce uniqueness only
+    // when the owning sketch reference is known.
     for point in &native.sketch_points {
         if !point.coordinates.u.is_finite() || !point.coordinates.v.is_finite() {
             findings.push(Finding {
@@ -5487,13 +5489,14 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 entity: Some(point.id.clone()),
             });
         }
-        if point.persistent_id == 0
-            || !sketch_point_identities.insert((
+        let duplicate = point.owner_reference.is_some_and(|owner_reference| {
+            !sketch_point_identities.insert((
                 design_stream(&point.id),
-                point.owner_reference,
+                owner_reference,
                 point.persistent_id,
             ))
-        {
+        });
+        if point.persistent_id == 0 || duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -5512,14 +5515,15 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     let mut sketch_curve_identities = HashSet::new();
     for curve in &native.sketch_curve_identities {
-        if curve.primary_id == 0
-            || !sketch_curve_identities.insert((
+        let duplicate = curve.owner_reference.is_some_and(|owner_reference| {
+            !sketch_curve_identities.insert((
                 design_stream(&curve.id),
-                curve.owner_reference,
+                owner_reference,
                 curve.primary_id,
                 curve.secondary_id,
             ))
-        {
+        });
+        if curve.primary_id == 0 || duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -5538,13 +5542,14 @@ fn validate_sketch_geometry_identities(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
     let mut sketch_surface_identities = HashSet::new();
     for surface in &native.sketch_surfaces {
-        if surface.persistent_id == 0
-            || !sketch_surface_identities.insert((
+        let duplicate = surface.owner_reference.is_some_and(|owner_reference| {
+            !sketch_surface_identities.insert((
                 design_stream(&surface.id),
-                surface.owner_reference,
+                owner_reference,
                 surface.persistent_id,
             ))
-        {
+        });
+        if surface.persistent_id == 0 || duplicate {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
