@@ -33,6 +33,7 @@ use crate::families::freeform::append_freeform_surface_pools;
 use crate::families::standard::{fbb, topology};
 use crate::families::FamilyOutput;
 use crate::solve::{mesh_quotient, missing_edge};
+use crate::wire::records::ConsolidatedRecord;
 
 #[derive(Clone)]
 struct ConsolidatedRevolutionBinding {
@@ -44,8 +45,10 @@ fn append_consolidated_revolutions(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
 ) -> (usize, Vec<ConsolidatedRevolutionBinding>) {
-    let resolved = crate::families::b2::records::b2_resolved_revolutions(bytes);
+    let resolved =
+        crate::families::b2::records::b2_resolved_revolutions_from_records(bytes, records);
     let mut bindings = Vec::new();
     for resolved in &resolved {
         let index = resolved.revolution_index;
@@ -687,6 +690,7 @@ mod consolidated_revolution_binding_tests {
 
 fn refine_consolidated_analytic_surfaces(
     bytes: &[u8],
+    records: &[ConsolidatedRecord],
     surfaces: &mut [Option<SurfaceGeometry>],
 ) -> HashMap<usize, usize> {
     fn exactly_one<T>(mut values: impl Iterator<Item = T>) -> Option<T> {
@@ -694,10 +698,10 @@ fn refine_consolidated_analytic_surfaces(
         values.next().is_none().then_some(value)
     }
 
-    let cylinders = crate::families::b2::records::b2_cylinders(bytes);
-    let cones = crate::families::b2::records::b2_cones(bytes);
-    let spheres = crate::families::b2::records::b2_spheres(bytes);
-    let tori = crate::families::b2::records::b2_tori(bytes);
+    let cylinders = crate::families::b2::records::b2_cylinders_from_records(bytes, records);
+    let cones = crate::families::b2::records::b2_cones_from_records(bytes, records);
+    let spheres = crate::families::b2::records::b2_spheres_from_records(bytes, records);
+    let tori = crate::families::b2::records::b2_tori_from_records(bytes, records);
     let quantized = |value: f64| f64::from(value as f32);
     let same_point = |point: Point3, stored: [f64; 3]| {
         point.x.to_bits() == quantized(stored[0]).to_bits()
@@ -823,7 +827,11 @@ mod consolidated_analytic_refinement_tests {
             minor_radius: 2.0,
         };
         let mut surfaces = vec![Some(coarse.clone()), Some(coarse)];
-        let refined = refine_consolidated_analytic_surfaces(&bytes, &mut surfaces);
+        let refined = refine_consolidated_analytic_surfaces(
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &mut surfaces,
+        );
         assert_eq!(refined, [(0, 0), (1, 0)].into());
         for surface in surfaces {
             assert!(matches!(
@@ -846,7 +854,11 @@ mod consolidated_analytic_refinement_tests {
         };
         let mut unique = vec![Some(coarse.clone())];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(&bytes, &mut unique),
+            refine_consolidated_analytic_surfaces(
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &mut unique,
+            ),
             [(0, 0)].into()
         );
         assert!(matches!(
@@ -856,7 +868,12 @@ mod consolidated_analytic_refinement_tests {
 
         bytes.extend_from_slice(&bytes.clone());
         let mut ambiguous = vec![Some(coarse)];
-        assert!(refine_consolidated_analytic_surfaces(&bytes, &mut ambiguous).is_empty());
+        assert!(refine_consolidated_analytic_surfaces(
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &mut ambiguous,
+        )
+        .is_empty());
     }
 
     #[test]
@@ -880,7 +897,12 @@ mod consolidated_analytic_refinement_tests {
             }),
         ];
         assert_eq!(
-            refine_consolidated_analytic_surfaces(&bytes, &mut surfaces).len(),
+            refine_consolidated_analytic_surfaces(
+                &bytes,
+                &crate::wire::records::consolidated_records(&bytes),
+                &mut surfaces,
+            )
+            .len(),
             2
         );
         assert!(matches!(
@@ -1119,6 +1141,7 @@ pub(crate) fn try_decode_standard(
     if !work_budget.charge() {
         return None;
     }
+    let consolidated_records = crate::wire::records::consolidated_records(&scan.data);
     let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()
@@ -1160,7 +1183,11 @@ pub(crate) fn try_decode_standard(
         .collect::<HashSet<_>>();
     let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
     let standard_limit_curve_count = object_evidence.limit_curves.len();
-    let revolution_record_count = crate::families::b2::records::b2_revolutions(&scan.data).len();
+    let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
+        &scan.data,
+        &consolidated_records,
+    )
+    .len();
     let freeform_geometries = &object_evidence.surface_geometries;
     let freeform_procedural_surfaces = &object_evidence.procedural_surfaces;
     let unresolved_freeform_record_count = records
@@ -1187,8 +1214,11 @@ pub(crate) fn try_decode_standard(
             | crate::families::standard::records::StandardSurfaceRecord::Freeform { .. } => None,
         })
         .collect::<Vec<_>>();
-    let refined_analytic_surfaces =
-        refine_consolidated_analytic_surfaces(&scan.data, &mut curved_surfaces);
+    let refined_analytic_surfaces = refine_consolidated_analytic_surfaces(
+        &scan.data,
+        &consolidated_records,
+        &mut curved_surfaces,
+    );
     let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
     let mut derived_plane_targets = HashSet::new();
     let mut exact_plane_targets = HashSet::new();
@@ -1561,8 +1591,12 @@ pub(crate) fn try_decode_standard(
         });
     }
     ir.model.surfaces = surfaces;
-    let (resolved_revolution_count, consolidated_revolutions) =
-        append_consolidated_revolutions(&mut ir, &mut annotations, &scan.data);
+    let (resolved_revolution_count, consolidated_revolutions) = append_consolidated_revolutions(
+        &mut ir,
+        &mut annotations,
+        &scan.data,
+        &consolidated_records,
+    );
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));

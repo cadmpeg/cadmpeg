@@ -17,8 +17,8 @@ use crate::wire::bytes::{
     allocation_ref, compact_int, f64_le, finite_f64_lane, read_f64_array, u32_le_24,
 };
 use crate::wire::records::{
-    b_family_frames, consolidated_records, parse_consolidated_pcurve, ConsolidatedFrame,
-    ConsolidatedPcurve,
+    b_family_frames, b_family_frames_from_records, consolidated_records, parse_consolidated_pcurve,
+    ConsolidatedFrame, ConsolidatedPcurve, ConsolidatedRecord,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -1272,7 +1272,15 @@ pub struct B2EmbeddedCylinder {
 /// Decode `0x5a` cylinder frames following type-3 `b2 03 60` group openers.
 #[must_use]
 pub fn b2_embedded_cylinders(data: &[u8]) -> Vec<B2EmbeddedCylinder> {
-    let groups = b2_groups(data);
+    let records = consolidated_records(data);
+    b2_embedded_cylinders_from_records(data, &records)
+}
+
+pub(crate) fn b2_embedded_cylinders_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2EmbeddedCylinder> {
+    let groups = b2_groups_from_records(data, records);
     let mut out = Vec::new();
     for (index, group) in groups.iter().enumerate() {
         if group.group_type != 3 {
@@ -1379,8 +1387,13 @@ pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
 /// Decode `b2 03 29` analytic cone charts.
 #[must_use]
 pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
+    let records = consolidated_records(data);
+    b2_cones_from_records(data, &records)
+}
+
+pub(crate) fn b2_cones_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Cone> {
     let mut out = Vec::new();
-    for frame in b_family_frames(data, 0x29) {
+    for frame in b_family_frames_from_records(records, 0x29) {
         let pos = frame.pos;
         let p = frame.payload;
         if frame.end - p != 0xb8 {
@@ -1450,8 +1463,16 @@ pub fn b2_cones(data: &[u8]) -> Vec<B2Cone> {
 /// Decode `b2 03 2d` axis-and-profile surfaces of revolution.
 #[must_use]
 pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
+    let records = consolidated_records(data);
+    b2_revolutions_from_records(data, &records)
+}
+
+pub(crate) fn b2_revolutions_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Revolution> {
     let mut out = Vec::new();
-    for frame in b_family_frames(data, 0x2d) {
+    for frame in b_family_frames_from_records(records, 0x2d) {
         let p = frame.payload;
         if frame.end - p != 0xae
             || !matches!(data.get(p), Some(0x08 | 0x0a))
@@ -1536,8 +1557,16 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
 /// Bind revolution profiles by exact, unique stored parameter interval.
 #[must_use]
 pub fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
-    let circles = b2_circles(data);
-    b2_revolutions(data)
+    let records = consolidated_records(data);
+    b2_resolved_revolutions_from_records(data, &records)
+}
+
+pub(crate) fn b2_resolved_revolutions_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2ResolvedRevolution> {
+    let circles = b2_circles_from_records(data, records);
+    b2_revolutions_from_records(data, records)
         .into_iter()
         .enumerate()
         .filter_map(|(revolution_index, revolution)| {
@@ -1586,7 +1615,12 @@ pub fn b2_line_profiles(data: &[u8]) -> Vec<B2LineProfile> {
 /// Decode `b2 03 2b` doubly periodic torus charts.
 #[must_use]
 pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
-    b_family_frames(data, 0x2b)
+    let records = consolidated_records(data);
+    b2_tori_from_records(data, &records)
+}
+
+pub(crate) fn b2_tori_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Torus> {
+    b_family_frames_from_records(records, 0x2b)
         .into_iter()
         .filter_map(|frame| {
             let p = frame.payload;
@@ -1660,7 +1694,15 @@ pub fn b2_tori(data: &[u8]) -> Vec<B2Torus> {
 /// Decode `b2 03 2a` radius-scaled sphere charts.
 #[must_use]
 pub fn b2_spheres(data: &[u8]) -> Vec<B2Sphere> {
-    b_family_frames(data, 0x2a)
+    let records = consolidated_records(data);
+    b2_spheres_from_records(data, &records)
+}
+
+pub(crate) fn b2_spheres_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Sphere> {
+    b_family_frames_from_records(records, 0x2a)
         .into_iter()
         .filter_map(|frame| {
             let p = frame.payload;
@@ -1737,7 +1779,12 @@ pub fn b2_group_separators(data: &[u8]) -> Vec<B2GroupSeparator> {
 /// Decode `b2 03 60` typed group openers.
 #[must_use]
 pub fn b2_groups(data: &[u8]) -> Vec<B2Group> {
-    b_family_frames(data, 0x60)
+    let records = consolidated_records(data);
+    b2_groups_from_records(data, &records)
+}
+
+pub(crate) fn b2_groups_from_records(data: &[u8], records: &[ConsolidatedRecord]) -> Vec<B2Group> {
+    b_family_frames_from_records(records, 0x60)
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
@@ -1806,11 +1853,19 @@ pub fn b2_torus_geometry(torus: &B2Torus) -> SurfaceGeometry {
 /// Decode standalone `b2 03 28` analytic cylinder supports.
 #[must_use]
 pub fn b2_cylinders(data: &[u8]) -> Vec<B2Cylinder> {
-    let embedded_offsets = b2_embedded_cylinders(data)
+    let records = consolidated_records(data);
+    b2_cylinders_from_records(data, &records)
+}
+
+pub(crate) fn b2_cylinders_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Cylinder> {
+    let embedded_offsets = b2_embedded_cylinders_from_records(data, records)
         .into_iter()
         .map(|embedded| embedded.pos)
         .collect::<HashSet<_>>();
-    b_family_frames(data, 0x28)
+    b_family_frames_from_records(records, 0x28)
         .into_iter()
         .filter_map(|frame| parse_b2_cylinder(data, frame))
         .filter(|cylinder| !embedded_offsets.contains(&cylinder.pos))
@@ -1962,8 +2017,16 @@ pub(crate) fn cylinder_range_origin(radius: f64, u_range: [f64; 2]) -> f64 {
 /// Decode `b2 03 19` arc-length circle supports.
 #[must_use]
 pub fn b2_circles(data: &[u8]) -> Vec<B2Circle> {
+    let records = consolidated_records(data);
+    b2_circles_from_records(data, &records)
+}
+
+pub(crate) fn b2_circles_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2Circle> {
     let mut out = Vec::new();
-    for frame in b_family_frames(data, 0x19) {
+    for frame in b_family_frames_from_records(records, 0x19) {
         let pos = frame.pos;
         if !(0x32..=0x34).contains(&(frame.end - frame.payload)) {
             continue;

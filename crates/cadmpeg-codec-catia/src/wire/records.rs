@@ -249,9 +249,12 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
     records
 }
 
-pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
-    consolidated_records(data)
-        .into_iter()
+pub(crate) fn a_family_frames_from_records(
+    records: &[ConsolidatedRecord],
+    class: u8,
+) -> Vec<ConsolidatedFrame> {
+    records
+        .iter()
         .filter(|record| record.family == ConsolidatedFamily::A && record.class == class)
         .map(|record| ConsolidatedFrame {
             pos: record.range.start,
@@ -262,9 +265,17 @@ pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
         .collect()
 }
 
-pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
-    consolidated_records(data)
-        .into_iter()
+pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
+    let records = consolidated_records(data);
+    a_family_frames_from_records(&records, class)
+}
+
+pub(crate) fn b_family_frames_from_records(
+    records: &[ConsolidatedRecord],
+    class: u8,
+) -> Vec<ConsolidatedFrame> {
+    records
+        .iter()
         .filter(|record| record.family == ConsolidatedFamily::B && record.class == class)
         .map(|record| ConsolidatedFrame {
             pos: record.range.start,
@@ -273,6 +284,11 @@ pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> 
             header_token: record.header_token,
         })
         .collect()
+}
+
+pub(crate) fn b_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
+    let records = consolidated_records(data);
+    b_family_frames_from_records(&records, class)
 }
 
 /// Scan every `05 08 01` coordinate row in `bytes`, returning the decoded

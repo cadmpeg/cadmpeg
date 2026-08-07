@@ -445,6 +445,69 @@ fn b2_torus_parser_reads_exact_frame_radii_and_parameter_scales() {
 }
 
 #[test]
+fn indexed_analytic_carrier_decoders_match_one_shot_wrappers() {
+    let cases = [
+        ("cone", b2_cone_stream()),
+        ("sphere", b2_sphere_stream()),
+        ("torus", b2_torus_stream()),
+        ("cylinder", b2_cylinder_stream()),
+    ];
+    for (name, bytes) in cases {
+        let consolidated = crate::wire::records::consolidated_records(&bytes);
+        let expected = match name {
+            "cone" => crate::families::b2::records::b2_cones(&bytes)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            "sphere" => crate::families::b2::records::b2_spheres(&bytes)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            "torus" => crate::families::b2::records::b2_tori(&bytes)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            "cylinder" => crate::families::b2::records::b2_cylinders(&bytes)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            _ => unreachable!("unknown analytic carrier fixture: {name}"),
+        };
+        let actual = match name {
+            "cone" => crate::families::b2::records::b2_cones_from_records(&bytes, &consolidated)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            "sphere" => {
+                crate::families::b2::records::b2_spheres_from_records(&bytes, &consolidated)
+                    .into_iter()
+                    .map(|record| record.pos)
+                    .collect::<Vec<_>>()
+            }
+            "torus" => crate::families::b2::records::b2_tori_from_records(&bytes, &consolidated)
+                .into_iter()
+                .map(|record| record.pos)
+                .collect::<Vec<_>>(),
+            "cylinder" => {
+                crate::families::b2::records::b2_cylinders_from_records(&bytes, &consolidated)
+                    .into_iter()
+                    .map(|record| record.pos)
+                    .collect::<Vec<_>>()
+            }
+            _ => unreachable!("unknown analytic carrier fixture: {name}"),
+        };
+        assert_eq!(actual, expected, "carrier decoder changed for {name}");
+    }
+
+    let bytes = b2_resolved_revolution_stream();
+    let consolidated = crate::wire::records::consolidated_records(&bytes);
+    assert_eq!(
+        crate::families::b2::records::b2_resolved_revolutions_from_records(&bytes, &consolidated,),
+        crate::families::b2::records::b2_resolved_revolutions(&bytes)
+    );
+}
+
+#[test]
 fn b2_torus_parser_rejects_invalid_frames_and_nonpositive_scales() {
     let mut stream = b2_torus_stream();
     stream[5 + 6 * 8..5 + 7 * 8].copy_from_slice(&1.0f64.to_le_bytes());
