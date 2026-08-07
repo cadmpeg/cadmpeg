@@ -297,7 +297,7 @@ pub fn scan_vertex_records(bytes: &[u8]) -> Vec<Point3> {
             let x = f32_le(bytes, p + 3);
             let y = f32_le(bytes, p + 7);
             let z = f32_le(bytes, p + 11);
-            if finite_in_range(x) && finite_in_range(y) && finite_in_range(z) {
+            if x.is_finite() && y.is_finite() && z.is_finite() {
                 out.push(Point3::new(x as f64, y as f64, z as f64));
             }
             p += 15;
@@ -312,6 +312,22 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
     cadmpeg_core::le::f32_at(bytes, at).unwrap_or(f32::NAN)
 }
 
-fn finite_in_range(v: f32) -> bool {
-    v.is_finite() && v.abs() < 1e4
+#[cfg(test)]
+mod tests {
+    use super::scan_vertex_records;
+
+    #[test]
+    fn vertex_scanner_accepts_finite_coordinates_without_model_size_cutoff() {
+        let mut bytes = vec![0x05, 0x08, 0x01];
+        for value in [2_000_000.0_f32, -2_000_000.0, 2_000_000.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let [point] = scan_vertex_records(&bytes)
+            .try_into()
+            .expect("one vertex row");
+        assert_eq!(point.x, 2_000_000.0);
+        assert_eq!(point.y, -2_000_000.0);
+        assert_eq!(point.z, 2_000_000.0);
+    }
 }
