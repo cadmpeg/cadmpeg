@@ -975,6 +975,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         PathRef::Unresolved(_) | PathRef::Native(_) => true,
         PathRef::Sketch(_) => false,
         PathRef::SketchCurves { curves, .. } => curves.is_empty(),
+        PathRef::SpatialSketchCurves { curves, .. } => curves.is_empty(),
     };
     let incomplete_vertex_selection = |selection: &cadmpeg_ir::features::VertexSelection| {
         matches!(

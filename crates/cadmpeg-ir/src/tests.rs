@@ -5773,14 +5773,23 @@ fn historical_edge_paths_round_trip_through_json() {
 #[test]
 fn spatial_sketch_paths_round_trip_through_json() {
     use crate::features::PathRef;
-    use crate::sketches::SpatialSketchId;
+    use crate::sketches::{SpatialSketchEntityId, SpatialSketchId};
 
-    let path = PathRef::SpatialSketchSelection {
+    let path = PathRef::SpatialSketchCurves {
         sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
-        selections: vec!["native:path-selection#0".into()],
+        curves: vec![SpatialSketchEntityId(
+            "synthetic:test:spatial-sketch-entity#0".into(),
+        )],
     };
     let json = serde_json::to_string(&path).unwrap();
     assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
+
+    let native = PathRef::SpatialSketchSelection {
+        sketch: SpatialSketchId("synthetic:test:spatial-sketch#0".into()),
+        selections: vec!["native:path-selection#0".into()],
+    };
+    let json = serde_json::to_string(&native).unwrap();
+    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), native);
 }
 
 #[test]

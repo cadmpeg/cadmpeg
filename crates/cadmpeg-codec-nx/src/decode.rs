@@ -12112,6 +12112,7 @@ pub(crate) fn path_ref_is_incomplete(path: &PathRef) -> bool {
         PathRef::HistoricalEdges { edges, .. } => selection_ids_are_incomplete(edges),
         PathRef::Sketch(_) => false,
         PathRef::SketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
+        PathRef::SpatialSketchCurves { curves, .. } => selection_ids_are_incomplete(curves),
         PathRef::Edges(edges) => selection_ids_are_incomplete(edges),
         PathRef::Curves(curves) => selection_ids_are_incomplete(curves),
     }

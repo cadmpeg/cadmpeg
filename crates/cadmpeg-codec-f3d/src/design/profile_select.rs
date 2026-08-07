@@ -89,8 +89,6 @@ pub(crate) fn bind_sweep_sketch_selections(
     resolution: &SketchCurveSelectionResolution<'_>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, PathRef, ProfileRef};
-    use cadmpeg_ir::sketches::SketchGeometry;
-
     let SketchCurveSelectionResolution {
         scopes,
         groups,
@@ -101,6 +99,7 @@ pub(crate) fn bind_sweep_sketch_selections(
         sketch_entities,
         ..
     } = resolution;
+    let path_resolution = resolution.path_resolution();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -231,50 +230,8 @@ pub(crate) fn bind_sweep_sketch_selections(
             if matching_groups.next().is_some() || group.members.len() != 1 {
                 return None;
             }
-            let mut matching_operands = operands.iter().filter(|operand| {
-                operand.scope_record_index == scope.record_index
-                    && operand.group_record_index == group.record_index
-                    && operand.group_member_ordinal == 0
-                    && operand.record_index == group.members[0]
-                    && native_stream(&operand.id) == Some(stream)
-            });
-            let operand = matching_operands.next()?;
-            if matching_operands.next().is_some() {
-                return None;
-            }
-            let mut matching_placements = placements.iter().filter(|placement| {
-                native_stream(&placement.id) == Some(stream)
-                    && placement.entity_suffix == operand.primary_identity
-            });
-            let placement = matching_placements.next()?;
-            if matching_placements.next().is_some() {
-                return None;
-            }
-            let sketch = neutral_sketch_id(placement);
-            if !sketches.iter().any(|candidate| candidate.id == sketch) {
-                return None;
-            }
-            let owner_reference = u32::try_from(operand.primary_identity).ok()?;
-            let mut matching_curves = curve_identities.iter().filter(|curve| {
-                native_stream(&curve.id) == Some(stream)
-                    && curve.owner_reference == Some(owner_reference)
-                    && entity_selection_matches_curve(operand, curve)
-            });
-            let curve = matching_curves.next()?;
-            if matching_curves.next().is_some() {
-                return None;
-            }
-            let selected = neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id);
-            let mut curves = sketch_entities.iter().filter(|entity| {
-                entity.sketch == sketch && !matches!(entity.geometry, SketchGeometry::Point { .. })
-            });
-            if curves.next().is_some_and(|entity| entity.id == selected) && curves.next().is_none()
-            {
-                *path = PathRef::Sketch(sketch);
-                Some(())
-            } else {
-                None
-            }
+            *path = resolve_entity_selection_path(group, &path_resolution)?;
+            Some(())
         };
         if let Some(path) = path {
             let _ = resolve_path(path);
@@ -1814,11 +1771,13 @@ fn resolve_entity_selection_path(
         {
             return None;
         }
-        return Some(PathRef::SpatialSketchSelection {
-            sketch: spatial_sketch,
-            selections: selected_operands
-                .iter()
-                .map(|operand| operand.id.clone())
+        return Some(PathRef::SpatialSketchCurves {
+            sketch: spatial_sketch.clone(),
+            curves: curve_ids
+                .into_iter()
+                .map(|(primary, secondary)| {
+                    neutral_spatial_sketch_curve_id(&spatial_sketch, primary, secondary)
+                })
                 .collect(),
         });
     }
@@ -2302,9 +2261,18 @@ mod tests {
 
         assert_eq!(
             resolve_entity_selection_path(&group, &resolution),
-            Some(PathRef::SpatialSketchSelection {
-                sketch: spatial_sketch,
-                selections: operands.iter().map(|operand| operand.id.clone()).collect(),
+            Some(PathRef::SpatialSketchCurves {
+                sketch: spatial_sketch.clone(),
+                curves: curves
+                    .iter()
+                    .map(|curve| {
+                        neutral_spatial_sketch_curve_id(
+                            &spatial_sketch,
+                            curve.primary_id,
+                            curve.secondary_id,
+                        )
+                    })
+                    .collect(),
             })
         );
     }

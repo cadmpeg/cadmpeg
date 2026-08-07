@@ -3397,6 +3397,13 @@ pub enum PathRef {
         /// Full-fidelity native selection records in path order.
         selections: Vec<String>,
     },
+    /// Ordered selected curves from one neutral spatial sketch.
+    SpatialSketchCurves {
+        /// Spatial sketch containing every selected curve.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Selected curve identities in source order.
+        curves: Vec<crate::sketches::SpatialSketchEntityId>,
+    },
     /// Path resolved as ordered topological edges.
     Edges(Vec<EdgeId>),
     /// Path resolved as ordered geometric curves.

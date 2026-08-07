@@ -2216,6 +2216,12 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
         .iter()
         .map(|entity| entity.id.0.clone())
         .collect::<HashSet<_>>();
+    let spatial_sketch_entity_owners = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut reported_plane_cycles = HashSet::new();
     for feature in &ir.model.features {
         let mut path = Vec::new();
@@ -4560,6 +4566,13 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                     curves.iter().map(|id| id.0.as_str()),
                     |identity| sketch_entities.contains(identity),
                 ),
+                PathRef::SpatialSketchCurves { curves, .. } => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "spatial sketch path curve",
+                    curves.iter().map(|id| id.0.as_str()),
+                    |identity| spatial_sketch_entity_owners.contains_key(identity),
+                ),
                 PathRef::HistoricalEdges {
                     state,
                     edges,
@@ -5528,6 +5541,12 @@ fn check_feature_sketch_references(
         .iter()
         .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
         .collect::<HashMap<_, _>>();
+    let spatial_sketch_entity_owners = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
         let sketch = match &feature.definition {
@@ -5847,6 +5866,28 @@ fn check_feature_sketch_references(
                 PathRef::Sketch(sketch) => (sketch.0.as_str(), sketches, "sketch path", None),
                 PathRef::SketchCurves { sketch, .. } => {
                     (sketch.0.as_str(), sketches, "sketch curve path", None)
+                }
+                PathRef::SpatialSketchCurves { sketch, curves } => {
+                    let invalid = curves.is_empty()
+                        || curves.iter().collect::<HashSet<_>>().len() != curves.len()
+                        || curves.iter().any(|curve| {
+                            spatial_sketch_entity_owners
+                                .get(curve.0.as_str())
+                                .is_none_or(|owner| *owner != sketch.0.as_str())
+                        });
+                    if invalid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "spatial sketch path curves are empty, repeated, missing, or owned by another sketch",
+                        );
+                    }
+                    (
+                        sketch.0.as_str(),
+                        &spatial_sketches,
+                        "spatial sketch curve path",
+                        None,
+                    )
                 }
                 PathRef::SpatialSketchSelection { sketch, selections } => (
                     sketch.0.as_str(),
