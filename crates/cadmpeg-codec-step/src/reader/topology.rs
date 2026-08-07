@@ -2801,9 +2801,12 @@ fn associated_pcurves(
         .collect()
 }
 
-/// Select one same-surface pcurve only when its mapped carrier has a unique
+/// Select one same-surface pcurve when its mapped carrier has a unique
 /// endpoint-continuous fit to the oriented edge. Multiple pcurves are common
 /// on seam and intersection curves; list order is not a geometric rule.
+/// Distinct candidates that tie remain unresolved, while candidates that map
+/// to the same model-space locus are equivalent carriers and may be reduced
+/// to one deterministic identity.
 fn select_associated_pcurve(
     ir: &CadIr,
     surface_step: u64,
@@ -2829,7 +2832,7 @@ fn select_associated_pcurve(
         .get(&edge.end)
         .and_then(|vertex| point_positions.get(vertex.point))
         .copied()?;
-    let scores = candidates
+    let fits = candidates
         .iter()
         .map(|candidate| {
             let pcurve = ir
@@ -2837,9 +2840,10 @@ fn select_associated_pcurve(
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == *candidate)?;
-            pcurve_endpoint_score(&index, &surface_id, &pcurve.geometry, surface, start, end)
+            pcurve_endpoint_fit(&index, &surface_id, &pcurve.geometry, surface, start, end)
         })
         .collect::<Option<Vec<_>>>()?;
+    let scores = fits.iter().map(|fit| fit.score).collect::<Vec<_>>();
     let (best_index, &best) = scores
         .iter()
         .enumerate()
@@ -2853,47 +2857,106 @@ fn select_associated_pcurve(
         .iter()
         .filter(|score| (**score - best).abs() <= tie_tolerance)
         .count();
-    (equally_good == 1).then(|| candidates[best_index].clone())
+    if equally_good == 1 {
+        return Some(candidates[best_index].clone());
+    }
+
+    let best_pcurve = ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == candidates[best_index])?;
+    let equivalent_ties = scores
+        .iter()
+        .enumerate()
+        .filter(|(_, score)| (**score - best).abs() <= tie_tolerance)
+        .all(|(candidate_index, _)| {
+            if candidate_index == best_index {
+                return true;
+            }
+            let Some(pcurve) = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == candidates[candidate_index])
+            else {
+                return false;
+            };
+            pcurve_loci_equivalent(
+                &index,
+                &surface_id,
+                &best_pcurve.geometry,
+                [
+                    fits[best_index].start_parameter,
+                    fits[best_index].end_parameter,
+                ],
+                &pcurve.geometry,
+                [
+                    fits[candidate_index].start_parameter,
+                    fits[candidate_index].end_parameter,
+                ],
+                COINCIDENCE_TOLERANCE.max(ir.tolerances.linear),
+            )
+        });
+    equivalent_ties.then(|| {
+        candidates
+            .iter()
+            .enumerate()
+            .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
+            .map(|(_, candidate)| candidate.clone())
+            .expect("tied candidate set is non-empty")
+    })
 }
 
-fn pcurve_endpoint_score(
+#[derive(Clone, Copy)]
+struct PcurveEndpointFit {
+    start_parameter: f64,
+    end_parameter: f64,
+    score: f64,
+}
+
+fn pcurve_endpoint_fit(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     surface: &SurfaceGeometry,
     start: Point3,
     end: Point3,
-) -> Option<f64> {
+) -> Option<PcurveEndpointFit> {
     let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
-    let start = pcurve_surface_distance(index, surface_id, geometry, start, &seeds)?;
-    let end = pcurve_surface_distance(index, surface_id, geometry, end, &seeds)?;
-    Some(start.max(end))
+    let start = pcurve_surface_closest(index, surface_id, geometry, start, &seeds)?;
+    let end = pcurve_surface_closest(index, surface_id, geometry, end, &seeds)?;
+    Some(PcurveEndpointFit {
+        start_parameter: start.1,
+        end_parameter: end.1,
+        score: start.0.max(end.0),
+    })
 }
 
-fn pcurve_surface_distance(
+fn pcurve_surface_closest(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seeds: &[f64],
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
     seeds
         .iter()
         .copied()
-        .filter_map(|seed| mapped_pcurve_distance(index, surface_id, geometry, target, seed))
-        .min_by(f64::total_cmp)
+        .filter_map(|seed| mapped_pcurve_closest(index, surface_id, geometry, target, seed))
+        .min_by(|left, right| left.0.total_cmp(&right.0))
 }
 
 /// Minimize the distance from one pcurve branch to a model-space endpoint.
 /// A pcurve and its 3D surface curve need not share parameter units, so this
 /// is an independent one-dimensional inverse rather than a parameter copy.
-fn mapped_pcurve_distance(
+fn mapped_pcurve_closest(
     index: &ModelIndex<'_>,
     surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
     if !seed.is_finite() {
         return None;
     }
@@ -2915,13 +2978,17 @@ fn mapped_pcurve_distance(
 
     let mut parameter = clamp_to_domain(seed);
     let mut best = f64::INFINITY;
+    let mut best_parameter = parameter;
     for _ in 0..32 {
         let (point, tangent) = evaluate(parameter)?;
         let error = point.distance(target);
         if !error.is_finite() {
             return None;
         }
-        best = best.min(error);
+        if error < best {
+            best = error;
+            best_parameter = parameter;
+        }
         let denominator = tangent.dot(tangent);
         if !denominator.is_finite() || denominator <= f64::EPSILON {
             break;
@@ -2951,7 +3018,55 @@ fn mapped_pcurve_distance(
         }
         parameter = candidate;
     }
-    best.is_finite().then_some(best)
+    best.is_finite().then_some((best, best_parameter))
+}
+
+fn pcurve_loci_equivalent(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    left: &PcurveGeometry,
+    left_parameters: [f64; 2],
+    right: &PcurveGeometry,
+    right_parameters: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return false;
+    }
+    let left_points = pcurve_locus_samples(index, surface_id, left, left_parameters);
+    let right_points = pcurve_locus_samples(index, surface_id, right, right_parameters);
+    let (Some(left_points), Some(right_points)) = (left_points, right_points) else {
+        return false;
+    };
+    directed_sample_distance(&left_points, &right_points) <= tolerance
+        && directed_sample_distance(&right_points, &left_points) <= tolerance
+}
+
+fn pcurve_locus_samples(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    parameters: [f64; 2],
+) -> Option<Vec<Point3>> {
+    const SAMPLE_COUNT: usize = 33;
+    (0..SAMPLE_COUNT)
+        .map(|sample| {
+            let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
+            let parameter = parameters[0] + (parameters[1] - parameters[0]) * fraction;
+            let uv = pcurve_uv(geometry, parameter)?;
+            model_surface_point_by_id(index, surface_id, uv.u, uv.v)
+        })
+        .collect()
+}
+
+fn directed_sample_distance(from: &[Point3], to: &[Point3]) -> f64 {
+    from.iter()
+        .map(|point| {
+            to.iter()
+                .map(|candidate| point.distance(*candidate))
+                .fold(f64::INFINITY, f64::min)
+        })
+        .fold(0.0, f64::max)
 }
 
 fn pcurve_selection_seeds(

@@ -191,13 +191,16 @@ curve carries more than one candidate pcurve?
 
 **Known.** The source curve can carry multiple pcurves for one surface. The
 decoder maps each candidate through the owning surface and selects a candidate
-only when its endpoint fit is uniquely continuous within the topology
-tolerance. Tied or unresolved candidates remain detached from the coedge and
-produce a topology loss.
+when its endpoint fit is uniquely continuous within the topology tolerance. A
+tie between candidates with equivalent model-space loci is one semantic
+carrier; the decoder retains the first source candidate. Distinct tied or
+unresolved candidates remain detached from the coedge and produce a topology
+loss.
 
-**Need.** Endpoint continuity does not distinguish equal seam branches. We
-need the standards-valid UV branch and orientation rule for selecting one of
-those tied candidates. Serialized occurrence order is not a sufficient rule.
+**Need.** Endpoint continuity does not distinguish distinct seam branches with
+the same endpoints. We need the standards-valid UV branch and orientation rule
+for selecting one of those tied candidates. Serialized occurrence order is
+not a sufficient rule.
 
 ### TP-05. Partial solid and tolerant point carriers
 

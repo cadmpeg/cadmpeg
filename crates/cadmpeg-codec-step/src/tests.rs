@@ -2395,7 +2395,7 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
-fn ambiguous_seam_source() -> String {
+fn equivalent_seam_source() -> String {
     String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -2408,21 +2408,54 @@ fn ambiguous_seam_source() -> String {
         )
 }
 
+fn distinct_seam_source() -> String {
+    equivalent_seam_source().replace(
+        "#71=LINE('',#51,#53);",
+        "#71=POLYLINE('',(#51,#72,#73));\n#72=CARTESIAN_POINT('',(5.,5.));\n#73=CARTESIAN_POINT('',(10.,0.));",
+    )
+}
+
 fn seam_source_with_one_endpoint_continuous_candidate() -> String {
-    ambiguous_seam_source().replace(
+    equivalent_seam_source().replace(
         "#71=LINE('',#51,#53);",
         "#71=LINE('',#72,#53);\n#72=CARTESIAN_POINT('',(0.,5.));",
     )
 }
 
 #[test]
-fn ambiguous_seam_pcurve_candidates_are_reported_not_guessed() {
+fn equivalent_seam_pcurve_candidates_select_one_carrier() {
     let decoded = StepCodec::default()
         .decode(
-            &mut Cursor::new(ambiguous_seam_source()),
+            &mut Cursor::new(equivalent_seam_source()),
             &DecodeOptions::default(),
         )
-        .expect("decode ambiguous seam pcurves");
+        .expect("decode equivalent seam pcurves");
+
+    let coedge = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("equivalent seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+    assert!(decoded.report.losses.iter().all(|loss| !loss
+        .message
+        .contains("no unique endpoint-continuous pcurve selects one")));
+
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(distinct_seam_source()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode distinct tied seam pcurves");
 
     assert!(decoded
         .ir
@@ -2496,7 +2529,7 @@ fn an_unambiguous_pcurve_still_binds() {
 fn ambiguous_pcurves_do_not_reject_the_body() {
     use cadmpeg_ir::topology::BodyKind;
 
-    let source = ambiguous_seam_source()
+    let source = distinct_seam_source()
         .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
         .replace(
             "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",

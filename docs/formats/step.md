@@ -270,9 +270,11 @@ its 2D affine operator maps the parent coordinates to the replica coordinates.
 An unsupported 2D representation stays opaque and remains detached from the
 coedge. When a source curve has multiple pcurve candidates on its owning
 surface, the decoder maps each candidate through that surface and selects it
-only when one candidate has a unique endpoint-continuous fit for the coedge.
-Tied or otherwise unresolved candidates remain detached and produce a topology
-loss.
+when one candidate has a unique endpoint-continuous fit for the coedge. If
+several candidates tie, the decoder compares their mapped loci over the
+endpoint interval. Candidates with equivalent model-space loci are one
+semantic carrier and the first source candidate is retained. Distinct tied or
+otherwise unresolved candidates remain detached and produce a topology loss.
 
 A topology-referenced curve or surface whose geometry fails transfer retains
 its STEP identity as an unknown carrier linked to its opaque record. The body
