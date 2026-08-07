@@ -765,10 +765,13 @@ fn attach_feature_operations(
     let labels = features.feature_operation_labels.as_slice();
     let booleans = features.feature_boolean_operations.as_slice();
     let body_references = features.feature_body_references.as_slice();
+    let body_segment_uses = features.feature_body_segment_uses.as_slice();
     let body_data_block_uses = features.feature_body_data_block_uses.as_slice();
     let body_reference_occurrences = features.feature_body_reference_occurrences.as_slice();
     let input_blocks = features.feature_input_blocks.as_slice();
     let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
+    let input_column_row_uses = features.feature_input_column_row_uses.as_slice();
+    let input_column_targets = features.feature_input_column_targets.as_slice();
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
     let datum_csys_column_row_uses = features.feature_datum_csys_column_row_uses.as_slice();
     let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
@@ -892,6 +895,22 @@ fn attach_feature_operations(
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
+    let mut body_segment_uses_by_reference =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
+    for use_ in body_segment_uses {
+        body_segment_uses_by_reference
+            .entry(use_.feature_body_reference.as_str())
+            .or_default()
+            .push(use_);
+    }
+    let mut body_data_block_uses_by_reference =
+        BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyDataBlockUse>>::new();
+    for use_ in body_data_block_uses {
+        body_data_block_uses_by_reference
+            .entry(use_.feature_body_reference.as_str())
+            .or_default()
+            .push(use_);
+    }
     let body_writer_references_by_operation = body_references
         .iter()
         .map(|reference| (reference.operation_label.as_str(), reference))
@@ -948,6 +967,10 @@ fn attach_feature_operations(
             .or_default()
             .push(input);
     }
+    let input_column_row_uses_by_operation =
+        records_by_operation(input_column_row_uses, |use_| &use_.operation_label);
+    let input_column_targets_by_operation =
+        records_by_operation(input_column_targets, |target| &target.operation_label);
     let input_block_identity_group_by_input = input_block_identity_groups
         .iter()
         .flat_map(|group| {
@@ -1656,6 +1679,28 @@ fn attach_feature_operations(
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
+        if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
+            if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
+                if let [use_] = uses.as_slice() {
+                    source_properties
+                        .insert("primary_body_segment_use".to_string(), use_.id.clone());
+                    source_properties.insert(
+                        "primary_body_segment_binding".to_string(),
+                        use_.segment_body_binding.clone(),
+                    );
+                }
+            }
+            if let Some(uses) = body_data_block_uses_by_reference.get(reference.id.as_str()) {
+                if let [use_] = uses.as_slice() {
+                    source_properties
+                        .insert("primary_body_data_block_use".to_string(), use_.id.clone());
+                    source_properties.insert(
+                        "primary_body_data_block".to_string(),
+                        use_.data_block.clone(),
+                    );
+                }
+            }
+        }
         for reference in body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -1974,6 +2019,22 @@ fn attach_feature_operations(
                     (*group).to_string(),
                 );
             }
+        }
+        for (ordinal, use_) in input_column_row_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("input_column_row_use.{ordinal}"), use_.id.clone());
+        }
+        for (ordinal, target) in input_column_targets_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("input_column_target.{ordinal}"), target.id.clone());
         }
         for reference in sketch_references_by_operation
             .get(label.id.as_str())
