@@ -229,6 +229,27 @@ pub(super) fn decode(
                 Vec::new()
             }
         };
+        if let Some(surface_step) = complex_triangulated_face_surface(record) {
+            let surface_id = format!("step:data:surface#{surface_step}");
+            if let Some(surface) = ir
+                .model
+                .surfaces
+                .iter_mut()
+                .find(|surface| surface.id.0 == surface_id)
+            {
+                surface
+                    .source_object
+                    .get_or_insert_with(|| SourceObjectAssociation {
+                        format: "step".into(),
+                        object_id: format!("#{id}"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    });
+            }
+        }
         if !declared_items.contains(&id) {
             let message = format!(
                 "tessellation item #{id} is not declared by an exact body container; mesh retained as detached"
@@ -282,6 +303,12 @@ pub(super) fn decode(
         warnings,
         losses,
     }
+}
+
+fn complex_triangulated_face_surface(record: &RawRecord) -> Option<u64> {
+    (record.simple_name() == Some("COMPLEX_TRIANGULATED_FACE"))
+        .then(|| record.parameter(4).and_then(ValueExt::reference))
+        .flatten()
 }
 
 fn linked_bodies(record: &RawRecord, topology: &TopologyResult) -> BTreeSet<BodyId> {

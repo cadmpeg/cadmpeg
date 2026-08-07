@@ -142,6 +142,7 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    geometry::associate_surface_curve_supports(exchange, &mut ir, &carrier_index, &owned_carriers);
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);

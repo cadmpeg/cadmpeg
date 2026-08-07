@@ -2258,6 +2258,189 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
     }
 }
 
+/// Associate surfaces listed by retained `SURFACE_CURVE` records.
+///
+/// The associated-geometry list normally contains PCURVE records, but some
+/// producers write the surface carriers directly. The IR stores the 3D basis
+/// curve rather than the STEP wrapper, so this pass projects the wrapper's
+/// surface dependencies onto the retained IR surfaces. Only wrappers that
+/// participate in topology or an explicit free-geometry/presentation owner
+/// are considered; an unrelated record with the same basis curve is not an
+/// ownership proof.
+pub(super) fn associate_surface_curve_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+) {
+    let retained = retained_surface_curve_ids(exchange, index, owned);
+    for (surface_curve_id, record) in
+        exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
+    {
+        if !retained.contains(&surface_curve_id) {
+            continue;
+        }
+        for surface_id in surface_curve_supports(record, exchange, index) {
+            let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
+                continue;
+            };
+            ir.model.surfaces[surface_index]
+                .source_object
+                .get_or_insert_with(|| SourceObjectAssociation {
+                    format: "step".into(),
+                    object_id: format!("#{surface_curve_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                });
+        }
+    }
+}
+
+fn retained_surface_curve_ids(
+    exchange: &Exchange,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+) -> BTreeSet<u64> {
+    let mut retained = BTreeSet::new();
+
+    for (_, edge) in exchange.entities("EDGE_CURVE") {
+        let Some(surface_curve) = edge_curve_geometry_reference(edge) else {
+            continue;
+        };
+        let Some(record) = exchange.records.get(&surface_curve) else {
+            continue;
+        };
+        if !is_surface_curve_record(record) {
+            continue;
+        }
+        let Some(basis) = surface_curve_basis(record) else {
+            continue;
+        };
+        if index
+            .curves
+            .get(&basis)
+            .is_some_and(|curve| owned.curves.contains(curve))
+        {
+            retained.insert(surface_curve);
+        }
+    }
+
+    for set in exchange.records.values() {
+        let Some(set_type) = entity_type(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
+            continue;
+        };
+        let Some(members) = named_parameter(set, set_type, 1).and_then(Value::list) else {
+            continue;
+        };
+        for member in members.iter().filter_map(Value::reference) {
+            if decoded_surface_curve(member, exchange, index) {
+                retained.insert(member);
+            }
+        }
+    }
+
+    for representation in exchange.records.values().filter(|record| {
+        record
+            .partials
+            .iter()
+            .any(|partial| partial.name.ends_with("REPRESENTATION"))
+    }) {
+        let Some(items) = representation_items(representation) else {
+            continue;
+        };
+        for item in items {
+            if decoded_surface_curve(item, exchange, index) {
+                retained.insert(item);
+            }
+        }
+    }
+
+    for record in exchange.records.values() {
+        if let Some(target) = super::presentation::styled_item_target(record) {
+            if decoded_surface_curve(target, exchange, index) {
+                retained.insert(target);
+            }
+        }
+    }
+    for (_, plane) in exchange.entities("ANNOTATION_PLANE") {
+        let mut references = Vec::new();
+        for parameter in plane
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+        {
+            collect_references(parameter, &mut references);
+        }
+        for target in references {
+            if decoded_surface_curve(target, exchange, index) {
+                retained.insert(target);
+            }
+        }
+    }
+
+    retained
+}
+
+fn decoded_surface_curve(id: u64, exchange: &Exchange, index: &CarrierIndex) -> bool {
+    let Some(record) = exchange.records.get(&id) else {
+        return false;
+    };
+    is_surface_curve_record(record)
+        && surface_curve_basis(record).is_some_and(|basis| index.curves.contains_key(&basis))
+}
+
+fn is_surface_curve_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+        )
+    })
+}
+
+fn surface_curve_supports(
+    record: &RawRecord,
+    exchange: &Exchange,
+    index: &CarrierIndex,
+) -> Vec<u64> {
+    let Some(associated_geometry) = surface_curve_associated_geometry(record) else {
+        return Vec::new();
+    };
+    associated_geometry
+        .into_iter()
+        .filter_map(|associated| {
+            let surface = exchange
+                .records
+                .get(&associated)
+                .and_then(|record| named_parameter(record, "PCURVE", 1))
+                .and_then(Value::reference)
+                .or_else(|| {
+                    index
+                        .surfaces
+                        .contains_key(&associated)
+                        .then_some(associated)
+                });
+            surface.filter(|surface| index.surfaces.contains_key(surface))
+        })
+        .collect()
+}
+
+fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
+    let values = if record.partials.len() == 1 {
+        record.parameter(2)?.list()?
+    } else {
+        record
+            .partial("SURFACE_CURVE")
+            .or_else(|| record.partial("SEAM_CURVE"))
+            .or_else(|| record.partial("INTERSECTION_CURVE"))
+            .and_then(|partial| partial.parameters.iter().find_map(Value::list))?
+    };
+    Some(values.iter().filter_map(Value::reference).collect())
+}
+
 fn length_scale(exchange: &Exchange) -> Option<f64> {
     let context_units = exchange.records.values().find_map(|record| {
         record

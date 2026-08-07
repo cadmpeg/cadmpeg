@@ -1146,6 +1146,36 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn surface_curve_retains_direct_surface_support() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SURFACE_CURVE('',#16,(#70),.CURVE_3D.);\n#70=PLANE('',#27);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode direct surface-curve support");
+
+    let support = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#70")
+        .expect("direct surface support carrier");
+    assert_eq!(
+        support
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#57")
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     let mut ir = StepCodec::default()
         .decode(
@@ -3770,6 +3800,42 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
         .message
         .contains("does not match transferred tessellation")));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn complex_tessellated_face_retains_its_surface_carrier() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),$,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),#90,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#90=PLANE('',#34);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode tessellated face surface");
+
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#90")
+        .expect("tessellated face surface");
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#7")
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
