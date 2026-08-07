@@ -135,9 +135,42 @@ struct ConcatenatedNurbs {
 }
 
 fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [f64; 2])> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    let control_count = curve.control_points.len();
+    let expected_knot_count = control_count.checked_add(degree)?.checked_add(1)?;
+    if control_count == 0
+        || degree >= control_count
+        || curve.knots.len() != expected_knot_count
+        || curve
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != control_count)
+        || curve.knots.iter().any(|knot| !knot.is_finite())
+        || curve.knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
     let [start, end] = interval;
-    let sum = start + end;
-    if !sum.is_finite() {
+    if !start.is_finite() || !end.is_finite() || start > end {
+        return None;
+    }
+    let domain_start = curve.knots[degree];
+    let domain_end = curve.knots[control_count];
+    if !domain_start.is_finite()
+        || !domain_end.is_finite()
+        || domain_start >= domain_end
+        || start < domain_start
+        || end > domain_end
+    {
+        return None;
+    }
+    let sum = domain_start + domain_end;
+    let reversed_range = [sum - end, sum - start];
+    if !sum.is_finite()
+        || reversed_range
+            .iter()
+            .any(|parameter| !parameter.is_finite())
+    {
         return None;
     }
     let knots = curve
@@ -159,7 +192,7 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
                 .map(|weights| weights.into_iter().rev().collect()),
             periodic: curve.periodic,
         },
-        [start, end],
+        reversed_range,
     ))
 }
 
@@ -987,5 +1020,51 @@ mod tests {
                 .expect("carrier join within the global resolution should project");
         assert_eq!(range, [0.0, 2.0]);
         assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn reversing_a_subrange_reflects_the_active_nurbs_domain() {
+        let curve = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 10.0, 10.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        let (reversed, range) = reverse_nurbs(curve, [2.0, 5.0])
+            .expect("a bounded subrange should have an exact reversed carrier");
+        assert_eq!(range, [5.0, 8.0]);
+        assert_eq!(
+            cadmpeg_ir::eval::nurbs_curve_point(
+                reversed.degree,
+                &reversed.knots,
+                &reversed.control_points,
+                reversed.weights.as_deref(),
+                range[0],
+            ),
+            Some(Point3::new(5.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            cadmpeg_ir::eval::nurbs_curve_point(
+                reversed.degree,
+                &reversed.knots,
+                &reversed.control_points,
+                reversed.weights.as_deref(),
+                range[1],
+            ),
+            Some(Point3::new(2.0, 0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn reversing_a_range_outside_the_active_nurbs_domain_is_rejected() {
+        let curve = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 10.0, 10.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert!(reverse_nurbs(curve, [-1.0, 5.0]).is_none());
     }
 }
