@@ -1412,11 +1412,12 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
 
 #[cfg(test)]
 mod tests {
-    use super::drop_committed_surfaces;
+    use super::{drop_committed_surfaces, pcurve_endpoint_fit};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::index::ModelIndex;
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::Vertex;
     use cadmpeg_ir::units::Units;
@@ -1464,6 +1465,53 @@ mod tests {
         let mut later_root = surface_draft(rejected_id);
         drop_committed_surfaces(&mut later_root, &session);
         assert_eq!(later_root.model().surfaces.len(), 1);
+    }
+
+    #[test]
+    fn pcurve_fit_keeps_exact_points_at_a_degenerate_surface_boundary() {
+        let surface_id = SurfaceId("step:data:surface#boundary".into());
+        let surface_geometry = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: surface_geometry.clone(),
+            source_object: None,
+        });
+        let index = ModelIndex::new(&ir);
+        let pcurve = PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        };
+
+        let fit = pcurve_endpoint_fit(
+            &index,
+            &surface_id,
+            &pcurve,
+            &surface_geometry,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+        )
+        .expect("surface points should be evaluable at the boundary");
+
+        assert_eq!(fit.start_parameter, 0.0);
+        assert_eq!(fit.end_parameter, 1.0);
+        assert!(fit.score <= f64::EPSILON);
     }
 }
 
@@ -2963,24 +3011,26 @@ fn mapped_pcurve_closest(
     let domain = pcurve_selection_parameter_domain(geometry);
     let clamp_to_domain =
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
-    let evaluate = |parameter: f64| {
+    let evaluate_point = |parameter: f64| {
         let uv = pcurve_uv(geometry, parameter)?;
-        let point = model_surface_point_by_id(index, surface_id, uv.u, uv.v)?;
+        model_surface_point_by_id(index, surface_id, uv.u, uv.v)
+    };
+    let evaluate_tangent = |parameter: f64| {
+        let uv = pcurve_uv(geometry, parameter)?;
         let tangent_uv = pcurve_tangent(geometry, parameter)?;
         let partials = model_surface_partials_by_id(index, surface_id, uv.u, uv.v)?;
-        let tangent = Vector3::new(
+        Some(Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
             partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
-        );
-        Some((point, tangent))
+        ))
     };
 
     let mut parameter = clamp_to_domain(seed);
     let mut best = f64::INFINITY;
     let mut best_parameter = parameter;
     for _ in 0..32 {
-        let (point, tangent) = evaluate(parameter)?;
+        let point = evaluate_point(parameter)?;
         let error = point.distance(target);
         if !error.is_finite() {
             return None;
@@ -2989,6 +3039,9 @@ fn mapped_pcurve_closest(
             best = error;
             best_parameter = parameter;
         }
+        let Some(tangent) = evaluate_tangent(parameter) else {
+            break;
+        };
         let denominator = tangent.dot(tangent);
         if !denominator.is_finite() || denominator <= f64::EPSILON {
             break;
@@ -2999,7 +3052,7 @@ fn mapped_pcurve_closest(
             break;
         }
         let mut candidate = clamp_to_domain(parameter - step);
-        let Some((candidate_point, _)) = evaluate(candidate) else {
+        let Some(candidate_point) = evaluate_point(candidate) else {
             break;
         };
         let mut candidate_error = candidate_point.distance(target);
@@ -3008,7 +3061,7 @@ fn mapped_pcurve_closest(
                 break;
             }
             candidate = clamp_to_domain(0.5 * (candidate + parameter));
-            let Some((candidate_point, _)) = evaluate(candidate) else {
+            let Some(candidate_point) = evaluate_point(candidate) else {
                 break;
             };
             candidate_error = candidate_point.distance(target);
