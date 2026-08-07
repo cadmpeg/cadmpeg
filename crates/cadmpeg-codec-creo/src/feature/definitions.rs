@@ -8,7 +8,7 @@ use cadmpeg_core::cursor::bounded_len;
 use crate::psb;
 use crate::scalar;
 
-use super::entity::{generated_source_entity_ids, FeatureEntityTable};
+use super::entity::{generated_class_200_source_entity_ids, FeatureEntityTable};
 use super::helpers::{decode_optional_scalars, find_bytes};
 use super::operations::{FeatureOperation, FeatureRecipeKind};
 use super::rows::{
@@ -5691,7 +5691,7 @@ pub fn bind_trimmed_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = generated_source_entity_ids(table);
+                    let source_ids = generated_class_200_source_entity_ids(table);
                     (source_ids == external_ids).then_some(owner)
                 })
                 .collect::<BTreeSet<_>>()
@@ -5751,7 +5751,7 @@ pub fn bind_replay_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = generated_source_entity_ids(table);
+                    let source_ids = generated_class_200_source_entity_ids(table);
                     (!trimmed_external_ids.is_empty() && source_ids == trimmed_external_ids)
                         .then_some(owner)
                 })
@@ -5766,7 +5766,7 @@ pub fn bind_replay_definition_owners(
                     if claimed_owner_ids.contains(&owner) {
                         return None;
                     }
-                    let source_ids = generated_source_entity_ids(table);
+                    let source_ids = generated_class_200_source_entity_ids(table);
                     (!source_ids.is_empty() && source_ids.is_subset(&order_external_ids))
                         .then_some(owner)
                 })

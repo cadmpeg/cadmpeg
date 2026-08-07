@@ -819,6 +819,26 @@ fn withholds_saved_section_owner_for_partial_reused_or_duplicate_entity_sets() {
 }
 
 #[test]
+fn saved_section_owner_uses_only_class_200_source_ids() {
+    let mut table = generated_entity_table(667, &[9]);
+    table.entries.push(FeatureEntityTableEntry {
+        entity_id: 2,
+        class_id: 201,
+        source_entity_id: Some(10),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: true,
+        offset: 1,
+        end_offset: 2,
+    });
+    let mut definitions = [pending_trimmed_definition(&[9, 10])];
+
+    bind_trimmed_definition_owners(&mut definitions, &[table]);
+
+    assert_eq!(definitions[0].owner_feature_id, None);
+}
+
+#[test]
 fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
     let mut empty = [pending_replay(&[10])];
     bind_replay_definition_owners(
