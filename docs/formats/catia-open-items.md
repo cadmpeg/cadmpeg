@@ -550,34 +550,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the construction to transfer the result without using an incorrect cone offset.
 
-### OS-15. Class-`0x34` elided pole program
-
-**Question.** Where does an `a8 03 34` freeform surface keep its pole grid when the record stores a fixed 141-byte program in place of the inline grid, and what does that program encode?
-
-**Known.** `catia.md` §6.1 "Payload: `degU` and `K_U`" and §6.7 "An `a8 03 34` surface with an unresolved indirect pole program" define the header lanes and the identity-bearing fallback. The header gives the degrees, distinct knots, multiplicities, and pole cardinalities, so the expected inline grid width is `u_count * v_count * 24` bytes. The program replaces that grid. The lane that follows the V multiplicities is:
-
-| Payload offset | Width | Type | Value |
-| -------------- | ----- | ---- | ----- |
-| `+0` | 1 | `u8` | `05` |
-| `+1` | 1 | `u8` | `4n+1` control |
-| `+2` | 1 | `u8` | `05` |
-| `+3` | 1 | `u8` | `4n+1` control |
-| `+4` | 8 | `f64le` | zero |
-| `+12` | 8 | `f64le` | positive scalar |
-| `+20` | 8 | `f64le` | zero |
-| `+28` | 8 | `f64le` | positive scalar, equal to the V knot span |
-| `+36` | 8 | `f64le` | one |
-| `+44` | 8 | `f64le` | zero |
-| `+52` | 8 | `f64le` | one |
-| `+60` | 8 | `f64le` | zero |
-| `+68` | 3 | `u8{3}` | `01 01 01` |
-| `+71` | 64 | `u8{64}` | zero |
-| `+135` | 6 | `u8{6}` | `01 00 01 00 07 07` |
-
-The program is exactly 141 bytes and the byte after it starts the next object frame. An A8 wrapper carrying this program owns a nested length-closed `b5 03` run holding the face, loop, pcurve, edge, and vertex records of the face that the carrier bounds.
-
-**Need.** We must know the pole source to evaluate the carrier. Without it no pcurve on the carrier lifts, no incident edge takes a vertex locus, and the owning face stays outside the transferred B-rep (FV-09).
-
 ## 5. Zero-entity `a9 03`
 
 ### ZE-01. Class-`0x5fxx` face terminal control
@@ -752,18 +724,6 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
 
-### FV-09. Isolated face on a pole-elided freeform carrier
-
-**Question.** What recovers the endpoint loci of a face whose `a8 03 34` carrier stores no inline pole grid, so that the face joins the transferred B-rep instead of the residual `topology_not_transferred` loss?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" fixes loop membership: a `b5 03 5f` face's loop references select its `62` nodes, and a `62` allocation that no face references is outside the B-rep. That rule accounts for every `62` allocation of an object-stream body. `catia.md` §6.7 "An `a8 03 34` surface with an unresolved indirect pole program" keeps such a carrier as an identity-bearing surface node. A class-`21` pcurve on that carrier lifts to no 3D endpoint, so no `5e` edge on it acquires a vertex locus, its `62` loop fails the endpoint conjunct, and the owning `5f` face leaves the connected graph. The face's own `5d`, `05`, `06`, `21`, and `5e` records are all structurally complete; only the carrier geometry is missing. OS-15 holds the carrier grammar.
-
-**Need.** We must recover the carrier geometry, or another endpoint source, to transfer the face. Until then the exclusion is correct and must not be relaxed: transferring the face would require invented vertex coordinates.
-
-**Note.** Until this tree the resolved graph did not reach the document at all. `assemble::neutral_model_is_admissible` judged the candidate model before `cadmpeg-ir` sorts each arena by entity id, and a `b5 03` id embeds an unpadded decimal `object_id`, so `catia:b5:face#10` preceded `catia:b5:face#9` and every topology arena failed the strict arena-order check together. The route then fell back to bare surface carriers. The gate now canonicalizes the candidate first, which is the form `DecodeResult::new` publishes. No identity change was needed: a cross-reference is an id string, so arena order carries no reference semantics.
-
-**Note.** The decode report measures the residual directly. `resolved_object_stream_face_terminal_control_*_count` and `resolved_object_stream_loop_framing_controls_*_count` sum the graph faces and loops; `transferred_object_stream_face_count` and `transferred_object_stream_loop_count` give the counts the transfer keeps. The difference is this item. Two counts of the same route measure different layers and must not be compared: the graph arenas hold every resolvable pcurve and surface record, while the neutral arenas hold only the records the reference-closed subset adopts.
-
 ### FV-10. Float-packed fixture validity
 
 **Question.** What object-stream and analytic-carrier records must a synthesized float-packed inner-no-FBB input contain to be a valid specimen of the variant?
@@ -772,7 +732,7 @@ The program is exactly 141 bytes and the byte after it starts the next object fr
 
 **Need.** We must know the minimum valid record set to synthesize golden fixtures that hold the object-stream route under snapshot.
 
-**Note.** Loop membership no longer blocks this item. `catia.md` §6.7 "**Object-stream topology:**" fixes the rule a fixture must satisfy: each `62` node is named by exactly one `5f` face, its trailing reference is that face's carrier, and its `n_refs` equals `2*edge_count+1`. The remaining blocker is the `5d` identity chain, which needs a `5d`, a class-`05` roster, class-`06` parameter incidences, and `05 08 01` vertex rows that agree with the lifted pcurve endpoints of every incident edge. A fixture that omits the chain reaches the same excluded state as FV-09 and proves nothing about the route.
+**Note.** Loop membership no longer blocks this item. `catia.md` §6.7 "**Object-stream topology:**" fixes the rule a fixture must satisfy: each `62` node is named by exactly one `5f` face, its trailing reference is that face's carrier, and its `n_refs` equals `2*edge_count+1`. The remaining blocker is the `5d` identity chain, which needs a `5d`, a class-`05` roster, class-`06` parameter incidences, and `05 08 01` vertex rows that agree with the lifted pcurve endpoints of every incident edge. A fixture that omits the chain reaches the excluded state for a carrier without an endpoint source and proves nothing about the route.
 
 ## 8. Appearance
 

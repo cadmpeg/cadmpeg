@@ -155,6 +155,69 @@ fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
     })
 }
 
+fn valid_a8_elided_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
+    let Some(end) = at.checked_add(141) else {
+        return false;
+    };
+    let Some(tail) = data.get(at..end) else {
+        return false;
+    };
+    if tail[0] != 0x05
+        || tail[2] != 0x05
+        || tail[1] % 4 != 1
+        || tail[3] % 4 != 1
+        || tail[68..71] != [0x01, 0x01, 0x01]
+        || !tail[71..135].iter().all(|byte| *byte == 0)
+        || tail[135..141] != [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
+    {
+        return false;
+    }
+    let read_f64 = |offset: usize| -> Option<f64> {
+        Some(f64::from_le_bytes(
+            tail.get(offset..offset + 8)?.try_into().ok()?,
+        ))
+    };
+    let Some(zero_u) = read_f64(4) else {
+        return false;
+    };
+    let Some(positive_u) = read_f64(12) else {
+        return false;
+    };
+    let Some(zero_v) = read_f64(20) else {
+        return false;
+    };
+    let Some(v_span) = read_f64(28) else {
+        return false;
+    };
+    let Some(one_u) = read_f64(36) else {
+        return false;
+    };
+    let Some(zero_w) = read_f64(44) else {
+        return false;
+    };
+    let Some(one_v) = read_f64(52) else {
+        return false;
+    };
+    let Some(zero_x) = read_f64(60) else {
+        return false;
+    };
+    let Some((&v_last, &v_first)) = v_knots.last().zip(v_knots.first()) else {
+        return false;
+    };
+    let expected_v_span = v_last - v_first;
+    zero_u == 0.0
+        && positive_u.is_finite()
+        && positive_u > 0.0
+        && zero_v == 0.0
+        && v_span.is_finite()
+        && v_span > 0.0
+        && v_span == expected_v_span
+        && one_u == 1.0
+        && zero_w == 0.0
+        && one_v == 1.0
+        && zero_x == 0.0
+}
+
 fn object_stream_frames(data: &[u8]) -> Vec<ObjectStreamFrame> {
     fn walk(
         data: &[u8],
@@ -982,17 +1045,13 @@ pub fn a8_surface_from_external_grid(
     };
     let grid_bytes = poles.checked_mul(24)?.checked_add(weight_bytes)?;
     let mut candidates = Vec::new();
-    let mut search = 0usize;
-    while let Some(relative) = data[search..]
-        .windows(3)
-        .position(|bytes| bytes[0] == 0xb5 && object_frame_flag(bytes[1]) && bytes[2] == 0x21)
+    for frame in object_stream_frames(data)
+        .into_iter()
+        .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
     {
-        let frame = search + relative;
-        search = frame + 3;
-        let payload_len = usize::from(*data.get(frame + 3)?);
-        let start = frame.checked_add(8)?.checked_add(payload_len)?;
+        let start = frame.end;
         let end = start.checked_add(grid_bytes)?;
-        if !object_frame_start(data, end) {
+        if object_stream_frame(data, end).is_none() {
             continue;
         }
         let mut at = start;
@@ -1190,8 +1249,8 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         return None;
     }
     let tail_end = at.checked_add(141)?;
-    let poles_elided = matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
-        && tail_end <= end
+    let poles_elided = tail_end <= end
+        && valid_a8_elided_tail(data, at, &v_distinct)
         && (tail_end == end || object_frame_start(data, tail_end));
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {

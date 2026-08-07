@@ -1071,6 +1071,20 @@ pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
     bytes.truncate(59);
     let mut tail = vec![0; 141];
     tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
+    for (offset, value) in [
+        (4, 0.0),
+        (12, 1.0),
+        (20, 0.0),
+        (28, 1.0),
+        (36, 1.0),
+        (44, 0.0),
+        (52, 1.0),
+        (60, 0.0),
+    ] {
+        tail[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    tail[68..71].copy_from_slice(&[0x01, 0x01, 0x01]);
+    tail[135..141].copy_from_slice(&[0x01, 0x00, 0x01, 0x00, 0x07, 0x07]);
     bytes.extend_from_slice(&tail);
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
@@ -1085,7 +1099,7 @@ pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
             bytes.extend_from_slice(&coordinate.to_le_bytes());
         }
     }
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0, 0, 0]);
     bytes
 }
 

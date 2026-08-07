@@ -66,18 +66,22 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
 
 #[test]
 fn a8_surface_header_identifies_an_elided_pole_grid() {
-    let mut bytes = a8_surface_stream();
-    bytes.truncate(59);
-    let mut tail = vec![0; 141];
-    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
-    bytes.extend_from_slice(&tail);
-    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 1, 0, 0, 0]);
-    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
-    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    let bytes = a8_elided_surface_stream();
     assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert!(headers[0].poles_elided);
+}
+
+#[test]
+fn a8_surface_header_rejects_an_incomplete_elided_program() {
+    let mut bytes = a8_elided_surface_stream();
+    bytes[59 + 44] = 1;
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one surface header");
+    assert!(!header.poles_elided);
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
 #[test]
@@ -150,6 +154,17 @@ fn a8_elided_surface_accepts_finite_large_external_poles() {
     assert_eq!(surface.control_points[0].x, 2e12);
 
     bytes[pole_start..pole_start + 8].copy_from_slice(&le_f64(f64::NAN));
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
+fn a8_elided_surface_requires_a_length_closed_successor_frame() {
+    let mut bytes = a8_elided_surface_stream();
+    let successor = bytes
+        .windows(3)
+        .rposition(|value| value == [0xb5, 0x03, 0x5e])
+        .expect("successor frame");
+    bytes[successor + 3] = 3;
     assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
 }
 
