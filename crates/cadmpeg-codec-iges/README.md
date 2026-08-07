@@ -1,7 +1,7 @@
 # cadmpeg-codec-iges
 
-`cadmpeg-codec-iges` inspects and decodes IGES 5.3 Fixed ASCII files into
-`CadIr`.
+`cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.2 and 5.3 Fixed ASCII
+files through `CadIr`.
 
 Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
 for the Fixed ASCII mechanical/document envelope.
@@ -38,6 +38,16 @@ decode. `IgesCodec::inspect` returns section structure, Directory census, and
 reference findings. Compressed ASCII and Binary representations are detected
 and inspected by name and refused for semantic decode.
 
+## Write
+
+`IgesCodec` replays an unchanged decoded source image byte for byte when its
+retained source record and document baseline are intact. `IgesEncoder` accepts
+an explicit target version. The semantic writer supports standalone points,
+finite lines, analytic conic arcs, NURBS curves, and piecewise-linear curves;
+unsupported neutral or native content is refused before output. Edited source
+documents may report `passthrough_record_omitted` losses for native display or
+occurrence-expansion records that are not regenerated.
+
 ## Data model
 
 A Fixed ASCII IGES file is an 80-column card stream with Start, Global,
@@ -50,8 +60,8 @@ parameters keep their native scale.
 
 Records that block faithful transfer land in `DecodeReport::losses`.
 `native.iges` retains physical cards and typed or generic entity data.
-`SourceFidelity` retained opaque byte records and `transfer_ledger` are not
-populated. Coverage for each envelope lives in the
+`SourceFidelity` retains the complete source image and its SHA-256 digest;
+`transfer_ledger` is not populated. Coverage for each envelope lives in the
 [format-support profile][support].
 
 ## Documentation

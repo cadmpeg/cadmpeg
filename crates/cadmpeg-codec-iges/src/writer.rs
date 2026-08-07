@@ -38,13 +38,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     options: crate::IgesWriteOptions,
 ) -> Result<ExportPlan<'_>, CodecError> {
-    if options.version != crate::IgesVersion::V5_3 {
-        return Err(CodecError::NotImplemented(
-            "IGES target version 5.2 is not implemented; only 5.3 Fixed ASCII can be written"
-                .into(),
-        ));
-    }
-    if let Some(bytes) = replay_bytes(input.ir, input.fidelity)? {
+    if let Some(bytes) = replay_bytes(input.ir, input.fidelity, options.version)? {
         return Ok(ExportPlan::buffered(
             report(
                 FidelityResolution::Replayed,
@@ -76,7 +70,7 @@ pub(crate) fn plan(
             .with_severity(Severity::Blocking),
         );
     }
-    let synthesis = synthesize(input.ir)?;
+    let synthesis = synthesize(input.ir, options.version)?;
     losses.extend(synthesis.losses.clone());
     let fidelity = if source_expected && !source_available {
         FidelityResolution::Degraded {
@@ -102,6 +96,7 @@ pub(crate) fn plan(
 fn replay_bytes(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
+    version: crate::IgesVersion,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let Some(expected) = ir
         .source
@@ -111,6 +106,14 @@ fn replay_bytes(
     else {
         return Ok(None);
     };
+    if ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("iges_version"))
+        .is_none_or(|source_version| source_version != version.name())
+    {
+        return Ok(None);
+    }
     if crate::document_digest(ir) != *expected {
         return Ok(None);
     }
@@ -176,7 +179,7 @@ struct Synthesis {
     losses: Vec<LossNote>,
 }
 
-fn synthesize(ir: &CadIr) -> Result<Synthesis, CodecError> {
+fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
     reject_unsupported_model(ir)?;
     let losses = reject_unsupported_native(ir)?;
 
@@ -233,7 +236,7 @@ fn synthesize(ir: &CadIr) -> Result<Synthesis, CodecError> {
 
     let counts = entity_counts(&entities);
     Ok(Synthesis {
-        bytes: encode_file(&entities)?,
+        bytes: encode_file(&entities, version)?,
         counts,
         losses,
     })
@@ -1095,8 +1098,12 @@ struct Entity {
     transform: Option<Placement>,
 }
 
-fn encode_file(entities: &[Entity]) -> Result<Vec<u8>, CodecError> {
-    let global = b"1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260807.000000,0.001,1000.0,6Hauthor,7Hcadmpeg,11,0,0H,0H;";
+fn encode_file(entities: &[Entity], version: crate::IgesVersion) -> Result<Vec<u8>, CodecError> {
+    let global = format!(
+        "1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260807.000000,0.001,1000.0,6Hauthor,7Hcadmpeg,{},0,0H,0H;",
+        version.global_flag()
+    )
+    .into_bytes();
     let global_count = global.len().div_ceil(72);
     let mut expanded = Vec::with_capacity(entities.len() * 2);
     for entity in entities {

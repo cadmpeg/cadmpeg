@@ -51,7 +51,7 @@ enum IgesTarget {
     #[default]
     #[value(name = "5.3", alias = "v5.3", alias = "v5_3")]
     V5_3,
-    /// IGES 5.2, which is recognized but not emitted by this build.
+    /// IGES 5.2 Fixed ASCII.
     #[value(name = "5.2", alias = "v5.2", alias = "v5_2")]
     V5_2,
 }

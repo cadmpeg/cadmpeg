@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! IGES 5.3 Fixed ASCII codec.
+//! IGES Fixed ASCII codec for versions 5.2 and 5.3.
 //!
 //! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for the declared Fixed ASCII mechanical/document envelope.
@@ -30,11 +30,27 @@ pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 /// IGES specification version selected for semantic output.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum IgesVersion {
-    /// IGES 5.3, the fixed-ASCII envelope implemented by this crate.
+    /// IGES 5.3 Fixed ASCII.
     #[default]
     V5_3,
-    /// IGES 5.2, recognized as a separate target but not emitted yet.
+    /// IGES 5.2 Fixed ASCII.
     V5_2,
+}
+
+impl IgesVersion {
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::V5_2 => "5.2",
+            Self::V5_3 => "5.3",
+        }
+    }
+
+    pub(crate) const fn global_flag(self) -> u8 {
+        match self {
+            Self::V5_2 => 10,
+            Self::V5_3 => 11,
+        }
+    }
 }
 
 /// Options controlling a semantic IGES write.

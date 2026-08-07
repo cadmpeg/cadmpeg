@@ -45,9 +45,9 @@ fn source_meta(global: &global::Global) -> SourceMeta {
 pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
     let scan = card::scan(bytes)?;
     let global = global::parse(&scan)?;
-    if global.version() != Some("5.3") {
+    if !matches!(global.version(), Some("5.2" | "5.3")) {
         return Err(CodecError::NotImplemented(format!(
-            "IGES Fixed ASCII version {} decode; target envelope is 5.3",
+            "IGES Fixed ASCII version {} decode; target envelope is 5.2 or 5.3",
             global.version().unwrap_or("unrecognized")
         )));
     }

@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Cursor;
 
-use crate::IgesCodec;
+use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
 fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
     card_with_ending(data, section, sequence, b"\n")
@@ -7854,6 +7854,73 @@ fn encode_replays_an_unchanged_iges_source_image() {
 }
 
 #[test]
+fn encode_emits_and_decodes_the_requested_iges_5_2_target() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.push(Point {
+        id: PointId("point#5.2".into()),
+        source_object: None,
+        position: Point3::new(4.0, 5.0, 6.0),
+    });
+    let encoder = IgesEncoder::new(IgesWriteOptions {
+        version: IgesVersion::V5_2,
+    });
+    let plan = encoder
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(written.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        decoded.ir.source.as_ref().unwrap().attributes["iges_version"],
+        "5.2"
+    );
+    assert_eq!(decoded.ir.model.points.len(), 1);
+    assert!(
+        decoded.report.losses.is_empty(),
+        "{:#?}",
+        decoded.report.losses
+    );
+}
+
+#[test]
+fn encode_does_not_replay_a_source_with_the_wrong_version() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+        .unwrap();
+    let encoder = IgesEncoder::new(IgesWriteOptions {
+        version: IgesVersion::V5_2,
+    });
+    let plan = encoder
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .unwrap();
+    assert_eq!(plan.write_path(), WritePath::Synthesized);
+
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        round_trip.ir.source.as_ref().unwrap().attributes["iges_version"],
+        "5.2"
+    );
+    assert_eq!(round_trip.ir.model.points.len(), 1);
+}
+
+#[test]
 fn encode_regenerates_an_edited_point_from_neutral_ir() {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.push(Point {
@@ -8080,7 +8147,7 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
 }
 
 #[test]
-fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
+fn fixed_ascii_5_2_decodes_under_the_supported_profile() {
     let mut bytes = point_file();
     let version = bytes
         .windows(b",11,0,".len())
@@ -8095,13 +8162,20 @@ fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
         )
         .unwrap();
     assert!(summary.notes.contains(&"iges_version=5.2".into()));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
     assert_eq!(
-        IgesCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap_err()
-            .to_string(),
-        "not implemented yet: IGES Fixed ASCII version 5.2 decode; target envelope is 5.3"
+        result.ir.source.as_ref().unwrap().attributes["iges_version"],
+        "5.2"
     );
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]

@@ -1,4 +1,4 @@
-# IGES 5.3 Fixed ASCII format specification
+# IGES 5.2/5.3 Fixed ASCII format specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
@@ -20,7 +20,7 @@ The Global data stream is the concatenation of bytes 1 through 72 from its cards
 
 A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty field between parameter delimiters is omitted. The record delimiter terminates the Global record.
 
-Global fields declare the sender and receiver identifiers, native file name, generator, significant digits, single and double precision limits, model scale, units flag and unit name, maximum line-weight gradation and width, creation and modification timestamps, minimum resolution, maximum coordinate, author, organization, specification version, drafting standard, and application protocol. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged.
+Global fields declare the sender and receiver identifiers, native file name, generator, significant digits, single and double precision limits, model scale, units flag and unit name, maximum line-weight gradation and width, creation and modification timestamps, minimum resolution, maximum coordinate, author, organization, specification version, drafting standard, and application protocol. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged. The specification version field is `10` for IGES 5.2 and `11` for IGES 5.3.
 
 ## Directory Entry section
 
@@ -176,4 +176,4 @@ The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. The reader does not emit a closed `transfer_ledger` and does not populate `SourceFidelity` retained opaque byte records or SHA-256 digests.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader does not emit a closed `transfer_ledger`.

@@ -53,7 +53,7 @@ A **proven** score satisfies every criterion for the declared envelope:
 | Rhino `.3dm` (V1/V2 and archive 5)                                    | **L0 tested**  | header-only inspection; decode is rejected                                                                                 |
 | STEP Part 21 AP242 editions 1–3                                       | **L9 tested**  |                                                                                                                            |
 | STEP Part 21 AP203 editions 1–2 and AP214                             | **L9 tested**  |                                                                                                                            |
-| IGES 5.3 Fixed ASCII mechanical/document                              | **L8 tested**  | read only                                                                                                                  |
+| IGES 5.2/5.3 Fixed ASCII mechanical/document                          | **L8 tested**  | deterministic source replay; bounded semantic point and curve writing                                                     |
 
 Each current score applies to the envelope described in its profile.
 
@@ -82,14 +82,14 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 ## IGES
 
-**Model:** IGES 5.3 entity graph
+**Model:** IGES 5.2/5.3 entity graph
 
-**Ladder: L8 tested for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes.
+**Ladder: L8 tested for the IGES 5.2/5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, other Fixed ASCII versions, and extensions are separate envelopes.
 
 ### Envelopes
 
-- **IGES 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the geometry, topology, product, presentation, annotation, drawing, associativity, and property entity branches listed by `corpus/iges-envelope-a.toml`; and no extension entity outside that matrix. The codec is read only.
-- **Pre-5.3 Fixed ASCII.** Version-specific legacy envelope. Detection and exact version reporting establish identity. Semantic decode uses the 5.3 Fixed ASCII envelope.
+- **IGES 5.2/5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the geometry, topology, product, presentation, annotation, drawing, associativity, and property entity branches listed by `corpus/iges-envelope-a.toml`; and no extension entity outside that matrix. Unchanged documents replay their retained source image. Semantic regeneration is bounded to the documented writer profile and refuses unsupported model or native content.
+- **Other Fixed ASCII versions.** Version-specific legacy or later envelope. Detection and exact version reporting establish identity. Semantic decode is refused outside the 5.2/5.3 profile.
 - **Compressed ASCII.** Distinct representation envelope.
 - **Binary.** Distinct representation envelope.
 - **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable. Its presence holds the Fixed ASCII mechanical/document score at the last level that admits it as opaque.
@@ -107,18 +107,18 @@ See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md), [`formats/freecad_fc
 
 ### Read profile
 
-- **Container and versions: Complete.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
+- **Container and versions: Complete.** Bounded detection, inspection, and decode cover IGES 5.2 and 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Other Fixed ASCII versions report their version and are refused for semantic decode.
 - **Geometry: Complete.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once.
 - **Topology: Complete.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology.
 - **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
 - **Product structure: Complete.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements.
 - **Presentation and metadata: Complete.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
-- **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. Retained opaque `SourceFidelity` byte records and the decode `transfer_ledger` are not populated.
+- **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. The decoder retains the complete source image in `SourceFidelity` and records its document-local digest. The decode `transfer_ledger` is not populated.
 
 ### Write and round trip
 
-- **Native write: None.** Writing is outside the envelope.
-- **Round trip: None.** Writing is outside the envelope.
+- **Native write: Bounded semantic regeneration.** An unchanged decoded document with an intact source baseline replays byte for byte. Source-less documents and edited documents can write standalone points, finite lines, circles, ellipse/parabola/hyperbola conic arcs, NURBS curves, and exact piecewise-linear carriers encoded as degree-one NURBS. Analytic placements use Type 124 transformation matrices; parameter domains, knot vectors, weights, orthonormal frames, finite coordinates, and card widths are validated before output. The default target is IGES 5.3 Fixed ASCII; target 5.2 is also emitted. Unsupported model arenas, native arenas, and native entity types are refused. Native display attributes and occurrence-expansion records that are not regenerated produce `passthrough_record_omitted` warnings; `--reject-lossy` can refuse the plan before writing.
+- **Round trip: Bounded.** Generated output is decoded and validated by the IGES codec for the writable geometry profile. Unchanged source documents preserve every source byte through replay. Native-application acceptance and general topology/presentation semantic regeneration are not asserted by repository tests; edited documents containing unsupported structures are refused rather than reduced silently.
 
 ## Rhino `.3dm`
 
