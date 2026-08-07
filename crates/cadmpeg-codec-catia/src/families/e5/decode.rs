@@ -319,22 +319,128 @@ pub(crate) fn solve_e5_plane_frame(
             }
         }
     }
-    if segments.is_empty() || segments.len() > 16 {
+    if segments.is_empty() {
         return None;
     }
-    let mut candidates = Vec::new();
-    for mask in 0usize..(1usize << segments.len()) {
-        let mut pairs = Vec::with_capacity(2 * segments.len());
-        for (index, (uv, xyz)) in segments.iter().enumerate() {
-            let reversed = mask & (1 << index) != 0;
-            pairs.push((uv[0], xyz[usize::from(reversed)]));
-            pairs.push((uv[1], xyz[usize::from(!reversed)]));
+
+    let independent_uv_vectors = |left: [f64; 2], right: [f64; 2]| {
+        let scale = left
+            .iter()
+            .chain(right.iter())
+            .map(|value| value.abs())
+            .fold(0.0_f64, f64::max);
+        if !scale.is_finite() || scale == 0.0 {
+            return false;
         }
-        let Some((u_axis, v_axis, residual)) = fit_e5_plane_axes(origin, &pairs).or_else(|| {
-            expected_normal.and_then(|normal| fit_rank_one_e5_plane_axes(origin, &pairs, normal))
-        }) else {
-            continue;
+        let left = [left[0] / scale, left[1] / scale];
+        let right = [right[0] / scale, right[1] / scale];
+        (left[0] * right[1] - left[1] * right[0]).abs() > f64::EPSILON
+    };
+    let anchors = 'find_anchors: {
+        let mut basis = None;
+        for (index, (uv, _)) in segments.iter().enumerate() {
+            for endpoint in uv {
+                if let Some((basis_index, basis_uv)) = basis {
+                    if independent_uv_vectors(basis_uv, *endpoint) {
+                        break 'find_anchors Some(if basis_index == index {
+                            vec![index]
+                        } else {
+                            vec![basis_index, index]
+                        });
+                    }
+                } else if endpoint[0] != 0.0 || endpoint[1] != 0.0 {
+                    basis = Some((index, *endpoint));
+                }
+            }
+        }
+        None
+    };
+    let endpoint_pairs = |segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
+        let points = if reversed {
+            [segment.1[1], segment.1[0]]
+        } else {
+            segment.1
         };
+        [(segment.0[0], points[0]), (segment.0[1], points[1])]
+    };
+    let endpoint_error =
+        |axes: (Vector3, Vector3), segment: &([[f64; 2]; 2], [Point3; 2]), reversed: bool| {
+            endpoint_pairs(segment, reversed)
+                .into_iter()
+                .map(|(uv, point)| {
+                    let predicted = Point3::new(
+                        origin[0] + uv[0] * axes.0.x + uv[1] * axes.1.x,
+                        origin[1] + uv[0] * axes.0.y + uv[1] * axes.1.y,
+                        origin[2] + uv[0] * axes.0.z + uv[1] * axes.1.z,
+                    );
+                    predicted.distance(point)
+                })
+                .fold(0.0_f64, f64::max)
+        };
+
+    let mut fitted_axes = Vec::new();
+    if let Some(anchors) = anchors {
+        for mask in 0usize..(1usize << anchors.len()) {
+            let mut orientations = vec![false; segments.len()];
+            for (bit, &index) in anchors.iter().enumerate() {
+                orientations[index] = mask & (1 << bit) != 0;
+            }
+            let mut seed_pairs = Vec::with_capacity(2 * anchors.len());
+            for &index in &anchors {
+                seed_pairs.extend(endpoint_pairs(&segments[index], orientations[index]));
+            }
+            let Some((seed_u, seed_v, _)) = fit_e5_plane_axes(origin, &seed_pairs) else {
+                continue;
+            };
+            for (index, segment) in segments.iter().enumerate() {
+                if anchors.contains(&index) {
+                    continue;
+                }
+                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
+                    < endpoint_error((seed_u, seed_v), segment, false);
+            }
+            let mut pairs = Vec::with_capacity(2 * segments.len());
+            for (segment, &reversed) in segments.iter().zip(&orientations) {
+                pairs.extend(endpoint_pairs(segment, reversed));
+            }
+            if let Some(fit) = fit_e5_plane_axes(origin, &pairs) {
+                fitted_axes.push(fit);
+            }
+        }
+    } else {
+        let normal = expected_normal?;
+        let seed_index = segments.iter().enumerate().find_map(|(index, (uv, _))| {
+            uv.iter()
+                .any(|point| point[0] != 0.0 || point[1] != 0.0)
+                .then_some(index)
+        })?;
+        for seed_reversed in [false, true] {
+            let seed_pairs = endpoint_pairs(&segments[seed_index], seed_reversed);
+            let Some((seed_u, seed_v, _)) = fit_rank_one_e5_plane_axes(origin, &seed_pairs, normal)
+            else {
+                continue;
+            };
+            let mut orientations = vec![false; segments.len()];
+            orientations[seed_index] = seed_reversed;
+            for (index, segment) in segments.iter().enumerate() {
+                if index == seed_index {
+                    continue;
+                }
+                orientations[index] = endpoint_error((seed_u, seed_v), segment, true)
+                    < endpoint_error((seed_u, seed_v), segment, false);
+            }
+            let mut pairs = Vec::with_capacity(2 * segments.len());
+            for (segment, &reversed) in segments.iter().zip(&orientations) {
+                pairs.extend(endpoint_pairs(segment, reversed));
+            }
+            if let Some(fit) = fit_rank_one_e5_plane_axes(origin, &pairs, normal) {
+                fitted_axes.push(fit);
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+    for (u_axis, v_axis, residual) in fitted_axes {
         let Some(u_axis) = unit_vector(u_axis) else {
             continue;
         };
@@ -1998,10 +2104,10 @@ mod route_tests {
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
         e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
-        fit_rank_one_e5_plane_axes, parameter_ranges_reversed,
+        fit_rank_one_e5_plane_axes, parameter_ranges_reversed, solve_e5_plane_frame,
     };
 
-    use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
+    use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
 
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
@@ -2010,6 +2116,89 @@ mod route_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use std::collections::BTreeMap;
+
+    #[test]
+    fn e5_plane_frame_solver_has_no_boundary_segment_cutoff() {
+        let segment_count = 17;
+        let mut edges = BTreeMap::new();
+        let mut pcurves = BTreeMap::new();
+        let mut vertex_refs = Vec::with_capacity(2 * segment_count);
+        let mut points = Vec::with_capacity(2 * segment_count);
+        let mut pcurve_refs = Vec::with_capacity(segment_count);
+        let mut edge_refs = Vec::with_capacity(segment_count);
+
+        for index in 0..segment_count {
+            let (start_uv, end_uv) = match index {
+                0 => ([0.0, 0.0], [1.0, 0.0]),
+                1 => ([0.0, 0.0], [0.0, 1.0]),
+                _ => {
+                    let offset = index as f64;
+                    ([offset, 0.0], [offset + 0.5, 0.0])
+                }
+            };
+            let start_vertex = 1000 + 2 * index as u32;
+            let end_vertex = start_vertex + 1;
+            let edge_ref = 3000 + index as u32;
+            let pcurve_ref = 2000 + index as u32;
+            vertex_refs.extend([start_vertex, end_vertex]);
+            points.extend([
+                Point3::new(start_uv[0], start_uv[1], 0.0),
+                Point3::new(end_uv[0], end_uv[1], 0.0),
+            ]);
+            pcurve_refs.push(pcurve_ref);
+            edge_refs.push(edge_ref);
+            edges.insert(
+                edge_ref,
+                E5Edge {
+                    record_id: edge_ref,
+                    support: 0,
+                    start_vertex,
+                    end_vertex,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            );
+            pcurves.insert(
+                pcurve_ref,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: start_uv,
+                    direction: [end_uv[0] - start_uv[0], end_uv[1] - start_uv[1]],
+                    range: [0.0, 1.0],
+                },
+            );
+        }
+
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![E5Face {
+                record_id: 1,
+                surface: 100,
+                trailer_sign: 1,
+                loops: vec![E5Loop {
+                    record_id: 2,
+                    surface: 100,
+                    pcurves: pcurve_refs,
+                    edge_uses: edge_refs,
+                    reversed: vec![false; segment_count],
+                    oriented_members: None,
+                    outer: Some(true),
+                    orientation_signs: Vec::new(),
+                }],
+            }],
+            edges,
+            pcurves,
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs,
+        };
+
+        let (normal, u_axis) = solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
+            .expect("17-segment plane frame");
+        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-8);
+        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-8);
+    }
 
     #[test]
     fn affine_bound_parameters_preserve_or_reverse_native_direction() {
