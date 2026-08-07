@@ -8,6 +8,40 @@ use crate::psb;
 use crate::scalar;
 
 #[test]
+fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
+    let payload = [
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 7, 0x90, 0x01, 0xe3, 0xf6, 0x83,
+        0x91, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 2);
+    assert_eq!(
+        decoded
+            .iter()
+            .map(|row| (row.header, row.root_schema_class))
+            .collect::<Vec<_>>(),
+        [([0xeb, 0x04], Some(917)), ([0x90, 0x01], Some(913))]
+    );
+}
+
+#[test]
+fn rows_suppress_repeated_same_class_candidates() {
+    let payload = [
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 7, 0x90, 0x01, 0xe3, 0xf6, 0x83,
+        0x95, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].root_schema_class, Some(917));
+}
+
+#[test]
 fn final_generated_entry_may_terminate_at_the_table_separator() {
     let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
     let entries = read_entries(&payload, 0, 2).expect("complete generated table");

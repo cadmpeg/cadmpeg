@@ -313,18 +313,45 @@ pub(super) fn row_spans(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<(usi
         }
     }
     starts.sort_unstable();
-    let mut seen = BTreeSet::new();
-    starts.retain(|(_, id)| seen.insert(*id));
-    starts
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_schema_classes = BTreeSet::new();
+    let retained_starts: Vec<(usize, u32)> = starts
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &(start, id))| {
+            let candidate_end = starts
+                .get(index + 1)
+                .map_or(payload.len(), |&(next, _)| next);
+            let first_for_id = seen_ids.insert(id);
+            let has_new_schema_class = row_root_schema_class(payload, start, candidate_end)
+                .is_some_and(|schema_class| seen_schema_classes.insert((id, schema_class)));
+            (first_for_id || has_new_schema_class).then_some((start, id))
+        })
+        .collect();
+    retained_starts
         .iter()
         .enumerate()
         .map(|(index, &(start, id))| {
-            let end = starts
+            let end = retained_starts
                 .get(index + 1)
                 .map_or(payload.len(), |&(next, _)| next);
             (start, end, id)
         })
         .collect()
+}
+
+/// Read the fixed-prefix root schema class from one candidate row span.
+fn row_root_schema_class(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+    let (_, body_start) = psb::reference_id(payload, start).ok()?;
+    let body = payload.get(body_start..end)?;
+    body[..body.len().min(16)]
+        .windows(2)
+        .position(|window| window == [0xe3, 0xf6])
+        .and_then(|relative| {
+            let value_offset = body_start + relative + 2;
+            let (value, after) = psb::compact_int(payload, value_offset);
+            (after > value_offset && payload.get(after) == Some(&0xe1)).then_some(value)
+        })
 }
 
 /// Decode positional `AllFeatur` rows whose identifiers exist in a decoded
@@ -336,14 +363,7 @@ pub fn rows(payload: &[u8], feature_ids: &BTreeSet<u32>) -> Vec<FeatureRow> {
             let (_, body_start) = psb::reference_id(payload, start).ok()?;
             let body = payload.get(body_start..end)?;
             let header = payload.get(body_start..body_start + 2)?.try_into().ok()?;
-            let root_schema_class = body[..body.len().min(16)]
-                .windows(2)
-                .position(|window| window == [0xe3, 0xf6])
-                .and_then(|relative| {
-                    let value_offset = body_start + relative + 2;
-                    let (value, after) = psb::compact_int(payload, value_offset);
-                    (after > value_offset && payload.get(after) == Some(&0xe1)).then_some(value)
-                });
+            let root_schema_class = row_root_schema_class(payload, start, end);
             Some(FeatureRow {
                 feature_id,
                 header,
