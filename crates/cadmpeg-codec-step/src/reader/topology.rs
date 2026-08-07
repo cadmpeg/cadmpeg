@@ -1418,11 +1418,12 @@ mod tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
     use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
-    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
     use cadmpeg_ir::index::ModelIndex;
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::Vertex;
+    use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
     use cadmpeg_ir::units::Units;
+    use std::collections::BTreeSet;
 
     fn surface_draft(id: &str) -> ModelDraft {
         let mut draft = ModelDraft::new();
@@ -1515,6 +1516,48 @@ mod tests {
         assert_eq!(fit.end_parameter, 1.0);
         assert!(fit.score <= f64::EPSILON);
     }
+
+    #[test]
+    fn shared_surface_carrier_is_staged_once() {
+        let surface = Surface {
+            id: SurfaceId("step:data:surface#shared".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let body_id = BodyId("step:data:body#shared-surface".into());
+        let region_id = RegionId("step:data:region#shared-surface".into());
+        let built = super::staged_topology(
+            BTreeSet::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![surface.clone(), surface],
+            Vec::new(),
+            Region {
+                id: region_id.clone(),
+                body: body_id.clone(),
+                shells: Vec::new(),
+            },
+            Body {
+                id: body_id,
+                kind: BodyKind::Sheet,
+                regions: vec![region_id],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        )
+        .expect("duplicate references to one source surface must stage");
+
+        assert_eq!(built.draft.model().surfaces.len(), 1);
+    }
 }
 
 #[allow(
@@ -1549,8 +1592,11 @@ fn staged_topology(
     for face in faces {
         draft.insert(face).ok()?;
     }
+    let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
-        draft.insert(surface).ok()?;
+        if surface_ids.insert(surface.id.0.clone()) {
+            draft.insert(surface).ok()?;
+        }
     }
     for shell in shells {
         draft.insert(shell).ok()?;
@@ -1672,6 +1718,7 @@ fn build(
         let body = BodyId(format!("step:data:body#{id}"));
         let region = RegionId(format!("step:data:region#{id}"));
         let mut failure = None;
+        let scope_shell_carriers = shell_steps.len() > 1 || scope_root;
         let built = build_one(
             id,
             root,
@@ -1686,8 +1733,8 @@ fn build(
             &shell_steps,
             body,
             &region,
-            shell_steps.len() > 1 || scope_root,
-            scope_root,
+            scope_shell_carriers,
+            scope_shell_carriers,
             scope_root,
             warnings,
             losses,

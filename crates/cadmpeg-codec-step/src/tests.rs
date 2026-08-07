@@ -1677,6 +1677,34 @@ fn brep_with_voids_scopes_edges_and_vertices_per_shell_after_shared_shell_use() 
 }
 
 #[test]
+fn first_brep_with_voids_scopes_all_shell_carriers() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=BREP_WITH_VOIDS('',#30,(#34));\n#34=CLOSED_SHELL('',(#29));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode first BREP with voids");
+
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "step:data:body#31"));
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("root #31 rejected")));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn oriented_shell_reads_the_derived_cfs_faces_slot() {
     let decoded = StepCodec::default()
         .decode(
