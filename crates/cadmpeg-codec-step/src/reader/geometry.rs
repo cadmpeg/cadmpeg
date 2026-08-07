@@ -1497,7 +1497,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
                     | "REPRESENTATION_CONTEXT"
             )
-        }) || record.simple_name() == Some("SHAPE_REPRESENTATION")
+        }) || entity_type(record, &["SHAPE_REPRESENTATION"]).is_some()
         {
             typed.insert(id);
         }

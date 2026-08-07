@@ -3311,6 +3311,33 @@ fn complex_representation_items_reach_edge_based_wire_models() {
 }
 
 #[test]
+fn complex_shape_representation_is_typed_for_free_representation_items() {
+    let decoded = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#3=CARTESIAN_POINT('free point',(1.,2.,3.));
+#4=(REPRESENTATION('free shape',(#3),#2) SHAPE_REPRESENTATION());",
+    );
+
+    assert_eq!(decoded.ir.model.points.len(), 1);
+    assert_eq!(
+        decoded.ir.model.points[0]
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("free point")
+    );
+    assert!(!decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:shape_representation#4"));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
