@@ -2655,6 +2655,12 @@ empty endpoint domain withholds every dependent point in the component.
 An edge transfers independently when both endpoint vertex orbits are solved;
 face and loop transfer still requires every edge of the complete boundary.
 
+An exact non-periodic NURBS curve produced by a complete tabulated-extrusion
+boundary or shared-generator join supplies an unordered endpoint pair by
+evaluating its intrinsic parameter-domain limits. Those points constrain the
+two endpoint orbits of its topology edge. Periodic NURBS and NURBS carriers
+from other constructions supply no endpoint pair through this rule.
+
 When a native edge has no pcurve candidate on a solved planar face, an exact
 line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane
 projects into the plane chart. For plane origin `O`, unit `u` axis `U`, unit

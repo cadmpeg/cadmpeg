@@ -21710,9 +21710,11 @@ fn transfer_topology_bound_planes(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
 ) -> usize {
     let carriers = placed_carriers(scan, ir);
-    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
+    let solved_vertices =
+        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
     let unique_rows = crate::surface::uniquely_identified_rows(&scan.surfaces.rows);
@@ -23014,6 +23016,7 @@ fn solved_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let vertex_faces =
         crate::topology::vertex_incident_faces(&scan.topology.vertices, &scan.topology.half_edges);
@@ -23065,6 +23068,22 @@ fn solved_topological_vertices(
             }
         }
     }
+    for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
+        let Some(vertices) = edge_vertices.get(&row.id).copied() else {
+            continue;
+        };
+        let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+        if !nurbs_endpoint_witnesses.contains(&id) {
+            continue;
+        }
+        let Some(geometry) = ir.model.curves.iter().find(|curve| curve.id == id) else {
+            continue;
+        };
+        let Some(points) = nonperiodic_nurbs_endpoint_points(&geometry.geometry) else {
+            continue;
+        };
+        constraints.push((vertices, points));
+    }
     let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curves.topology_rows)
         .into_iter()
         .filter_map(|row| {
@@ -23075,15 +23094,16 @@ fn solved_topological_vertices(
                 .iter()
                 .find(|curve| curve.id == id)?
                 .geometry;
-            matches!(
-                geometry,
+            let evaluable = match geometry {
                 CurveGeometry::Line { .. }
-                    | CurveGeometry::Circle { .. }
-                    | CurveGeometry::Ellipse { .. }
-                    | CurveGeometry::Parabola { .. }
-                    | CurveGeometry::Hyperbola { .. }
-            )
-            .then_some((row.id, geometry))
+                | CurveGeometry::Circle { .. }
+                | CurveGeometry::Ellipse { .. }
+                | CurveGeometry::Parabola { .. }
+                | CurveGeometry::Hyperbola { .. } => true,
+                CurveGeometry::Nurbs(nurbs) => valid_positive_nurbs_curve(nurbs).is_some(),
+                _ => false,
+            };
+            evaluable.then_some((row.id, geometry))
         })
         .collect::<BTreeMap<_, _>>();
     let incident_curves = scan
@@ -23225,6 +23245,26 @@ fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
         *nurbs.knots.get(nurbs.control_points.len())?,
     ];
     (range[0] < range[1]).then_some(range)
+}
+
+fn nonperiodic_nurbs_endpoint_points(geometry: &CurveGeometry) -> Option<[[f64; 3]; 2]> {
+    let CurveGeometry::Nurbs(nurbs) = geometry else {
+        return None;
+    };
+    (!nurbs.periodic).then_some(())?;
+    valid_positive_nurbs_curve(nurbs)?;
+    let range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let points = range.map(|parameter| {
+        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = points else {
+        return None;
+    };
+    first
+        .into_iter()
+        .chain(second)
+        .all(f64::is_finite)
+        .then_some([first, second])
 }
 
 fn nonperiodic_nurbs_edge_parameter_range(
@@ -24324,6 +24364,7 @@ fn transfer_native_brep(
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
     analytic_pcurve_carriers: &BTreeSet<CurveId>,
+    nurbs_endpoint_witnesses: &BTreeSet<CurveId>,
 ) -> (usize, usize) {
     let carriers = placed_carriers(scan, ir);
     let planes = carriers
@@ -24346,7 +24387,8 @@ fn transfer_native_brep(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
+    let solved_vertices =
+        solved_topological_vertices(scan, ir, &carriers, nurbs_endpoint_witnesses);
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .curves
@@ -28276,7 +28318,7 @@ fn transfer_carrier_intersection_curves(
 ) -> BTreeSet<CurveId> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
-    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
+    let solved_vertices = solved_topological_vertices(scan, ir, &carriers, &BTreeSet::new());
     let edge_vertices =
         crate::topology::edge_vertex_pairs(&scan.topology.half_edge_vertex_incidence);
     for row in crate::topology::uniquely_identified_rows(&scan.curves.topology_rows) {
@@ -28342,6 +28384,7 @@ fn transfer_carrier_intersection_curves(
 
 struct TransferredNurbsBoundaryCurves {
     ids: BTreeSet<CurveId>,
+    endpoint_witnesses: BTreeSet<CurveId>,
     extrusion_plane_count: usize,
     extrusion_plane_section_generator_count: usize,
     shared_extrusion_generator_count: usize,
@@ -28361,6 +28404,7 @@ fn transfer_nurbs_boundary_curves(
 ) -> TransferredNurbsBoundaryCurves {
     let mut result = TransferredNurbsBoundaryCurves {
         ids: BTreeSet::new(),
+        endpoint_witnesses: BTreeSet::new(),
         extrusion_plane_count: 0,
         extrusion_plane_section_generator_count: 0,
         shared_extrusion_generator_count: 0,
@@ -28456,7 +28500,8 @@ fn transfer_nurbs_boundary_curves(
                 instance_path: Vec::new(),
             }),
         });
-        result.ids.insert(id);
+        result.ids.insert(id.clone());
+        result.endpoint_witnesses.insert(id);
         match kind {
             NurbsBoundaryKind::ExtrusionPlane => result.extrusion_plane_count += 1,
             NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {
@@ -29780,15 +29825,20 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         nurbs_boundary_curves.extrusion_plane_section_generator_count;
     let shared_extrusion_generator_curve_count =
         nurbs_boundary_curves.shared_extrusion_generator_count;
-    derived_intersection_curves.extend(nurbs_boundary_curves.ids);
-    let topology_bound_plane_count =
-        transfer_topology_bound_planes(scan, &mut ir, &mut annotations);
+    derived_intersection_curves.extend(nurbs_boundary_curves.ids.iter().cloned());
+    let topology_bound_plane_count = transfer_topology_bound_planes(
+        scan,
+        &mut ir,
+        &mut annotations,
+        &nurbs_boundary_curves.endpoint_witnesses,
+    );
     let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,
         &derived_intersection_curves,
         &analytic_pcurve_carriers,
+        &nurbs_boundary_curves.endpoint_witnesses,
     );
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
