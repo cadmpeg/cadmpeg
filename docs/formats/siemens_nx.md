@@ -1343,10 +1343,12 @@ A wrapped operation-body member is a body operand when its compact index differs
 A `SEW` operation projects as a neutral body-sew feature. Without a unique
 primary-body field or without body operands, the body selection is unresolved.
 With both fields, the primary body is the first participant and the remaining
-participant order is the wrapped-member order. Every participant resolves to
-neutral bodies only when all object identities have surviving segment body
-bindings and their body sets are pairwise disjoint; otherwise the ordered
-native object-index selection is retained
+participant order is the wrapped-member order. A segment-body selection
+resolves only when every participant has a surviving segment body identity. An
+offset-store selection resolves to feature-local bodies only when the primary
+body and every operand address distinct blocks in the same selected store. A
+mixed segment/offset selection, a missing operand identity, or an ambiguous
+namespace retains the complete ordered native object-index selection
 atomically. The operation record does not assign a gap tolerance, so the
 neutral tolerance remains absent.
 
@@ -1358,9 +1360,9 @@ surviving segment body bindings only when their participant body sets are
 pairwise disjoint. When the operation selects one offset store, the primary
 body retains its exact local data-block identity. Every tool also retains its
 exact local data-block identity when the target and ordered tool indices are
-distinct. Other unresolved selections retain their native object-index
-identities or feature-local body identities. The body clauses do not assign
-which side is retained, so the neutral retained side is unresolved.
+distinct. Mixed or ambiguous segment/offset namespaces retain both complete
+native selections atomically. The body clauses do not assign which side is
+retained, so the neutral retained side is unresolved.
 
 A `DELETE` operation with a primary-body field projects as a neutral
 delete-selected-bodies feature. The field identifies the selected body, not an
