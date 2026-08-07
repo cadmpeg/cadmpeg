@@ -461,21 +461,21 @@ pub(super) fn decode(
         "ADVANCED_BREP_SHAPE_REPRESENTATION",
         "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
     ]) {
-        if !matches!(
-            record.simple_name(),
-            Some(
-                "SHAPE_REPRESENTATION"
-                    | "ADVANCED_BREP_SHAPE_REPRESENTATION"
-                    | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
-            )
-        ) {
+        let Some(representation_type) = most_specific(
+            record,
+            &[
+                "ADVANCED_BREP_SHAPE_REPRESENTATION",
+                "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION",
+                "SHAPE_REPRESENTATION",
+            ],
+        ) else {
             continue;
-        }
+        };
         let omitted = geometric_set_omissions(record, exchange, carrier_index);
         if !omitted.is_empty() {
             result.warnings.push(format!(
                 "{} #{id} omitted unsupported or unresolved member(s): {}",
-                record.simple_name().unwrap_or("representation"),
+                representation_type,
                 omitted
                     .iter()
                     .map(|member| format!("#{member}"))
@@ -564,7 +564,7 @@ fn geometric_set_omissions(
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
 ) -> Vec<u64> {
-    let Some(set_ids) = representation.parameter(1).and_then(refs) else {
+    let Some(set_ids) = representation_items(representation) else {
         return Vec::new();
     };
     set_ids
@@ -981,7 +981,7 @@ fn mark_standalone_geometric_set(
     carrier_index: &CarrierIndex,
     typed: &mut BTreeSet<u64>,
 ) -> bool {
-    let Some(set_ids) = representation.parameter(1).and_then(refs) else {
+    let Some(set_ids) = representation_items(representation) else {
         return false;
     };
     let mut decoded = false;
@@ -989,13 +989,10 @@ fn mark_standalone_geometric_set(
         let Some(set) = exchange.records.get(&set_id) else {
             continue;
         };
-        if !matches!(
-            set.simple_name(),
-            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
-        ) {
+        let Some(set_type) = most_specific(set, &["GEOMETRIC_SET", "GEOMETRIC_CURVE_SET"]) else {
             continue;
-        }
-        let Some(items) = set.parameter(1).and_then(refs) else {
+        };
+        let Some(items) = named_refs(set, set_type, 1) else {
             continue;
         };
         let has_decoded_member = items.into_iter().any(|item| {
@@ -1021,7 +1018,7 @@ fn build_geometric_set(
     carrier_index: &CarrierIndex,
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
-    let set_ids = refs(representation.parameter(1)?)?;
+    let set_ids = representation_items(representation)?;
     let mut typed = BTreeSet::from([id]);
     let mut surfaces = Vec::new();
     for set_id in set_ids {

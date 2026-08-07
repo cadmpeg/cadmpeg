@@ -3444,6 +3444,30 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
 }
 
 #[test]
+fn complex_geometric_set_representation_uses_its_named_items() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = String::from_utf8(include_bytes!(
+        "../tests/fixtures/ap242_geometric_set.p21"
+    )
+    .to_vec())
+    .expect("fixture is UTF-8")
+    .replace(
+        "#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12),#2);",
+        "#13=(GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION() REPRESENTATION('',(#12),#2) SHAPE_REPRESENTATION());",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric surface set");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn direct_boundary_curve_builds_a_curve_bounded_surface() {
     for boundary_type in ["BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"] {
         let source = format!(
