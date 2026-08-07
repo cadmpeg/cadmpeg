@@ -653,6 +653,23 @@ pub(crate) fn try_decode_zero_entity(
                     let Some(pcurve) = support.pcurve.clone() else {
                         continue;
                     };
+                    let Some(surface_geometry) = ir
+                        .model
+                        .surfaces
+                        .iter()
+                        .find(|candidate| candidate.id == surface)
+                        .map(|candidate| &candidate.geometry)
+                    else {
+                        continue;
+                    };
+                    let Some(pcurve) =
+                        crate::families::zero_entity::records::zero_entity_neutral_pcurve(
+                            surface_geometry,
+                            &pcurve,
+                        )
+                    else {
+                        continue;
+                    };
                     let PcurveGeometry::Nurbs {
                         degree,
                         knots,

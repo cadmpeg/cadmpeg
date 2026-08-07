@@ -1011,6 +1011,54 @@ fn zero_entity_support_pcurve(data: &[u8], record: ZeroEntityRecord) -> Option<P
     })
 }
 
+/// Convert a zero-entity support pcurve from the carrier's native chart into
+/// the neutral IR chart.  The support records store cylindrical and toroidal
+/// coordinates as arc lengths and conical latitude as slant length; IR
+/// analytic surfaces use angles and axial distance respectively.
+pub(crate) fn zero_entity_neutral_pcurve(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+) -> Option<PcurveGeometry> {
+    let (u_scale, v_scale) = match surface {
+        SurfaceGeometry::Cylinder { radius, .. } => (radius.recip(), 1.0),
+        SurfaceGeometry::Cone { half_angle, .. } => (1.0, half_angle.cos()),
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => (major_radius.recip(), minor_radius.recip()),
+        SurfaceGeometry::Plane { .. } | SurfaceGeometry::Nurbs(_) => (1.0, 1.0),
+        _ => return None,
+    };
+    if !u_scale.is_finite() || !v_scale.is_finite() || u_scale == 0.0 || v_scale == 0.0 {
+        return None;
+    }
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = pcurve
+    else {
+        return None;
+    };
+    let control_points = control_points
+        .iter()
+        .map(|point| {
+            let point = Point2::new(point.u * u_scale, point.v * v_scale);
+            ([point.u, point.v].into_iter().all(f64::is_finite)).then_some(point)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(PcurveGeometry::Nurbs {
+        degree: *degree,
+        knots: knots.clone(),
+        control_points,
+        weights: weights.clone(),
+        periodic: *periodic,
+    })
+}
+
 fn zero_entity_model_curve(
     surface: &SurfaceGeometry,
     pcurve: &PcurveGeometry,
@@ -2096,6 +2144,65 @@ mod tests {
         assert!(torus_point.x.abs() < 1e-12);
         assert!((torus_point.y - 4.0).abs() < 1e-12);
         assert_eq!(torus_point.z, 2.0);
+    }
+
+    #[test]
+    fn support_pcurve_conversion_uses_the_neutral_surface_chart() {
+        use cadmpeg_ir::math::Vector3;
+
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(2.0, 3.0), Point2::new(4.0, 5.0)],
+            weights: None,
+            periodic: false,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        assert_eq!(
+            zero_entity_neutral_pcurve(&cylinder, &pcurve),
+            Some(PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(1.0, 3.0), Point2::new(2.0, 5.0)],
+                weights: None,
+                periodic: false,
+            })
+        );
+
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: 0.25,
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
+            zero_entity_neutral_pcurve(&cone, &pcurve)
+        else {
+            panic!("neutral cone pcurve")
+        };
+        assert_eq!(control_points[0].u, 2.0);
+        assert_eq!(control_points[0].v, 3.0 * 0.25_f64.cos());
+
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        };
+        let Some(PcurveGeometry::Nurbs { control_points, .. }) =
+            zero_entity_neutral_pcurve(&torus, &pcurve)
+        else {
+            panic!("neutral torus pcurve")
+        };
+        assert_eq!(control_points[1], Point2::new(1.0, 2.5));
     }
 
     #[test]
