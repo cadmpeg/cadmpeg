@@ -5525,6 +5525,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         primary_identity_offset: 0,
         secondary_identity: Some(104),
         secondary_identity_offset: Some(0),
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -6024,6 +6026,8 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         primary_identity_offset: 31_200,
         secondary_identity: Some(164),
         secondary_identity_offset: Some(31_208),
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -7986,6 +7990,8 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         primary_identity_offset: 0,
         secondary_identity: None,
         secondary_identity_offset: None,
+        curve_secondary_identity: None,
+        curve_secondary_identity_offset: None,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -9924,6 +9930,25 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     assert_eq!(compact_operand.identity_record_offset, identity_at as u64);
     assert_eq!(compact_operand.next_record_index, 109);
     assert_eq!(compact_operand.next_byte_offset, compact_next_at as u64);
+
+    let mut curve_identity = bytes[..identity_at].to_vec();
+    header(&mut curve_identity, *b"429", 103);
+    curve_identity.extend_from_slice(&[0; 10]);
+    curve_identity.extend_from_slice(&77u64.to_le_bytes());
+    curve_identity.extend_from_slice(&1331u64.to_le_bytes());
+    curve_identity.extend_from_slice(&183u64.to_le_bytes());
+    let curve_next_at = curve_identity.len();
+    header(&mut curve_identity, *b"311", 104);
+    let curve_operand = parse_entity_selection_operand(&curve_identity, &group, 0, &record)
+        .expect("expanded Sketch-curve entity-selection frame");
+    assert_eq!(curve_operand.primary_identity, 1331);
+    assert_eq!(curve_operand.secondary_identity, Some(183));
+    assert_eq!(curve_operand.curve_secondary_identity, Some(77));
+    assert_eq!(
+        curve_operand.curve_secondary_identity_offset,
+        Some(identity_at as u64 + 21)
+    );
+    assert_eq!(curve_operand.next_byte_offset, curve_next_at as u64);
 }
 
 #[test]

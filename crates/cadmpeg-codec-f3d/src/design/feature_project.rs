@@ -7,6 +7,7 @@
 
 use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
+use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
@@ -4118,7 +4119,7 @@ fn resolve_sketch_axis_selection(
         .filter(|curve| {
             native_stream(&curve.id) == Some(stream)
                 && curve.owner_reference == Some(owner_reference)
-                && Some(curve.primary_id) == selection.secondary_identity
+                && entity_selection_matches_curve(selection, curve)
         })
         .collect::<Vec<_>>();
     let [curve] = curves.as_slice() else {

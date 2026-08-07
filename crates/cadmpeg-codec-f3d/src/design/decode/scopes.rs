@@ -4757,6 +4757,7 @@ fn exact_coil_placement(
         identity_record_index: selection.identity_record_index,
         primary_identity: selection.primary_identity,
         secondary_identity: selection.secondary_identity,
+        curve_secondary_identity: selection.curve_secondary_identity,
     })
     .or_else(|| {
         exact_coil_face_selection(
@@ -6314,6 +6315,7 @@ mod tests {
                     identity_record_index: 103,
                     primary_identity: 1331,
                     secondary_identity: Some(183),
+                    curve_secondary_identity: None,
                 }
             );
             assert_eq!(

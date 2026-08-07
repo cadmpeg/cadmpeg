@@ -830,6 +830,9 @@ pub enum DesignCoilSelection {
         /// Second persistent identity value in the expanded form.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         secondary_identity: Option<u64>,
+        /// Curve secondary identity in the expanded curve-selection form.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        curve_secondary_identity: Option<u64>,
     },
     /// Face construction recipe carried by a placement selection frame.
     FaceRecipe {
@@ -3068,16 +3071,24 @@ pub struct DesignEntitySelectionOperand {
     pub identity_record_index: u32,
     /// Byte offset of the nested identity record.
     pub identity_record_offset: u64,
-    /// First u64 in the nested identity pair.
+    /// Primary entity identity in the nested identity pair; for a Sketch
+    /// curve selection, this is the owning Sketch entity suffix.
     pub primary_identity: u64,
     /// Byte offset of `primary_identity`.
     pub primary_identity_offset: u64,
-    /// Second u64 in the expanded nested identity pair.
+    /// Secondary identity in the nested pair; for a Sketch curve selection,
+    /// this is the curve's primary persistent identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_identity: Option<u64>,
     /// Byte offset of `secondary_identity`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub secondary_identity_offset: Option<u64>,
+    /// Optional secondary identity of the selected Sketch curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_secondary_identity: Option<u64>,
+    /// Byte offset of `curve_secondary_identity`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve_secondary_identity_offset: Option<u64>,
     /// Input-state edge proofs derived from the two serialized identities.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_edge_candidates: Vec<DesignEntitySelectionEdgeCandidate>,

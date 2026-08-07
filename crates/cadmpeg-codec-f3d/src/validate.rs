@@ -3979,6 +3979,17 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 (primary, None, None)
                     if primary == operand.identity_record_offset.saturating_add(21)
             ))
+            && match (
+                operand.curve_secondary_identity,
+                operand.curve_secondary_identity_offset,
+            ) {
+                (None, None) => true,
+                (Some(_), Some(offset)) => {
+                    operand.secondary_identity.is_some()
+                        && offset == operand.identity_record_offset.saturating_add(21)
+                }
+                _ => false,
+            }
             && (operand.secondary_identity.is_none()
                 || operand.next_record_index == operand.record_index.saturating_add(4))
             && operand.next_byte_offset

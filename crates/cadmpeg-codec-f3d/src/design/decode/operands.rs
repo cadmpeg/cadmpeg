@@ -1879,6 +1879,8 @@ pub(crate) fn parse_entity_selection_operand(
         primary_identity_offset: frame.primary_identity_offset,
         secondary_identity: frame.secondary_identity,
         secondary_identity_offset: frame.secondary_identity_offset,
+        curve_secondary_identity: frame.curve_secondary_identity,
+        curve_secondary_identity_offset: frame.curve_secondary_identity_offset,
         historical_edge_candidates: Vec::new(),
         historical_face_candidates: Vec::new(),
         resolved_edge_slot: None,
@@ -1904,6 +1906,8 @@ pub(crate) struct EntitySelectionFrame {
     pub(crate) primary_identity_offset: u64,
     pub(crate) secondary_identity: Option<u64>,
     pub(crate) secondary_identity_offset: Option<u64>,
+    pub(crate) curve_secondary_identity: Option<u64>,
+    pub(crate) curve_secondary_identity_offset: Option<u64>,
     pub(crate) next_record_index: u32,
     pub(crate) next_byte_offset: u64,
 }
@@ -1959,6 +1963,17 @@ pub(crate) fn parse_entity_selection_prefix(
     })
 }
 
+/// Match the selected curve identity carried by a nested entity-selection frame.
+pub(crate) fn entity_selection_matches_curve(
+    operand: &DesignEntitySelectionOperand,
+    curve: &SketchCurveIdentity,
+) -> bool {
+    Some(curve.primary_id) == operand.secondary_identity
+        && operand
+            .curve_secondary_identity
+            .is_none_or(|secondary| curve.secondary_id == secondary)
+}
+
 /// Parse the nested persistent-entity frame without assigning group ownership.
 pub(crate) fn parse_entity_selection_frame(
     bytes: &[u8],
@@ -1990,19 +2005,20 @@ pub(crate) fn parse_entity_selection_frame(
     }
     let (_, after_next_tag) = lp_ascii_filtered(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = u32_at(bytes, after_next_tag)?;
-    let (primary_identity_offset, secondary_identity_offset) =
-        if bytes.get(identity_at + 11..identity_at + 29)? == [0; 18]
+    let (primary_identity_offset, secondary_identity_offset, curve_secondary_identity_offset) =
+        if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
             && identity_at.checked_add(45)? == next_at
             && next_record_index == record_index.checked_add(4)?
         {
             (
                 identity_at.checked_add(29)?,
                 Some(identity_at.checked_add(37)?),
+                Some(identity_at.checked_add(21)?),
             )
         } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
             && identity_at.checked_add(29)? == next_at
         {
-            (identity_at.checked_add(21)?, None)
+            (identity_at.checked_add(21)?, None, None)
         } else {
             return None;
         };
@@ -2020,6 +2036,12 @@ pub(crate) fn parse_entity_selection_frame(
         primary_identity_offset: u64::try_from(primary_identity_offset).ok()?,
         secondary_identity: secondary_identity_offset.and_then(|offset| read_u64(bytes, offset)),
         secondary_identity_offset: secondary_identity_offset
+            .and_then(|offset| u64::try_from(offset).ok()),
+        curve_secondary_identity: curve_secondary_identity_offset
+            .and_then(|offset| read_u64(bytes, offset))
+            .filter(|identity| *identity != 0),
+        curve_secondary_identity_offset: curve_secondary_identity_offset
+            .filter(|offset| read_u64(bytes, *offset).is_some_and(|identity| identity != 0))
             .and_then(|offset| u64::try_from(offset).ok()),
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,

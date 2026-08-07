@@ -1613,6 +1613,8 @@ fn finish_model_decode<'a>(
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_split_face_sketch_selections(
@@ -1625,6 +1627,8 @@ fn finish_model_decode<'a>(
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_loft_sketch_selections(
@@ -2147,6 +2151,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_split_face_sketch_selections(
@@ -2159,6 +2165,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             curve_identities: &native.sketch_curve_identities,
             sketches: &ir.model.sketches,
             sketch_entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_sketch_entities: &ir.model.spatial_sketch_entities,
         },
     );
     crate::design::profile_select::bind_loft_sketch_selections(
