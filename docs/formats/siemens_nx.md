@@ -211,10 +211,13 @@ A body-affecting operation record contains exactly one primary-body field
 `01 02 10 reference_index ff`. The index uses the operation-header encoding and
 retains its exact token and offset. The operation-selected namespace determines
 whether it addresses an offset-store block or an object identity. Operations
-sharing an object-namespace index form one ordered body lineage. An operation
-depends on the preceding operation in its primary-body lineage. A
-Boolean additionally depends on the preceding operation in each tool-body
-lineage, preserving tool order and omitting duplicate dependencies. When the
+sharing an object-namespace index form one ordered body lineage. Operations
+selecting the same exact offset-store block identity form one ordered native
+body lineage within that store. An operation depends on the preceding
+operation in its primary-body lineage. A Boolean additionally depends on the
+preceding operation in each tool-body lineage, preserving tool order and
+omitting duplicate dependencies. A wrapped body operand that resolves to an
+offset-store block participates in that block's tool lineage. When the
 object-namespace primary body has a segment body-image binding, every surviving
 neutral body from that image is an output of the operation. An offset-store
 primary body or unbound object-namespace primary body retains its native

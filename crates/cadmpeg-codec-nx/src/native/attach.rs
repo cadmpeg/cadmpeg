@@ -934,7 +934,7 @@ fn attach_feature_operations(
         .as_ref()
         .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
     {
-        body_writer_history.record_writer(None, &feature.outputs, &feature.id);
+        body_writer_history.record_writer(None, None, &feature.outputs, &feature.id);
     }
     let body_alias_roots =
         crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
@@ -1477,6 +1477,21 @@ fn attach_feature_operations(
                 }
             }
         }
+        for operand in operation_body_operands_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            let Some(data_block) = operand.operand_data_block.as_deref() else {
+                continue;
+            };
+            let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
+                continue;
+            };
+            if !dependencies.contains(writer) {
+                dependencies.push(writer.clone());
+            }
+        }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
             .into_iter()
@@ -1625,6 +1640,12 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .copied()
             .map(canonical_body);
+        let offset_store_primary_body = offset_store_bodies_by_operation
+            .get(label.id.as_str())
+            .and_then(|uses| match uses.as_slice() {
+                [(_, data_block)] => Some(data_block.as_str()),
+                _ => None,
+            });
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -2397,6 +2418,7 @@ fn attach_feature_operations(
             &outputs,
             initial_body_id.as_ref(),
             native_primary_body,
+            offset_store_primary_body,
             &body_writer_history,
         );
         if block_op == BooleanOp::NewBody {
@@ -2421,6 +2443,7 @@ fn attach_feature_operations(
         body_writer_history.extend_primary_dependencies(
             initial_body_id.as_ref(),
             native_primary_body,
+            offset_store_primary_body,
             &outputs,
             &mut dependencies,
         );
@@ -2651,7 +2674,10 @@ fn attach_feature_operations(
             annotations.derived(&id, "source_content");
         }
         let native_output = (!deletes_body).then_some(native_primary_body).flatten();
-        body_writer_history.record_writer(native_output, &outputs, &id);
+        let offset_store_output = (!deletes_body)
+            .then_some(offset_store_primary_body)
+            .flatten();
+        body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -4260,11 +4286,17 @@ fn block_boolean_op(
     outputs: &[BodyId],
     provisional_feature: Option<&FeatureId>,
     native_primary_body: Option<u32>,
+    offset_store_primary_body: Option<&str>,
     history: &BodyWriterHistory,
 ) -> BooleanOp {
     if has_complete_projection
         && matches!(outputs, [_])
-        && !history.has_preceding_writer(provisional_feature, native_primary_body, outputs)
+        && !history.has_preceding_writer(
+            provisional_feature,
+            native_primary_body,
+            offset_store_primary_body,
+            outputs,
+        )
     {
         BooleanOp::NewBody
     } else {
@@ -8071,7 +8103,7 @@ mod tests {
         let body = BodyId("body".into());
         let provisional = FeatureId("initial-bodies".into());
         let mut history = BodyWriterHistory::default();
-        history.record_writer(None, std::slice::from_ref(&body), &provisional);
+        history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
         assert_eq!(
             super::block_boolean_op(
@@ -8079,19 +8111,21 @@ mod tests {
                 std::slice::from_ref(&body),
                 Some(&provisional),
                 None,
+                None,
                 &history,
             ),
             BooleanOp::NewBody
         );
 
         let prior = FeatureId("prior-feature".into());
-        history.record_writer(Some(7), std::slice::from_ref(&body), &prior);
+        history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
         assert_eq!(
             super::block_boolean_op(
                 true,
                 std::slice::from_ref(&body),
                 Some(&provisional),
                 Some(7),
+                None,
                 &history,
             ),
             BooleanOp::Unresolved
@@ -8102,7 +8136,23 @@ mod tests {
                 std::slice::from_ref(&body),
                 Some(&provisional),
                 None,
+                None,
                 &history,
+            ),
+            BooleanOp::Unresolved
+        );
+
+        let offset_prior = FeatureId("offset-prior-feature".into());
+        let mut offset_history = BodyWriterHistory::default();
+        offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
+        assert_eq!(
+            super::block_boolean_op(
+                true,
+                std::slice::from_ref(&body),
+                Some(&provisional),
+                None,
+                Some("store:block#7"),
+                &offset_history,
             ),
             BooleanOp::Unresolved
         );

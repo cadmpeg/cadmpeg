@@ -502,6 +502,22 @@ pub(crate) fn composed_feature_history_prt() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
 }
 
+/// A synthetic history whose two body writers select the same exact
+/// offset-store block. The source record order is newest first, so the
+/// decoder must attach the older operation as the writer dependency of the
+/// newer operation without using the integer block suffix alone.
+pub(crate) fn offset_store_primary_body_lineage_prt() -> Vec<u8> {
+    let input_slots: &'static [u8] = &[1, 0xff, 0xff, 0xff];
+    let primary_body = || vec![0x01, 0x02, 0x10, 0x02, 0xff];
+    let operations = [
+        (input_slots, "BLEND", primary_body()),
+        (input_slots, "EXTRUDE", primary_body()),
+    ];
+    let store_records: [&[u8]; 2] = [b"\0", b"\0"];
+    let payload = composed_feature_history_payload(&operations, &store_records);
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 pub(crate) fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
