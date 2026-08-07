@@ -7,8 +7,8 @@ use super::transforms::{
     select_marker_transforms_by_frame, sketch_entity_loci, MarkerTransform,
 };
 use super::typed_relations::{
-    line_endpoint_markers, relation_link_identifies_owner, relation_owner_markers,
-    sketch_entity_contains_point,
+    line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
+    relation_owner_markers, sketch_entity_contains_point,
 };
 use super::SKETCH_POINT_TOLERANCE;
 use crate::records::{
@@ -107,17 +107,18 @@ pub(super) fn relation_operand_loci(
     let loci = relation
         .links
         .iter()
-        .filter(|link| !relation_link_identifies_owner(relation, link))
+        .filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
         .map(|link| link.entity_ref.as_str())
         .chain(owners.iter().map(|owner| owner.id.as_str()))
         .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
         .collect::<Option<Vec<_>>>()?;
-    Some(loci.into_iter().fold(Vec::new(), |mut unique, locus| {
+    let loci = loci.into_iter().fold(Vec::new(), |mut unique, locus| {
         if !unique.contains(&locus) {
             unique.push(locus);
         }
         unique
-    }))
+    });
+    (!loci.is_empty()).then_some(loci)
 }
 
 pub(super) fn linked_single_entities(

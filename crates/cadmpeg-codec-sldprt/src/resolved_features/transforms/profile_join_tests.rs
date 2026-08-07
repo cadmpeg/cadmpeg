@@ -1845,6 +1845,51 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
 }
 
 #[test]
+fn point_relation_ignores_auxiliary_relation_links() {
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.links = vec![SketchInputLink {
+        local_id: 1,
+        entity_ref: "radius".into(),
+    }];
+    let mut radius = marker("radius", None);
+    radius.kind = SketchInputKind::Relation(SketchRelationKind::Radius);
+    let mut first = marker("first", Some([0.0, 1.0]));
+    first.offset = 1;
+    first.links = vec![SketchInputLink {
+        local_id: 4,
+        entity_ref: relation.id.clone(),
+    }];
+    let mut second = marker("second", Some([1.0, 1.0]));
+    second.offset = 2;
+    second.links = first.links.clone();
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (radius.id.as_str(), &radius),
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+    ]);
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&relation, &markers, &loci),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-point".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+        })
+    );
+}
+
+#[test]
 fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);

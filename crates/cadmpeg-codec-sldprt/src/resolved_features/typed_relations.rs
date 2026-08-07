@@ -995,7 +995,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     let links = marker
         .links
         .iter()
-        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .filter(|link| relation_link_is_geometric_operand(marker, link, markers_by_id))
         .collect::<Vec<_>>();
     let [first_link, second_link] = links.as_slice() else {
         return None;
@@ -1086,6 +1086,22 @@ pub(super) fn relation_link_identifies_owner(
     link.entity_ref == relation.id
         || relation.local_id == Some(u32::from(link.local_id))
         || relation.object_index == Some(u32::from(link.local_id))
+}
+
+pub(super) fn relation_link_is_geometric_operand(
+    relation: &SketchInputEntity,
+    link: &crate::records::SketchInputLink,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+) -> bool {
+    // Relation markers are solver handles; geometric operands come from direct
+    // links or reverse incidence, never from a relation-to-relation chain.
+    !relation_link_identifies_owner(relation, link)
+        && !matches!(
+            markers_by_id
+                .get(link.entity_ref.as_str())
+                .map(|marker| marker.kind),
+            Some(SketchInputKind::Relation(_))
+        )
 }
 
 fn typed_axis_relation_is_inactive(
