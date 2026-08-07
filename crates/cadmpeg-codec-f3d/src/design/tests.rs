@@ -20510,6 +20510,25 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert_eq!(linkage_record_offset, 234);
     assert_eq!(auxiliary_record, 401);
     assert_eq!(auxiliary_record_offset, 253);
+
+    let mut packed_snapshot_bytes = vec![0u8; 485];
+    packed_snapshot_bytes[..54].copy_from_slice(&snapshot_bytes[..54]);
+    packed_snapshot_bytes[54..58].copy_from_slice(&snapshot_bytes[54..58]);
+    packed_snapshot_bytes[58] = 0;
+    packed_snapshot_bytes[59..63].copy_from_slice(&snapshot_bytes[58..62]);
+    packed_snapshot_bytes[63..215].copy_from_slice(&snapshot_bytes[62..214]);
+    packed_snapshot_bytes[214..].copy_from_slice(&snapshot_bytes[214..]);
+    let packed = exact_base_feature_construction(&packed_snapshot_bytes, &snapshot_scope)
+        .expect("packed body-snapshot Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::BodySnapshot {
+        related_guid_offsets,
+        ..
+    } = packed
+    else {
+        panic!("packed body-snapshot Base Feature frame selected the wrong form");
+    };
+    assert_eq!(related_guid_offsets, [67, 143, 275]);
+
     let mut invalid_scope = snapshot_scope;
     invalid_scope.reference_members = vec![302];
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());

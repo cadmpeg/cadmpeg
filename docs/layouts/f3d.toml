@@ -215,12 +215,42 @@ source = "spec"
 anchor = "`u8 1 + u64 body entity suffix + six-byte field`"
 
 [[record]]
+name = "base_feature_body_snapshot_compact_preamble"
+kind = "byte"
+section = "3.1"
+anchor = "the eight-byte sequence `01 00 00 00 01 00 00 00`"
+size = 8
+note = "The compact body-snapshot preamble occupies the eight bytes immediately after the repeated body-entry run."
+
+[[record.field]]
+name = "preamble"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "the eight-byte sequence `01 00 00 00 01 00 00 00`"
+
+[[record]]
+name = "base_feature_body_snapshot_expanded_preamble"
+kind = "byte"
+section = "3.1"
+anchor = "the nine-byte sequence `01 00 00 00 00 01 00 00 00`"
+size = 9
+note = "The expanded body-snapshot preamble occupies the nine bytes immediately after the repeated body-entry run. Its final zero byte is also the first byte of the linkage tail."
+
+[[record.field]]
+name = "preamble"
+offset = 0
+type = "bytes[9]"
+source = "spec"
+anchor = "the nine-byte sequence `01 00 00 00 00 01 00 00 00`"
+
+[[record]]
 name = "base_feature_body_snapshot_linkage_tail"
 kind = "byte"
 section = "3.1"
 anchor = "The linkage tail at `A` stores two zero bytes, `01 01 00 00 00`, a marked first-body suffix"
 size = 57
-note = "Offsets are relative to `A = 184 + 15N`, immediately after the two initial GUIDs. The third GUID starts at offset 57."
+note = "Offsets are relative to the linkage-tail anchor `A = 184 + 15N`. The third GUID starts at offset 57; in the expanded preamble, the second GUID ends at `A + 1` and shares its final zero byte with the tail at `A`."
 
 [[record.field]]
 name = "zero_run_2"

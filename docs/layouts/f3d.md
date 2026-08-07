@@ -84,11 +84,31 @@ This layout repeats once for each body, with the entry base at primary-scope off
 | 1 | 8 | `body_entity_suffix` | `u64` | little | spec | `u8 1 + u64 body entity suffix + six-byte field` |
 | 9 | 6 | `body_entity_field` | `bytes[6]` | little | spec | `u8 1 + u64 body entity suffix + six-byte field` |
 
+## `base_feature_body_snapshot_compact_preamble`
+
+Spec §3.1 · layout: byte offsets · size: 8 B
+
+The compact body-snapshot preamble occupies the eight bytes immediately after the repeated body-entry run.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `preamble` | `bytes[8]` | little | spec | the eight-byte sequence `01 00 00 00 01 00 00 00` |
+
+## `base_feature_body_snapshot_expanded_preamble`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+The expanded body-snapshot preamble occupies the nine bytes immediately after the repeated body-entry run. Its final zero byte is also the first byte of the linkage tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 9 | `preamble` | `bytes[9]` | little | spec | the nine-byte sequence `01 00 00 00 00 01 00 00 00` |
+
 ## `base_feature_body_snapshot_linkage_tail`
 
 Spec §3.1 · layout: byte offsets · size: 57 B
 
-Offsets are relative to `A = 184 + 15N`, immediately after the two initial GUIDs. The third GUID starts at offset 57.
+Offsets are relative to the linkage-tail anchor `A = 184 + 15N`. The third GUID starts at offset 57; in the expanded preamble, the second GUID ends at `A + 1` and shares its final zero byte with the tail at `A`.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

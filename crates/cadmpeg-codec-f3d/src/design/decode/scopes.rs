@@ -2430,17 +2430,29 @@ fn exact_base_feature_body_snapshot(
         body_entity_fields.push(bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?);
         cursor += BODY_ENTRY_SIZE;
     }
-    if u32_at(bytes, cursor)? != 1 || u32_at(bytes, cursor + 4)? != 1 {
+    let preamble = bytes.get(cursor..cursor + 9)?;
+    let packed_guid_preamble = if preamble == [1, 0, 0, 0, 0, 1, 0, 0, 0] {
+        true
+    } else if preamble[..8] == [1, 0, 0, 0, 1, 0, 0, 0] {
+        false
+    } else {
         return None;
-    }
-    cursor += 8;
+    };
+    cursor += if packed_guid_preamble { 9 } else { 8 };
     let parse_guid = |at: usize| {
         let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
         crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + 4))
     };
     let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
     let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
-    let after_guids = after_second_guid;
+    // The nine-byte preamble carries the linkage anchor in the final zero
+    // byte of the second GUID's UTF-16 payload. Keep the full GUID for the
+    // native record, but anchor the fixed tail at that shared byte.
+    let after_guids = if packed_guid_preamble {
+        after_second_guid.checked_sub(1)?
+    } else {
+        after_second_guid
+    };
     if bytes.get(after_guids..after_guids + 7)? != [0, 0, 1, 1, 0, 0, 0]
         || bytes.get(after_guids + 7) != Some(&1)
         || read_u64(bytes, after_guids + 8)? != *body_entity_suffixes.first()?
