@@ -2,8 +2,8 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::CurveGeometry;
-use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
+use cadmpeg_ir::ids::{CurveId, PointId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::topology::Point;
@@ -8058,6 +8058,99 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
         );
         let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn encode_nurbs_declares_actual_planarity_and_closedness() {
+    let cases = [
+        (
+            "planar-open",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            [1, 0, 1, 0],
+        ),
+        (
+            "nonplanar-open",
+            NurbsCurve {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 2.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 1.0),
+                    Point3::new(2.0, 1.0, 0.0),
+                    Point3::new(3.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            [0, 0, 1, 0],
+        ),
+        (
+            "closed-planar",
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            [1, 1, 1, 0],
+        ),
+    ];
+    for (name, nurbs, expected) in cases {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("curve#{name}")),
+            geometry: CurveGeometry::Nurbs(nurbs),
+            source_object: None,
+        });
+        let plan = IgesCodec
+            .plan(EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let mut written = Vec::new();
+        plan.write_to(&mut written)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let entity = decoded.ir.native.namespace("iges").unwrap().arenas["entities"]
+            .iter()
+            .find(|record| {
+                record.field("entity_type").and_then(|value| value.as_i64()) == Some(126)
+            })
+            .unwrap_or_else(|| panic!("{name}: missing Type 126 entity"));
+        let fields = entity.fields();
+        let parameters = fields["parameters"].as_array().unwrap();
+        for (index, expected_value) in expected.into_iter().enumerate() {
+            assert_eq!(
+                parameters[index + 3]["value"]["value"].as_i64(),
+                Some(i64::from(expected_value)),
+                "{name}: Type 126 property {}",
+                index + 1
+            );
+        }
+        assert!(
+            decoded.report.losses.is_empty(),
+            "{name}: {:?}",
+            decoded.report.losses
+        );
     }
 }
 

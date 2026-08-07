@@ -806,12 +806,14 @@ fn encode_nurbs(
         None => vec![1.0; control_count],
     };
     let polynomial = nurbs.weights.is_none();
+    let planar = nurbs_control_polygon_is_planar(&nurbs.control_points);
+    let closed = nurbs_is_closed(nurbs, &weights, domain);
     let k = control_count - 1;
     let mut parameters = format!(
         "126,{k},{},{},{},{},{}",
         nurbs.degree,
-        1,
-        0,
+        i32::from(planar),
+        i32::from(closed),
         i32::from(polynomial),
         i32::from(nurbs.periodic)
     );
@@ -841,6 +843,91 @@ fn encode_nurbs(
         parameters: parameters.into_bytes(),
         transform: None,
     })
+}
+
+fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
+    let Some(origin) = points.first().copied() else {
+        return true;
+    };
+    let distances = points
+        .iter()
+        .map(|point| point.distance(origin))
+        .collect::<Vec<_>>();
+    if distances.iter().any(|distance| !distance.is_finite()) {
+        return false;
+    }
+    let scale = distances.into_iter().fold(1.0, f64::max);
+    let tolerance = 1.0e-10 * scale;
+    let mut first_direction = None;
+    for point in points.iter().skip(1) {
+        let direction = point.vector_from(origin);
+        let length = direction.norm();
+        if !length.is_finite() {
+            return false;
+        }
+        if length > tolerance {
+            first_direction = Some(direction);
+            break;
+        }
+    }
+    let Some(first_direction) = first_direction else {
+        return true;
+    };
+    let normal_threshold = 1.0e-12 * scale * first_direction.norm();
+    let mut normal = None;
+    for point in points.iter().skip(1) {
+        let candidate = first_direction.cross(point.vector_from(origin));
+        let length = candidate.norm();
+        if !length.is_finite() {
+            return false;
+        }
+        if length > normal_threshold {
+            normal = Some(candidate);
+            break;
+        }
+    }
+    let Some(normal) = normal else {
+        return true;
+    };
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= f64::EPSILON {
+        return false;
+    }
+    let unit_normal = normal.scale(1.0 / normal_length);
+    points
+        .iter()
+        .all(|point| unit_normal.dot(point.vector_from(origin)).abs() <= tolerance)
+}
+
+fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {
+    if nurbs.periodic {
+        return true;
+    }
+    let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
+        nurbs.degree,
+        &nurbs.knots,
+        &nurbs.control_points,
+        Some(weights),
+        domain[0],
+    ) else {
+        return false;
+    };
+    let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
+        nurbs.degree,
+        &nurbs.knots,
+        &nurbs.control_points,
+        Some(weights),
+        domain[1],
+    ) else {
+        return false;
+    };
+    let scale = nurbs
+        .control_points
+        .iter()
+        .map(|point| point.distance(start))
+        .filter(|distance| distance.is_finite())
+        .fold(1.0, f64::max);
+    start.distance(end) <= 1.0e-10 * scale
 }
 
 fn flatten_curve(geometry: &CurveGeometry) -> Result<CurveGeometry, CodecError> {
