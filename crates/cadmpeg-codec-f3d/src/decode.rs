@@ -3499,6 +3499,7 @@ fn extend_related_design_records(
         &mut native.design_body_recipe_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
+        &native.design_parameter_scopes,
     );
     crate::history::bind_body_recipe_operand_history_candidates(
         &mut native.design_body_recipe_operands,

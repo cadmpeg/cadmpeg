@@ -2364,6 +2364,7 @@ pub fn bind_body_recipe_operand_candidates(
     operands: &mut [DesignBodyRecipeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
+    scopes: &[DesignParameterScope],
 ) {
     use cadmpeg_ir::attributes::AttributeTarget;
 
@@ -2375,6 +2376,20 @@ pub fn bind_body_recipe_operand_candidates(
             .or_insert(Some(recipe));
     }
     for operand in operands {
+        // The recipe selector is a persistent-tag selector for Combine's
+        // form-three clauses. In the class-365 body-member grammar it names
+        // the enclosing N+4 record instead, so each clause joins by its own
+        // Design reference and the history pass performs the body proof.
+        let form_three_uses_recipe_selector = {
+            let mut matching_scopes = scopes.iter().filter(|scope| {
+                scope.record_index == operand.scope_record_index
+                    && native_stream(&scope.id) == native_stream(&operand.id)
+            });
+            match (matching_scopes.next(), matching_scopes.next()) {
+                (Some(scope), None) => scope.combine_operation.is_some(),
+                _ => true,
+            }
+        };
         let tag_selector = recipes_by_id
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| *recipe)
@@ -2390,7 +2405,9 @@ pub fn bind_body_recipe_operand_candidates(
                 .filter(|tag| {
                     crate::ids::same_native_occurrence(&tag.id, &operand.id)
                         && tag.design_references.contains(&design_reference)
-                        && (reference.form != 3 || tag_selector == Some(tag.selector))
+                        && (reference.form != 3
+                            || !form_three_uses_recipe_selector
+                            || tag_selector == Some(tag.selector))
                 })
                 .filter_map(|tag| match &tag.target {
                     AttributeTarget::Face(face) => Some(face.clone()),

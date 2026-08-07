@@ -10031,12 +10031,14 @@ fn body_recipe_operand_decodes_counted_reference_table() {
         design_id: Some("2265".into()),
         design_id_offset: None,
         design_selector: Some(crate::records::ConstructionRecipeSelector {
-            value: 1,
+            value: 9,
             byte_offset: 0,
         }),
         recipe_index: 0,
         record_index: 0,
     };
+    let scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "BoundaryFill", 80);
 
     let mut operand = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand");
@@ -10085,9 +10087,58 @@ fn body_recipe_operand_decodes_counted_reference_table() {
                 ordinal: 0,
             },
         ],
+        std::slice::from_ref(&scope),
     );
     assert_eq!(
         operand.references[0].candidate_faces,
+        [
+            FaceId("other-selector".into()),
+            FaceId("same-stream".into())
+        ]
+    );
+
+    let mut combine_scope =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "Combine", 80);
+    combine_scope.combine_operation = Some(crate::records::DesignCombineOperation {
+        operation: crate::records::DesignExtrudeOperation::Join,
+        operation_offset: 0,
+        keep_tools: false,
+        keep_tools_offset: 0,
+        body_selection_record_indexes: Vec::new(),
+    });
+    let combine_recipe = ConstructionRecipe {
+        design_selector: Some(crate::records::ConstructionRecipeSelector {
+            value: 1,
+            byte_offset: 0,
+        }),
+        ..recipe.clone()
+    };
+    let mut combine_operand = operand.clone();
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        std::slice::from_mut(&mut combine_operand),
+        std::slice::from_ref(&combine_recipe),
+        &[
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("same-stream".into())),
+                selector: 1,
+                token: String::new(),
+                design_references: vec![2265],
+                ordinal: 0,
+            },
+            PersistentSubentityTag {
+                id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#2".into(),
+                target: AttributeTarget::Face(FaceId("other-selector".into())),
+                selector: 2,
+                token: String::new(),
+                design_references: vec![2265, 2266],
+                ordinal: 0,
+            },
+        ],
+        std::slice::from_ref(&combine_scope),
+    );
+    assert_eq!(
+        combine_operand.references[0].candidate_faces,
         [FaceId("same-stream".into())]
     );
 

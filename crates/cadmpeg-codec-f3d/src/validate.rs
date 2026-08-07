@@ -3495,6 +3495,7 @@ fn validate_body_recipe_operands<'a>(
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
+        &native.design_parameter_scopes,
     );
     history::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
