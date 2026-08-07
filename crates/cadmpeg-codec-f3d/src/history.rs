@@ -1396,8 +1396,10 @@ pub(crate) fn bind_feature_face_selections(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
+        let Some(state_id) = scope.history_state_id else {
+            continue;
+        };
+        let Some(previous_state_id) = effective_scope_previous_history_state_id(scope, histories)
         else {
             continue;
         };
@@ -6405,7 +6407,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn split_face_targets_bind_from_a_unique_preceding_face() {
+    fn split_face_targets_bind_from_a_transition_predecessor() {
         use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
         use crate::records::{
             ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6421,7 +6423,6 @@ mod tests {
         let face_id = FaceId("f3d:brep:entity#7".into());
         let mut scope = DesignParameterScope::empty(&scope_id, "SplitFace", 42);
         scope.history_state_id = Some(2);
-        scope.previous_history_state_id = Some(1);
 
         let group = DesignConstructionOperandGroup {
             id: group_id.clone(),
