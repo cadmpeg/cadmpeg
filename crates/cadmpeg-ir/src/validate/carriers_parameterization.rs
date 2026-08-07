@@ -474,7 +474,10 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
-            ProceduralSurfaceDefinition::Subset { support, .. }
+            ProceduralSurfaceDefinition::Replica {
+                source: support, ..
+            }
+            | ProceduralSurfaceDefinition::Subset { support, .. }
             | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
                 surfaces.insert(&support.0);
             }
@@ -682,7 +685,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralCurveDefinition::VectorOffset { source, .. } => {
                 curves.insert(&source.0);
             }
-            ProceduralCurveDefinition::Subset { source, .. } => {
+            ProceduralCurveDefinition::Replica { source, .. }
+            | ProceduralCurveDefinition::Subset { source, .. } => {
                 curves.insert(&source.0);
             }
             ProceduralCurveDefinition::BlendSpine { blend_surface } => {

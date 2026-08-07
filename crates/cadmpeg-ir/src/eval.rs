@@ -13,8 +13,8 @@
 //! parameterization is established by model entities.
 
 use crate::geometry::{
-    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
-    SurfaceGeometry, SurfaceParameterAxis,
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::sketches::SpatialSketchGeometry;
@@ -1391,39 +1391,91 @@ pub fn model_curve_point_by_id(
     curve_id: &crate::ids::CurveId,
     parameter: f64,
 ) -> Option<Point3> {
+    model_curve_point_by_id_inner(index, curve_id, parameter, 0)
+}
+
+fn model_curve_point_by_id_inner(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+    depth: usize,
+) -> Option<Point3> {
+    if depth > 256 {
+        return None;
+    }
     let curve = index.curves(&curve_id.0)?;
-    let CurveGeometry::Procedural { construction } = &curve.geometry else {
+    let Some(procedural) = index
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.curve == *curve_id)
+    else {
         return curve_point(&curve.geometry, parameter);
     };
-    let procedural = index.procedural_curves(&construction.0)?;
     if procedural.curve != *curve_id {
         return None;
     }
-    let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        supports,
-        tolerance,
-        parameterization: Some(parameterization),
-        ..
-    } = &procedural.definition
-    else {
-        return None;
-    };
-    let parameter_range = parameterization.parameter_range;
-    if !parameter.is_finite() || parameter < parameter_range[0] || parameter > parameter_range[1] {
-        return None;
+    match &procedural.definition {
+        ProceduralCurveDefinition::Replica { source, transform } => {
+            model_curve_point_by_id_inner(index, source, parameter, depth + 1)
+                .map(|point| affine_point(*transform, point))
+        }
+        ProceduralCurveDefinition::Subset {
+            source,
+            parameter_range: [start, end],
+            sense,
+        } => {
+            let span = (end - start).abs();
+            if !parameter.is_finite()
+                || !span.is_finite()
+                || span == 0.0
+                || parameter < 0.0
+                || parameter > span
+            {
+                return None;
+            }
+            let source_parameter = if *sense {
+                start + parameter
+            } else {
+                end - parameter
+            };
+            model_curve_point_by_id_inner(index, source, source_parameter, depth + 1)
+        }
+        ProceduralCurveDefinition::TolerantIntersection {
+            supports,
+            tolerance,
+            parameterization: Some(parameterization),
+            ..
+        } => {
+            let parameter_range = parameterization.parameter_range;
+            if !parameter.is_finite()
+                || parameter < parameter_range[0]
+                || parameter > parameter_range[1]
+            {
+                return None;
+            }
+            let points = std::array::from_fn(|side| {
+                let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
+                model_surface_point_by_id(index, &supports[side], uv.u, uv.v)
+            });
+            let [Some(first), Some(second)] = points else {
+                return None;
+            };
+            let separation = ((first.x - second.x).powi(2)
+                + (first.y - second.y).powi(2)
+                + (first.z - second.z).powi(2))
+            .sqrt();
+            (separation.is_finite() && separation <= *tolerance).then_some(first)
+        }
+        _ => {
+            if matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
+                None
+            } else {
+                curve_point(&curve.geometry, parameter)
+            }
+        }
     }
-    let points = std::array::from_fn(|side| {
-        let uv = pcurve_uv(&parameterization.pcurves[side], parameter)?;
-        model_surface_point_by_id(index, &supports[side], uv.u, uv.v)
-    });
-    let [Some(first), Some(second)] = points else {
-        return None;
-    };
-    let separation = ((first.x - second.x).powi(2)
-        + (first.y - second.y).powi(2)
-        + (first.z - second.z).powi(2))
-    .sqrt();
-    (separation.is_finite() && separation <= *tolerance).then_some(first)
 }
 
 /// Invert a model curve near a caller-selected branch parameter.
@@ -1439,10 +1491,94 @@ pub fn model_curve_parameter_near_point(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
+    model_curve_parameter_near_point_with_tolerance(
+        ir,
+        curve_id,
+        point,
+        seed,
+        ir.tolerances.linear,
+        0,
+    )
+}
+
+fn model_curve_parameter_near_point_with_tolerance(
+    ir: &CadIr,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+    tolerance: f64,
+    depth: usize,
+) -> Option<f64> {
+    if depth > 256 {
+        return None;
+    }
     let index = crate::index::ModelIndex::new(ir);
     let curve = index.curves(&curve_id.0)?;
+    if let Some(procedural) = index
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.curve == *curve_id)
+    {
+        match &procedural.definition {
+            ProceduralCurveDefinition::Replica { source, transform } => {
+                let (basis_point, tolerance_scale) = inverse_affine_point(*transform, point)?;
+                let basis_tolerance = tolerance * tolerance_scale;
+                if !basis_tolerance.is_finite() {
+                    return None;
+                }
+                return model_curve_parameter_near_point_with_tolerance(
+                    ir,
+                    source,
+                    basis_point,
+                    seed,
+                    basis_tolerance,
+                    depth + 1,
+                );
+            }
+            ProceduralCurveDefinition::Subset {
+                source,
+                parameter_range: [start, end],
+                sense,
+            } => {
+                let span = (end - start).abs();
+                if !seed.is_finite()
+                    || !tolerance.is_finite()
+                    || tolerance < 0.0
+                    || !span.is_finite()
+                    || span == 0.0
+                    || seed < 0.0
+                    || seed > span
+                {
+                    return None;
+                }
+                let source_seed = if *sense { start + seed } else { end - seed };
+                let source_parameter = model_curve_parameter_near_point_with_tolerance(
+                    ir,
+                    source,
+                    point,
+                    source_seed,
+                    tolerance,
+                    depth + 1,
+                )?;
+                let parameter = if *sense {
+                    source_parameter - start
+                } else {
+                    end - source_parameter
+                };
+                return (parameter.is_finite()
+                    && parameter >= 0.0
+                    && parameter <= span
+                    && model_curve_point_by_id(&index, curve_id, parameter)
+                        .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
+                .then_some(parameter);
+            }
+            _ => {}
+        }
+    }
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
-        return curve_parameter_near_point(&curve.geometry, point, seed, ir.tolerances.linear);
+        return curve_parameter_near_point(&curve.geometry, point, seed, tolerance);
     }
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
         unreachable!("direct carriers return before procedural inversion");
@@ -2181,6 +2317,24 @@ pub fn model_surface_point_by_id(
             .iter()
             .find(|procedural| procedural.surface == *surface_id);
         let result = match procedural.map(|procedural| &procedural.definition) {
+            Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
+                let mut evaluation = evaluate(index, source, u, v, visiting)?;
+                let partials = model_surface_partials_by_id(index, source, u, v)?;
+                let du = affine_vector(*transform, partials.du);
+                let dv = affine_vector(*transform, partials.dv);
+                let normal = cross(du, dv);
+                let magnitude = normal.norm();
+                evaluation.point = affine_point(*transform, evaluation.point);
+                evaluation.oriented_normal =
+                    (magnitude.is_finite() && magnitude > 0.0).then(|| {
+                        Vector3::new(
+                            normal.x / magnitude,
+                            normal.y / magnitude,
+                            normal.z / magnitude,
+                        )
+                    });
+                Some(evaluation)
+            }
             Some(ProceduralSurfaceDefinition::Subset {
                 support,
                 parameter_ranges,
@@ -2321,6 +2475,17 @@ fn model_surface_mapping(
         .iter()
         .find(|procedural| procedural.surface == *surface);
     let result = match procedural.map(|procedural| &procedural.definition) {
+        Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
+            let source = model_surface_mapping(index, source, u, v, visiting)?;
+            let base = offset_surface_second_partials(source.base, source.offset_distance)?;
+            Some(SurfaceMapping {
+                base: transform_surface_second_partials(base, *transform),
+                offset_distance: 0.0,
+                u_scale: source.u_scale,
+                v_scale: source.v_scale,
+                orientation: source.orientation * affine_orientation(*transform),
+            })
+        }
         Some(ProceduralSurfaceDefinition::Subset {
             support,
             parameter_ranges,
@@ -2527,6 +2692,32 @@ fn polyline_tangent(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Op
         tangent = Some(candidate);
     }
     tangent
+}
+
+fn transform_surface_second_partials(
+    partials: SurfaceSecondPartials,
+    transform: Transform,
+) -> SurfaceSecondPartials {
+    SurfaceSecondPartials {
+        point: affine_point(transform, partials.point),
+        du: affine_vector(transform, partials.du),
+        dv: affine_vector(transform, partials.dv),
+        duu: affine_vector(transform, partials.duu),
+        duv: affine_vector(transform, partials.duv),
+        dvv: affine_vector(transform, partials.dvv),
+    }
+}
+
+fn affine_orientation(transform: Transform) -> f64 {
+    let [first, second, third, _] = transform.rows;
+    let determinant = first[0] * (second[1] * third[2] - second[2] * third[1])
+        - first[1] * (second[0] * third[2] - second[2] * third[0])
+        + first[2] * (second[0] * third[1] - second[1] * third[0]);
+    if determinant.is_finite() && determinant < 0.0 {
+        -1.0
+    } else {
+        1.0
+    }
 }
 
 fn affine_point(transform: Transform, point: Point3) -> Point3 {

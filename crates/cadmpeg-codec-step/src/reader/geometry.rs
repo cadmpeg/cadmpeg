@@ -506,13 +506,23 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 continue;
             };
             let curve_index = ir.model.curves.len();
+            let curve = CurveId(format!("step:data:curve#{id}"));
             ir.model.curves.push(Curve {
-                id: CurveId(format!("step:data:curve#{id}")),
+                id: curve.clone(),
                 geometry: CurveGeometry::Transformed {
                     basis: Box::new(basis),
                     transform,
                 },
                 source_object: None,
+            });
+            ir.model.procedural_curves.push(ProceduralCurve {
+                id: ProceduralCurveId(format!("step:construction:curve_replica#{id}")),
+                curve,
+                definition: ProceduralCurveDefinition::Replica {
+                    source: CurveId(format!("step:data:curve#{parent_step}")),
+                    transform,
+                },
+                cache_fit_tolerance: None,
             });
             carrier_index.curves.insert(id, curve_index);
             typed.insert(id);
@@ -578,6 +588,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis,
                     parameter_range,
+                    sense,
                 },
                 cache_fit_tolerance: Some(0.0),
             });
@@ -1206,14 +1217,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             else {
                 continue;
             };
+            let surface = SurfaceId(format!("step:data:surface#{id}"));
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(format!("step:data:surface#{id}")),
+                id: surface.clone(),
                 geometry: SurfaceGeometry::Transformed {
                     basis: Box::new(basis),
                     transform,
                 },
                 source_object: None,
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("step:construction:surface_replica#{id}")),
+                surface,
+                definition: ProceduralSurfaceDefinition::Replica {
+                    source: SurfaceId(format!("step:data:surface#{parent_step}")),
+                    transform,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
             });
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);

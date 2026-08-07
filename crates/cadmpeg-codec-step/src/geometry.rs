@@ -275,7 +275,7 @@ pub fn placement(e: &mut Emitter, origin: Point3, axis: Vector3, ref_dir: Vector
     e.emit("AXIS2_PLACEMENT_3D", &format!("'',{o},{a},{r}"))
 }
 
-fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
+pub(crate) fn transformation_operator(e: &mut Emitter, transform: Transform) -> Ref {
     let origin = point(
         e,
         Point3::new(

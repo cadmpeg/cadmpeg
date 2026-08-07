@@ -191,11 +191,15 @@ the same shape as their control-point aggregates.
 
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the
-basis curve's parameterization. A `CURVE_REPLICA` inherits its parent curve's
-parameter range and parameterization; its transformation changes model-space
-location and dimensions only. Deferred curve dependencies resolve by graph
-fixpoint, including forward and nested replicas. Composite-curve segments
-retain order, same-sense, transition continuity, and carrier identity.
+basis curve's parameterization. Its local parameter domain is the directed
+trim interval measured from the first select; the stored sense maps local
+parameters in the increasing or decreasing parent direction. A
+`CURVE_REPLICA` retains the complete parent relation, including a trim, and
+inherits the parent's parameter range and parameterization; its transformation
+changes model-space location and dimensions only. Deferred curve dependencies
+resolve by graph fixpoint, including forward and nested replicas. Composite-
+curve segments retain order, same-sense, transition continuity, and carrier
+identity.
 
 Bounded-surface boundaries use `BOUNDARY_CURVE` or a degenerate pcurve. A
 `BOUNDARY_CURVE` is a closed composite curve on its bounded surface. Its
@@ -207,9 +211,12 @@ has a general curve role.
 endpoint pairs, and both parameter-direction senses as a surface subset. Its
 local U and V domains are `0..abs(u2-u1)` and `0..abs(v2-v1)`. A local parameter
 maps to `u1 + s` or `u1 - s`, and to `v1 + t` or `v1 - t`, according to the
-stored senses. Deferred surface dependencies resolve by graph fixpoint,
-including forward and nested replicas. Its native entity is emitted again when
-those values are available.
+stored senses. A `SURFACE_REPLICA` retains the complete parent relation,
+including a rectangular or curve-bounded surface; its transformation changes
+model-space location and dimensions while preserving the parent parameter
+domain. Deferred surface dependencies resolve by graph fixpoint, including
+forward and nested replicas. Its native entity is emitted again when those
+values are available.
 
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and

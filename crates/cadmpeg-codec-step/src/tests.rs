@@ -6,7 +6,9 @@
 #![allow(clippy::default_trait_access)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
-use cadmpeg_ir::eval::{model_surface_partials_by_id, model_surface_point_by_id};
+use cadmpeg_ir::eval::{
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id,
+};
 use cadmpeg_ir::index::ModelIndex;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
@@ -825,6 +827,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 source,
                 parameter_range,
+                ..
             } => Some((source, *parameter_range)),
             _ => None,
         })
@@ -5234,6 +5237,41 @@ fn trimmed_curve_replica_keeps_parent_parameterization_for_both_selectors() {
                 )
         }));
     }
+
+    assert!(result.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                if curve.curve.as_str() == "step:data:curve#8"
+                    && source.as_str() == "step:data:curve#6"
+        )
+    }));
+    let index = ModelIndex::new(&result.ir);
+    assert_eq!(
+        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        Some(Point3::new(6.0, 0.0, 0.0))
+    );
+    assert_eq!(
+        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 2.0,),
+        Some(Point3::new(12.0, 0.0, 0.0))
+    );
+
+    let mut output = Vec::new();
+    write_step(&result.ir, &mut output, &StepWriteOptions::default())
+        .expect("write trimmed replica");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    assert!(text.contains("CURVE_REPLICA"));
+    assert!(text.contains("TRIMMED_CURVE"));
+    let round_trip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode trimmed replica");
+    assert!(round_trip.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                if source.as_str().starts_with("step:data:curve#")
+        )
+    }));
 }
 
 #[test]
@@ -5340,6 +5378,18 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         .expect("opposed-sense trimmed curve");
     assert!((parameter_range[0] - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
     assert!((parameter_range[1] - std::f64::consts::TAU).abs() < 1.0e-12);
+    assert!(result.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { sense, .. }
+                if curve.id.as_str() == "step:construction:trimmed_curve#40" && !sense
+        )
+    }));
+    let mut output = Vec::new();
+    write_step(&result.ir, &mut output, &StepWriteOptions::default())
+        .expect("write opposed-sense trimmed curve");
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains(".F.,.PARAMETER."));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -6402,6 +6452,103 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
             .message
             .contains("RECTANGULAR_TRIMMED_SURFACE #10 has invalid or unresolved")
     }));
+
+    assert!(decoded.ir.model.procedural_surfaces.iter().any(|surface| {
+        matches!(
+            &surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                if surface.surface.as_str() == "step:data:surface#8"
+                    && source.as_str() == "step:data:surface#9"
+        )
+    }));
+    let index = ModelIndex::new(&decoded.ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 0.0, 0.0,),
+        Some(Point3::new(0.0, 0.0, 0.0))
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#10".into()), 1.0, 1.0,),
+        Some(Point3::new(4.0, 4.0, 0.0))
+    );
+
+    let mut output = Vec::new();
+    write_step(&decoded.ir, &mut output, &StepWriteOptions::default())
+        .expect("write trimmed surface replica");
+    let text = String::from_utf8(output.clone()).expect("STEP output is UTF-8");
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
+    let round_trip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode trimmed surface replica");
+    assert!(round_trip
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| {
+            matches!(
+                &surface.definition,
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                    if source.as_str().starts_with("step:data:surface#")
+            )
+        }));
+}
+
+#[test]
+fn replicas_retain_bounded_parent_relations() {
+    let decoded = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=TRIMMED_CURVE('',#6,(PARAMETER_VALUE(1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#1,3.,#4);
+#9=CURVE_REPLICA('',#7,#8);
+#10=AXIS2_PLACEMENT_3D('',#1,#4,#2);
+#11=PLANE('',#10);
+#12=RECTANGULAR_TRIMMED_SURFACE('',#11,1.,2.,3.,4.,.T.,.T.);
+#13=SURFACE_REPLICA('',#12,#8);
+#14=GEOMETRIC_SET('',(#9,#13));
+#15=SHAPE_REPRESENTATION('',(#14),#16);
+#16=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));",
+    );
+
+    assert!(decoded.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { source, .. }
+                if curve.curve.as_str() == "step:data:curve#9"
+                    && source.as_str() == "step:data:curve#7"
+        )
+    }));
+    assert!(decoded.ir.model.procedural_surfaces.iter().any(|surface| {
+        matches!(
+            &surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Replica { source, .. }
+                if surface.surface.as_str() == "step:data:surface#13"
+                    && source.as_str() == "step:data:surface#12"
+        )
+    }));
+    let index = ModelIndex::new(&decoded.ir);
+    assert_eq!(
+        model_curve_point_by_id(&index, &CurveId("step:data:curve#9".into()), 0.0,),
+        Some(Point3::new(3.0, 0.0, 0.0))
+    );
+    assert_eq!(
+        model_surface_point_by_id(&index, &SurfaceId("step:data:surface#13".into()), 0.0, 0.0,),
+        Some(Point3::new(3.0, 9.0, 0.0))
+    );
+
+    let mut output = Vec::new();
+    write_step(&decoded.ir, &mut output, &StepWriteOptions::default())
+        .expect("write replicas of bounded parents");
+    let text = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(text.contains("CURVE_REPLICA"));
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("TRIMMED_CURVE"));
+    assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
 }
 
 #[test]

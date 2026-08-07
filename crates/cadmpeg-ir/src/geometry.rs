@@ -14,6 +14,10 @@ use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+fn default_true() -> bool {
+    true
+}
+
 /// A tensor-product NURBS surface.
 ///
 /// Control points use u-major order. `weights == None` denotes a non-rational
@@ -651,6 +655,14 @@ pub enum ProceduralSurfaceDefinition {
         /// Whether the trimmed surface V direction agrees with the support.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         v_sense: Option<bool>,
+    },
+    /// Affine replica of a surface carrier, retaining the parent surface
+    /// construction and its parameter domain.
+    Replica {
+        /// Surface being replicated.
+        source: SurfaceId,
+        /// Affine map from the parent surface coordinates to this surface.
+        transform: Transform,
     },
     /// Parallel offset from a support surface.
     ParallelOffset {
@@ -3227,6 +3239,17 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Native parameter interval retained from the parent.
         parameter_range: [f64; 2],
+        /// Whether the subset follows increasing parent parameters.
+        #[serde(default = "default_true")]
+        sense: bool,
+    },
+    /// Affine replica of a curve carrier, retaining the parent curve's
+    /// parameter range and parameterization.
+    Replica {
+        /// Curve being replicated.
+        source: CurveId,
+        /// Affine map from the parent curve coordinates to this curve.
+        transform: Transform,
     },
     /// Spine or center curve of a blend surface.
     BlendSpine {

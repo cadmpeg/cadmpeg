@@ -33221,6 +33221,7 @@
               -1.1147408034263075,
               1.800735143996343
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:basis"
           },
           "id": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:5:construction"
@@ -33233,6 +33234,7 @@
               -1.1147408034263075,
               1.800735143996343
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:basis"
           },
           "id": "fcstd:model:curve#PartChamfer:Shape:PartChamfer.Shape.brp:9:construction"
@@ -33245,6 +33247,7 @@
               4.71238898038469,
               6.283185307179586
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:basis"
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:5:construction"
@@ -33257,6 +33260,7 @@
               4.71238898038469,
               6.283185307179586
             ],
+            "sense": true,
             "source": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:basis"
           },
           "id": "fcstd:model:curve#PartFillet:Shape:PartFillet.Shape.brp:9:construction"

@@ -627,7 +627,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     }
                 }
             }
-            ProceduralSurfaceDefinition::SubSurface { support, .. } => {
+            ProceduralSurfaceDefinition::SubSurface { support, .. }
+            | ProceduralSurfaceDefinition::Replica {
+                source: support, ..
+            } => {
                 if ids.surfaces(&support.0).is_none() {
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
@@ -1409,7 +1412,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
-            ProceduralCurveDefinition::Subset { source, .. } => {
+            ProceduralCurveDefinition::Replica { source, .. }
+            | ProceduralCurveDefinition::Subset { source, .. } => {
                 if ids.curves(&source.0).is_none() {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }

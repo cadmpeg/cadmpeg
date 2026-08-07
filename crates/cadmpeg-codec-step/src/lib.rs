@@ -2398,6 +2398,14 @@ impl<'a> Builder<'a> {
                     ),
                 ))
             }
+            ProceduralSurfaceDefinition::Replica { source, transform } => {
+                let source = self.emit_surface(source.as_str())?;
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                Some(
+                    self.emitter
+                        .emit("SURFACE_REPLICA", &format!("'',{source},{operator}")),
+                )
+            }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
                 let SurfaceGeometry::Torus {
                     center,
@@ -2506,16 +2514,31 @@ impl<'a> Builder<'a> {
             ProceduralCurveDefinition::Subset {
                 source,
                 parameter_range: [start, end],
+                sense,
             } => {
                 let source = self.emit_curve(source.as_str())?;
+                let (start, end) = if *sense {
+                    (*start, *end)
+                } else {
+                    (*end, *start)
+                };
                 Some(self.emitter.emit(
                     "TRIMMED_CURVE",
                     &format!(
-                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
-                        real(*start),
-                        real(*end)
+                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{},.PARAMETER.",
+                        real(start),
+                        real(end),
+                        if *sense { ".T." } else { ".F." }
                     ),
                 ))
+            }
+            ProceduralCurveDefinition::Replica { source, transform } => {
+                let source = self.emit_curve(source.as_str())?;
+                let operator = geometry::transformation_operator(&mut self.emitter, *transform);
+                Some(
+                    self.emitter
+                        .emit("CURVE_REPLICA", &format!("'',{source},{operator}")),
+                )
             }
             ProceduralCurveDefinition::SpatialOffset {
                 source,

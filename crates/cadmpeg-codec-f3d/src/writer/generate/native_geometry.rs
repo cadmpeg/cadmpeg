@@ -1194,6 +1194,7 @@ fn native_procedural_surface_definition(
         | ProceduralSurfaceDefinition::DegenerateTorus { .. }
         | ProceduralSurfaceDefinition::CurveBounded { .. }
         | ProceduralSurfaceDefinition::Subset { .. }
+        | ProceduralSurfaceDefinition::Replica { .. }
         | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
@@ -5233,6 +5234,7 @@ pub(crate) fn native_procedural_curve(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        ..
     } = &procedural.definition
     {
         let source = target
@@ -5292,6 +5294,7 @@ pub(crate) fn native_procedural_curve(
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Replica { .. }
         | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
             unreachable!("procedural curve variant returned from its native writer")
         }

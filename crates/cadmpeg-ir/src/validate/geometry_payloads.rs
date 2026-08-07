@@ -476,6 +476,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
             }
         }
+        if let ProceduralSurfaceDefinition::Replica { transform, .. } = &procedural.definition {
+            if !transform.is_affine() {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface replica transform is not finite affine",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition {
             let valid = match parameters {
                 crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
@@ -2446,6 +2455,16 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     findings,
                     &procedural.id.0,
                     "subset-curve range is not finite and ordered",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::Replica { transform, .. } = &procedural.definition {
+            if !transform.is_affine() {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "curve replica transform is not finite affine",
                 );
             }
             continue;
