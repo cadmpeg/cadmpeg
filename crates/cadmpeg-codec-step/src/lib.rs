@@ -2770,7 +2770,11 @@ impl<'a> Builder<'a> {
                 PmiDefinition::GeometricTolerance {
                     tolerance,
                     magnitude,
+                    defined_unit,
+                    defined_area_unit,
+                    defined_area_second_unit,
                     datum_system,
+                    modifiers,
                 } => {
                     let kind_exact = !matches!(tolerance, GeometricToleranceKind::Other(value) if value != "geometric_tolerance");
                     let entity = match tolerance {
@@ -2790,23 +2794,74 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
                         GeometricToleranceKind::Other(_) => continue,
                     };
-                    let measure = self.emit_pmi_measure(*magnitude);
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
-                    // Datum references are carried by the complex
-                    // GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE subtype. Until
-                    // that complex entity is modeled, refuse it through the
-                    // unwritten-PMI accounting instead of emitting an invalid
-                    // fifth parameter on the simple tolerance entity.
-                    if datum_system.is_some() {
+                    let modifier_values = Self::emit_geometric_tolerance_modifiers(modifiers);
+                    if !modifiers.is_empty() && modifier_values.is_none() {
                         continue;
                     }
-                    let tolerance_ref = self.emitter.emit(
-                        entity,
-                        &format!(
-                            "{},'',{measure},{aspect}",
-                            string(annotation.name.as_deref().unwrap_or(""))
-                        ),
-                    );
+                    let area_unit =
+                        Self::emit_geometric_tolerance_area_unit(defined_area_unit.as_deref());
+                    if defined_area_unit.is_some() && area_unit.is_none()
+                        || defined_area_second_unit.is_some() && area_unit.is_none()
+                    {
+                        continue;
+                    }
+                    let datum_ref = datum_system
+                        .as_ref()
+                        .and_then(|id| annotation_refs.get(id).copied());
+                    if datum_system.is_some() && datum_ref.is_none() {
+                        continue;
+                    }
+                    let measure = self.emit_pmi_measure(*magnitude);
+                    let tolerance_ref = if datum_ref.is_none()
+                        && modifiers.is_empty()
+                        && defined_unit.is_none()
+                        && area_unit.is_none()
+                    {
+                        self.emitter.emit(
+                            entity,
+                            &format!(
+                                "{},'',{measure},{aspect}",
+                                string(annotation.name.as_deref().unwrap_or(""))
+                            ),
+                        )
+                    } else {
+                        let mut parts = vec![format!(
+                            "GEOMETRIC_TOLERANCE({},{},{measure},{aspect})",
+                            string(annotation.name.as_deref().unwrap_or("")),
+                            "''"
+                        )];
+                        if area_unit.is_some() || defined_unit.is_some() {
+                            let defined_unit = defined_unit.as_ref().map_or_else(
+                                || "$".into(),
+                                |unit| self.emit_pmi_measure(*unit).to_string(),
+                            );
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT({defined_unit})"
+                            ));
+                        }
+                        if let Some(area_unit) = area_unit {
+                            let second_unit = defined_area_second_unit.as_ref().map_or_else(
+                                || "$".into(),
+                                |unit| self.emit_pmi_measure(*unit).to_string(),
+                            );
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.{area_unit}.,{second_unit})"
+                            ));
+                        }
+                        if let Some(datum) = datum_ref {
+                            parts.push(format!(
+                                "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE(({datum}))"
+                            ));
+                        }
+                        if let Some(modifiers) = modifier_values {
+                            parts
+                                .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
+                        }
+                        parts.push(format!("{entity}()"));
+                        self.emitter
+                            .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
+                    };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
                     self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
                 }
@@ -2912,6 +2967,74 @@ impl<'a> Builder<'a> {
             }
         }
         Some(modifiers.join(","))
+    }
+
+    fn emit_geometric_tolerance_modifiers(source: &[String]) -> Option<String> {
+        const SUPPORTED: &[&str] = &[
+            "any_cross_section",
+            "associated_least_square_feature",
+            "associated_maximum_inscribed_feature",
+            "associated_minimum_inscribed_feature",
+            "associated_minmax_feature",
+            "associated_tangent_feature",
+            "circle_a",
+            "common_zone",
+            "continuous_features",
+            "derived_feature",
+            "each_element",
+            "each_radial_element",
+            "free_state",
+            "individually",
+            "least_material_requirement",
+            "line_element",
+            "major_diameter",
+            "maximum_material_requirement",
+            "minor_diameter",
+            "not_convex",
+            "offset_zone",
+            "peak_height",
+            "pitch_diameter",
+            "reciprocity_requirement",
+            "reference_least_square_feature_with_external_material_constraint",
+            "reference_least_square_feature_with_internal_material_constraint",
+            "reference_least_square_feature_without_constraint",
+            "reference_maximum_inscribed_feature",
+            "reference_minimax_feature_with_external_material_constraint",
+            "reference_minimax_feature_with_internal_material_constraint",
+            "reference_minimax_feature_without_constraint",
+            "reference_minimum_circumscribed_feature",
+            "separate_requirement",
+            "separate_zones",
+            "standard_deviation",
+            "statistical_tolerance",
+            "stock",
+            "tangent_plane",
+            "total_range_deviations",
+            "united_feature",
+            "unspecified_angular_tolerance_zone_offset",
+            "unspecified_linear_tolerance_zone_offset",
+            "valley_depth",
+            "variable_angle",
+        ];
+        source
+            .iter()
+            .map(|modifier| {
+                let normalized = modifier.to_ascii_lowercase();
+                SUPPORTED
+                    .contains(&normalized.as_str())
+                    .then(|| format!(".{}.", normalized.to_ascii_uppercase()))
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|modifiers| modifiers.join(","))
+    }
+
+    fn emit_geometric_tolerance_area_unit(source: Option<&str>) -> Option<String> {
+        let source = source?;
+        matches!(
+            source.to_ascii_lowercase().as_str(),
+            "circular" | "square" | "rectangular" | "cylindrical" | "spherical"
+        )
+        .then(|| source.to_ascii_lowercase())
     }
 
     fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {

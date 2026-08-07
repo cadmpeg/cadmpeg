@@ -176,15 +176,27 @@ pub enum PmiDefinition {
         /// Ordered datum references.
         references: Vec<DatumReference>,
     },
-    /// Geometric tolerance and optional datum system.
+    /// Geometric tolerance, zone units, modifiers, and optional datum system.
     GeometricTolerance {
         /// Tolerance characteristic.
         tolerance: GeometricToleranceKind,
         /// Tolerance-zone magnitude.
         magnitude: PmiValue,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Explicit tolerance-zone unit size.
+        defined_unit: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Explicit area-unit shape for the tolerance zone.
+        defined_area_unit: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Second unit for rectangular, cylindrical, or spherical zones.
+        defined_area_second_unit: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Referenced datum-system annotation.
         datum_system: Option<PmiId>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        /// Source-defined geometric-tolerance modifiers.
+        modifiers: Vec<String>,
     },
     /// Size or location dimension with optional plus/minus limits.
     Dimension {
@@ -333,7 +345,11 @@ mod tests {
                     value: 0.1,
                     quantity: PmiQuantity::Length,
                 },
+                defined_unit: None,
+                defined_area_unit: None,
+                defined_area_second_unit: None,
                 datum_system: Some(dimension_id),
+                modifiers: Vec::new(),
             },
         });
 

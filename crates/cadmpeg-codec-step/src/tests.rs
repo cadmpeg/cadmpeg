@@ -4967,6 +4967,7 @@ fn decode_transfers_ap242_semantic_pmi() {
                 quantity: PmiQuantity::Length,
             },
             datum_system: None,
+            ..
         }
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
@@ -5106,7 +5107,7 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     .expect("fixture is UTF-8")
     .replace(
         "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
-        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT($) FLATNESS_TOLERANCE());",
+        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT(.CIRCULAR.,$) GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT(#11));",
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5129,6 +5130,37 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
             ..
         }
     ));
+    let PmiDefinition::GeometricTolerance {
+        defined_unit,
+        defined_area_unit,
+        defined_area_second_unit,
+        ..
+    } = &tolerance.definition
+    else {
+        panic!("complex flatness tolerance has the wrong definition")
+    };
+    assert_eq!(
+        defined_unit,
+        &Some(cadmpeg_ir::PmiValue {
+            value: 0.05,
+            quantity: PmiQuantity::Length,
+        })
+    );
+    assert_eq!(defined_area_unit.as_deref(), Some("circular"));
+    assert!(defined_area_second_unit.is_none());
+    let mut output = Vec::new();
+    write_step(
+        &result.ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write complex geometric tolerance units");
+    let output = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT"));
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT"));
     assert!(!result.report.losses.iter().any(|loss| {
         loss.message
             .contains("FLATNESS_TOLERANCE+GEOMETRIC_TOLERANCE")
@@ -5145,7 +5177,7 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     .expect("fixture is UTF-8")
     .replace(
         "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
-        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)) FLATNESS_TOLERANCE());",
+        "#12=(GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)) GEOMETRIC_TOLERANCE_WITH_MODIFIERS((.MAXIMUM_MATERIAL_REQUIREMENT.,.FREE_STATE.)) FLATNESS_TOLERANCE());",
     );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5165,6 +5197,16 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
             ..
         } if system.as_str() == "step:presentation:pmi#8"
     ));
+    let PmiDefinition::GeometricTolerance { modifiers, .. } = &tolerance.definition else {
+        panic!("complex flatness tolerance has the wrong definition")
+    };
+    assert_eq!(
+        modifiers,
+        &[
+            "maximum_material_requirement".to_string(),
+            "free_state".to_string()
+        ]
+    );
     assert!(result
         .ir
         .model
@@ -5184,11 +5226,31 @@ fn complex_geometric_tolerance_links_its_inherited_datum_system() {
         },
     )
     .expect("write complex geometric tolerance with report policy");
-    assert!(report
+    assert!(!report
         .losses
         .iter()
         .any(|loss| loss.code == cadmpeg_ir::LossKind::PmiOmitted));
-    assert!(!String::from_utf8_lossy(&output).contains("FLATNESS_TOLERANCE"));
+    let output = String::from_utf8(output).expect("STEP output is UTF-8");
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE"));
+    assert!(output.contains("GEOMETRIC_TOLERANCE_WITH_MODIFIERS"));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written complex geometric tolerance");
+    let tolerance = roundtrip
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("roundtripped flatness tolerance");
+    assert!(matches!(
+        &tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            datum_system: Some(_),
+            modifiers,
+            ..
+        } if modifiers == &["maximum_material_requirement", "free_state"]
+    ));
 }
 
 #[test]
@@ -6863,6 +6925,10 @@ fn ap242_dimension_kinds_emit_concrete_schema_entities() {
             quantity: cadmpeg_ir::PmiQuantity::Length,
         },
         datum_system: None,
+        defined_unit: None,
+        defined_area_unit: None,
+        defined_area_second_unit: None,
+        modifiers: Vec::new(),
     };
     ir.model.pmi.push(unsupported);
 

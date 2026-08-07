@@ -382,7 +382,9 @@ their dimensions.
 Geometric tolerances read their name and magnitude from the
 `GEOMETRIC_TOLERANCE` partial when the tolerance is complex. The
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial supplies the datum-system
-link and does not add a shape-aspect target. Presentation PMI
+link and does not add a shape-aspect target. The defined-unit and
+defined-area-unit partials retain their unit sizes and area shape; modifier
+aggregates retain their enumeration values. Presentation PMI
 retains annotation identity, text, and placement across inherited annotation
 partials. A presentation graph search types only the text carrier it consumes;
 unmodeled tessellated annotation carriers remain named opaque records with

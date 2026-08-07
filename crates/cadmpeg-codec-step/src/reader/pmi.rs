@@ -355,10 +355,25 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             continue;
         };
         let refs = record
-            .parameters()
+            .partials
             .iter()
-            .flat_map(references)
-            .collect::<Vec<_>>();
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+            .map_or_else(
+                || {
+                    record
+                        .parameters()
+                        .iter()
+                        .flat_map(references)
+                        .collect::<Vec<_>>()
+                },
+                |partial| {
+                    partial
+                        .parameters
+                        .iter()
+                        .flat_map(references)
+                        .collect::<Vec<_>>()
+                },
+            );
         let mut measurements = MeasureContext {
             length_scale: geometry.length_scale,
             angle_scale: geometry.plane_angle_scale,
@@ -367,8 +382,18 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let magnitude = record
             .partials
             .iter()
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE")
+            .into_iter()
             .flat_map(|partial| partial.parameters.iter())
-            .find_map(|value| measure(value, exchange, &mut measurements));
+            .find_map(|value| measure(value, exchange, &mut measurements))
+            .or_else(|| {
+                record
+                    .partials
+                    .iter()
+                    .filter(|partial| partial.name != "GEOMETRIC_TOLERANCE")
+                    .flat_map(|partial| partial.parameters.iter())
+                    .find_map(|value| measure(value, exchange, &mut measurements))
+            });
         let Some(magnitude) = magnitude else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
@@ -376,6 +401,29 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ));
             continue;
         };
+        let defined_unit = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_UNIT")
+            .and_then(|partial| partial.parameters.first())
+            .and_then(|value| measure(value, exchange, &mut measurements));
+        let (defined_area_unit, defined_area_second_unit) = record
+            .partials
+            .iter()
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DEFINED_AREA_UNIT")
+            .map_or((None, None), |partial| {
+                (
+                    partial
+                        .parameters
+                        .first()
+                        .and_then(ValueExt::enumeration)
+                        .map(str::to_ascii_lowercase),
+                    partial
+                        .parameters
+                        .get(1)
+                        .and_then(|value| measure(value, exchange, &mut measurements)),
+                )
+            });
         // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
         // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
         // system as a separate aggregate.
@@ -410,7 +458,11 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             PmiDefinition::GeometricTolerance {
                 tolerance,
                 magnitude,
+                defined_unit,
+                defined_area_unit,
+                defined_area_second_unit,
                 datum_system,
+                modifiers: tolerance_modifiers(record),
             },
         );
         typed.insert(id);
@@ -420,6 +472,19 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 .get(reference)
                 .is_some_and(is_measure_record)
         }));
+        typed.extend(
+            record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .flat_map(references)
+                .filter(|reference| {
+                    exchange
+                        .records
+                        .get(reference)
+                        .is_some_and(is_measure_record)
+                }),
+        );
     }
 
     for (id, record) in exchange.entities("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
@@ -929,6 +994,26 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         }
         _ => return None,
     })
+}
+
+fn tolerance_modifiers(record: &RawRecord) -> Vec<String> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_MODIFIERS")
+        .into_iter()
+        .flat_map(|partial| partial.parameters.iter())
+        .flat_map(modifier_values)
+        .collect()
+}
+
+fn modifier_values(value: &Value) -> Vec<String> {
+    match value {
+        Value::Enumeration(value) => vec![value.to_ascii_lowercase()],
+        Value::List(values) => values.iter().flat_map(modifier_values).collect(),
+        Value::Typed(_, value) => modifier_values(value),
+        _ => Vec::new(),
+    }
 }
 
 fn characteristic_values(
