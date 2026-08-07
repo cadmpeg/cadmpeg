@@ -786,6 +786,9 @@ pub(crate) struct E5IntersectionSidePlan {
 #[allow(clippy::struct_field_names)]
 struct E5BoundaryPlan {
     pcurve_plan: BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
+    /// Whether each native pcurve occurrence runs opposite to its edge's
+    /// stored endpoint order.
+    pcurve_use_reversed: BTreeMap<(u32, usize), bool>,
     edge_curve_plan: BTreeMap<u32, (CurveGeometry, [f64; 2])>,
     surface_curve_plan: BTreeMap<u32, (SurfaceId, PcurveGeometry, [f64; 2])>,
     intersection_plan: BTreeMap<u32, IntcurveSupportContext>,
@@ -844,6 +847,7 @@ pub(crate) fn transfer_e5_topology(
     };
     let E5BoundaryPlan {
         pcurve_plan,
+        pcurve_use_reversed,
         edge_curve_plan,
         surface_curve_plan,
         intersection_plan,
@@ -882,16 +886,20 @@ pub(crate) fn transfer_e5_topology(
         &intersection_plan,
         &surface_curve_plan,
     );
-    emit_e5_pcurves(ir, annotations, pcurve_plan);
+    emit_e5_pcurves(ir, annotations, &pcurve_plan);
     emit_e5_bodies(ir, annotations, &body_faces, &ownership);
-    emit_e5_faces_loops_coedges(
+    if !emit_e5_faces_loops_coedges(
         ir,
         annotations,
         topology,
         &surface_for_ref,
         &face_shell,
         &edge_ids,
-    );
+        &pcurve_plan,
+        &pcurve_use_reversed,
+    ) {
+        return false;
+    }
     true
 }
 
@@ -904,6 +912,7 @@ fn plan_e5_boundary(
     point_for_ref: &HashMap<u32, Point3>,
 ) -> Option<E5BoundaryPlan> {
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
+    let mut pcurve_use_reversed = BTreeMap::<(u32, usize), bool>::new();
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
     let mut surface_curve_plan = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     let mut occurrence_intersection_sides =
@@ -913,10 +922,15 @@ fn plan_e5_boundary(
             return None;
         };
         for loop_ in &face.loops {
-            if loop_.resolved_members().is_none() {
+            if loop_.pcurves.is_empty()
+                || loop_.pcurves.len() != loop_.edge_uses.len()
+                || loop_.resolved_members().is_none()
+            {
                 return None;
             }
-            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+            for (member_index, (&pcurve_ref, &edge_ref)) in
+                loop_.pcurves.iter().zip(&loop_.edge_uses).enumerate()
+            {
                 let Some(edge) = topology.edges.get(&edge_ref) else {
                     return None;
                 };
@@ -951,6 +965,12 @@ fn plan_e5_boundary(
                 let Some(reversed) = reversed else {
                     return None;
                 };
+                if pcurve_use_reversed
+                    .insert((loop_.record_id, member_index), reversed)
+                    .is_some()
+                {
+                    return None;
+                }
                 if if reversed { reverse_error } else { forward } > 2e-3 {
                     return None;
                 }
@@ -1163,6 +1183,7 @@ fn plan_e5_boundary(
     }
     Some(E5BoundaryPlan {
         pcurve_plan,
+        pcurve_use_reversed,
         edge_curve_plan,
         surface_curve_plan,
         intersection_plan,
@@ -1375,9 +1396,9 @@ fn emit_e5_curves_and_edges(
 fn emit_e5_pcurves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    pcurve_plan: BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
+    pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
 ) {
-    for (record_id, (geometry, range)) in pcurve_plan {
+    for (&record_id, (geometry, range)) in pcurve_plan {
         let id = PcurveId(format!("catia:e5:pcurve#{record_id}"));
         annotate(
             annotations,
@@ -1390,9 +1411,9 @@ fn emit_e5_pcurves(
         annotations.derived(&id, "geometry");
         ir.model.pcurves.push(Pcurve {
             id,
-            geometry,
+            geometry: geometry.clone(),
             wrapper_reversed: None,
-            parameter_range: Some(range),
+            parameter_range: Some(*range),
             fit_tolerance: None,
             native_tail_flags: None,
         });
@@ -1484,6 +1505,13 @@ fn emit_e5_bodies(
 }
 
 /// Emits the face/loop/coedge layer and the radial-next fixup.
+///
+/// Returns `false` when the lowering plan is not total for a serialized loop
+/// member.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Face lowering keeps one parameter per independent arena, table, or control plan rather than a catch-all context struct."
+)]
 fn emit_e5_faces_loops_coedges(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -1491,7 +1519,9 @@ fn emit_e5_faces_loops_coedges(
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     face_shell: &HashMap<u32, ShellId>,
     edge_ids: &HashMap<u32, EdgeId>,
-) {
+    pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
+    pcurve_use_reversed: &BTreeMap<(u32, usize), bool>,
+) -> bool {
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
     for face in &topology.faces {
         let face_id = FaceId(format!("catia:e5:face#{}", face.record_id));
@@ -1564,6 +1594,15 @@ fn emit_e5_faces_loops_coedges(
                 let index = member.serialized_index;
                 let edge_ref = loop_.edge_uses[index];
                 let pcurve_ref = loop_.pcurves[index];
+                let Some(&pcurve_reversed) = pcurve_use_reversed.get(&(loop_.record_id, index))
+                else {
+                    return false;
+                };
+                let Some((_, range)) = pcurve_plan.get(&pcurve_ref) else {
+                    return false;
+                };
+                let pcurve_parameter_range =
+                    (member.reversed ^ pcurve_reversed).then_some([range[1], range[0]]);
                 let id = coedge_ids_by_member[index].clone();
                 annotate(
                     annotations,
@@ -1597,7 +1636,7 @@ fn emit_e5_faces_loops_coedges(
                     pcurves: vec![cadmpeg_ir::topology::PcurveUse {
                         pcurve: PcurveId(format!("catia:e5:pcurve#{pcurve_ref}")),
                         isoparametric: None,
-                        parameter_range: None,
+                        parameter_range: pcurve_parameter_range,
                     }],
                     use_curve: None,
                     use_curve_parameter_range: None,
@@ -1611,6 +1650,7 @@ fn emit_e5_faces_loops_coedges(
             ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
         }
     }
+    true
 }
 
 pub(crate) fn e5_stored_pcurve_reversed(
@@ -2271,13 +2311,18 @@ mod route_tests {
         fit_rank_one_e5_plane_axes, parameter_ranges_reversed, solve_e5_plane_frame,
     };
 
-    use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology};
+    use crate::families::e5::graph::{
+        E5CurveSupport, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+    };
 
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
-    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::BodyKind;
+    use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
 
     use std::collections::BTreeMap;
 
@@ -2423,6 +2468,111 @@ mod route_tests {
         assert_eq!(
             parameter_ranges_reversed([0.0, f64::INFINITY], [0.0, 1.0]),
             None
+        );
+    }
+
+    #[test]
+    fn e5_coedge_pcurve_use_composes_native_and_edge_direction() {
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![E5Face {
+                record_id: 1,
+                surface: 100,
+                trailer_sign: 1,
+                loops: vec![E5Loop {
+                    record_id: 2,
+                    surface: 100,
+                    pcurves: vec![30],
+                    edge_uses: vec![20],
+                    reversed: vec![false],
+                    oriented_members: Some(vec![crate::families::e5::graph::E5OrientedMember {
+                        serialized_index: 0,
+                        reversed: false,
+                    }]),
+                    outer: Some(true),
+                    orientation_signs: Vec::new(),
+                }],
+            }],
+            edges: BTreeMap::from([(
+                20,
+                E5Edge {
+                    record_id: 20,
+                    support: 40,
+                    start_vertex: 10,
+                    end_vertex: 11,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            )]),
+            pcurves: BTreeMap::from([(
+                30,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: [1.0, 0.0],
+                    direction: [-1.0, 0.0],
+                    range: [0.0, 1.0],
+                },
+            )]),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::from([(
+                40,
+                E5CurveSupport {
+                    record_id: 40,
+                    intersection: false,
+                    pcurves: vec![30],
+                    mode: 0,
+                    range: [0.0, 1.0],
+                    tail: Vec::new(),
+                },
+            )]),
+            vertex_refs: vec![10, 11],
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.extend([
+            Point {
+                id: PointId("point-10".to_string()),
+                position: Point3::new(0.0, 0.0, 0.0),
+                source_object: None,
+            },
+            Point {
+                id: PointId("point-11".to_string()),
+                position: Point3::new(1.0, 0.0, 0.0),
+                source_object: None,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: VertexId("vertex-10".to_string()),
+                point: PointId("point-10".to_string()),
+                tolerance: None,
+            },
+            Vertex {
+                id: VertexId("vertex-11".to_string()),
+                point: PointId("point-11".to_string()),
+                tolerance: None,
+            },
+        ]);
+        let surface = crate::families::e5::records::E5Surface {
+            pos: 0,
+            record_id: 100,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [1.0, 1.0],
+        };
+        let mut annotations = AnnotationBuilder::new();
+        assert!(super::transfer_e5_topology(
+            &mut ir,
+            &mut annotations,
+            &topology,
+            &[surface],
+        ));
+        assert_eq!(
+            ir.model.coedges[0].pcurves[0].parameter_range,
+            Some([1.0, 0.0])
         );
     }
 
