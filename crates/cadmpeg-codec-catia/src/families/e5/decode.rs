@@ -1755,6 +1755,7 @@ pub(crate) fn e5_boundary_curve(
     range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
+    let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
     if let (
         SurfaceGeometry::Plane {
             origin,
@@ -1768,6 +1769,9 @@ pub(crate) fn e5_boundary_curve(
         let center = (*origin)
             .translated(*u_axis, center[0])
             .translated(v_axis, center[1]);
+        if !finite_point(center) {
+            return None;
+        }
         return Some((
             CurveGeometry::Circle {
                 center,
@@ -2732,6 +2736,36 @@ mod route_tests {
             range: [0.0, 1.0],
         };
         assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+    }
+
+    #[test]
+    fn e5_boundary_circle_rejects_nonfinite_center() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(f64::MAX, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let native = crate::families::e5::graph::E5Pcurve::Circle {
+            surface: 0,
+            center: [f64::MAX, 0.0],
+            codes: [0, 0],
+            radius: 1.0,
+            range: [0.0, 1.0],
+            tail: [0.0, 0.0],
+        };
+        let pcurve =
+            rational_pcurve_arc([f64::MAX, 0.0], 1.0, [0.0, 1.0]).expect("finite native circle");
+        assert!(e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(f64::MAX, 1.0, 0.0)
+            ],
+        )
+        .is_none());
     }
 
     #[test]
