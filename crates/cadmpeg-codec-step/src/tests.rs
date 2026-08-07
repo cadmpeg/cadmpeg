@@ -6180,6 +6180,19 @@ fn null_style_branch_does_not_suppress_a_sibling_color() {
 }
 
 #[test]
+fn complex_null_style_inherited_partial_suppresses_false_color_warning() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=(PRESENTATION_STYLE_ASSIGNMENT(()) STYLE_ASSIGNMENT((NULL_STYLE(.NULL.))));
+#3=STYLED_ITEM('',(#2),#1);",
+    );
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("STYLED_ITEM #3 has no resolved surface color")
+    }));
+}
+
+#[test]
 fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
     use cadmpeg_ir::pmi::PmiDefinition;
 

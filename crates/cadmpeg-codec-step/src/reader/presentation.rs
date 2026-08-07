@@ -952,8 +952,9 @@ fn contains_null_style(
             .iter()
             .any(|value| contains_null_style(value, exchange, visited, depth + 1)),
         Value::Reference(id) if visited.insert(*id) => exchange.records.get(id).is_some_and(|r| {
-            r.parameters()
+            r.partials
                 .iter()
+                .flat_map(|partial| partial.parameters.iter())
                 .any(|value| contains_null_style(value, exchange, visited, depth + 1))
         }),
         _ => false,
