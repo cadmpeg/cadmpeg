@@ -3215,11 +3215,12 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
     let values = line_values::<9>(&record.payload, position)?;
     position += 72;
     let controls: [u8; 2] = record.payload.get(position..)?.try_into().ok()?;
+    let direction = [values[0], values[1], values[2]];
     let contextual_offset_chart = matches!(controls, [0x01, 0x09 | 0x15]);
     ((matches!(controls, [0x05, 0x05 | 0x11 | 0x15 | 0x19])
         || contextual_offset_chart
         || (matches!(controls[0], 0x01 | 0x05) && controls[1] == 0x29))
-        && unit([values[0], values[1], values[2]]).is_some()
+        && direction_is_unit(direction)
         && values[3] < values[4]
         && values[5].to_bits() == 1.0f64.to_bits()
         && values[6].to_bits() == 0.0f64.to_bits()
@@ -3230,7 +3231,7 @@ fn extrusion_carrier(record: &B5Record) -> Option<B5ExtrusionCarrier> {
         })
     .then_some(B5ExtrusionCarrier {
         directrix_id,
-        direction: [values[0], values[1], values[2]],
+        direction,
         parameter_bounds: [[values[3], values[4]], [values[7], values[8]]],
         controls,
     })
@@ -3366,7 +3367,7 @@ fn parse_offset_curve_directrix(
     if position != record.payload.len()
         || !distance.is_finite()
         || distance == 0.0
-        || unit(direction).is_none()
+        || !direction_is_unit(direction)
         || source_parameter_range[0] >= source_parameter_range[1]
         || start >= end
         || !source.supports().iter().any(|support| {
@@ -7338,6 +7339,13 @@ mod tests {
             })
         );
 
+        let mut nonunit_direction = record.clone();
+        nonunit_direction.payload[2..10].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(
+            parse_extrusion_surface(&nonunit_direction, &records, &pcurves),
+            None
+        );
+
         let mut translated_wrapper = wrapper.clone();
         translated_wrapper.payload[12..20].copy_from_slice(&50.0f64.to_le_bytes());
         let translated_records = HashMap::from([(2, &translated_wrapper)]);
@@ -7523,6 +7531,13 @@ mod tests {
                 direction: [0.0, 0.0, 1.0],
                 parameter_range: [-5.0, 6.0],
             })
+        );
+
+        let mut nonunit_direction = record.clone();
+        nonunit_direction.payload[27..35].copy_from_slice(&2.0f64.to_le_bytes());
+        assert_eq!(
+            parse_extrusion_directrix(&nonunit_direction, &records, &pcurves),
+            None
         );
 
         let mut wrong_control = record.clone();
