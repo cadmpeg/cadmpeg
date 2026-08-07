@@ -356,13 +356,29 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
                 })
                 .map(
-                    |(((center, axis, major_direction), major_radius), minor_radius)| {
+                    |(((center, axis, reference_direction), first_radius), second_radius)| {
+                        let first_radius = first_radius * scale;
+                        let second_radius = second_radius * scale;
+                        let (major_direction, major_radius, minor_radius) =
+                            if first_radius >= second_radius {
+                                (reference_direction, first_radius, second_radius)
+                            } else {
+                                // STEP ELLIPSE stores two ordered semiaxes;
+                                // neither position is required to be the
+                                // longer one. The IR ellipse is canonicalized
+                                // around its semi-major direction.
+                                (
+                                    cross(axis, reference_direction),
+                                    second_radius,
+                                    first_radius,
+                                )
+                            };
                         CurveGeometry::Ellipse {
                             center,
                             axis,
                             major_direction,
-                            major_radius: major_radius * scale,
-                            minor_radius: minor_radius * scale,
+                            major_radius,
+                            minor_radius,
                         }
                     },
                 ),

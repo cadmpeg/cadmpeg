@@ -3904,6 +3904,36 @@ fn decode_transfers_ap242_semantic_pmi() {
 }
 
 #[test]
+fn reversed_step_ellipse_axes_are_canonicalized() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap242_geometry.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#10=ELLIPSE('',#6,6.,2.);", "#10=ELLIPSE('',#6,2.,6.);");
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode reversed ellipse");
+    let ellipse = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#10")
+        .expect("ellipse carrier");
+    assert!(matches!(
+        ellipse.geometry,
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } if major_radius == 6.0 && minor_radius == 2.0
+    ));
+}
+
+#[test]
 fn decode_transfers_ap242_presentation_pmi() {
     use cadmpeg_ir::pmi::PmiDefinition;
 
