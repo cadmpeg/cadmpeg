@@ -53,6 +53,9 @@ fixtures, claims above L1 remain unproven.
   preserve their oriented directrix degree, intrinsic knot domain, poles,
   weights, periodic flag, exact angular NURBS surface, constant-parameter
   endpoint p-curves, and face sense.
+- Full-turn revolutions reconstruct a missing section axis from their complete
+  transferred carrier surfaces, requiring coaxial analytic axes, parallel
+  carrier-plane normals, and carrier-sphere centers on the common axis.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier

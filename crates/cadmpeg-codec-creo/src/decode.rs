@@ -8564,7 +8564,15 @@ fn transfer_resolved_revolution_breps(
         else {
             continue;
         };
-        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+        let extent = feature_revolution_extent(scan, feature_id);
+        let Some(axis) = revolution_axis_for_transfer(
+            scan,
+            ir,
+            feature_id,
+            definition,
+            transform,
+            extent.as_ref(),
+        ) else {
             continue;
         };
         let sketch_id = model_sketch_id(scan, definition);
@@ -14628,7 +14636,15 @@ fn transfer_resolved_revolution_surfaces(
         else {
             continue;
         };
-        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+        let extent = feature_revolution_extent(scan, feature_id);
+        let Some(axis) = revolution_axis_for_transfer(
+            scan,
+            ir,
+            feature_id,
+            definition,
+            transform,
+            extent.as_ref(),
+        ) else {
             continue;
         };
         let points = resolved_section_points(definition);
@@ -14933,7 +14949,15 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
         else {
             continue;
         };
-        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+        let extent = feature_revolution_extent(scan, feature_id);
+        let Some(axis) = revolution_axis_for_transfer(
+            scan,
+            ir,
+            feature_id,
+            definition,
+            transform,
+            extent.as_ref(),
+        ) else {
             continue;
         };
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
@@ -16484,6 +16508,18 @@ fn full_turn_revolution_carrier_axis(
         origin: Point3::new(origin[0], origin[1], origin[2]),
         direction: Vector3::new(direction[0], direction[1], direction[2]),
     })
+}
+
+fn revolution_axis_for_transfer(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    definition: &crate::feature::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+    extent: Option<&RevolveExtent>,
+) -> Option<RevolutionAxis> {
+    resolved_revolution_axis(definition, transform)
+        .or_else(|| full_turn_revolution_carrier_axis(scan, ir, feature_id, extent))
 }
 
 fn section_profile_ref(ir: &CadIr, native_ref: String) -> ProfileRef {

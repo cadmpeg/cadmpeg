@@ -12443,6 +12443,46 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             direction: Vector3::new(0.0, 1.0, 0.0),
         })
     );
+    let carrier_only_definition = crate::feature::FeatureDefinition {
+        id: 7,
+        owner_feature_id: Some(7),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 7,
+        feature_id: Some(7),
+        origin: [0.0, 0.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 0,
+    };
+    assert_eq!(
+        revolution_axis_for_transfer(
+            &scan,
+            &ir,
+            7,
+            &carrier_only_definition,
+            &transform,
+            Some(&full_turn),
+        ),
+        Some(RevolutionAxis {
+            origin: Point3::new(2.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        })
+    );
     let partial = RevolveExtent::OneSided {
         termination: Termination::Angle { angle: Angle(1.0) },
     };
