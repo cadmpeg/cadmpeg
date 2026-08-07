@@ -44,9 +44,12 @@ and inspected by name and refused for semantic decode.
 retained source record and document baseline are intact. `IgesEncoder` accepts
 an explicit target version. The semantic writer supports standalone points,
 finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
-surfaces, and one-face trimmed sheet bodies with NURBS parameter curves;
-unsupported neutral or native content is refused before output. Edited source
-documents may report `passthrough_record_omitted` losses for native display or
+surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and
+bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face
+sheet bodies. It validates topology ownership, edge spans, radial incidence,
+and supported surface and pcurve geometry before output. Unsupported neutral
+or native content is refused. Edited source documents may report
+`passthrough_record_omitted` losses for native direction, display, or
 occurrence-expansion records that are not regenerated.
 
 ## Data model

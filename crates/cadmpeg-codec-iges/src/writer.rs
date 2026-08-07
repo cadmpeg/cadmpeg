@@ -29,6 +29,7 @@ use std::fmt::Write as _;
 const ALLOWED_NATIVE_ARENAS: &[&str] = &[
     "cards",
     "copious_data",
+    "directions",
     "display_attributes",
     "entities",
     "product_occurrence_expansion",
@@ -186,7 +187,9 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     reject_unsupported_model(ir)?;
     let losses = reject_unsupported_native(ir)?;
 
-    let mut entities = if has_trimmed_sheet_topology(ir) {
+    let mut entities = if has_brep_topology(ir) {
+        brep_entities(ir)?
+    } else if has_trimmed_sheet_topology(ir) {
         topology_entities(ir)?
     } else {
         let mut entities = Vec::new();
@@ -263,6 +266,956 @@ fn has_trimmed_sheet_topology(ir: &CadIr) -> bool {
         || !ir.model.pcurves.is_empty()
 }
 
+fn has_brep_topology(ir: &CadIr) -> bool {
+    if ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| !is_decoder_free_geometry_body(body) && body.kind == BodyKind::Solid)
+    {
+        return true;
+    }
+    if ir.model.faces.iter().any(|face| {
+        face.loops.iter().any(|loop_id| {
+            ir.model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == *loop_id)
+                .is_some_and(|loop_| !loop_.vertex_uses.is_empty())
+        })
+    }) {
+        return true;
+    }
+    let mut edge_use_counts = BTreeMap::new();
+    for coedge in &ir.model.coedges {
+        *edge_use_counts
+            .entry(coedge.edge.as_str())
+            .or_insert(0_usize) += 1;
+    }
+    if edge_use_counts.values().any(|count| *count > 1) {
+        return true;
+    }
+    if ir.model.bodies.iter().any(|body| {
+        if is_decoder_free_geometry_body(body) || body.kind != BodyKind::Sheet {
+            return false;
+        }
+        body.regions.iter().any(|region_id| {
+            ir.model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)
+                .is_some_and(|region| region.shells.len() != 1)
+        })
+    }) {
+        return true;
+    }
+    ir.model.faces.iter().any(|face| {
+        ir.model
+            .shells
+            .iter()
+            .find(|shell| shell.faces.iter().any(|face_id| face_id == &face.id))
+            .is_some_and(|shell| shell.faces.len() > 1)
+    })
+}
+
+fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| !is_decoder_free_geometry_body(body))
+        .collect::<Vec<_>>();
+    if bodies.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "IGES B-rep writer requires at least one supported body".into(),
+        ));
+    }
+    let supported_body_ids = bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut owned_regions = std::collections::BTreeSet::new();
+    let mut owned_shells = std::collections::BTreeSet::new();
+    let mut owned_faces = std::collections::BTreeSet::new();
+    let mut used_loops = std::collections::BTreeSet::new();
+    let mut used_coedges = std::collections::BTreeSet::new();
+    let mut used_edges = std::collections::BTreeSet::new();
+    let mut used_vertices = std::collections::BTreeSet::new();
+    let mut edge_bodies = BTreeMap::<String, (String, BodyKind)>::new();
+    let mut edge_coedges = BTreeMap::<String, Vec<String>>::new();
+
+    for body in &bodies {
+        if !matches!(body.kind, BodyKind::Solid | BodyKind::Sheet) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep writer does not encode body kind {:?} ({})",
+                body.kind, body.id
+            )));
+        }
+        if body.regions.len() != 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep writer requires one region per body ({})",
+                body.id
+            )));
+        }
+        let region_id = &body.regions[0];
+        let region = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id == *region_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES body {} references missing region {}",
+                    body.id, region_id
+                ))
+            })?;
+        if region.body != body.id || region.shells.is_empty() {
+            return Err(CodecError::Malformed(format!(
+                "IGES region {} is not a nonempty region of body {}",
+                region.id, body.id
+            )));
+        }
+        if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep writer requires one shell for a sheet body ({})",
+                body.id
+            )));
+        }
+        if !owned_regions.insert(region.id.as_str().to_owned()) {
+            return Err(CodecError::Malformed(format!(
+                "IGES region {} is owned more than once",
+                region.id
+            )));
+        }
+        for shell_id in &region.shells {
+            let shell = ir
+                .model
+                .shells
+                .iter()
+                .find(|shell| shell.id == *shell_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES region {} references missing shell {}",
+                        region.id, shell_id
+                    ))
+                })?;
+            if shell.region != region.id || shell.faces.is_empty() {
+                return Err(CodecError::Malformed(format!(
+                    "IGES shell {} is not a nonempty shell of region {}",
+                    shell.id, region.id
+                )));
+            }
+            if !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty() {
+                return Err(CodecError::NotImplemented(format!(
+                    "IGES B-rep writer does not encode wire edges or free vertices in shell {}",
+                    shell.id
+                )));
+            }
+            if !owned_shells.insert(shell.id.as_str().to_owned()) {
+                return Err(CodecError::Malformed(format!(
+                    "IGES shell {} is owned more than once",
+                    shell.id
+                )));
+            }
+            for face_id in &shell.faces {
+                let face = ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id == *face_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES shell {} references missing face {}",
+                            shell.id, face_id
+                        ))
+                    })?;
+                if face.shell != shell.id || face.loops.is_empty() {
+                    return Err(CodecError::Malformed(format!(
+                        "IGES face {} is not a nonempty face of shell {}",
+                        face.id, shell.id
+                    )));
+                }
+                if !owned_faces.insert(face.id.as_str().to_owned()) {
+                    return Err(CodecError::Malformed(format!(
+                        "IGES face {} is owned more than once",
+                        face.id
+                    )));
+                }
+                let surface = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == face.surface)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES face {} references missing surface {}",
+                            face.id, face.surface
+                        ))
+                    })?;
+                surface_entity(&surface.geometry)?;
+                for loop_id in &face.loops {
+                    let loop_ = ir
+                        .model
+                        .loops
+                        .iter()
+                        .find(|loop_| loop_.id == *loop_id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "IGES face {} references missing loop {}",
+                                face.id, loop_id
+                            ))
+                        })?;
+                    if loop_.face != face.id || loop_.coedges.is_empty() {
+                        return Err(CodecError::Malformed(format!(
+                            "IGES loop {} is not a nonempty loop of face {}",
+                            loop_.id, face.id
+                        )));
+                    }
+                    if !loop_.vertex_uses.is_empty() {
+                        return Err(CodecError::NotImplemented(format!(
+                            "IGES B-rep writer does not encode pole-vertex uses ({})",
+                            loop_.id
+                        )));
+                    }
+                    if !used_loops.insert(loop_.id.as_str().to_owned()) {
+                        return Err(CodecError::Malformed(format!(
+                            "IGES loop {} is used more than once",
+                            loop_.id
+                        )));
+                    }
+                    for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+                        let coedge = ir
+                            .model
+                            .coedges
+                            .iter()
+                            .find(|coedge| coedge.id == *coedge_id)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES loop {} references missing coedge {}",
+                                    loop_.id, coedge_id
+                                ))
+                            })?;
+                        let next = &loop_.coedges[(index + 1) % loop_.coedges.len()];
+                        let previous =
+                            &loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()];
+                        if coedge.owner_loop != loop_.id
+                            || coedge.next != *next
+                            || coedge.previous != *previous
+                            || coedge.use_curve.is_some()
+                        {
+                            return Err(CodecError::Malformed(format!(
+                                "IGES coedge {} is not a valid loop use",
+                                coedge.id
+                            )));
+                        }
+                        if !used_coedges.insert(coedge.id.as_str().to_owned()) {
+                            return Err(CodecError::Malformed(format!(
+                                "IGES coedge {} is used more than once",
+                                coedge.id
+                            )));
+                        }
+                        let edge = ir
+                            .model
+                            .edges
+                            .iter()
+                            .find(|edge| edge.id == coedge.edge)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES coedge {} references missing edge {}",
+                                    coedge.id, coedge.edge
+                                ))
+                            })?;
+                        if let Some((owner, _)) = edge_bodies.get(edge.id.as_str()) {
+                            if owner != body.id.as_str() {
+                                return Err(CodecError::Malformed(format!(
+                                    "IGES edge {} is used by multiple bodies",
+                                    edge.id
+                                )));
+                            }
+                        } else {
+                            edge_bodies.insert(
+                                edge.id.as_str().to_owned(),
+                                (body.id.as_str().to_owned(), body.kind),
+                            );
+                        }
+                        used_edges.insert(edge.id.as_str().to_owned());
+                        edge_coedges
+                            .entry(edge.id.as_str().to_owned())
+                            .or_default()
+                            .push(coedge.id.as_str().to_owned());
+                        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                            CodecError::NotImplemented(format!(
+                                "IGES B-rep writer does not encode carrier-less edge {}",
+                                edge.id
+                            ))
+                        })?;
+                        let curve = ir
+                            .model
+                            .curves
+                            .iter()
+                            .find(|curve| curve.id == *curve_id)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES edge {} references missing curve {}",
+                                    edge.id, curve_id
+                                ))
+                            })?;
+                        let geometry = flatten_curve(&curve.geometry)?;
+                        edge_span(ir, edge, &geometry)?;
+                        for vertex_id in [&edge.start, &edge.end] {
+                            let vertex = ir
+                                .model
+                                .vertices
+                                .iter()
+                                .find(|vertex| vertex.id == *vertex_id)
+                                .ok_or_else(|| {
+                                    CodecError::Malformed(format!(
+                                        "IGES edge {} references missing vertex {}",
+                                        edge.id, vertex_id
+                                    ))
+                                })?;
+                            used_vertices.insert(vertex.id.as_str().to_owned());
+                            point_position(ir, &vertex.point)?;
+                        }
+                        for pcurve_use in &coedge.pcurves {
+                            let pcurve = ir
+                                .model
+                                .pcurves
+                                .iter()
+                                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                                .ok_or_else(|| {
+                                    CodecError::Malformed(format!(
+                                        "IGES coedge {} references missing pcurve {}",
+                                        coedge.id, pcurve_use.pcurve
+                                    ))
+                                })?;
+                            let range = pcurve.parameter_range.ok_or_else(|| {
+                                CodecError::NotImplemented(format!(
+                                    "IGES B-rep writer requires a parameter range for pcurve {}",
+                                    pcurve.id
+                                ))
+                            })?;
+                            if pcurve_use
+                                .parameter_range
+                                .is_some_and(|use_range| !same_range(use_range, range))
+                            {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "IGES B-rep writer cannot restrict pcurve use {}",
+                                    pcurve_use.pcurve
+                                )));
+                            }
+                            if pcurve.wrapper_reversed.is_some()
+                                || pcurve.native_tail_flags.is_some()
+                            {
+                                return Err(CodecError::NotImplemented(format!(
+                                    "IGES B-rep writer does not encode pcurve wrapper metadata {}",
+                                    pcurve.id
+                                )));
+                            }
+                            pcurve_entity(pcurve)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let ignored_carriers = ignored_carrier_geometry(ir);
+    let mut admitted_edges = used_edges.clone();
+    admitted_edges.extend(ignored_carriers.edges.iter().cloned());
+    let mut admitted_vertices = used_vertices.clone();
+    admitted_vertices.extend(ignored_carriers.vertices.iter().cloned());
+    let supported_region_count = ir
+        .model
+        .regions
+        .iter()
+        .filter(|region| supported_body_ids.contains(&region.body))
+        .count();
+    let supported_shell_count = ir
+        .model
+        .shells
+        .iter()
+        .filter(|shell| {
+            ir.model.regions.iter().any(|region| {
+                supported_body_ids.contains(&region.body) && region.shells.contains(&shell.id)
+            })
+        })
+        .count();
+    if owned_regions.len() != supported_region_count
+        || owned_shells.len() != supported_shell_count
+        || owned_faces.len() != ir.model.faces.len()
+        || used_loops.len() != ir.model.loops.len()
+        || used_coedges.len() != ir.model.coedges.len()
+        || admitted_edges.len() != ir.model.edges.len()
+        || admitted_vertices.len() != ir.model.vertices.len()
+        || used_brep_pcurve_ids(ir).len() != ir.model.pcurves.len()
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES B-rep topology ownership is incomplete: regions {}/{} shells {}/{} faces {}/{} loops {}/{} coedges {}/{} edges {}/{} vertices {}/{} pcurves {}/{}",
+            owned_regions.len(),
+            supported_region_count,
+            owned_shells.len(),
+            supported_shell_count,
+            owned_faces.len(),
+            ir.model.faces.len(),
+            used_loops.len(),
+            ir.model.loops.len(),
+            used_coedges.len(),
+            ir.model.coedges.len(),
+            admitted_edges.len(),
+            ir.model.edges.len(),
+            admitted_vertices.len(),
+            ir.model.vertices.len(),
+            used_brep_pcurve_ids(ir).len(),
+            ir.model.pcurves.len()
+        )));
+    }
+
+    for (edge_id, uses) in &edge_coedges {
+        let first = uses.first().ok_or_else(|| {
+            CodecError::Malformed(format!("IGES edge {edge_id} has no coedge uses"))
+        })?;
+        let mut ring = Vec::new();
+        let mut current = first.clone();
+        loop {
+            if ring.contains(&current) {
+                if current == *first {
+                    break;
+                }
+                return Err(CodecError::Malformed(format!(
+                    "IGES edge {edge_id} has an invalid radial ring"
+                )));
+            }
+            if ring.len() >= uses.len() {
+                return Err(CodecError::Malformed(format!(
+                    "IGES edge {edge_id} has an invalid radial ring"
+                )));
+            }
+            ring.push(current.clone());
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id.as_str() == current)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES radial ring references missing coedge {current}"
+                    ))
+                })?;
+            if coedge.edge.as_str() != edge_id {
+                return Err(CodecError::Malformed(format!(
+                    "IGES radial ring for edge {edge_id} names another edge"
+                )));
+            }
+            current = coedge.radial_next.as_str().to_owned();
+        }
+        if ring.len() != uses.len() {
+            return Err(CodecError::Malformed(format!(
+                "IGES edge {edge_id} radial ring does not cover every use"
+            )));
+        }
+        if ring.len() > 2 {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep writer does not encode non-manifold edge {edge_id}"
+            )));
+        }
+        let senses = ring
+            .iter()
+            .map(|coedge_id| {
+                ir.model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id.as_str() == coedge_id)
+                    .map(|coedge| coedge.sense)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES radial ring references missing coedge {coedge_id}"
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if senses.len() == 2 && senses[0] == senses[1] {
+            return Err(CodecError::Malformed(format!(
+                "IGES edge {edge_id} has two coedges with the same sense"
+            )));
+        }
+        if edge_bodies[edge_id].1 == BodyKind::Solid && ring.len() != 2 {
+            return Err(CodecError::Malformed(format!(
+                "IGES solid edge {edge_id} is not used by exactly two coedges"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
+    validate_brep_topology(ir)?;
+    let ignored_carriers = ignored_carrier_geometry(ir);
+    let mut topology_point_ids = std::collections::BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == coedge.edge) else {
+            continue;
+        };
+        for vertex_id in [&edge.start, &edge.end] {
+            if let Some(vertex) = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == *vertex_id)
+            {
+                topology_point_ids.insert(vertex.point.as_str().to_owned());
+            }
+        }
+    }
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| !is_decoder_free_geometry_body(body))
+        .collect::<Vec<_>>();
+    let mut entities = Vec::new();
+    let mut surface_indices = BTreeMap::new();
+    let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
+    surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    for surface in surfaces {
+        let index = entities.len();
+        entities.push(surface_entity(&surface.geometry)?);
+        surface_indices.insert(surface.id.as_str().to_owned(), index);
+    }
+
+    let mut topology_edge_ids = std::collections::BTreeSet::new();
+    for coedge in &ir.model.coedges {
+        topology_edge_ids.insert(coedge.edge.as_str().to_owned());
+    }
+    let mut edge_curve_indices = BTreeMap::new();
+    let mut edges = topology_edge_ids.iter().collect::<Vec<_>>();
+    edges.sort();
+    for edge_id in edges {
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|candidate| candidate.id.as_str() == edge_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("IGES topology references missing edge {edge_id}"))
+            })?;
+        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "IGES B-rep writer does not encode carrier-less edge {}",
+                edge.id
+            ))
+        })?;
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|candidate| candidate.id == *curve_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES edge {} references missing curve {}",
+                    edge.id, curve_id
+                ))
+            })?;
+        let geometry = flatten_curve(&curve.geometry)?;
+        let span = edge_span(ir, edge, &geometry)?;
+        let index = entities.len();
+        entities.push(curve_entity(&geometry, Some(&span))?);
+        edge_curve_indices.insert(edge.id.as_str().to_owned(), index);
+    }
+
+    let consumed_curve_ids = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| topology_edge_ids.contains(edge.id.as_str()))
+        .filter_map(|edge| edge.curve.as_ref().map(|curve| curve.as_str().to_owned()))
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
+    curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    for curve in curves {
+        if consumed_curve_ids.contains(curve.id.as_str())
+            || ignored_carriers.curves.contains(curve.id.as_str())
+        {
+            continue;
+        }
+        let geometry = flatten_curve(&curve.geometry)?;
+        entities.push(curve_entity(&geometry, None)?);
+    }
+
+    let used_pcurve_ids = used_brep_pcurve_ids(ir);
+    let mut pcurve_indices = BTreeMap::new();
+    for pcurve_id in used_pcurve_ids {
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|candidate| candidate.id.as_str() == pcurve_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES topology references missing pcurve {pcurve_id}"
+                ))
+            })?;
+        let index = entities.len();
+        entities.push(pcurve_entity(pcurve)?);
+        pcurve_indices.insert(pcurve_id, index);
+    }
+
+    let mut body_ids = bodies
+        .iter()
+        .map(|body| body.id.as_str().to_owned())
+        .collect::<Vec<_>>();
+    body_ids.sort();
+    for body_id in body_ids {
+        let body = bodies
+            .iter()
+            .find(|body| body.id.as_str() == body_id)
+            .ok_or_else(|| CodecError::Malformed(format!("IGES body {body_id} is missing")))?;
+        let region = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.body.as_str() == body_id)
+            .ok_or_else(|| CodecError::Malformed(format!("IGES body {body_id} has no region")))?;
+        let shells = region
+            .shells
+            .iter()
+            .map(|shell_id| {
+                ir.model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES region {} references missing shell {}",
+                            region.id, shell_id
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut body_edge_ids = std::collections::BTreeSet::new();
+        let mut body_vertex_ids = std::collections::BTreeSet::new();
+        let mut body_loop_ids = Vec::new();
+        let mut body_face_ids = Vec::new();
+        for shell in &shells {
+            for face_id in &shell.faces {
+                let face = ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id == *face_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES shell {} references missing face {}",
+                            shell.id, face_id
+                        ))
+                    })?;
+                body_face_ids.push(face.id.clone());
+                for loop_id in &face.loops {
+                    let loop_ = ir
+                        .model
+                        .loops
+                        .iter()
+                        .find(|loop_| loop_.id == *loop_id)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "IGES face {} references missing loop {}",
+                                face.id, loop_id
+                            ))
+                        })?;
+                    body_loop_ids.push(loop_.id.clone());
+                    for coedge_id in &loop_.coedges {
+                        let coedge = ir
+                            .model
+                            .coedges
+                            .iter()
+                            .find(|coedge| coedge.id == *coedge_id)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES loop {} references missing coedge {}",
+                                    loop_.id, coedge_id
+                                ))
+                            })?;
+                        body_edge_ids.insert(coedge.edge.as_str().to_owned());
+                        let edge = ir
+                            .model
+                            .edges
+                            .iter()
+                            .find(|edge| edge.id == coedge.edge)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES coedge {} references missing edge {}",
+                                    coedge.id, coedge.edge
+                                ))
+                            })?;
+                        body_vertex_ids.insert(edge.start.as_str().to_owned());
+                        body_vertex_ids.insert(edge.end.as_str().to_owned());
+                    }
+                }
+            }
+        }
+
+        let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
+        vertex_ids.sort();
+        let mut vertex_indices = BTreeMap::new();
+        for (index, vertex_id) in vertex_ids.iter().enumerate() {
+            vertex_indices.insert(vertex_id.clone(), index);
+        }
+        let mut parameters = format!("502,{}", vertex_ids.len());
+        for vertex_id in &vertex_ids {
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id.as_str() == vertex_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES B-rep references missing vertex {vertex_id}"
+                    ))
+                })?;
+            let point = point_position(ir, &vertex.point)?;
+            for value in [point.x, point.y, point.z] {
+                parameters.push(',');
+                parameters.push_str(&number(value));
+            }
+        }
+        parameters.push(';');
+        let vertex_list_index = entities.len();
+        entities.push(Entity {
+            type_code: 502,
+            form: 1,
+            label: "VERTICES",
+            status: "00010000",
+            parameters: parameters.into_bytes(),
+            transform: None,
+        });
+
+        let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
+        edge_ids.sort();
+        let mut edge_indices = BTreeMap::new();
+        for (index, edge_id) in edge_ids.iter().enumerate() {
+            edge_indices.insert(edge_id.clone(), index);
+        }
+        let mut parameters = format!("504,{}", edge_ids.len());
+        for edge_id in &edge_ids {
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id.as_str() == edge_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("IGES B-rep edge {edge_id} is missing"))
+                })?;
+            let curve_index = edge_curve_indices[edge_id];
+            let start_index = vertex_indices[edge.start.as_str()];
+            let end_index = vertex_indices[edge.end.as_str()];
+            let _ = write!(
+                parameters,
+                ",{},{},{},{},{}",
+                reference_marker(curve_index),
+                reference_marker(vertex_list_index),
+                start_index + 1,
+                reference_marker(vertex_list_index),
+                end_index + 1
+            );
+        }
+        parameters.push(';');
+        let edge_list_index = entities.len();
+        entities.push(Entity {
+            type_code: 504,
+            form: 1,
+            label: "EDGES",
+            status: "00010001",
+            parameters: parameters.into_bytes(),
+            transform: None,
+        });
+
+        let mut loop_indices = BTreeMap::new();
+        for loop_id in &body_loop_ids {
+            let loop_ = ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == *loop_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("IGES B-rep loop {loop_id} is missing"))
+                })?;
+            let mut parameters = format!("508,{}", loop_.coedges.len());
+            for coedge_id in &loop_.coedges {
+                let coedge = ir
+                    .model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id == *coedge_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES loop {} references missing coedge {}",
+                            loop_.id, coedge_id
+                        ))
+                    })?;
+                let edge_index = edge_indices[coedge.edge.as_str()];
+                let sense = brep_sense(coedge.sense);
+                let _ = write!(
+                    parameters,
+                    ",0,{},{},{},{}",
+                    reference_marker(edge_list_index),
+                    edge_index + 1,
+                    sense,
+                    coedge.pcurves.len()
+                );
+                for pcurve_use in &coedge.pcurves {
+                    let _ = write!(
+                        parameters,
+                        ",{},{}",
+                        i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                        reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                    );
+                }
+            }
+            parameters.push(';');
+            let index = entities.len();
+            entities.push(Entity {
+                type_code: 508,
+                form: 1,
+                label: "LOOP",
+                status: "00010000",
+                parameters: parameters.into_bytes(),
+                transform: None,
+            });
+            loop_indices.insert(loop_id.as_str().to_owned(), index);
+        }
+
+        let mut face_indices = BTreeMap::new();
+        for face_id in &body_face_ids {
+            let face = ir
+                .model
+                .faces
+                .iter()
+                .find(|face| face.id == *face_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("IGES B-rep face {face_id} is missing"))
+                })?;
+            let has_outer = face.loops.iter().any(|loop_id| {
+                ir.model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == *loop_id)
+                    .is_some_and(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer)
+            });
+            let mut parameters = format!(
+                "510,{},{},{}",
+                reference_marker(surface_indices[face.surface.as_str()]),
+                face.loops.len(),
+                i32::from(has_outer)
+            );
+            for loop_id in &face.loops {
+                let _ = write!(
+                    parameters,
+                    ",{}",
+                    reference_marker(loop_indices[loop_id.as_str()])
+                );
+            }
+            parameters.push(';');
+            let index = entities.len();
+            entities.push(Entity {
+                type_code: 510,
+                form: 1,
+                label: "FACE",
+                status: "00010000",
+                parameters: parameters.into_bytes(),
+                transform: None,
+            });
+            face_indices.insert(face_id.as_str().to_owned(), index);
+        }
+
+        let mut shell_indices = Vec::new();
+        for shell in &shells {
+            let mut parameters = format!("514,{}", shell.faces.len());
+            for face_id in &shell.faces {
+                let face = ir
+                    .model
+                    .faces
+                    .iter()
+                    .find(|face| face.id == *face_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES shell {} references missing face {}",
+                            shell.id, face_id
+                        ))
+                    })?;
+                let _ = write!(
+                    parameters,
+                    ",{},{}",
+                    reference_marker(face_indices[face.id.as_str()]),
+                    brep_sense(face.sense)
+                );
+            }
+            parameters.push(';');
+            let index = entities.len();
+            entities.push(Entity {
+                type_code: 514,
+                form: if body.kind == BodyKind::Solid { 1 } else { 2 },
+                label: "SHELL",
+                status: if body.kind == BodyKind::Solid {
+                    "00010000"
+                } else {
+                    "00000000"
+                },
+                parameters: parameters.into_bytes(),
+                transform: None,
+            });
+            shell_indices.push(index);
+        }
+        if body.kind == BodyKind::Solid {
+            let mut parameters = format!(
+                "186,{},1,{}",
+                reference_marker(shell_indices[0]),
+                shell_indices.len() - 1
+            );
+            for shell_index in shell_indices.iter().skip(1) {
+                let _ = write!(parameters, ",{},1", reference_marker(*shell_index));
+            }
+            parameters.push(';');
+            entities.push(Entity {
+                type_code: 186,
+                form: 0,
+                label: "SOLID",
+                status: "00000000",
+                parameters: parameters.into_bytes(),
+                transform: None,
+            });
+        }
+    }
+    let mut points = ir.model.points.iter().collect::<Vec<_>>();
+    points.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    for point in points {
+        if topology_point_ids.contains(point.id.as_str())
+            || ignored_carriers.points.contains(point.id.as_str())
+        {
+            continue;
+        }
+        ensure_finite_point(point.position, &point.id.0)?;
+        entities.push(point_entity(point.position));
+    }
+    Ok(entities)
+}
+
+fn brep_sense(sense: Sense) -> i32 {
+    match sense {
+        Sense::Forward => 1,
+        Sense::Reversed => 0,
+    }
+}
+
+fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
+    ir.model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .map(|use_| use_.pcurve.as_str().to_owned())
+        .collect()
+}
+
 struct IgnoredCarrierGeometry {
     edges: std::collections::BTreeSet<String>,
     curves: std::collections::BTreeSet<String>,
@@ -289,6 +1242,32 @@ fn ignored_carrier_geometry(ir: &CadIr) -> IgnoredCarrierGeometry {
         vertices: std::collections::BTreeSet::new(),
         points: std::collections::BTreeSet::new(),
     };
+    for body in &ir.model.bodies {
+        if !is_decoder_free_geometry_body(body) {
+            continue;
+        }
+        for region_id in &body.regions {
+            let Some(region) = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)
+            else {
+                continue;
+            };
+            for shell_id in &region.shells {
+                let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == *shell_id) else {
+                    continue;
+                };
+                ignored.vertices.extend(
+                    shell
+                        .free_vertices
+                        .iter()
+                        .map(|vertex| vertex.as_str().to_owned()),
+                );
+            }
+        }
+    }
     for edge in &ir.model.edges {
         if topology_edge_ids.contains(edge.id.as_str()) {
             continue;
@@ -1161,6 +2140,12 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             142 => "142_curve_on_parametric_surface",
             143 => "143_bounded_surface",
             144 => "144_trimmed_surface",
+            186 => "186_manifold_solid_brep",
+            502 => "502_vertex_list",
+            504 => "504_edge_list",
+            508 => "508_loop",
+            510 => "510_face",
+            514 => "514_shell",
             _ => "unknown_entity",
         };
         *counts.entry(name.into()).or_insert(0) += 1;
@@ -1289,13 +2274,25 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
                         | 108
                         | 110
                         | 116
+                        | 123
                         | 124
                         | 126
                         | 128
                         | 141
                         | 142
                         | 143
-                        | 144,
+                        | 144
+                        | 190
+                        | 192
+                        | 194
+                        | 196
+                        | 198
+                        | 186
+                        | 502
+                        | 504
+                        | 508
+                        | 510
+                        | 514,
                 )
             )
         })
@@ -1312,13 +2309,13 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let has_native_surface = native_entities.clone().any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(108 | 128)
+            Some(108 | 128 | 190 | 192 | 194 | 196 | 198)
         )
     });
     let has_native_topology = native_entities.any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),
-            Some(141..=144)
+            Some(141..=144 | 186 | 502 | 504 | 508 | 510 | 514)
         )
     });
     if has_native_surface && ir.model.surfaces.is_empty() {
@@ -1337,6 +2334,9 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             continue;
         }
         let message = match arena.as_str() {
+            "directions" => {
+                "IGES direction records are omitted because support geometry is regenerated from neutral surfaces"
+            }
             "display_attributes" => {
                 "IGES display attributes are not regenerated by the bounded semantic writer"
             }

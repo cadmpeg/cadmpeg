@@ -8593,6 +8593,126 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
 }
 
 #[test]
+fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::PassthroughRecordOmitted));
+    assert_eq!(
+        report.census.counts.get("186_manifold_solid_brep"),
+        Some(&1)
+    );
+    assert_eq!(report.census.counts.get("502_vertex_list"), Some(&1));
+    assert_eq!(report.census.counts.get("504_edge_list"), Some(&1));
+    assert_eq!(report.census.counts.get("508_loop"), Some(&4));
+    assert_eq!(report.census.counts.get("510_face"), Some(&4));
+    assert_eq!(report.census.counts.get("514_shell"), Some(&1));
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let body = round_trip
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Solid)
+        .unwrap();
+    assert_eq!(body.kind, BodyKind::Solid);
+    assert_eq!(round_trip.ir.model.faces.len(), 4);
+    let topology_edge_ids = round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(topology_edge_ids.len(), 6);
+    assert_eq!(round_trip.ir.model.coedges.len(), 12);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let body = round_trip
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.kind == BodyKind::Solid)
+        .unwrap();
+    let region = round_trip
+        .ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    assert_eq!(region.shells.len(), 2);
+    let void_shell = round_trip
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[1])
+        .unwrap();
+    assert!(void_shell.faces.iter().all(|face_id| {
+        round_trip
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == *face_id)
+            .is_some_and(|face| face.sense == Sense::Reversed)
+    }));
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_nurbs_declares_actual_planarity_and_closedness() {
     let cases = [
         (
