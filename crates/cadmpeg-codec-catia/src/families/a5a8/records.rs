@@ -8,8 +8,8 @@ use crate::wire::bytes::{compact_int, f64_le, f64_point, read_f64_array, u32_le_
 #[cfg(any(test, feature = "fuzzing"))]
 use crate::wire::records::consolidated_records;
 use crate::wire::records::{
-    a_family_frames, a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame,
-    ConsolidatedPcurve, ConsolidatedRecord,
+    a_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
+    ConsolidatedRecord,
 };
 use cadmpeg_core::le::{u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::geometry::{
@@ -398,48 +398,20 @@ pub struct A5NurbsCurve {
 
 /// Decode length-closed `a5/a6/a7 13 16` non-rational NURBS curves.
 #[must_use]
+#[cfg(test)]
 pub fn a5_nurbs_curves(data: &[u8]) -> Vec<A5NurbsCurve> {
-    a5_nurbs_curve_frames(data)
+    let records = consolidated_records(data);
+    a5_nurbs_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_nurbs_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5NurbsCurve> {
+    a_family_frames_from_records(records, 0x16)
         .into_iter()
         .filter_map(|frame| parse_a5_nurbs_curve(data, frame))
         .collect()
-}
-
-fn a5_nurbs_curve_frames(data: &[u8]) -> Vec<ConsolidatedFrame> {
-    let mut frames = Vec::new();
-    for pos in 0..data.len().saturating_sub(8) {
-        let Some(width) = data[pos]
-            .checked_sub(0xa4)
-            .filter(|width| (1..=3).contains(width))
-        else {
-            continue;
-        };
-        if !matches!(data[pos + 1], 0x03 | 0x13 | 0x83) || data[pos + 2] != 0x16 {
-            continue;
-        }
-        let Some(length) = u32_le(data, pos + 3).and_then(|value| usize::try_from(value).ok())
-        else {
-            continue;
-        };
-        let token_start = pos + 7;
-        let payload = token_start + usize::from(width);
-        let Some(end) = payload.checked_add(length).filter(|end| *end <= data.len()) else {
-            continue;
-        };
-        let header_token = data[token_start..payload]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (8 * shift))
-            });
-        frames.push(ConsolidatedFrame {
-            pos,
-            payload,
-            end,
-            header_token,
-        });
-    }
-    frames
 }
 
 fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5NurbsCurve> {
@@ -511,8 +483,17 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
 
 /// Decode `a5/a6/a7 03 39` guide-curve and unit-direction jets.
 #[must_use]
+#[cfg(test)]
 pub fn a5_guide_curves(data: &[u8]) -> Vec<A5GuideCurve> {
-    a_family_frames(data, 0x39)
+    let records = consolidated_records(data);
+    a5_guide_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_guide_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5GuideCurve> {
+    a_family_frames_from_records(records, 0x39)
         .into_iter()
         .filter_map(|frame| parse_a5_guide_curve(data, frame))
         .collect()
@@ -715,8 +696,17 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
 
 /// Decode framed `a5 03 32` rolling-ball jet records.
 #[must_use]
+#[cfg(test)]
 pub fn a5_freeform_curves(data: &[u8]) -> Vec<A5FreeformCurve> {
-    a_family_frames(data, 0x32)
+    let records = consolidated_records(data);
+    a5_freeform_curves_from_records(data, &records)
+}
+
+pub(crate) fn a5_freeform_curves_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<A5FreeformCurve> {
+    a_family_frames_from_records(records, 0x32)
         .into_iter()
         .filter_map(|frame| parse_a5_curve(data, frame))
         .collect()

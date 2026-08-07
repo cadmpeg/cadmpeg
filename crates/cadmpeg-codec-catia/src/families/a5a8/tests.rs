@@ -635,6 +635,47 @@ fn a8_curve_parser_accepts_each_object_frame_flag() {
     assert!(crate::families::a5a8::records::a8_freeform_curves(&malformed).is_empty());
 }
 
+#[test]
+fn indexed_a5_record_decoders_match_one_shot_wrappers() {
+    let freeform = a5_freeform_curve_stream();
+    let records = crate::wire::records::consolidated_records(&freeform);
+    let one_shot = crate::families::a5a8::records::a5_freeform_curves(&freeform);
+    let indexed =
+        crate::families::a5a8::records::a5_freeform_curves_from_records(&freeform, &records);
+    assert_eq!(one_shot.len(), indexed.len());
+    for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
+        assert_eq!(one_shot.pos, indexed.pos);
+        assert_eq!(one_shot.header_token, indexed.header_token);
+        assert_eq!(one_shot.degree, indexed.degree);
+        assert_eq!(one_shot.knots, indexed.knots);
+        assert_eq!(one_shot.sites, indexed.sites);
+        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
+        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
+    }
+
+    let guide = a5_guide_curve_stream();
+    let records = crate::wire::records::consolidated_records(&guide);
+    let one_shot = crate::families::a5a8::records::a5_guide_curves(&guide);
+    let indexed = crate::families::a5a8::records::a5_guide_curves_from_records(&guide, &records);
+    assert_eq!(one_shot.len(), indexed.len());
+    for (one_shot, indexed) in one_shot.iter().zip(&indexed) {
+        assert_eq!(one_shot.pos, indexed.pos);
+        assert_eq!(one_shot.header_token, indexed.header_token);
+        assert_eq!(one_shot.degree, indexed.degree);
+        assert_eq!(one_shot.knots, indexed.knots);
+        assert_eq!(one_shot.sites, indexed.sites);
+        assert_eq!(one_shot.first_derivatives, indexed.first_derivatives);
+        assert_eq!(one_shot.second_derivatives, indexed.second_derivatives);
+    }
+
+    let nurbs = a5_nurbs_curve_stream();
+    let records = crate::wire::records::consolidated_records(&nurbs);
+    assert_eq!(
+        crate::families::a5a8::records::a5_nurbs_curves(&nurbs),
+        crate::families::a5a8::records::a5_nurbs_curves_from_records(&nurbs, &records)
+    );
+}
+
 fn a5_nurbs_curve_stream() -> Vec<u8> {
     let knots = [-2.220_264_955_47_f64, 0.0, 2.220_264_955_47];
     let points = [

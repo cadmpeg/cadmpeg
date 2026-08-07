@@ -1181,7 +1181,8 @@ pub(crate) fn try_decode_standard(
         .iter()
         .map(|support| support.tag)
         .collect::<HashSet<_>>();
-    let object_evidence = standard_object_evidence(scan, &freeform_tags, &edge_tags);
+    let object_evidence =
+        standard_object_evidence(scan, &freeform_tags, &edge_tags, &consolidated_records);
     let standard_limit_curve_count = object_evidence.limit_curves.len();
     let revolution_record_count = crate::families::b2::records::b2_revolutions_from_records(
         &scan.data,
@@ -2107,6 +2108,7 @@ pub(crate) fn standard_object_evidence(
     scan: &ContainerScan,
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
+    consolidated_records: &[ConsolidatedRecord],
 ) -> StandardObjectEvidence {
     let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
         .into_iter()
@@ -2117,12 +2119,20 @@ pub(crate) fn standard_object_evidence(
             })
         });
     let mut evidence = standard_object_evidence_from_streams(streams, tags, edge_tags);
-    merge_standard_limit_curves(&mut evidence.limit_curves, &scan.data);
+    merge_standard_limit_curves_from_records(
+        &mut evidence.limit_curves,
+        &scan.data,
+        consolidated_records,
+    );
     evidence
 }
 
-fn merge_standard_limit_curves(curves: &mut Vec<NurbsCurve>, data: &[u8]) {
-    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+fn merge_standard_limit_curves_from_records(
+    curves: &mut Vec<NurbsCurve>,
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(geometry) =
                 crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)
@@ -2148,7 +2158,8 @@ pub(crate) fn standard_object_evidence_from_streams(
     let mut edge_support_candidates = HashMap::<u32, Option<StandardEdgeSupport>>::new();
     let mut limit_curves = Vec::<NurbsCurve>::new();
     for stream in streams {
-        merge_standard_limit_curves(&mut limit_curves, &stream);
+        let records = crate::wire::records::consolidated_records(&stream);
+        merge_standard_limit_curves_from_records(&mut limit_curves, &stream, &records);
         let frames = crate::families::b5::graph::object_stream_frames(&stream);
         let face_surfaces =
             crate::families::b5::graph::face_surface_references_from_frames(&stream, &frames);

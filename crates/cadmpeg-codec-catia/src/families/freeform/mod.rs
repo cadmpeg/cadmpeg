@@ -188,7 +188,10 @@ pub(crate) fn try_decode_freeform_surfaces(
         &consolidated_records,
     );
     let b2_nurbs_curve_count = b2_nurbs_curves.len();
-    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves(&scan.data);
+    let a5_nurbs_curves = crate::families::a5a8::records::a5_nurbs_curves_from_records(
+        &scan.data,
+        &consolidated_records,
+    );
     let a5_nurbs_curve_count = a5_nurbs_curves.len();
     let b2_spatial_circles = crate::families::b2::records::b2_spatial_circles_from_records(
         &scan.data,
@@ -857,7 +860,7 @@ pub(crate) fn append_freeform_surface_pools(
 
     append_consolidated_line_profiles(ir, annotations, data, records);
 
-    for guide in crate::families::a5a8::records::a5_guide_curves(data) {
+    for guide in crate::families::a5a8::records::a5_guide_curves_from_records(data, records) {
         let points = guide
             .sites
             .iter()
@@ -907,7 +910,7 @@ pub(crate) fn append_freeform_surface_pools(
         });
     }
 
-    for jet in crate::families::a5a8::records::a5_freeform_curves(data) {
+    for jet in crate::families::a5a8::records::a5_freeform_curves_from_records(data, records) {
         for second_limit in [false, true] {
             let Some(curve) =
                 crate::families::a5a8::records::rolling_ball_limit_curve(&jet, second_limit)

@@ -265,11 +265,6 @@ pub(crate) fn a_family_frames_from_records(
         .collect()
 }
 
-pub(crate) fn a_family_frames(data: &[u8], class: u8) -> Vec<ConsolidatedFrame> {
-    let records = consolidated_records(data);
-    a_family_frames_from_records(&records, class)
-}
-
 pub(crate) fn b_family_frames_from_records(
     records: &[ConsolidatedRecord],
     class: u8,
