@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::ids::PointId;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::WritePath;
+use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::units::Units;
+use cadmpeg_ir::CadIr;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -7728,6 +7734,19 @@ fn decode_preserves_native_entities_and_graph() {
         .unwrap();
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["document_local_sha256"],
+        crate::document_digest(&result.ir)
+    );
+    assert_eq!(
+        result
+            .source_fidelity
+            .retained_record(crate::SOURCE_IMAGE_ID)
+            .unwrap()
+            .data
+            .as_deref(),
+        Some(bytes.as_slice())
+    );
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
     assert_eq!(native.arenas["cards"].len(), 7);
@@ -7747,6 +7766,77 @@ fn decode_preserves_native_entities_and_graph() {
     }));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_replays_an_unchanged_iges_source_image() {
+    let bytes = point_file();
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .unwrap();
+    assert_eq!(plan.write_path(), WritePath::VerbatimReplay);
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(written, bytes);
+}
+
+#[test]
+fn encode_regenerates_an_edited_point_from_neutral_ir() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.points.push(Point {
+        id: PointId("point#1".into()),
+        source_object: None,
+        position: Point3::new(4.0, 5.0, 6.0),
+    });
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .unwrap();
+    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report.losses.is_empty());
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(written.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        decoded.ir.model.points[0].position,
+        Point3::new(4.0, 5.0, 6.0)
+    );
+}
+
+#[test]
+fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
+        .unwrap();
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &decoded.ir,
+        fidelity: None,
+    }) else {
+        panic!("unsupported curve geometry was accepted")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("does not encode model arena edges"),
+        "{error}"
+    );
 }
 
 #[test]

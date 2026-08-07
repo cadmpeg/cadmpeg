@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Read-only IGES 5.3 Fixed ASCII codec.
+//! IGES 5.3 Fixed ASCII codec.
 //!
 //! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for the declared Fixed ASCII mechanical/document envelope.
@@ -14,15 +14,26 @@ mod native;
 mod parameter;
 mod profile;
 mod reader;
+mod writer;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
-use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, DecodeResult};
+use cadmpeg_ir::codec::{
+    Codec, Confidence, DecodeOptions, DecodeResult, EncodeInput, Encoder, ExportPlan,
+};
+use cadmpeg_ir::hash::document_local_sha256;
+use cadmpeg_ir::CadIr;
 use std::io::Cursor;
+
+pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
+
+pub(crate) fn document_digest(ir: &CadIr) -> String {
+    document_local_sha256(ir, "iges", SOURCE_IMAGE_ID)
+}
 
 impl Codec for IgesCodec {
     fn id(&self) -> &'static str {
@@ -84,6 +95,16 @@ impl Codec for IgesCodec {
                 "unrecognized IGES representation".into(),
             )),
         }
+    }
+}
+
+impl Encoder for IgesCodec {
+    fn id(&self) -> &'static str {
+        "iges"
+    }
+
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        writer::plan(input)
     }
 }
 

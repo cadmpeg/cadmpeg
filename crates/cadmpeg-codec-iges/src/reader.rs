@@ -4,9 +4,10 @@
 use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
+use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
+use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(global: &global::Global) -> SourceMeta {
@@ -54,6 +55,14 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
+    source_fidelity.retained_records.push(RetainedSourceRecord {
+        id: crate::SOURCE_IMAGE_ID.into(),
+        stream: "iges".into(),
+        offset: 0,
+        byte_len: bytes.len() as u64,
+        sha256: sha256_hex(bytes),
+        data: Some(bytes.to_vec()),
+    });
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -74,6 +83,13 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
         &references,
         &global,
     )?;
+    ir.finalize();
+    let document_digest = crate::document_digest(&ir);
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert(DOCUMENT_LOCAL_DIGEST_ATTRIBUTE.into(), document_digest);
+    }
     source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();
