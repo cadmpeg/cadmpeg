@@ -333,7 +333,7 @@ pub fn decode_face_operands(
                     | DesignFeatureFamily::Thicken
                     | DesignFeatureFamily::Split
             )
-        ) || scope.kind == "SplitFace"
+        ) || matches!(scope.kind.as_str(), "SplitFace" | "Hole")
     }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -2012,7 +2012,7 @@ pub fn decode_body_recipe_operands(
     }
     for scope in scopes
         .iter()
-        .filter(|scope| scope.combine_operation.is_some())
+        .filter(|scope| scope.combine_operation.is_some() || scope.kind == "Hole")
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -2025,10 +2025,13 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(operation) = &scope.combine_operation else {
-            continue;
-        };
-        for record_index in &operation.body_selection_record_indexes {
+        let record_indexes = scope
+            .combine_operation
+            .as_ref()
+            .map_or(scope.reference_members.as_slice(), |operation| {
+                operation.body_selection_record_indexes.as_slice()
+            });
+        for record_index in record_indexes {
             let mut ordinals = scope
                 .reference_members
                 .iter()
@@ -2038,7 +2041,12 @@ pub fn decode_body_recipe_operands(
             let Some(scope_reference_ordinal) = ordinals.next() else {
                 continue;
             };
-            if ordinals.next().is_some() || scope_reference_ordinal.is_multiple_of(2) {
+            if ordinals.next().is_some()
+                || scope
+                    .combine_operation
+                    .as_ref()
+                    .is_some_and(|_| scope_reference_ordinal.is_multiple_of(2))
+            {
                 continue;
             }
             let Some(Some(header)) = headers_by_identity.get(&(stream, *record_index)) else {
