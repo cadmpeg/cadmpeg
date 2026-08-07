@@ -8,18 +8,19 @@ use crate::records::{
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ScalarUnit {
+    Native,
+    Length,
+    Angle,
+}
+
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
 pub(crate) fn enrich_history_parameters<'a>(
     histories: &mut [crate::records::FeatureHistory],
     lanes: impl IntoIterator<Item = &'a FeatureInputLane>,
     replace_existing: bool,
 ) {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum ScalarUnit {
-        Native,
-        Length,
-        Angle,
-    }
     let mut candidates = BTreeMap::<(usize, usize, String), Vec<(f64, ScalarUnit, bool)>>::new();
     for lane in lanes {
         let names_by_id = lane
@@ -82,6 +83,7 @@ pub(crate) fn enrich_history_parameters<'a>(
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let feature = &histories[history_index].features[feature_index];
             let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in lane
                 .scalars
@@ -115,6 +117,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     let unit = scalar_units
                         .get(scalar.id.as_str())
                         .copied()
+                        .or_else(|| scalar_unit_from_feature_parameter(feature, name))
                         .unwrap_or(ScalarUnit::Native);
                     if value_only {
                         continue;
@@ -176,6 +179,20 @@ pub(crate) fn enrich_history_parameters<'a>(
             feature.parameters.entry(name).or_insert(expression);
         }
     }
+}
+
+/// Infer a length unit for a standard fillet radius whose native display is a
+/// placeholder such as `R0`. Variable fillets use indexed radius parameters;
+/// their `D1` value is not a constant radius.
+fn scalar_unit_from_feature_parameter(
+    feature: &crate::records::Feature,
+    name: &str,
+) -> Option<ScalarUnit> {
+    let expression = feature.parameters.get(name)?;
+    if crate::history::fillet_radius_parameter_has_native_display(feature, name, expression) {
+        return Some(ScalarUnit::Length);
+    }
+    None
 }
 
 pub(super) fn value_only_scalar_offset(payload: &[u8], name: &FeatureInputName) -> Option<usize> {

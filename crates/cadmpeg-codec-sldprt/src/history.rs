@@ -2632,6 +2632,22 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn variable_fillet_does_not_use_d1_as_a_constant_radius() {
+        let mut feature = feature("variable-fillet", Some("61"), 0);
+        feature.kind = "VarFillet".into();
+        feature.input_class = Some("VarFillet_c".into());
+        feature.parameters.insert("D1".into(), "R1".into());
+        assert!(matches!(
+            project_fillet(&feature),
+            FeatureDefinition::Fillet { groups }
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::FilletGroup {
+                    radius: RadiusSpec::Unresolved { .. },
+                    ..
+                }])
+        ));
+    }
+
+    #[test]
     fn offset_plane_frame_resolves_one_preceding_parallel_plane() {
         let mut reference = feature("sldprt:history:feature#0:0", None, 0);
         reference.input_class = Some("moRefPlane_c".into());
@@ -7803,10 +7819,14 @@ fn project_fillet(feature: &Feature) -> FeatureDefinition {
         .get("Radius")
         .and_then(|value| parse_positive_length_mm(value))
         .or_else(|| {
-            feature
-                .parameters
-                .get("D1")
-                .and_then(|value| parse_positive_dimension_length_mm(value))
+            if variable_fillet(feature) {
+                None
+            } else {
+                feature
+                    .parameters
+                    .get("D1")
+                    .and_then(|value| parse_positive_dimension_length_mm(value))
+            }
         }) {
         RadiusSpec::Constant {
             radius: Length(radius),
@@ -7877,6 +7897,25 @@ fn project_fillet(feature: &Feature) -> FeatureDefinition {
             tangency_weight: None,
         }],
     }
+}
+
+pub(crate) fn fillet_radius_parameter_has_native_display(
+    feature: &Feature,
+    name: &str,
+    expression: &str,
+) -> bool {
+    name == "D1"
+        && is_fillet(feature)
+        && !variable_fillet(feature)
+        && dimension_display(expression).is_some()
+}
+
+fn variable_fillet(feature: &Feature) -> bool {
+    feature.kind.eq_ignore_ascii_case("VarFillet")
+        || feature
+            .input_class
+            .as_deref()
+            .is_some_and(|class| class.eq_ignore_ascii_case("VarFillet_c"))
 }
 
 fn project_rib(feature: &Feature, native_by_source: &HashMap<&str, &str>) -> FeatureDefinition {
