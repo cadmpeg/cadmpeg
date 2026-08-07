@@ -2,9 +2,11 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
-use cadmpeg_ir::ids::{CurveId, PointId};
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::WritePath;
 use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::units::Units;
@@ -8225,6 +8227,72 @@ fn encode_regenerates_supported_analytic_and_spline_curves() {
         let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
+}
+
+#[test]
+fn encode_regenerates_planar_and_nurbs_surfaces() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("surface#plane".into()),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(4.0, 5.0, 6.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("surface#nurbs".into()),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: 1,
+                v_degree: 1,
+                u_knots: vec![0.0, 0.0, 1.0, 1.0],
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count: 2,
+                v_count: 2,
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                ],
+                weights: None,
+                u_periodic: false,
+                v_periodic: false,
+            }),
+            source_object: None,
+        },
+    ]);
+
+    let plan = IgesEncoder::new(IgesWriteOptions::default())
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.surfaces.len(), 2);
+    assert!(
+        decoded.report.losses.is_empty(),
+        "{:#?}",
+        decoded.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let entities = &decoded.ir.native.namespace("iges").unwrap().arenas["entities"];
+    assert!(entities.iter().any(|record| {
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
+    }));
+    assert!(entities.iter().any(|record| {
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(128)
+    }));
 }
 
 #[test]

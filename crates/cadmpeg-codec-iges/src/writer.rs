@@ -10,7 +10,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
 use cadmpeg_ir::eval::curve_point;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::hash::{sha256_hex, DOCUMENT_LOCAL_DIGEST_ATTRIBUTE};
 use cadmpeg_ir::ids::{PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -186,6 +186,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let mut entities = Vec::new();
     let mut consumed_points = std::collections::BTreeSet::new();
     let mut consumed_curves = std::collections::BTreeSet::new();
+    let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
+    surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    for surface in surfaces {
+        entities.push(surface_entity(&surface.geometry)?);
+    }
     let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
     edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for edge in edges {
@@ -248,9 +253,11 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
         let name = match entity.type_code {
             100 => "100_circular_arc",
             104 => "104_conic_arc",
+            108 => "108_plane",
             110 => "110_line",
             116 => "116_point",
             126 => "126_nurbs_curve",
+            128 => "128_nurbs_surface",
             124 => "124_transformation",
             106 => "106_copious_data",
             102 => "102_composite_curve",
@@ -266,7 +273,6 @@ fn reject_unsupported_model(ir: &CadIr) -> Result<(), CodecError> {
         ("faces", !ir.model.faces.is_empty()),
         ("loops", !ir.model.loops.is_empty()),
         ("coedges", !ir.model.coedges.is_empty()),
-        ("surfaces", !ir.model.surfaces.is_empty()),
         ("pcurves", !ir.model.pcurves.is_empty()),
         (
             "procedural_surfaces",
@@ -380,7 +386,7 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         .find(|record| {
             !matches!(
                 record.field("entity_type").and_then(|value| value.as_i64()),
-                Some(100 | 102 | 104 | 106 | 110 | 116 | 124 | 126)
+                Some(100 | 102 | 104 | 106 | 108 | 110 | 116 | 124 | 126 | 128)
             )
         })
     {
@@ -439,6 +445,175 @@ fn point_entity(position: Point3) -> Entity {
         .into_bytes(),
         transform: None,
     }
+}
+
+fn surface_entity(geometry: &SurfaceGeometry) -> Result<Entity, CodecError> {
+    match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            ensure_finite_point(*origin, "plane origin")?;
+            let normal = unit(*normal, "plane normal")?;
+            let u_axis = unit(*u_axis, "plane u axis")?;
+            let projected = u_axis - normal.scale(normal.dot(u_axis));
+            let u_axis = unit(projected, "plane u axis")?;
+            let v_axis = normal.cross(u_axis);
+            let placement = placement(*origin, u_axis, v_axis, normal)?;
+            Ok(Entity {
+                type_code: 108,
+                form: 0,
+                label: "PLANE",
+                parameters: b"108,0,0,1,0,0;".to_vec(),
+                transform: Some(placement),
+            })
+        }
+        SurfaceGeometry::Nurbs(nurbs) => encode_nurbs_surface(nurbs),
+        other => Err(CodecError::NotImplemented(format!(
+            "IGES semantic writer does not encode surface geometry {other:?}"
+        ))),
+    }
+}
+
+fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
+    let u_count = usize::try_from(nurbs.u_count)
+        .map_err(|_| CodecError::Malformed("IGES surface u count overflows usize".into()))?;
+    let v_count = usize::try_from(nurbs.v_count)
+        .map_err(|_| CodecError::Malformed("IGES surface v count overflows usize".into()))?;
+    let u_degree = usize::try_from(nurbs.u_degree)
+        .map_err(|_| CodecError::Malformed("IGES surface u degree overflows usize".into()))?;
+    let v_degree = usize::try_from(nurbs.v_degree)
+        .map_err(|_| CodecError::Malformed("IGES surface v degree overflows usize".into()))?;
+    let pole_count = u_count.checked_mul(v_count).ok_or_else(|| {
+        CodecError::Malformed("IGES surface control-point count overflows".into())
+    })?;
+    if u_count == 0
+        || v_count == 0
+        || u_degree == 0
+        || v_degree == 0
+        || u_degree >= u_count
+        || v_degree >= v_count
+        || nurbs.control_points.len() != pole_count
+        || nurbs.u_knots.len() != u_count + u_degree + 1
+        || nurbs.v_knots.len() != v_count + v_degree + 1
+        || nurbs.u_knots.iter().any(|value| !value.is_finite())
+        || nurbs.v_knots.iter().any(|value| !value.is_finite())
+        || nurbs.u_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || nurbs.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || nurbs.control_points.iter().any(|point| {
+            [point.x, point.y, point.z]
+                .iter()
+                .any(|value| !value.is_finite())
+        })
+    {
+        return Err(CodecError::Malformed(
+            "IGES NURBS surface dimensions, knots, or poles are invalid".into(),
+        ));
+    }
+    let weights = match &nurbs.weights {
+        Some(weights) if weights.len() == pole_count => {
+            if weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+            {
+                return Err(CodecError::Malformed(
+                    "IGES NURBS surface weights must be finite and positive".into(),
+                ));
+            }
+            weights.clone()
+        }
+        Some(_) => {
+            return Err(CodecError::Malformed(
+                "IGES NURBS surface weight count does not match poles".into(),
+            ));
+        }
+        None => vec![1.0; pole_count],
+    };
+    let u_range = [nurbs.u_knots[u_degree], nurbs.u_knots[u_count]];
+    let v_range = [nurbs.v_knots[v_degree], nurbs.v_knots[v_count]];
+    if u_range[0] >= u_range[1] || v_range[0] >= v_range[1] {
+        return Err(CodecError::Malformed(
+            "IGES NURBS surface has an empty parameter domain".into(),
+        ));
+    }
+    let closed_u = nurbs_surface_closed_u(nurbs, u_range, v_range);
+    let closed_v = nurbs_surface_closed_v(nurbs, u_range, v_range);
+    let mut parameters = format!(
+        "128,{},{},{},{},{},{},{},{},{}",
+        u_count - 1,
+        v_count - 1,
+        nurbs.u_degree,
+        nurbs.v_degree,
+        i32::from(closed_u),
+        i32::from(closed_v),
+        i32::from(nurbs.weights.is_none()),
+        i32::from(nurbs.u_periodic),
+        i32::from(nurbs.v_periodic)
+    );
+    for value in &nurbs.u_knots {
+        parameters.push(',');
+        parameters.push_str(&number(*value));
+    }
+    for value in &nurbs.v_knots {
+        parameters.push(',');
+        parameters.push_str(&number(*value));
+    }
+    for v in 0..v_count {
+        for u in 0..u_count {
+            parameters.push(',');
+            parameters.push_str(&number(weights[u * v_count + v]));
+        }
+    }
+    for v in 0..v_count {
+        for u in 0..u_count {
+            let point = nurbs.control_points[u * v_count + v];
+            for value in [point.x, point.y, point.z] {
+                parameters.push(',');
+                parameters.push_str(&number(value));
+            }
+        }
+    }
+    for value in [u_range[0], u_range[1], v_range[0], v_range[1]] {
+        parameters.push(',');
+        parameters.push_str(&number(value));
+    }
+    parameters.push(';');
+    Ok(Entity {
+        type_code: 128,
+        form: 0,
+        label: "NURBS",
+        parameters: parameters.into_bytes(),
+        transform: None,
+    })
+}
+
+fn nurbs_surface_closed_u(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64; 2]) -> bool {
+    [v_range[0], v_range[0].midpoint(v_range[1]), v_range[1]]
+        .into_iter()
+        .all(|v| {
+            let Some(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[0], v) else {
+                return false;
+            };
+            let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u_range[1], v) else {
+                return false;
+            };
+            close_point(start, end)
+        })
+}
+
+fn nurbs_surface_closed_v(nurbs: &NurbsSurface, u_range: [f64; 2], v_range: [f64; 2]) -> bool {
+    [u_range[0], u_range[0].midpoint(u_range[1]), u_range[1]]
+        .into_iter()
+        .all(|u| {
+            let Some(start) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[0]) else {
+                return false;
+            };
+            let Some(end) = cadmpeg_ir::eval::nurbs_surface_point(nurbs, u, v_range[1]) else {
+                return false;
+            };
+            close_point(start, end)
+        })
 }
 
 fn vertex_point_id(ir: &CadIr, vertex_id: &VertexId) -> Result<PointId, CodecError> {
