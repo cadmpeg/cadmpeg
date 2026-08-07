@@ -12,8 +12,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use cadmpeg_codec_nx::NxCodec;
+use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 use cadmpeg_ir::report::LossCategory;
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::{CadIr, Severity};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -252,7 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        version: 9,
+        version: 10,
         format: "nx",
         fixtures,
         totals,
@@ -432,22 +434,72 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         loss_details,
         validation_errors,
         all_bodies_colored: !decoded.ir.model.bodies.is_empty()
-            && decoded
-                .ir
-                .model
-                .bodies
-                .iter()
-                .all(|body| body.color.is_some()),
+            && decoded.ir.model.bodies.iter().all(|body| {
+                has_effective_color(
+                    &decoded.ir,
+                    body.color,
+                    &AppearanceTarget::Body(body.id.clone()),
+                )
+            }),
         all_faces_colored: !decoded.ir.model.faces.is_empty()
-            && decoded
-                .ir
-                .model
-                .faces
-                .iter()
-                .all(|face| face.color.is_some()),
+            && decoded.ir.model.faces.iter().all(|face| {
+                has_effective_color(
+                    &decoded.ir,
+                    face.color,
+                    &AppearanceTarget::Face(face.id.clone()),
+                )
+            }),
         rederivation,
         rederivation_boundary,
     })
+}
+
+/// Return the target's effective color under the neutral appearance contract.
+///
+/// A direct color is sufficient when no topology-targeted binding exists. If a
+/// binding exists, it must be the sole binding and agree with the direct color;
+/// without a direct color it must resolve to exactly one appearance with a
+/// normalized base color. Source-carrier bindings and ambiguous target
+/// bindings do not supply a topology color.
+fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &AppearanceTarget) -> bool {
+    let bindings = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| &binding.target == target);
+    let bindings = bindings.collect::<Vec<_>>();
+    if bindings.len() > 1 {
+        return false;
+    }
+
+    let bound_color = bindings.first().and_then(|binding| {
+        let mut appearances = ir
+            .model
+            .appearances
+            .iter()
+            .filter(|appearance| appearance.id == binding.appearance);
+        let appearance = appearances.next()?;
+        if appearances.next().is_some() {
+            return None;
+        }
+        appearance
+            .base_color
+            .filter(|color| normalized_color(*color))
+    });
+
+    match direct_color {
+        Some(color) => match bindings.first() {
+            None => normalized_color(color),
+            Some(_) => bound_color.is_some_and(|bound| normalized_color(color) && bound == color),
+        },
+        None => bound_color.is_some(),
+    }
+}
+
+fn normalized_color(color: Color) -> bool {
+    [color.r, color.g, color.b, color.a]
+        .into_iter()
+        .all(|component| component.is_finite() && (0.0..=1.0).contains(&component))
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
@@ -676,12 +728,12 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
                 assertion(
                     "body_appearance",
                     body_colors,
-                    "every decoded body has a color",
+                    "every decoded body has an effective direct or uniquely bound base color",
                 ),
                 assertion(
                     "face_appearance",
                     face_colors,
-                    "every decoded face has a color",
+                    "every decoded face has an effective direct or uniquely bound base color",
                 ),
                 assertion(
                     "complete_attributes",
@@ -942,6 +994,176 @@ mod tests {
         let assertion = &gates[3].assertions[0];
         assert_eq!(assertion.observed, "0/2 fixtures");
         assert!(!gates[3].passed);
+    }
+
+    #[test]
+    fn effective_color_accepts_a_unique_base_color_binding() {
+        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+        use cadmpeg_ir::ids::AppearanceId;
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = cadmpeg_ir::topology::Body {
+            id: BodyId("body".to_string()),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let appearance_id = AppearanceId("appearance".to_string());
+        ir.model.bodies.push(body.clone());
+        ir.model.appearances.push(Appearance {
+            id: appearance_id.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(Color {
+                r: 0.1,
+                g: 0.2,
+                b: 0.3,
+                a: 1.0,
+            }),
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding".to_string(),
+            target: AppearanceTarget::Body(body.id.clone()),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+
+        assert!(has_effective_color(
+            &ir,
+            body.color,
+            &AppearanceTarget::Body(body.id),
+        ));
+
+        ir.model.bodies[0].color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        assert!(has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+        ir.model.appearances[0].base_color = None;
+        assert!(!has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+        ir.model.appearances[0].base_color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        ir.model.bodies[0].color = Some(Color {
+            r: 0.9,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        assert!(!has_effective_color(
+            &ir,
+            ir.model.bodies[0].color,
+            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        ));
+    }
+
+    #[test]
+    fn effective_color_rejects_ambiguous_or_non_color_bindings() {
+        use cadmpeg_ir::appearance::{Appearance, AppearanceBinding};
+        use cadmpeg_ir::ids::AppearanceId;
+
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let body = cadmpeg_ir::topology::Body {
+            id: BodyId("body".to_string()),
+            kind: cadmpeg_ir::topology::BodyKind::Solid,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let appearance_id = AppearanceId("appearance".to_string());
+        ir.model.bodies.push(body.clone());
+        ir.model.appearances.push(Appearance {
+            id: appearance_id.clone(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        let target = AppearanceTarget::Body(body.id.clone());
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding-1".to_string(),
+            target: target.clone(),
+            appearance: appearance_id.clone(),
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+        assert!(!has_effective_color(&ir, None, &target));
+
+        ir.model.appearances[0].base_color = Some(Color {
+            r: 0.1,
+            g: 0.2,
+            b: 0.3,
+            a: 1.0,
+        });
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: "binding-2".to_string(),
+            target: target.clone(),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: None,
+            channels: BTreeMap::new(),
+        });
+        assert!(!has_effective_color(&ir, None, &target));
+    }
+
+    #[test]
+    fn effective_color_requires_normalized_direct_color() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+        assert!(!has_effective_color(
+            &ir,
+            Some(Color {
+                r: 1.1,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            &target,
+        ));
+        assert!(has_effective_color(
+            &ir,
+            Some(Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            }),
+            &target,
+        ));
     }
 
     #[test]
