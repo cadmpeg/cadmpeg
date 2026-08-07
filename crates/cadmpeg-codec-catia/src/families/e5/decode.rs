@@ -1755,12 +1755,16 @@ pub(crate) fn e5_boundary_curve(
     range: [f64; 2],
     endpoints: [Point3; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
+    let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
     let finite_vector = |vector: Vector3| {
         [vector.x, vector.y, vector.z]
             .into_iter()
             .all(f64::is_finite)
     };
+    if !range.into_iter().all(f64::is_finite) || !endpoints.iter().copied().all(finite_point) {
+        return None;
+    }
     if let (
         SurfaceGeometry::Plane {
             origin,
@@ -1774,7 +1778,13 @@ pub(crate) fn e5_boundary_curve(
         let center = (*origin)
             .translated(*u_axis, center[0])
             .translated(v_axis, center[1]);
-        if !finite_point(center) {
+        if !finite_point(center)
+            || !finite_vector(*normal)
+            || !finite_vector(*u_axis)
+            || !finite_vector(v_axis)
+            || !radius.is_finite()
+            || *radius <= 0.0
+        {
             return None;
         }
         return Some((
@@ -1839,12 +1849,18 @@ pub(crate) fn e5_boundary_curve(
     let PcurveGeometry::Line { origin, direction } = pcurve else {
         return None;
     };
+    if !finite_point2(*origin) || !finite_point2(*direction) {
+        return None;
+    }
     let start_uv = Point2::new(
         origin.u + range[0] * direction.u,
         origin.v + range[0] * direction.v,
     );
     let span = range[1] - range[0];
     let span_direction = Point2::new(span * direction.u, span * direction.v);
+    if !finite_point2(start_uv) || !span.is_finite() || !finite_point2(span_direction) {
+        return None;
+    }
 
     let circle = if direction.v == 0.0 && direction.u != 0.0 {
         e5_constant_v_circle(surface, start_uv.v)
@@ -1854,10 +1870,16 @@ pub(crate) fn e5_boundary_curve(
         None
     };
     if let Some((center, radius, axis)) = circle {
+        if !finite_point(center) || !finite_vector(axis) || !radius.is_finite() || radius <= 0.0 {
+            return None;
+        }
         let candidates = [axis, axis.scale(-1.0)]
             .into_iter()
             .filter_map(|axis| {
                 let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                if !finite_vector(ref_direction) {
+                    return None;
+                }
                 let range = circle_parameter_range_from_surface_branch(
                     surface,
                     center,
@@ -1901,10 +1923,14 @@ pub(crate) fn e5_boundary_curve(
     }
     let delta = endpoints[1].vector_from(endpoints[0]);
     let length = delta.x.hypot(delta.y).hypot(delta.z);
-    (length.is_finite() && length > 0.0).then_some((
+    if !length.is_finite() || length <= 0.0 {
+        return None;
+    }
+    let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
+    finite_vector(direction).then_some((
         CurveGeometry::Line {
             origin: endpoints[0],
-            direction: delta.scale(1.0 / length),
+            direction,
         },
         [0.0, length],
     ))
@@ -2534,6 +2560,96 @@ mod route_tests {
         .expect("finite nonzero plane line");
         assert!(matches!(curve, CurveGeometry::Line { .. }));
         assert_eq!(range, [0.0, direction]);
+    }
+
+    #[test]
+    fn e5_boundary_line_rejects_overflowing_uv_start() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let native = E5Pcurve::Line {
+            surface: 0,
+            origin: [f64::MAX, 0.0],
+            direction: [f64::MAX, 0.0],
+            range: [1.0, 2.0],
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(f64::MAX, 0.0),
+            direction: Point2::new(f64::MAX, 0.0),
+        };
+        assert!(e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [1.0, 2.0],
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn e5_boundary_circle_rejects_nonfinite_radius() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let native = E5Pcurve::Circle {
+            surface: 0,
+            center: [0.0, 0.0],
+            codes: [0, 0],
+            radius: f64::INFINITY,
+            range: [0.0, 1.0],
+            tail: [0.0, 0.0],
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn e5_boundary_line_normalizes_subnormal_chord() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let tiny = f64::from_bits(1);
+        let native = E5Pcurve::Line {
+            surface: 0,
+            origin: [0.0, 0.0],
+            direction: [tiny, 0.0],
+            range: [0.0, 1.0],
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(tiny, 0.0),
+        };
+        let (curve, range) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
+        )
+        .expect("subnormal line chord");
+        assert_eq!(range, [0.0, tiny]);
+        assert!(matches!(
+            curve,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(1.0, 0.0, 0.0)
+        ));
     }
 
     #[test]
