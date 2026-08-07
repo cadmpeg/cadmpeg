@@ -217,13 +217,25 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     missing_support[support_start + 3] = 0x7f;
     assert!(crate::families::e5::graph::parse_topology(&missing_support).is_none());
 
-    let mut missing_support_pcurve = bytes;
+    let mut missing_support_pcurve = bytes.clone();
     let support_start = missing_support_pcurve
         .windows(4)
         .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
         .expect("curve-support record");
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
     assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
+
+    let mut missing_pcurve_surface = bytes;
+    let pcurve_start = missing_pcurve_surface
+        .windows(13)
+        .position(|window| {
+            window.starts_with(&[0xe5, 0x0d, 0x03, 0x96])
+                && u32::from_le_bytes(window[9..13].try_into().unwrap()) == 410
+        })
+        .expect("support pcurve record");
+    missing_pcurve_surface[pcurve_start + 14..pcurve_start + 17]
+        .copy_from_slice(&[0x18, 0x84, 0x03]);
+    assert!(crate::families::e5::graph::parse_topology(&missing_pcurve_surface).is_none());
 }
 
 #[test]

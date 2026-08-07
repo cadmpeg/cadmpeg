@@ -317,6 +317,19 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
         .filter(|record| matches!(record.class, 0x96 | 0x97 | 0xa0))
         .map(|record| parse_pcurve(record).map(|pcurve| (record.id, pcurve)))
         .collect::<Option<_>>()?;
+    for pcurve in pcurves.values() {
+        let surface = match pcurve {
+            E5Pcurve::Line { surface, .. }
+            | E5Pcurve::Circle { surface, .. }
+            | E5Pcurve::Jet { surface, .. } => *surface,
+        };
+        if !by_id
+            .get(&surface)
+            .is_some_and(|record| is_surface_carrier_class(record.class))
+        {
+            return None;
+        }
+    }
     let bounds: BTreeMap<u32, E5Bounds> = records
         .iter()
         .filter(|record| record.class == 0x0e)
@@ -349,7 +362,12 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
     let mut faces = Vec::with_capacity(raw_faces.len());
     let mut reachable_edges = HashSet::new();
     for face in raw_faces {
-        by_id.get(&face.surface)?;
+        if !by_id
+            .get(&face.surface)
+            .is_some_and(|record| is_surface_carrier_class(record.class))
+        {
+            return None;
+        }
         let mut resolved_loops = Vec::with_capacity(face.loops.len());
         for (loop_position, loop_id) in face.loops.into_iter().enumerate() {
             let raw = loops.get(&loop_id)?;
@@ -440,6 +458,10 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
         curve_supports,
         vertex_refs,
     })
+}
+
+fn is_surface_carrier_class(class: u8) -> bool {
+    matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc)
 }
 
 fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
