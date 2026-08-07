@@ -247,8 +247,12 @@ remaining conflicting roles unspecified, and reports a topology loss.
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
 definitional representation transfers one exact 2D line, circle, ellipse,
 parabola, hyperbola, polyline, NURBS, trimmed curve, or offset curve. An
-ambiguous or unsupported 2D representation stays opaque and remains detached
-from the coedge.
+unsupported 2D representation stays opaque and remains detached from the
+coedge. When a source curve has multiple pcurve candidates on its owning
+surface, the decoder maps each candidate through that surface and selects it
+only when one candidate has a unique endpoint-continuous fit for the coedge.
+Tied or otherwise unresolved candidates remain detached and produce a topology
+loss.
 
 A topology-referenced curve or surface whose geometry fails transfer retains
 its STEP identity as an unknown carrier linked to its opaque record. The body

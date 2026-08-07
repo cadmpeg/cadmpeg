@@ -5,17 +5,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::eval::{pcurve_tangent, pcurve_uv, surface_partials, surface_point};
+use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
     Vertex, VertexUse,
 };
+use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -270,6 +272,7 @@ pub(super) fn decode(
             id,
             record,
             exchange,
+            ir,
             &vertices,
             &edges,
             &oriented,
@@ -1588,6 +1591,7 @@ fn build(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
+    ir: &CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -1619,6 +1623,7 @@ fn build(
             id,
             root,
             exchange,
+            ir,
             vdefs,
             edefs,
             odefs,
@@ -1680,6 +1685,7 @@ fn build(
             id,
             root,
             exchange,
+            ir,
             vdefs,
             edefs,
             odefs,
@@ -1716,6 +1722,7 @@ fn build_one(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
+    ir: &CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
@@ -2145,24 +2152,39 @@ fn build_one(
                     } else {
                         associated
                     };
-                    let pcurves = match associated.len() {
-                        0 | 1 => associated,
-                        n => {
-                            let message = match (edge.curve, surface_step) {
-                                (Some(curve), Some(surface)) => format!(
-                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                                _ => format!(
-                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                            };
-                            losses.push(LossNote {
-                                code: LossKind::ReferenceGraphNotClosed,
-                                severity: Severity::Warning,
-                                message,
-                                provenance: None,
+                    let pcurves = match associated.as_slice() {
+                        [] | [_] => associated,
+                        candidates => {
+                            let selected = surface_step.and_then(|surface| {
+                                select_associated_pcurve(
+                                    ir,
+                                    surface,
+                                    edge,
+                                    vdefs,
+                                    point_positions,
+                                    candidates,
+                                )
                             });
-                            Vec::new()
+                            if let Some(selected) = selected {
+                                vec![selected]
+                            } else {
+                                let n = candidates.len();
+                                let message = match (edge.curve, surface_step) {
+                                    (Some(curve), Some(surface)) => format!(
+                                        "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                    ),
+                                    _ => format!(
+                                        "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                    ),
+                                };
+                                losses.push(LossNote {
+                                    code: LossKind::ReferenceGraphNotClosed,
+                                    severity: Severity::Warning,
+                                    message,
+                                    provenance: None,
+                                });
+                                Vec::new()
+                            }
                         }
                     };
                     let cid = CoedgeId(format!(
@@ -2774,6 +2796,273 @@ fn associated_pcurves(
             .then_some(pcurve_id)
         })
         .collect()
+}
+
+/// Select one same-surface pcurve only when its mapped carrier has a unique
+/// endpoint-continuous fit to the oriented edge. Multiple pcurves are common
+/// on seam and intersection curves; list order is not a geometric rule.
+fn select_associated_pcurve(
+    ir: &CadIr,
+    surface_step: u64,
+    edge: &EdgeDef,
+    vdefs: &BTreeMap<u64, VertexDef>,
+    point_positions: &CarrierIndex,
+    candidates: &[PcurveId],
+) -> Option<PcurveId> {
+    let surface_identity = format!("step:data:surface#{surface_step}");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == surface_identity)
+        .map(|surface| &surface.geometry)?;
+    let start = vdefs
+        .get(&edge.start)
+        .and_then(|vertex| point_positions.get(vertex.point))
+        .copied()?;
+    let end = vdefs
+        .get(&edge.end)
+        .and_then(|vertex| point_positions.get(vertex.point))
+        .copied()?;
+    let scores = candidates
+        .iter()
+        .map(|candidate| {
+            let pcurve = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == *candidate)?;
+            pcurve_endpoint_score(&pcurve.geometry, surface, start, end)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let (best_index, &best) = scores
+        .iter()
+        .enumerate()
+        .min_by(|(_, left), (_, right)| left.total_cmp(right))?;
+    let bound = COINCIDENCE_TOLERANCE.max(ir.tolerances.linear);
+    if !best.is_finite() || !bound.is_finite() || best > bound {
+        return None;
+    }
+    let tie_tolerance = 1.0e-9_f64.max(best * 1.0e-9);
+    let equally_good = scores
+        .iter()
+        .filter(|score| (**score - best).abs() <= tie_tolerance)
+        .count();
+    (equally_good == 1).then(|| candidates[best_index].clone())
+}
+
+fn pcurve_endpoint_score(
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    start: Point3,
+    end: Point3,
+) -> Option<f64> {
+    let seeds = pcurve_selection_seeds(geometry, surface);
+    let start = pcurve_surface_distance(geometry, surface, start, &seeds)?;
+    let end = pcurve_surface_distance(geometry, surface, end, &seeds)?;
+    Some(start.max(end))
+}
+
+fn pcurve_surface_distance(
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    target: Point3,
+    seeds: &[f64],
+) -> Option<f64> {
+    seeds
+        .iter()
+        .copied()
+        .filter_map(|seed| mapped_pcurve_distance(geometry, surface, target, seed))
+        .min_by(f64::total_cmp)
+}
+
+/// Minimize the distance from one pcurve branch to a model-space endpoint.
+/// A pcurve and its 3D surface curve need not share parameter units, so this
+/// is an independent one-dimensional inverse rather than a parameter copy.
+fn mapped_pcurve_distance(
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+    target: Point3,
+    seed: f64,
+) -> Option<f64> {
+    if !seed.is_finite() {
+        return None;
+    }
+    let domain = pcurve_selection_parameter_domain(geometry);
+    let clamp_to_domain =
+        |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
+    let evaluate = |parameter: f64| {
+        let uv = pcurve_uv(geometry, parameter)?;
+        let point = surface_point(surface, uv.u, uv.v)?;
+        let tangent_uv = pcurve_tangent(geometry, parameter)?;
+        let partials = surface_partials(surface, uv.u, uv.v)?;
+        let tangent = Vector3::new(
+            partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
+            partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
+            partials.du.z * tangent_uv.u + partials.dv.z * tangent_uv.v,
+        );
+        Some((point, tangent))
+    };
+
+    let mut parameter = clamp_to_domain(seed);
+    let mut best = f64::INFINITY;
+    for _ in 0..32 {
+        let (point, tangent) = evaluate(parameter)?;
+        let error = point.distance(target);
+        if !error.is_finite() {
+            return None;
+        }
+        best = best.min(error);
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= f64::EPSILON {
+            break;
+        }
+        let residual = point.vector_from(target);
+        let step = residual.dot(tangent) / denominator;
+        if !step.is_finite() {
+            break;
+        }
+        let mut candidate = clamp_to_domain(parameter - step);
+        let Some((candidate_point, _)) = evaluate(candidate) else {
+            break;
+        };
+        let mut candidate_error = candidate_point.distance(target);
+        for _ in 0..12 {
+            if candidate_error < error {
+                break;
+            }
+            candidate = clamp_to_domain(0.5 * (candidate + parameter));
+            let Some((candidate_point, _)) = evaluate(candidate) else {
+                break;
+            };
+            candidate_error = candidate_point.distance(target);
+        }
+        if candidate == parameter || !candidate_error.is_finite() || candidate_error >= error {
+            break;
+        }
+        parameter = candidate;
+    }
+    best.is_finite().then_some(best)
+}
+
+fn pcurve_selection_seeds(geometry: &PcurveGeometry, surface: &SurfaceGeometry) -> Vec<f64> {
+    let mut seeds = vec![0.0];
+    if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
+        seeds.extend([start, start + (end - start) * 0.5, end]);
+    }
+    if matches!(
+        geometry,
+        PcurveGeometry::Circle { .. }
+            | PcurveGeometry::Ellipse { .. }
+            | PcurveGeometry::Harmonic { .. }
+            | PcurveGeometry::SphericalGreatCircle { .. }
+    ) {
+        seeds.extend([
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            std::f64::consts::PI * 1.5,
+        ]);
+    }
+    if let PcurveGeometry::Line { origin, direction } = geometry {
+        if let Some([[u_lower, u_upper], [v_lower, v_upper]]) =
+            surface_selection_parameter_domains(surface)
+        {
+            for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
+                if direction.u != 0.0 {
+                    seeds.push((boundary - origin.u) / direction.u);
+                }
+            }
+            for boundary in [v_lower, (v_lower + v_upper) * 0.5, v_upper] {
+                if direction.v != 0.0 {
+                    seeds.push((boundary - origin.v) / direction.v);
+                }
+            }
+        }
+    }
+    seeds
+        .into_iter()
+        .filter(|seed| seed.is_finite())
+        .fold(Vec::new(), |mut unique, seed| {
+            if !unique.contains(&seed) {
+                unique.push(seed);
+            }
+            unique
+        })
+}
+
+fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => selection_nurbs_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => selection_nurbs_parameter_domain(*degree, knots, radial_control_points.len()),
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            if parameter_range[0] < parameter_range[1] {
+                Some(*parameter_range)
+            } else {
+                pcurve_selection_parameter_domain(basis)
+            }
+        }
+        PcurveGeometry::Offset { basis, .. } => pcurve_selection_parameter_domain(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. } => None,
+    }
+}
+
+fn surface_selection_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f64; 2]; 2]> {
+    match surface {
+        SurfaceGeometry::Nurbs(surface) => {
+            let u_count = usize::try_from(surface.u_count).ok()?;
+            let v_count = usize::try_from(surface.v_count).ok()?;
+            Some([
+                selection_nurbs_parameter_domain(surface.u_degree, &surface.u_knots, u_count)?,
+                selection_nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count)?,
+            ])
+        }
+        SurfaceGeometry::Transformed { basis, .. } => surface_selection_parameter_domains(basis),
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn selection_nurbs_parameter_domain(
+    degree: u32,
+    knots: &[f64],
+    control_point_count: usize,
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    if control_point_count <= degree
+        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
+    {
+        return None;
+    }
+    let start = *knots.get(degree)?;
+    let end = *knots.get(control_point_count)?;
+    (start.is_finite() && end.is_finite() && start < end).then_some([start, end])
 }
 
 #[derive(Clone)]

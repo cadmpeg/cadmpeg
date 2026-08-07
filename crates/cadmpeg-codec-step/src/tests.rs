@@ -2346,6 +2346,13 @@ fn ambiguous_seam_source() -> String {
         )
 }
 
+fn seam_source_with_one_endpoint_continuous_candidate() -> String {
+    ambiguous_seam_source().replace(
+        "#71=LINE('',#51,#53);",
+        "#71=LINE('',#72,#53);\n#72=CARTESIAN_POINT('',(0.,5.));",
+    )
+}
+
 #[test]
 fn ambiguous_seam_pcurve_candidates_are_reported_not_guessed() {
     let decoded = StepCodec::default()
@@ -2376,8 +2383,34 @@ fn ambiguous_seam_pcurve_candidates_are_reported_not_guessed() {
     assert_eq!(losses[0].severity, cadmpeg_ir::Severity::Warning);
     assert_eq!(
         losses[0].message,
-        "curve #57 associates 2 pcurves with surface #28; no UV-continuity rule selects one, so the coedge has no pcurve"
+        "curve #57 associates 2 pcurves with surface #28; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
     );
+}
+
+#[test]
+fn endpoint_continuity_selects_the_unique_seam_pcurve_candidate() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(seam_source_with_one_endpoint_continuous_candidate()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode endpoint-continuous seam pcurve");
+
+    let coedge = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    assert_eq!(coedge.pcurves[0].pcurve.as_str(), "step:data:pcurve#56");
+    assert!(decoded.report.losses.iter().all(|loss| !loss
+        .message
+        .contains("no unique endpoint-continuous pcurve selects one")));
+
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

@@ -189,11 +189,15 @@ semantics before changing the current rule.
 **Question.** Which same-surface pcurve belongs to each seam coedge when a seam
 curve carries more than one candidate pcurve?
 
-**Known.** The source curve can carry multiple pcurves for one surface and the
-decoder associates one candidate with each coedge use.
+**Known.** The source curve can carry multiple pcurves for one surface. The
+decoder maps each candidate through the owning surface and selects a candidate
+only when its endpoint fit is uniquely continuous within the topology
+tolerance. Tied or unresolved candidates remain detached from the coedge and
+produce a topology loss.
 
-**Need.** We need the UV-continuity and orientation rule that selects a
-candidate. Serialized occurrence order is not a sufficient rule.
+**Need.** Endpoint continuity does not distinguish equal seam branches. We
+need the standards-valid UV branch and orientation rule for selecting one of
+those tied candidates. Serialized occurrence order is not a sufficient rule.
 
 ### TP-05. Partial solid and tolerant point carriers
 
