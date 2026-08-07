@@ -726,25 +726,45 @@ fn mesh_face_coverage(
     }) {
         return None;
     }
+    let mut occurrences_by_cycle = cycles
+        .iter()
+        .map(|face_cycles| vec![Vec::<(usize, MeshEdgeOccurrence)>::new(); face_cycles.len()])
+        .collect::<Vec<_>>();
+    let mut present_edges_by_face = vec![HashSet::<usize>::new(); cycles.len()];
+    for (edge, values) in occurrences.iter().enumerate() {
+        for &occurrence in values {
+            let face_cycles = occurrences_by_cycle.get_mut(occurrence.face)?;
+            let cycle_occurrences = face_cycles.get_mut(occurrence.cycle)?;
+            cycle_occurrences.push((edge, occurrence));
+            present_edges_by_face[occurrence.face].insert(edge);
+        }
+    }
+    let mut edges_by_face = vec![Vec::new(); cycles.len()];
+    for (edge, faces) in edge_faces.iter().copied().enumerate() {
+        for face in faces {
+            if face >= cycles.len() {
+                return None;
+            }
+        }
+        edges_by_face[faces[0]].push(edge);
+        if faces[1] != faces[0] {
+            edges_by_face[faces[1]].push(edge);
+        }
+    }
     let mut coverage = Vec::with_capacity(cycles.len());
     for (face, face_cycles) in cycles.iter().enumerate() {
         let mut gaps = Vec::new();
         for (cycle_index, cycle) in face_cycles.iter().enumerate() {
             let mut covered = vec![false; cycle.len()];
-            for (edge, values) in occurrences.iter().enumerate() {
-                for occurrence in values
-                    .iter()
-                    .filter(|occurrence| occurrence.face == face && occurrence.cycle == cycle_index)
-                {
-                    let (start, segment_count) =
-                        edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
-                    for offset in 0..segment_count {
-                        let slot = &mut covered[(start + offset) % cycle.len()];
-                        if *slot {
-                            return None;
-                        }
-                        *slot = true;
+            for &(edge, occurrence) in &occurrences_by_cycle[face][cycle_index] {
+                let (start, segment_count) =
+                    edge_rows[edge].boundary_span(occurrence.start, cycle.len())?;
+                for offset in 0..segment_count {
+                    let slot = &mut covered[(start + offset) % cycle.len()];
+                    if *slot {
+                        return None;
                     }
+                    *slot = true;
                 }
             }
             if covered.iter().all(|value| !*value) {
@@ -768,16 +788,10 @@ fn mesh_face_coverage(
                 }
             }
         }
-        let missing_edges = edge_rows
+        let missing_edges = edges_by_face[face]
             .iter()
-            .enumerate()
-            .filter_map(|(edge, _)| {
-                (edge_faces[edge].contains(&face)
-                    && !occurrences[edge]
-                        .iter()
-                        .any(|occurrence| occurrence.face == face))
-                .then_some(edge)
-            })
+            .copied()
+            .filter(|edge| !present_edges_by_face[face].contains(edge))
             .collect();
         coverage.push(MeshFaceCoverage {
             face,

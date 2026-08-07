@@ -617,7 +617,10 @@ pub(crate) fn parse_trim_chain(
 
     let prefix = bytes.get(..end)?;
     let mut predecessors = HashMap::<usize, Vec<usize>>::new();
-    for start in 0..prefix.len() {
+    for (start, marker) in prefix.windows(2).enumerate() {
+        if marker[0] != 0x01 || !TRIM_KINDS.contains(&marker[1]) {
+            continue;
+        }
         if let Some(layout) = parse_trim_record_layout(prefix, start, width) {
             predecessors.entry(layout.end).or_default().push(start);
         }

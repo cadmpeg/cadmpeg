@@ -4088,7 +4088,8 @@ fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f
 }
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
-    let mut records = framed_records(bytes);
+    let frames = object_stream_frames(bytes);
+    let mut records = framed_records(bytes, &frames);
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
     let mut admitted = HashSet::new();
@@ -4098,7 +4099,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             break;
         }
         let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-        for frame in object_stream_frames(bytes) {
+        for frame in &frames {
             if !pending.contains(&frame.object_id)
                 || !is_reference_dependency_class(frame.family, frame.class)
             {
@@ -4140,7 +4141,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
     records
 }
 
-fn framed_records(bytes: &[u8]) -> Vec<B5Record> {
+fn framed_records(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     for ObjectFrame {
@@ -4149,7 +4150,7 @@ fn framed_records(bytes: &[u8]) -> Vec<B5Record> {
         family,
         class,
         object_id,
-    } in object_stream_frames(bytes)
+    } in frames.iter().copied()
     {
         if !((family == 0xb5 && is_topology_class(class))
             || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
@@ -6852,7 +6853,8 @@ mod tests {
         bytes.extend_from_slice(&9u32.to_le_bytes());
         bytes.push(0x00);
 
-        let records = framed_records(&bytes);
+        let frames = object_stream_frames(&bytes);
+        let records = framed_records(&bytes, &frames);
         assert_eq!(
             records
                 .iter()
