@@ -5023,6 +5023,47 @@ fn complex_datum_feature_remains_a_dimension_target() {
 }
 
 #[test]
+fn complex_dimension_inherits_kind_targets_and_nominal_value() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=(DIMENSIONAL_LOCATION() DIMENSIONAL_LOCATION_WITH_PATH(#6) DIRECTED_DIMENSIONAL_LOCATION() SHAPE_ASPECT_RELATIONSHIP('centre distance','',#6,#6));
+#13=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(5.0),#1);
+#14=SHAPE_DIMENSION_REPRESENTATION('distance value',(#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let dimension = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("centre distance"))
+        .expect("complex dimensional location");
+    assert!(matches!(
+        &dimension.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Location,
+            nominal: Some(cadmpeg_ir::pmi::PmiValue {
+                value: 5.0,
+                quantity: PmiQuantity::Length,
+            }),
+            ..
+        }
+    ));
+    assert_eq!(
+        dimension.targets,
+        vec![cadmpeg_ir::pmi::PmiTarget::ShapeAspect {
+            source_id: "#6".into()
+        }]
+    );
+}
+
+#[test]
 fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 

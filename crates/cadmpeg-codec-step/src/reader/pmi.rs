@@ -151,32 +151,39 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(record) = exchange.records.get(&id) else {
             continue;
         };
-        let Some(mut kind) = dimension_kind(record.simple_name()) else {
+        let Some((dimension_name, mut kind)) = dimension_descriptor(record) else {
             continue;
         };
-        let name = record.parameters().iter().find_map(|value| {
-            decode_text(
-                value,
-                &mut losses,
-                id,
-                "dimension name",
-                LossKind::MetadataNotTransferred,
-            )
-        });
+        let name = record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+            .find_map(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    id,
+                    "dimension name",
+                    LossKind::MetadataNotTransferred,
+                )
+            });
         if matches!(kind, DimensionKind::Size) {
-            let category = if record
-                .simple_name()
-                .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
-            {
-                record.parameters().iter().rev().find_map(|value| {
-                    decode_text(
-                        value,
-                        &mut losses,
-                        id,
-                        "dimension category",
-                        LossKind::MetadataNotTransferred,
-                    )
-                })
+            let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
+                record
+                    .partials
+                    .iter()
+                    .find(|partial| partial.name == dimension_name)
+                    .into_iter()
+                    .flat_map(|partial| partial.parameters.iter().rev())
+                    .find_map(|value| {
+                        decode_text(
+                            value,
+                            &mut losses,
+                            id,
+                            "dimension category",
+                            LossKind::MetadataNotTransferred,
+                        )
+                    })
             } else {
                 name.clone()
             };
@@ -191,8 +198,9 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .and_then(|values| values.first())
             .copied();
         let aspect_ids = record
-            .parameters()
+            .partials
             .iter()
+            .flat_map(|partial| &partial.parameters)
             .flat_map(references)
             .filter(|reference| aspects.contains(reference));
         push_annotation(
@@ -512,10 +520,14 @@ fn mark_characteristic_representations(
     typed: &mut BTreeSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let record_references = record
-            .parameters()
+        let parameters = record
+            .partials
             .iter()
-            .flat_map(references)
+            .flat_map(|partial| &partial.parameters)
+            .collect::<Vec<_>>();
+        let record_references = parameters
+            .iter()
+            .flat_map(|value| references(value))
             .collect::<Vec<_>>();
         if !record_references
             .iter()
@@ -528,14 +540,19 @@ fn mark_characteristic_representations(
             let Some(representation) = exchange.records.get(&representation_id) else {
                 continue;
             };
-            if representation.simple_name() != Some("SHAPE_DIMENSION_REPRESENTATION") {
+            if !representation
+                .partials
+                .iter()
+                .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+            {
                 continue;
             }
             typed.insert(representation_id);
             typed.extend(
                 representation
-                    .parameters()
+                    .partials
                     .iter()
+                    .flat_map(|partial| &partial.parameters)
                     .flat_map(references)
                     .filter(|reference| {
                         exchange.records.get(reference).is_some_and(|record| {
@@ -780,7 +797,9 @@ fn push_annotation(
 }
 
 fn targets(ids: impl IntoIterator<Item = u64>) -> Vec<PmiTarget> {
+    let mut seen = BTreeSet::new();
     ids.into_iter()
+        .filter(|id| seen.insert(*id))
         .map(|id| PmiTarget::ShapeAspect {
             source_id: format!("#{id}"),
         })
@@ -850,6 +869,12 @@ fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
     }
 }
 
+fn dimension_descriptor(record: &RawRecord) -> Option<(&str, DimensionKind)> {
+    record.partials.iter().find_map(|partial| {
+        dimension_kind(Some(partial.name.as_str())).map(|kind| (partial.name.as_str(), kind))
+    })
+}
+
 fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
     use GeometricToleranceKind as Kind;
     Some(match name? {
@@ -881,17 +906,26 @@ fn characteristic_values(
 ) -> BTreeMap<u64, Vec<PmiValue>> {
     let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
     for (_, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
-        let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
-            exchange
-                .records
-                .get(id)
-                .is_some_and(|record| dimension_kind(record.simple_name()).is_some())
-        }) else {
+        let parameters = record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+            .collect::<Vec<_>>();
+        let Some(characteristic) =
+            parameters
+                .iter()
+                .flat_map(|value| references(value))
+                .find(|id| {
+                    exchange
+                        .records
+                        .get(id)
+                        .is_some_and(|record| dimension_descriptor(record).is_some())
+                })
+        else {
             continue;
         };
         result.entry(characteristic).or_default().extend(
-            record
-                .parameters()
+            parameters
                 .iter()
                 .filter_map(|value| measure(value, exchange, measurements)),
         );
