@@ -11104,6 +11104,27 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         crate::design::decode::operands::edge_recipe_local_topology_references(&structured, 2)
             .is_none()
     );
+    let signed_middle =
+        crate::design::decode::operands::edge_recipe_entries(&[1, 4, 1, -2, 1, 4, 4, 4])
+            .expect("signed topology middle is retained");
+    assert_eq!(signed_middle[0].topology_triplets[0].middle, -2);
+    assert_eq!(
+        signed_middle[0].topology_triplets[0].incident_edge_ordinal,
+        None
+    );
+    let signed_face = crate::design::decode::operands::face_recipe_structure(&[
+        0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3, 0, -1,
+        0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1,
+    ])
+    .expect("signed face-node topology recipe structure");
+    assert_eq!(
+        signed_face.sides[0].entries[0].topology_triplets[0].middle,
+        -2
+    );
+    assert_eq!(
+        signed_face.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+        None
+    );
     let mut referenced_headers = structured.clone();
     referenced_headers.sides[0].header_value = 2;
     referenced_headers.sides[1].header_value = 3;
@@ -11731,6 +11752,17 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         Some(FaceSelection::Resolved { faces, native })
             if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
     ));
+    let mut namespaced_slot = operand.clone();
+    namespaced_slot.candidate_faces = vec![FaceId("f3d:brep/example.smbh/brep:entity#50".into())];
+    namespaced_slot.unreferenced_candidate_faces.clear();
+    assert!(matches!(
+        resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)),
+        Some(FaceSelection::Resolved { faces, native })
+            if faces == [FaceId("f3d:brep/example.smbh/brep:entity#50".into())]
+                && native == group.id
+    ));
+    namespaced_slot.resolved_face_slots = vec![51];
+    assert!(resolved_face_group(&group, std::slice::from_ref(&namespaced_slot)).is_none());
     let mut historical_face_scope = face_scope.clone();
     historical_face_scope.previous_history_state_id = Some(49);
     assert!(matches!(

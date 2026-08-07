@@ -209,13 +209,36 @@ pub(crate) fn resolved_historical_face_group(
 
 fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
     if !operand.resolved_face_slots.is_empty() {
-        return Some(
-            operand
-                .resolved_face_slots
-                .iter()
-                .map(|slot| cadmpeg_ir::ids::FaceId(ids::brep_entity_id(slot)))
-                .collect(),
-        );
+        let active_candidates = operand
+            .candidate_faces
+            .iter()
+            .chain(&operand.unreferenced_candidate_faces)
+            .chain(&operand.alternate_selector_candidate_faces)
+            .collect::<Vec<_>>();
+        if active_candidates.is_empty() {
+            return Some(
+                operand
+                    .resolved_face_slots
+                    .iter()
+                    .map(|slot| cadmpeg_ir::ids::FaceId(ids::brep_entity_id(slot)))
+                    .collect(),
+            );
+        }
+        return operand
+            .resolved_face_slots
+            .iter()
+            .map(|slot| {
+                active_candidates
+                    .iter()
+                    .find(|face| {
+                        face.0
+                            .rsplit_once('#')
+                            .and_then(|(_, ordinal)| ordinal.parse::<i64>().ok())
+                            == Some(*slot)
+                    })
+                    .map(|face| (*face).clone())
+            })
+            .collect();
     }
     let candidates = face_operand_candidates(operand);
     if !operand.alternate_selector_candidate_faces.is_empty() {

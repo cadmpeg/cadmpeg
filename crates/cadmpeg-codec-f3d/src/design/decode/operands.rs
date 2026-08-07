@@ -3172,14 +3172,13 @@ fn edge_recipe_topology_triplet(
         return None;
     }
     let outer = std::num::NonZeroU32::new(u32::try_from(*outer).ok()?)?;
-    let middle = u32::try_from(*middle).ok()?;
     let vertex_ordinal = outer.get().checked_sub(1)?;
-    let incident = if middle == outer.get() {
+    let incident = if *middle == i32::try_from(outer.get()).ok()? {
         Some((
             crate::records::DesignTopologyIncidentSide::Following,
             vertex_ordinal,
         ))
-    } else if middle.checked_add(1) == Some(outer.get()) {
+    } else if *middle >= 0 && middle.checked_add(1) == i32::try_from(outer.get()).ok() {
         Some((
             crate::records::DesignTopologyIncidentSide::Preceding,
             vertex_ordinal
@@ -3192,7 +3191,7 @@ fn edge_recipe_topology_triplet(
     };
     Some(DesignTopologyRecipeTriplet {
         outer,
-        middle,
+        middle: *middle,
         vertex_ordinal,
         incident_edge_ordinal: incident.map(|(_, ordinal)| ordinal),
         incident_side: incident.map(|(side, _)| side),

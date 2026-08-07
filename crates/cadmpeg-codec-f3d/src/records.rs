@@ -3675,8 +3675,8 @@ pub struct DesignTopologyRecipeTriplet {
     /// Equal positive first and third words, not exceeding the containing
     /// entry's boundary-edge count.
     pub outer: NonZeroU32,
-    /// Nonnegative middle word.
-    pub middle: u32,
+    /// Signed middle word retained from the source triplet.
+    pub middle: i32,
     /// Zero-based loop vertex ordinal encoded by `outer`.
     pub vertex_ordinal: u32,
     /// Zero-based boundary-edge ordinal incident to `vertex_ordinal`.
