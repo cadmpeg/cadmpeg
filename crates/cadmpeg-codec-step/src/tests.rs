@@ -5136,6 +5136,62 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
 }
 
 #[test]
+fn complex_geometric_tolerance_links_its_inherited_datum_system() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6) GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE((#8)));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance datum system");
+    let tolerance = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        &tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            datum_system: Some(system),
+            ..
+        } if system.as_str() == "step:presentation:pmi#8"
+    ));
+    assert!(result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .any(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. })));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    let report = crate::write_step(
+        &result.ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write complex geometric tolerance with report policy");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::PmiOmitted));
+    assert!(!String::from_utf8_lossy(&output).contains("FLATNESS_TOLERANCE"));
+}
+
+#[test]
 fn reversed_step_ellipse_axes_are_canonicalized() {
     use cadmpeg_ir::geometry::CurveGeometry;
 

@@ -366,22 +366,21 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ));
             continue;
         };
-        // This path decodes simple tolerance entities. Datum references belong
-        // to GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE complex instances; a
-        // surplus reference on a simple entity does not alter its semantics.
-        let has_datum_reference = record
+        // A complex tolerance keeps its base targets in GEOMETRIC_TOLERANCE,
+        // while GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE carries the datum
+        // system as a separate aggregate.
+        let datum_system = record
             .partials
             .iter()
-            .any(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
-        let datum_system = if has_datum_reference {
-            refs.iter().find_map(|id| {
-                let annotation = &ir.model.pmi[*annotations.get(id)?];
+            .find(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE")
+            .into_iter()
+            .flat_map(|partial| partial.parameters.iter())
+            .flat_map(references)
+            .find_map(|id| {
+                let annotation = &ir.model.pmi[*annotations.get(&id)?];
                 matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
                     .then(|| annotation.id.clone())
-            })
-        } else {
-            None
-        };
+            });
         push_annotation(
             ir,
             &mut annotations,
