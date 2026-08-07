@@ -314,6 +314,7 @@ fn compact_legacy_short_role_two_curve_carries_endpoint_indices() {
         compact_legacy_short_role_two_curve_endpoint_indices(&payload, 0),
         Some([2, 4])
     );
+    assert!(marker_is_selected_construction_line(&payload, 0));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(42));
     payload[23..25].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
@@ -356,6 +357,15 @@ fn compact_legacy_short_role_one_curve_indexes_the_coordinate_roster() {
         Some([1, 3])
     );
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(42));
+    payload[33..35].copy_from_slice(&0x18u16.to_le_bytes());
+    assert_eq!(
+        compact_legacy_short_role_one_curve_endpoint_indices(&payload, 0),
+        Some([1, 3])
+    );
+    assert_eq!(
+        compact_legacy_code_one_line_endpoint_indices(&payload, 0),
+        Some([1, 3])
+    );
     payload[25..27].fill(0);
     payload[46..50].fill(0);
     assert_eq!(

@@ -4375,7 +4375,7 @@ fn compact_legacy_short_curve_endpoint_indices_for_role(
     if !compact_legacy_marker_body(payload, offset)
         || !matches!(marker_native_code(payload, offset), Some(0 | 1))
         || marker_profile_curve_role(payload, offset) != Some(role)
-        || payload.get(offset + 31..offset + 42) != Some(&[body_tag, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || !compact_legacy_short_curve_body(payload, offset, body_tag, role == 1)
         || payload.get(offset + 46..offset + 50) != Some(&u32::from(state).to_le_bytes())
         || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
         || payload.get(offset + 62..offset + 64) != Some(&[0; 2])
@@ -4388,6 +4388,22 @@ fn compact_legacy_short_curve_endpoint_indices_for_role(
     }
     one_based_u16_endpoint_pair(payload, offset, 42)
         .filter(|endpoints| endpoints[0] != endpoints[1])
+}
+
+fn compact_legacy_short_curve_body(
+    payload: &[u8],
+    offset: usize,
+    body_tag: u8,
+    allow_profile_variant: bool,
+) -> bool {
+    let Some(body) = payload.get(offset + 31..offset + 42) else {
+        return false;
+    };
+    let profile_variant = u16::from_le_bytes([body[2], body[3]]);
+    body[0] == body_tag
+        && body[1] == 0
+        && (profile_variant == 0 || (allow_profile_variant && profile_variant == 0x18))
+        && body[4..] == [0; 7]
 }
 
 pub(super) fn compact_legacy_code_one_line_endpoint_indices(
@@ -4414,7 +4430,7 @@ fn compact_legacy_curve_endpoint_indices_for_code(
         || marker_native_code(payload, offset) != Some(code)
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 42) != Some(&[0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || !compact_legacy_short_curve_body(payload, offset, 0x04, true)
         || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
         || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
         || !(short_record
@@ -4943,6 +4959,7 @@ pub(super) fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option
 pub(super) fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     if (packed_compact_legacy_curve_endpoint_indices(payload, offset).is_some()
         && marker_profile_curve_role(payload, offset) == Some(2))
+        || compact_legacy_short_role_two_curve_endpoint_indices(payload, offset).is_some()
         || alternate_current_selected_axis_endpoint_indices(payload, offset).is_some()
         || extended_profile_roster_construction_line_endpoint_indices(payload, offset).is_some()
         || extended_shifted_construction_line_endpoint_indices(payload, offset).is_some()

@@ -580,6 +580,36 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `compact_legacy_68_profile_variant_curve`
+
+Spec §2 · layout: byte offsets · size: 68 B
+
+The role-1 profile-body variant uses u16 24 at +33 and carries two feature-local trailer object values.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The compact `ff ff 07 00 01` generation |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes |
+| 13 | 4 | `native_kind` | `u32` | little | spec | stores its native value u32 at marker +13 |
+| 17 | 2 | `zero_prefix` | `bytes[2]` | little | spec | bytes +17 through +18 are zero |
+| 19 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` at marker +19 |
+| 23 | 2 | `role` | `u16` | little | spec | role u16 at marker +23 |
+| 25 | 2 | `state` | `u16` | little | spec | state u16 `1` at marker +25 |
+| 27 | 4 | `zero_body_prefix` | `bytes[4]` | little | spec | bytes +27 through +30 are zero |
+| 31 | 1 | `body_tag` | `u8` | little | spec | byte `04` at marker +31 |
+| 32 | 1 | `body_zero` | `u8` | little | spec | zero byte at marker +32 |
+| 33 | 2 | `profile_variant` | `u16` | little | spec | u16 `0` or `24` at marker +33 |
+| 35 | 7 | `zero_body_suffix` | `bytes[7]` | little | spec | seven zero bytes at marker +35 through +41 |
+| 42 | 2 | `endpoint_first` | `u16` | little | spec | zero-based endpoint u16 values at marker +42 and +44 |
+| 44 | 2 | `endpoint_second` | `u16` | little | spec | zero-based endpoint u16 values at marker +42 and +44 |
+| 46 | 4 | `selector_value` | `u32` | little | spec | u32 `1` at marker +46 |
+| 50 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +50 |
+| 58 | 2 | `tail_zero_first` | `u16` | little | spec | marker +58 stores zero u16 |
+| 60 | 2 | `linked_object_first` | `u16` | little | spec | marker +60 stores a feature-local object u16 |
+| 62 | 2 | `tail_zero_second` | `u16` | little | spec | marker +62 stores zero u16 |
+| 64 | 2 | `linked_object_second` | `u16` | little | spec | marker +64 stores a feature-local object u16 |
+| 66 | 2 | `tail_zero_third` | `u16` | little | spec | marker +66 stores zero u16 |
+
 ## `compact_legacy_code_two_profile_point`
 
 Spec §2 · layout: byte offsets · size: 132 B

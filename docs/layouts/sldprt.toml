@@ -1927,6 +1927,162 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "compact_legacy_68_profile_variant_curve"
+kind = "byte"
+section = "2"
+anchor = "A role-1 indexed line has value `0`"
+size = 68
+endianness = "little"
+note = "The role-1 profile-body variant uses u16 24 at +33 and carries two feature-local trailer object values."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The compact `ff ff 07 00 01` generation"
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[8]"
+source = "spec"
+anchor = "Its header at marker +5 is either eight `ff` bytes"
+
+[[record.field]]
+name = "native_kind"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "stores its native value u32 at marker +13"
+
+[[record.field]]
+name = "zero_prefix"
+offset = 17
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes +17 through +18 are zero"
+
+[[record.field]]
+name = "profile_locus"
+offset = 19
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00` at marker +19"
+
+[[record.field]]
+name = "role"
+offset = 23
+type = "u16"
+source = "spec"
+anchor = "role u16 at marker +23"
+
+[[record.field]]
+name = "state"
+offset = 25
+type = "u16"
+source = "spec"
+anchor = "state u16 `1` at marker +25"
+
+[[record.field]]
+name = "zero_body_prefix"
+offset = 27
+type = "bytes[4]"
+source = "spec"
+anchor = "bytes +27 through +30 are zero"
+
+[[record.field]]
+name = "body_tag"
+offset = 31
+type = "u8"
+source = "spec"
+anchor = "byte `04` at marker +31"
+
+[[record.field]]
+name = "body_zero"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "zero byte at marker +32"
+
+[[record.field]]
+name = "profile_variant"
+offset = 33
+type = "u16"
+source = "spec"
+anchor = "u16 `0` or `24` at marker +33"
+
+[[record.field]]
+name = "zero_body_suffix"
+offset = 35
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes at marker +35 through +41"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 42
+type = "u16"
+source = "spec"
+anchor = "zero-based endpoint u16 values at marker +42 and +44"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 44
+type = "u16"
+source = "spec"
+anchor = "zero-based endpoint u16 values at marker +42 and +44"
+
+[[record.field]]
+name = "selector_value"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +46"
+
+[[record.field]]
+name = "signed_selector"
+offset = 50
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +50"
+
+[[record.field]]
+name = "tail_zero_first"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "marker +58 stores zero u16"
+
+[[record.field]]
+name = "linked_object_first"
+offset = 60
+type = "u16"
+source = "spec"
+anchor = "marker +60 stores a feature-local object u16"
+
+[[record.field]]
+name = "tail_zero_second"
+offset = 62
+type = "u16"
+source = "spec"
+anchor = "marker +62 stores zero u16"
+
+[[record.field]]
+name = "linked_object_second"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "marker +64 stores a feature-local object u16"
+
+[[record.field]]
+name = "tail_zero_third"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "marker +66 stores zero u16"
+
+[[record]]
 name = "compact_legacy_code_two_profile_point"
 kind = "byte"
 section = "2"
