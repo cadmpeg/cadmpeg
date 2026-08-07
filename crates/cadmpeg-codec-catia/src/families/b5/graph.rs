@@ -3931,6 +3931,15 @@ fn rational_arc_pcurve(
     }
     distinct_knots.push(end);
     multiplicities.push(3);
+    if distinct_knots.iter().any(|knot| !knot.is_finite())
+        || control_points
+            .iter()
+            .flatten()
+            .any(|coordinate| !coordinate.is_finite())
+        || weights.iter().any(|weight| !weight.is_finite())
+    {
+        return None;
+    }
     Some(B5Pcurve {
         object_id: record.object_id,
         surface,
