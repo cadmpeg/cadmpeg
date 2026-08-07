@@ -5937,27 +5937,68 @@ fn directed_blind_extrusion_span(
     })
 }
 
+fn feature_id_for_section_transform(
+    definition: &crate::feature::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<u32> {
+    match (definition.owner_feature_id, transform.feature_id) {
+        (Some(definition_feature_id), Some(transform_feature_id))
+            if definition_feature_id != transform_feature_id =>
+        {
+            None
+        }
+        (Some(feature_id), _) | (_, Some(feature_id)) => Some(feature_id),
+        (None, None) => None,
+    }
+}
+
+fn derived_blind_extrusion_span(
+    transform: &crate::placement::FeatureSectionTransform,
+    extent: &ExtrudeExtent,
+    direction: [f64; 3],
+) -> Option<ExtrusionSpan> {
+    let ExtrudeExtent::OneSided {
+        side:
+            ExtrudeSide {
+                termination: Termination::Blind { length },
+                ..
+            },
+    } = extent
+    else {
+        return None;
+    };
+    directed_blind_extrusion_span(transform.normal, direction, length.0)
+}
+
 fn resolved_feature_extrusion_span(
     scan: &ContainerScan,
+    ir: &CadIr,
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<ExtrusionSpan> {
+    let feature_id = feature_id_for_section_transform(definition, transform)?;
     generated_arc_cylinder_extent(scan, definition, transform)
-        .and_then(|(extent, direction)| match extent {
-            ExtrudeExtent::OneSided {
-                side:
-                    ExtrudeSide {
-                        termination: Termination::Blind { length },
-                        ..
-                    },
-            } => directed_blind_extrusion_span(transform.normal, direction, length.0),
-            _ => None,
-        })
+        .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
             extrusion_span(
                 transform.origin,
                 transform.normal,
-                feature_plane_equations(scan, definition.owner_feature_id?),
+                feature_plane_equations(scan, feature_id),
+            )
+        })
+        .or_else(|| {
+            generated_cap_plane_extent(scan, ir, feature_id).and_then(|(extent, direction)| {
+                derived_blind_extrusion_span(transform, &extent, direction)
+            })
+        })
+        .or_else(|| {
+            generated_bounded_cylinder_extent(scan, ir, feature_id, Some(transform)).and_then(
+                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
+            )
+        })
+        .or_else(|| {
+            generated_nurbs_translation_extent(scan, ir, feature_id, Some(transform)).and_then(
+                |(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction),
             )
         })
 }
@@ -7119,7 +7160,7 @@ fn transfer_feature_extrusion_surfaces(
                     .then_some((surface_id, spline))
             })
             .collect::<Vec<_>>();
-        let Some(span) = resolved_feature_extrusion_span(scan, definition, transform) else {
+        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
         let lower_translation = transform.normal.map(|value| value * span.lower);
@@ -8681,7 +8722,7 @@ fn transfer_resolved_extrusion_breps(
             continue;
         };
         let sketch_id = model_sketch_id(scan, definition);
-        let Some(span) = resolved_feature_extrusion_span(scan, definition, transform) else {
+        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
         let length = span.upper - span.lower;

@@ -43,6 +43,11 @@ fixtures, claims above L1 remain unproven.
   do not affect solved geometry.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs.
+- Generated cap-plane tables and complete positional-cylinder carriers provide
+  blind extrusion spans to generated feature surfaces and first additive B-reps
+  when the section transform agrees with the carrier direction. Complete
+  NURBS-translation carriers provide the same span to generated NURBS feature
+  surfaces when their profile is supported.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.

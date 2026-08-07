@@ -3731,6 +3731,44 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
         generated_bounded_cylinder_extent(&scan, &untransferred_caps, 7, Some(&transform)),
         generated_bounded_cylinder_extent(&scan, &ir, 7, None)
     );
+    let definition = crate::feature::FeatureDefinition {
+        id: 7,
+        owner_feature_id: Some(7),
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let surface_rows = std::mem::take(&mut scan.surfaces.rows);
+    scan.surfaces.rows = surface_rows
+        .iter()
+        .filter(|row| row.id == 33)
+        .cloned()
+        .collect();
+    let model_surfaces = std::mem::take(&mut ir.model.surfaces);
+    ir.model.surfaces = model_surfaces
+        .iter()
+        .filter(|surface| surface.id == SurfaceId::from("creo:visibgeom:surface#33"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        resolved_feature_extrusion_span(&scan, &ir, &definition, &transform),
+        Some(ExtrusionSpan {
+            lower: 0.0,
+            upper: 8.0,
+        })
+    );
+    scan.surfaces.rows = surface_rows;
+    ir.model.surfaces = model_surfaces;
     let displaced = crate::placement::FeatureSectionTransform {
         origin: [0.0, 3.0, 0.0],
         ..transform.clone()
