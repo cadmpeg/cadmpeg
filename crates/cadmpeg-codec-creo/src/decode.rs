@@ -14576,6 +14576,11 @@ fn section_entity_is_generated_profile(
             ] == [204, 203, 200, 200]
                 && profile.source_entity_id == Some(source_entity_id)
                 && cylinder.source_entity_id.is_none()
+                && table.surface_ids.contains(&cap.entity_id)
+                && table.surface_ids.contains(&cylinder.entity_id)
+                && table
+                    .non_surface_entity_ids
+                    .contains(&rowless_cap.entity_id)
                 && table.non_surface_entity_ids.contains(&profile.entity_id)
                 && crate::surface::unique_surface_row(rows, cylinder.entity_id).is_some_and(
                     |row| {
@@ -19650,6 +19655,8 @@ fn single_cap_circular_sweep_geometry(
     ] == [204, 203, 200, 200]
         && profile_id.source_entity_id.is_some()
         && cylinder_id.source_entity_id.is_none()
+        && table.surface_ids.contains(&cap_id.entity_id)
+        && table.surface_ids.contains(&cylinder_id.entity_id)
         && table
             .non_surface_entity_ids
             .contains(&rowless_cap.entity_id)
