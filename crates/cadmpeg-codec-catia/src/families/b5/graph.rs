@@ -669,14 +669,22 @@ impl B5Loop {
 /// Resolve the dominant object-stream topology graph through inline object ids.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
-    parse_records(bytes, &records(bytes), true)
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    parse_from_records(bytes, &records, &frames, true)
 }
 
 pub(crate) fn parse_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Option<B5Graph> {
-    parse_records(bytes, &records_from_frames(bytes, frames), true)
+    let records = records_from_frames(bytes, frames);
+    parse_from_records(bytes, &records, frames, true)
 }
 
-fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> Option<B5Graph> {
+pub(crate) fn parse_from_records(
+    bytes: &[u8],
+    records: &[B5Record],
+    frames: &[ObjectFrame],
+    require_topology: bool,
+) -> Option<B5Graph> {
     let by_id: HashMap<u32, &B5Record> = records
         .iter()
         .map(|record| (record.object_id, record))
@@ -706,7 +714,7 @@ fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> 
             candidate,
         );
     }
-    for candidate in a8_class21_pcurves(bytes) {
+    for candidate in a8_class21_pcurves_from_frames(bytes, frames) {
         object_stream_pcurve_classes
             .entry(candidate.object_id)
             .and_modify(|class| {
@@ -940,7 +948,7 @@ fn parse_records(bytes: &[u8], records: &[B5Record], require_topology: bool) -> 
         .collect();
     let mut conflicting_pcurves = HashSet::new();
     let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
-    for pcurve in circle_pcurves(bytes) {
+    for pcurve in circle_pcurves_from_frames(bytes, frames) {
         if surfaces.contains_key(&pcurve.surface) {
             circle_candidates
                 .entry(pcurve.object_id)
@@ -1263,9 +1271,15 @@ fn object_stream_pcurve_candidate(
     })
 }
 
+#[cfg(test)]
 fn a8_class21_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
+    let frames = object_stream_frames(bytes);
+    a8_class21_pcurves_from_frames(bytes, &frames)
+}
+
+fn a8_class21_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         if frame.family != 0xa8 || frame.class != 0x21 {
             continue;
         }
@@ -1567,7 +1581,7 @@ pub(crate) fn targeted_geometry_graph_from_frames(
     }
     let mut records = candidates.into_values().flatten().collect::<Vec<_>>();
     records.sort_by_key(|record| record.offset);
-    parse_records(bytes, &records, false)
+    parse_from_records(bytes, &records, frames, false)
 }
 
 fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
@@ -4026,9 +4040,9 @@ fn parse_sphere_great_circle_pcurve(
         })
 }
 
-fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
+fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
-    for frame in object_stream_frames(bytes) {
+    for frame in frames {
         if frame.family != 0xb5 || frame.class != 0x19 {
             continue;
         }
@@ -4108,12 +4122,13 @@ fn line_values<const N: usize>(payload: &[u8], mut position: usize) -> Option<[f
     Some(values)
 }
 
+#[cfg(test)]
 fn records(bytes: &[u8]) -> Vec<B5Record> {
     let frames = object_stream_frames(bytes);
     records_from_frames(bytes, &frames)
 }
 
-fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
+pub(crate) fn records_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Record> {
     let mut records = framed_records(bytes, frames);
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
     let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
@@ -4423,69 +4438,124 @@ fn parse_face_record(record: &B5Record) -> Option<B5FaceRecord> {
 
 /// Read every structurally complete face record independently of target
 /// resolution.
+#[cfg(test)]
 pub(crate) fn typed_face_records(bytes: &[u8]) -> BTreeMap<u32, B5FaceRecord> {
-    records(bytes)
-        .into_iter()
-        .filter_map(|record| parse_face_record(&record).map(|face| (record.object_id, face)))
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_face_records_from_records(&records)
+}
+
+pub(crate) fn typed_face_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5FaceRecord> {
+    records
+        .iter()
+        .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
         .collect()
 }
 
 /// Read every structurally complete loop record independently of target
 /// resolution.
+#[cfg(test)]
 pub(crate) fn typed_loop_records(bytes: &[u8]) -> BTreeMap<u32, B5Loop> {
-    records(bytes)
-        .into_iter()
-        .filter_map(|record| parse_loop_record(&record).map(|loop_| (record.object_id, loop_)))
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_loop_records_from_records(&records)
+}
+
+pub(crate) fn typed_loop_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Loop> {
+    records
+        .iter()
+        .filter_map(|record| parse_loop_record(record).map(|loop_| (record.object_id, loop_)))
         .collect()
 }
 
 /// Read every structurally complete physical-edge record independently of
 /// topology resolution.
+#[cfg(test)]
 pub(crate) fn typed_edge_records(bytes: &[u8]) -> BTreeMap<u32, B5Edge> {
-    records(bytes)
-        .into_iter()
-        .filter_map(|record| parse_edge(&record).map(|edge| (record.object_id, edge)))
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_edge_records_from_records(&records)
+}
+
+pub(crate) fn typed_edge_records_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Edge> {
+    records
+        .iter()
+        .filter_map(|record| parse_edge(record).map(|edge| (record.object_id, edge)))
         .collect()
 }
 
 /// Read every structurally complete vertex-incidence link independently of
 /// topology resolution.
+#[cfg(test)]
 pub(crate) fn typed_vertex_incidence_links(bytes: &[u8]) -> BTreeMap<u32, B5VertexIncidenceLink> {
-    records(bytes)
-        .into_iter()
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_vertex_incidence_links_from_records(&records)
+}
+
+pub(crate) fn typed_vertex_incidence_links_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5VertexIncidenceLink> {
+    records
+        .iter()
         .filter_map(|record| {
-            parse_vertex_incidence_link(&record).map(|link| (record.object_id, link))
+            parse_vertex_incidence_link(record).map(|link| (record.object_id, link))
         })
         .collect()
 }
 
 /// Read every structurally complete class-`21` pcurve independently of
 /// support and topology resolution.
+#[cfg(test)]
 pub(crate) fn typed_class_21_pcurves(bytes: &[u8]) -> BTreeMap<u32, B5Pcurve> {
-    records(bytes)
-        .into_iter()
-        .filter_map(|record| parse_pcurve(&record).map(|pcurve| (record.object_id, pcurve)))
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_class_21_pcurves_from_records(&records)
+}
+
+pub(crate) fn typed_class_21_pcurves_from_records(records: &[B5Record]) -> BTreeMap<u32, B5Pcurve> {
+    records
+        .iter()
+        .filter_map(|record| parse_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
         .collect()
 }
 
 /// Read every structurally complete parameter incidence independently of
 /// curve, edge, and topology resolution.
+#[cfg(test)]
 pub(crate) fn typed_parameter_incidences(bytes: &[u8]) -> BTreeMap<u32, B5ParameterIncidence> {
-    records(bytes)
-        .into_iter()
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_parameter_incidences_from_records(&records)
+}
+
+pub(crate) fn typed_parameter_incidences_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, B5ParameterIncidence> {
+    records
+        .iter()
         .filter_map(|record| {
-            parameter_incidence(&record).map(|incidence| (record.object_id, incidence))
+            parameter_incidence(record).map(|incidence| (record.object_id, incidence))
         })
         .collect()
 }
 
 /// Read every structurally complete vertex-incidence roster independently of
 /// member and topology resolution.
+#[cfg(test)]
 pub(crate) fn typed_vertex_incidence_rosters(bytes: &[u8]) -> BTreeMap<u32, Vec<u32>> {
-    records(bytes)
-        .into_iter()
+    let frames = object_stream_frames(bytes);
+    let records = records_from_frames(bytes, &frames);
+    typed_vertex_incidence_rosters_from_records(&records)
+}
+
+pub(crate) fn typed_vertex_incidence_rosters_from_records(
+    records: &[B5Record],
+) -> BTreeMap<u32, Vec<u32>> {
+    records
+        .iter()
         .filter_map(|record| {
-            counted_references(&record, 0x05).map(|members| (record.object_id, members))
+            counted_references(record, 0x05).map(|members| (record.object_id, members))
         })
         .collect()
 }
@@ -6902,8 +6972,41 @@ mod tests {
     fn indexed_frame_parse_matches_one_shot_parse() {
         let bytes = crate::tests::b5_closed_triangle_stream();
         let frames = object_stream_frames(&bytes);
+        let records = records_from_frames(&bytes, &frames);
 
         assert_eq!(parse(&bytes), parse_from_frames(&bytes, &frames));
+        assert_eq!(
+            parse(&bytes),
+            parse_from_records(&bytes, &records, &frames, true)
+        );
+        assert_eq!(
+            typed_face_records(&bytes),
+            typed_face_records_from_records(&records)
+        );
+        assert_eq!(
+            typed_loop_records(&bytes),
+            typed_loop_records_from_records(&records)
+        );
+        assert_eq!(
+            typed_edge_records(&bytes),
+            typed_edge_records_from_records(&records)
+        );
+        assert_eq!(
+            typed_vertex_incidence_links(&bytes),
+            typed_vertex_incidence_links_from_records(&records)
+        );
+        assert_eq!(
+            typed_class_21_pcurves(&bytes),
+            typed_class_21_pcurves_from_records(&records)
+        );
+        assert_eq!(
+            typed_parameter_incidences(&bytes),
+            typed_parameter_incidences_from_records(&records)
+        );
+        assert_eq!(
+            typed_vertex_incidence_rosters(&bytes),
+            typed_vertex_incidence_rosters_from_records(&records)
+        );
     }
 
     fn a8_class21_test_payload() -> Vec<u8> {

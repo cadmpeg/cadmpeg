@@ -81,7 +81,15 @@ pub(crate) fn try_decode_freeform_surfaces(
     _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
-    let mut b5_graph = crate::families::b5::graph::parse(&scan.data);
+    let object_frames = crate::families::b5::graph::object_stream_frames(&scan.data);
+    let object_records =
+        crate::families::b5::graph::records_from_frames(&scan.data, &object_frames);
+    let mut b5_graph = crate::families::b5::graph::parse_from_records(
+        &scan.data,
+        &object_records,
+        &object_frames,
+        true,
+    );
     let face_terminal_controls = b5_graph.as_ref().map(|graph| {
         graph.faces.iter().fold([0usize; 3], |mut counts, face| {
             match face.terminal_control {
@@ -96,10 +104,11 @@ pub(crate) fn try_decode_freeform_surfaces(
     let typed_face_counts = if let Some(graph) = &b5_graph {
         Some(typed_face_counts(&graph.face_records, graph.faces.len()))
     } else {
-        let records = crate::families::b5::graph::typed_face_records(&scan.data);
+        let records = crate::families::b5::graph::typed_face_records_from_records(&object_records);
         (!records.is_empty()).then(|| typed_face_counts(&records, 0))
     };
-    let typed_edge_records = crate::families::b5::graph::typed_edge_records(&scan.data);
+    let typed_edge_records =
+        crate::families::b5::graph::typed_edge_records_from_records(&object_records);
     let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
         typed_edge_records
             .values()
@@ -120,7 +129,7 @@ pub(crate) fn try_decode_freeform_surfaces(
             })
     });
     let typed_vertex_incidence_links =
-        crate::families::b5::graph::typed_vertex_incidence_links(&scan.data);
+        crate::families::b5::graph::typed_vertex_incidence_links_from_records(&object_records);
     let vertex_incidence_terminal_controls =
         (!typed_vertex_incidence_links.is_empty()).then(|| {
             typed_vertex_incidence_links
@@ -139,7 +148,8 @@ pub(crate) fn try_decode_freeform_surfaces(
     let resolved_loop_metadata_counts = b5_graph
         .as_ref()
         .map(|graph| loop_metadata_counts(graph.loops.values()));
-    let typed_loop_records = crate::families::b5::graph::typed_loop_records(&scan.data);
+    let typed_loop_records =
+        crate::families::b5::graph::typed_loop_records_from_records(&object_records);
     let typed_loop_metadata_counts = (!typed_loop_records.is_empty()).then(|| {
         let resolved_count = b5_graph.as_ref().map_or(0, |graph| graph.loops.len());
         (
@@ -158,15 +168,15 @@ pub(crate) fn try_decode_freeform_surfaces(
             .count()
     });
     let typed_class_21_pcurve_count =
-        crate::families::b5::graph::typed_class_21_pcurves(&scan.data).len();
+        crate::families::b5::graph::typed_class_21_pcurves_from_records(&object_records).len();
     let typed_parameter_incidences =
-        crate::families::b5::graph::typed_parameter_incidences(&scan.data);
+        crate::families::b5::graph::typed_parameter_incidences_from_records(&object_records);
     let typed_parameter_incidence_member_count = typed_parameter_incidences
         .values()
         .map(|incidence| incidence.curves.len())
         .sum();
     let typed_vertex_incidence_rosters =
-        crate::families::b5::graph::typed_vertex_incidence_rosters(&scan.data);
+        crate::families::b5::graph::typed_vertex_incidence_rosters_from_records(&object_records);
     let typed_vertex_incidence_roster_member_count =
         typed_vertex_incidence_rosters.values().map(Vec::len).sum();
     let mut fallback_surfaces = b5_graph
