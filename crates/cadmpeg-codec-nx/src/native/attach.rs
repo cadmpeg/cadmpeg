@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
@@ -26,7 +27,9 @@ use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{
+    AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId,
+};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
     SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -94,6 +97,7 @@ pub(crate) fn attach(
         return Ok(());
     }
     attach_rm_face_colors(ir, model, scan, annotations);
+    attach_rm_source_appearances(ir, model, annotations);
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -332,6 +336,133 @@ fn attach_rm_face_colors(
             annotations.derived(&face.id, "color");
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RmSourceColorBinding {
+    source_id: String,
+    color_definition: String,
+    source_offset: u64,
+}
+
+fn attach_rm_source_appearances(
+    ir: &mut CadIr,
+    model: &crate::native::model::NativeModel,
+    annotations: &mut AnnotationBuilder,
+) {
+    let bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
+    if bindings.is_empty() {
+        return;
+    }
+    let definitions = model
+        .om
+        .part_color_definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let annotation_stream = annotations.stream("nx:container");
+    let mut appearances = BTreeMap::<String, AppearanceId>::new();
+    for binding in bindings {
+        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+            continue;
+        };
+        let appearance_id = appearances
+            .entry(definition.id.clone())
+            .or_insert_with(|| {
+                let id = AppearanceId(format!(
+                    "nx:appearance:rmfastload-color#{}",
+                    native_entity_key(&definition.id)
+                ));
+                annotations
+                    .note(&id.0, annotation_stream, definition.source_offset)
+                    .tag("RMFASTLOAD_COLOR_APPEARANCE");
+                annotations.derived(&id.0, "name");
+                annotations.derived(&id.0, "schema");
+                annotations.derived(&id.0, "base_color");
+                ir.model.appearances.push(Appearance {
+                    id: id.clone(),
+                    name: Some(definition.name.clone()),
+                    asset_guid: None,
+                    library_id: None,
+                    visual_guid: None,
+                    physical_token: None,
+                    schema: Some("UGS::COLOR_table".into()),
+                    category: None,
+                    base_color: Some(Color {
+                        r: definition.rgb[0],
+                        g: definition.rgb[1],
+                        b: definition.rgb[2],
+                        a: 1.0,
+                    }),
+                    properties: BTreeMap::new(),
+                    textures: Vec::new(),
+                });
+                id
+            })
+            .clone();
+        let binding_id = format!(
+            "nx:appearance-binding:rmfastload-color#{}",
+            native_entity_key(&binding.source_id)
+        );
+        annotations
+            .note(&binding_id, annotation_stream, binding.source_offset)
+            .tag("RMFASTLOAD_COLOR_ASSIGNMENT");
+        annotations.derived(&binding_id, "target");
+        annotations.derived(&binding_id, "appearance");
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: binding_id,
+            target: AppearanceTarget::Source {
+                source_id: binding.source_id.clone(),
+            },
+            appearance: appearance_id,
+            source_entity_id: Some(binding.source_id),
+            object_type: Some("RMFastLoad object ID".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+}
+
+fn native_entity_key(id: &str) -> String {
+    id.replace([':', '#'], "-")
+}
+
+fn resolve_rm_source_color_bindings(
+    assignments: &[super::om::RmDisplayColorAssignment],
+) -> Vec<RmSourceColorBinding> {
+    let mut definitions_by_source = BTreeMap::<String, BTreeSet<String>>::new();
+    let mut first_offset_by_source = BTreeMap::<String, u64>::new();
+    for assignment in assignments {
+        let Some(source_id) = assignment.target_object_id.as_ref() else {
+            continue;
+        };
+        definitions_by_source
+            .entry(source_id.clone())
+            .or_default()
+            .insert(assignment.color_definition.clone());
+        first_offset_by_source
+            .entry(source_id.clone())
+            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
+            .or_insert(assignment.source_offset);
+    }
+    definitions_by_source
+        .into_iter()
+        .filter_map(|(source_id, color_definitions)| {
+            let mut definitions = color_definitions.into_iter();
+            let color_definition = definitions.next()?;
+            if definitions.next().is_some() {
+                return None;
+            }
+            let source_offset = first_offset_by_source
+                .get(&source_id)
+                .copied()
+                .expect("every source has one assignment");
+            Some(RmSourceColorBinding {
+                source_id,
+                color_definition,
+                source_offset,
+            })
+        })
+        .collect()
 }
 
 fn resolve_rm_face_colors(
@@ -6114,6 +6245,55 @@ mod tests {
             &pairs,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn rm_source_color_bindings_require_one_palette_per_source_identity() {
+        let assignment = |id: &str, source_id: Option<&str>, color_definition: &str, offset| {
+            crate::native::om::RmDisplayColorAssignment {
+                id: id.into(),
+                ordinal: 0,
+                encoding: crate::native::om::RmDisplayColorAssignmentEncoding::Target {
+                    target_index: 7,
+                    raw_target_index: vec![7],
+                    target_index_source_offset: offset,
+                    indices: [1, 2, 3],
+                    raw_indices: [vec![1], vec![2], vec![3]],
+                    index_source_offsets: [offset + 1, offset + 2, offset + 3],
+                    mode: 4,
+                },
+                target_object_id: source_id.map(str::to_owned),
+                color_index: 201,
+                color_definition: color_definition.into(),
+                raw_color_index: vec![0x80, 201],
+                source_entry: "/Root/FastLoad/RMFastLoad".into(),
+                source_offset: offset,
+                row_source_offset: offset,
+            }
+        };
+        let assignments = [
+            assignment("assignment-b", Some("source-a"), "color-a", 20),
+            assignment("assignment-a", Some("source-a"), "color-a", 10),
+            assignment("assignment-c", Some("source-b"), "color-a", 30),
+            assignment("assignment-d", Some("source-c"), "color-a", 40),
+            assignment("assignment-e", Some("source-c"), "color-b", 50),
+            assignment("assignment-f", None, "color-a", 60),
+        ];
+        assert_eq!(
+            resolve_rm_source_color_bindings(&assignments),
+            vec![
+                RmSourceColorBinding {
+                    source_id: "source-a".into(),
+                    color_definition: "color-a".into(),
+                    source_offset: 10,
+                },
+                RmSourceColorBinding {
+                    source_id: "source-b".into(),
+                    color_definition: "color-a".into(),
+                    source_offset: 30,
+                },
+            ]
+        );
     }
 
     fn hole_diameters_for_operations(

@@ -200,7 +200,7 @@ Native records retain typed references into the neutral model. Format-neutral co
 
 ## Presentation, attributes, and source fidelity
 
-Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to bodies or faces. Attributes attach source-native values to supported targets.
+Tessellations are display meshes independent of exact B-rep geometry. Appearances describe visual or physical assets. Appearance bindings assign appearances to topology entities or native source carriers. Attributes attach source-native values to supported targets.
 
 A tessellation channel stores `count` fixed-width values in `data`. A vertex
 channel uses implicit vertex-order addressing and has no `indices`. A corner
