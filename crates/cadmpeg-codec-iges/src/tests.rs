@@ -659,6 +659,37 @@ fn circular_arc_file() -> Vec<u8> {
     bytes
 }
 
+fn transformed_circular_arc_file(matrix: &[u8], arc: &[u8]) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["124", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["124", "0", "0", "1", "0", "", "", "FRAME", "0"],
+        2,
+    ));
+    bytes.extend(directory_card(
+        ["100", "2", "0", "0", "0", "0", "1", "0", "00000000"],
+        3,
+    ));
+    bytes.extend(directory_card(
+        ["100", "0", "0", "1", "0", "", "", "ARC", "0"],
+        4,
+    ));
+    bytes.extend(parameter_card(matrix, 1, 1));
+    bytes.extend(parameter_card(arc, 3, 2));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
 fn uniform_offset_circle_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -8145,6 +8176,79 @@ fn decode_projects_a_counterclockwise_circular_arc() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_accepts_rounded_transformed_circular_arc_frame() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_circular_arc_file(
+                b"124,0.8,-0.60000000005,0,0,0.6,0.8,0,0,0,0,1,0;",
+                b"100,0,0,0,1,0,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } =
+        &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a circle carrier");
+    };
+    assert!((*radius - 1.0).abs() < 1.0e-12);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_accepts_arc_endpoints_within_model_resolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_circular_arc_file(
+                b"124,0,-1,0,0,1,0,0,0,0,0,1,0;",
+                b"100,0,0,0,16,0,-3.326587053,15.65036161;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Circle { radius, .. } =
+        &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a circle carrier");
+    };
+    assert!((*radius - 16.0).abs() < 1.0e-12);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_arc_endpoints_beyond_model_resolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(transformed_circular_arc_file(
+                b"124,0,-1,0,0,1,0,0,0,0,0,1,0;",
+                b"100,0,0,0,16,0,-3.326587053,15.75036161;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir.model.curves.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("arc start and terminate points have different radii")
+    }));
 }
 
 #[test]

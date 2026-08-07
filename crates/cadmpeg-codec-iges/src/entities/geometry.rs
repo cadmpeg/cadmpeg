@@ -13,6 +13,7 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
+const TRANSFORM_TOLERANCE: f64 = 1.0e-10;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
@@ -164,10 +165,10 @@ pub(crate) fn resolve_transform(
                 .map(|row| columns[left][row] * columns[right][row])
                 .sum::<f64>()
         };
-        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > 1.0e-10)
+        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > TRANSFORM_TOLERANCE)
             || [(0, 1), (0, 2), (1, 2)]
                 .into_iter()
-                .any(|(left, right)| column_dot(left, right).abs() > 1.0e-10)
+                .any(|(left, right)| column_dot(left, right).abs() > TRANSFORM_TOLERANCE)
         {
             return Err(format!(
                 "transformation D{sequence} linear part is not orthonormal"
@@ -177,7 +178,7 @@ pub(crate) fn resolve_transform(
             - values[1] * (values[4] * values[10] - values[6] * values[8])
             + values[2] * (values[4] * values[9] - values[5] * values[8]);
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if (determinant - expected_determinant).abs() > 1.0e-10 {
+        if (determinant - expected_determinant).abs() > TRANSFORM_TOLERANCE {
             return Err(format!(
                 "transformation D{sequence} determinant {determinant} disagrees with form {}",
                 entry.form
@@ -348,11 +349,11 @@ pub(crate) fn project_geometry(
         let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
         let scale_x = basis_x.norm();
         let scale_y = basis_y.norm();
-        let scale_tolerance = scale_x.max(scale_y).max(1.0) * 1.0e-12;
+        let scale_tolerance = scale_x.max(scale_y).max(1.0) * TRANSFORM_TOLERANCE;
         if !scale_x.is_finite()
             || !scale_y.is_finite()
             || (scale_x - scale_y).abs() > scale_tolerance
-            || dot(basis_x, basis_y).abs() > scale_x * scale_y * 1.0e-12
+            || dot(basis_x, basis_y).abs() > scale_x * scale_y * TRANSFORM_TOLERANCE
         {
             losses.push(entity_loss(
                 entry,
@@ -375,9 +376,11 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "arc placement collapses its plane"));
             continue;
         };
-        if !end_radius.is_finite()
-            || (end_radius - radius).abs() > radius.max(end_radius).max(1.0) * 1.0e-10
-        {
+        let radius_tolerance = global
+            .minimum_resolution_mm()
+            .unwrap_or_default()
+            .max(radius.max(end_radius).max(1.0) * TRANSFORM_TOLERANCE);
+        if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             losses.push(entity_loss(
                 entry,
                 "arc start and terminate points have different radii",
