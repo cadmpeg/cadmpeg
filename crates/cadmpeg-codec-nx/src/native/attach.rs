@@ -1031,10 +1031,18 @@ fn attach_feature_operations(
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
     let datum_csys_column_row_uses = features.feature_datum_csys_column_row_uses.as_slice();
     let datum_csys_payloads = features.feature_datum_csys_payloads.as_slice();
+    let datum_csys_payload_scalar_pairs =
+        features.feature_datum_csys_payload_scalar_pairs.as_slice();
+    let datum_csys_payload_fixed_pairs = features.feature_datum_csys_payload_fixed_pairs.as_slice();
+    let datum_csys_payload_scalars = features.feature_datum_csys_payload_scalars.as_slice();
+    let datum_csys_descriptors = features.feature_datum_csys_descriptors.as_slice();
     let datum_csys_block_uses = features.feature_datum_csys_block_uses.as_slice();
     let datum_plane_headers = features.feature_datum_plane_headers.as_slice();
     let datum_plane_block_uses = features.feature_datum_plane_block_uses.as_slice();
     let datum_plane_payloads = features.feature_datum_plane_payloads.as_slice();
+    let datum_plane_payload_scalar_pairs =
+        features.feature_datum_plane_payload_scalar_pairs.as_slice();
+    let datum_plane_descriptors = features.feature_datum_plane_descriptors.as_slice();
     let datum_plane_csys_identity_uses = features.feature_datum_plane_csys_identity_uses.as_slice();
     let sketch_datum_csys_dependencies = features.feature_sketch_datum_csys_dependencies.as_slice();
     let sketch_references = features.feature_sketch_references.as_slice();
@@ -1276,6 +1284,18 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let datum_csys_payloads_by_operation =
         records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
+    let datum_csys_payload_scalar_pairs_by_operation =
+        records_by_operation(datum_csys_payload_scalar_pairs, |pair| {
+            &pair.operation_label
+        });
+    let datum_csys_payload_fixed_pairs_by_operation =
+        records_by_operation(datum_csys_payload_fixed_pairs, |pair| &pair.operation_label);
+    let datum_csys_payload_scalars_by_operation =
+        records_by_operation(datum_csys_payload_scalars, |scalar| &scalar.operation_label);
+    let datum_csys_descriptors_by_operation =
+        records_by_operation(datum_csys_descriptors, |descriptor| {
+            &descriptor.operation_label
+        });
     let datum_csys_column_row_uses_by_operation =
         records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
     let mut datum_csys_uses_by_input_operation =
@@ -1294,6 +1314,14 @@ fn attach_feature_operations(
         .iter()
         .map(|payload| (payload.operation_label.as_str(), payload))
         .collect::<BTreeMap<_, _>>();
+    let datum_plane_payload_scalar_pairs_by_operation =
+        records_by_operation(datum_plane_payload_scalar_pairs, |pair| {
+            &pair.operation_label
+        });
+    let datum_plane_descriptors_by_operation =
+        records_by_operation(datum_plane_descriptors, |descriptor| {
+            &descriptor.operation_label
+        });
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
@@ -2215,11 +2243,77 @@ fn attach_feature_operations(
         {
             source_properties.insert(format!("datum_csys_payload.{ordinal}"), payload.id.clone());
         }
+        for (ordinal, pair) in datum_csys_payload_scalar_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_scalar_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, pair) in datum_csys_payload_fixed_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_fixed_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, scalar) in datum_csys_payload_scalars_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_payload_scalar.{ordinal}"),
+                scalar.id.clone(),
+            );
+        }
+        for (ordinal, descriptor) in datum_csys_descriptors_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_csys_descriptor.{ordinal}"),
+                descriptor.id.clone(),
+            );
+        }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_header".to_string(), header.id.clone());
         }
         if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
+        }
+        for (ordinal, pair) in datum_plane_payload_scalar_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_plane_payload_scalar_pair.{ordinal}"),
+                pair.id.clone(),
+            );
+        }
+        for (ordinal, descriptor) in datum_plane_descriptors_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_plane_descriptor.{ordinal}"),
+                descriptor.id.clone(),
+            );
         }
         for (ordinal, identity_use) in datum_identity_uses_by_operation
             .get(label.id.as_str())
