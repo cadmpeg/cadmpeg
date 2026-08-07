@@ -777,6 +777,8 @@ Per-face appearance assignments live in a Design record of class `D3937028-C20C-
 
 An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or face supplies that target's neutral color. Otherwise, exactly one appearance binding whose asset has a base color supplies the target's neutral color. Multiple appearance bindings on the same target do not select a neutral color.
 
+In the paired-library browser-node-reference generation, a face-scoped appearance envelope ends with its visual GUID and the two library identifiers. The lower-case GUID immediately before the visual GUID is the B-rep face identity. Body-scoped envelopes carry a `PrismMaterial` token in that position and use the browser-node reference for the body identity.
+
 A `PhysMatSchema` value block follows the same schema-driven layout as every other instance record. Its constituent aspect assets are the connected-asset GUIDs of its `physmat_aspects` Reference. The physical-material join is `BulkStream` `PrismMaterial` token → `PhysMatSchema` asset → referenced Structural, Thermal, and Prism aspect assets.
 
 **Design-entity join backbone:** body identity resolves across five tables via the numeric design-entity namespace:

@@ -908,7 +908,55 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
             visual_guid: visual[..36].to_string(),
         });
     }
+    out.extend(modern_face_appearance_assignments(&strings));
     out
+}
+
+/// Decode a face-scoped appearance assignment from the paired-library marker
+/// used by the browser-node-reference generation.
+///
+/// The assignment envelope ends with the visual GUID and the two library
+/// marker GUIDs. Its terminal lower-case GUID is the B-rep face identity. A
+/// body-scoped envelope has a material token in that position and therefore
+/// does not satisfy this grammar.
+fn modern_face_appearance_assignments(
+    strings: &[(usize, String)],
+) -> Vec<FaceAppearanceAssignment> {
+    let mut out = Vec::new();
+    for (index, (_, marker)) in strings.iter().enumerate() {
+        if marker != APPEARANCE_LIBRARY_ID_PAIR[0]
+            || strings
+                .get(index + 1)
+                .is_none_or(|(_, next)| next != APPEARANCE_LIBRARY_ID_PAIR[1])
+        {
+            continue;
+        }
+        let Some(visual_index) = index.checked_sub(1) else {
+            continue;
+        };
+        let Some(face_index) = visual_index.checked_sub(1) else {
+            continue;
+        };
+        let visual = &strings[visual_index].1;
+        let face_guid = &strings[face_index].1;
+        if !is_guid_prefix(visual) || visual.len() < GUID_LEN || !is_lowercase_guid(face_guid) {
+            continue;
+        }
+        out.push(FaceAppearanceAssignment {
+            face_guid: face_guid.clone(),
+            visual_guid: visual[..GUID_LEN].to_string(),
+        });
+    }
+    out
+}
+
+/// Whether the first 36 characters form a lower-case hexadecimal GUID.
+fn is_lowercase_guid(value: &str) -> bool {
+    value.len() == GUID_LEN
+        && is_guid_prefix(value)
+        && value[..GUID_LEN]
+            .bytes()
+            .all(|byte| !byte.is_ascii_uppercase())
 }
 
 /// The marker GUID pair that opens the appearance fields of a browser body

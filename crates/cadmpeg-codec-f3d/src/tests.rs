@@ -24763,6 +24763,40 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
     }
 }
 
+#[test]
+fn modern_face_appearance_assignment_uses_terminal_lowercase_guid() {
+    let mut bytes = vec![0u8; 8];
+    for value in [
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+        "33333333-3333-3333-3333-333333333333",
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
+        "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
+        "005E1000-55CE-AFB6-81A1-36E3EF077C5F",
+    ] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    let out = crate::materials::face_appearance_assignments(&bytes);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].face_guid, "33333333-3333-3333-3333-333333333333");
+    assert_eq!(out[0].visual_guid, "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F");
+}
+
+#[test]
+fn modern_body_appearance_is_not_a_face_assignment() {
+    let mut bytes = vec![0u8; 8];
+    for value in [
+        "11111111-1111-1111-1111-111111111111",
+        "PrismMaterial-018",
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
+        "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
+        "005E1000-55CE-AFB6-81A1-36E3EF077C5F",
+    ] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
+}
+
 /// A `RedirectionsStream.dat` body with one self design entry plus one design
 /// and one XREF reference per `(relative_path, role)` pair.
 fn redirections_json(own_name: &str, targets: &[(&str, &str)]) -> String {
