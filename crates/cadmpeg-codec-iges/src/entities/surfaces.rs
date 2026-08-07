@@ -977,8 +977,8 @@ pub(super) fn project(
             continue;
         };
         let u_start = ranges[0];
-        let v_start = ranges[1];
-        let u_end = ranges[2];
+        let u_end = ranges[1];
+        let v_start = ranges[2];
         let v_end = ranges[3];
         if u_start > u_end
             || v_start > v_end
