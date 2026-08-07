@@ -198,6 +198,7 @@ pub(crate) fn transfer_design_features(
         }
     }
 
+    transfer.assign_feature_parents(ir, native);
     transfer
 }
 
