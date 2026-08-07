@@ -1080,7 +1080,8 @@ fn parse_b2_spatial_circle(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Sp
     let axis = ref_direction.cross(transverse).unit()?;
     let radius = values[9];
     let range = [values[10], values[11]];
-    if (ref_norm - 1.0).abs() > 1e-12
+    if !values.iter().all(|value| value.is_finite())
+        || (ref_norm - 1.0).abs() > 1e-12
         || (transverse_norm - 1.0).abs() > 1e-12
         || orthogonality > 1e-12
         || radius <= 0.0

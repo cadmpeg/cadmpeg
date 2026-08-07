@@ -1255,7 +1255,7 @@ fn b2_spatial_circle_parser_reads_the_model_space_frame_and_range() {
 }
 
 #[test]
-fn b2_spatial_circle_parser_rejects_nonorthonormal_and_invalid_charts() {
+fn b2_spatial_circle_parser_rejects_nonorthonormal_invalid_charts_and_nonfinite_payload() {
     for scalar in [3usize, 6, 9, 11, 12] {
         let mut broken = b2_spatial_circle_stream();
         let offset = 5 + scalar * 8;
@@ -1263,6 +1263,16 @@ fn b2_spatial_circle_parser_rejects_nonorthonormal_and_invalid_charts() {
         assert!(
             crate::families::b2::records::b2_spatial_circles(&broken).is_empty(),
             "scalar {scalar}"
+        );
+    }
+
+    for scalar in [0usize, 3, 9, 10, 13] {
+        let mut broken = b2_spatial_circle_stream();
+        let offset = 5 + scalar * 8;
+        broken[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(
+            crate::families::b2::records::b2_spatial_circles(&broken).is_empty(),
+            "nonfinite scalar {scalar}"
         );
     }
 }
