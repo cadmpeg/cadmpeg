@@ -445,6 +445,50 @@ fn feature_family_tokens_are_localized() {
 }
 
 #[test]
+fn dispatcher_projects_datum_feature_scopes() {
+    let mut transform = identity_matrix();
+    transform[0][3] = 1.0;
+    transform[1][3] = 2.0;
+    transform[2][3] = 3.0;
+
+    let mut joint_origin =
+        DesignParameterScope::empty("f3d:native:parameter-scope#1", "JointOrigin", 1);
+    joint_origin.joint_origin_transform = Some(transform);
+
+    let mut work_plane =
+        DesignParameterScope::empty("f3d:native:parameter-scope#2", "WorkPlane", 2);
+    work_plane.work_plane_transform = Some(transform);
+
+    let mut work_point =
+        DesignParameterScope::empty("f3d:native:parameter-scope#3", "WorkPoint", 3);
+    work_point.work_point_position = Some([4.0, 5.0, 6.0]);
+
+    let scopes = vec![joint_origin, work_plane, work_point];
+    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+
+    assert!(matches!(
+        &features[0].definition,
+        FeatureDefinition::DatumCoordinateSystem { origin, .. }
+            if *origin == Point3::new(10.0, 20.0, 30.0)
+    ));
+    assert!(matches!(
+        &features[1].definition,
+        FeatureDefinition::DatumPlane {
+            origin,
+            normal,
+            u_axis,
+        } if *origin == Point3::new(10.0, 20.0, 30.0)
+            && *normal == Vector3::new(0.0, 0.0, 1.0)
+            && *u_axis == Vector3::new(1.0, 0.0, 0.0)
+    ));
+    assert!(matches!(
+        &features[2].definition,
+        FeatureDefinition::DatumPoint { position }
+            if *position == Point3::new(40.0, 50.0, 60.0)
+    ));
+}
+
+#[test]
 fn partial_historical_edge_selection_retains_proofs_and_unresolved_operands() {
     use cadmpeg_ir::features::EdgeSelection;
     use cadmpeg_ir::ids::FeatureInputTopologyId;
