@@ -2381,6 +2381,7 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 chart_origin,
                 chart_origin + std::f64::consts::TAU * angular_scale,
             ];
+            chart_domain[1].is_finite().then_some(())?;
             let chart_tolerance = 1e-12
                 * u_range
                     .into_iter()
@@ -5890,6 +5891,12 @@ mod tests {
             &(chart_origin + std::f64::consts::TAU * angular_scale + 1.0).to_le_bytes(),
         );
         assert_eq!(parse_surface(&outside_domain), None);
+
+        let mut overflowing_domain = record.clone();
+        overflowing_domain.payload[73..81].copy_from_slice(&f64::MAX.to_le_bytes());
+        overflowing_domain.payload[113..121].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(parse_surface(&overflowing_domain), None);
+
         let mut wrong_fixed_scalar = record;
         wrong_fixed_scalar.payload[121..129].copy_from_slice(&2.0f64.to_le_bytes());
         assert_eq!(parse_surface(&wrong_fixed_scalar), None);
