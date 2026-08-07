@@ -76,6 +76,27 @@ fn a8_surface_parser_accepts_each_object_frame_flag() {
 }
 
 #[test]
+fn a8_surface_header_rejects_nonfinite_and_repeated_distinct_knots() {
+    for (start, value, label) in [
+        (17, f64::INFINITY, "nonfinite U knot"),
+        (25, 0.0, "repeated U knot"),
+        (40, f64::INFINITY, "nonfinite V knot"),
+        (48, 0.0, "repeated V knot"),
+    ] {
+        let mut bytes = a8_surface_stream();
+        bytes[start..start + 8].copy_from_slice(&le_f64(value));
+        assert!(
+            crate::families::a5a8::records::a8_surfaces(&bytes).is_empty(),
+            "{label} must not produce a resolved surface"
+        );
+        assert!(
+            crate::families::a5a8::records::a8_surface_headers(&bytes).is_empty(),
+            "{label} must not produce a surface header"
+        );
+    }
+}
+
+#[test]
 fn a8_surface_header_survives_an_opaque_pole_representation() {
     let mut bytes = a8_surface_stream();
     bytes[59..67].copy_from_slice(&f64::NAN.to_le_bytes());

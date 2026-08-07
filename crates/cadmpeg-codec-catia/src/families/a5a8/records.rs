@@ -1254,8 +1254,8 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         || !(2..=8192).contains(&u_distinct_count)
         || !(2..=8192).contains(&v_distinct_count)
         || !matches!(mode, 0x01 | 0x05)
-        || !monotonic(&u_distinct)
-        || !monotonic(&v_distinct)
+        || !strictly_increasing_finite(&u_distinct)
+        || !strictly_increasing_finite(&v_distinct)
     {
         return None;
     }
@@ -1401,10 +1401,6 @@ fn f64_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) -> Option<
 
 fn compact_values(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
     (0..count).map(|_| compact_int(bytes, at)).collect()
-}
-
-fn monotonic(values: &[f64]) -> bool {
-    values.windows(2).all(|pair| pair[0] <= pair[1])
 }
 
 fn strictly_increasing_finite(values: &[f64]) -> bool {

@@ -504,7 +504,7 @@ When these clamped NURBS or bounded spatial-circle carriers are the complete geo
 
 Frame: `a8 <frame_flag> <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`, where `frame_flag` is `03`, `13`, or `83`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 <frame_flag> 32` stores the same complete degree-5 rolling-ball value/derivative jet and exact procedural surface as the consolidated `a5 03 32` form, followed by a fixed 59-byte tail. Its knots are strictly increasing. The endpoint multiplicities are six and every interior multiplicity is one or three. A class-`20` frame stores a pcurve under every valid frame flag.
 
-For `a8 <frame_flag> 34`, the lead byte, U degree/flags/distinct knots/multiplicities, V degree/flags/distinct knots/multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
+For `a8 <frame_flag> 34`, the lead byte, U degree/flags, finite strictly increasing distinct U knots and multiplicities, V degree/flags, finite strictly increasing distinct V knots and multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
 The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. Its byte layout is:
 
