@@ -2903,11 +2903,14 @@ fn line_parameter_scale(
     length_scale: f64,
     losses: &mut Vec<LossNote>,
 ) -> f64 {
-    exchange
+    let Some(record) = exchange
         .records
         .get(&curve)
         .filter(|record| record.partial("LINE").is_some())
-        .and_then(|record| named_parameter(record, "LINE", 2))
+    else {
+        return length_scale;
+    };
+    named_parameter(record, "LINE", 2)
         .and_then(ValueExt::reference)
         .and_then(|vector| exchange.records.get(&vector))
         .filter(|record| record.partial("VECTOR").is_some())

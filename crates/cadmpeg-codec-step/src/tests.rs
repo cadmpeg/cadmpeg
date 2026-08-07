@@ -5150,6 +5150,11 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
                 ..
             } if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
         )));
+    assert!(result.report.losses.iter().all(|loss| {
+        !loss
+            .message
+            .contains("LINE #14 parameter scale did not resolve")
+    }));
 }
 
 #[test]
