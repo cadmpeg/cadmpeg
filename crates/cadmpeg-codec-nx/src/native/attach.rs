@@ -28,7 +28,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, LoopId, SurfaceId, UnknownId,
+    AppearanceId, AttributeId, BodyId, FaceId, FeatureResultTopologyId, LoopId, SurfaceId,
+    UnknownId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::semantic_annotations::{
@@ -97,7 +98,7 @@ pub(crate) fn attach(
         return Ok(());
     }
     attach_rm_face_colors(ir, model, scan, annotations);
-    attach_rm_source_appearances(ir, model, annotations);
+    attach_rm_appearances(ir, model, scan, annotations);
     let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
         meshes: &model.display_jt.display_jt_polygon_meshes,
         coordinates: &model.display_jt.display_jt_vertex_coordinates,
@@ -345,13 +346,34 @@ struct RmSourceColorBinding {
     source_offset: u64,
 }
 
-fn attach_rm_source_appearances(
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RmFaceColorBinding {
+    face_id: String,
+    color_definition: String,
+    source_offset: u64,
+}
+
+fn attach_rm_appearances(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
+    scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) {
-    let bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
-    if bindings.is_empty() {
+    let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
+    let face_ids = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.0.clone())
+        .collect::<BTreeSet<_>>();
+    let face_bindings = resolve_rm_face_color_bindings(
+        &face_ids,
+        &model.om.rm_display_color_assignments,
+        &model.om.part_color_definitions,
+        &model.parasolid.parasolid_deltas_records,
+        &super::substrate::paired_delta_streams(scan),
+    );
+    if source_bindings.is_empty() && face_bindings.is_empty() {
         return;
     }
     let definitions = model
@@ -362,44 +384,17 @@ fn attach_rm_source_appearances(
         .collect::<BTreeMap<_, _>>();
     let annotation_stream = annotations.stream("nx:container");
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
-    for binding in bindings {
+    for binding in source_bindings {
         let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
             continue;
         };
-        let appearance_id = appearances
-            .entry(definition.id.clone())
-            .or_insert_with(|| {
-                let id = AppearanceId(format!(
-                    "nx:appearance:rmfastload-color#{}",
-                    native_entity_key(&definition.id)
-                ));
-                annotations
-                    .note(&id.0, annotation_stream, definition.source_offset)
-                    .tag("RMFASTLOAD_COLOR_APPEARANCE");
-                annotations.derived(&id.0, "name");
-                annotations.derived(&id.0, "schema");
-                annotations.derived(&id.0, "base_color");
-                ir.model.appearances.push(Appearance {
-                    id: id.clone(),
-                    name: Some(definition.name.clone()),
-                    asset_guid: None,
-                    library_id: None,
-                    visual_guid: None,
-                    physical_token: None,
-                    schema: Some("UGS::COLOR_table".into()),
-                    category: None,
-                    base_color: Some(Color {
-                        r: definition.rgb[0],
-                        g: definition.rgb[1],
-                        b: definition.rgb[2],
-                        a: 1.0,
-                    }),
-                    properties: BTreeMap::new(),
-                    textures: Vec::new(),
-                });
-                id
-            })
-            .clone();
+        let appearance_id = ensure_rm_color_appearance(
+            ir,
+            annotations,
+            &mut appearances,
+            definition,
+            annotation_stream,
+        );
         let binding_id = format!(
             "nx:appearance-binding:rmfastload-color#{}",
             native_entity_key(&binding.source_id)
@@ -420,6 +415,96 @@ fn attach_rm_source_appearances(
             channels: BTreeMap::new(),
         });
     }
+    for binding in face_bindings {
+        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+            continue;
+        };
+        let Some(existing_color) = ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id.0 == binding.face_id)
+            .map(|face| face.color)
+        else {
+            continue;
+        };
+        let color = Color {
+            r: definition.rgb[0],
+            g: definition.rgb[1],
+            b: definition.rgb[2],
+            a: 1.0,
+        };
+        if existing_color.is_some_and(|existing| existing != color) {
+            continue;
+        }
+        let appearance_id = ensure_rm_color_appearance(
+            ir,
+            annotations,
+            &mut appearances,
+            definition,
+            annotation_stream,
+        );
+        let binding_id = format!(
+            "nx:appearance-binding:rmfastload-face-color#{}",
+            native_entity_key(&binding.face_id)
+        );
+        annotations
+            .note(&binding_id, annotation_stream, binding.source_offset)
+            .tag("RMFASTLOAD_FACE_COLOR_ASSIGNMENT");
+        annotations.derived(&binding_id, "target");
+        annotations.derived(&binding_id, "appearance");
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: binding_id,
+            target: AppearanceTarget::Face(FaceId(binding.face_id.clone())),
+            appearance: appearance_id,
+            source_entity_id: Some(binding.face_id),
+            object_type: Some("Parasolid FACE".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+}
+
+fn ensure_rm_color_appearance(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    appearances: &mut BTreeMap<String, AppearanceId>,
+    definition: &crate::native::om::PartColorDefinition,
+    annotation_stream: cadmpeg_ir::annotations::StreamHandle,
+) -> AppearanceId {
+    appearances
+        .entry(definition.id.clone())
+        .or_insert_with(|| {
+            let id = AppearanceId(format!(
+                "nx:appearance:rmfastload-color#{}",
+                native_entity_key(&definition.id)
+            ));
+            annotations
+                .note(&id.0, annotation_stream, definition.source_offset)
+                .tag("RMFASTLOAD_COLOR_APPEARANCE");
+            annotations.derived(&id.0, "name");
+            annotations.derived(&id.0, "schema");
+            annotations.derived(&id.0, "base_color");
+            ir.model.appearances.push(Appearance {
+                id: id.clone(),
+                name: Some(definition.name.clone()),
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: Some("UGS::COLOR_table".into()),
+                category: None,
+                base_color: Some(Color {
+                    r: definition.rgb[0],
+                    g: definition.rgb[1],
+                    b: definition.rgb[2],
+                    a: 1.0,
+                }),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            id
+        })
+        .clone()
 }
 
 fn native_entity_key(id: &str) -> String {
@@ -472,6 +557,34 @@ fn resolve_rm_face_colors(
     records: &[super::parasolid::ParasolidDeltasRecord],
     delta_pairs: &BTreeMap<usize, Vec<usize>>,
 ) -> Vec<(String, Color)> {
+    let definitions_by_id = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs)
+        .into_iter()
+        .filter_map(|binding| {
+            let definition = definitions_by_id.get(binding.color_definition.as_str())?;
+            Some((
+                binding.face_id,
+                Color {
+                    r: definition.rgb[0],
+                    g: definition.rgb[1],
+                    b: definition.rgb[2],
+                    a: 1.0,
+                },
+            ))
+        })
+        .collect()
+}
+
+fn resolve_rm_face_color_bindings(
+    face_ids: &BTreeSet<String>,
+    assignments: &[super::om::RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Vec<RmFaceColorBinding> {
     let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
     for (partition, deltas) in delta_pairs {
         for delta in deltas {
@@ -494,6 +607,18 @@ fn resolve_rm_face_colors(
             .or_default()
             .insert(assignment.color_definition.clone());
     }
+    let mut source_offsets_by_object = BTreeMap::<u32, u64>::new();
+    for assignment in assignments {
+        let crate::native::om::RmDisplayColorAssignmentEncoding::Linked { object_index, .. } =
+            &assignment.encoding
+        else {
+            continue;
+        };
+        source_offsets_by_object
+            .entry(*object_index)
+            .and_modify(|offset| *offset = (*offset).min(assignment.source_offset))
+            .or_insert(assignment.source_offset);
+    }
     let definitions_by_id = definitions
         .iter()
         .map(|definition| (definition.id.as_str(), definition))
@@ -515,7 +640,7 @@ fn resolve_rm_face_colors(
             continue;
         }
         let definition_id = definition_ids.first().expect("one definition id");
-        let Some(definition) = definitions_by_id.get(definition_id.as_str()) else {
+        let Some(_definition) = definitions_by_id.get(definition_id.as_str()) else {
             continue;
         };
         let candidates = face_records_by_node
@@ -536,17 +661,17 @@ fn resolve_rm_face_colors(
             continue;
         }
         let face_id = candidates.first().expect("one face id");
-        bindings.push((
-            face_id.clone(),
-            Color {
-                r: definition.rgb[0],
-                g: definition.rgb[1],
-                b: definition.rgb[2],
-                a: 1.0,
-            },
-        ));
+        let source_offset = source_offsets_by_object
+            .get(&object_index)
+            .copied()
+            .expect("every linked color object has an assignment");
+        bindings.push(RmFaceColorBinding {
+            face_id: face_id.clone(),
+            color_definition: definition_id.clone(),
+            source_offset,
+        });
     }
-    bindings.sort_by(|left, right| left.0.cmp(&right.0));
+    bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
     bindings
 }
 
@@ -6204,6 +6329,21 @@ mod tests {
                     a: 1.0,
                 },
             )]
+        );
+
+        assert_eq!(
+            resolve_rm_face_color_bindings(
+                &face_ids,
+                std::slice::from_ref(&assignment),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&record),
+                &pairs,
+            ),
+            vec![RmFaceColorBinding {
+                face_id: "nx:s0:face#99".into(),
+                color_definition: definition.id.clone(),
+                source_offset: 20,
+            }]
         );
 
         let mut target_assignment = assignment.clone();
