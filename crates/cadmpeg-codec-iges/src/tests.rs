@@ -1573,6 +1573,93 @@ fn ruled_surface_file() -> Vec<u8> {
     bytes
 }
 
+fn composite_ruled_surface_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL1A".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL1B".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "RAIL1".into(),
+            status: "00000000",
+            parameters: "102,2,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL2A".into(),
+            status: "00010000",
+            parameters: "110,0,1,0,1,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "RAIL2B".into(),
+            status: "00010000",
+            parameters: "110,1,1,0,2,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "RAIL2".into(),
+            status: "00000000",
+            parameters: "102,2,7,9;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 118,
+            form: 1,
+            label: "RULED".into(),
+            status: "00000000",
+            parameters: "118,5,11,0,1;".into(),
+        },
+    ])
+}
+
+fn composite_tabulated_cylinder_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "DIRECT1".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "DIRECT2".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 102,
+            form: 0,
+            label: "DIRECT".into(),
+            status: "00000000",
+            parameters: "102,2,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 122,
+            form: 0,
+            label: "TABULATE".into(),
+            status: "00000000",
+            parameters: "122,5,0,0,2;".into(),
+        },
+    ])
+}
+
 #[test]
 fn decode_solves_a_parameter_matched_ruled_surface() {
     let result = IgesCodec
@@ -1595,6 +1682,33 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_composite_ruled_and_tabulated_carriers() {
+    let ruled = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(ruled.ir.model.procedural_surfaces.len(), 1);
+    assert!(ruled.report.losses.is_empty(), "{:#?}", ruled.report.losses);
+    assert!(cadmpeg_ir::validate(&ruled.ir, Vec::new()).is_ok());
+
+    let tabulated = IgesCodec
+        .decode(
+            &mut Cursor::new(composite_tabulated_cylinder_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(tabulated.ir.model.procedural_surfaces.len(), 1);
+    assert!(
+        tabulated.report.losses.is_empty(),
+        "{:#?}",
+        tabulated.report.losses
+    );
+    assert!(cadmpeg_ir::validate(&tabulated.ir, Vec::new()).is_ok());
 }
 
 fn tabulated_cylinder_file() -> Vec<u8> {
