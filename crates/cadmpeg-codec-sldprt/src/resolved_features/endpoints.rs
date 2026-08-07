@@ -380,6 +380,26 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             return endpoints;
         }
     }
+    if let Some(indices) = compact_legacy_90_geometry_line_roster_indices(payload, offset) {
+        let mut owned = markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.feature_ref == curve.feature_ref)
+            .collect::<Vec<_>>();
+        owned.sort_unstable_by_key(|marker| marker.offset);
+        let endpoints = indices
+            .into_iter()
+            .filter_map(|index| owned.get(index).copied())
+            .filter(|marker| {
+                marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            })
+            .collect::<Vec<_>>();
+        return endpoints;
+    }
     if let Some(indices) = extended_wide_construction_line_roster_indices(payload, offset) {
         let mut owned = markers
             .iter()
@@ -4411,6 +4431,53 @@ pub(super) fn compact_legacy_code_one_line_endpoint_indices(
     offset: usize,
 ) -> Option<[u32; 2]> {
     compact_legacy_curve_endpoint_indices_for_code(payload, offset, 1)
+}
+
+/// Decode the zero-based feature-marker roster used by the long geometry-locus
+/// line form. These values are not object indices and must not enter the
+/// ordinary indexed-endpoint decoder chain.
+pub(super) fn compact_legacy_90_geometry_line_roster_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[usize; 2]> {
+    let identity = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .is_some_and(|bytes| bytes != [0; 4] && bytes != [0xff; 4])
+    };
+    let continued =
+        identity(82) && identity(86) && sketch_marker_prefix_at(payload, offset.checked_add(90)?);
+    let terminal = payload.get(offset + 82..offset + 136) == Some(&[0; 54])
+        && payload.get(offset + 136..offset + 138) == Some(&[0x08, 0x80]);
+    if !compact_legacy_marker_body(payload, offset)
+        || marker_native_code(payload, offset) != Some(1)
+        || payload.get(offset + 19..offset + 23) != Some(&[0x05, 0x00, 0x01, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 25..offset + 27) != Some(&1u16.to_le_bytes())
+        || !compact_legacy_short_curve_body(payload, offset, 0x04, true)
+        || payload.get(offset + 46..offset + 50) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 50..offset + 58) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 58..offset + 62) != Some(&1u32.to_le_bytes())
+        || !payload.get(offset + 64..offset + 80).is_some_and(|cells| {
+            cells
+                .chunks_exact(4)
+                .all(|cell| cell == (-2i32).to_le_bytes())
+        })
+        || payload.get(offset + 80..offset + 82) != Some(&[0; 2])
+        || !(continued || terminal)
+    {
+        return None;
+    }
+    let endpoint = |relative| {
+        Some(usize::from(u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )))
+    };
+    let endpoints = [endpoint(42)?, endpoint(44)?];
+    (endpoints[0] != endpoints[1]).then_some(endpoints)
 }
 
 fn compact_legacy_curve_endpoint_indices_for_code(

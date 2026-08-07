@@ -641,6 +641,37 @@ The role-1 profile-body variant uses u16 24 at +33 and carries two feature-local
 | 64 | 2 | `linked_object_second` | `u16` | little | spec | marker +64 stores a feature-local object u16 |
 | 66 | 2 | `tail_zero_third` | `u16` | little | spec | marker +66 stores zero u16 |
 
+## `compact_legacy_90_geometry_line`
+
+Spec §2 · layout: byte offsets · size: 90 B
+
+Endpoint values are zero-based indices in the feature-owned sketch-marker roster. The terminal variant extends the fixed body to marker +138 and has the terminal suffix described by the spec.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The compact `ff ff 07 00 01` generation |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | Its header at marker +5 is either eight `ff` bytes |
+| 13 | 4 | `native_kind` | `u32` | little | spec | The geometry-locus 90-byte line form has native value `1` |
+| 19 | 4 | `geometry_locus` | `bytes[4]` | little | spec | locus `05 00 01 00` at marker +19 |
+| 23 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 25 | 2 | `state` | `u16` | little | spec | state u16 `1` |
+| 31 | 11 | `body` | `bytes[11]` | little | spec | the same byte `04` body at marker +31 |
+| 42 | 2 | `endpoint_first` | `u16` | little | spec | Its endpoint values are zero-based ordinals |
+| 44 | 2 | `endpoint_second` | `u16` | little | spec | Its endpoint values are zero-based ordinals |
+| 46 | 4 | `selector_value` | `u32` | little | spec | u32 `1` at marker +46 |
+| 50 | 8 | `signed_selector` | `f64` | little | spec | f64 `-1` at marker +50 |
+| 58 | 4 | `tail_value` | `u32` | little | spec | u32 `1` at marker +58 |
+| 64 | 16 | `sentinel_cells` | `i32[4]` | little | spec | four consecutive i32 `-2` cells at marker +64 |
+| 80 | 2 | `tail_zero_suffix` | `u16` | little | spec | zero u16 at marker +80 |
+| 82 | 4 | `identity_first` | `u32` | little | spec | nonzero non-null u32 identities at marker +82 and +86 |
+| 86 | 4 | `identity_second` | `u32` | little | spec | nonzero non-null u32 identities at marker +82 and +86 |
+
+Unstated regions:
+
+- `17..19` (2 B): The geometry-locus prefix stores zero bytes at marker +17 through +18 before the locus.
+- `27..31` (4 B): The geometry-locus body stores zero bytes at marker +27 through +30 before the body tag.
+- `62..64` (2 B): Bytes +62 through +63 are not interpreted by this fixed form.
+
 ## `compact_legacy_code_two_profile_point`
 
 Spec §2 · layout: byte offsets · size: 132 B

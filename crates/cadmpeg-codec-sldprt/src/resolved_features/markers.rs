@@ -3,7 +3,8 @@
 use super::curves::slot_curve_and_center_indices;
 use super::endpoints::{
     compact_curve_endpoint_indices, compact_indexed_curve_endpoint_indices,
-    current_compact_104_profile_line, current_direct_92_profile_line_endpoint_indices,
+    compact_legacy_90_geometry_line_roster_indices, current_compact_104_profile_line,
+    current_direct_92_profile_line_endpoint_indices,
     extended_geometry_locus_construction_line_endpoint_indices,
     extended_identity_inline_line_record, extended_tagged_indexed_curve_endpoint_indices,
     extended_terminal_profile_line, extended_wide_horizontal_relation_endpoint_indices,
@@ -453,6 +454,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 || extended_terminal_profile_line(payload, offset)
                 || extended_identity_inline_line_record(payload, offset)
                 || legacy_compact_profile_line(payload, offset)
+                || compact_legacy_90_geometry_line_roster_indices(payload, offset).is_some()
                 || coordinates_m.is_none()
                     && (marker_is_selected_construction_line(payload, offset)
                         || compact_curve_endpoint_indices(payload, offset).is_some())
