@@ -976,12 +976,16 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        if ranges[0] > ranges[1]
-            || ranges[2] > ranges[3]
-            || ranges[0] < u_knots[u_degree_usize]
-            || ranges[1] > u_knots[u_count]
-            || ranges[2] < v_knots[v_degree_usize]
-            || ranges[3] > v_knots[v_count]
+        let u_start = ranges[0];
+        let v_start = ranges[1];
+        let u_end = ranges[2];
+        let v_end = ranges[3];
+        if u_start > u_end
+            || v_start > v_end
+            || u_start < u_knots[u_degree_usize]
+            || u_end > u_knots[u_count]
+            || v_start < v_knots[v_degree_usize]
+            || v_end > v_knots[v_count]
         {
             losses.push(entity_loss(
                 entry,

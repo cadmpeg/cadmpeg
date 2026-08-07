@@ -3492,7 +3492,7 @@ fn encode_nurbs_surface(nurbs: &NurbsSurface) -> Result<Entity, CodecError> {
             }
         }
     }
-    for value in [u_range[0], u_range[1], v_range[0], v_range[1]] {
+    for value in [u_range[0], v_range[0], u_range[1], v_range[1]] {
         parameters.push(',');
         parameters.push_str(&number(value));
     }
