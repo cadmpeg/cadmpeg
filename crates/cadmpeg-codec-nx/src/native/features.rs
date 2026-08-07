@@ -10593,7 +10593,7 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: u64::from(ordinal),
         };
-        let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+        let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
             id: "reference#30".to_string(),
             operation_label: "operation#0".to_string(),

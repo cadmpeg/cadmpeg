@@ -145,7 +145,8 @@ pub struct SegmentOmLink {
 /// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
 /// the retained history area unless a decoded operation writes them. Primary
 /// references resolved in an offset-store block namespace do not participate
-/// in object-identity lineage.
+/// in object-identity lineage. The label arena is source/newest-first; all
+/// history positions below use oldest-first order within each section.
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
@@ -165,14 +166,16 @@ pub fn terminal_feature_body_indices(
     if object_references.is_empty() && bindings.is_empty() {
         return None;
     }
-    let positions = labels
+    let chronological_labels =
+        crate::native::features::feature_operation_chronological_labels(labels);
+    let positions = chronological_labels
         .iter()
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
     let aliases = body_alias_roots(bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let operation_kinds = labels
+    let operation_kinds = chronological_labels
         .iter()
         .map(|label| (label.id.as_str(), label.value.as_str()))
         .collect::<BTreeMap<_, _>>();
@@ -673,7 +676,7 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: ordinal as u64,
         };
-        let labels = [label(0, "EXTRUDE"), label(1, "EXTRUDE"), label(2, "UNITE")];
+        let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
         let reference = |operation: &str, body_object_index| FeatureBodyReference {
             id: format!("reference#{body_object_index}"),
             operation_label: operation.to_string(),
@@ -717,10 +720,10 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: u64::from(ordinal),
         };
-        let labels = [label(0), label(1)];
+        let labels = [label(1), label(0)];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
             id: format!("boolean#{ordinal}"),
-            operation_label: labels[ordinal].id.clone(),
+            operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
             target_object_index: target,
             raw_target_object_index: vec![target as u8],
@@ -777,17 +780,17 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: u64::from(ordinal),
         };
-        let labels = [label(0, "UNITE"), label(1, "UNITE"), label(2, "EXTRUDE")];
+        let labels = [label(2, "EXTRUDE"), label(1, "UNITE"), label(0, "UNITE")];
         let references = [FeatureBodyReference {
             id: "reference#10".to_string(),
-            operation_label: labels[2].id.clone(),
+            operation_label: "operation#2".to_string(),
             body_object_index: 10,
             raw_body_object_index: vec![10],
             source_offset: 2,
         }];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
             id: format!("boolean#{ordinal}"),
-            operation_label: labels[ordinal].id.clone(),
+            operation_label: format!("operation#{ordinal}"),
             kind: FeatureBooleanKind::Unite,
             target_object_index: target,
             raw_target_object_index: vec![target as u8],
@@ -979,7 +982,9 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: u64::from(ordinal),
         };
-        let labels = [label(0, "DELETE"), label(1, "EXTRUDE")];
+        // Feature-history labels are newest-first within one section. The raw
+        // order places the later writer before the earlier delete.
+        let labels = [label(0, "EXTRUDE"), label(1, "DELETE")];
         let reference = |ordinal: u32| FeatureBodyReference {
             id: format!("reference#{ordinal}"),
             operation_label: format!("operation#{ordinal}"),
@@ -1002,6 +1007,48 @@ mod tests {
         assert_eq!(
             super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
             Some([10, 11].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_consumes_a_writer_before_a_delete_in_raw_order() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+            id: format!("operation#{ordinal}"),
+            section_link: "history#0".to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let reference = |ordinal: u32| FeatureBodyReference {
+            id: format!("reference#{ordinal}"),
+            operation_label: format!("operation#{ordinal}"),
+            body_object_index: 10,
+            raw_body_object_index: vec![10],
+            source_offset: u64::from(ordinal),
+        };
+        // The raw order is newest-first, so this encodes a writer followed by
+        // a delete in chronological history.
+        let labels = [label(0, "DELETE"), label(1, "EXTRUDE")];
+        let references = [reference(0), reference(1)];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
+            Some(std::collections::BTreeSet::new())
         );
     }
 
@@ -1068,7 +1115,7 @@ mod tests {
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: ordinal as u64,
         };
-        let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
+        let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
             id: "reference#150".to_string(),
             operation_label: "operation#0".to_string(),
