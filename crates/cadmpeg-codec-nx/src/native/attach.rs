@@ -2419,6 +2419,7 @@ fn attach_feature_operations(
             }
         }
         body_writer_history.extend_primary_dependencies(
+            initial_body_id.as_ref(),
             native_primary_body,
             &outputs,
             &mut dependencies,

@@ -39,6 +39,7 @@ impl BodyWriterHistory {
 
     pub(crate) fn extend_primary_dependencies(
         &self,
+        provisional_feature: Option<&FeatureId>,
         native_body: Option<u32>,
         outputs: &[BodyId],
         dependencies: &mut Vec<FeatureId>,
@@ -46,6 +47,9 @@ impl BodyWriterHistory {
         let mut has_output_writer = false;
         for output in outputs {
             if let Some(writer) = self.outputs.get(output) {
+                if Some(writer) == provisional_feature {
+                    continue;
+                }
                 has_output_writer = true;
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
@@ -153,6 +157,7 @@ mod tests {
 
         let mut dependencies = Vec::new();
         history.extend_primary_dependencies(
+            None,
             Some(8),
             std::slice::from_ref(&body),
             &mut dependencies,
@@ -163,11 +168,11 @@ mod tests {
         history.record_writer(Some(8), std::slice::from_ref(&body), &second);
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
-        history.extend_primary_dependencies(Some(7), &[body], &mut dependencies);
+        history.extend_primary_dependencies(None, Some(7), &[body], &mut dependencies);
         assert_eq!(dependencies, [second]);
 
         dependencies.clear();
-        history.extend_primary_dependencies(Some(7), &[], &mut dependencies);
+        history.extend_primary_dependencies(None, Some(7), &[], &mut dependencies);
         assert_eq!(dependencies, [FeatureId("first".into())]);
     }
 
@@ -191,6 +196,24 @@ mod tests {
             Some(7),
             std::slice::from_ref(&existing)
         ));
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            Some(&provisional),
+            Some(7),
+            std::slice::from_ref(&existing),
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [retained]);
+
+        let mut dependencies = Vec::new();
+        history.extend_primary_dependencies(
+            Some(&provisional),
+            Some(7),
+            std::slice::from_ref(&created),
+            &mut dependencies,
+        );
+        assert_eq!(dependencies, [FeatureId("retained".into())]);
 
         history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
 
