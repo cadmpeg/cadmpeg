@@ -46,6 +46,7 @@
               "body_reference.0": "6466",
               "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "input_block.0": "nx:om-data-blocks-0:block#1",
+              "input_block_record.0": "nx:feature-history:input-block#0000000000-0000000000-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",

@@ -9255,6 +9255,10 @@ mod tests {
             result.ir.model.features[0].source_properties["input_block.0"],
             inputs[0].data_block
         );
+        assert_eq!(
+            result.ir.model.features[0].source_properties["input_block_record.0"],
+            inputs[0].id
+        );
         let references = result
             .ir
             .native

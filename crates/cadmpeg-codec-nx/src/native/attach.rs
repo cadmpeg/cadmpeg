@@ -2399,6 +2399,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("input_block_record.{}", input.input_slot),
+                input.id.clone(),
+            );
+            source_properties.insert(
                 format!("input_block.{}", input.input_slot),
                 input.data_block.clone(),
             );
@@ -2431,6 +2435,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("sketch_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
+            source_properties.insert(
                 format!("sketch_reference.{}", reference.ordinal),
                 reference
                     .data_block
@@ -2443,6 +2451,10 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("projected_curve_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("projected_curve_reference.{}", reference.ordinal),
                 reference
@@ -2514,6 +2526,10 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("pattern_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("pattern_reference.{}", reference.ordinal),
                 reference
@@ -2602,6 +2618,10 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
+                format!("draft_construction_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
+            source_properties.insert(
                 format!("draft_construction_reference.{}", reference.ordinal),
                 reference
                     .data_block
@@ -2688,6 +2708,13 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!(
+                    "surface_construction_reference_record.{}",
+                    reference.ordinal
+                ),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("surface_construction_reference.{}", reference.ordinal),
                 reference
@@ -2795,6 +2822,10 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
+            source_properties.insert(
+                format!("extrude_profile_reference_record.{}", reference.ordinal),
+                reference.id.clone(),
+            );
             source_properties.insert(
                 format!("extrude_profile_reference.{}", reference.ordinal),
                 reference
