@@ -262,6 +262,11 @@ current scores require those matrices and representative fixtures.
   chain resolves to exactly one transferred feature identity. A missing
   object, non-reflexive cycle, or ambiguous feature identity leaves the
   parameter at document scope.
+- A transferred feature receives a structural `parent` only when its exact
+  `owner_design_object` incidence selects another design object that also
+  transfers as a feature. Self-links and owner cycles do not create neutral
+  history links. Structural parent transfer does not assign operation
+  dependencies.
 - Design objects consisting entirely of one exact empty principal-plane
   declaration class transfer the corresponding built-in reference-plane
   history node with the design object's first-field byte offset as its source
