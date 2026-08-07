@@ -19105,6 +19105,9 @@ fn counterbore_cylinder_sources(scan: &ContainerScan, feature_id: u32) -> Option
     };
     let mut cylinders_by_source = BTreeMap::<u32, Vec<u32>>::new();
     for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+        if !table.surface_ids.contains(&entry.entity_id) {
+            continue;
+        }
         let source_id = entry.source_entity_id?;
         let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
         else {

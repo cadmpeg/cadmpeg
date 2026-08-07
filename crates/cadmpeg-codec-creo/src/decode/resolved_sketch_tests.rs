@@ -1417,6 +1417,50 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
 }
 
 #[test]
+fn counterbore_sources_require_materialized_table_membership() {
+    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id: 200,
+        source_entity_id: Some(source_entity_id),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![entry(11, 4), entry(12, 4), entry(15, 7), entry(16, 7)];
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(9),
+        table_class_id: 29,
+        entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+        entries,
+        surface_ids: vec![11, 15, 16],
+        non_surface_entity_ids: vec![12],
+        offset: 0,
+    };
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Cylinder.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Cylinder,
+        feature_id: 9,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.entity_tables.push(table);
+    scan.surfaces
+        .rows
+        .extend([row(11), row(12), row(15), row(16)]);
+
+    assert_eq!(
+        counterbore_cylinder_sources(&scan, 9),
+        Some(vec![vec![15, 16]])
+    );
+}
+
+#[test]
 fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
     let table = |depth: f64| crate::feature::FeatureDimensionTable {
         declared_count: 4,
