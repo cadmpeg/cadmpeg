@@ -352,7 +352,7 @@
       "features": [],
       "loops": [
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#0:0:0",
             "catia:standard:coedge#0:0:1",
@@ -362,7 +362,7 @@
           "id": "catia:standard:loop#0:0"
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#1:0:0",
             "catia:standard:coedge#1:0:1",
@@ -372,7 +372,7 @@
           "id": "catia:standard:loop#1:0"
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#2:0:0",
             "catia:standard:coedge#2:0:1",
@@ -382,7 +382,7 @@
           "id": "catia:standard:loop#2:0"
         },
         {
-          "boundary_role": "unspecified",
+          "boundary_role": "outer",
           "coedges": [
             "catia:standard:coedge#3:0:0",
             "catia:standard:coedge#3:0:1",
@@ -1337,6 +1337,7 @@
         "catia:standard:loop#0:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived"
           }
@@ -1344,6 +1345,7 @@
         "catia:standard:loop#1:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived"
           }
@@ -1351,6 +1353,7 @@
         "catia:standard:loop#2:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived"
           }
@@ -1358,6 +1361,7 @@
         "catia:standard:loop#3:0": {
           "entity": "byte_exact",
           "fields": {
+            "boundary_role": "derived",
             "coedges": "derived",
             "face": "derived"
           }
