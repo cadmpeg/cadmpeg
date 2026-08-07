@@ -27,7 +27,8 @@ reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
 signature= "SIGNATURE;" signature_content "ENDSEC;"
 anchor_entry    = resource "=" parameter ";"
-reference_entry = resource "=" resource ";"
+reference_entry = reference_name "=" resource ";"
+reference_name  = resource | instance_name
 ```
 
 Outside string escape sequences, editions 1 and 2 interpret character bytes as
@@ -125,9 +126,11 @@ accessors resolve inherited attributes against that representation.
 
 Instance names share one namespace across all DATA sections. Forward and
 backward references resolve after all DATA sections are read. A reference to an
-absent instance is a structural reference error. An unknown entity name
-produces a named opaque record that retains its complete token span, byte span,
-and links to other named opaque records.
+absent local instance is a structural reference error. An instance name
+declared by a REFERENCE entry is an external reference and is not required in
+the local DATA graph. An unknown standard or user-defined entity name produces
+a named opaque record that retains its complete token span, byte span, and
+links to other named opaque records.
 
 ## 6. Header
 
@@ -144,9 +147,11 @@ ANCHOR entries bind a resource name to an in-file parameter value. Anchor names
 are unique. Resource values that name anchors resolve recursively before schema
 decoding. A cycle is a structural error.
 
-REFERENCE entries bind a local resource name to a resource URI. Each name and
-URI is delimited by `<` and `>`. A URI target outside the exchange structure is
-an external dependency.
+REFERENCE entries bind a local resource name to a resource URI. They also bind
+an external instance name to a resource URI. Resource names and URIs are
+delimited by `<` and `>`; an external instance name uses the `#id` form. A URI
+target outside the exchange structure is an external dependency. External
+instance names do not enter the local DATA instance graph.
 SIGNATURE content begins after `SIGNATURE;`, ends at the next `ENDSEC;`, and
 retains its complete byte range.
 

@@ -6,7 +6,7 @@
 //! producer, represented by its own diagnostic kind, and rejectable by strict
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -35,14 +35,14 @@ pub enum Value {
     Derived,
     /// Ordered aggregate values.
     List(Vec<Value>),
-    /// Type name and its single wrapped parameter.
+    /// Standard or user-defined type name and its single wrapped parameter.
     Typed(String, Box<Value>),
 }
 
 /// One simple entity leaf within an entity instance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartialRecord {
-    /// Uppercase entity name.
+    /// Uppercase standard or `!`-prefixed user-defined entity name.
     pub name: String,
     /// Explicit external-mapping parameters.
     pub parameters: Vec<Value>,
@@ -89,7 +89,7 @@ pub struct AnchorEntry {
 /// One edition-3 external REFERENCE binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceEntry {
-    /// Local resource name.
+    /// Local resource name or external instance name such as `#123`.
     pub name: String,
     /// External resource URI.
     pub uri: String,
@@ -339,13 +339,25 @@ impl Parser<'_> {
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
+        let mut external_reference_ids = BTreeSet::new();
+        let mut reference_names = BTreeSet::new();
         if self.peek_name("REFERENCE") {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let TokenKind::Resource(name) = self.next_kind()? else {
-                    return self.err("expected reference name");
+                let (name, instance_id) = match self.next_kind()? {
+                    TokenKind::Resource(name) => (name, None),
+                    TokenKind::Instance(id) => (format!("#{id}"), Some(id)),
+                    _ => return self.err("expected reference name"),
                 };
+                if !reference_names.insert(name.clone()) {
+                    return self.err("duplicate reference name");
+                }
+                if let Some(id) = instance_id {
+                    if !external_reference_ids.insert(id) {
+                        return self.err("duplicate external reference instance name");
+                    }
+                }
                 self.punct(&TokenKind::Equals)?;
                 let TokenKind::Resource(uri) = self.next_kind()? else {
                     return self.err("expected reference URI");
@@ -403,6 +415,9 @@ impl Parser<'_> {
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
+        if records.keys().any(|id| external_reference_ids.contains(id)) {
+            return self.err("external reference instance collides with a DATA instance");
+        }
         if !anchors.is_empty() {
             let anchor_bindings = anchors
                 .iter()
@@ -435,7 +450,10 @@ impl Parser<'_> {
         for anchor in &anchors {
             refs.clear();
             references(&anchor.value, &mut refs);
-            if refs.iter().any(|id| !records.contains_key(id)) {
+            if refs
+                .iter()
+                .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
+            {
                 return self.err("unresolved instance reference in anchor binding");
             }
         }
@@ -446,7 +464,10 @@ impl Parser<'_> {
                     references(value, &mut refs);
                 }
             }
-            if refs.iter().any(|id| !records.contains_key(id)) {
+            if refs
+                .iter()
+                .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
+            {
                 return Self::err_at(record.span.start, "unresolved instance reference");
             }
         }
@@ -568,28 +589,32 @@ impl Parser<'_> {
             TokenKind::Resource(v) => Ok(Value::Resource(v)),
             TokenKind::Omitted => Ok(Value::Omitted),
             TokenKind::Derived => Ok(Value::Derived),
-            TokenKind::Name(name) => {
-                let parameters = self.parameters()?;
-                if parameters.len() != 1 {
-                    return self.err("typed parameter requires one value");
-                }
-                Ok(Value::Typed(
-                    name,
-                    Box::new(
-                        parameters
-                            .into_iter()
-                            .next()
-                            .expect("parameter count was checked"),
-                    ),
-                ))
-            }
+            TokenKind::Name(name) => self.typed_parameter(name),
+            TokenKind::UserName(name) => self.typed_parameter(format!("!{name}")),
             _ => self.err("expected parameter value"),
         }
+    }
+
+    fn typed_parameter(&mut self, name: String) -> Result<Value, ParseError> {
+        let parameters = self.parameters()?;
+        if parameters.len() != 1 {
+            return self.err("typed parameter requires one value");
+        }
+        Ok(Value::Typed(
+            name,
+            Box::new(
+                parameters
+                    .into_iter()
+                    .next()
+                    .expect("parameter count was checked"),
+            ),
+        ))
     }
 
     fn take_name(&mut self) -> Result<String, ParseError> {
         match self.next_kind()? {
             TokenKind::Name(name) => Ok(name),
+            TokenKind::UserName(name) => Ok(format!("!{name}")),
             _ => self.err("expected name"),
         }
     }

@@ -141,6 +141,40 @@ fn parser_rejects_duplicate_complex_partial_names() {
 }
 
 #[test]
+fn parser_accepts_external_instance_references_in_edition_three() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.references[0].name, "#100");
+    assert_eq!(exchange.references[0].uri, "part.step#root");
+    assert_eq!(
+        exchange.anchors[0].value,
+        crate::parse::Value::Reference(100)
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![crate::parse::Value::Reference(100)]
+    );
+}
+
+#[test]
+fn parser_retains_user_defined_entity_and_type_names() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=!VENDOR_ENTITY(!VENDOR_TYPE(#2));#2=KNOWN();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined names");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.records[&1].partials[0].name, "!VENDOR_ENTITY");
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![crate::parse::Value::Typed(
+            "!VENDOR_TYPE".into(),
+            Box::new(crate::parse::Value::Reference(2)),
+        )]
+    );
+}
+
+#[test]
 fn parser_reports_recoverable_noncanonical_complex_partial_order() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(NAMED_UNIT(#2)SOLID_ANGLE_UNIT()SI_UNIT($,.STERADIAN.));#2=DIMENSIONAL_EXPONENTS(0.,0.,0.,0.,0.,0.,0.);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
