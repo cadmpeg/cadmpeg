@@ -4644,6 +4644,59 @@ fn mapped_presentation_does_not_report_body_placement_loss() {
 }
 
 #[test]
+fn two_dimensional_mapping_does_not_change_body_placement() {
+    let mut source = export(&unit_cube());
+    let representation_line = source
+        .lines()
+        .find(|line| line.contains("ADVANCED_BREP_SHAPE_REPRESENTATION("))
+        .expect("written body representation");
+    let representation = representation_line
+        .split_once('=')
+        .and_then(|(id, _)| id.trim().strip_prefix('#'))
+        .and_then(|id| id.parse::<u64>().ok())
+        .expect("body representation id");
+    let next_id = source
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix('#')
+                .and_then(|line| line.split_once('='))
+                .and_then(|(id, _)| id.trim().parse::<u64>().ok())
+        })
+        .max()
+        .expect("written STEP entity")
+        + 1;
+    let origin_point = next_id;
+    let origin_direction = next_id + 1;
+    let origin = next_id + 2;
+    let map = next_id + 3;
+    let target_point = next_id + 4;
+    let target = next_id + 5;
+    let mapped_item = next_id + 6;
+    let records = format!(
+        "#{origin_point}=CARTESIAN_POINT('',(0.,0.));\n\
+#{origin_direction}=DIRECTION('',(1.,0.));\n\
+#{origin}=AXIS2_PLACEMENT_2D('',#{origin_point},#{origin_direction});\n\
+#{map}=REPRESENTATION_MAP(#{origin},#{representation});\n\
+#{target_point}=CARTESIAN_POINT('',(10.,0.));\n\
+#{target}=AXIS2_PLACEMENT_2D('',#{target_point},#{origin_direction});\n\
+#{mapped_item}=MAPPED_ITEM('',#{map},#{target});\n"
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(end, &records);
+
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode 2D mapped presentation item");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(result.ir.model.bodies[0].transform.is_none());
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("MAPPED_ITEM has no resolved body placement")
+    }));
+}
+
+#[test]
 fn decode_builds_mapped_item_placement_from_canonical_cartesian_operator() {
     let bytes = include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21");
     let mut source = String::from_utf8(bytes.to_vec()).expect("fixture is UTF-8");

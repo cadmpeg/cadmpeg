@@ -339,7 +339,9 @@ transform is the target transform composed with the inverse mapping-origin
 transform. Reused source topology roots
 reuse their committed body identity. Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
-unresolved placement.
+unresolved placement. A mapping whose origin and target are both 2D placement
+or 2D transformation records is presentation geometry and does not change a
+body placement.
 
 Product definitions and product-definition formations use the inherited base
 attribute prefix. A direct subtype carries that prefix in its own parameter

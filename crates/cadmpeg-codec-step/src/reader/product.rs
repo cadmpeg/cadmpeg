@@ -402,6 +402,9 @@ fn apply_body_placements(
         if assembly_representations.contains(&representation) {
             continue;
         }
+        if is_two_dimensional_mapping(origin, target, exchange) {
+            continue;
+        }
         let bodies = super::topology::representation_bodies(
             representation,
             exchange,
@@ -681,6 +684,17 @@ fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) ->
         .map(placement_transform)
         .or_else(|| geometry.transformation_operators.get(&target).copied())?;
     Some(to.compose(from.try_inverse_affine()?))
+}
+
+fn is_two_dimensional_mapping(origin: u64, target: u64, exchange: &Exchange) -> bool {
+    [origin, target].into_iter().all(|id| {
+        exchange.records.get(&id).is_some_and(|record| {
+            record.partial("AXIS2_PLACEMENT_2D").is_some()
+                || record
+                    .partial("CARTESIAN_TRANSFORMATION_OPERATOR_2D")
+                    .is_some()
+        })
+    })
 }
 
 fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
