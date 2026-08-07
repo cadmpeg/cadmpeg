@@ -4120,6 +4120,86 @@ fn catia_cartesian_trim_points_resolve_on_nurbs_curve() {
 }
 
 #[test]
+fn defaulted_spline_curve_subtypes_derive_knot_vectors() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,1.,0.));
+#3=CARTESIAN_POINT('',(2.,0.,0.));
+#4=QUASI_UNIFORM_CURVE('quasi',2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.);
+#5=UNIFORM_CURVE('uniform',1,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.);
+#6=BEZIER_CURVE('bezier',2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.);
+#7=(BOUNDED_CURVE() B_SPLINE_CURVE(2,(#1,#2,#3),.UNSPECIFIED.,.F.,.F.) QUASI_UNIFORM_CURVE() RATIONAL_B_SPLINE_CURVE((1.,.5,1.)) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('rational'));
+#8=GEOMETRIC_SET('',(#4,#5,#6,#7));
+#9=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#8),#10);
+#10=(GEOMETRIC_REPRESENTATION_CONTEXT(3)REPRESENTATION_CONTEXT('',''));",
+    );
+
+    let nurbs = |id: &str| {
+        result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+            .and_then(|curve| match &curve.geometry {
+                CurveGeometry::Nurbs(nurbs) => Some(nurbs),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing NURBS curve {id}"))
+    };
+    assert_eq!(
+        nurbs("step:data:curve#4").knots,
+        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    );
+    assert_eq!(nurbs("step:data:curve#5").knots, [-1.0, 0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(
+        nurbs("step:data:curve#6").knots,
+        [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+    );
+    let rational = nurbs("step:data:curve#7");
+    assert_eq!(rational.knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(rational.weights.as_deref(), Some(&[1.0, 0.5, 1.0][..]));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));",
+            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));\n#58=CARTESIAN_POINT('',(1.,0.));",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=QUASI_UNIFORM_CURVE('',1,(#51,#58),.UNSPECIFIED.,.F.,.F.);",
+        )
+        .replace(
+            "#55=DEFINITIONAL_REPRESENTATION('',(#54),#50);",
+            "#55=(DEFINITIONAL_REPRESENTATION()REPRESENTATION('',(#54),#50)SHAPE_REPRESENTATION());",
+        );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode quasi-uniform pcurve");
+
+    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+        matches!(
+            &pcurve.geometry,
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                knots,
+                control_points,
+                weights: None,
+                periodic: false,
+            } if knots == &[0.0, 0.0, 1.0, 1.0] && control_points.len() == 2
+        )
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn excessive_nurbs_degree_is_rejected_before_knot_allocation() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

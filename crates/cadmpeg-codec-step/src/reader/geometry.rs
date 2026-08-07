@@ -92,7 +92,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             _ => {}
         }
     }
-
     let mut point_carriers = BTreeSet::new();
     for record in exchange.records.values() {
         if record
@@ -268,17 +267,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         let Some(items) = named_parameter(record, "PCURVE", 2)
             .and_then(Value::reference)
             .and_then(|representation| exchange.records.get(&representation))
-            .and_then(|representation| representation.parameter(1))
-            .and_then(Value::list)
+            .and_then(representation_items)
         else {
             continue;
         };
         let decoded = items
             .iter()
-            .filter_map(Value::reference)
             .filter_map(|curve| {
                 decode_pcurve_geometry(
-                    curve,
+                    *curve,
                     exchange,
                     &points2,
                     &vectors2,
@@ -288,7 +285,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     &mut BTreeSet::new(),
                     0,
                 )
-                .map(|decoded| (curve, decoded))
+                .map(|decoded| (*curve, decoded))
             })
             .collect::<Vec<_>>();
         if let [(curve, decoded)] = decoded.as_slice() {
@@ -304,6 +301,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         "HYPERBOLA",
         "POLYLINE",
         "B_SPLINE_CURVE_WITH_KNOTS",
+        "UNIFORM_CURVE",
+        "QUASI_UNIFORM_CURVE",
+        "BEZIER_CURVE",
     ]) {
         let Some(curve_type) = entity_type(
             record,
@@ -315,6 +315,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 "HYPERBOLA",
                 "POLYLINE",
                 "B_SPLINE_CURVE_WITH_KNOTS",
+                "UNIFORM_CURVE",
+                "QUASI_UNIFORM_CURVE",
+                "BEZIER_CURVE",
             ],
         ) else {
             continue;
@@ -401,7 +404,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     },
                 ),
             "POLYLINE" => polyline(record, &points).map(CurveGeometry::Nurbs),
-            "B_SPLINE_CURVE_WITH_KNOTS" => {
+            "B_SPLINE_CURVE_WITH_KNOTS"
+            | "UNIFORM_CURVE"
+            | "QUASI_UNIFORM_CURVE"
+            | "BEZIER_CURVE" => {
                 nurbs_curve(record, &points, &mut warnings).map(CurveGeometry::Nurbs)
             }
             _ => unreachable!("curve type was selected from the dispatch list"),
@@ -1222,14 +1228,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             .and_then(Value::reference)
             .and_then(|representation| exchange.records.get(&representation));
         let curve_steps = representation
-            .and_then(|representation| representation.parameter(1))
-            .and_then(Value::list)
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(Value::reference)
-                    .collect::<Vec<_>>()
-            })
+            .and_then(representation_items)
             .unwrap_or_default();
         let decoded = curve_steps
             .iter()
@@ -2842,40 +2841,70 @@ fn nonnegative(value: Option<&Value>) -> Option<f64> {
         .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
-fn nurbs_curve(
+#[derive(Clone, Copy)]
+enum DefaultNurbsKnotKind {
+    Uniform,
+    QuasiUniform,
+    Bezier,
+}
+
+struct NurbsCurveDefinition {
+    degree: u32,
+    control_points: Vec<u64>,
+    knots: Vec<f64>,
+    weights: Option<Vec<f64>>,
+    periodic: bool,
+}
+
+fn nurbs_curve_definition(
     record: &RawRecord,
-    points: &BTreeMap<u64, Point3>,
     warnings: &mut Vec<String>,
-) -> Option<NurbsCurve> {
-    let complex = record.partials.len() > 1;
-    let base = if complex {
-        record.partial("B_SPLINE_CURVE")?
+    periodicity_field: &str,
+) -> Option<NurbsCurveDefinition> {
+    let (base, offset) = if record.partials.len() > 1 {
+        (record.partial("B_SPLINE_CURVE")?, 0)
     } else {
-        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
-    };
-    let offset = usize::from(!complex);
-    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let control_points = references(base.parameters.get(offset + 1)?)?
+        let base_name = [
+            "B_SPLINE_CURVE_WITH_KNOTS",
+            "UNIFORM_CURVE",
+            "QUASI_UNIFORM_CURVE",
+            "BEZIER_CURVE",
+        ]
         .into_iter()
-        .map(|id| points.get(&id).copied())
-        .collect::<Option<Vec<_>>>()?;
+        .find(|name| record.partial(name).is_some())?;
+        (record.partial(base_name)?, 1)
+    };
+    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
+    let control_points = references(base.parameters.get(offset + 1)?)?;
     if usize::try_from(degree).ok()? >= control_points.len() {
         return None;
     }
     let periodic = periodic_value(
         base.parameters.get(offset + 3),
-        "B_SPLINE_CURVE_WITH_KNOTS",
+        periodicity_field,
         record.id,
         warnings,
     )?;
-    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
-    let tail = knot_leaf.parameters.len().checked_sub(3)?;
     let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
-    let knots = expand_knots(
-        knot_leaf.parameters.get(tail)?,
-        knot_leaf.parameters.get(tail + 1)?,
-        expected_knots,
-    )?;
+    let knots = if let Some(knot_leaf) = record.partial("B_SPLINE_CURVE_WITH_KNOTS") {
+        let tail = knot_leaf.parameters.len().checked_sub(3)?;
+        expand_knots(
+            knot_leaf.parameters.get(tail)?,
+            knot_leaf.parameters.get(tail + 1)?,
+            expected_knots,
+        )?
+    } else {
+        let kind = if record.partial("UNIFORM_CURVE").is_some() {
+            DefaultNurbsKnotKind::Uniform
+        } else if record.partial("QUASI_UNIFORM_CURVE").is_some() {
+            DefaultNurbsKnotKind::QuasiUniform
+        } else if record.partial("BEZIER_CURVE").is_some() {
+            DefaultNurbsKnotKind::Bezier
+        } else {
+            return None;
+        };
+        default_nurbs_knots(control_points.len(), degree, kind)?
+    };
     if knots.len() != expected_knots {
         return None;
     }
@@ -2887,12 +2916,79 @@ fn nurbs_curve(
     } else {
         None
     };
-    Some(NurbsCurve {
+    Some(NurbsCurveDefinition {
         degree,
-        knots,
         control_points,
+        knots,
         weights,
         periodic,
+    })
+}
+
+fn default_nurbs_knots(
+    control_point_count: usize,
+    degree: u32,
+    kind: DefaultNurbsKnotKind,
+) -> Option<Vec<f64>> {
+    let degree = usize::try_from(degree).ok()?;
+    let expected = control_point_count.checked_add(degree)?.checked_add(1)?;
+    let mut knots = Vec::new();
+    knots.try_reserve_exact(expected).ok()?;
+    match kind {
+        DefaultNurbsKnotKind::Uniform => {
+            knots.extend((0..expected).map(|index| index as f64 - degree as f64));
+        }
+        DefaultNurbsKnotKind::QuasiUniform => {
+            let distinct_count = control_point_count.checked_sub(degree)?.checked_add(1)?;
+            for index in 0..distinct_count {
+                let multiplicity = if index == 0 || index + 1 == distinct_count {
+                    degree.checked_add(1)?
+                } else {
+                    1
+                };
+                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+            }
+        }
+        DefaultNurbsKnotKind::Bezier => {
+            if degree == 0 {
+                return None;
+            }
+            let segment_count = control_point_count.checked_sub(1)?;
+            if segment_count % degree != 0 {
+                return None;
+            }
+            let segment_count = segment_count / degree;
+            let distinct_count = segment_count.checked_add(1)?;
+            for index in 0..distinct_count {
+                let multiplicity = if index == 0 || index + 1 == distinct_count {
+                    degree.checked_add(1)?
+                } else {
+                    degree
+                };
+                knots.extend(std::iter::repeat_n(index as f64, multiplicity));
+            }
+        }
+    }
+    (knots.len() == expected).then_some(knots)
+}
+
+fn nurbs_curve(
+    record: &RawRecord,
+    points: &BTreeMap<u64, Point3>,
+    warnings: &mut Vec<String>,
+) -> Option<NurbsCurve> {
+    let definition = nurbs_curve_definition(record, warnings, "B_SPLINE_CURVE")?;
+    let control_points = definition
+        .control_points
+        .into_iter()
+        .map(|id| points.get(&id).copied())
+        .collect::<Option<Vec<_>>>()?;
+    Some(NurbsCurve {
+        degree: definition.degree,
+        knots: definition.knots,
+        control_points,
+        weights: definition.weights,
+        periodic: definition.periodic,
     })
 }
 
@@ -2901,52 +2997,18 @@ fn nurbs_pcurve(
     points: &BTreeMap<u64, Point2>,
     warnings: &mut Vec<String>,
 ) -> Option<PcurveGeometry> {
-    let complex = record.partials.len() > 1;
-    let base = if complex {
-        record.partial("B_SPLINE_CURVE")?
-    } else {
-        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
-    };
-    let offset = usize::from(!complex);
-    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
-    let control_points = references(base.parameters.get(offset + 1)?)?
+    let definition = nurbs_curve_definition(record, warnings, "B_SPLINE_CURVE pcurve")?;
+    let control_points = definition
+        .control_points
         .into_iter()
         .map(|id| points.get(&id).copied())
         .collect::<Option<Vec<_>>>()?;
-    if usize::try_from(degree).ok()? >= control_points.len() {
-        return None;
-    }
-    let periodic = periodic_value(
-        base.parameters.get(offset + 3),
-        "B_SPLINE_CURVE_WITH_KNOTS pcurve",
-        record.id,
-        warnings,
-    )?;
-    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
-    let tail = knot_leaf.parameters.len().checked_sub(3)?;
-    let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
-    let knots = expand_knots(
-        knot_leaf.parameters.get(tail)?,
-        knot_leaf.parameters.get(tail + 1)?,
-        expected_knots,
-    )?;
-    if knots.len() != expected_knots {
-        return None;
-    }
-    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
-        let values = numbers(leaf.parameters.first()?)?;
-        (values.len() == control_points.len())
-            .then_some(values)
-            .map(Some)?
-    } else {
-        None
-    };
     Some(PcurveGeometry::Nurbs {
-        degree,
-        knots,
+        degree: definition.degree,
+        knots: definition.knots,
         control_points,
-        weights,
-        periodic,
+        weights: definition.weights,
+        periodic: definition.periodic,
     })
 }
 
@@ -2970,7 +3032,12 @@ fn decode_pcurve_geometry(
     }
     let record = exchange.records.get(&id)?;
     let mut records = BTreeSet::from([id]);
-    let geometry = if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
+    let geometry = if record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "B_SPLINE_CURVE_WITH_KNOTS" | "UNIFORM_CURVE" | "QUASI_UNIFORM_CURVE" | "BEZIER_CURVE"
+        )
+    }) {
         nurbs_pcurve(record, points, warnings)?
     } else {
         let curve_type = entity_type(
@@ -2984,6 +3051,9 @@ fn decode_pcurve_geometry(
                 "POLYLINE",
                 "TRIMMED_CURVE",
                 "OFFSET_CURVE_2D",
+                "UNIFORM_CURVE",
+                "QUASI_UNIFORM_CURVE",
+                "BEZIER_CURVE",
             ],
         )?;
         match curve_type {
