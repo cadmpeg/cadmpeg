@@ -1873,6 +1873,15 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
         legacy_single_incidence_profile_point_coordinates(&payload, 0),
         Some([0.052, -0.01])
     );
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    assert_eq!(
+        legacy_single_incidence_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+    assert_eq!(
+        sketch_input_entities(&payload, "lane")[0].kind,
+        SketchInputKind::Point
+    );
     payload[136..140].copy_from_slice(&1u32.to_le_bytes());
     assert_eq!(
         legacy_single_incidence_profile_point_coordinates(&payload, 0),

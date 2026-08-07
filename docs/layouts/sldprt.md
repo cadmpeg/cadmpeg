@@ -479,6 +479,37 @@ Unstated regions:
 - `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `legacy_140_single_incidence_profile_point`
+
+Spec §2 · layout: byte offsets · size: 140 B
+
+The record emits a point. Native code 1 uses link-state 2 in this layout.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The legacy prefix has a 140-byte single-incidence profile-point record |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | f32 `-1` at marker +13 |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native code u32 at marker +17 |
+| 21 | 2 | `zero_prefix` | `bytes[2]` | little | spec | zero bytes at marker +21 through +22 |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `zero_state` | `u16` | little | spec | zero state u16 at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 |
+| 39 | 9 | `zero_state_prefix` | `bytes[9]` | little | spec | f64 `1` at marker +48 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `u16` | little | spec | Marker +74 is zero |
+| 76 | 2 | `link_state` | `u16` | little | spec | native code and link-state u16 pairs `(0, 2)`, `(1, 2)`, or `(2, 1)` |
+| 78 | 12 | `incidence_cell` | `bytes[12]` | little | spec | One 12-byte incidence cell at marker +78 |
+| 90 | 6 | `link_terminator` | `bytes[6]` | little | spec | The terminator `fe ff ff ff 00 00` begins at marker +90 |
+| 96 | 32 | `trailer_prefix` | `bytes[32]` | little | spec | zero bytes from marker +96 through +127 |
+| 128 | 4 | `identity_first` | `u32` | little | spec | a nonzero, non-null u32 identity at marker +128 |
+| 132 | 4 | `trailer_separator` | `bytes[4]` | little | spec | four zero bytes at marker +132 |
+| 136 | 4 | `identity_second` | `u32` | little | spec | a distinct nonzero, non-null u32 identity at marker +136 |
+
 ## `extended_scaled_146_profile_point`
 
 Spec §2 · layout: byte offsets · size: 146 B

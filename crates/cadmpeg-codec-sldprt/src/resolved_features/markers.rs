@@ -1013,7 +1013,7 @@ fn legacy_single_incidence_profile_point_coordinates(
         .and_then(|bytes| bytes.try_into().ok())
         .map(u16::from_le_bytes)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || !matches!((code, link_state), (0, 2) | (2, 1))
+        || !matches!((code, link_state), (0 | 1, 2) | (2, 1))
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
         || payload.get(offset + 23..offset + 29) != Some(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00])
         || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
