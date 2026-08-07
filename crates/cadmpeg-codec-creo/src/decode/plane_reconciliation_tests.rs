@@ -190,6 +190,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
         &scan,
         &mut ir,
         &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+        &std::collections::BTreeSet::new(),
     );
 
     assert_eq!(transferred, 1);
@@ -214,6 +215,7 @@ fn unique_native_conic_loop_places_its_plane_surface() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &std::collections::BTreeSet::new(),
         ),
         0
     );
@@ -282,6 +284,7 @@ fn unique_nurbs_line_loop_places_its_plane_surface() {
             &scan,
             &mut ir,
             &mut cadmpeg_ir::annotations::AnnotationBuilder::new(),
+            &std::collections::BTreeSet::new(),
         ),
         1
     );
