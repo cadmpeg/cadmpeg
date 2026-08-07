@@ -191,13 +191,7 @@ pub(super) fn decode(
     let mut styles = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| {
-            matches!(
-                record.simple_name(),
-                Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
-            )
-            .then_some(id)
-        })
+        .filter_map(|(&id, record)| styled_item_parts(record).map(|_| id))
         .collect::<Vec<_>>();
     let overridden_styles = styles
         .iter()
@@ -211,24 +205,23 @@ pub(super) fn decode(
             continue;
         }
         let style = &exchange.records[&style_id];
-        let Some(target_step) = style.parameter(2).and_then(ValueExt::reference) else {
+        let Some(parts) = styled_item_parts(style) else {
+            continue;
+        };
+        let Some(target_step) = parts.target.reference() else {
             warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
             continue;
         };
-        if style
-            .parameter(1)
-            .and_then(ValueExt::list)
-            .is_some_and(<[Value]>::is_empty)
-        {
+        if parts.styles.list().is_some_and(<[Value]>::is_empty) {
             typed.insert(style_id);
             continue;
         }
         let domain = style_domain(target_step, exchange);
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
-        let Some((color_id, color, name)) = style
-            .parameter(1)
-            .and_then(ValueExt::list)
+        let Some((color_id, color, name)) = parts
+            .styles
+            .list()
             .into_iter()
             .flatten()
             .flat_map(references)
@@ -245,10 +238,7 @@ pub(super) fn decode(
             })
         else {
             let mut visited = BTreeSet::new();
-            if !style
-                .parameter(1)
-                .is_some_and(|value| contains_null_style(value, exchange, &mut visited, 0))
-            {
+            if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
                 warnings.push(format!(
                     "STYLED_ITEM #{style_id} has no resolved surface color"
                 ));
@@ -592,8 +582,49 @@ struct EntityIds {
 }
 
 fn overridden_style(style: &RawRecord) -> Option<u64> {
-    (style.simple_name() == Some("OVER_RIDING_STYLED_ITEM"))
-        .then(|| style.parameter(3).and_then(ValueExt::reference))?
+    styled_item_parts(style)
+        .and_then(|parts| parts.overridden)
+        .and_then(ValueExt::reference)
+}
+
+struct StyledItemParts<'a> {
+    styles: &'a Value,
+    target: &'a Value,
+    overridden: Option<&'a Value>,
+}
+
+fn styled_item_parts(record: &RawRecord) -> Option<StyledItemParts<'_>> {
+    if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "OVER_RIDING_STYLED_ITEM")
+    {
+        let parameters = partial.parameters.as_slice();
+        let target = parameters.get(parameters.len().checked_sub(2)?)?;
+        let styles = parameters.get(parameters.len().checked_sub(3)?)?;
+        let overridden = parameters.last()?;
+        return Some(StyledItemParts {
+            styles,
+            target,
+            overridden: Some(overridden),
+        });
+    }
+    let partial = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "STYLED_ITEM")?;
+    let parameters = partial.parameters.as_slice();
+    let target = parameters.last()?;
+    let styles = parameters.get(parameters.len().checked_sub(2)?)?;
+    Some(StyledItemParts {
+        styles,
+        target,
+        overridden: None,
+    })
+}
+
+pub(super) fn styled_item_target(record: &RawRecord) -> Option<u64> {
+    styled_item_parts(record).and_then(|parts| parts.target.reference())
 }
 
 fn style_depth(

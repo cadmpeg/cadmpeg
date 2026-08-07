@@ -4432,6 +4432,61 @@ fn presentation_records_retain_non_color_geometry_owners() {
 }
 
 #[test]
+fn complex_styled_item_decodes_color_and_owns_its_curve() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,0.,0.));
+#3=POLYLINE('styled curve',(#1,#2));
+#4=COLOUR_RGB('red',1.,0.,0.);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#4));
+#6=(ANNOTATION_CURVE_OCCURRENCE() STYLED_ITEM((#5),#3));
+#7=COLOUR_RGB('blue',0.,0.,1.);
+#8=PRESENTATION_STYLE_ASSIGNMENT((#7));
+#9=(ANNOTATION_CURVE_OCCURRENCE() OVER_RIDING_STYLED_ITEM((#8),#3,#6));",
+    );
+
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .expect("complex styled curve");
+    assert_eq!(
+        curve
+            .source_object
+            .as_ref()
+            .expect("complex styled curve owner")
+            .object_id,
+        "#6"
+    );
+    assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
+        matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Curve(ref curve)
+                if curve.as_str() == "step:data:curve#3"
+        )
+    }));
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    let appearance = result
+        .ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == result.ir.model.appearance_bindings[0].appearance)
+        .expect("overriding appearance");
+    assert_eq!(appearance.name.as_deref(), Some("blue"));
+    assert!(result
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .all(|record| record.id.0 != "step:data:styled_item#6"));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn null_style_branch_does_not_suppress_a_sibling_color() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

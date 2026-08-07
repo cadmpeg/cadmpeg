@@ -132,14 +132,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
             }
         }
-        if matches!(
-            record.simple_name(),
-            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
-        ) {
-            if let Some(id) = record.parameter(2).and_then(Value::reference) {
-                if points.contains_key(&id) {
-                    point_carriers.insert(id);
-                }
+        if let Some(id) = super::presentation::styled_item_target(record) {
+            if points.contains_key(&id) {
+                point_carriers.insert(id);
             }
         }
     }
@@ -1836,16 +1831,10 @@ pub(super) fn associate_free_presentation_carriers(
     owned: &OwnedCarriers,
     losses: &mut Vec<LossNote>,
 ) {
-    for (style_id, style) in exchange.records.iter().filter(|(_, record)| {
-        matches!(
-            record.simple_name(),
-            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
-        )
+    for (style_id, target) in exchange.records.iter().filter_map(|(style_id, record)| {
+        super::presentation::styled_item_target(record).map(|target| (*style_id, target))
     }) {
-        let Some(target) = style.parameter(2).and_then(Value::reference) else {
-            continue;
-        };
-        associate_presentation_carrier(exchange, ir, index, owned, target, *style_id, losses);
+        associate_presentation_carrier(exchange, ir, index, owned, target, style_id, losses);
     }
     for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
         let mut targets = Vec::new();
