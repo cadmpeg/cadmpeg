@@ -20,7 +20,7 @@ use cadmpeg_ir::report::{
     CensusBasis, EntityCensus, ExportReport, FidelityResolution, LossKind, LossNote, Severity,
     WritePath,
 };
-use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, Sense};
+use cadmpeg_ir::topology::{BodyKind, Edge, Loop, LoopBoundaryRole, PcurveUse, Sense};
 use cadmpeg_ir::{CadIr, SourceFidelity};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
@@ -465,15 +465,17 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                                 face.id, loop_id
                             ))
                         })?;
-                    if loop_.face != face.id || loop_.coedges.is_empty() {
+                    if loop_.face != face.id
+                        || (loop_.coedges.is_empty() && loop_.vertex_uses.len() != 1)
+                    {
                         return Err(CodecError::Malformed(format!(
-                            "IGES loop {} is not a nonempty loop of face {}",
+                            "IGES loop {} is not a valid loop of face {}",
                             loop_.id, face.id
                         )));
                     }
-                    if !loop_.vertex_uses.is_empty() {
-                        return Err(CodecError::NotImplemented(format!(
-                            "IGES B-rep writer does not encode pole-vertex uses ({})",
+                    if loop_.coedges.is_empty() && loop_.vertex_uses[0].after.is_some() {
+                        return Err(CodecError::Malformed(format!(
+                            "IGES vertex-only loop {} has a preceding coedge",
                             loop_.id
                         )));
                     }
@@ -577,43 +579,39 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             used_vertices.insert(vertex.id.as_str().to_owned());
                             point_position(ir, &vertex.point)?;
                         }
-                        for pcurve_use in &coedge.pcurves {
-                            let pcurve = ir
-                                .model
-                                .pcurves
-                                .iter()
-                                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
-                                .ok_or_else(|| {
-                                    CodecError::Malformed(format!(
-                                        "IGES coedge {} references missing pcurve {}",
-                                        coedge.id, pcurve_use.pcurve
-                                    ))
-                                })?;
-                            let range = pcurve.parameter_range.ok_or_else(|| {
-                                CodecError::NotImplemented(format!(
-                                    "IGES B-rep writer requires a parameter range for pcurve {}",
-                                    pcurve.id
+                        validate_brep_pcurve_uses(ir, &coedge.pcurves, coedge.id.as_str())?;
+                    }
+                    for vertex_use in &loop_.vertex_uses {
+                        if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
+                            return Err(CodecError::Malformed(format!(
+                                "IGES loop {} vertex use has no preceding coedge",
+                                loop_.id
+                            )));
+                        }
+                        if vertex_use
+                            .after
+                            .as_ref()
+                            .is_some_and(|coedge_id| !loop_.coedges.contains(coedge_id))
+                        {
+                            return Err(CodecError::Malformed(format!(
+                                "IGES loop {} vertex use references a coedge outside the loop",
+                                loop_.id
+                            )));
+                        }
+                        let vertex = ir
+                            .model
+                            .vertices
+                            .iter()
+                            .find(|vertex| vertex.id == vertex_use.vertex)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "IGES loop {} references missing vertex {}",
+                                    loop_.id, vertex_use.vertex
                                 ))
                             })?;
-                            if pcurve_use
-                                .parameter_range
-                                .is_some_and(|use_range| !same_range(use_range, range))
-                            {
-                                return Err(CodecError::NotImplemented(format!(
-                                    "IGES B-rep writer cannot restrict pcurve use {}",
-                                    pcurve_use.pcurve
-                                )));
-                            }
-                            if pcurve.wrapper_reversed.is_some()
-                                || pcurve.native_tail_flags.is_some()
-                            {
-                                return Err(CodecError::NotImplemented(format!(
-                                    "IGES B-rep writer does not encode pcurve wrapper metadata {}",
-                                    pcurve.id
-                                )));
-                            }
-                            pcurve_entity(pcurve)?;
-                        }
+                        used_vertices.insert(vertex.id.as_str().to_owned());
+                        point_position(ir, &vertex.point)?;
+                        validate_brep_pcurve_uses(ir, &vertex_use.pcurves, loop_.id.as_str())?;
                     }
                 }
             }
@@ -762,6 +760,18 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .vertices
                 .iter()
                 .find(|vertex| vertex.id == *vertex_id)
+            {
+                topology_point_ids.insert(vertex.point.as_str().to_owned());
+            }
+        }
+    }
+    for loop_ in &ir.model.loops {
+        for vertex_use in &loop_.vertex_uses {
+            if let Some(vertex) = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == vertex_use.vertex)
             {
                 topology_point_ids.insert(vertex.point.as_str().to_owned());
             }
@@ -950,6 +960,9 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         body_vertex_ids.insert(edge.start.as_str().to_owned());
                         body_vertex_ids.insert(edge.end.as_str().to_owned());
                     }
+                    for vertex_use in &loop_.vertex_uses {
+                        body_vertex_ids.insert(vertex_use.vertex.as_str().to_owned());
+                    }
                 }
             }
         }
@@ -995,39 +1008,44 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         for (index, edge_id) in edge_ids.iter().enumerate() {
             edge_indices.insert(edge_id.clone(), index);
         }
-        let mut parameters = format!("504,{}", edge_ids.len());
-        for edge_id in &edge_ids {
-            let edge = ir
-                .model
-                .edges
-                .iter()
-                .find(|edge| edge.id.as_str() == edge_id)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!("IGES B-rep edge {edge_id} is missing"))
-                })?;
-            let curve_index = edge_curve_indices[edge_id];
-            let start_index = vertex_indices[edge.start.as_str()];
-            let end_index = vertex_indices[edge.end.as_str()];
-            let _ = write!(
-                parameters,
-                ",{},{},{},{},{}",
-                reference_marker(curve_index),
-                reference_marker(vertex_list_index),
-                start_index + 1,
-                reference_marker(vertex_list_index),
-                end_index + 1
-            );
-        }
-        parameters.push(';');
-        let edge_list_index = entities.len();
-        entities.push(Entity {
-            type_code: 504,
-            form: 1,
-            label: "EDGES",
-            status: "00010001",
-            parameters: parameters.into_bytes(),
-            transform: None,
-        });
+        let edge_list_index = if edge_ids.is_empty() {
+            None
+        } else {
+            let mut parameters = format!("504,{}", edge_ids.len());
+            for edge_id in &edge_ids {
+                let edge = ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.id.as_str() == edge_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!("IGES B-rep edge {edge_id} is missing"))
+                    })?;
+                let curve_index = edge_curve_indices[edge_id];
+                let start_index = vertex_indices[edge.start.as_str()];
+                let end_index = vertex_indices[edge.end.as_str()];
+                let _ = write!(
+                    parameters,
+                    ",{},{},{},{},{}",
+                    reference_marker(curve_index),
+                    reference_marker(vertex_list_index),
+                    start_index + 1,
+                    reference_marker(vertex_list_index),
+                    end_index + 1
+                );
+            }
+            parameters.push(';');
+            let index = entities.len();
+            entities.push(Entity {
+                type_code: 504,
+                form: 1,
+                label: "EDGES",
+                status: "00010001",
+                parameters: parameters.into_bytes(),
+                transform: None,
+            });
+            Some(index)
+        };
 
         let mut loop_indices = BTreeMap::new();
         for loop_id in &body_loop_ids {
@@ -1039,7 +1057,12 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .ok_or_else(|| {
                     CodecError::Malformed(format!("IGES B-rep loop {loop_id} is missing"))
                 })?;
-            let mut parameters = format!("508,{}", loop_.coedges.len());
+            let use_count = loop_
+                .coedges
+                .len()
+                .checked_add(loop_.vertex_uses.len())
+                .ok_or_else(|| CodecError::Malformed("IGES loop use count overflows".into()))?;
+            let mut parameters = format!("508,{use_count}");
             for coedge_id in &loop_.coedges {
                 let coedge = ir
                     .model
@@ -1053,6 +1076,12 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         ))
                     })?;
                 let edge_index = edge_indices[coedge.edge.as_str()];
+                let edge_list_index = edge_list_index.ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES loop {} has a coedge but no edge list",
+                        loop_.id
+                    ))
+                })?;
                 let sense = brep_sense(coedge.sense);
                 let _ = write!(
                     parameters,
@@ -1069,6 +1098,50 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                         i32::from(pcurve_use.isoparametric.unwrap_or(false)),
                         reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
                     );
+                }
+                for vertex_use in loop_
+                    .vertex_uses
+                    .iter()
+                    .filter(|vertex_use| vertex_use.after.as_ref() == Some(&coedge.id))
+                {
+                    let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
+                    let _ = write!(
+                        parameters,
+                        ",1,{},{},{},{}",
+                        reference_marker(vertex_list_index),
+                        vertex_index + 1,
+                        0,
+                        vertex_use.pcurves.len()
+                    );
+                    for pcurve_use in &vertex_use.pcurves {
+                        let _ = write!(
+                            parameters,
+                            ",{},{}",
+                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                        );
+                    }
+                }
+            }
+            if loop_.coedges.is_empty() {
+                for vertex_use in &loop_.vertex_uses {
+                    let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
+                    let _ = write!(
+                        parameters,
+                        ",1,{},{},{},{}",
+                        reference_marker(vertex_list_index),
+                        vertex_index + 1,
+                        0,
+                        vertex_use.pcurves.len()
+                    );
+                    for pcurve_use in &vertex_use.pcurves {
+                        let _ = write!(
+                            parameters,
+                            ",{},{}",
+                            i32::from(pcurve_use.isoparametric.unwrap_or(false)),
+                            reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                        );
+                    }
                 }
             }
             parameters.push(';');
@@ -1207,12 +1280,22 @@ fn brep_sense(sense: Sense) -> i32 {
 }
 
 fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
-    ir.model
+    let mut ids = ir
+        .model
         .coedges
         .iter()
         .flat_map(|coedge| coedge.pcurves.iter())
         .map(|use_| use_.pcurve.as_str().to_owned())
-        .collect()
+        .collect::<std::collections::BTreeSet<_>>();
+    ids.extend(
+        ir.model
+            .loops
+            .iter()
+            .flat_map(|loop_| loop_.vertex_uses.iter())
+            .flat_map(|vertex_use| vertex_use.pcurves.iter())
+            .map(|use_| use_.pcurve.as_str().to_owned()),
+    );
+    ids
 }
 
 struct IgnoredCarrierGeometry {
@@ -2114,6 +2197,49 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
     left.into_iter()
         .zip(right)
         .all(|(left, right)| (left - right).abs() <= left.abs().max(right.abs()).max(1.0) * 1.0e-10)
+}
+
+fn validate_brep_pcurve_uses(
+    ir: &CadIr,
+    uses: &[PcurveUse],
+    owner: &str,
+) -> Result<(), CodecError> {
+    for pcurve_use in uses {
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES B-rep {owner} references missing pcurve {}",
+                    pcurve_use.pcurve
+                ))
+            })?;
+        let range = pcurve.parameter_range.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "IGES B-rep requires a parameter range for pcurve {}",
+                pcurve.id
+            ))
+        })?;
+        if pcurve_use
+            .parameter_range
+            .is_some_and(|use_range| !same_range(use_range, range))
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep cannot restrict pcurve use {}",
+                pcurve_use.pcurve
+            )));
+        }
+        if pcurve.wrapper_reversed.is_some() || pcurve.native_tail_flags.is_some() {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES B-rep does not encode pcurve wrapper metadata {}",
+                pcurve.id
+            )));
+        }
+        pcurve_entity(pcurve)?;
+    }
+    Ok(())
 }
 
 fn same_point(left: Point3, right: Point3) -> bool {

@@ -9042,6 +9042,40 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
 }
 
 #[test]
+fn encode_regenerates_decoded_vertex_only_pole_loop_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    let loop_ = &round_trip.ir.model.loops[0];
+    assert!(loop_.coedges.is_empty());
+    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_decoded_brep_void_shell_without_source_bytes() {
     let decoded = IgesCodec
         .decode(
