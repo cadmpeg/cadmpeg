@@ -5790,6 +5790,39 @@ struct RectilinearPlaneFamily {
     stations: Vec<RectilinearPlaneStation>,
 }
 
+fn rectilinear_family_extent(
+    family: &RectilinearPlaneFamily,
+    start_reversed: bool,
+    station_tolerance: f64,
+) -> Option<([f64; 3], f64)> {
+    let first = family
+        .stations
+        .iter()
+        .min_by(|left, right| left.coordinate.total_cmp(&right.coordinate))?;
+    let last = family
+        .stations
+        .iter()
+        .max_by(|left, right| left.coordinate.total_cmp(&right.coordinate))?;
+    (first.coordinate.is_finite()
+        && last.coordinate.is_finite()
+        && (last.coordinate - first.coordinate).abs() > station_tolerance)
+        .then_some(())?;
+    let (start, end) = if first.reversed == start_reversed && last.reversed != start_reversed {
+        (first.coordinate, last.coordinate)
+    } else if last.reversed == start_reversed && first.reversed != start_reversed {
+        (last.coordinate, first.coordinate)
+    } else {
+        return None;
+    };
+    let signed_length = end - start;
+    let direction = if first.reversed == start_reversed {
+        family.normal
+    } else {
+        family.normal.map(|component| -component)
+    };
+    (signed_length.abs() > station_tolerance).then_some((direction, signed_length.abs()))
+}
+
 fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -5842,6 +5875,7 @@ fn generated_rectilinear_plane_extent(
     let mut families: Vec<RectilinearPlaneFamily> = Vec::new();
     for (plane, reversed) in planes {
         let station = dot(plane.origin, plane.normal);
+        station.is_finite().then_some(())?;
         if let Some(family) = families.iter_mut().find(|family| {
             family
                 .normal
@@ -5891,20 +5925,9 @@ fn generated_rectilinear_plane_extent(
     let candidates = families
         .iter()
         .filter_map(|family| {
-            let [first, second] = family.stations.as_slice() else {
-                return None;
-            };
-            (first.reversed != second.reversed).then_some(())?;
-            let (start, end) = if first.reversed == start_reversed {
-                (first.coordinate, second.coordinate)
-            } else {
-                (second.coordinate, first.coordinate)
-            };
-            let signed_length = end - start;
-            (signed_length.abs() > station_tolerance).then_some((
-                family.normal.map(|component| component * signed_length),
-                signed_length.abs(),
-            ))
+            let (direction, length) =
+                rectilinear_family_extent(family, start_reversed, station_tolerance)?;
+            Some((direction.map(|component| component * length), length))
         })
         .collect::<Vec<_>>();
     let [(vector, length)] = candidates.as_slice() else {

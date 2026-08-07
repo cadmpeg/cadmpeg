@@ -4603,6 +4603,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         row(32, true),
         row(33, true),
         row(34, true),
+        row(36, false),
         row(35, true),
     ]);
     let plane = |id, origin, normal| Surface {
@@ -4624,6 +4625,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             Point3::new(-4.0, 48.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
         ),
+        plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
     ]);
 
