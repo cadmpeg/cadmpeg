@@ -378,10 +378,15 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 {
                     return None;
                 }
-                reachable_edges.insert(*edge_id);
-                if !curve_supports.is_empty() && !curve_supports.contains_key(&edge.support) {
+                let support = curve_supports.get(&edge.support)?;
+                if support
+                    .pcurves
+                    .iter()
+                    .any(|pcurve| !pcurves.contains_key(pcurve))
+                {
                     return None;
                 }
+                reachable_edges.insert(*edge_id);
             }
             resolved_loops.push(E5Loop {
                 record_id: raw.id,
@@ -985,6 +990,10 @@ mod tests {
             }
             append_e5_record(&mut bytes, 0x96, pcurve, &payload);
         }
+        let mut support_payload = vec![0x82, 0x08, 100, 0x08, 101, 0x81, 0, 0];
+        support_payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        support_payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
 
         let mut loop_payload = vec![0x87];
         for reference in [100, 110, 101, 111, 102, 112] {

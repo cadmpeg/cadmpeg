@@ -208,6 +208,22 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         topology.pcurves[&403],
         crate::families::e5::graph::E5Pcurve::Jet { degree: 5, ref knots, .. } if knots == &[0.0, 1.0]
     ));
+
+    let mut missing_support = bytes.clone();
+    let support_start = missing_support
+        .windows(4)
+        .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
+        .expect("curve-support record");
+    missing_support[support_start + 3] = 0x7f;
+    assert!(crate::families::e5::graph::parse_topology(&missing_support).is_none());
+
+    let mut missing_support_pcurve = bytes;
+    let support_start = missing_support_pcurve
+        .windows(4)
+        .position(|window| window == [0xe5, 0x0d, 0x03, 0xc1])
+        .expect("curve-support record");
+    missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
+    assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
 }
 
 #[test]
