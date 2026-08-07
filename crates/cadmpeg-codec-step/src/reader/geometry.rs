@@ -1182,13 +1182,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(surface_index);
         }
     }
-    let planar_surface_ids = ir
+    let surface_parameter_scales = ir
         .model
         .surfaces
         .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
-        .filter_map(|surface| step_instance_id(&surface.id.0))
-        .collect::<BTreeSet<_>>();
+        .filter_map(|surface| {
+            step_instance_id(&surface.id.0).map(|id| {
+                (
+                    id,
+                    surface_parameter_scales(&surface.geometry, scale, angle_scale),
+                )
+            })
+        })
+        .collect::<BTreeMap<_, _>>();
     for (id, record) in exchange.entities("PCURVE") {
         if record.partial("PCURVE").is_none() {
             continue;
@@ -1226,8 +1232,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         };
         let mut geometry = geometry.clone();
-        if surface_step.is_some_and(|surface| planar_surface_ids.contains(&surface)) {
-            scale_planar_pcurve_geometry(&mut geometry, scale);
+        if let Some(scales) =
+            surface_step.and_then(|surface| surface_parameter_scales.get(&surface))
+        {
+            if !scale_pcurve_geometry(&mut geometry, *scales) {
+                warnings.push(format!(
+                    "PCURVE #{id} has a 2D carrier that cannot be scaled into the owning surface parameter units"
+                ));
+                continue;
+            }
         }
         ir.model.pcurves.push(Pcurve {
             id: PcurveId(format!("step:data:pcurve#{id}")),
@@ -2655,48 +2668,126 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
     .filter(|value| value.is_finite())
 }
 
-fn scale_planar_pcurve_geometry(geometry: &mut PcurveGeometry, scale: f64) {
-    fn point(point: &mut Point2, scale: f64) {
-        point.u *= scale;
-        point.v *= scale;
+fn surface_parameter_scales(
+    geometry: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+) -> [f64; 2] {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => [length_scale, length_scale],
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            [angle_scale, length_scale]
+        }
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
+            [angle_scale, angle_scale]
+        }
+        SurfaceGeometry::Transformed { basis, .. } => {
+            surface_parameter_scales(basis, length_scale, angle_scale)
+        }
+        SurfaceGeometry::Nurbs { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => [1.0, 1.0],
     }
+}
+
+/// Scale a pcurve's coordinates into the units of its owning surface.
+///
+/// The pcurve parameter itself is unchanged. Circle, ellipse, and hyperbola
+/// carriers keep their native trigonometric parameterization by using the
+/// general harmonic forms when the two coordinate scales differ. The remaining
+/// analytic forms require an affine 2D carrier to preserve that parameterization;
+/// report them as unsupported instead of applying a scalar approximation.
+fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> bool {
+    let [u_scale, v_scale] = scales;
+    let scale_point = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
+    let isotropic = u_scale == v_scale;
 
     match geometry {
         PcurveGeometry::Line { origin, direction } => {
-            point(origin, scale);
-            point(direction, scale);
+            *origin = scale_point(*origin);
+            *direction = scale_point(*direction);
         }
-        PcurveGeometry::Circle { center, radius, .. } => {
-            point(center, scale);
-            *radius *= scale;
+        PcurveGeometry::Circle {
+            center: center_slot,
+            x_axis,
+            y_axis,
+            radius,
+        } => {
+            let center = scale_point(*center_slot);
+            if isotropic {
+                *center_slot = center;
+                *radius *= u_scale;
+            } else {
+                *geometry = PcurveGeometry::Harmonic {
+                    center,
+                    cosine: scale_point(Point2::new(*radius * x_axis.u, *radius * x_axis.v)),
+                    sine: scale_point(Point2::new(*radius * y_axis.u, *radius * y_axis.v)),
+                };
+            }
         }
         PcurveGeometry::Ellipse {
-            center,
+            center: center_slot,
+            x_axis,
+            y_axis,
             major_radius,
             minor_radius,
-            ..
         } => {
-            point(center, scale);
-            *major_radius *= scale;
-            *minor_radius *= scale;
+            let center = scale_point(*center_slot);
+            if isotropic {
+                *center_slot = center;
+                *major_radius *= u_scale;
+                *minor_radius *= u_scale;
+            } else {
+                *geometry = PcurveGeometry::Harmonic {
+                    center,
+                    cosine: scale_point(Point2::new(
+                        *major_radius * x_axis.u,
+                        *major_radius * x_axis.v,
+                    )),
+                    sine: scale_point(Point2::new(
+                        *minor_radius * y_axis.u,
+                        *minor_radius * y_axis.v,
+                    )),
+                };
+            }
         }
         PcurveGeometry::Parabola {
             vertex,
             focal_distance,
             ..
         } => {
-            point(vertex, scale);
-            *focal_distance *= scale;
+            if !isotropic {
+                return false;
+            }
+            *vertex = scale_point(*vertex);
+            *focal_distance *= u_scale;
         }
         PcurveGeometry::Hyperbola {
-            center,
+            center: center_slot,
+            x_axis,
+            y_axis,
             major_radius,
             minor_radius,
-            ..
         } => {
-            point(center, scale);
-            *major_radius *= scale;
-            *minor_radius *= scale;
+            let center = scale_point(*center_slot);
+            if isotropic {
+                *center_slot = center;
+                *major_radius *= u_scale;
+                *minor_radius *= u_scale;
+            } else {
+                *geometry = PcurveGeometry::Hyperbolic {
+                    center,
+                    cosine: scale_point(Point2::new(
+                        *major_radius * x_axis.u,
+                        *major_radius * x_axis.v,
+                    )),
+                    sine: scale_point(Point2::new(
+                        *minor_radius * y_axis.u,
+                        *minor_radius * y_axis.v,
+                    )),
+                };
+            }
         }
         PcurveGeometry::Harmonic {
             center,
@@ -2708,26 +2799,31 @@ fn scale_planar_pcurve_geometry(geometry: &mut PcurveGeometry, scale: f64) {
             cosine,
             sine,
         } => {
-            point(center, scale);
-            point(cosine, scale);
-            point(sine, scale);
+            *center = scale_point(*center);
+            *cosine = scale_point(*cosine);
+            *sine = scale_point(*sine);
         }
         PcurveGeometry::Nurbs { control_points, .. } => {
             for control_point in control_points {
-                point(control_point, scale);
+                *control_point = scale_point(*control_point);
             }
         }
         PcurveGeometry::Trimmed { basis, .. } => {
-            scale_planar_pcurve_geometry(basis, scale);
+            if !scale_pcurve_geometry(basis, scales) {
+                return false;
+            }
         }
         PcurveGeometry::Offset { distance, basis } => {
-            *distance *= scale;
-            scale_planar_pcurve_geometry(basis, scale);
+            if !isotropic || !scale_pcurve_geometry(basis, scales) {
+                return false;
+            }
+            *distance *= u_scale;
         }
         PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => {}
+        | PcurveGeometry::SphericalGreatCircle { .. } => return isotropic && u_scale == 1.0,
     }
+    true
 }
 
 fn polyline_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
@@ -3066,6 +3162,76 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surface_parameter_units_follow_the_surface_chart() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let transformed = SurfaceGeometry::Transformed {
+            basis: Box::new(cylinder.clone()),
+            transform: Transform::identity(),
+        };
+        assert_eq!(surface_parameter_scales(&plane, 10.0, 0.25), [10.0, 10.0]);
+        assert_eq!(
+            surface_parameter_scales(&cylinder, 10.0, 0.25),
+            [0.25, 10.0]
+        );
+        assert_eq!(surface_parameter_scales(&sphere, 10.0, 0.25), [0.25, 0.25]);
+        assert_eq!(
+            surface_parameter_scales(&transformed, 10.0, 0.25),
+            [0.25, 10.0]
+        );
+        assert_eq!(
+            surface_parameter_scales(&SurfaceGeometry::Unknown { record: None }, 10.0, 0.25),
+            [1.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn anisotropic_circle_scaling_preserves_its_native_parameterization() {
+        let original = PcurveGeometry::Circle {
+            center: Point2::new(1.0, -2.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            radius: 3.0,
+        };
+        let mut scaled = original.clone();
+        assert!(scale_pcurve_geometry(&mut scaled, [2.0, 3.0]));
+        assert!(matches!(scaled, PcurveGeometry::Harmonic { .. }));
+        for parameter in [0.0, 0.25, 1.0, 2.0] {
+            let expected = cadmpeg_ir::eval::pcurve_uv(&original, parameter).unwrap();
+            let actual = cadmpeg_ir::eval::pcurve_uv(&scaled, parameter).unwrap();
+            assert!((actual.u - expected.u * 2.0).abs() < 1.0e-12);
+            assert!((actual.v - expected.v * 3.0).abs() < 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn unsupported_anisotropic_pcurve_forms_are_not_reshaped_by_scalar_scaling() {
+        let mut parabola = PcurveGeometry::Parabola {
+            vertex: Point2::new(0.0, 0.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            focal_distance: 1.0,
+        };
+        assert!(!scale_pcurve_geometry(&mut parabola, [2.0, 3.0]));
+        assert!(matches!(parabola, PcurveGeometry::Parabola { .. }));
+    }
 
     #[test]
     fn every_iso_si_prefix_resolves_to_its_exact_factor() {

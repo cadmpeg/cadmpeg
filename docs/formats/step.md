@@ -250,8 +250,12 @@ relation rejects the complete solid root. Records owned only by that root stay
 opaque, and product bindings omit the body. Sheet and wire members use the
 independent-member salvage rule. A `SURFACE_CURVE` with a star or non-reference
 basis keeps its edge occurrence without a CADIR curve and produces a loss; the
-decoder does not fabricate a curve carrier. A pcurve on a plane scales both
-parameter axes and all length-valued 2D geometry by the document length unit.
+decoder does not fabricate a curve carrier. A plane pcurve uses the document
+length scale for both parameter axes and all length-valued 2D geometry. A
+cylinder or cone uses plane-angle scale for `u` and length scale for `v`. A
+sphere or torus uses plane-angle scale for both axes. NURBS surface parameter
+axes are dimensionless. A pcurve carrier that cannot preserve its native
+parameterization under an anisotropic surface-unit map remains opaque.
 A surface-curve carrier and its pcurve represent the same point set but may
 use different parameterizations; its edge vertices determine the occurrence
 interval when no explicit trim is present. The carrier's own NURBS domain is

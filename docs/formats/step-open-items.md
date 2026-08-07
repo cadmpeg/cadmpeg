@@ -195,17 +195,6 @@ decoder associates one candidate with each coedge use.
 **Need.** We need the UV-continuity and orientation rule that selects a
 candidate. Serialized occurrence order is not a sufficient rule.
 
-### TP-03. Non-planar pcurve units
-
-**Question.** Which pcurve parameter axes are length-valued for cylinders,
-spheres, cones, tori, and other non-planar support surfaces?
-
-**Known.** Plane pcurve axes are length-valued and are scaled by the document
-length unit. Angular and mixed parameter axes require surface-specific rules.
-
-**Need.** We need the surface-axis table before scaling non-planar pcurve
-coordinates.
-
 ### TP-05. Partial solid and tolerant point carriers
 
 **Question.** Should CADIR gain a tolerant point carrier or a partial-solid

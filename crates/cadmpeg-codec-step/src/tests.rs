@@ -1994,6 +1994,31 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
 }
 
 #[test]
+fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)")
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,10.);")
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode cylindrical pcurve");
+
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("cylindrical pcurve");
+    assert!(matches!(
+        pcurve.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
+            if direction.u.abs() < 1.0e-12 && (direction.v - 10.0).abs() < 1.0e-12
+    ));
+}
+
+#[test]
 fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
