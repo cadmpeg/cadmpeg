@@ -435,7 +435,7 @@ Distinct endpoint indices define a minor arc; equal endpoint indices use the ext
 | 58 | 2 | `endpoint_second` | `u16` | little | spec | endpoint indices at marker +56 and +58 are zero-based positions |
 | 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 |
 | 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 |
-| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` at marker +72 |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` at marker +72 |
 | 76 | 2 | `center_index` | `u16` | little | spec | u16 center index at marker +76 |
 | 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells |
 | 94 | 2 | `terminator` | `u16` | little | spec | marker +94 is zero u16 |

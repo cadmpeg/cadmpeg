@@ -1971,10 +1971,12 @@ pub(super) fn coordinate_roster_arc_center(
             })
             .collect::<Vec<_>>();
         coordinates.sort_unstable_by_key(|marker| marker.offset);
-        Some([
-            *coordinates.get(first_index)?,
-            *coordinates.get(second_index)?,
-        ])
+        coordinates
+    };
+    let equidistant = |center: [f64; 2]| {
+        let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+        let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+        first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
     };
     let endpoint_pair_matches = |roster_endpoints: [&SketchInputEntity; 2]| {
         (resolved_endpoints[0].id == roster_endpoints[0].id
@@ -1982,12 +1984,21 @@ pub(super) fn coordinate_roster_arc_center(
             || (resolved_endpoints[0].id == roster_endpoints[1].id
                 && resolved_endpoints[1].id == roster_endpoints[0].id)
     };
-    if ![roster(false), roster(true)]
-        .into_iter()
-        .flatten()
-        .any(endpoint_pair_matches)
-    {
-        return None;
+    for coordinates in [roster(false), roster(true)] {
+        let (Some(first_marker), Some(second_marker)) =
+            (coordinates.get(first_index), coordinates.get(second_index))
+        else {
+            continue;
+        };
+        if endpoint_pair_matches([*first_marker, *second_marker]) {
+            if let Some(center) = coordinates
+                .get(center_index)
+                .and_then(|marker| marker.coordinates_m)
+                .filter(|center| equidistant(*center))
+            {
+                return Some(center);
+            }
+        }
     }
     let mut complete_roster = markers
         .iter()
@@ -1995,11 +2006,6 @@ pub(super) fn coordinate_roster_arc_center(
         .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
         .collect::<Vec<_>>();
     complete_roster.sort_unstable_by_key(|marker| marker.offset);
-    let equidistant = |center: [f64; 2]| {
-        let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
-        let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
-        first_radius > 0.0 && same_dimension_length(first_radius, second_radius)
-    };
     if let Some(center) = complete_roster
         .get(center_index)
         .and_then(|marker| marker.coordinates_m)
@@ -4151,7 +4157,11 @@ fn extended_geometry_104_indexed_arc(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
         && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
-        && payload.get(offset + 72..offset + 76) == Some(&1i32.to_le_bytes())
+        && payload
+            .get(offset + 72..offset + 76)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(i32::from_le_bytes)
+            .is_some_and(|selector| matches!(selector, -1 | 1))
         && payload.get(offset + 78..offset + 94)
             == Some(&[
                 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,

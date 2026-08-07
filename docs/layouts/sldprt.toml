@@ -1268,7 +1268,7 @@ name = "arc_selector"
 offset = 72
 type = "i32"
 source = "spec"
-anchor = "signed selector `1` at marker +72"
+anchor = "signed selector `1` or `-1` at marker +72"
 
 [[record.field]]
 name = "center_index"
