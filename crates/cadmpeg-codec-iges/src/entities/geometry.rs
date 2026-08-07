@@ -256,6 +256,18 @@ pub(crate) fn project_geometry(
             .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
             .map(|entry| entry.sequence),
     );
+    let analytic_surface_locations = directory
+        .iter()
+        .filter(|entry| {
+            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+        })
+        .filter_map(|entry| {
+            records
+                .get(&entry.sequence)
+                .and_then(|record| record.integer(1))
+                .and_then(|value| u32::try_from(value).ok())
+        })
+        .collect::<BTreeSet<_>>();
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
     for entry in directory
@@ -471,18 +483,20 @@ pub(crate) fn project_geometry(
             continue;
         }
         let point = PointId(format!("iges:model:point#D{}", entry.sequence));
-        let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
             position,
         });
-        ir.model.vertices.push(Vertex {
-            id: vertex.clone(),
-            point,
-            tolerance: None,
-        });
-        free_vertices.push(vertex);
+        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+            ir.model.vertices.push(Vertex {
+                id: vertex.clone(),
+                point,
+                tolerance: None,
+            });
+            free_vertices.push(vertex);
+        }
         decoded.insert(entry.sequence);
     }
     for entry in directory
@@ -906,6 +920,19 @@ pub(crate) fn project_geometry(
     handled.extend(annotation.handled);
     decoded.extend(annotation.decoded);
     losses.extend(annotation.losses);
+    let analytic_surface_points = analytic_surface_locations
+        .iter()
+        .map(|sequence| PointId(format!("iges:model:point#D{sequence}")))
+        .collect::<BTreeSet<_>>();
+    let vertex_points = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<BTreeSet<_>>();
+    ir.model.points.retain(|point| {
+        !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
+    });
     Projection {
         handled,
         decoded,

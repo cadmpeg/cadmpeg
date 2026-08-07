@@ -485,14 +485,6 @@
       "pmi": [],
       "points": [
         {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D21-end",
           "position": {
             "x": 1.0,
@@ -566,14 +558,6 @@
         },
         {
           "id": "iges:model:point#D29-start",
-          "position": {
-            "x": 1.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D3",
           "position": {
             "x": 1.0,
             "y": 0.0,
@@ -664,10 +648,6 @@
         },
         {
           "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1",
-            "iges:model:vertex#D3"
-          ],
           "id": "iges:model:shell#free-geometry",
           "region": "iges:model:region#free-geometry",
           "wire_edges": [
@@ -804,10 +784,6 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        },
-        {
           "id": "iges:model:vertex#D21-end",
           "point": "iges:model:point#D21-end"
         },
@@ -846,10 +822,6 @@
         {
           "id": "iges:model:vertex#D29-start",
           "point": "iges:model:point#D29-start"
-        },
-        {
-          "id": "iges:model:vertex#D3",
-          "point": "iges:model:point#D3"
         },
         {
           "id": "iges:model:vertex#D31-end",
@@ -16218,7 +16190,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "46a204d8b779cf593e2d1e345dc2b40b4cfb9ad74f44916e6c572ec23d43a73f",
+        "document_local_sha256": "ddf64cf8f3e8e991f6a64f458b1c25b07382e529446c98675f8aaaf8e7c84c1f",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

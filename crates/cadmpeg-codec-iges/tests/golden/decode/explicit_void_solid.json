@@ -927,14 +927,6 @@
       "pmi": [],
       "points": [
         {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D109:D33:1",
           "position": {
             "x": 0.0,
@@ -1079,14 +1071,6 @@
           }
         },
         {
-          "id": "iges:model:point#D3",
-          "position": {
-            "x": 4.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D31-end",
           "position": {
             "x": 0.0,
@@ -1100,22 +1084,6 @@
             "x": 0.0,
             "y": 4.0,
             "z": 0.0
-          }
-        },
-        {
-          "id": "iges:model:point#D55",
-          "position": {
-            "x": 0.5,
-            "y": 0.5,
-            "z": 0.5
-          }
-        },
-        {
-          "id": "iges:model:point#D57",
-          "position": {
-            "x": 1.0,
-            "y": 0.5,
-            "z": 0.5
           }
         },
         {
@@ -1261,12 +1229,6 @@
         },
         {
           "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1",
-            "iges:model:vertex#D3",
-            "iges:model:vertex#D55",
-            "iges:model:vertex#D57"
-          ],
           "id": "iges:model:shell#free-geometry",
           "region": "iges:model:region#free-geometry",
           "wire_edges": [
@@ -1521,10 +1483,6 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        },
-        {
           "id": "iges:model:vertex#D109:D33:1",
           "point": "iges:model:point#D109:D33:1"
         },
@@ -1597,24 +1555,12 @@
           "point": "iges:model:point#D29-start"
         },
         {
-          "id": "iges:model:vertex#D3",
-          "point": "iges:model:point#D3"
-        },
-        {
           "id": "iges:model:vertex#D31-end",
           "point": "iges:model:point#D31-end"
         },
         {
           "id": "iges:model:vertex#D31-start",
           "point": "iges:model:point#D31-start"
-        },
-        {
-          "id": "iges:model:vertex#D55",
-          "point": "iges:model:point#D55"
-        },
-        {
-          "id": "iges:model:vertex#D57",
-          "point": "iges:model:point#D57"
         },
         {
           "id": "iges:model:vertex#D75-end",
@@ -31443,7 +31389,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "1de633196221b042c34b5e49fb5a2986711413ff95f81479228b2bdf5f84304a",
+        "document_local_sha256": "362948228ba9b3b2a9b61aafe6aba9937c115cd6d8ec4d23358d81dcf6b5fd0b",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

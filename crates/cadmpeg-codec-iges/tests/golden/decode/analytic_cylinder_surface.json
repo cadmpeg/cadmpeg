@@ -6,16 +6,7 @@
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "configurations": [],
       "curves": [],
@@ -28,41 +19,15 @@
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 1.0,
-            "y": 2.0,
-            "z": 3.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1"
-          ],
-          "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -102,12 +67,7 @@
         }
       ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -2569,7 +2529,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "9e51827ea0b92aa561c1e8331dbf8e16e890588d8deb7459fe2483a436ac0ad5",
+        "document_local_sha256": "52dce9308494f3919dbb60c3f1498e04fa386ee7e4e4ac06f3867990545e1d82",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

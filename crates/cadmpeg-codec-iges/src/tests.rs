@@ -8495,6 +8495,108 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
 }
 
 #[test]
+fn encode_regenerates_pointer_defined_analytic_surfaces() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.extend([
+        Surface {
+            id: SurfaceId("surface#cylinder".into()),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(1.0, 2.0, 3.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("surface#cone".into()),
+            geometry: SurfaceGeometry::Cone {
+                origin: Point3::new(-1.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 1.0,
+                ratio: 1.0,
+                half_angle: std::f64::consts::FRAC_PI_6,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("surface#sphere".into()),
+            geometry: SurfaceGeometry::Sphere {
+                center: Point3::new(0.0, 4.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 3.0,
+            },
+            source_object: None,
+        },
+        Surface {
+            id: SurfaceId("surface#torus".into()),
+            geometry: SurfaceGeometry::Torus {
+                center: Point3::new(0.0, 0.0, 5.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 4.0,
+                minor_radius: 1.0,
+            },
+            source_object: None,
+        },
+    ]);
+
+    let plan = IgesEncoder::new(IgesWriteOptions::default())
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.surfaces.len(), 4);
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cylinder { radius, .. } if (radius - 2.0).abs() < 1.0e-12
+    )));
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone { radius, half_angle, .. }
+            if (radius - 1.0).abs() < 1.0e-12
+                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1.0e-12
+    )));
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Sphere { radius, .. } if (radius - 3.0).abs() < 1.0e-12
+    )));
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } if (major_radius - 4.0).abs() < 1.0e-12
+            && (minor_radius - 1.0).abs() < 1.0e-12
+    )));
+    assert!(
+        decoded.report.losses.is_empty(),
+        "{:#?}",
+        decoded.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let entities = &decoded.ir.native.namespace("iges").unwrap().arenas["entities"];
+    for entity_type in [192, 194, 196, 198] {
+        assert!(entities.iter().any(|record| {
+            record.field("entity_type").and_then(|value| value.as_i64()) == Some(entity_type)
+        }));
+    }
+}
+
+#[test]
 fn encode_regenerates_a_single_face_trimmed_sheet() {
     let surface_id = SurfaceId("surface#sheet".into());
     let body_id = BodyId("body#sheet".into());

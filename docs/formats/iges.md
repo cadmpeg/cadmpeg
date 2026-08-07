@@ -48,6 +48,12 @@ An entity retains its type, form, Directory Entry fields, status fields, ordered
 
 Model-space lengths equal native values divided by the Global model-space scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
 
+## Geometry
+
+Type 116 Form 0 stores one finite model-space point. Type 123 Form 0 stores three finite dimensionless direction components and is physically dependent. Type 108 Form 0 stores a plane through the origin of its Directory transformation with local X and Y axes from that transformation; its local Z axis is the plane normal.
+
+Pointer-defined analytic surfaces use odd Directory pointers to Type 116 location points and physically dependent Type 123 direction entities. Type 190 Forms 0 and 1 define a plane from a location and normal, with Form 1 adding a reference direction. Type 192 Forms 0 and 1 define a circular cylinder from a location, axis, positive radius, and optional reference direction. Type 194 Forms 0 and 1 define a circular cone from a location, axis, nonnegative radius, semi-angle in degrees in `(0, 90)`, and an optional reference direction. Type 196 Forms 0 and 1 define a sphere from a center and positive radius, with Form 1 adding its polar axis and reference direction. Type 198 Forms 0 and 1 define a torus from a center, axis, positive major and minor radii satisfying `minor < major`, and an optional reference direction. A missing reference direction derives a stable perpendicular frame from the axis. A supplied reference direction is projected into the plane normal to the axis and must remain nonzero.
+
 ## Primitive solids
 
 Primitive solid entities use Form 0. Their native dimensional values remain in declared model units, their origin defaults to `(0,0,0)`, and their axis vectors are dimensionless. An omitted X axis defaults to `(1,0,0)` and an omitted Z or revolution axis defaults to `(0,0,1)`. Every supplied or defaulted axis is unit length. Entities carrying both X and Z axes require them to be orthogonal; local Y is `Z × X`. The Directory transformation remains a separate placement link.

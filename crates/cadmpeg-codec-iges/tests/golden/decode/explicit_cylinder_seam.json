@@ -279,14 +279,6 @@
       "pmi": [],
       "points": [
         {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D13-end",
           "position": {
             "x": 0.0,
@@ -383,9 +375,6 @@
         },
         {
           "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1"
-          ],
           "id": "iges:model:shell#free-geometry",
           "region": "iges:model:region#free-geometry",
           "wire_edges": [
@@ -435,10 +424,6 @@
       ],
       "tessellations": [],
       "vertices": [
-        {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        },
         {
           "id": "iges:model:vertex#D13-end",
           "point": "iges:model:point#D13-end"
@@ -6995,7 +6980,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "20bdfea3137697219931239c535f9d1949dacd26cfed33c47cdb1c6afa7ea536",
+        "document_local_sha256": "71adc5909692622fc8242b5cf97797f36a9098b314301d28349b0ff2b2b6da95",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

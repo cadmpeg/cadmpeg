@@ -61,14 +61,6 @@
             "iges:model:region#D11"
           ],
           "visible": true
-        },
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
         }
       ],
       "coedges": [],
@@ -112,14 +104,6 @@
       "pmi": [],
       "points": [
         {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 0.0,
-            "y": 0.0,
-            "z": 0.0
-          }
-        },
-        {
           "id": "iges:model:point#D11:D5:1",
           "position": {
             "x": 0.0,
@@ -140,13 +124,6 @@
           "shells": [
             "iges:model:shell#D11"
           ]
-        },
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
-          ]
         }
       ],
       "semantic_annotations": [],
@@ -157,14 +134,6 @@
           ],
           "id": "iges:model:shell#D11",
           "region": "iges:model:region#D11"
-        },
-        {
-          "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1"
-          ],
-          "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry"
         }
       ],
       "sketch_constraints": [],
@@ -207,10 +176,6 @@
       ],
       "tessellations": [],
       "vertices": [
-        {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        },
         {
           "id": "iges:model:vertex#D11:D5:1",
           "point": "iges:model:point#D11:D5:1"
@@ -4214,7 +4179,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "580f09af30c2825b39ef9ea12e591fe92e873692a4a38cd801a0d9ab80c26210",
+        "document_local_sha256": "e494ed30e549f1670a85dffde4d30bc2044e3daa1c409162e1892d8552742b93",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
