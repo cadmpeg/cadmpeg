@@ -1579,6 +1579,8 @@ pub(crate) fn e5_pcurve_on_surface(
     pcurve: &crate::families::e5::graph::E5Pcurve,
     decoded_surface: &crate::families::e5::records::E5Surface,
 ) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
+    let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
+    let finite_point3 = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
     let surface = &decoded_surface.geometry;
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
@@ -1592,20 +1594,30 @@ pub(crate) fn e5_pcurve_on_surface(
                 direction[0] * decoded_surface.uv_scale[0],
                 direction[1] * decoded_surface.uv_scale[1],
             );
+            if !finite_point2(origin)
+                || !finite_point2(direction)
+                || !range.iter().copied().all(f64::is_finite)
+            {
+                return None;
+            }
             let uv = range.map(|parameter| {
                 Point2::new(
                     origin.u + parameter * direction.u,
                     origin.v + parameter * direction.v,
                 )
             });
+            if !uv.iter().copied().all(finite_point2) {
+                return None;
+            }
+            let lifted = uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v));
+            let endpoints = [lifted[0]?, lifted[1]?];
+            if !endpoints.iter().copied().all(finite_point3) {
+                return None;
+            }
             Some((
                 PcurveGeometry::Line { origin, direction },
                 *range,
-                uv.map(|point| cadmpeg_ir::eval::surface_point(surface, point.u, point.v))
-                    .into_iter()
-                    .collect::<Option<Vec<_>>>()?
-                    .try_into()
-                    .ok()?,
+                endpoints,
             ))
         }
         crate::families::e5::graph::E5Pcurve::Circle {
@@ -2613,6 +2625,27 @@ mod route_tests {
         );
         assert!(endpoints[0].distance(Point3::new(2.0, 0.0, 3.0)) < 1e-12);
         assert!(endpoints[1].distance(Point3::new(0.0, 2.0, 3.0)) < 1e-12);
+    }
+
+    #[test]
+    fn e5_pcurve_on_surface_rejects_nonfinite_scaled_line() {
+        let surface = crate::families::e5::records::E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [f64::MAX, 1.0],
+        };
+        let pcurve = crate::families::e5::graph::E5Pcurve::Line {
+            surface: 7,
+            origin: [2.0, 0.0],
+            direction: [1.0, 0.0],
+            range: [0.0, 1.0],
+        };
+        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
     }
 
     #[test]
