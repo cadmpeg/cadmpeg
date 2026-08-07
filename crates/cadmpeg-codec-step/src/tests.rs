@@ -3289,6 +3289,28 @@ fn shared_edge_wire_model_marks_every_representation_typed() {
 }
 
 #[test]
+fn complex_representation_items_reach_edge_based_wire_models() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=EDGE_BASED_WIREFRAME_MODEL('',(#70));\n#70=CONNECTED_EDGE_SET('',(#19,#20,#21));\n#71=(MANIFOLD_SURFACE_SHAPE_REPRESENTATION() REPRESENTATION('',(#31),#2) SHAPE_REPRESENTATION());",
+        )
+        .replace("#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);", "#33=OPEN_SHELL('',(#29));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex wire representation");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(decoded.ir.model.edges.len(), 3);
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn complex_edge_and_oriented_edge_instances_use_named_attributes() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -3454,14 +3476,17 @@ fn complex_geometric_set_representation_uses_its_named_items() {
     .expect("fixture is UTF-8")
     .replace(
         "#12=GEOMETRIC_SET('',(#11));",
-        "#12=GEOMETRIC_SET('',(#11,#15));",
+        "#12=GEOMETRIC_SET('',(#11,#14,#15));",
     )
     .replace(
         "#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12),#2);",
         "#13=(GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION() REPRESENTATION('',(#12),#2) SHAPE_REPRESENTATION());",
     );
     let end = source.rfind("ENDSEC;").expect("STEP data section end");
-    source.insert_str(end, "#15=UNSUPPORTED_ITEM('');\n");
+    source.insert_str(
+        end,
+        "#14=(CIRCLE('',#6,5.) CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('free circle'));\n#15=UNSUPPORTED_ITEM('');\n",
+    );
     let result = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex geometric surface set");
@@ -3469,6 +3494,20 @@ fn complex_geometric_set_representation_uses_its_named_items() {
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(result.ir.model.faces.len(), 1);
+    let free_circle = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#14")
+        .expect("free complex representation member");
+    assert_eq!(
+        free_circle
+            .source_object
+            .as_ref()
+            .and_then(|source| source.name.as_deref()),
+        Some("free circle")
+    );
     assert!(result.report.losses.iter().any(|loss| {
         loss.message.contains(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #13 omitted unsupported or unresolved member(s): #15",
@@ -4987,6 +5026,41 @@ fn complex_tessellation_partials_transfer_coordinates_and_indices() {
         mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
         Some("step:data:body#38")
     );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn presentation_layers_target_complex_tessellation_surface_sets() {
+    let mut source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),$,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+        "#7=COMPLEX_TRIANGULATED_SURFACE_SET('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        "#78=PRESENTATION_LAYER_ASSIGNMENT('mesh layer','',(#7));\n",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode layer target");
+
+    let layer = decoded
+        .ir
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "mesh layer")
+        .expect("mesh presentation layer");
+    assert!(layer.items.iter().any(|item| matches!(
+        item,
+        cadmpeg_ir::presentation::PresentationItem::Tessellation { tessellation }
+            if tessellation.ends_with("#7")
+    )));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

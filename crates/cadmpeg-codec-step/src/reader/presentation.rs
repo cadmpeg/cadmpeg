@@ -670,7 +670,8 @@ fn presentation_item_one(
         }
     } else if (has("TRIANGULATED_FACE")
         || has("COMPLEX_TRIANGULATED_FACE")
-        || has("TRIANGULATED_SURFACE_SET"))
+        || has("TRIANGULATED_SURFACE_SET")
+        || has("COMPLEX_TRIANGULATED_SURFACE_SET"))
         && entity_ids
             .tessellations
             .contains(&format!("step:tessellation:mesh#{id}"))

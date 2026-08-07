@@ -188,7 +188,7 @@ pub(super) fn decode(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            record.parameter(1).and_then(refs).map(|items| {
+            representation_items(record).map(|items| {
                 items
                     .into_iter()
                     .filter(|model| {

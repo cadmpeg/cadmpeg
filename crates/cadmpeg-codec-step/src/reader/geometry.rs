@@ -1878,7 +1878,7 @@ pub(super) fn associate_free_geometric_set_members(
             let name = exchange
                 .records
                 .get(&member)
-                .and_then(|record| record.parameter(0))
+                .and_then(representation_item_name)
                 .and_then(|value| {
                     super::decode_text(
                         value,
@@ -1951,7 +1951,7 @@ pub(super) fn associate_free_representation_members(
             let source_name = exchange
                 .records
                 .get(&member)
-                .and_then(|record| record.parameter(0))
+                .and_then(representation_item_name)
                 .and_then(|value| {
                     super::decode_text(
                         value,
@@ -2043,7 +2043,7 @@ fn associate_presentation_carrier(
     let name = exchange
         .records
         .get(&target)
-        .and_then(|record| record.parameter(0))
+        .and_then(representation_item_name)
         .and_then(|value| {
             super::decode_text(
                 value,
@@ -2113,6 +2113,16 @@ fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
         .flat_map(|partial| partial.parameters.iter())
         .find_map(Value::list)
         .map(|items| items.iter().filter_map(Value::reference).collect())
+}
+
+fn representation_item_name(record: &RawRecord) -> Option<&Value> {
+    if record.partials.len() == 1 {
+        record.parameter(0)
+    } else {
+        record
+            .partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+    }
 }
 
 fn entity_parameters<'a>(record: &'a RawRecord, name: &str) -> Option<&'a [Value]> {
