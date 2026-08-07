@@ -282,6 +282,27 @@ pub(crate) fn append_e5_planes(
     }
 }
 
+/// Classify two UV vectors by a scale-normalized determinant.
+///
+/// A tiny transverse component is common after a circular or spline boundary
+/// is serialized as a line-like endpoint tape. Treating that roundoff as a
+/// second rank would send plane fitting through an ill-conditioned 2D solve;
+/// the known geometric normal must select the rank-one path instead.
+fn e5_uv_vectors_are_independent(left: [f64; 2], right: [f64; 2]) -> bool {
+    const RANK_TOLERANCE: f64 = 1e-12;
+    let scale = left
+        .into_iter()
+        .chain(right)
+        .map(f64::abs)
+        .fold(0.0_f64, f64::max);
+    if !scale.is_finite() || scale == 0.0 {
+        return false;
+    }
+    let left = [left[0] / scale, left[1] / scale];
+    let right = [right[0] / scale, right[1] / scale];
+    (left[0] * right[1] - left[1] * right[0]).abs() > RANK_TOLERANCE
+}
+
 pub(crate) fn solve_e5_plane_frame(
     surface_ref: u32,
     origin: [f64; 3],
@@ -334,25 +355,12 @@ pub(crate) fn solve_e5_plane_frame(
         return None;
     }
 
-    let independent_uv_vectors = |left: [f64; 2], right: [f64; 2]| {
-        let scale = left
-            .iter()
-            .chain(right.iter())
-            .map(|value| value.abs())
-            .fold(0.0_f64, f64::max);
-        if !scale.is_finite() || scale == 0.0 {
-            return false;
-        }
-        let left = [left[0] / scale, left[1] / scale];
-        let right = [right[0] / scale, right[1] / scale];
-        (left[0] * right[1] - left[1] * right[0]).abs() > f64::EPSILON
-    };
     let anchors = 'find_anchors: {
         let mut basis = None;
         for (index, (uv, _)) in segments.iter().enumerate() {
             for endpoint in uv {
                 if let Some((basis_index, basis_uv)) = basis {
-                    if independent_uv_vectors(basis_uv, *endpoint) {
+                    if e5_uv_vectors_are_independent(basis_uv, *endpoint) {
                         break 'find_anchors Some(if basis_index == index {
                             vec![index]
                         } else {
@@ -3144,6 +3152,91 @@ mod route_tests {
             fit_rank_one_e5_plane_axes([0.0; 3], &pairs, Vector3::new(0.0, 1.0, 0.0))
                 .expect("rank-one frame");
         assert!(residual < 1e-12);
+    }
+
+    #[test]
+    fn e5_uv_rank_detection_ignores_roundoff_transverse_components() {
+        assert!(!super::e5_uv_vectors_are_independent(
+            [1e-15, -20.0],
+            [-1e-15, 20.0],
+        ));
+        assert!(super::e5_uv_vectors_are_independent([1.0, 0.0], [0.0, 1.0]));
+    }
+
+    #[test]
+    fn e5_plane_solver_uses_known_normal_for_roundoff_rank_one_uv() {
+        let tiny = 1e-15;
+        let mut edges = BTreeMap::new();
+        let mut pcurves = BTreeMap::new();
+        let mut add_segment = |edge_ref: u32,
+                               pcurve_ref: u32,
+                               start_vertex: u32,
+                               end_vertex: u32,
+                               start: [f64; 2],
+                               end: [f64; 2]| {
+            edges.insert(
+                edge_ref,
+                E5Edge {
+                    record_id: edge_ref,
+                    support: 0,
+                    start_vertex,
+                    end_vertex,
+                    parameter_start: 0,
+                    parameter_end: 0,
+                    tail: Vec::new(),
+                },
+            );
+            pcurves.insert(
+                pcurve_ref,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: start,
+                    direction: [end[0] - start[0], end[1] - start[1]],
+                    range: [0.0, 1.0],
+                },
+            );
+        };
+        add_segment(3, 1, 10, 11, [tiny, -20.0], [tiny, 20.0]);
+        add_segment(4, 2, 12, 13, [-tiny, -7.5], [-tiny, 7.5]);
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![E5Face {
+                record_id: 1,
+                surface: 100,
+                trailer_sign: 1,
+                loops: vec![E5Loop {
+                    record_id: 2,
+                    surface: 100,
+                    pcurves: vec![1, 2],
+                    edge_uses: vec![3, 4],
+                    reversed: vec![false, false],
+                    oriented_members: None,
+                    outer: Some(true),
+                    orientation_signs: Vec::new(),
+                }],
+            }],
+            edges,
+            pcurves,
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: vec![10, 11, 12, 13],
+        };
+        let points = vec![
+            Point3::new(-20.0, 0.0, 0.0),
+            Point3::new(20.0, 0.0, 0.0),
+            Point3::new(-7.5, 0.0, 0.0),
+            Point3::new(7.5, 0.0, 0.0),
+        ];
+        let (normal, u_axis) = super::solve_e5_plane_frame(
+            100,
+            [0.0, 0.0, 0.0],
+            &topology,
+            &points,
+            Some(Vector3::new(0.0, 1.0, 0.0)),
+        )
+        .expect("rank-one plane frame");
+        assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - 1e-12);
+        assert!(u_axis.norm().is_finite());
     }
 
     #[test]
