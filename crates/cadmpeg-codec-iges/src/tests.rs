@@ -37,6 +37,14 @@ fn fixed_ascii_detection_requires_two_consistent_cards() {
 }
 
 #[test]
+fn fixed_ascii_detection_allows_eight_bit_data_fields() {
+    let mut valid = card(b"generated fixture", b'S', 1);
+    valid.extend(card(&[0x80, 0xff], b'G', 1));
+
+    assert_eq!(IgesCodec.detect(&valid), Confidence::High);
+}
+
+#[test]
 fn malformed_sequence_padding_is_rejected_without_panicking() {
     let mut bytes = point_file();
     bytes[73..80].copy_from_slice(b"     1 ");
