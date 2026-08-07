@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-local trimmed-surface projection.
 
-use super::composite::bounded_nurbs_for_curve;
+use super::composite::bounded_nurbs_for_curve_with_tolerance;
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
@@ -105,9 +105,10 @@ pub(super) fn pcurve_geometry(
     sequence: u32,
     support: &SurfaceGeometry,
     factor: f64,
+    tolerance: Option<f64>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let (nurbs, range) = bounded_nurbs_for_curve(ir, &curve_id)?;
+    let (nurbs, range) = bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance)?;
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
@@ -543,7 +544,9 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
-                    .map(|sequence| pcurve_geometry(ir, *sequence, &support_geometry, factor))
+                    .map(|sequence| {
+                        pcurve_geometry(ir, *sequence, &support_geometry, factor, Some(tolerance))
+                    })
                     .collect::<Option<Vec<_>>>();
                 let Some(pcurves) = pcurves else {
                     losses.push(entity_loss(

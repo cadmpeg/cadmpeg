@@ -135,7 +135,8 @@ fn project_pcurve_uses(
     uses.iter()
         .enumerate()
         .map(|(index, (isoparametric, sequence))| {
-            let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
+            let (geometry, range) =
+                pcurve_geometry(source, *sequence, surface, factor, fit_tolerance)?;
             let id = PcurveId(format!("{id_stem}:{index}"));
             candidate.model_mut().pcurves.push(Pcurve {
                 id: id.clone(),
@@ -169,8 +170,13 @@ fn pcurves_agree(
     let mapped = uses
         .iter()
         .map(|(_, sequence)| {
-            let (geometry, range) =
-                pcurve_geometry(source, *sequence, support.geometry, support.factor)?;
+            let (geometry, range) = pcurve_geometry(
+                source,
+                *sequence,
+                support.geometry,
+                support.factor,
+                Some(tolerance),
+            )?;
             let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
                 cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
             })?;

@@ -163,7 +163,71 @@ fn reverse_nurbs(curve: NurbsCurve, interval: [f64; 2]) -> Option<(NurbsCurve, [
     ))
 }
 
-fn concatenate_nurbs(mut children: Vec<(NurbsCurve, [f64; 2])>) -> Option<ConcatenatedNurbs> {
+fn elevate_linear_nurbs_to_degree(
+    curve: &mut NurbsCurve,
+    interval: [f64; 2],
+    target_degree: u32,
+    join_tolerance: Option<f64>,
+) -> bool {
+    if curve.degree != 1
+        || curve.control_points.len() < 2
+        || curve.knots.len() != curve.control_points.len() + 2
+        || curve.knots.first() != Some(&interval[0])
+        || curve.knots.last() != Some(&interval[1])
+        || interval[0] >= interval[1]
+        || target_degree <= 1
+        || curve
+            .weights
+            .as_ref()
+            .is_some_and(|weights| weights.len() != curve.control_points.len())
+    {
+        return false;
+    }
+    if curve.knots.windows(2).any(|pair| pair[0] > pair[1]) {
+        return false;
+    }
+    let mut pieces = Vec::new();
+    for span in 1..curve.control_points.len() {
+        let start = curve.knots[span];
+        let end = curve.knots[span + 1];
+        if !start.is_finite() || !end.is_finite() || start >= end {
+            continue;
+        }
+        let mut piece = NurbsCurve {
+            degree: 1,
+            knots: vec![start, start, end, end],
+            control_points: vec![curve.control_points[span - 1], curve.control_points[span]],
+            weights: curve
+                .weights
+                .as_ref()
+                .map(|weights| vec![weights[span - 1], weights[span]]),
+            periodic: false,
+        };
+        if !elevate_linear_bezier_to_degree(&mut piece, [start, end], target_degree) {
+            return false;
+        }
+        pieces.push((piece, [start, end]));
+    }
+    let Some(concatenated) = concatenate_nurbs(pieces, join_tolerance) else {
+        return false;
+    };
+    curve.degree = concatenated.nurbs.degree;
+    curve.knots = concatenated
+        .nurbs
+        .knots
+        .into_iter()
+        .map(|knot| knot + interval[0])
+        .collect();
+    curve.control_points = concatenated.nurbs.control_points;
+    curve.weights = concatenated.nurbs.weights;
+    curve.periodic = false;
+    true
+}
+
+fn concatenate_nurbs(
+    mut children: Vec<(NurbsCurve, [f64; 2])>,
+    join_tolerance: Option<f64>,
+) -> Option<ConcatenatedNurbs> {
     if children.is_empty() {
         return None;
     }
@@ -174,7 +238,8 @@ fn concatenate_nurbs(mut children: Vec<(NurbsCurve, [f64; 2])>) -> Option<Concat
         .unwrap_or_default();
     for (curve, interval) in &mut children {
         if curve.degree < degree
-            && (curve.degree != 1 || !elevate_linear_bezier_to_degree(curve, *interval, degree))
+            && (curve.degree != 1
+                || !elevate_linear_nurbs_to_degree(curve, *interval, degree, join_tolerance))
         {
             return None;
         }
@@ -228,9 +293,10 @@ fn concatenate_nurbs(mut children: Vec<(NurbsCurve, [f64; 2])>) -> Option<Concat
             control_points = curve.control_points;
             weights = child_weights;
         } else {
-            if !close(
+            if !close_with_tolerance(
                 control_points[control_points.len() - 1],
                 curve.control_points[0],
+                join_tolerance,
             ) {
                 return None;
             }
@@ -291,6 +357,7 @@ fn bounded_nurbs_for_id(
     ir: &CadIr,
     curve_id: &CurveId,
     depth: usize,
+    join_tolerance: Option<f64>,
 ) -> Option<(NurbsCurve, [f64; 2])> {
     if depth > MAX_COMPOSITE_DEPTH {
         return None;
@@ -300,7 +367,7 @@ fn bounded_nurbs_for_id(
         let children = segments
             .iter()
             .map(|segment| {
-                let child = bounded_nurbs_for_id(ir, &segment.curve, depth + 1)?;
+                let child = bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance)?;
                 if segment.same_sense {
                     Some(child)
                 } else {
@@ -308,7 +375,7 @@ fn bounded_nurbs_for_id(
                 }
             })
             .collect::<Option<Vec<_>>>()?;
-        let concatenated = concatenate_nurbs(children)?;
+        let concatenated = concatenate_nurbs(children, join_tolerance)?;
         let range = [0.0, *concatenated.boundaries.last()?];
         return Some((concatenated.nurbs, range));
     }
@@ -374,14 +441,27 @@ fn bounded_nurbs_for_id(
 
 fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    bounded_nurbs_for_id(ir, &curve_id, 0)
+    bounded_nurbs_for_id(ir, &curve_id, 0, None)
 }
 
 pub(super) fn bounded_nurbs_for_curve(
     ir: &CadIr,
     curve_id: &CurveId,
 ) -> Option<(NurbsCurve, [f64; 2])> {
-    bounded_nurbs_for_id(ir, curve_id, 0)
+    bounded_nurbs_for_id(ir, curve_id, 0, None)
+}
+
+pub(super) fn bounded_nurbs_for_curve_with_tolerance(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    tolerance: Option<f64>,
+) -> Option<(NurbsCurve, [f64; 2])> {
+    bounded_nurbs_for_id(
+        ir,
+        curve_id,
+        0,
+        tolerance.filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0),
+    )
 }
 
 fn close(left: Point3, right: Point3) -> bool {
@@ -397,6 +477,15 @@ fn close(left: Point3, right: Point3) -> bool {
     (left.x - right.x).abs() <= scale * 1.0e-10
         && (left.y - right.y).abs() <= scale * 1.0e-10
         && (left.z - right.z).abs() <= scale * 1.0e-10
+}
+
+fn close_with_tolerance(left: Point3, right: Point3, tolerance: Option<f64>) -> bool {
+    tolerance
+        .filter(|tolerance| tolerance.is_finite() && *tolerance > 0.0)
+        .map_or_else(
+            || close(left, right),
+            |tolerance| left.distance(right) <= tolerance,
+        )
 }
 
 fn curve_endpoints(ir: &CadIr, curve_id: &CurveId) -> Option<(Point3, Point3)> {
@@ -582,7 +671,7 @@ pub(super) fn project(
             nurbs,
             boundaries,
             child_starts,
-        }) = concatenate_nurbs(children)
+        }) = concatenate_nurbs(children, None)
         else {
             if let Some(edge) = project_native_composite(ir, entry, &child_sequences) {
                 wire_edges.push(edge);
@@ -737,5 +826,166 @@ mod tests {
         assert!(before.distance(after) <= 1.0e-12);
         assert_eq!(curve.control_points[1], Point3::new(1.5, 0.0, 0.0));
         assert_eq!(curve.weights, Some(vec![1.0, 2.0, 3.0]));
+    }
+
+    #[test]
+    fn multi_span_linear_degree_elevation_preserves_a_degenerate_curve() {
+        let mut curve = NurbsCurve {
+            degree: 1,
+            knots: vec![0.5, 0.5, 1.5, 2.5, 2.5],
+            control_points: vec![
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, 2.0, 3.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let before = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            2.0,
+        )
+        .expect("valid multi-span linear NURBS evaluates before degree elevation");
+        assert!(elevate_linear_nurbs_to_degree(
+            &mut curve,
+            [0.5, 2.5],
+            3,
+            None
+        ));
+        let after = cadmpeg_ir::eval::nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            curve.weights.as_deref(),
+            2.0,
+        )
+        .expect("valid multi-span linear NURBS evaluates after degree elevation");
+        assert_eq!(curve.degree, 3);
+        assert!(before.distance(after) <= 1.0e-12);
+    }
+
+    #[test]
+    fn mixed_degree_composition_accepts_a_multi_span_linear_child() {
+        let point = |x, y| Point3::new(x, y, 0.0);
+        let line = |start, end| NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![start, end],
+            weights: None,
+            periodic: false,
+        };
+        let constant = |position| NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+            control_points: vec![position; 3],
+            weights: None,
+            periodic: false,
+        };
+        let cubic = NurbsCurve {
+            degree: 3,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 2.0, 2.0, 2.0, 2.0],
+            control_points: vec![
+                point(1.0, 1.0),
+                point(1.666_666_666_666_666_7, 0.666_666_666_666_666_6),
+                point(2.333_333_333_333_333_5, 0.333_333_333_333_333_3),
+                point(3.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let mut children = vec![
+            (line(point(3.0, 0.0), point(2.0, 0.0)), [0.0, 1.0]),
+            (constant(point(2.0, 0.0)), [0.0, 2.0]),
+            (line(point(2.0, 0.0), point(1.0, 0.0)), [0.0, 1.0]),
+            (line(point(1.0, 0.0), point(1.0, 1.0)), [0.0, 1.0]),
+            (cubic, [0.0, 2.0]),
+            (line(point(3.0, 0.0), point(3.0, 0.0)), [0.0, 1.0]),
+        ];
+        for (index, (curve, interval)) in children.iter_mut().enumerate() {
+            if curve.degree < 3 {
+                assert!(
+                    elevate_linear_nurbs_to_degree(curve, *interval, 3, None),
+                    "child {index} should elevate"
+                );
+            }
+        }
+        let concatenated = concatenate_nurbs(children, None)
+            .expect("mixed-degree composite should have an exact NURBS carrier");
+        assert_eq!(concatenated.nurbs.degree, 3);
+        assert_eq!(
+            concatenated.boundaries,
+            vec![0.0, 1.0, 3.0, 4.0, 5.0, 7.0, 8.0]
+        );
+    }
+
+    #[test]
+    fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
+        let first_id = CurveId("first".into());
+        let second_id = CurveId("second".into());
+        let composite_id = CurveId("composite".into());
+        let first_end = Point3::new(1.0, 0.0, 0.0);
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.curves.extend([
+            Curve {
+                id: first_id.clone(),
+                geometry: CurveGeometry::Nurbs(NurbsCurve {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![Point3::new(0.0, 0.0, 0.0), first_end],
+                    weights: None,
+                    periodic: false,
+                }),
+                source_object: None,
+            },
+            Curve {
+                id: second_id.clone(),
+                geometry: CurveGeometry::Nurbs(NurbsCurve {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![Point3::new(1.0005, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+                    weights: None,
+                    periodic: false,
+                }),
+                source_object: None,
+            },
+            Curve {
+                id: composite_id.clone(),
+                geometry: CurveGeometry::Composite {
+                    segments: vec![
+                        CompositeCurveSegment {
+                            curve: first_id.clone(),
+                            same_sense: true,
+                            transition: CompositeCurveTransition::Continuous,
+                        },
+                        CompositeCurveSegment {
+                            curve: second_id.clone(),
+                            same_sense: true,
+                            transition: CompositeCurveTransition::Continuous,
+                        },
+                    ],
+                    self_intersect: None,
+                },
+                source_object: None,
+            },
+        ]);
+        for (index, curve) in [first_id, second_id].into_iter().enumerate() {
+            ir.model.edges.push(Edge {
+                id: EdgeId(format!("edge-{index}")),
+                curve: Some(curve),
+                start: VertexId(format!("start-{index}")),
+                end: VertexId(format!("end-{index}")),
+                param_range: Some([0.0, 1.0]),
+                tolerance: None,
+            });
+        }
+        assert!(bounded_nurbs_for_curve(&ir, &composite_id).is_none());
+        let (carrier, range) =
+            bounded_nurbs_for_curve_with_tolerance(&ir, &composite_id, Some(0.001))
+                .expect("carrier join within the global resolution should project");
+        assert_eq!(range, [0.0, 2.0]);
+        assert_eq!(carrier.control_points[0], Point3::new(0.0, 0.0, 0.0));
     }
 }
