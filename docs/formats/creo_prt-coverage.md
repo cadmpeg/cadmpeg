@@ -56,6 +56,9 @@ fixtures, claims above L1 remain unproven.
 - Full-turn revolutions reconstruct a missing section axis from their complete
   transferred carrier surfaces, requiring coaxial analytic axes, parallel
   carrier-plane normals, and carrier-sphere centers on the common axis.
+- Class-942 `Surface` operations with a unique numbered `Extrude` reference
+  transfer as independent sheet linear sweeps; the same class without that
+  reference remains distinct from the sheet-sweep family.
 - Generated cap-plane tables and complete positional-cylinder carriers provide
   blind extrusion spans to generated feature surfaces and first additive linear
   or one-circle B-reps when the section transform agrees with the carrier

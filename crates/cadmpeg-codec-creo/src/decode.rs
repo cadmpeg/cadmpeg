@@ -15537,7 +15537,7 @@ fn sweep_output_kind(
     feature_id: u32,
 ) -> Option<BodyKind> {
     evaluated_sweep_body_kind(ir, family, feature_id).or_else(|| {
-        (feature_schema_class(scan, feature_id) == Some(942)).then_some(())?;
+        feature_is_sheet_extrusion(scan, feature_id).then_some(())?;
         new_sheet_output_surface_id(
             feature_id,
             &scan.features.entity_tables,
@@ -18090,6 +18090,14 @@ fn schema_feature_definition(
         }
         return IrFeatureDefinition::DatumCoordinateSystemUnresolved;
     }
+    if schema_class == 942 && feature_is_sheet_extrusion(scan, feature_id) {
+        return extrude_feature_definition_with_profile(
+            scan,
+            ir,
+            feature_id,
+            BooleanOp::Unresolved,
+        );
+    }
     if numbered_feature_name_has_family(kind, "Extrude") {
         return extrude_feature_definition_with_profile(
             scan,
@@ -18201,10 +18209,16 @@ fn section_sweep_allows_linear_extrusion(
             && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
 }
 
+fn feature_is_sheet_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
+    feature_schema_class(scan, feature_id) == Some(942)
+        && feature_reference_name(scan, feature_id)
+            .is_some_and(|name| numbered_feature_name_has_family(name, "Extrude"))
+}
+
 fn feature_allows_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
     feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
         section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
-    })
+    }) || feature_is_sheet_extrusion(scan, feature_id)
 }
 
 fn feature_allows_additive_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {

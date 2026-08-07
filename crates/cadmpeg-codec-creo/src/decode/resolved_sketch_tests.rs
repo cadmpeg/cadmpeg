@@ -2223,6 +2223,66 @@ fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
 }
 
 #[test]
+fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 942,
+            kind: "Surface".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Surface id 942".to_string()),
+            stored_name_bytes: Some(b"Surface id 942".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            root_schema_class: Some(942),
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+    scan.features
+        .reference_names
+        .push(crate::feature::FeatureReferenceName {
+            feature_id: 942,
+            name: "Extrude 1".to_string(),
+            name_bytes: b"Extrude 1".to_vec(),
+            own_reference_id: 1,
+            reference_type: 0,
+            offset: 0,
+        });
+
+    assert!(feature_is_sheet_extrusion(&scan, 942));
+    assert!(feature_allows_linear_extrusion(&scan, 942));
+    assert_eq!(
+        sweep_output_kind(&scan, &CadIr::empty(Units::default()), "extrusion", 942),
+        Some(BodyKind::Sheet)
+    );
+    assert!(matches!(
+        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        IrFeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved(_),
+            op: BooleanOp::NewBody,
+            solid: Some(false),
+            ..
+        }
+    ));
+
+    scan.features.reference_names[0].name = "Boundary Blend 1".to_string();
+    scan.features.reference_names[0].name_bytes = b"Boundary Blend 1".to_vec();
+    assert!(!feature_is_sheet_extrusion(&scan, 942));
+    assert!(!feature_allows_linear_extrusion(&scan, 942));
+    assert_eq!(
+        sweep_output_kind(&scan, &CadIr::empty(Units::default()), "extrusion", 942),
+        None
+    );
+    assert!(matches!(
+        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        IrFeatureDefinition::BoundarySurfaceUnresolved
+    ));
+}
+
+#[test]
 fn numbered_reference_name_selects_only_its_exact_feature_family() {
     assert!(numbered_feature_name_has_family("Thicken 1", "Thicken"));
     assert!(numbered_feature_name_has_family("Thicken 12", "Thicken"));
