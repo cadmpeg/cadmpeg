@@ -4669,8 +4669,12 @@ fn parse_loop(
         return None;
     }
     for (&pcurve, &edge) in record.pcurves.iter().zip(&record.edges) {
-        if (!parsed_pcurves.contains_key(&pcurve)
-            && !opaque_pcurves.contains_key(&pcurve)
+        if (parsed_pcurves
+            .get(&pcurve)
+            .is_none_or(|pcurve| pcurve.surface != surface)
+            && opaque_pcurves
+                .get(&pcurve)
+                .is_none_or(|pcurve| pcurve.surface != surface)
             && implicit_pcurves.get(&pcurve) != Some(&surface))
             || by_id.get(&edge)?.class != 0x5e
         {
@@ -4973,6 +4977,44 @@ mod tests {
         merge_pcurve_candidate(&mut pcurves, &mut conflicts, test_pcurve(1, 10));
         assert!(!pcurves.contains_key(&1));
         assert!(conflicts.contains(&1));
+    }
+
+    #[test]
+    fn loop_rejects_a_pcurve_bound_to_another_surface() {
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            metadata: test_loop_metadata(1),
+            surface: 10,
+        };
+        let edge = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x5e,
+            object_id: 3,
+            payload: Vec::new(),
+        };
+        let records = HashMap::from([(3, &edge)]);
+        let pcurves = BTreeMap::from([(2, test_pcurve(2, 11))]);
+        let surfaces = BTreeMap::from([(
+            10,
+            B5Surface::Unknown {
+                family: 0xb5,
+                class: 0x27,
+                payload: Vec::new(),
+            },
+        )]);
+
+        assert!(parse_loop(
+            &loop_,
+            &records,
+            &pcurves,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &surfaces,
+        )
+        .is_none());
     }
 
     #[test]
