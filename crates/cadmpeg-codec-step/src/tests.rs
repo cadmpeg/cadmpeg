@@ -4166,6 +4166,55 @@ fn overriding_style_suppresses_the_base_binding() {
 }
 
 #[test]
+fn presentation_records_retain_non_color_geometry_owners() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=CARTESIAN_POINT('',(1.,0.,0.));
+#3=POLYLINE('styled curve',(#1,#2));
+#4=CURVE_STYLE('line style',$,$,$);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#4));
+#6=STYLED_ITEM('',(#5),#3);
+#7=DIRECTION('',(0.,0.,1.));
+#8=AXIS2_PLACEMENT_3D('',#1,#7,$);
+#9=PLANE('annotation support',#8);
+#10=ANNOTATION_PLANE('annotation plane',(),#9,());",
+    );
+
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#3")
+        .expect("styled curve");
+    assert_eq!(
+        curve
+            .source_object
+            .as_ref()
+            .expect("styled curve owner")
+            .object_id,
+        "#6"
+    );
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "step:data:surface#9")
+        .expect("annotation support surface");
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .expect("annotation plane owner")
+            .object_id,
+        "#10"
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn null_style_branch_does_not_suppress_a_sibling_color() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

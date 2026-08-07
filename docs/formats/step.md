@@ -291,9 +291,12 @@ other normal aggregates align with the local point table.
 Styles resolve from a styled item through presentation assignments to color.
 An overriding style takes precedence for its occurrence. A style on a
 geometric set applies to each member. Empty and NULL style assignments leave
-appearance unchanged. A native presentation carrier without a neutral geometry
-arena retains its carrier identity as the style target. Semantic PMI retains its
-shape-aspect target. Presentation PMI retains annotation identity and
-placement. `PLUS_MINUS_TOLERANCE` carries numeric lower and upper deviations,
-or the form variance, zone variance, grade, and source fields of
+appearance unchanged. A direct `STYLED_ITEM` or
+`OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when
+the assignment has no resolvable colour. An `ANNOTATION_PLANE` owns each
+referenced surface carrier. A native presentation carrier without a neutral
+geometry arena retains its carrier identity as the style target. Semantic PMI
+retains its shape-aspect target. Presentation PMI retains annotation identity
+and placement. `PLUS_MINUS_TOLERANCE` carries numeric lower and upper
+deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.

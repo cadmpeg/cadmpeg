@@ -1802,6 +1802,122 @@ pub(super) fn associate_free_representation_members(
     }
 }
 
+/// Associate geometry that is owned by presentation records rather than by a
+/// shape representation. A style is a source owner even when its style
+/// assignment has no surface colour, and an annotation plane owns each
+/// referenced surface used to construct that plane.
+pub(super) fn associate_free_presentation_carriers(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+    losses: &mut Vec<LossNote>,
+) {
+    for (style_id, style) in exchange.records.iter().filter(|(_, record)| {
+        matches!(
+            record.simple_name(),
+            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
+        )
+    }) {
+        let Some(target) = style.parameter(2).and_then(Value::reference) else {
+            continue;
+        };
+        associate_presentation_carrier(exchange, ir, index, owned, target, *style_id, losses);
+    }
+    for (plane_id, plane) in exchange.entities("ANNOTATION_PLANE") {
+        let mut targets = Vec::new();
+        for parameter in plane
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+        {
+            collect_references(parameter, &mut targets);
+        }
+        for target in targets {
+            if index.surfaces.contains_key(&target) {
+                associate_presentation_carrier(
+                    exchange, ir, index, owned, target, plane_id, losses,
+                );
+            }
+        }
+    }
+}
+
+fn associate_presentation_carrier(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+    target: u64,
+    source_id: u64,
+    losses: &mut Vec<LossNote>,
+) {
+    let name = exchange
+        .records
+        .get(&target)
+        .and_then(|record| record.parameter(0))
+        .and_then(|value| {
+            super::decode_text(
+                value,
+                losses,
+                target,
+                "presentation carrier name",
+                LossKind::MetadataNotTransferred,
+            )
+        })
+        .filter(|name| !name.is_empty());
+    let association = || SourceObjectAssociation {
+        format: "step".into(),
+        object_id: format!("#{source_id}"),
+        name: name.clone(),
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    if let Some(index) = index.curves.get(&target) {
+        if !owned.curves.contains(index) {
+            ir.model.curves[*index]
+                .source_object
+                .get_or_insert_with(association);
+        }
+    }
+    if let Some(index) = index.points.get(&target) {
+        if !owned.points.contains(index) {
+            ir.model.points[*index]
+                .source_object
+                .get_or_insert_with(association);
+        }
+    }
+    if let Some(index) = index.surfaces.get(&target) {
+        if !owned.surfaces.contains(index) {
+            ir.model.surfaces[*index]
+                .source_object
+                .get_or_insert_with(association);
+        }
+    }
+}
+
+fn collect_references(value: &Value, references: &mut Vec<u64>) {
+    match value {
+        Value::Reference(id) => references.push(*id),
+        Value::List(values) => {
+            for value in values {
+                collect_references(value, references);
+            }
+        }
+        Value::Typed(_, value) => collect_references(value, references),
+        Value::Integer(_)
+        | Value::Real(_)
+        | Value::String(_)
+        | Value::Enumeration(_)
+        | Value::Binary(_)
+        | Value::Resource(_)
+        | Value::Omitted
+        | Value::Derived => {}
+    }
+}
+
 fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
     record
         .partials
