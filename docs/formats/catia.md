@@ -315,6 +315,8 @@ Same-incidence spline or line rows of one curve family with the same complete bi
 
 **Analytic occurrence pcurves** are the inverse image of the bound edge endpoints in the owning face chart. Plane coordinates are orthogonal projections onto `(u_axis, normal×u_axis)`. Cylinder and cone coordinates are azimuth and axial distance; the cone's tangential component is divided by its elliptic ratio before `atan2`. Sphere coordinates are azimuth and latitude. Torus coordinates are major and minor azimuth. Periodic endpoint coordinates unwrap across the shortest congruent interval. A parameter-space segment transfers only when its lifted midpoint lies on the serialized line or circle within `2e-3` mm. Plane-circle images transfer as exact piecewise rational quadratic arcs only when the stored circle is contained in the plane: its center lies on the plane, both bound endpoints have the stored radius, and a known 3D circle axis is parallel to the plane normal. An off-plane or nonparallel circle retains its coedge without a derived plane pcurve.
 
+A standard occurrence pcurve is parameterized in physical edge-row direction. Its `PcurveUse.parameter_range` is the derived carrier range for a forward boundary occurrence and the reversed range for a reversed boundary occurrence. The edge curve's own parameter direction is independent of this face-local pcurve direction.
+
 ### 5.7 Surface carrier semantics
 
 - **Cylinder axis-frame** from its two parallel equal-radius rim circles: `origin=circle0.center`, `axis=normalize(circle1.center−circle0.center)`, `radius=circle.radius`.

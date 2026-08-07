@@ -4188,7 +4188,7 @@ fn emit_standard_topology(
                         fit_tolerance: None,
                         native_tail_flags: None,
                     });
-                    id
+                    (id, range)
                 });
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
@@ -4228,10 +4228,10 @@ fn emit_standard_topology(
                         Sense::Forward
                     },
                     pcurves: pcurve_id
-                        .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                        .map(|(pcurve, range)| cadmpeg_ir::topology::PcurveUse {
                             pcurve,
                             isoparametric: None,
-                            parameter_range: None,
+                            parameter_range: edge_use.reversed.then_some([range[1], range[0]]),
                         })
                         .into_iter()
                         .collect(),
@@ -6755,12 +6755,12 @@ mod route_tests {
         analytic_surface_uv, bind_ordered_standard_curve_branches, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
-        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
-        point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
-        resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_curve_branch_assignment_is_ranked,
+        emit_standard_topology, include_native_endpoint_pairs, intersection_line_direction,
+        merge_native_endpoint_evidence, native_support_circle_param_range, plane_intersection_line,
+        point_on_known_surface, point_on_standard_face, point_on_surface,
+        resolve_standard_endpoint_pairs, resolve_standard_limit_curve_binding,
+        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_curve_branch_assignment_is_ranked,
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
@@ -6785,9 +6785,9 @@ mod route_tests {
         ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
         RollingBallJetSite, Surface, SurfaceGeometry,
     };
-    use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
+    use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Point, Vertex};
+    use cadmpeg_ir::topology::{Face, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
 
     use cadmpeg_ir::AnnotationBuilder;
@@ -8799,6 +8799,92 @@ mod route_tests {
                 direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
             }
         );
+    }
+
+    #[test]
+    fn standard_emission_reverses_only_face_pcurve_use_range() {
+        for reversed in [false, true] {
+            let mut ir = CadIr::empty(Units::default());
+            ir.model.points.extend([
+                Point {
+                    id: PointId("point-0".into()),
+                    position: Point3::new(0.0, 0.0, 0.0),
+                    source_object: None,
+                },
+                Point {
+                    id: PointId("point-1".into()),
+                    position: Point3::new(1.0, 0.0, 0.0),
+                    source_object: None,
+                },
+            ]);
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId("surface-0".into()),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+            ir.model.faces.push(Face {
+                id: FaceId("catia:standard:face#0".into()),
+                shell: ShellId("shell-0".into()),
+                surface: SurfaceId("surface-0".into()),
+                sense: Sense::Forward,
+                loops: Vec::new(),
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            let bindings = [(SurfaceId("surface-0".into()), false, 0)];
+            let surface_indices = HashMap::from([(bindings[0].0.clone(), 0)]);
+            let supports = [StandardCurveSupport {
+                pos: 0,
+                tag: 1,
+                faces: [0, 0],
+                geometry: StandardCurveGeometry::Line,
+            }];
+            let topology = crate::families::standard::topology::StandardTopology {
+                faces: vec![crate::families::standard::topology::FaceTopology {
+                    boundaries: vec![crate::families::standard::topology::Boundary {
+                        coedges: vec![crate::families::standard::topology::CoedgeUse {
+                            edge_row: 0,
+                            reversed,
+                            start_vertex: 0,
+                            end_vertex: 1,
+                        }],
+                    }],
+                }],
+                edge_rows: vec![crate::families::standard::topology::EdgeRow {
+                    kind: 1,
+                    handles: vec![0, 1],
+                    boundary_layout:
+                        crate::families::standard::topology::EdgeBoundaryLayout::CompleteBoundaryRun,
+                }],
+                vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+                logical_vertex_count: 2,
+            };
+            let mut annotations = AnnotationBuilder::new();
+            emit_standard_topology(
+                &mut ir,
+                &mut annotations,
+                &bindings,
+                &[],
+                &surface_indices,
+                &supports,
+                &[[0, 1]],
+                &[0, 1],
+                &topology,
+                &HashMap::new(),
+                &[None],
+                &[],
+            );
+
+            let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
+                panic!("standard line occurrence must retain its pcurve");
+            };
+            assert_eq!(pcurve.parameter_range, reversed.then_some([1.0, 0.0]));
+        }
     }
 
     #[test]
