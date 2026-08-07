@@ -14323,6 +14323,233 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
     )
     .unwrap();
     assert_eq!(supplementary, lines);
+    let duplicate_diagonal = entity(
+        "generated:line#duplicate-diagonal",
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(4.0, 4.0),
+        },
+    );
+    let projected_with_duplicate = HashMap::from([
+        (("native", 1), &point),
+        (("native", 2), &explicit),
+        (("native", 3), &diagonal),
+        (("native", 4), &horizontal),
+        (("native", 5), &duplicate_diagonal),
+    ]);
+    assert!(indirect_angular_lines(
+        "native",
+        &[&point, &explicit],
+        std::f64::consts::FRAC_PI_4,
+        &projected_with_duplicate,
+    )
+    .is_none());
+}
+
+#[test]
+fn counted_angular_group_projects_unique_point_selected_line() {
+    let stream = "f3d:A";
+    let placement = DesignSketchPlacement {
+        member_run_head: false,
+        id: format!("{stream}:design-sketch-placement#0"),
+        scope_record_index: Some(10),
+        entity_id: "0_100".into(),
+        entity_suffix: 100,
+        byte_offset: 0,
+        class_tag: "356".into(),
+        record_index: 11,
+        frame_length: 201,
+        transform: identity_matrix(),
+        transform_offset: None,
+        paired_class_tag: "259".into(),
+        paired_byte_offset: 201,
+    };
+    let parameter = DesignParameter {
+        id: format!("{stream}:design-parameter#20"),
+        byte_offset: 0,
+        class_tag: "305".into(),
+        record_index: 20,
+        family_discriminator: Some(0),
+        family_discriminator_offset: Some(0),
+        source_ordinal: 4,
+        owner_record_index: Some(21),
+        expression: "1.0471975512 rad".into(),
+        expression_offset: 0,
+        source_kind: "Angular Dimension-4".into(),
+        source_kind_offset: 0,
+        kind: DesignParameterKind::Dimension,
+        unit: Some("rad".into()),
+        unit_offset: Some(0),
+        name: "d4".into(),
+        name_offset: 0,
+        evaluated_value: std::f64::consts::FRAC_PI_3,
+        evaluated_value_offset: 0,
+    };
+    let owner = DesignParameterOwner {
+        id: format!("{stream}:design-parameter-owner#21"),
+        byte_offset: 0,
+        class_tag: "292".into(),
+        record_index: 21,
+        scope_record_index: 10,
+        local_ordinal: 0,
+        evaluated_value: std::f64::consts::FRAC_PI_3,
+        evaluated_value_offset: 0,
+        parameter_record_index: 20,
+        owned_ordinal: 0,
+        variant: Some(0),
+        companion_record_index: 22,
+    };
+    let companion = DesignParameterCompanion {
+        id: format!("{stream}:design-parameter-companion#22"),
+        byte_offset: 0,
+        class_tag: "408".into(),
+        record_index: 22,
+        owner_record_index: 21,
+        timestamp_micros: 1,
+        timestamp_micros_offset: 42,
+        payload_byte_offset: 58,
+        payload_byte_length: 0,
+        owned_recipe_ids: Vec::new(),
+    };
+    let group = DesignDimensionLocusGroup {
+        id: format!("{stream}:design-dimension-locus-group#30"),
+        companion_record_index: 22,
+        byte_offset: 0,
+        class_tag: "277".into(),
+        record_index: 30,
+        frame_length: 100,
+        loci: vec![
+            DesignDimensionLocus {
+                geometry_record_index: 40,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+            DesignDimensionLocus {
+                geometry_record_index: 41,
+                geometry_reference_offset: 0,
+                role: 0,
+                role_offset: 0,
+            },
+        ],
+        owner_reference: 100,
+        owner_reference_offset: 0,
+        owner_role: 1,
+        owner_role_offset: 0,
+        state: 0,
+        state_offset: 0,
+        constraint_kinds: vec![SketchConstraintKind::Coincident],
+        unknown_constraint_bits: 0,
+        return_members: vec![40, 41],
+        return_member_offsets: vec![0, 0],
+        next_class_tag: "273".into(),
+        next_record_index: 31,
+        next_byte_offset: 100,
+    };
+    let point = SketchPoint {
+        id: format!("{stream}:sketch-point#40"),
+        record_index: 40,
+        owner_reference: Some(100),
+        class_tag: "300".into(),
+        byte_offset: 0,
+        coordinate_offset: 0,
+        entity_genesis: None,
+        persistent_id: 40,
+        paired_reference: 0,
+        coordinates: Point2::new(0.0, 0.0),
+        raw_bytes: Vec::new(),
+    };
+    let curve = |record_index: u32, start: Point2, end: Point2| {
+        let delta_u = end.u - start.u;
+        let delta_v = end.v - start.v;
+        let length = delta_u.hypot(delta_v);
+        SketchCurveIdentity {
+            id: format!("{stream}:sketch-curve#{record_index}"),
+            record_index,
+            owner_reference: Some(100),
+            class_tag: "301".into(),
+            byte_offset: 0,
+            geometry_offset: 0,
+            entity_genesis: None,
+            primary_id: u64::from(record_index),
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::Line {
+                start: Point3::new(start.u, start.v, 0.0),
+                end: Point3::new(end.u, end.v, 0.0),
+                direction: Vector3::new(delta_u / length, delta_v / length, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }),
+        }
+    };
+    let explicit = curve(41, Point2::new(0.0, 0.0), Point2::new(2.0, 0.0));
+    let candidate = curve(42, Point2::new(0.0, 0.0), Point2::new(1.0, 3.0f64.sqrt()));
+    let sketch = neutral_sketch_id(&placement);
+    let point_entity = SketchEntity {
+        id: SketchEntityId("generated:point#40".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(point.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: point.coordinates,
+        },
+    };
+    let explicit_entity = SketchEntity {
+        id: SketchEntityId("generated:line#41".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(explicit.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        },
+    };
+    let candidate_entity = SketchEntity {
+        id: SketchEntityId("generated:line#42".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(candidate.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 3.0f64.sqrt()),
+        },
+    };
+    let entities = vec![point_entity, explicit_entity, candidate_entity];
+    let curves = vec![explicit, candidate];
+    let constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&parameter),
+            owners: std::slice::from_ref(&owner),
+            pairs: &[],
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: std::slice::from_ref(&point),
+            curves: &curves,
+            entities: &entities,
+        },
+        &[],
+    );
+
+    assert_eq!(constraints.len(), 1);
+    assert!(matches!(
+        &constraints[0].definition,
+        SketchConstraintDefinition::Angle {
+            first,
+            second,
+            parameter: actual_parameter,
+        } if first == &entities[2].id
+            && second == &entities[1].id
+            && actual_parameter == &neutral_parameter_id_parts(stream, 20)
+    ));
 }
 
 #[test]
