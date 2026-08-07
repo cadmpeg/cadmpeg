@@ -809,32 +809,33 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     for (id, record) in
         exchange.entities_any(&["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"])
     {
-        let definition = match record.simple_name() {
-            Some("SURFACE_OF_LINEAR_EXTRUSION") => record
-                .parameter(1)
+        let definition = match entity_type(
+            record,
+            &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
+        ) {
+            Some("SURFACE_OF_LINEAR_EXTRUSION") => {
+                named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 1)
+                    .and_then(Value::reference)
+                    .filter(|curve| carrier_index.curves.contains_key(curve))
+                    .map(|curve| CurveId(format!("step:data:curve#{curve}")))
+                    .zip(
+                        named_parameter(record, "SURFACE_OF_LINEAR_EXTRUSION", 2)
+                            .and_then(Value::reference)
+                            .and_then(|vector| vectors.get(&vector).copied()),
+                    )
+                    .map(
+                        |(directrix, direction)| ProceduralSurfaceDefinition::LinearSweep {
+                            directrix,
+                            direction,
+                        },
+                    )
+            }
+            Some("SURFACE_OF_REVOLUTION") => named_parameter(record, "SURFACE_OF_REVOLUTION", 1)
                 .and_then(Value::reference)
                 .filter(|curve| carrier_index.curves.contains_key(curve))
                 .map(|curve| CurveId(format!("step:data:curve#{curve}")))
                 .zip(
-                    record
-                        .parameter(2)
-                        .and_then(Value::reference)
-                        .and_then(|vector| vectors.get(&vector).copied()),
-                )
-                .map(
-                    |(directrix, direction)| ProceduralSurfaceDefinition::LinearSweep {
-                        directrix,
-                        direction,
-                    },
-                ),
-            Some("SURFACE_OF_REVOLUTION") => record
-                .parameter(1)
-                .and_then(Value::reference)
-                .filter(|curve| carrier_index.curves.contains_key(curve))
-                .map(|curve| CurveId(format!("step:data:curve#{curve}")))
-                .zip(
-                    record
-                        .parameter(2)
+                    named_parameter(record, "SURFACE_OF_REVOLUTION", 2)
                         .and_then(Value::reference)
                         .and_then(|placement| placements.get(&placement).copied()),
                 )
@@ -850,7 +851,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         let Some(definition) = definition else {
             warnings.push(format!(
                 "{} #{id} has an unresolved directrix, vector, or axis",
-                record.simple_name().expect("matched swept surface")
+                entity_type(
+                    record,
+                    &["SURFACE_OF_LINEAR_EXTRUSION", "SURFACE_OF_REVOLUTION"],
+                )
+                .expect("matched swept surface")
             ));
             continue;
         };

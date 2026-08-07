@@ -1030,6 +1030,36 @@ fn procedural_step_geometry_round_trips_as_native_entities() {
 }
 
 #[test]
+fn complex_swept_surfaces_decode_named_partials() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap242_geometry.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#23=SURFACE_OF_LINEAR_EXTRUSION('linear sweep',#8,#5);",
+            "#23=(SURFACE() SURFACE_OF_LINEAR_EXTRUSION('linear sweep',#8,#5) SWEPT_SURFACE());",
+        )
+        .replace(
+            "#25=SURFACE_OF_REVOLUTION('full revolution',#8,#24);",
+            "#25=(SURFACE() SURFACE_OF_REVOLUTION('full revolution',#8,#24) SWEPT_SURFACE());",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex swept surfaces");
+
+    assert!(decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| { surface.id.as_str() == "step:construction:swept_surface#23" }));
+    assert!(decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| { surface.id.as_str() == "step:construction:swept_surface#25" }));
+}
+
+#[test]
 fn decode_conical_apex_and_context_plane_angle_units() {
     let bytes = include_bytes!("../tests/fixtures/ap242_degree_cone.p21");
     let result = StepCodec::default()
