@@ -884,6 +884,27 @@ fn legacy_extended_linked_profile_point_coordinates(
         }
         _ => false,
     };
+    let link_count = payload
+        .get(offset + 76..offset + 78)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes);
+    let trailer_state = payload
+        .get(offset + 134..offset + 136)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes);
+    let standard_link_state = matches!(
+        payload.get(offset + 74..offset + 78),
+        Some([0x00 | 0x01, 0x00, 0x02 | 0x03, 0x00])
+    );
+    let scaled_extended_link_state = payload
+        .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && marker_native_code(payload, offset) == Some(0)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && payload.get(offset + 74..offset + 76) == Some(&[0; 2])
+        && matches!((link_count, trailer_state), (Some(count), Some(state))
+            if state >= 2
+                && state.checked_mul(2).is_some_and(|expected| count == expected));
     if !valid_marker_and_coordinate_tag
         || !matches!(marker_native_code(payload, offset), Some(0..=2))
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -896,10 +917,7 @@ fn legacy_extended_linked_profile_point_coordinates(
         || payload.get(offset + 31..offset + 39)
             != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
         || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || !matches!(
-            payload.get(offset + 74..offset + 78),
-            Some([0x00 | 0x01, 0x00, 0x02 | 0x03, 0x00])
-        )
+        || !(standard_link_state || scaled_extended_link_state)
     {
         return None;
     }
@@ -951,6 +969,11 @@ fn legacy_extended_linked_profile_point_coordinates(
         && payload.get(offset + 142..offset + 146) == Some(&1u32.to_le_bytes())
         && identity(146).is_some_and(|identity| !matches!(identity, 0 | u32::MAX))
         && sketch_marker_prefix_at(payload, offset.saturating_add(150));
+    let scaled_identity = scaled_extended_link_state
+        && payload.get(offset + 100..offset + 134) == Some(&[0; 34])
+        && payload.get(offset + 136..offset + 142) == Some(&[0; 6])
+        && identity(142).is_some_and(|identity| identity != u32::MAX)
+        && sketch_marker_prefix_at(payload, offset.saturating_add(146));
     let cells = [78, 86].map(|relative| {
         let cell = payload.get(offset + relative..offset + relative + 8)?;
         Some((
@@ -972,7 +995,8 @@ fn legacy_extended_linked_profile_point_coordinates(
             || paired_identities
             || split_identities
             || terminal_sentinel
-            || continuation)
+            || continuation
+            || scaled_identity)
     {
         return None;
     }

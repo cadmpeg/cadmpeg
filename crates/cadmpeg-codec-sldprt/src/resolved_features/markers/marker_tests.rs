@@ -1881,6 +1881,50 @@ fn legacy_single_incidence_profile_point_decodes_both_identity_trailers() {
 }
 
 #[test]
+fn extended_scaled_incidence_profile_point_decodes_coordinates() {
+    let mut payload = vec![0; 146 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[23..29].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+    payload[58..66].copy_from_slice(&0.052f64.to_le_bytes());
+    payload[66..74].copy_from_slice(&(-0.01f64).to_le_bytes());
+    payload[76..78].copy_from_slice(&4u16.to_le_bytes());
+    payload[78..82].copy_from_slice(&[0x16, 0x87, 0x03, 0x00]);
+    payload[82..86].fill(0xff);
+    payload[86..90].copy_from_slice(&[0x10, 0x87, 0x02, 0x00]);
+    payload[90..94].fill(0xff);
+    payload[94..100].copy_from_slice(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff]);
+    payload[134..136].copy_from_slice(&2u16.to_le_bytes());
+    payload[142..146].copy_from_slice(&24u32.to_le_bytes());
+    payload[146..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+    let entity = &sketch_input_entities(&payload, "lane")[0];
+    assert_eq!(entity.kind, SketchInputKind::Point);
+    assert_eq!(entity.coordinates_m, Some([0.052, -0.01]));
+
+    payload[76..78].copy_from_slice(&8u16.to_le_bytes());
+    payload[134..136].copy_from_slice(&4u16.to_le_bytes());
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        Some([0.052, -0.01])
+    );
+
+    payload[134..136].copy_from_slice(&3u16.to_le_bytes());
+    assert_eq!(
+        legacy_extended_linked_profile_point_coordinates(&payload, 0),
+        None
+    );
+}
+
+#[test]
 fn packed_legacy_linked_profile_point_decodes_inline_coordinates() {
     let mut payload = vec![0; 138 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
