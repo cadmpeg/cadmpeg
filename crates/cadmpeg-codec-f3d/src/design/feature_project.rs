@@ -916,7 +916,7 @@ pub fn project_parameter_design_with_edge_identities(
                             |construction| FeatureDefinition::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,
-                                    &construction.body_entity_suffixes,
+                                    construction.body_entity_suffixes(),
                                     body_bindings,
                                 ),
                             },

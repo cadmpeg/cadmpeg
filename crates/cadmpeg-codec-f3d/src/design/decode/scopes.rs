@@ -2238,9 +2238,12 @@ pub(crate) fn exact_base_feature_construction(
     if scope.kind != "Base Feature" {
         return None;
     }
+    if let Some(snapshot) = exact_base_feature_body_snapshot(bytes, scope) {
+        return Some(snapshot);
+    }
     let start = usize::try_from(scope.byte_offset).ok()?;
     if scope.frame_length == 267 {
-        return Some(DesignBaseFeatureConstruction {
+        return Some(DesignBaseFeatureConstruction::ResultBodies {
             body_entity_suffixes: Vec::new(),
             body_entity_suffix_offsets: Vec::new(),
             body_entity_fields: Vec::new(),
@@ -2370,7 +2373,7 @@ pub(crate) fn exact_base_feature_construction(
         && bytes
             .get(cursor..uuid_offset)
             .is_some_and(|padding| padding.iter().all(|byte| *byte == 0)))
-    .then_some(DesignBaseFeatureConstruction {
+    .then_some(DesignBaseFeatureConstruction::ResultBodies {
         body_entity_suffixes,
         body_entity_suffix_offsets,
         body_entity_fields,
@@ -2384,6 +2387,138 @@ pub(crate) fn exact_base_feature_construction(
         result_records,
         result_record_offsets,
         result_fields,
+    })
+}
+
+fn exact_base_feature_body_snapshot(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignBaseFeatureConstruction> {
+    const BODY_ENTRY_SIZE: usize = 15;
+    // Fixed prefix, linkage and GUID blocks, generic scope prefix, kind
+    // prefix, ordinal, and closing tail; the kind payload adds 2L bytes.
+    const FIXED_FRAME_LENGTH: u64 = 431;
+    if scope.class_tag != "314"
+        || scope.paired_class_tag != "259"
+        || scope.reference_members.len() != 1
+    {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let body_count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    let kind_width = scope.kind.encode_utf16().count().checked_mul(2)?;
+    let expected_frame_length = FIXED_FRAME_LENGTH
+        .checked_add(u64::try_from(body_count.checked_mul(BODY_ENTRY_SIZE)?).ok()?)?
+        .checked_add(u64::try_from(kind_width).ok()?)?;
+    if !(1..=200_000).contains(&body_count)
+        || scope.frame_length != expected_frame_length
+        || bytes.get(start + 11..start + 19)? != [0; 8]
+        || bytes.get(start + 19) != Some(&1)
+    {
+        return None;
+    }
+    let mut cursor = start + 24;
+    let mut body_entity_suffixes = Vec::with_capacity(body_count);
+    let mut body_entity_suffix_offsets = Vec::with_capacity(body_count);
+    let mut body_entity_fields = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        body_entity_suffixes.push(read_u64(bytes, cursor + 1)?);
+        body_entity_suffix_offsets.push(u64::try_from(cursor + 1).ok()?);
+        body_entity_fields.push(bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?);
+        cursor += BODY_ENTRY_SIZE;
+    }
+    if u32_at(bytes, cursor)? != 1 || u32_at(bytes, cursor + 4)? != 1 {
+        return None;
+    }
+    cursor += 8;
+    let parse_guid = |at: usize| {
+        let (guid, end) = lp_utf16_bounded(bytes, at, 36..=36)?;
+        crate::bytes::is_guid_relaxed(&guid).then_some((guid, end, at + 4))
+    };
+    let (first_guid, after_first_guid, first_guid_offset) = parse_guid(cursor)?;
+    let (second_guid, after_second_guid, second_guid_offset) = parse_guid(after_first_guid)?;
+    let after_guids = after_second_guid;
+    if bytes.get(after_guids..after_guids + 7)? != [0, 0, 1, 1, 0, 0, 0]
+        || bytes.get(after_guids + 7) != Some(&1)
+        || read_u64(bytes, after_guids + 8)? != *body_entity_suffixes.first()?
+        || bytes.get(after_guids + 16..after_guids + 19)? != [0; 3]
+        || bytes.get(after_guids + 19) != Some(&1)
+    {
+        return None;
+    }
+    let linkage_record = u32::try_from(read_u64(bytes, after_guids + 20)?).ok()?;
+    if linkage_record != scope.reference_members[0]
+        || bytes.get(after_guids + 28..after_guids + 34)? != [0; 6]
+        || u32_at(bytes, after_guids + 34)? != 1
+        || bytes.get(after_guids + 38) != Some(&1)
+    {
+        return None;
+    }
+    let auxiliary_record = u32::try_from(read_u64(bytes, after_guids + 39)?).ok()?;
+    if bytes.get(after_guids + 47..after_guids + 53)? != [0; 6]
+        || bytes.get(after_guids + 53..after_guids + 57)? != [0; 4]
+    {
+        return None;
+    }
+    let (third_guid, after_third_guid, third_guid_offset) = parse_guid(after_guids + 57)?;
+    let reference_count_at = after_third_guid.checked_add(3)?;
+    let reference_marker = reference_count_at.checked_add(4)?;
+    let state_at = reference_marker.checked_add(11)?;
+    let kind_at = state_at.checked_add(4)?;
+    if kind_at != after_third_guid.checked_add(22)?
+        || bytes.get(after_third_guid..reference_count_at)? != [0; 3]
+        || u32_at(bytes, reference_count_at)? != 1
+        || bytes.get(reference_marker) != Some(&1)
+        || u32_at(bytes, reference_marker + 1)? != scope.reference_members[0]
+        || bytes.get(reference_marker + 5..state_at)? != [0; 6]
+        || scope.reference_count_offset != u64::try_from(reference_count_at).ok()?
+        || scope.reference_member_offsets.first().copied()
+            != Some(u64::try_from(reference_marker + 1).ok()?)
+        || scope.kind_offset != u64::try_from(kind_at + 4).ok()?
+        || scope.history_state_id_offset != u64::try_from(state_at).ok()?
+    {
+        return None;
+    }
+    match scope.history_state_id {
+        Some(history_state_id)
+            if u32_at(bytes, state_at)? != u32::try_from(history_state_id).ok()? =>
+        {
+            return None;
+        }
+        None if u32_at(bytes, state_at)? != u32::MAX => return None,
+        _ => {}
+    }
+    let (kind, kind_end) = lp_utf16_bounded(bytes, kind_at, 1..=256)?;
+    if kind != scope.kind
+        || u32_at(bytes, kind_end)? != scope.feature_ordinal
+        || scope.feature_ordinal_offset != u64::try_from(kind_end).ok()?
+        || scope.previous_history_state_id.is_some()
+        || scope.previous_history_state_id_offset != 0
+    {
+        return None;
+    }
+    if scope.paired_byte_offset
+        != u64::try_from(start.checked_add(usize::try_from(scope.frame_length).ok()?)?).ok()?
+    {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::BodySnapshot {
+        body_entity_suffixes,
+        body_entity_suffix_offsets,
+        body_entity_fields,
+        related_guids: [first_guid, second_guid, third_guid],
+        related_guid_offsets: [
+            u64::try_from(first_guid_offset).ok()?,
+            u64::try_from(second_guid_offset).ok()?,
+            u64::try_from(third_guid_offset).ok()?,
+        ],
+        linkage_record,
+        linkage_record_offset: u64::try_from(after_guids + 20).ok()?,
+        auxiliary_record,
+        auxiliary_record_offset: u64::try_from(after_guids + 39).ok()?,
     })
 }
 

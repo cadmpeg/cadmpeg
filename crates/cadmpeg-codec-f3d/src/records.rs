@@ -2338,36 +2338,91 @@ pub struct DesignCopyPasteBodiesOperation {
     pub copied_body_entity_suffix_offsets: Vec<u64>,
 }
 
-/// Result bodies captured when a Fusion direct-modeling Base Feature closes.
+/// Typed construction data carried by a Fusion direct-modeling Base Feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignBaseFeatureConstruction {
-    /// Ordered Design body entity suffixes exposed by the Base Feature.
-    pub body_entity_suffixes: Vec<u64>,
-    /// Byte offsets parallel to `body_entity_suffixes`.
-    pub body_entity_suffix_offsets: Vec<u64>,
-    /// Six-byte source fields parallel to `body_entity_suffixes`.
-    pub body_entity_fields: Vec<[u8; 6]>,
-    /// Ordered passive body-reference records parallel to the body suffixes.
-    pub body_reference_records: Vec<u32>,
-    /// Byte offsets parallel to `body_reference_records`.
-    pub body_reference_record_offsets: Vec<u64>,
-    /// Six-byte source fields parallel to `body_reference_records`.
-    pub body_reference_fields: Vec<[u8; 6]>,
-    /// Six-byte source fields in the repeated passive-reference run.
-    pub repeated_reference_fields: Vec<[u8; 6]>,
-    /// Shared passive-reference metadata record.
-    pub metadata_record: u32,
-    /// Byte offset of `metadata_record`.
-    pub metadata_record_offset: u64,
-    /// Variant-width source field following `metadata_record`.
-    pub metadata_field: Vec<u8>,
-    /// Ordered result-body join records parallel to the body suffixes.
-    pub result_records: Vec<u32>,
-    /// Byte offsets parallel to `result_records`.
-    pub result_record_offsets: Vec<u64>,
-    /// Six-byte source fields parallel to `result_records`.
-    pub result_fields: Vec<[u8; 6]>,
+// Keep the legacy result-body JSON shape while allowing the native record to
+// grow form-specific fields. The required field sets are disjoint, so the
+// decoder remains unambiguous without adding a breaking discriminator field.
+#[serde(untagged)]
+pub enum DesignBaseFeatureConstruction {
+    /// Counted body, passive-reference, metadata, and result runs.
+    ResultBodies {
+        /// Ordered Design body entity suffixes exposed by the Base Feature.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Ordered passive body-reference records parallel to the body suffixes.
+        body_reference_records: Vec<u32>,
+        /// Byte offsets parallel to `body_reference_records`.
+        body_reference_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_reference_records`.
+        body_reference_fields: Vec<[u8; 6]>,
+        /// Six-byte source fields in the repeated passive-reference run.
+        repeated_reference_fields: Vec<[u8; 6]>,
+        /// Shared passive-reference metadata record.
+        metadata_record: u32,
+        /// Byte offset of `metadata_record`.
+        metadata_record_offset: u64,
+        /// Variant-width source field following `metadata_record`.
+        metadata_field: Vec<u8>,
+        /// Ordered result-body join records parallel to the body suffixes.
+        result_records: Vec<u32>,
+        /// Byte offsets parallel to `result_records`.
+        result_record_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `result_records`.
+        result_fields: Vec<[u8; 6]>,
+    },
+    /// Body snapshot form used by the class-314/class-259 scope pair.
+    BodySnapshot {
+        /// Ordered Design body entity suffixes exposed by the snapshot.
+        body_entity_suffixes: Vec<u64>,
+        /// Byte offsets parallel to `body_entity_suffixes`.
+        body_entity_suffix_offsets: Vec<u64>,
+        /// Six-byte source fields parallel to `body_entity_suffixes`.
+        body_entity_fields: Vec<[u8; 6]>,
+        /// Three LP-UTF-16 source GUIDs carried by the snapshot envelope.
+        related_guids: [String; 3],
+        /// Byte offsets of the first code unit of each related GUID.
+        related_guid_offsets: [u64; 3],
+        /// Indexed record carried by the snapshot linkage tail.
+        linkage_record: u32,
+        /// Byte offset of `linkage_record`.
+        linkage_record_offset: u64,
+        /// Auxiliary indexed record carried by the snapshot linkage tail.
+        auxiliary_record: u32,
+        /// Byte offset of `auxiliary_record`.
+        auxiliary_record_offset: u64,
+    },
+}
+
+impl DesignBaseFeatureConstruction {
+    /// Return the body suffixes in source order for any Base Feature form.
+    pub(crate) fn body_entity_suffixes(&self) -> &[u64] {
+        match self {
+            Self::ResultBodies {
+                body_entity_suffixes,
+                ..
+            }
+            | Self::BodySnapshot {
+                body_entity_suffixes,
+                ..
+            } => body_entity_suffixes,
+        }
+    }
+
+    /// Return passive body-reference records for forms that carry them.
+    pub(crate) fn body_reference_records(&self) -> &[u32] {
+        match self {
+            Self::ResultBodies {
+                body_reference_records,
+                ..
+            } => body_reference_records,
+            Self::BodySnapshot { .. } => &[],
+        }
+    }
 }
 
 /// Sketch-profile selection frame named by an Extrude scope.

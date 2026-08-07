@@ -2172,7 +2172,7 @@ pub(crate) fn bind_scope_histories(
         };
         let mut referenced_histories =
             construction
-                .body_reference_records
+                .body_reference_records()
                 .iter()
                 .filter_map(|suffix| {
                     let mut bindings = body_bindings.iter().filter(|binding| {

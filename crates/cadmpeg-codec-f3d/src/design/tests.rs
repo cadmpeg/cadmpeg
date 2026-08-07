@@ -111,22 +111,22 @@ use crate::ids::{
 use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyRecipeOperand,
-    DesignBodyRecipeOperandOwner, DesignBodyRecipeReference, DesignCircularPatternConstruction,
-    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignCombineOperation,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
-    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
-    DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand, DesignFaceRecipeNode,
-    DesignFaceRecipeStructure, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
-    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignScaleOperation,
-    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
+    DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCombineOperation, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
+    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletParameters, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
+    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
     DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
@@ -20311,11 +20311,29 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     };
     let construction = exact_base_feature_construction(&bytes, &scope)
         .expect("generated Base Feature frame is canonical");
-    assert_eq!(construction.body_entity_suffixes, [101, 202]);
-    assert_eq!(construction.body_reference_records, [301, 302]);
-    assert_eq!(construction.metadata_record, 401);
-    assert_eq!(construction.result_records, [501, 502]);
-    assert_eq!(construction.body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        body_reference_records,
+        metadata_record,
+        result_records,
+        body_entity_fields,
+        ..
+    } = &construction
+    else {
+        panic!("parallel Base Feature frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, &[101, 202]);
+    assert_eq!(body_reference_records, &[301, 302]);
+    assert_eq!(*metadata_record, 401);
+    assert_eq!(result_records, &[501, 502]);
+    assert_eq!(body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
+    let serialized = serde_json::to_value(&construction).expect("serialize legacy form");
+    assert!(serialized.get("form").is_none());
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize legacy form"),
+        construction
+    );
 
     let mut expanded_bytes = Vec::new();
     expanded_bytes.extend_from_slice(&bytes[..84]);
@@ -20334,9 +20352,18 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     expanded_scope.paired_byte_offset = 366;
     let expanded = exact_base_feature_construction(&expanded_bytes, &expanded_scope)
         .expect("expanded Base Feature frame is canonical");
-    assert_eq!(expanded.body_entity_suffixes, [101, 202]);
-    assert_eq!(expanded.result_records, [501, 502]);
-    assert_eq!(expanded.metadata_field, [0, 0]);
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        result_records,
+        metadata_field,
+        ..
+    } = &expanded
+    else {
+        panic!("expanded Base Feature frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, &[101, 202]);
+    assert_eq!(result_records, &[501, 502]);
+    assert_eq!(metadata_field, &[0, 0]);
 
     let mut legacy_compact_bytes = expanded_bytes.clone();
     legacy_compact_bytes[90] = 1;
@@ -20348,15 +20375,144 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     let legacy_compact =
         exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope)
             .expect("legacy compact Base Feature frame is canonical");
-    assert_eq!(legacy_compact.body_entity_suffixes, [101, 202]);
-    assert_eq!(legacy_compact.body_reference_records, [301, 302]);
-    assert_eq!(legacy_compact.result_records, [501, 502]);
-    assert_eq!(legacy_compact.metadata_field, [0, 0]);
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        body_reference_records,
+        result_records,
+        metadata_field,
+        ..
+    } = &legacy_compact
+    else {
+        panic!("legacy compact Base Feature frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, &[101, 202]);
+    assert_eq!(body_reference_records, &[301, 302]);
+    assert_eq!(result_records, &[501, 502]);
+    assert_eq!(metadata_field, &[0, 0]);
 
     legacy_compact_bytes[96..100].copy_from_slice(&301u32.to_le_bytes());
     assert!(
         exact_base_feature_construction(&legacy_compact_bytes, &legacy_compact_scope).is_none()
     );
+
+    let mut snapshot_bytes = vec![0u8; 485];
+    snapshot_bytes[19] = 1;
+    snapshot_bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    let mut cursor = 24;
+    for (value, field) in [(101u64, [1u8, 2, 3, 4, 5, 6]), (202, [6u8, 5, 4, 3, 2, 1])] {
+        snapshot_bytes[cursor] = 1;
+        snapshot_bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        snapshot_bytes[cursor + 9..cursor + 15].copy_from_slice(&field);
+        cursor += 15;
+    }
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
+    snapshot_bytes[cursor + 4..cursor + 8].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 8;
+    let related_guids = [
+        "11111111-2222-3333-4444-555555555555",
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+    ];
+    for guid in related_guids {
+        let encoded = crate::bytes::lp_utf16_bytes(guid);
+        snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
+        cursor += encoded.len();
+    }
+    snapshot_bytes[cursor..cursor + 7].copy_from_slice(&[0, 0, 1, 1, 0, 0, 0]);
+    cursor += 7;
+    snapshot_bytes[cursor] = 1;
+    cursor += 1;
+    snapshot_bytes[cursor..cursor + 8].copy_from_slice(&101u64.to_le_bytes());
+    cursor += 8;
+    cursor += 3;
+    snapshot_bytes[cursor] = 1;
+    cursor += 1;
+    snapshot_bytes[cursor..cursor + 8].copy_from_slice(&301u64.to_le_bytes());
+    cursor += 8;
+    cursor += 6;
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 4;
+    snapshot_bytes[cursor] = 1;
+    cursor += 1;
+    snapshot_bytes[cursor..cursor + 8].copy_from_slice(&401u64.to_le_bytes());
+    cursor += 8;
+    cursor += 6;
+    cursor += 4;
+    let third_guid = "00000000-0000-0000-0000-000000000000";
+    let encoded = crate::bytes::lp_utf16_bytes(third_guid);
+    snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
+    cursor += encoded.len();
+    cursor += 3;
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 4;
+    snapshot_bytes[cursor] = 1;
+    cursor += 1;
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&301u32.to_le_bytes());
+    cursor += 4;
+    cursor += 6;
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
+    cursor += 4;
+    let encoded = crate::bytes::lp_utf16_bytes("Base Feature");
+    snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
+    cursor += encoded.len();
+    snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 4;
+    assert_eq!(cursor, 401);
+
+    let mut snapshot_scope = scope;
+    snapshot_scope.class_tag = "314".into();
+    snapshot_scope.frame_length = 485;
+    snapshot_scope.kind_offset = 373;
+    snapshot_scope.feature_ordinal_offset = 397;
+    snapshot_scope.history_state_id = Some(7);
+    snapshot_scope.history_state_id_offset = 365;
+    snapshot_scope.previous_history_state_id = None;
+    snapshot_scope.previous_history_state_id_offset = 0;
+    snapshot_scope.reference_count_offset = 350;
+    snapshot_scope.reference_members = vec![301];
+    snapshot_scope.reference_member_offsets = vec![355];
+    snapshot_scope.paired_class_tag = "259".into();
+    snapshot_scope.paired_byte_offset = 485;
+    let construction = exact_base_feature_construction(&snapshot_bytes, &snapshot_scope)
+        .expect("body-snapshot Base Feature frame is canonical");
+    let serialized = serde_json::to_value(&construction).expect("serialize snapshot form");
+    assert!(serialized.get("form").is_none());
+    assert_eq!(
+        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
+            .expect("deserialize snapshot form"),
+        construction
+    );
+    let DesignBaseFeatureConstruction::BodySnapshot {
+        body_entity_suffixes,
+        body_entity_fields,
+        related_guids: decoded_guids,
+        related_guid_offsets,
+        linkage_record,
+        linkage_record_offset,
+        auxiliary_record,
+        auxiliary_record_offset,
+        ..
+    } = construction
+    else {
+        panic!("body-snapshot Base Feature frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, [101, 202]);
+    assert_eq!(body_entity_fields[0], [1, 2, 3, 4, 5, 6]);
+    assert_eq!(
+        decoded_guids,
+        [
+            related_guids[0].to_owned(),
+            related_guids[1].to_owned(),
+            third_guid.to_owned()
+        ]
+    );
+    assert_eq!(related_guid_offsets, [66, 142, 275]);
+    assert_eq!(linkage_record, 301);
+    assert_eq!(linkage_record_offset, 234);
+    assert_eq!(auxiliary_record, 401);
+    assert_eq!(auxiliary_record_offset, 253);
+    let mut invalid_scope = snapshot_scope;
+    invalid_scope.reference_members = vec![302];
+    assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
 #[test]

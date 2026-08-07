@@ -150,6 +150,249 @@ source = "spec"
 anchor = "byte 25 is `0x01`"
 
 [[record]]
+name = "base_feature_body_snapshot_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The class-314 primary paired with class-259 stores a body-snapshot form."
+size = 24
+note = "Offsets are relative to the primary indexed header. The repeated body-entry run begins at offset 24 and has 15 bytes per body."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "At offsets 11 through 18 it stores eight zero bytes"
+
+[[record.field]]
+name = "body_count_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "then `u8 1` at offset 19"
+
+[[record.field]]
+name = "body_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "and u32 `N` at offset 20"
+
+[[record]]
+name = "base_feature_body_snapshot_body_entry"
+kind = "byte"
+section = "3.1"
+anchor = "Each body entry at offset `24 + 15i` is `u8 1 + u64 body entity suffix + six-byte field`."
+size = 15
+note = "This layout repeats once for each body, with the entry base at primary-scope offset `24 + 15i`."
+
+[[record.field]]
+name = "body_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`u8 1 + u64 body entity suffix + six-byte field`"
+
+[[record.field]]
+name = "body_entity_suffix"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "`u8 1 + u64 body entity suffix + six-byte field`"
+
+[[record.field]]
+name = "body_entity_field"
+offset = 9
+type = "bytes[6]"
+source = "spec"
+anchor = "`u8 1 + u64 body entity suffix + six-byte field`"
+
+[[record]]
+name = "base_feature_body_snapshot_linkage_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The linkage tail at `A` stores two zero bytes, `01 01 00 00 00`, a marked first-body suffix"
+size = 57
+note = "Offsets are relative to `A = 184 + 15N`, immediately after the two initial GUIDs. The third GUID starts at offset 57."
+
+[[record.field]]
+name = "zero_run_2"
+offset = 0
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "envelope_prefix"
+offset = 2
+type = "bytes[5]"
+source = "spec"
+anchor = "`01 01 00 00 00`"
+
+[[record.field]]
+name = "first_body_marker"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "a marked first-body suffix at offsets `A + 7` and `A + 8`"
+
+[[record.field]]
+name = "first_body_entity_suffix"
+offset = 8
+type = "u64"
+source = "spec"
+anchor = "a marked first-body suffix at offsets `A + 7` and `A + 8`"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 16
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "linkage_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a marked linkage record at `A + 19` and `A + 20`"
+
+[[record.field]]
+name = "linkage_record"
+offset = 20
+type = "u64"
+source = "spec"
+anchor = "a marked linkage record at `A + 19` and `A + 20`"
+
+[[record.field]]
+name = "zero_run_6"
+offset = 28
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "relation_count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at `A + 34`"
+
+[[record.field]]
+name = "auxiliary_marker"
+offset = 38
+type = "u8"
+source = "spec"
+anchor = "a marked auxiliary record at `A + 38` and `A + 39`"
+
+[[record.field]]
+name = "auxiliary_record"
+offset = 39
+type = "u64"
+source = "spec"
+anchor = "a marked auxiliary record at `A + 38` and `A + 39`"
+
+[[record.field]]
+name = "trailing_zero_run_6"
+offset = 47
+type = "bytes[6]"
+source = "spec"
+anchor = "six zero bytes"
+
+[[record.field]]
+name = "trailing_zero_run_4"
+offset = 53
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes"
+
+[[record]]
+name = "base_feature_body_snapshot_guid"
+kind = "byte"
+section = "3.1"
+anchor = "two consecutive LP-UTF16 GUIDs of 36 code units"
+size = 76
+note = "Each GUID occupies a u32 code-unit count followed by 72 UTF-16LE payload bytes. The layout repeats for the two initial GUIDs and the third GUID after the linkage tail."
+
+[[record.field]]
+name = "code_unit_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "LP-UTF16 GUIDs of 36 code units"
+
+[[record.field]]
+name = "guid_utf16"
+offset = 4
+type = "bytes[72]"
+source = "spec"
+anchor = "LP-UTF16 GUIDs of 36 code units"
+
+[[record]]
+name = "base_feature_body_snapshot_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The generic scope suffix stores three zero bytes, the one-member reference table at `T + 3`"
+size = 26
+note = "Offsets are relative to `T = A + 133`, after the third GUID. The LP-UTF16 kind payload follows this prefix at offset 26."
+
+[[record.field]]
+name = "zero_run_3"
+offset = 0
+type = "bytes[3]"
+source = "spec"
+anchor = "stores three zero bytes"
+
+[[record.field]]
+name = "reference_count"
+offset = 3
+type = "u32"
+source = "spec"
+anchor = "the one-member reference table at `T + 3`"
+
+[[record.field]]
+name = "reference_marker"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "the one-member reference table at `T + 3`"
+
+[[record.field]]
+name = "reference_member"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the reference value is at `T + 8`"
+
+[[record.field]]
+name = "reference_zero_run"
+offset = 12
+type = "bytes[6]"
+source = "spec"
+anchor = "the one-member reference table at `T + 3`"
+
+[[record.field]]
+name = "history_state_id"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "the current history-state identity at `T + 18`"
+
+[[record.field]]
+name = "kind_code_unit_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "the LP-UTF16 scope kind at `T + 22`"
+
+[[record]]
 name = "form_compact_one_cage_list"
 kind = "byte"
 section = "1.1.1"

@@ -59,6 +59,80 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
+## `base_feature_body_snapshot_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the primary indexed header. The repeated body-entry run begins at offset 24 and has 15 bytes per body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | At offsets 11 through 18 it stores eight zero bytes |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | then `u8 1` at offset 19 |
+| 20 | 4 | `body_count` | `u32` | little | spec | and u32 `N` at offset 20 |
+
+## `base_feature_body_snapshot_body_entry`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+This layout repeats once for each body, with the entry base at primary-scope offset `24 + 15i`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `body_marker` | `u8` | little | spec | `u8 1 + u64 body entity suffix + six-byte field` |
+| 1 | 8 | `body_entity_suffix` | `u64` | little | spec | `u8 1 + u64 body entity suffix + six-byte field` |
+| 9 | 6 | `body_entity_field` | `bytes[6]` | little | spec | `u8 1 + u64 body entity suffix + six-byte field` |
+
+## `base_feature_body_snapshot_linkage_tail`
+
+Spec §3.1 · layout: byte offsets · size: 57 B
+
+Offsets are relative to `A = 184 + 15N`, immediately after the two initial GUIDs. The third GUID starts at offset 57.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
+| 2 | 5 | `envelope_prefix` | `bytes[5]` | little | spec | `01 01 00 00 00` |
+| 7 | 1 | `first_body_marker` | `u8` | little | spec | a marked first-body suffix at offsets `A + 7` and `A + 8` |
+| 8 | 8 | `first_body_entity_suffix` | `u64` | little | spec | a marked first-body suffix at offsets `A + 7` and `A + 8` |
+| 16 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes |
+| 19 | 1 | `linkage_marker` | `u8` | little | spec | a marked linkage record at `A + 19` and `A + 20` |
+| 20 | 8 | `linkage_record` | `u64` | little | spec | a marked linkage record at `A + 19` and `A + 20` |
+| 28 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
+| 34 | 4 | `relation_count` | `u32` | little | spec | u32 `1` at `A + 34` |
+| 38 | 1 | `auxiliary_marker` | `u8` | little | spec | a marked auxiliary record at `A + 38` and `A + 39` |
+| 39 | 8 | `auxiliary_record` | `u64` | little | spec | a marked auxiliary record at `A + 38` and `A + 39` |
+| 47 | 6 | `trailing_zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
+| 53 | 4 | `trailing_zero_run_4` | `bytes[4]` | little | spec | four zero bytes |
+
+## `base_feature_body_snapshot_guid`
+
+Spec §3.1 · layout: byte offsets · size: 76 B
+
+Each GUID occupies a u32 code-unit count followed by 72 UTF-16LE payload bytes. The layout repeats for the two initial GUIDs and the third GUID after the linkage tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `code_unit_count` | `u32` | little | spec | LP-UTF16 GUIDs of 36 code units |
+| 4 | 72 | `guid_utf16` | `bytes[72]` | little | spec | LP-UTF16 GUIDs of 36 code units |
+
+## `base_feature_body_snapshot_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to `T = A + 133`, after the third GUID. The LP-UTF16 kind payload follows this prefix at offset 26.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 3 | `zero_run_3` | `bytes[3]` | little | spec | stores three zero bytes |
+| 3 | 4 | `reference_count` | `u32` | little | spec | the one-member reference table at `T + 3` |
+| 7 | 1 | `reference_marker` | `u8` | little | spec | the one-member reference table at `T + 3` |
+| 8 | 4 | `reference_member` | `u32` | little | spec | the reference value is at `T + 8` |
+| 12 | 6 | `reference_zero_run` | `bytes[6]` | little | spec | the one-member reference table at `T + 3` |
+| 18 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity at `T + 18` |
+| 22 | 4 | `kind_code_unit_count` | `u32` | little | spec | the LP-UTF16 scope kind at `T + 22` |
+
 ## `form_compact_one_cage_list`
 
 Spec §1.1.1 · layout: byte offsets · size: 100 B
