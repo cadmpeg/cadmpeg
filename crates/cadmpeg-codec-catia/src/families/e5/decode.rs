@@ -485,13 +485,20 @@ pub(crate) fn solve_e5_plane_frame(
 pub(crate) fn e5_native_uv_endpoints(
     pcurve: &crate::families::e5::graph::E5Pcurve,
 ) -> Option<[[f64; 2]; 2]> {
+    let finite = |endpoints: [[f64; 2]; 2]| {
+        endpoints
+            .into_iter()
+            .flatten()
+            .all(f64::is_finite)
+            .then_some(endpoints)
+    };
     match pcurve {
         crate::families::e5::graph::E5Pcurve::Line {
             origin,
             direction,
             range,
             ..
-        } => Some(range.map(|parameter| {
+        } => finite(range.map(|parameter| {
             [
                 origin[0] + parameter * direction[0],
                 origin[1] + parameter * direction[1],
@@ -502,7 +509,7 @@ pub(crate) fn e5_native_uv_endpoints(
             radius,
             range,
             ..
-        } => Some(range.map(|parameter| {
+        } => finite(range.map(|parameter| {
             let angle = parameter / radius;
             [
                 center[0] + radius * angle.cos(),
@@ -510,7 +517,7 @@ pub(crate) fn e5_native_uv_endpoints(
             ]
         })),
         crate::families::e5::graph::E5Pcurve::Jet { points, .. } => {
-            Some([*points.first()?, *points.last()?])
+            finite([*points.first()?, *points.last()?])
         }
     }
 }
@@ -2102,8 +2109,8 @@ pub(crate) fn e5_ownership_plan(
 mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
-        e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
-        e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
+        e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_context,
+        e5_ownership_plan, e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
         fit_rank_one_e5_plane_axes, parameter_ranges_reversed, solve_e5_plane_frame,
     };
 
@@ -2116,6 +2123,39 @@ mod route_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use std::collections::BTreeMap;
+
+    #[test]
+    fn e5_native_uv_endpoints_reject_nonfinite_results() {
+        let line = E5Pcurve::Line {
+            surface: 0,
+            origin: [f64::MAX, 0.0],
+            direction: [f64::MAX, 0.0],
+            range: [1.0, 2.0],
+        };
+        assert!(e5_native_uv_endpoints(&line).is_none());
+
+        let circle = E5Pcurve::Circle {
+            surface: 0,
+            center: [f64::MAX, 0.0],
+            codes: [0, 0],
+            radius: f64::MAX,
+            range: [0.0, 1.0],
+            tail: [0.0, 0.0],
+        };
+        assert!(e5_native_uv_endpoints(&circle).is_none());
+
+        let jet = E5Pcurve::Jet {
+            surface: 0,
+            degree: 5,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![6, 6],
+            points: vec![[0.0, 0.0], [f64::INFINITY, 0.0]],
+            first_derivatives: Vec::new(),
+            second_derivatives: Vec::new(),
+            range: [0.0, 1.0],
+        };
+        assert!(e5_native_uv_endpoints(&jet).is_none());
+    }
 
     #[test]
     fn e5_plane_frame_solver_has_no_boundary_segment_cutoff() {
