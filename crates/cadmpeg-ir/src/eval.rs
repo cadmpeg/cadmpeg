@@ -2112,6 +2112,34 @@ fn surface_second_partials_inner(
     }
 }
 
+fn construction_parameter(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    parameter: f64,
+    surface_interval: Option<&[f64; 2]>,
+) -> Option<f64> {
+    let curve = index.curves(&directrix.0)?;
+    if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
+        return Some(parameter);
+    }
+    let Some(surface_interval) = surface_interval else {
+        return Some(parameter);
+    };
+    let edge = index
+        .ir()
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(directrix))?;
+    let [curve_start, curve_end] = edge.param_range?;
+    let surface_width = surface_interval[1] - surface_interval[0];
+    if !surface_width.is_finite() || surface_width == 0.0 {
+        return None;
+    }
+    let fraction = (parameter - surface_interval[0]) / surface_width;
+    Some(curve_start + fraction * (curve_end - curve_start))
+}
+
 /// Evaluate an exact construction before its solved cache. In particular, a
 /// rational-quadratic revolution cache represents the circle exactly but does
 /// not preserve the native linear angular parameterization.
@@ -2137,7 +2165,9 @@ fn procedural_surface_point(
             }) {
                 return None;
             }
-            model_curve_point_by_id(index, directrix, u)
+            let parameter =
+                construction_parameter(index, directrix, u, parameter_interval.as_ref())?;
+            model_curve_point_by_id(index, directrix, parameter)
                 .map(|point| offset(point, &[(v, *direction)]))
         }
         ProceduralSurfaceDefinition::Revolution {
@@ -2170,6 +2200,12 @@ fn procedural_surface_point(
                 axis_direction.y / axis_length,
                 axis_direction.z / axis_length,
             );
+            let directrix_parameter = construction_parameter(
+                index,
+                directrix,
+                directrix_parameter,
+                parameter_interval.as_ref(),
+            )?;
             let point = model_curve_point_by_id(index, directrix, directrix_parameter)?;
             let delta = Vector3::new(
                 point.x - axis_origin.x,
