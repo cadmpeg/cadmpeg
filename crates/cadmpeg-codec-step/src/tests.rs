@@ -7240,6 +7240,43 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn presentation_reader_resolves_complex_datum_reference_inheritance() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=DATUM('',$,#5,.F.,'A');
+#8=DATUM_SYSTEM('system','',#5,.F.,(#20));
+#20=(DATUM_REFERENCE_COMPARTMENT() GENERAL_DATUM_REFERENCE(COMMON_DATUM_LIST((#21)),(#22)) SHAPE_ASPECT('','',#5,.F.));
+#21=(DATUM_REFERENCE_ELEMENT() GENERAL_DATUM_REFERENCE(#7,()) SHAPE_ASPECT('','',#5,.F.));
+#22=DATUM_REFERENCE_MODIFIER_WITH_VALUE(.DISTANCE.,#23);
+#23=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let system = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("system"))
+        .expect("complex datum system");
+    assert!(matches!(
+        &system.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1
+                && references[0].datum.as_str() == "step:presentation:pmi#7"
+                && references[0].common_group.is_none()
+                && references[0].modifiers == ["distance:0.2"]
+    ));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| { !loss.message.contains("DATUM_REFERENCE_COMPARTMENT #20") }));
+}
+
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();

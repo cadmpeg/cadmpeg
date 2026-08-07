@@ -660,21 +660,19 @@ fn datum_references(
     let Some(compartment) = exchange.records.get(&compartment_id) else {
         return Vec::new();
     };
-    if !matches!(
-        compartment.simple_name(),
-        Some("DATUM_REFERENCE_COMPARTMENT" | "DATUM_REFERENCE_ELEMENT")
-    ) {
+    if !is_datum_reference_partial(compartment, "DATUM_REFERENCE_COMPARTMENT")
+        && !is_datum_reference_partial(compartment, "DATUM_REFERENCE_ELEMENT")
+    {
         return Vec::new();
     }
     typed.insert(compartment_id);
-    let compartment_modifiers = compartment
-        .parameter(5)
+    let compartment_modifiers = datum_modifiers(compartment)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
         .filter_map(|modifier| modifier_text(modifier, exchange, typed, measurements))
         .collect::<Vec<_>>();
-    let base = compartment.parameter(4);
+    let base = datum_base(compartment);
     if is_common_datum_list(base) {
         let Some(Value::Typed(_, members)) = base else {
             return Vec::new();
@@ -690,17 +688,16 @@ fn datum_references(
             .into_iter()
             .filter_map(|element_id| {
                 let element = exchange.records.get(&element_id)?;
-                if element.simple_name() != Some("DATUM_REFERENCE_ELEMENT") {
+                if !is_datum_reference_partial(element, "DATUM_REFERENCE_ELEMENT") {
                     return None;
                 }
-                let datum = element.parameter(4).and_then(ValueExt::reference)?;
+                let datum = datum_base(element).and_then(ValueExt::reference)?;
                 if !annotations.contains_key(&datum) {
                     return None;
                 }
                 let mut modifiers = compartment_modifiers.clone();
                 modifiers.extend(
-                    element
-                        .parameter(5)
+                    datum_modifiers(element)
                         .and_then(ValueExt::list)
                         .into_iter()
                         .flatten()
@@ -733,6 +730,28 @@ fn datum_references(
         .collect()
 }
 
+fn is_datum_reference_partial(record: &RawRecord, name: &str) -> bool {
+    record.partials.iter().any(|partial| partial.name == name)
+}
+
+fn datum_base(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+        .and_then(|partial| partial.parameters.first())
+        .or_else(|| record.parameter(4))
+}
+
+fn datum_modifiers(record: &RawRecord) -> Option<&Value> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "GENERAL_DATUM_REFERENCE")
+        .and_then(|partial| partial.parameters.get(1))
+        .or_else(|| record.parameter(5))
+}
+
 fn is_common_datum_list(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
 }
@@ -759,12 +778,15 @@ fn modifier_text(
         Value::Typed(_, value) => modifier_text(value, exchange, typed, measurements),
         Value::Reference(id) => {
             let record = exchange.records.get(id)?;
-            if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
-                return None;
-            }
+            let parameters = record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "DATUM_REFERENCE_MODIFIER_WITH_VALUE")?
+                .parameters
+                .as_slice();
             typed.insert(*id);
-            let kind = record.parameter(0)?.enumeration()?.to_ascii_lowercase();
-            let measure_id = record.parameter(1)?.reference()?;
+            let kind = parameters.first()?.enumeration()?.to_ascii_lowercase();
+            let measure_id = parameters.get(1)?.reference()?;
             let value = measure(&Value::Reference(measure_id), exchange, measurements)?.value;
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
