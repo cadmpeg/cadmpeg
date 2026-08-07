@@ -3997,7 +3997,8 @@ fn encode_nurbs(
         None => vec![1.0; control_count],
     };
     let polynomial = nurbs.weights.is_none();
-    let planar = nurbs_control_polygon_is_planar(&nurbs.control_points);
+    let plane_normal = nurbs_plane_normal(&nurbs.control_points);
+    let planar = plane_normal.is_some();
     let closed = nurbs_is_closed(nurbs, &weights, domain);
     let k = control_count - 1;
     let mut parameters = format!(
@@ -4026,6 +4027,12 @@ fn encode_nurbs(
     parameters.push_str(&number(range[0]));
     parameters.push(',');
     parameters.push_str(&number(range[1]));
+    if let Some(normal) = plane_normal {
+        for value in [normal.x, normal.y, normal.z] {
+            parameters.push(',');
+            parameters.push_str(&number(value));
+        }
+    }
     parameters.push(';');
     let status = if label == "PCURVE" {
         "00010500"
@@ -4042,16 +4049,16 @@ fn encode_nurbs(
     })
 }
 
-fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
+fn nurbs_plane_normal(points: &[Point3]) -> Option<Vector3> {
     let Some(origin) = points.first().copied() else {
-        return true;
+        return Some(Vector3::new(0.0, 0.0, 1.0));
     };
     let distances = points
         .iter()
         .map(|point| point.distance(origin))
         .collect::<Vec<_>>();
     if distances.iter().any(|distance| !distance.is_finite()) {
-        return false;
+        return None;
     }
     let scale = distances.into_iter().fold(1.0, f64::max);
     let tolerance = 1.0e-10 * scale;
@@ -4060,7 +4067,7 @@ fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
         let direction = point.vector_from(origin);
         let length = direction.norm();
         if !length.is_finite() {
-            return false;
+            return None;
         }
         if length > tolerance {
             first_direction = Some(direction);
@@ -4068,7 +4075,7 @@ fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
         }
     }
     let Some(first_direction) = first_direction else {
-        return true;
+        return Some(Vector3::new(0.0, 0.0, 1.0));
     };
     let normal_threshold = 1.0e-12 * scale * first_direction.norm();
     let mut normal = None;
@@ -4076,7 +4083,7 @@ fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
         let candidate = first_direction.cross(point.vector_from(origin));
         let length = candidate.norm();
         if !length.is_finite() {
-            return false;
+            return None;
         }
         if length > normal_threshold {
             normal = Some(candidate);
@@ -4084,16 +4091,30 @@ fn nurbs_control_polygon_is_planar(points: &[Point3]) -> bool {
         }
     }
     let Some(normal) = normal else {
-        return true;
+        let axes = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ];
+        let reference = axes.into_iter().min_by(|left, right| {
+            first_direction
+                .dot(*left)
+                .abs()
+                .total_cmp(&first_direction.dot(*right).abs())
+        })?;
+        let normal = first_direction.cross(reference);
+        let length = normal.norm();
+        return (length.is_finite() && length > f64::EPSILON).then(|| normal.scale(1.0 / length));
     };
     let normal_length = normal.norm();
     if !normal_length.is_finite() || normal_length <= f64::EPSILON {
-        return false;
+        return None;
     }
     let unit_normal = normal.scale(1.0 / normal_length);
     points
         .iter()
         .all(|point| unit_normal.dot(point.vector_from(origin)).abs() <= tolerance)
+        .then_some(unit_normal)
 }
 
 fn nurbs_is_closed(nurbs: &NurbsCurve, weights: &[f64], domain: [f64; 2]) -> bool {

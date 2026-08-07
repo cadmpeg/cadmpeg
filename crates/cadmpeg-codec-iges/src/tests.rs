@@ -9908,6 +9908,16 @@ fn encode_nurbs_declares_actual_planarity_and_closedness() {
                 index + 1
             );
         }
+        if expected[0] == 1 {
+            let normal = parameters
+                .get(parameters.len().saturating_sub(3)..)
+                .unwrap_or_default()
+                .iter()
+                .map(|parameter| parameter["value"]["value"].as_f64())
+                .collect::<Option<Vec<_>>>()
+                .unwrap_or_else(|| panic!("{name}: missing Type 126 plane normal"));
+            assert_eq!(normal, vec![0.0, 0.0, 1.0], "{name}: Type 126 plane normal");
+        }
         assert!(
             decoded.report.losses.is_empty(),
             "{name}: {:?}",
