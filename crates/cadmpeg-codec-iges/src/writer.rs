@@ -3057,12 +3057,67 @@ fn reject_unsupported_native(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             )));
         }
     }
+    for record in native_entities.clone().filter(|record| {
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(116)
+            && record
+                .field("subordinate_status")
+                .and_then(|value| value.as_i64())
+                != Some(1)
+    }) {
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return Err(CodecError::Malformed(
+                "IGES native point entity has no directory sequence".into(),
+            ));
+        };
+        let point_id = format!("iges:model:point#D{sequence}");
+        if !ir
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.as_str() == point_id)
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer cannot preserve native point entity D{sequence} without neutral geometry"
+            )));
+        }
+    }
     let has_native_surface = native_entities.clone().any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),
             Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
         )
     });
+    for record in native_entities.clone().filter(|record| {
+        matches!(
+            record.field("entity_type").and_then(|value| value.as_i64()),
+            Some(108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198)
+        )
+    }) {
+        let Some(sequence) = record
+            .field("directory_sequence")
+            .and_then(|value| value.as_i64())
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            return Err(CodecError::Malformed(
+                "IGES native surface entity has no directory sequence".into(),
+            ));
+        };
+        let object_id = format!("D{sequence}");
+        if !ir.model.surfaces.iter().any(|surface| {
+            surface
+                .source_object
+                .as_ref()
+                .is_some_and(|source| source.format == "iges" && source.object_id == object_id)
+        }) {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer cannot preserve native surface entity D{sequence} without neutral geometry"
+            )));
+        }
+    }
     let has_native_topology = native_entities.any(|record| {
         matches!(
             record.field("entity_type").and_then(|value| value.as_i64()),

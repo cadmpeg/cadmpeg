@@ -8860,6 +8860,54 @@ fn encode_refuses_a_native_curve_without_neutral_geometry() {
 }
 
 #[test]
+fn encode_refuses_a_native_point_without_neutral_geometry() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir;
+    ir.model.points.clear();
+    ir.model.vertices.clear();
+    ir.model.bodies.clear();
+    ir.model.regions.clear();
+    ir.model.shells.clear();
+
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &ir,
+        fidelity: None,
+    }) else {
+        panic!("native point was silently omitted from semantic output")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("native point entity D1 without neutral geometry"),
+        "{error}"
+    );
+}
+
+#[test]
+fn encode_refuses_a_native_surface_without_neutral_geometry() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(plane_file()), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir;
+    ir.model.surfaces.clear();
+
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &ir,
+        fidelity: None,
+    }) else {
+        panic!("native surface was silently omitted from semantic output")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("native surface entity D1 without neutral geometry"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encode_regenerates_supported_analytic_and_spline_curves() {
     let fixtures = [
         ("circle", circular_arc_file()),
