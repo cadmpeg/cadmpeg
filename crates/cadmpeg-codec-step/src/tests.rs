@@ -212,7 +212,7 @@ fn parser_reports_recoverable_noncanonical_complex_partial_order() {
 
 #[test]
 fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
-    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=CARTESIAN_POINT((0.,1.,2.));#2=GEOMETRIC_REPRESENTATION_CONTEXT(3);#3=MAPPED_ITEM(#1,#2);#4=SEAM_EDGE($,$,#1,.T.,$);#5=SHAPE_REPRESENTATION((#1),$);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=CARTESIAN_POINT((0.,1.,2.));#2=GEOMETRIC_REPRESENTATION_CONTEXT(3);#3=MAPPED_ITEM(#1,#2);#4=SEAM_EDGE(*,*,#1,.T.,$);#5=SHAPE_REPRESENTATION((#1),$);#6=CLOSED_SHELL($,(#1));ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) =
         crate::parse::parse(source).expect("omitted geometry name is recoverable");
 
@@ -250,6 +250,13 @@ fn parser_recovers_omitted_geometry_name_without_shifting_context_fields() {
     assert_eq!(
         exchange.records[&5].partials[0].parameters[0],
         crate::parse::Value::String(Vec::new())
+    );
+    assert_eq!(
+        exchange.records[&6].partials[0].parameters,
+        vec![
+            crate::parse::Value::Omitted,
+            crate::parse::Value::List(vec![crate::parse::Value::Reference(1)]),
+        ]
     );
 }
 

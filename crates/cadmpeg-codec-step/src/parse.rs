@@ -428,7 +428,10 @@ fn has_named_carrier(name: &str) -> bool {
 
 fn omitted_entity_name(partial: &PartialRecord) -> bool {
     has_named_carrier(&partial.name)
-        && !matches!(partial.parameters.first(), Some(Value::String(_)))
+        && !matches!(
+            partial.parameters.first(),
+            Some(Value::String(_) | Value::Omitted)
+        )
 }
 
 impl Parser<'_> {
