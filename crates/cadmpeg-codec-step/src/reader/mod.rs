@@ -98,7 +98,15 @@ fn decode_exchange_mode(
             format: "step".into(),
             stream: String::new(),
             offset: diagnostic.offset as u64,
-            tag: Some("complex_entity".into()),
+            tag: Some(
+                match diagnostic.kind {
+                    crate::parse::ParseDiagnosticKind::ComplexPartialsNotAlphabetical => {
+                        "complex_entity"
+                    }
+                    crate::parse::ParseDiagnosticKind::OmittedEntityName => "entity_name",
+                }
+                .into(),
+            ),
         })
     }));
     if options.container_only {

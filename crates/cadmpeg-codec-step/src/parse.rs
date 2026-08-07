@@ -273,12 +273,14 @@ pub enum ParseError {
 pub enum ParseDiagnosticKind {
     /// Complex-entity partials are not in their canonical alphabetical order.
     ComplexPartialsNotAlphabetical,
+    /// A simple named carrier omits its inherited `name` value.
+    OmittedEntityName,
 }
 
 /// One attributable parser diagnostic that does not prevent recovery.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseDiagnostic {
-    /// Byte offset of the containing complex entity instance.
+    /// Byte offset of the containing source record.
     pub offset: usize,
     /// Stable diagnostic classification.
     pub kind: ParseDiagnosticKind,
@@ -295,6 +297,8 @@ pub fn parse(input: &[u8]) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseErro
         last_end: 0,
         depth: 0,
         diagnostics: Vec::new(),
+        omitted_entity_name_count: 0,
+        first_omitted_entity_name_offset: None,
     }
     .exchange()
 }
@@ -305,6 +309,126 @@ struct Parser<'a> {
     last_end: usize,
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
+    omitted_entity_name_count: usize,
+    first_omitted_entity_name_offset: Option<usize>,
+}
+
+/// Return whether a simple geometry, topology, or representation carrier
+/// carries the inherited representation-item or representation `name` before
+/// its entity-specific attributes.
+///
+/// The list is limited to carriers handled by the STEP reader. Context,
+/// representation-map, relationship, and shape-definition entities have
+/// different first attributes and must keep their positional layout.
+fn has_named_carrier(name: &str) -> bool {
+    matches!(
+        name,
+        "ANNOTATION_PLANE"
+            | "ADVANCED_FACE"
+            | "ADVANCED_BREP_REPRESENTATION"
+            | "ADVANCED_BREP_SHAPE_REPRESENTATION"
+            | "AXIS1_PLACEMENT"
+            | "AXIS2_PLACEMENT_2D"
+            | "AXIS2_PLACEMENT_3D"
+            | "BEZIER_CURVE"
+            | "BOUNDARY_CURVE"
+            | "BREP_WITH_VOIDS"
+            | "B_SPLINE_CURVE_WITH_KNOTS"
+            | "B_SPLINE_SURFACE_WITH_KNOTS"
+            | "CARTESIAN_POINT"
+            | "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
+            | "CARTESIAN_TRANSFORMATION_OPERATOR_3D"
+            | "CIRCLE"
+            | "CLOSED_SHELL"
+            | "COMPOSITE_CURVE"
+            | "CONNECTED_EDGE_SET"
+            | "CONNECTED_EDGE_SUB_SET"
+            | "CONNECTED_FACE_SET"
+            | "CONNECTED_FACE_SUB_SET"
+            | "CONICAL_SURFACE"
+            | "CYLINDRICAL_SURFACE"
+            | "CURVE_BOUNDED_SURFACE"
+            | "CURVE_REPLICA"
+            | "DEFINITIONAL_REPRESENTATION"
+            | "DEGENERATE_TOROIDAL_SURFACE"
+            | "DIRECTION"
+            | "DRAUGHTING_CALLOUT"
+            | "DRAUGHTING_MODEL"
+            | "EDGE_BASED_WIREFRAME_MODEL"
+            | "EDGE"
+            | "EDGE_CURVE"
+            | "EDGE_LOOP"
+            | "ELLIPSE"
+            | "ELLIPTICAL_SURFACE"
+            | "FACE_BASED_SURFACE_MODEL"
+            | "FACE_BOUND"
+            | "FACE_OUTER_BOUND"
+            | "FACE_SURFACE"
+            | "FACETED_BREP"
+            | "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION"
+            | "GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION"
+            | "GEOMETRIC_CURVE_SET"
+            | "GEOMETRIC_SET"
+            | "HYPERBOLA"
+            | "INTERSECTION_CURVE"
+            | "LINE"
+            | "LOOP"
+            | "MAPPED_ITEM"
+            | "MANIFOLD_SOLID_BREP"
+            | "MANIFOLD_SURFACE_SHAPE_REPRESENTATION"
+            | "MEASURE_REPRESENTATION_ITEM"
+            | "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
+            | "OFFSET_CURVE_2D"
+            | "OFFSET_CURVE_3D"
+            | "OFFSET_SURFACE"
+            | "OPEN_SHELL"
+            | "ORIENTED_CLOSED_SHELL"
+            | "ORIENTED_EDGE"
+            | "ORIENTED_FACE"
+            | "ORIENTED_OPEN_SHELL"
+            | "OUTER_BOUNDARY_CURVE"
+            | "PARABOLA"
+            | "PCURVE"
+            | "PLANE"
+            | "POLY_LOOP"
+            | "POLYLINE"
+            | "QUASI_UNIFORM_CURVE"
+            | "RECTANGULAR_TRIMMED_SURFACE"
+            | "REPRESENTATION"
+            | "SEAM_CURVE"
+            | "SEAM_EDGE"
+            | "SHELL_BASED_SURFACE_MODEL"
+            | "SHELL_BASED_WIREFRAME_MODEL"
+            | "SHELL"
+            | "SHAPE_DIMENSION_REPRESENTATION"
+            | "SHAPE_REPRESENTATION"
+            | "SPHERICAL_SURFACE"
+            | "SUBEDGE"
+            | "SUBFACE"
+            | "SURFACE_CURVE"
+            | "SURFACE_OF_LINEAR_EXTRUSION"
+            | "SURFACE_OF_REVOLUTION"
+            | "SURFACE_REPLICA"
+            | "TESSELLATED_FACE"
+            | "TESSELLATED_GEOMETRIC_SET"
+            | "TESSELLATED_SHELL"
+            | "TESSELLATED_SOLID"
+            | "TESSELLATED_SHAPE_REPRESENTATION"
+            | "TOROIDAL_SURFACE"
+            | "TRIMMED_CURVE"
+            | "UNIFORM_CURVE"
+            | "VECTOR"
+            | "VERTEX"
+            | "VERTEX_POINT"
+            | "VERTEX_LOOP"
+            | "VERTEX_SHELL"
+            | "WIRE_SHELL"
+    ) || (name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE"))
+}
+
+fn omitted_entity_name(partial: &PartialRecord) -> bool {
+    has_named_carrier(&partial.name)
+        && !matches!(partial.parameters.first(), Some(Value::String(_)))
 }
 
 impl Parser<'_> {
@@ -471,6 +595,16 @@ impl Parser<'_> {
                 return Self::err_at(record.span.start, "unresolved instance reference");
             }
         }
+        if let Some(offset) = self.first_omitted_entity_name_offset {
+            self.diagnostics.push(ParseDiagnostic {
+                offset,
+                kind: ParseDiagnosticKind::OmittedEntityName,
+                message: format!(
+                    "recovered {} simple named carrier instance(s) with an omitted leading name attribute by inserting an empty name",
+                    self.omitted_entity_name_count
+                ),
+            });
+        }
         Ok((
             Exchange {
                 header,
@@ -491,7 +625,7 @@ impl Parser<'_> {
             return self.err("expected instance name");
         };
         self.punct(&TokenKind::Equals)?;
-        let partials = if self.peek(&TokenKind::LParen) {
+        let mut partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
             let mut parts = Vec::new();
             while !self.peek(&TokenKind::RParen) {
@@ -531,6 +665,11 @@ impl Parser<'_> {
         } else {
             vec![self.partial()?]
         };
+        if partials.len() == 1 && omitted_entity_name(&partials[0]) {
+            partials[0].parameters.insert(0, Value::String(Vec::new()));
+            self.omitted_entity_name_count += 1;
+            self.first_omitted_entity_name_offset.get_or_insert(start);
+        }
         self.punct(&TokenKind::Semicolon)?;
         Ok(RawRecord {
             id,
