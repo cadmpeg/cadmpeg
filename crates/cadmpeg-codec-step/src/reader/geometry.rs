@@ -67,12 +67,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     }
 
     for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
-        match record.simple_name() {
+        match entity_type(record, &["CARTESIAN_POINT", "DIRECTION"]) {
             Some("CARTESIAN_POINT") => {
-                if let Some(position) = coordinates(record, 1, scale) {
+                if let Some(position) = named_coordinates(record, "CARTESIAN_POINT", 1, scale) {
                     points.insert(id, position);
                     typed.insert(id);
-                } else if let Some(position) = coordinates2(record, 1) {
+                } else if let Some(position) = named_coordinates2(record, "CARTESIAN_POINT", 1) {
                     points2.insert(id, position);
                     typed.insert(id);
                 } else {
@@ -80,10 +80,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 }
             }
             Some("DIRECTION") => {
-                if let Some(direction) = vector3(record.parameter(1), 1.0).and_then(normalize) {
+                if let Some(direction) =
+                    vector3(named_parameter(record, "DIRECTION", 1), 1.0).and_then(normalize)
+                {
                     directions.insert(id, direction);
                     typed.insert(id);
-                } else if let Some(direction) = vector2(record.parameter(1)).and_then(normalize2) {
+                } else if let Some(direction) =
+                    vector2(named_parameter(record, "DIRECTION", 1)).and_then(normalize2)
+                {
                     directions2.insert(id, direction);
                     typed.insert(id);
                 } else {
@@ -3241,8 +3245,8 @@ fn record_values(record: &RawRecord) -> impl Iterator<Item = &Value> {
         .flat_map(|partial| partial.parameters.iter())
 }
 
-fn coordinates(record: &RawRecord, index: usize, scale: f64) -> Option<Point3> {
-    let values = record.parameter(index)?.list()?;
+fn named_coordinates(record: &RawRecord, name: &str, index: usize, scale: f64) -> Option<Point3> {
+    let values = named_parameter(record, name, index)?.list()?;
     if values.len() != 3 {
         return None;
     }
@@ -3253,8 +3257,8 @@ fn coordinates(record: &RawRecord, index: usize, scale: f64) -> Option<Point3> {
     ))
 }
 
-fn coordinates2(record: &RawRecord, index: usize) -> Option<Point2> {
-    let values = record.parameter(index)?.list()?;
+fn named_coordinates2(record: &RawRecord, name: &str, index: usize) -> Option<Point2> {
+    let values = named_parameter(record, name, index)?.list()?;
     if values.len() != 2 {
         return None;
     }

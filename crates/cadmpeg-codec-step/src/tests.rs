@@ -3368,6 +3368,31 @@ fn complex_geometry_instances_decode_named_partials() {
 }
 
 #[test]
+fn complex_points_and_directions_decode_named_partials() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=(CARTESIAN_POINT('',(0.,0.,0.)) GEOMETRIC_REPRESENTATION_ITEM() POINT(''));",
+        )
+        .replace(
+            "#9=DIRECTION('',(0.,0.,1.));",
+            "#9=(DIRECTION('',(0.,0.,1.)) GEOMETRIC_REPRESENTATION_ITEM());",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex points and directions");
+
+    assert_eq!(decoded.ir.model.vertices.len(), 3);
+    assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+        surface.id.as_str() == "step:data:surface#28"
+            && matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     use cadmpeg_ir::topology::BodyKind;
 
