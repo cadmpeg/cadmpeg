@@ -28,6 +28,32 @@ fn a8_surface_parser_reads_common_form_nurbs() {
 }
 
 #[test]
+fn a8_surface_parser_rejects_unframed_trailing_bytes() {
+    let mut bytes = a8_surface_stream();
+    bytes.push(0);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    assert!(crate::families::a5a8::records::a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
+fn a8_surface_parser_accepts_a_closed_nested_b5_run() {
+    let a8 = a8_pcurve_stream();
+    let payload = &a8[11..];
+    let mut child = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
+    child.extend_from_slice(&0x9abcu32.to_le_bytes());
+    child.extend_from_slice(payload);
+
+    let mut bytes = a8_surface_stream();
+    bytes.extend_from_slice(&child);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    assert_eq!(crate::families::a5a8::records::a8_surfaces(&bytes).len(), 1);
+}
+
+#[test]
 fn a8_surface_parser_accepts_each_object_frame_flag() {
     for flag in [0x03, 0x13, 0x83] {
         let mut bytes = a8_surface_stream();

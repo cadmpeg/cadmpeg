@@ -155,6 +155,20 @@ fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
     })
 }
 
+fn closed_a8_child_run(data: &[u8], start: usize, end: usize) -> bool {
+    let mut at = start;
+    while at < end {
+        let Some(frame) = object_stream_frame(data, at) else {
+            return false;
+        };
+        if frame.family != 0xb5 || frame.end > end {
+            return false;
+        }
+        at = frame.end;
+    }
+    at == end
+}
+
 fn valid_a8_elided_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
     let Some(end) = at.checked_add(141) else {
         return false;
@@ -1322,7 +1336,7 @@ fn a8_surface_from_parsed(data: &[u8], parsed: ParsedA8SurfaceHeader) -> Option<
     } else {
         Vec::new()
     };
-    if pole_start > end {
+    if !closed_a8_child_run(data, pole_start, end) {
         return None;
     }
     Some(FreeformSurface {
