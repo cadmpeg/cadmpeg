@@ -230,8 +230,20 @@ pub(super) fn project(
                         .atan2(dot(delta, major_direction) / major_radius)
                         .rem_euclid(std::f64::consts::TAU)
                 };
-                let start_parameter = parameter(start);
-                let sweep = (parameter(end) - start_parameter).rem_euclid(std::f64::consts::TAU);
+                let raw_start_parameter = parameter(start);
+                let raw_end_parameter = parameter(end);
+                let mut sweep =
+                    (raw_end_parameter - raw_start_parameter).rem_euclid(std::f64::consts::TAU);
+                if sweep <= 1.0e-14 {
+                    sweep = std::f64::consts::TAU;
+                }
+                let start_parameter = if raw_start_parameter
+                    >= std::f64::consts::TAU - super::curve_conversion::ANGULAR_TOLERANCE
+                {
+                    0.0
+                } else {
+                    raw_start_parameter
+                };
                 (sweep > 0.0).then_some((
                     CurveGeometry::Ellipse {
                         center: plane_origin,

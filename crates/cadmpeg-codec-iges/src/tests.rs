@@ -1006,6 +1006,27 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
     }
 }
 
+#[test]
+fn decode_canonicalizes_ellipse_arc_seam_noise() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(
+                0,
+                b"104,0.25,0,1,0,0,-1,0,2,-0.0000000000001,0,1;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result.ir.model.edges[0].param_range.map(|range| range[0]),
+        Some(0.0)
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn nurbs_curve_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
