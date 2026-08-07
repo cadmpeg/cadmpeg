@@ -37,6 +37,10 @@ pub struct B2OffsetSupport {
     pub domain: [f64; 4],
 }
 
+fn valid_offset_domain([u0, v0, u1, v1]: [f64; 4]) -> bool {
+    [u0, v0, u1, v1].iter().all(|value| value.is_finite()) && u0 < u1 && v0 < v1
+}
+
 /// Parameter-space data stored in a `b2/b3/b4 03 18` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2ParameterPoint {
@@ -1511,12 +1515,15 @@ pub(crate) fn b2_construction_uses_from_records(
         if at + 41 != frame.end || !distance.is_finite() || fields.iter().any(|v| !v.is_finite()) {
             continue;
         }
+        let domain = (kind == 0x01)
+            .then_some([fields[0], fields[2], fields[1], fields[3]])
+            .filter(|domain| valid_offset_domain(*domain));
         out.push(B2ConstructionUse {
             pos,
             support_id,
             distance,
             kind,
-            domain: (kind == 0x01).then_some([fields[0], fields[2], fields[1], fields[3]]),
+            domain,
         });
     }
     out
@@ -2306,15 +2313,13 @@ pub(crate) fn b2_offset_supports_from_records(
                 _ => return None,
             };
             let values = read_f64_array::<5>(data, at)?;
-            values
-                .iter()
-                .all(|v| v.is_finite())
-                .then_some(B2OffsetSupport {
-                    pos: frame.pos,
-                    support_id,
-                    distance: values[0],
-                    domain: [values[1], values[2], values[3], values[4]],
-                })
+            let domain = [values[1], values[2], values[3], values[4]];
+            (values[0].is_finite() && valid_offset_domain(domain)).then_some(B2OffsetSupport {
+                pos: frame.pos,
+                support_id,
+                distance: values[0],
+                domain,
+            })
         })
         .collect::<Vec<_>>();
     offsets.extend(
@@ -2348,6 +2353,9 @@ pub fn offset_support_carriers(
     offsets
         .iter()
         .map(|offset| {
+            if !valid_offset_domain(offset.domain) {
+                return None;
+            }
             let [u0, v0, u1, v1] = offset.domain;
             let candidates = carriers
                 .iter()

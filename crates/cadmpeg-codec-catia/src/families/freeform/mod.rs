@@ -854,7 +854,12 @@ pub(crate) fn append_freeform_surface_pools(
                 revision_form: None,
             },
             cache_fit_tolerance: None,
-            record_bounds: None,
+            record_bounds: Some([
+                Some(offset.domain[0]),
+                Some(offset.domain[1]),
+                Some(offset.domain[2]),
+                Some(offset.domain[3]),
+            ]),
         });
     }
 
