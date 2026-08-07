@@ -1674,33 +1674,61 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
             .get(face.surface.as_str())
             .expect("validated face surface reference");
         let loops = face_loop_order(ir, face)?;
-        let outer = loops
-            .first()
-            .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
-        let inner = if outer.is_some() {
-            &loops[1..]
-        } else {
-            &loops[..]
-        };
-        let mut parameters = format!(
-            "144,{},{},{},{}",
-            reference_marker(surface_index),
-            i32::from(outer.is_some()),
-            inner.len(),
-            outer.map_or_else(
-                || "0".into(),
-                |loop_| reference_marker(boundary_indices[loop_.id.as_str()]),
+        let bounded = loops
+            .iter()
+            .all(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+        let mut parameters = if bounded {
+            let representation = loops
+                .first()
+                .and_then(|loop_| loop_.coedges.first())
+                .and_then(|coedge_id| {
+                    ir.model
+                        .coedges
+                        .iter()
+                        .find(|coedge| coedge.id == *coedge_id)
+                })
+                .map_or(0, |coedge| i32::from(!coedge.pcurves.is_empty()));
+            format!(
+                "143,{representation},{},{}",
+                reference_marker(surface_index),
+                loops.len()
             )
-        );
-        for loop_ in inner {
-            parameters.push(',');
-            parameters.push_str(&reference_marker(boundary_indices[loop_.id.as_str()]));
+        } else {
+            let outer = loops
+                .first()
+                .filter(|loop_| loop_.boundary_role == LoopBoundaryRole::Outer);
+            let inner = if outer.is_some() {
+                &loops[1..]
+            } else {
+                &loops[..]
+            };
+            let mut parameters = format!(
+                "144,{},{},{},{}",
+                reference_marker(surface_index),
+                i32::from(outer.is_some()),
+                inner.len(),
+                outer.map_or_else(
+                    || "0".into(),
+                    |loop_| reference_marker(boundary_indices[loop_.id.as_str()]),
+                )
+            );
+            for loop_ in inner {
+                parameters.push(',');
+                parameters.push_str(&reference_marker(boundary_indices[loop_.id.as_str()]));
+            }
+            parameters
+        };
+        if bounded {
+            for loop_ in &loops {
+                parameters.push(',');
+                parameters.push_str(&reference_marker(boundary_indices[loop_.id.as_str()]));
+            }
         }
         parameters.push(';');
         entities.push(Entity {
-            type_code: 144,
+            type_code: if bounded { 143 } else { 144 },
             form: 0,
-            label: "TRIMMED",
+            label: if bounded { "BOUNDED" } else { "TRIMMED" },
             status: "00000000",
             parameters: parameters.into_bytes(),
             transform: None,
@@ -2184,7 +2212,7 @@ fn boundary_entity(
         type_code: 141,
         form: 0,
         label: "BOUNDARY",
-        status: "00000000",
+        status: "00010000",
         parameters: parameters.into_bytes(),
         transform: None,
     })
@@ -2736,21 +2764,23 @@ fn surface_entities(
             normal,
             u_axis,
         } => {
-            ensure_finite_point(*origin, "plane origin")?;
-            let normal = unit(*normal, "plane normal")?;
-            let u_axis = unit(*u_axis, "plane u axis")?;
-            let projected = u_axis - normal.scale(normal.dot(u_axis));
-            let u_axis = unit(projected, "plane u axis")?;
-            let v_axis = normal.cross(u_axis);
-            let placement = placement(*origin, u_axis, v_axis, normal)?;
-            Ok(vec![Entity {
-                type_code: 108,
-                form: 0,
+            let (mut entities, location, axis, reference) =
+                pointer_surface_support(base_index, *origin, *normal, *u_axis)?;
+            entities.push(Entity {
+                type_code: 190,
+                form: 1,
                 label: "PLANE",
-                status: "00000000",
-                parameters: b"108,0,0,1,0,0;".to_vec(),
-                transform: Some(placement),
-            }])
+                status: "00010000",
+                parameters: format!(
+                    "190,{},{},{};",
+                    reference_marker(location),
+                    reference_marker(axis),
+                    reference_marker(reference)
+                )
+                .into_bytes(),
+                transform: None,
+            });
+            Ok(entities)
         }
         SurfaceGeometry::Nurbs(nurbs) => Ok(vec![encode_nurbs_surface(nurbs)?]),
         SurfaceGeometry::Cylinder {

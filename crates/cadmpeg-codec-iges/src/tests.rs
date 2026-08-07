@@ -8912,7 +8912,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == SurfaceId("iges:model:surface#D5".into()))
+        .find(|surface| surface.id == SurfaceId("iges:model:surface#D9".into()))
         .unwrap();
     let SurfaceGeometry::Plane {
         origin,
@@ -8936,7 +8936,7 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     let entities = &decoded.ir.native.namespace("iges").unwrap().arenas["entities"];
     assert!(entities.iter().any(|record| {
-        record.field("entity_type").and_then(|value| value.as_i64()) == Some(108)
+        record.field("entity_type").and_then(|value| value.as_i64()) == Some(190)
     }));
     assert!(entities.iter().any(|record| {
         record.field("entity_type").and_then(|value| value.as_i64()) == Some(128)
@@ -9361,12 +9361,45 @@ fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
         })
         .unwrap();
     let mut written = Vec::new();
-    plan.write_to(&mut written).unwrap();
+    let report = plan.write_to(&mut written).unwrap();
+    assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir.model.faces.len(), 1);
     assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(parametrically_bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert_eq!(round_trip.ir.model.pcurves.len(), 1);
     assert!(
         round_trip.report.losses.is_empty(),
         "{:#?}",
@@ -9400,6 +9433,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)
     );
+    assert_eq!(report.census.counts.get("190_pointer_plane"), Some(&4));
     assert_eq!(report.census.counts.get("502_vertex_list"), Some(&1));
     assert_eq!(report.census.counts.get("504_edge_list"), Some(&1));
     assert_eq!(report.census.counts.get("508_loop"), Some(&4));
