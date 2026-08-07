@@ -142,26 +142,24 @@ pub(super) fn decode(
     let usages = exchange
         .entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
-                return None;
-            }
+            let name =
+                named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1).and_then(|value| {
+                    decode_text(
+                        value,
+                        &mut losses,
+                        id,
+                        "assembly occurrence name",
+                        LossKind::MetadataNotTransferred,
+                    )
+                });
             Some((
                 id,
                 Usage {
-                    parent_definition: record.parameter(3)?.reference()?,
-                    child_definition: record.parameter(4)?.reference()?,
-                    name: record
-                        .parameter(1)
-                        .and_then(|value| {
-                            decode_text(
-                                value,
-                                &mut losses,
-                                id,
-                                "assembly occurrence name",
-                                LossKind::MetadataNotTransferred,
-                            )
-                        })
-                        .filter(|name| !name.is_empty()),
+                    parent_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+                        .and_then(ValueExt::reference)?,
+                    child_definition: named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 4)
+                        .and_then(ValueExt::reference)?,
+                    name: name.filter(|name| !name.is_empty()),
                 },
             ))
         })
@@ -330,22 +328,22 @@ pub(super) fn decode(
         "MAPPED_ITEM",
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
     ]) {
-        if matches!(
-            record.simple_name(),
-            Some(
-                "APPLICATION_CONTEXT"
-                    | "PRODUCT_CONTEXT"
-                    | "PRODUCT_DEFINITION_CONTEXT"
-                    | "PRODUCT_DEFINITION_SHAPE"
-                    | "SHAPE_DEFINITION_REPRESENTATION"
-                    | "ITEM_DEFINED_TRANSFORMATION"
-                    | "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION"
-                    | "REPRESENTATION_MAP"
-                    | "MAPPED_ITEM"
-            )
-        ) || record
-            .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
-            .is_some()
+        if [
+            "APPLICATION_CONTEXT",
+            "PRODUCT_CONTEXT",
+            "PRODUCT_DEFINITION_CONTEXT",
+            "PRODUCT_DEFINITION_SHAPE",
+            "SHAPE_DEFINITION_REPRESENTATION",
+            "ITEM_DEFINED_TRANSFORMATION",
+            "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
+            "REPRESENTATION_MAP",
+            "MAPPED_ITEM",
+        ]
+        .iter()
+        .any(|name| record.partial(name).is_some())
+            || record
+                .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
+                .is_some()
         {
             typed.insert(id);
         }
@@ -368,8 +366,11 @@ fn apply_body_placements(
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
-            (record.simple_name() == Some("PRODUCT_DEFINITION_SHAPE"))
-                .then_some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let definition_representations = definition_representations(exchange, &pds);
@@ -392,7 +393,7 @@ fn apply_body_placements(
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
     for (id, item) in exchange.entities("MAPPED_ITEM") {
-        if item.simple_name() != Some("MAPPED_ITEM") {
+        if item.partial("MAPPED_ITEM").is_none() {
             continue;
         }
         let Some((representation, origin, target)) = mapped_item_definition(item, exchange) else {
@@ -438,10 +439,11 @@ fn shape_bindings(
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
         .filter_map(|(id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION_SHAPE") {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::<u64, Vec<BodyId>>::new();
@@ -449,7 +451,7 @@ fn shape_bindings(
     for record in exchange
         .records
         .values()
-        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
+        .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
     {
         if let Some((product, bodies)) = shape_binding(
             record,
@@ -473,9 +475,13 @@ fn shape_binding(
     topology: &TopologyResult,
     representation_cache: &mut BTreeMap<u64, Vec<BodyId>>,
 ) -> Option<(u64, Vec<BodyId>)> {
-    let definition = *pds.get(&record.parameter(0)?.reference()?)?;
+    let definition = *pds.get(
+        &named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)?,
+    )?;
     let product = *definitions.get(&definition)?;
-    let representation = record.parameter(1)?.reference()?;
+    let representation = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+        .and_then(ValueExt::reference)?;
     let bodies = super::topology::representation_bodies(
         representation,
         exchange,
@@ -494,9 +500,14 @@ fn definition_representations(
     exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
         .filter_map(|(_, record)| {
-            let shape = record.parameter(0)?.reference()?;
+            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+                .and_then(ValueExt::reference)?;
             let definition = *pds.get(&shape)?;
-            Some((definition, record.parameter(1)?.reference()?))
+            Some((
+                definition,
+                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .fold(
             BTreeMap::<u64, BTreeSet<u64>>::new(),
@@ -517,10 +528,11 @@ fn occurrence_placements(
         .records
         .iter()
         .filter_map(|(&id, record)| {
-            if record.simple_name() != Some("PRODUCT_DEFINITION_SHAPE") {
-                return None;
-            }
-            Some((id, record.parameter(2)?.reference()?))
+            Some((
+                id,
+                named_parameter(record, "PRODUCT_DEFINITION_SHAPE", 2)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let mut result = BTreeMap::new();
@@ -535,11 +547,14 @@ fn occurrence_placements(
     let occurrence_representations = exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
         .filter_map(|(_, record)| {
-            let shape = record.parameter(0)?.reference()?;
+            let shape = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
+                .and_then(ValueExt::reference)?;
             let usage = *pds.get(&shape)?;
-            usages
-                .contains_key(&usage)
-                .then_some((usage, record.parameter(1)?.reference()?))
+            usages.contains_key(&usage).then_some((
+                usage,
+                named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
+                    .and_then(ValueExt::reference)?,
+            ))
         })
         .fold(
             BTreeMap::<u64, Vec<u64>>::new(),
@@ -564,17 +579,14 @@ fn occurrence_placements(
             let Some(record) = exchange.records.get(&representation) else {
                 continue;
             };
-            let Some(items) = record.parameter(1).and_then(ValueExt::list) else {
+            let Some(items) = representation_items(record) else {
                 continue;
             };
-            for item in items {
-                let Some(item_id) = item.reference() else {
-                    continue;
-                };
+            for item_id in items {
                 let Some(item) = exchange.records.get(&item_id) else {
                     continue;
                 };
-                if item.simple_name() != Some("MAPPED_ITEM") {
+                if item.partial("MAPPED_ITEM").is_none() {
                     continue;
                 }
                 let Some((mapped_representation, transform)) =
@@ -672,13 +684,13 @@ fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) ->
 }
 
 fn mapped_item_definition(item: &RawRecord, exchange: &Exchange) -> Option<(u64, u64, u64)> {
-    let map = item
-        .parameter(1)
+    let map = named_parameter(item, "MAPPED_ITEM", 1)
         .and_then(ValueExt::reference)
         .and_then(|map| exchange.records.get(&map))?;
-    let origin = map.parameter(0).and_then(ValueExt::reference)?;
-    let representation = map.parameter(1).and_then(ValueExt::reference)?;
-    let target = item.parameter(2).and_then(ValueExt::reference)?;
+    let origin = named_parameter(map, "REPRESENTATION_MAP", 0).and_then(ValueExt::reference)?;
+    let representation =
+        named_parameter(map, "REPRESENTATION_MAP", 1).and_then(ValueExt::reference)?;
+    let target = named_parameter(item, "MAPPED_ITEM", 2).and_then(ValueExt::reference)?;
     Some((representation, origin, target))
 }
 
@@ -688,20 +700,28 @@ fn occurrence_placement(
     geometry: &GeometryResult,
     pds: &BTreeMap<u64, u64>,
 ) -> Option<(u64, Transform)> {
-    let relation = exchange.records.get(&record.parameter(0)?.reference()?)?;
-    let usage = *pds.get(&record.parameter(1)?.reference()?)?;
+    let relation = exchange.records.get(
+        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
+            .and_then(ValueExt::reference)?,
+    )?;
+    let usage = *pds.get(
+        &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
+            .and_then(ValueExt::reference)?,
+    )?;
     let transform_id = relation
         .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
         .parameters
         .first()?
         .reference()?;
     let transform = exchange.records.get(&transform_id)?;
-    let from = geometry
-        .placements
-        .get(&transform.parameter(2)?.reference()?)?;
-    let to = geometry
-        .placements
-        .get(&transform.parameter(3)?.reference()?)?;
+    let from = geometry.placements.get(
+        &named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
+            .and_then(ValueExt::reference)?,
+    )?;
+    let to = geometry.placements.get(
+        &named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
+            .and_then(ValueExt::reference)?,
+    )?;
     Some((usage, between(*from, *to)))
 }
 
@@ -782,10 +802,25 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
     }
 }
 
+fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Option<&'a Value> {
+    record.partial(name)?.parameters.get(index)
+}
+
+fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .and_then(|partial| partial.parameters.get(1))
+        .and_then(ValueExt::list)
+        .map(|items| items.iter().filter_map(ValueExt::reference).collect())
+}
+
 trait RecordExt {
     fn simple_name(&self) -> Option<&str>;
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
 }
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
@@ -793,9 +828,6 @@ impl RecordExt for RawRecord {
     }
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
         self.partials.iter().find(|partial| partial.name == name)
-    }
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
     }
 }
 trait ValueExt {

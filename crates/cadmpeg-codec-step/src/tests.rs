@@ -4580,6 +4580,52 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
 }
 
 #[test]
+fn complex_product_relationships_preserve_mapped_occurrence_placement() {
+    let source = String::from_utf8(include_bytes!(
+        "../tests/fixtures/ap242_mapped_assembly.p21"
+    )
+    .to_vec())
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=PRODUCT_DEFINITION_SHAPE('','',#6);",
+        "#7=(PRODUCT_DEFINITION_SHAPE('','',#6) PROPERTY_DEFINITION());",
+    )
+    .replace(
+        "#11=PRODUCT_DEFINITION_SHAPE('','',#10);",
+        "#11=(PRODUCT_DEFINITION_SHAPE('','',#10) PROPERTY_DEFINITION());",
+    )
+    .replace(
+        "#12=NEXT_ASSEMBLY_USAGE_OCCURRENCE('occ-1','Mapped child','',#6,#10,$);",
+        "#12=(ASSEMBLY_COMPONENT_USAGE() NEXT_ASSEMBLY_USAGE_OCCURRENCE('occ-1','Mapped child','',#6,#10,$));",
+    )
+    .replace(
+        "#24=SHAPE_DEFINITION_REPRESENTATION(#7,#22);",
+        "#24=(PROPERTY_DEFINITION_REPRESENTATION() SHAPE_DEFINITION_REPRESENTATION(#7,#22));",
+    )
+    .replace(
+        "#25=SHAPE_DEFINITION_REPRESENTATION(#11,#23);",
+        "#25=(PROPERTY_DEFINITION_REPRESENTATION() SHAPE_DEFINITION_REPRESENTATION(#11,#23));",
+    )
+    .replace(
+        "#40=MAPPED_ITEM('Mapped child',#39,#35);",
+        "#40=(MAPPED_ITEM('Mapped child',#39,#35) REPRESENTATION_ITEM());",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex mapped-item assembly");
+
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
+        .expect("mapped child occurrence");
+    assert_eq!(child.transform.rows[0][3], 40.0);
+    assert_eq!(child.transform.rows[1][3], 5.0);
+}
+
+#[test]
 fn mapped_presentation_does_not_report_body_placement_loss() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.));
