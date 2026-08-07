@@ -14482,7 +14482,9 @@ fn generated_surface_id_for_feature(
             table
                 .entries
                 .iter()
-                .filter(|entry| entry.source_entity_id == Some(source_entity_id))
+                .filter(|entry| {
+                    entry.class_id == 200 && entry.source_entity_id == Some(source_entity_id)
+                })
                 .filter(|entry| table.surface_ids.contains(&entry.entity_id))
                 .map(|entry| entry.entity_id)
         });

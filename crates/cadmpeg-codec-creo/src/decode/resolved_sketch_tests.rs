@@ -1265,6 +1265,12 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         generated_surface_id_for_feature(&[first_table, table.clone()], 17, 9),
         None
     );
+    let mut wrong_class = table.clone();
+    wrong_class.entries[2].class_id = 201;
+    assert_eq!(
+        generated_surface_id_for_feature(&[wrong_class], 17, 9),
+        None
+    );
     let torus = SurfaceGeometry::Torus {
         center: Point3::new(0.0, 0.0, 0.0),
         axis: Vector3::new(0.0, 1.0, 0.0),
