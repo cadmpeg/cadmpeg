@@ -743,6 +743,10 @@ pub(crate) struct FeatureBodySelectionInputs<'a> {
     pub groups: &'a [crate::records::DesignConstructionOperandGroup],
     /// Whole-body recipe operands.
     pub body_recipe_operands: &'a [crate::records::DesignBodyRecipeOperand],
+    /// Construction recipes backing whole-body operands.
+    pub construction_recipes: &'a [crate::records::ConstructionRecipe],
+    /// Persistent body identities in the active solved B-rep.
+    pub persistent_design_links: &'a [crate::records::PersistentDesignLink],
     /// Independent ASM history graphs.
     pub histories: &'a [AsmHistory],
     /// Neutral top-level bodies.
@@ -767,7 +771,7 @@ pub(crate) fn bind_feature_body_selections(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
-    bind_pattern_body_selections(features, scopes, groups, body_recipe_operands);
+    bind_pattern_body_selections(features, inputs);
     let pattern_body_slots = features
         .iter()
         .filter_map(|feature| {
@@ -1014,15 +1018,7 @@ pub(crate) fn bind_feature_body_selections(
                     body_recipe_operands,
                 );
             } else {
-                bind_direct_body_recipe_body_selection(
-                    targets,
-                    scope,
-                    groups,
-                    body_recipe_operands,
-                    bodies,
-                    regions,
-                    shells,
-                );
+                bind_direct_body_recipe_body_selection(targets, scope, inputs);
             }
             continue;
         }
@@ -1105,11 +1101,13 @@ fn historical_body_slot(id: &str) -> Option<i64> {
 
 fn bind_pattern_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
-    scopes: &[crate::records::DesignParameterScope],
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    body_recipe_operands: &[crate::records::DesignBodyRecipeOperand],
+    inputs: &FeatureBodySelectionInputs<'_>,
 ) {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, PatternSeed};
+
+    let scopes = inputs.scopes;
+    let groups = inputs.groups;
+    let body_recipe_operands = inputs.body_recipe_operands;
 
     for feature in features {
         let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition else {
@@ -1123,9 +1121,6 @@ fn bind_pattern_body_selections(
             .filter(|scope| scope.id == native_ref)
             .collect::<Vec<_>>();
         let [scope] = matching_scopes.as_slice() else {
-            continue;
-        };
-        let Some(previous_state_id) = scope.previous_history_state_id else {
             continue;
         };
         let stream = crate::ids::native_stream(&scope.id);
@@ -1152,14 +1147,18 @@ fn bind_pattern_body_selections(
         } else {
             continue;
         };
-        bind_body_recipe_body_selection(
-            selection,
-            &feature.id,
-            previous_state_id,
-            scope,
-            groups,
-            body_recipe_operands,
-        );
+        if let Some(previous_state_id) = scope.previous_history_state_id {
+            bind_body_recipe_body_selection(
+                selection,
+                &feature.id,
+                previous_state_id,
+                scope,
+                groups,
+                body_recipe_operands,
+            );
+        } else {
+            bind_direct_body_recipe_body_selection(selection, scope, inputs);
+        }
     }
 }
 
@@ -1295,13 +1294,17 @@ fn bind_body_recipe_body_selection(
 fn bind_direct_body_recipe_body_selection(
     selection: &mut cadmpeg_ir::features::BodySelection,
     scope: &crate::records::DesignParameterScope,
-    groups: &[crate::records::DesignConstructionOperandGroup],
-    operands: &[crate::records::DesignBodyRecipeOperand],
-    bodies: &[cadmpeg_ir::topology::Body],
-    regions: &[cadmpeg_ir::topology::Region],
-    shells: &[cadmpeg_ir::topology::Shell],
+    inputs: &FeatureBodySelectionInputs<'_>,
 ) {
     use cadmpeg_ir::features::BodySelection;
+
+    let groups = inputs.groups;
+    let operands = inputs.body_recipe_operands;
+    let construction_recipes = inputs.construction_recipes;
+    let persistent_design_links = inputs.persistent_design_links;
+    let bodies = inputs.bodies;
+    let regions = inputs.regions;
+    let shells = inputs.shells;
 
     let BodySelection::Native(group_id) = selection else {
         return;
@@ -1339,8 +1342,14 @@ fn bind_direct_body_recipe_body_selection(
         if matching_operands.next().is_some() {
             return;
         }
-        let Some(body) = unique_external_body_candidate(operand, None, bodies, regions, shells)
-        else {
+        let Some(body) = direct_body_recipe_candidate(
+            operand,
+            construction_recipes,
+            persistent_design_links,
+            bodies,
+            regions,
+            shells,
+        ) else {
             return;
         };
         if selected.contains(&body) {
@@ -1353,6 +1362,101 @@ fn bind_direct_body_recipe_body_selection(
         bodies: selected,
         native: group.id.clone(),
     };
+}
+
+fn direct_body_recipe_candidate(
+    operand: &crate::records::DesignBodyRecipeOperand,
+    construction_recipes: &[crate::records::ConstructionRecipe],
+    persistent_design_links: &[crate::records::PersistentDesignLink],
+    bodies: &[cadmpeg_ir::topology::Body],
+    regions: &[cadmpeg_ir::topology::Region],
+    shells: &[cadmpeg_ir::topology::Shell],
+) -> Option<cadmpeg_ir::ids::BodyId> {
+    if let Some(body) = body_recipe_link_candidate(
+        operand,
+        construction_recipes,
+        persistent_design_links,
+        bodies,
+    ) {
+        let candidate_bodies = body_recipe_face_body_candidates(operand, bodies, regions, shells);
+        if candidate_bodies.is_empty() || candidate_bodies.contains(&body) {
+            return Some(body);
+        }
+        return None;
+    }
+    unique_external_body_candidate(operand, None, bodies, regions, shells)
+}
+
+fn body_recipe_link_candidate(
+    operand: &crate::records::DesignBodyRecipeOperand,
+    construction_recipes: &[crate::records::ConstructionRecipe],
+    persistent_design_links: &[crate::records::PersistentDesignLink],
+    bodies: &[cadmpeg_ir::topology::Body],
+) -> Option<cadmpeg_ir::ids::BodyId> {
+    let stream = crate::ids::native_stream(&operand.id)?;
+    let mut matching_recipes = construction_recipes.iter().filter(|recipe| {
+        recipe.id == operand.recipe_id
+            && recipe.kind == crate::records::ConstructionRecipeKind::Body
+            && crate::ids::native_stream(&recipe.id) == Some(stream)
+    });
+    let recipe = matching_recipes.next()?;
+    if matching_recipes.next().is_some() {
+        return None;
+    }
+    let design_id = recipe.design_id.as_deref()?;
+    let selector = i64::from(recipe.design_selector?.value);
+    let mut matching_bodies = Vec::new();
+    for link in persistent_design_links.iter().filter(|link| {
+        link.entity_kind == 3
+            && link.is_current
+            && link.design_id == design_id
+            && link.design_reference == selector
+    }) {
+        let cadmpeg_ir::attributes::AttributeTarget::Body(body) = &link.target else {
+            continue;
+        };
+        if bodies.iter().any(|candidate| candidate.id == *body) && !matching_bodies.contains(body) {
+            matching_bodies.push(body.clone());
+        }
+    }
+    let [body] = matching_bodies.as_slice() else {
+        return None;
+    };
+    Some(body.clone())
+}
+
+fn body_recipe_face_body_candidates(
+    operand: &crate::records::DesignBodyRecipeOperand,
+    bodies: &[cadmpeg_ir::topology::Body],
+    regions: &[cadmpeg_ir::topology::Region],
+    shells: &[cadmpeg_ir::topology::Shell],
+) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let body_by_region = regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<std::collections::HashMap<_, _>>();
+    let body_by_face = shells
+        .iter()
+        .filter_map(|shell| {
+            let body = body_by_region.get(&shell.region)?;
+            Some(shell.faces.iter().map(move |face| (face, *body)))
+        })
+        .flatten()
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut candidates = Vec::new();
+    for face in operand
+        .references
+        .iter()
+        .flat_map(|reference| &reference.candidate_faces)
+    {
+        let Some(body) = body_by_face.get(face).copied() else {
+            continue;
+        };
+        if bodies.iter().any(|candidate| candidate.id == *body) && !candidates.contains(body) {
+            candidates.push(body.clone());
+        }
+    }
+    candidates
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6546,22 +6650,58 @@ mod tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         };
+        let inputs = super::FeatureBodySelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: std::slice::from_ref(&group),
+            body_recipe_operands: std::slice::from_ref(&operand),
+            construction_recipes: &[],
+            persistent_design_links: &[],
+            histories: &[],
+            bodies: std::slice::from_ref(&body),
+            regions: std::slice::from_ref(&region),
+            shells: std::slice::from_ref(&shell),
+        };
         let mut selection = BodySelection::Native(group_id.into());
-        super::bind_direct_body_recipe_body_selection(
-            &mut selection,
-            &scope,
-            &[group],
-            &[operand],
-            &[body],
-            &[region],
-            &[shell],
-        );
+        super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &inputs);
         assert_eq!(
             selection,
             BodySelection::Resolved {
                 bodies: vec![BodyId("f3d:brep:body#1".into())],
                 native: group_id.into(),
             }
+        );
+
+        let recipe = crate::records::ConstructionRecipe {
+            id: operand.recipe_id.clone(),
+            byte_offset: 0,
+            record_index_offset: None,
+            kind: crate::records::ConstructionRecipeKind::Body,
+            design_id: Some("301".into()),
+            design_id_offset: None,
+            design_selector: Some(crate::records::ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+            recipe_index: 0,
+            record_index: 0,
+        };
+        let link = crate::records::PersistentDesignLink {
+            id: "link".into(),
+            target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+            design_id: "301".into(),
+            entity_kind: 3,
+            design_reference: 9,
+            ordinal: 0,
+            is_current: true,
+        };
+        assert_eq!(
+            super::body_recipe_link_candidate(
+                &operand,
+                std::slice::from_ref(&recipe),
+                std::slice::from_ref(&link),
+                std::slice::from_ref(&body),
+            ),
+            Some(body.id.clone())
         );
     }
 
