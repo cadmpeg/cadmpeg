@@ -9177,7 +9177,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         std::slice::from_ref(&split_tool)
     )
     .is_none()));
-    let mut nonterminal_tool = split_tool;
+    let mut nonterminal_tool = split_tool.clone();
     nonterminal_tool.recipe_program = vec![0, -1, 2];
     assert!(project_split(
         &split_body_scope,
@@ -9197,6 +9197,14 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     delete_group.members = vec![200];
     delete_group.member_offsets = vec![1096];
     delete_group.role = 0x0000_0010_0000_0000;
+    let mut delete_face_operand = split_tool.clone();
+    delete_face_operand.id = "f3d:Design/BulkStream.dat:face-operand#200".into();
+    delete_face_operand.scope_record_index = delete_scope.record_index;
+    delete_face_operand.scope_reference_ordinal = 1;
+    delete_face_operand.group_record_index = Some(delete_group.record_index);
+    delete_face_operand.group_member_ordinal = Some(0);
+    delete_face_operand.record_index = 200;
+    delete_face_operand.resolved_face_slots = vec![7];
     let (features, _) = project_parameter_design(
         &[],
         &[],
@@ -9211,6 +9219,26 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: true,
+        }
+    );
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&delete_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        std::slice::from_ref(&delete_face_operand),
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Resolved {
+                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                native: delete_group.id.clone(),
+            },
             heal: true,
         }
     );
@@ -9265,6 +9293,26 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         features[0].definition,
         FeatureDefinition::DeleteFace {
             faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            heal: false,
+        }
+    );
+    let (features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&surface_scope),
+        std::slice::from_ref(&delete_group),
+        &[],
+        &[],
+        std::slice::from_ref(&delete_face_operand),
+        &[],
+    );
+    assert_eq!(
+        features[0].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Resolved {
+                faces: vec![FaceId(crate::ids::brep_entity_id(7))],
+                native: delete_group.id.clone(),
+            },
             heal: false,
         }
     );

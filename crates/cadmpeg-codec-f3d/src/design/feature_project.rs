@@ -5501,6 +5501,7 @@ fn project_delete_face(
         return None;
     }
     let faces = resolved_historical_face_group(scope, group, face_operands)
+        .or_else(|| resolved_face_group(group, face_operands))
         .unwrap_or_else(|| FaceSelection::Native(group.id.clone()));
     Some(FeatureDefinition::DeleteFace { faces, heal })
 }
