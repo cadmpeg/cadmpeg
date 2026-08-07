@@ -184,7 +184,10 @@ impl std::fmt::Display for WorkerFailure {
 
 impl std::error::Error for WorkerFailure {}
 
-const WORKER_TIMEOUT: Duration = Duration::from_secs(90);
+// A large admitted part can require several minutes for one complete decode.
+// Keep the bound per worker so one pathological file cannot stall the profile,
+// while allowing the largest supported object-model sections to finish.
+const WORKER_TIMEOUT: Duration = Duration::from_secs(600);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
