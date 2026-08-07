@@ -5066,7 +5066,10 @@ fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
     (magnitude.is_finite() && magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }
 
-fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 3], [f64; 3])> {
+fn feature_plane_equations(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<Vec<([f64; 3], [f64; 3])>> {
     let ids = scan
         .surfaces
         .rows
@@ -5077,7 +5080,7 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
         .map(|row| row.id)
         .collect::<BTreeSet<_>>();
     ids.into_iter()
-        .filter_map(|id| {
+        .map(|id| {
             crate::surface::unique_surface_row(&scan.surfaces.rows, id)?;
             let outlines = scan
                 .planes
@@ -5980,11 +5983,8 @@ fn resolved_feature_extrusion_span(
     generated_arc_cylinder_extent(scan, definition, transform)
         .and_then(|(extent, direction)| derived_blind_extrusion_span(transform, &extent, direction))
         .or_else(|| {
-            extrusion_span(
-                transform.origin,
-                transform.normal,
-                feature_plane_equations(scan, feature_id),
-            )
+            feature_plane_equations(scan, feature_id)
+                .and_then(|planes| extrusion_span(transform.origin, transform.normal, planes))
         })
         .or_else(|| {
             generated_cap_plane_extent(scan, ir, feature_id).and_then(|(extent, direction)| {
@@ -17920,11 +17920,9 @@ fn schema_feature_definition(
         let extent_and_direction =
             if let ([transform], Some(definition)) = (transforms.as_slice(), definition) {
                 generated_arc_cylinder_extent(scan, definition, transform).or_else(|| {
-                    extrusion_extent_and_direction(
-                        transform.origin,
-                        transform.normal,
-                        feature_plane_equations(scan, feature_id),
-                    )
+                    feature_plane_equations(scan, feature_id).and_then(|planes| {
+                        extrusion_extent_and_direction(transform.origin, transform.normal, planes)
+                    })
                 })
             } else {
                 None

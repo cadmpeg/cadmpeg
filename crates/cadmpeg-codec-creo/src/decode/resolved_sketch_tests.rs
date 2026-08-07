@@ -98,6 +98,51 @@ fn chamfer_requires_every_affected_support_plane_to_be_placed() {
 }
 
 #[test]
+fn linear_plane_extent_requires_complete_generated_plane_evidence() {
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 917,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let plane = |id, z| crate::surface::OutlinePlane {
+        surface_id: id,
+        origin: [0.0, 0.0, z],
+        normal: [0.0, 0.0, 1.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([row(31), row(32)]);
+    scan.planes.outlines.push(plane(31, 2.0));
+
+    assert!(feature_plane_equations(&scan, 917).is_none());
+
+    scan.planes.outlines.push(plane(32, 8.0));
+    assert_eq!(
+        feature_plane_equations(&scan, 917).and_then(|planes| {
+            extrusion_extent_and_direction([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], planes)
+        }),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(8.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 0.0, 1.0],
+        ))
+    );
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
