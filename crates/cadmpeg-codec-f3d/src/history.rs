@@ -232,24 +232,80 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
     }
 }
 
-fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
+fn is_history_boundary_record(record: &AsmHistoryRecord) -> bool {
+    matches!(
+        record.name.as_str(),
+        "End-of-ASM-History-Section" | "End-of-ASM-data"
+    )
+}
+
+fn archived_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
     let mut archived = states
         .iter()
         .flat_map(|state| &state.records)
         .filter_map(|record| record.revision_id)
         .collect::<Vec<_>>();
     archived.sort_unstable();
-    let Some(&active_count) = archived.first() else {
-        return;
-    };
+    let &active_count = archived.first()?;
     if active_count <= 0
         || archived
             .iter()
             .copied()
             .ne(active_count..active_count + archived.len() as i64)
     {
-        return;
+        return None;
     }
+    usize::try_from(active_count).ok()
+}
+
+/// Return the active `RecordTable` length for a history that has no archived
+/// snapshot. Insert-only chains use the active records themselves as every
+/// revision, so their bulletin-board references must cover every non-header
+/// slot exactly once.
+fn insert_only_active_record_count(states: &[AsmDeltaState]) -> Option<usize> {
+    let mut has_boundary_record = false;
+    for record in states.iter().flat_map(|state| &state.records) {
+        if record.revision_id.is_some() || !is_history_boundary_record(record) {
+            return None;
+        }
+        has_boundary_record = true;
+    }
+    if !has_boundary_record {
+        return None;
+    }
+    let mut inserted = BTreeSet::new();
+    for change in states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .flat_map(|board| &board.changes)
+    {
+        let (None, Some(new_ref)) = (change.old_ref, change.new_ref) else {
+            return None;
+        };
+        if new_ref <= 0 || !inserted.insert(new_ref) {
+            return None;
+        }
+    }
+    let &last = inserted.last()?;
+    if inserted.iter().copied().ne(1..=last) {
+        return None;
+    }
+    usize::try_from(last.checked_add(1)?).ok()
+}
+
+fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
+    let mut archived_ids = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter_map(|record| record.revision_id)
+        .collect::<Vec<_>>();
+    archived_ids.sort_unstable();
+    let active_count = archived_active_record_count(states)
+        .or_else(|| insert_only_active_record_count(states))
+        .and_then(|count| i64::try_from(count).ok());
+    let Some(active_count) = active_count else {
+        return;
+    };
     let by_node = states
         .iter()
         .enumerate()
@@ -294,7 +350,7 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
         {
             match (change.old_ref, change.new_ref) {
                 (Some(old), Some(new)) => {
-                    if !versions.contains_key(&new) || archived.binary_search(&old).is_err() {
+                    if !versions.contains_key(&new) || archived_ids.binary_search(&old).is_err() {
                         return;
                     }
                     versions.insert(new, old);
@@ -305,7 +361,7 @@ fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
                     }
                 }
                 (Some(old), None) => {
-                    if versions.contains_key(&old) || archived.binary_search(&old).is_err() {
+                    if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
                         return;
                     }
                     versions.insert(old, old);
@@ -366,7 +422,8 @@ fn bind_complete_record_tables(
     let Some(start) = cadmpeg_asm::asm_header::record_stream_start(bytes) else {
         return false;
     };
-    let Ok(framed) = cadmpeg_asm::sab::frame(bytes, start, bytes.len(), width) else {
+    let active_limit = cadmpeg_asm::asm_header::solved_record_limit(bytes).unwrap_or(bytes.len());
+    let Ok(framed) = cadmpeg_asm::sab::frame(bytes, start, active_limit, width) else {
         return false;
     };
     if complete_table_binding_budget_exceeded(
@@ -375,15 +432,14 @@ fn bind_complete_record_tables(
     ) {
         return true;
     }
-    let Some(active_count) = states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.revision_id)
-        .min()
-        .and_then(|count| usize::try_from(count).ok())
-    else {
+    let insert_only = insert_only_active_record_count(states);
+    let archived_count = archived_active_record_count(states);
+    let Some(active_count) = archived_count.or(insert_only) else {
         return false;
     };
+    if insert_only.is_some() && framed.len() != active_count {
+        return false;
+    }
     let Some(active_records) = framed.get(..active_count) else {
         return false;
     };
@@ -463,7 +519,7 @@ fn historical_record_archive(
     for record in states
         .iter()
         .flat_map(|state| &state.records)
-        .filter(|record| record.name != "End-of-ASM-data")
+        .filter(|record| !is_history_boundary_record(record))
     {
         let revision_id = record.revision_id?;
         let offset = usize::try_from(record.byte_offset).ok()?;
@@ -9135,6 +9191,157 @@ mod tests {
                 .collect::<Vec<_>>(),
             [Some(5), Some(6), Some(7)]
         );
+    }
+
+    #[test]
+    fn insert_only_history_uses_the_active_record_table_as_revisions() {
+        let state = |node_index, next_ref, inserted: &[i64]| {
+            let state_id = format!("state-{node_index}");
+            let board_id = format!("board-{node_index}");
+            AsmDeltaState {
+                id: state_id.clone(),
+                parent: "history".into(),
+                byte_offset: node_index as u64,
+                state_id: 10 - node_index,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: (node_index > 0).then_some(node_index - 1),
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: vec![AsmBulletinBoard {
+                    id: board_id.clone(),
+                    parent: state_id.clone(),
+                    byte_offset: node_index as u64,
+                    owner_ref: 0,
+                    number: 2,
+                    changes: inserted
+                        .iter()
+                        .enumerate()
+                        .map(|(index, new_ref)| AsmEntityChange {
+                            id: format!("change-{node_index}-{index}"),
+                            parent: board_id.clone(),
+                            byte_offset: index as u64,
+                            kind: AsmEntityChangeKind::Insert,
+                            old_ref: None,
+                            new_ref: Some(*new_ref),
+                        })
+                        .collect(),
+                }],
+                records: vec![AsmHistoryRecord {
+                    id: format!("record-{node_index}"),
+                    parent: state_id,
+                    revision_id: None,
+                    index: 0,
+                    byte_offset: node_index as u64,
+                    name: "End-of-ASM-History-Section".into(),
+                    framing_error: None,
+                    entity_references: Vec::new(),
+                    raw_bytes: vec![0x11],
+                }],
+                entity_versions: Vec::new(),
+                record_table_complete: false,
+                topology: None,
+                transition: None,
+            }
+        };
+        let mut states = vec![
+            state(0, Some(1), &[1]),
+            state(1, Some(2), &[2]),
+            state(2, None, &[3]),
+        ];
+
+        assert_eq!(insert_only_active_record_count(&states), Some(4));
+        bind_historical_entity_versions(&mut states);
+
+        assert_eq!(
+            states
+                .iter()
+                .map(|state| state.entity_versions.len())
+                .collect::<Vec<_>>(),
+            [4, 3, 2]
+        );
+        assert_eq!(
+            states[1].entity_versions,
+            [
+                AsmEntityVersion {
+                    entity_ref: 0,
+                    record_ref: 0,
+                },
+                AsmEntityVersion {
+                    entity_ref: 2,
+                    record_ref: 2,
+                },
+                AsmEntityVersion {
+                    entity_ref: 3,
+                    record_ref: 3,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn insert_only_history_rejects_gaps_and_updates() {
+        let mut state = AsmDeltaState {
+            id: "state".into(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: vec![AsmHistoryRecord {
+                id: "record".into(),
+                parent: "state".into(),
+                revision_id: None,
+                index: 0,
+                byte_offset: 0,
+                name: "End-of-ASM-History-Section".into(),
+                framing_error: None,
+                entity_references: Vec::new(),
+                raw_bytes: vec![0x11],
+            }],
+            entity_versions: Vec::new(),
+            record_table_complete: false,
+            topology: None,
+            transition: None,
+        };
+        let board = AsmBulletinBoard {
+            id: "board".into(),
+            parent: state.id.clone(),
+            byte_offset: 0,
+            owner_ref: 0,
+            number: 2,
+            changes: vec![
+                AsmEntityChange {
+                    id: "gap-a".into(),
+                    parent: "board".into(),
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Insert,
+                    old_ref: None,
+                    new_ref: Some(1),
+                },
+                AsmEntityChange {
+                    id: "gap-b".into(),
+                    parent: "board".into(),
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Insert,
+                    old_ref: None,
+                    new_ref: Some(3),
+                },
+            ],
+        };
+        state.bulletin_boards.push(board);
+        assert_eq!(insert_only_active_record_count(&[state.clone()]), None);
+        state.bulletin_boards[0].changes[1].old_ref = Some(2);
+        state.bulletin_boards[0].changes[1].kind = AsmEntityChangeKind::Update;
+        assert_eq!(insert_only_active_record_count(&[state]), None);
     }
 
     #[test]
