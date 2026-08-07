@@ -795,6 +795,45 @@ size = 147
 note = "The identity form omits the explicit matrix block and retains the remaining carrier bytes natively."
 
 [[record]]
+name = "coil_compact_placement_owner_identity_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The 442-byte compact scope form also has a 233-byte owner-referenced identity carrier."
+size = 233
+note = "Offsets are relative to the second ordered placement carrier's indexed header. The owner reference closes the carrier to its containing Coil scope."
+
+[[record.gap]]
+offset = 0
+size = 213
+note = "The fixed identity carrier precedes the owner-reference extension."
+
+[[record.gap]]
+offset = 213
+size = 9
+note = "Its bytes 213 through 221 are zero."
+
+[[record.field]]
+name = "owner_reference_marker"
+offset = 222
+type = "u8"
+source = "spec"
+anchor = "offset 222 is a marked reference"
+
+[[record.field]]
+name = "owner_scope_record_index"
+offset = 223
+type = "u32"
+source = "spec"
+anchor = "the u32 at offset 223 equals the owning Coil scope record index"
+
+[[record.field]]
+name = "owner_reference_tail"
+offset = 227
+type = "bytes[6]"
+source = "spec"
+anchor = "bytes 227 through 232 are zero"
+
+[[record]]
 name = "coil_compact_placement_matrix_frame"
 kind = "byte"
 section = "3.1"

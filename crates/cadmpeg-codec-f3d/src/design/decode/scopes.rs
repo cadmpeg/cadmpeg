@@ -4681,10 +4681,12 @@ struct CoilDiscriminators {
 ///
 /// The first carrier is a nested support-selection frame. It may carry either
 /// a persistent support identity or a face recipe. The second is a rigid frame
-/// whose identity form omits the matrix and therefore has a
-/// 213-byte span; its explicit form has the same fixed envelope plus 128 matrix
-/// bytes and a 341-byte span. A malformed or ambiguous carrier leaves the
-/// complete placement native.
+/// whose direct identity form omits the matrix and therefore has a 213-byte
+/// span. The 442-byte scope form also has an owner-referenced identity carrier:
+/// it appends a marked reference to the owning scope and has a 233-byte span.
+/// The explicit form has the same fixed envelope plus 128 matrix bytes and a
+/// 341-byte span. A malformed or ambiguous carrier leaves the complete
+/// placement native.
 fn exact_coil_placement(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -4729,6 +4731,16 @@ fn exact_coil_placement(
         213 if bytes.get(transform_start + 55) == Some(&1)
             && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
             && bytes.get(transform_start + 65) == Some(&1) =>
+        {
+            (identity_matrix(), None)
+        }
+        233 if bytes.get(transform_start + 55) == Some(&1)
+            && bytes.get(transform_start + 56..transform_start + 65) == Some(&[0; 9][..])
+            && bytes.get(transform_start + 65) == Some(&1)
+            && bytes.get(transform_start + 213..transform_start + 222) == Some(&[0; 9][..])
+            && bytes.get(transform_start + 222) == Some(&1)
+            && u32_at(bytes, transform_start + 223) == Some(scope.record_index)
+            && bytes.get(transform_start + 227..transform_start + 233) == Some(&[0; 6][..]) =>
         {
             (identity_matrix(), None)
         }
@@ -6252,6 +6264,18 @@ mod tests {
         (bytes, scope, transform_start)
     }
 
+    fn compact_coil_owner_identity_fixture() -> (Vec<u8>, DesignParameterScope, usize) {
+        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(None);
+        let paired_start = transform_start + 213;
+        let paired = bytes.split_off(paired_start);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&scope.record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&paired);
+        (bytes, scope, transform_start)
+    }
+
     fn compact_coil_face_selection_fixture(
     ) -> (Vec<u8>, DesignParameterScope, Vec<ConstructionRecipe>) {
         let mut bytes = Vec::new();
@@ -6373,6 +6397,28 @@ mod tests {
     }
 
     #[test]
+    fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
+        let (bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
+        let placement =
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[])
+                .expect("owner-referenced compact Coil placement");
+        assert_eq!(
+            placement.transform,
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+        assert_eq!(placement.transform_offset, None);
+        assert_eq!(
+            placement.transform_record_byte_offset,
+            transform_start as u64
+        );
+    }
+
+    #[test]
     fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
         let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(Some([
             [1.0, 0.0, 0.0, 0.0],
@@ -6388,8 +6434,15 @@ mod tests {
             None
         );
 
-        let (mut bytes, scope, transform_start) = compact_coil_placement_fixture(None);
+        let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
         bytes[transform_start + 65] = 0;
+        assert_eq!(
+            exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
+            None
+        );
+
+        let (mut bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
+        bytes[transform_start + 223] ^= 1;
         assert_eq!(
             exact_coil_placement(&bytes, &IndexedRecordOffsets::build(&bytes), &scope, &[]),
             None

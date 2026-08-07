@@ -276,6 +276,23 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the identity marker block.
 - `66..213` (147 B): The identity form omits the explicit matrix block and retains the remaining carrier bytes natively.
 
+## `coil_compact_placement_owner_identity_frame`
+
+Spec §3.1 · layout: byte offsets · size: 233 B
+
+Offsets are relative to the second ordered placement carrier's indexed header. The owner reference closes the carrier to its containing Coil scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 222 | 1 | `owner_reference_marker` | `u8` | little | spec | offset 222 is a marked reference |
+| 223 | 4 | `owner_scope_record_index` | `u32` | little | spec | the u32 at offset 223 equals the owning Coil scope record index |
+| 227 | 6 | `owner_reference_tail` | `bytes[6]` | little | spec | bytes 227 through 232 are zero |
+
+Unstated regions:
+
+- `0..213` (213 B): The fixed identity carrier precedes the owner-reference extension.
+- `213..222` (9 B): Its bytes 213 through 221 are zero.
+
 ## `coil_compact_placement_matrix_frame`
 
 Spec §3.1 · layout: byte offsets · size: 341 B
