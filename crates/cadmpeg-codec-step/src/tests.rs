@@ -4727,7 +4727,7 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
 }
 
 #[test]
-fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
+fn duplicate_face_outer_bounds_are_reported_without_inventing_inner_roles() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
@@ -4753,8 +4753,40 @@ fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
         .expect("decode duplicate outer bounds");
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::TopologyGaugeSubstituted
-            && loss.message.contains("FACE_OUTER_BOUND")
+            && loss
+                .message
+                .contains("marking the remaining 1 roles unspecified")
     }));
+    let face = &decoded.ir.model.faces[0];
+    let roles = face
+        .loops
+        .iter()
+        .map(|id| {
+            decoded
+                .ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == *id)
+                .expect("decoded face loop")
+                .boundary_role
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Outer)
+            .count(),
+        1
+    );
+    assert_eq!(
+        roles
+            .iter()
+            .filter(|role| **role == cadmpeg_ir::topology::LoopBoundaryRole::Unspecified)
+            .count(),
+        1
+    );
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
 #[test]

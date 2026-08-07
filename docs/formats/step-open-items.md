@@ -206,17 +206,6 @@ length unit. Angular and mixed parameter axes require surface-specific rules.
 **Need.** We need the surface-axis table before scaling non-planar pcurve
 coordinates.
 
-### TP-04. Multiple outer loops
-
-**Question.** Can one STEP face contain multiple `FACE_OUTER_BOUND` loops, and
-if so, how should CADIR represent them?
-
-**Known.** The current topology model commits one ordered loop collection and
-requires one outer boundary for the usual face representation.
-
-**Need.** We need a valid construction and an IR representation decision for
-multiple disjoint outer regions.
-
 ### TP-05. Partial solid and tolerant point carriers
 
 **Question.** Should CADIR gain a tolerant point carrier or a partial-solid

@@ -228,6 +228,11 @@ the solid-root transaction rejects it. A geometric set with surface members
 forms a sheet carrier. Curve-only and point-only sets remain standalone
 geometry.
 
+A face has at most one `FACE_OUTER_BOUND`. Other face bounds are not outer
+bounds. When malformed input declares more than one outer bound, the decoder
+retains every loop, keeps the first outer role in source order, marks the
+remaining conflicting roles unspecified, and reports a topology loss.
+
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
 definitional representation transfers one exact 2D line, circle, ellipse,

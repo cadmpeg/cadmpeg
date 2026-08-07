@@ -1889,6 +1889,7 @@ fn build_one(
             let face_same_sense = face_info.same_sense;
             let fid = FaceId(format!("step:data:face#{face_step}{face_suffix}"));
             let mut loop_ids = vec![];
+            let mut outer_bound_count = 0;
             for bound_step in face_info.bounds {
                 let br = require_carrier(
                     exchange.records.get(&bound_step),
@@ -1899,6 +1900,10 @@ fn build_one(
                 if !has_type(br, "FACE_BOUND") && !has_type(br, "FACE_OUTER_BOUND") {
                     note_failure(failure, bound_step, "face bound carrier");
                     return None;
+                }
+                let is_outer_bound = has_type(br, "FACE_OUTER_BOUND");
+                if is_outer_bound {
+                    outer_bound_count += 1;
                 }
                 let bound_type = if has_type(br, "FACE_BOUND") {
                     "FACE_BOUND"
@@ -1937,8 +1942,10 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
                             LoopBoundaryRole::Outer
+                        } else if is_outer_bound {
+                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
@@ -1955,7 +1962,7 @@ fn build_one(
                             pcurves: Vec::new(),
                         }],
                     });
-                    loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                     used_v.insert((shell_step, vertex_step));
                     typed.extend([bound_step, loop_step]);
                     continue;
@@ -2048,15 +2055,17 @@ fn build_one(
                     loops.push(Loop {
                         id: lid.clone(),
                         face: fid.clone(),
-                        boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                        boundary_role: if is_outer_bound && outer_bound_count == 1 {
                             LoopBoundaryRole::Outer
+                        } else if is_outer_bound {
+                            LoopBoundaryRole::Unspecified
                         } else {
                             LoopBoundaryRole::Inner
                         },
                         coedges: coedge_ids,
                         vertex_uses: Vec::new(),
                     });
-                    loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                    loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                     typed.insert(bound_step);
                     continue;
                 }
@@ -2209,24 +2218,26 @@ fn build_one(
                 loops.push(Loop {
                     id: lid.clone(),
                     face: fid.clone(),
-                    boundary_role: if has_type(br, "FACE_OUTER_BOUND") {
+                    boundary_role: if is_outer_bound && outer_bound_count == 1 {
                         LoopBoundaryRole::Outer
+                    } else if is_outer_bound {
+                        LoopBoundaryRole::Unspecified
                     } else {
                         LoopBoundaryRole::Inner
                     },
                     coedges: coedge_ids,
                     vertex_uses: Vec::new(),
                 });
-                loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
+                loop_ids.push((is_outer_bound && outer_bound_count == 1, lid));
                 typed.extend([bound_step, loop_step]);
             }
-            let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
-            if outer_count > 1 {
+            if outer_bound_count > 1 {
                 losses.push(LossNote {
                     code: LossKind::TopologyGaugeSubstituted,
                     severity: Severity::Warning,
                     message: format!(
-                        "face #{face_step} has {outer_count} FACE_OUTER_BOUND loops; retaining all explicit outer roles"
+                        "face #{face_step} has {outer_bound_count} FACE_OUTER_BOUND loops; retaining the first outer role and marking the remaining {} roles unspecified",
+                        outer_bound_count - 1
                     ),
                     provenance: None,
                 });
