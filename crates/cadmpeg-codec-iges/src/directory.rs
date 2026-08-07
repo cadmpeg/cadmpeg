@@ -68,10 +68,18 @@ fn integer(field: [u8; 8], sequence: u32, name: &str) -> Result<i64, CodecError>
 }
 
 fn status(field: [u8; 8], sequence: u32) -> Result<Status, CodecError> {
+    if field.iter().all(|byte| *byte == b' ') {
+        return Ok(Status {
+            blank: 0,
+            subordinate: 0,
+            use_flag: 0,
+            hierarchy: 0,
+        });
+    }
     if field.iter().any(|byte| !byte.is_ascii_digit()) {
         return Err(malformed(
             sequence,
-            "status number is not eight decimal digits",
+            "status number is neither blank nor eight decimal digits",
         ));
     }
     let pair = |at: usize| (field[at] - b'0') * 10 + field[at + 1] - b'0';

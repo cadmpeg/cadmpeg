@@ -70,6 +70,69 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
 }
 
 #[test]
+fn blank_directory_status_defaults_to_zero_fields() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "BLANK".into(),
+                status: "        ",
+                parameters: "116,1,2,3,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn predecessor_parameter_back_pointer_is_accepted_as_noncanonical_syntax() {
+    let mut bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "FIRST".into(),
+            status: "00010000",
+            parameters: "116,1,2,3,0;comment".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "SECOND".into(),
+            status: "00010000",
+            parameters: "116,4,5,6,0;".into(),
+        },
+    ]);
+    let marker = bytes
+        .windows(8)
+        .position(|window| window == b"P      2")
+        .expect("second Parameter Data card");
+    let card_start = marker - 72;
+    bytes[card_start + 64..card_start + 72].copy_from_slice(b"       2");
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.points.len(), 2);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::NoncanonicalSourceSyntax
+            && loss.message.contains("D3")
+            && loss.message.contains("cards 2")
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively() {
     let targets = (1..=100_000_u32)
         .map(|sequence| (sequence, sequence + 1))
