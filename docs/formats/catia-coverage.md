@@ -291,6 +291,14 @@ current scores require those matrices and representative fixtures.
   from one, two, or three bytes by landing on the complete counted vertex
   table. A two-handle row is a complete boundary segment; longer rows retain
   flanking endpoint ports around their interior trim handles.
+- E5 plane carriers solve their in-plane frame from endpoint UV values and
+  referenced vertex positions. A full-rank endpoint set uses the unique
+  orthonormal least-squares frame within `2e-3` mm. A rank-one diameter set
+  uses the known normal supplied by the adjacent analytic carrier to complete
+  the perpendicular axis; the simultaneous sign gauge requires the first
+  nonzero component of the `u_axis` to be positive. A missing or ambiguous
+  normal, non-finite endpoint, non-orthonormal fit, or residual above the
+  tolerance leaves the plane carrier unresolved.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding

@@ -610,14 +610,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to orient the cap when its boundary is a digon.
 
-### E5-04. Rank-deficient plane frame
-
-**Question.** How is a rank-deficient E5 plane frame completed?
-
-**Known.** The decoder retains the stored frame lanes. The general frame equation requires independent axes.
-
-**Need.** We must know the completion rule to construct the plane.
-
 ### E5-05. Root orientation signs
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
