@@ -249,6 +249,123 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     }
 }
 
+/// Materialize a circle dimension when its point operand already has one
+/// neutral point witness in the owning sketch.
+///
+/// Some selected profile streams omit the circle carrier but retain the
+/// dimension's point marker. The point marker is a center witness for this
+/// relation family, not sufficient geometry by itself. Use it only after the
+/// relation-point projector has established one same-sketch neutral point;
+/// ambiguous or missing witnesses remain native.
+pub(crate) fn project_relation_point_dimensioned_circles(
+    entities: &mut Vec<SketchEntity>,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) {
+    let sketches_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.as_deref()?, sketch))
+        })
+        .collect::<HashMap<_, _>>();
+    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let parameters_by_id = parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+
+    for lane in lanes {
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        for relation in &lane.relation_instances {
+            if relation.family != FeatureInputRelationFamily::CircleDiameter {
+                continue;
+            }
+            let ([operand] | [_, operand]) = relation.operands.as_slice() else {
+                continue;
+            };
+            let Some(marker_id) = operand.entity_ref.as_deref() else {
+                continue;
+            };
+            let Some(marker) = markers_by_id.get(marker_id).copied() else {
+                continue;
+            };
+            if !matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                continue;
+            }
+            let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
+                continue;
+            };
+            let Some(parameter) = ownership
+                .get(&relation.id)
+                .and_then(Option::as_ref)
+                .and_then(|parameter| parameters_by_id.get(parameter))
+            else {
+                continue;
+            };
+            let Some(radius) = radial_dimension_radius(parameter) else {
+                continue;
+            };
+            let centers = entities
+                .iter()
+                .filter(|entity| {
+                    entity.sketch == **sketch
+                        && entity.native_ref.as_deref() == Some(marker_id)
+                        && matches!(entity.geometry, SketchGeometry::Point { .. })
+                })
+                .collect::<Vec<_>>();
+            let [center_entity] = centers.as_slice() else {
+                continue;
+            };
+            let SketchGeometry::Point { position: center } = center_entity.geometry else {
+                continue;
+            };
+            if entities.iter().any(|entity| {
+                entity.sketch == **sketch
+                    && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
+                        if quantize(*existing, 1.0e-8) == quantize(center, 1.0e-8)
+                            && same_dimension_length(existing_radius.0, radius))
+            }) {
+                continue;
+            }
+            entities.push(SketchEntity {
+                id: SketchEntityId(format!(
+                    "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
+                    relation.offset
+                )),
+                sketch: (*sketch).clone(),
+                construction: false,
+                native_ref: Some(marker.id.clone()),
+                geometry_ref: Some(relation.id.clone()),
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center,
+                    radius: Length(radius),
+                },
+            });
+        }
+    }
+}
+
 pub(super) fn compact_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
     let marker = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len());
     if marker != Some(LEGACY_SKETCH_MARKER) && marker != Some(LEGACY_EXTENDED_SKETCH_MARKER) {
