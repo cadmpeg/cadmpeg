@@ -17295,8 +17295,8 @@ fn chamfer_constant_distance(scan: &ContainerScan, feature_id: u32) -> Option<f6
     let planes = placed_planes(scan);
     let support_planes = affected_ids
         .iter()
-        .filter_map(|id| planes.get(id).copied())
-        .collect::<Vec<_>>();
+        .map(|id| planes.get(id).copied())
+        .collect::<Option<Vec<_>>>()?;
     equal_distance_chamfer_setback(&cones, &support_planes)
 }
 

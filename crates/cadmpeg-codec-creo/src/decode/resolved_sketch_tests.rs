@@ -38,6 +38,66 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
 }
 
 #[test]
+fn chamfer_requires_every_affected_support_plane_to_be_placed() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 10,
+        type_byte: crate::surface::SurfaceKind::Cone.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Cone,
+        feature_id: 914,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 10,
+    });
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 10,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: Some(crate::surface::PositionalConeFrame {
+                apex: [0.5, 0.0, 0.0],
+                axis: [-1.0, 0.0, 0.0],
+                ref_direction: [0.0, 1.0, 0.0],
+                half_angle: std::f64::consts::FRAC_PI_4,
+            }),
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 10,
+            body_offset: 11,
+        });
+    scan.planes
+        .positional_frames
+        .push(crate::surface::OutlinePlane {
+            surface_id: 31,
+            origin: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+            u_axis: [0.0, 1.0, 0.0],
+            offset: 31,
+        });
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 914,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![31],
+            offset: 0,
+        });
+
+    assert_eq!(chamfer_constant_distance(&scan, 914), Some(0.5));
+    scan.features.affected_ids[0].ids.push(99);
+    assert_eq!(chamfer_constant_distance(&scan, 914), None);
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);
