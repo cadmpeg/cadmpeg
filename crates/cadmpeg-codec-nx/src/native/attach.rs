@@ -2384,7 +2384,6 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
-        let block_has_explicit_output = !outputs.is_empty();
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
@@ -2393,19 +2392,14 @@ fn attach_feature_operations(
                 outputs.push(body.clone());
             }
         }
-        let block_op = if block_projection.is_some()
-            && matches!(outputs.as_slice(), [_])
-            && if block_has_explicit_output {
-                !body_writer_history.has_primary_writer(native_primary_body, &outputs)
-            } else {
-                !body_writer_history
-                    .has_output_writer_other_than(initial_body_id.as_ref(), &outputs)
-            } {
-            BooleanOp::NewBody
-        } else {
-            BooleanOp::Unresolved
-        };
-        if block_op == BooleanOp::NewBody && !block_has_explicit_output {
+        let block_op = block_boolean_op(
+            block_projection.is_some(),
+            &outputs,
+            initial_body_id.as_ref(),
+            native_primary_body,
+            &body_writer_history,
+        );
+        if block_op == BooleanOp::NewBody {
             if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
                 ir.model
                     .features
@@ -4258,6 +4252,23 @@ fn block_placement(
             ],
         },
     ))
+}
+
+fn block_boolean_op(
+    has_complete_projection: bool,
+    outputs: &[BodyId],
+    provisional_feature: Option<&FeatureId>,
+    native_primary_body: Option<u32>,
+    history: &BodyWriterHistory,
+) -> BooleanOp {
+    if has_complete_projection
+        && matches!(outputs, [_])
+        && !history.has_preceding_writer(provisional_feature, native_primary_body, outputs)
+    {
+        BooleanOp::NewBody
+    } else {
+        BooleanOp::Unresolved
+    }
 }
 
 #[cfg(test)]
@@ -8051,6 +8062,48 @@ mod tests {
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
             None
+        );
+    }
+
+    #[test]
+    fn nx_block_new_body_ignores_only_the_provisional_initial_writer() {
+        let body = BodyId("body".into());
+        let provisional = FeatureId("initial-bodies".into());
+        let mut history = BodyWriterHistory::default();
+        history.record_writer(None, std::slice::from_ref(&body), &provisional);
+
+        assert_eq!(
+            super::block_boolean_op(
+                true,
+                std::slice::from_ref(&body),
+                Some(&provisional),
+                None,
+                &history,
+            ),
+            BooleanOp::NewBody
+        );
+
+        let prior = FeatureId("prior-feature".into());
+        history.record_writer(Some(7), std::slice::from_ref(&body), &prior);
+        assert_eq!(
+            super::block_boolean_op(
+                true,
+                std::slice::from_ref(&body),
+                Some(&provisional),
+                Some(7),
+                &history,
+            ),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            super::block_boolean_op(
+                false,
+                std::slice::from_ref(&body),
+                Some(&provisional),
+                None,
+                &history,
+            ),
+            BooleanOp::Unresolved
         );
     }
 

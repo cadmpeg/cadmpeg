@@ -20,23 +20,21 @@ impl BodyWriterHistory {
         self.native.get(&body)
     }
 
-    pub(crate) fn has_primary_writer(&self, native_body: Option<u32>, outputs: &[BodyId]) -> bool {
-        outputs
-            .iter()
-            .any(|output| self.outputs.contains_key(output))
-            || native_body.is_some_and(|body| self.native.contains_key(&body))
-    }
-
-    pub(crate) fn has_output_writer_other_than(
+    /// Return whether a retained history feature already writes one of the
+    /// selected bodies. The provisional retained-history input is excluded
+    /// because segment-backed body images exist before feature replay but are
+    /// not feature writers.
+    pub(crate) fn has_preceding_writer(
         &self,
-        feature: Option<&FeatureId>,
+        provisional_feature: Option<&FeatureId>,
+        native_body: Option<u32>,
         outputs: &[BodyId],
     ) -> bool {
         outputs.iter().any(|output| {
             self.outputs
                 .get(output)
-                .is_some_and(|writer| Some(writer) != feature)
-        })
+                .is_some_and(|writer| Some(writer) != provisional_feature)
+        }) || native_body.is_some_and(|body| self.native.contains_key(&body))
     }
 
     pub(crate) fn extend_primary_dependencies(
@@ -162,9 +160,6 @@ mod tests {
 
         assert_eq!(dependencies, [first]);
         assert!(history.native_writer(8).is_none());
-        assert!(history.has_primary_writer(Some(7), &[]));
-        assert!(history.has_primary_writer(None, std::slice::from_ref(&body)));
-        assert!(!history.has_primary_writer(Some(8), &[]));
         history.record_writer(Some(8), std::slice::from_ref(&body), &second);
         assert_eq!(history.native_writer(8), Some(&second));
         dependencies.clear();
@@ -186,14 +181,20 @@ mod tests {
         history.record_writer(None, &[created.clone(), existing.clone()], &provisional);
         history.record_writer(Some(7), std::slice::from_ref(&existing), &retained);
 
-        assert!(!history
-            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&created)));
-        assert!(history
-            .has_output_writer_other_than(Some(&provisional), std::slice::from_ref(&existing)));
+        assert!(!history.has_preceding_writer(
+            Some(&provisional),
+            None,
+            std::slice::from_ref(&created)
+        ));
+        assert!(history.has_preceding_writer(
+            Some(&provisional),
+            Some(7),
+            std::slice::from_ref(&existing)
+        ));
 
         history.retract_outputs(&provisional, &[created.clone(), existing.clone()]);
 
-        assert!(!history.has_primary_writer(None, &[created]));
-        assert!(history.has_primary_writer(Some(7), &[existing]));
+        assert!(!history.has_preceding_writer(Some(&provisional), None, &[created]));
+        assert!(history.has_preceding_writer(Some(&provisional), Some(7), &[existing]));
     }
 }
