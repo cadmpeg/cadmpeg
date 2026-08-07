@@ -516,28 +516,42 @@ pub(crate) fn nurbs_surface_isocurve(
     parameter: f64,
     fix_u: bool,
 ) -> Option<NurbsCurve> {
+    if !parameter.is_finite()
+        || !surface.u_knots.iter().copied().all(f64::is_finite)
+        || !surface.v_knots.iter().copied().all(f64::is_finite)
+        || !surface.control_points.iter().copied().all(finite_point3)
+        || surface.weights.as_ref().is_some_and(|weights| {
+            weights.len() != surface.control_points.len()
+                || weights.iter().copied().any(|weight| !weight.is_finite())
+        })
+    {
+        return None;
+    }
     let u_count = usize::try_from(surface.u_count).ok()?;
     let v_count = usize::try_from(surface.v_count).ok()?;
+    let expected_control_count = u_count.checked_mul(v_count)?;
+    if surface.control_points.len() != expected_control_count {
+        return None;
+    }
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    if surface.u_knots.len() != u_count.checked_add(u_degree)?.checked_add(1)?
+        || surface.v_knots.len() != v_count.checked_add(v_degree)?.checked_add(1)?
+        || surface.u_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || surface.v_knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
     let (fixed_basis, varying_count, degree, knots) = if fix_u {
         (
-            nurbs_basis_values(
-                &surface.u_knots,
-                usize::try_from(surface.u_degree).ok()?,
-                parameter,
-                u_count,
-            )?,
+            nurbs_basis_values(&surface.u_knots, u_degree, parameter, u_count)?,
             v_count,
             surface.v_degree,
             surface.v_knots.clone(),
         )
     } else {
         (
-            nurbs_basis_values(
-                &surface.v_knots,
-                usize::try_from(surface.v_degree).ok()?,
-                parameter,
-                v_count,
-            )?,
+            nurbs_basis_values(&surface.v_knots, v_degree, parameter, v_count)?,
             u_count,
             surface.u_degree,
             surface.u_knots.clone(),
@@ -555,27 +569,38 @@ pub(crate) fn nurbs_surface_isocurve(
                 varying.checked_mul(v_count)?.checked_add(fixed)?
             };
             let point = surface.control_points.get(index)?;
-            let weight = surface
-                .weights
-                .as_ref()
-                .and_then(|values| values.get(index))
-                .copied()
-                .unwrap_or(1.0);
+            let weight = match surface.weights.as_ref() {
+                Some(values) => *values.get(index)?,
+                None => 1.0,
+            };
             let factor = basis * weight;
             numerator[0] += factor * point.x;
             numerator[1] += factor * point.y;
             numerator[2] += factor * point.z;
             denominator += factor;
         }
-        if !denominator.is_finite() || denominator == 0.0 {
+        if !denominator.is_finite()
+            || denominator == 0.0
+            || !numerator.into_iter().all(f64::is_finite)
+        {
             return None;
         }
-        control_points.push(Point3::new(
+        let point = Point3::new(
             numerator[0] / denominator,
             numerator[1] / denominator,
             numerator[2] / denominator,
-        ));
+        );
+        if !finite_point3(point) {
+            return None;
+        }
+        control_points.push(point);
         weights.push(denominator);
+    }
+    if !knots.iter().copied().all(f64::is_finite)
+        || !control_points.iter().copied().all(finite_point3)
+        || !weights.iter().copied().all(f64::is_finite)
+    {
+        return None;
     }
     Some(NurbsCurve {
         degree,
@@ -597,6 +622,12 @@ fn nurbs_basis_values(
     count: usize,
 ) -> Option<Vec<f64>> {
     if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
+        return None;
+    }
+    if !parameter.is_finite()
+        || !knots.iter().copied().all(f64::is_finite)
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
         return None;
     }
     let mut basis = vec![0.0; count + degree];
@@ -790,6 +821,37 @@ mod tests {
             [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)]
         );
         assert_eq!(curve.weights, Some(vec![tiny, tiny]));
+    }
+
+    #[test]
+    fn surface_isocurve_rejects_invalid_weight_shape_and_output() {
+        let surface = |control_points, weights| NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points,
+            weights,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        assert!(nurbs_surface_isocurve(
+            &surface(vec![Point3::new(0.0, 0.0, 0.0); 4], Some(vec![1.0; 3]),),
+            0.5,
+            true,
+        )
+        .is_none());
+        assert!(nurbs_surface_isocurve(
+            &surface(
+                vec![Point3::new(f64::MAX, 0.0, 0.0); 4],
+                Some(vec![1.0e200; 4]),
+            ),
+            0.5,
+            true,
+        )
+        .is_none());
     }
 
     #[test]
