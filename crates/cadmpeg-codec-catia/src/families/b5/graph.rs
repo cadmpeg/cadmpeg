@@ -2495,14 +2495,14 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let axis = unit(stored_axis)?;
             let expected_chart_angle =
                 (azimuth_range[0] + azimuth_range[1]) * 0.5 - std::f64::consts::PI;
-            let chart_angle = chart_origin / construction_radius;
-            let chart_angle_tolerance =
-                2.0 * f64::EPSILON * chart_angle.abs().max(expected_chart_angle.abs()).max(1.0);
+            let expected_chart_origin = construction_radius * expected_chart_angle;
+            let chart_origin_tolerance =
+                2.0 * f64::EPSILON * chart_origin.abs().max(expected_chart_origin.abs()).max(1.0);
             (radius > 0.0
                 && construction_radius > 0.0
                 && sphere_angular_ranges_are_valid(azimuth_range, latitude_range)
-                && chart_angle.is_finite()
-                && (chart_angle - expected_chart_angle).abs() <= chart_angle_tolerance
+                && expected_chart_origin.is_finite()
+                && (chart_origin - expected_chart_origin).abs() <= chart_origin_tolerance
                 && [stored_x, stored_y, stored_axis]
                     .iter()
                     .all(|direction| ((vector_length(*direction) / radius) - 1.0).abs() <= 1e-12)
@@ -6019,7 +6019,10 @@ mod tests {
         tiny_chart.payload[137..145].copy_from_slice(&tiny_construction_radius.to_le_bytes());
         tiny_chart.payload[145..153].copy_from_slice(&tiny_chart_origin.to_le_bytes());
         assert!(parse_surface(&tiny_chart).is_some());
-        tiny_chart.payload[145..153].copy_from_slice(&1e-16_f64.to_le_bytes());
+        tiny_chart.payload[145..153]
+            .copy_from_slice(&(tiny_chart_origin + f64::EPSILON).to_le_bytes());
+        assert!(parse_surface(&tiny_chart).is_some());
+        tiny_chart.payload[145..153].copy_from_slice(&1e-12_f64.to_le_bytes());
         assert_eq!(parse_surface(&tiny_chart), None);
 
         let mut left_handed = record.clone();
