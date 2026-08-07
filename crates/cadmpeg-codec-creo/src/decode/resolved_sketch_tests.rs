@@ -3651,16 +3651,21 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
         ),
     ])
     .is_none());
-    assert!(circular_sweep_cylinder_from_cap_outlines([
-        (
-            828,
-            [0.0, 4.0, 0.0],
-            [0.0, 1.0, 0.0],
-            Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
-        ),
-        (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
-    ])
-    .is_none());
+    assert!(matches!(
+        circular_sweep_cylinder_from_cap_outlines([
+            (
+                828,
+                [0.0, 4.0, 0.0],
+                [0.0, 1.0, 0.0],
+                Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
+            ),
+            (831, [0.0, -4.0, 0.0], [0.0, 1.0, 0.0], None,),
+        ]),
+        Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+            if origin == Point3::new(-12.5, 4.0, 0.0)
+                && axis == Vector3::new(0.0, -1.0, 0.0)
+                && radius == 0.75
+    ));
     assert!(matches!(
         cylinder_from_single_cap_outline((
             46,
@@ -3673,6 +3678,114 @@ fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
                 && axis == Vector3::new(0.0, 1.0, 0.0)
                 && radius == 4.45
     ));
+}
+
+#[test]
+fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id: 825,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    scan.surfaces.rows.extend([
+        row(828, crate::surface::SurfaceKind::Plane),
+        row(831, crate::surface::SurfaceKind::Plane),
+        row(836, crate::surface::SurfaceKind::Cylinder),
+    ]);
+    scan.planes
+        .positional_frames
+        .push(crate::surface::OutlinePlane {
+            surface_id: 828,
+            origin: [0.0, 4.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            offset: 828,
+        });
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 831,
+        origin: [0.0, -4.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: 831,
+    });
+    scan.planes
+        .envelopes
+        .push(crate::surface::PlaneEnvelopeRecord {
+            surface_id: 831,
+            body: Vec::new(),
+            envelope: crate::surface::PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [Some(-13.25), Some(-4.0), Some(-0.75)],
+                    [Some(-11.75), Some(-4.0), Some(0.75)],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
+            row_offset: 0,
+            offset: 0,
+        });
+    let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let entries = vec![
+        entry(828, 204, None),
+        entry(831, 203, None),
+        entry(834, 200, Some(22)),
+        entry(836, 200, None),
+    ];
+    scan.features
+        .entity_tables
+        .push(crate::feature::FeatureEntityTable {
+            feature_id: Some(825),
+            table_class_id: 29,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            entries,
+            surface_ids: vec![828, 831, 836],
+            non_surface_entity_ids: vec![834],
+            offset: 0,
+        });
+
+    let sweep = two_cap_circular_sweep_geometry(&scan, 825).expect("two-cap sweep");
+    assert_eq!(sweep.cylinder_ids, vec![836]);
+    assert_eq!(sweep.direction, [0.0, -1.0, 0.0]);
+    assert_eq!(
+        sweep.extent,
+        ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: Termination::Blind {
+                    length: Length(8.0),
+                },
+                draft: None,
+                offset: None,
+            },
+        }
+    );
+    assert!(matches!(
+        sweep.geometry,
+        SurfaceGeometry::Cylinder { origin, axis, radius, .. }
+            if origin == Point3::new(-12.5, -4.0, 0.0)
+                && axis == Vector3::new(0.0, -1.0, 0.0)
+                && radius == 0.75
+    ));
+
+    scan.features.entity_tables[0]
+        .surface_ids
+        .retain(|id| *id != 831);
+    assert!(two_cap_circular_sweep_geometry(&scan, 825).is_none());
 }
 
 #[test]

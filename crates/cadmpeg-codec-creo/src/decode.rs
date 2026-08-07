@@ -5110,7 +5110,9 @@ fn feature_plane_equations(
 
 type FeatureOutlinePlane = (u32, [f64; 3], [f64; 3]);
 
-/// Resolve one uniquely identified plane row to its unique complete outline.
+/// Resolve one uniquely identified plane row to one unambiguous placed plane
+/// equation. The equation may be carried by one outline and one positional
+/// frame; both carriers are valid only when they agree on origin and normal.
 fn feature_outline_plane(
     scan: &ContainerScan,
     feature_id: u32,
@@ -5119,12 +5121,46 @@ fn feature_outline_plane(
     let row = crate::surface::unique_surface_row(&scan.surfaces.rows, surface_id)?;
     (row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane)
         .then_some(())?;
-    let plane = crate::surface::unique_outline_plane(&scan.planes.outlines, surface_id)?;
+    let outlines = scan
+        .planes
+        .outlines
+        .iter()
+        .filter(|plane| plane.surface_id == surface_id);
+    let outlines = outlines.cloned().collect::<Vec<_>>();
+    let positional_frames = scan
+        .planes
+        .positional_frames
+        .iter()
+        .filter(|plane| plane.surface_id == surface_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    let agrees = |left: &crate::surface::OutlinePlane, right: &crate::surface::OutlinePlane| {
+        left.origin
+            .into_iter()
+            .zip(right.origin)
+            .all(|(left, right)| {
+                (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0)
+            })
+            && left
+                .normal
+                .into_iter()
+                .zip(right.normal)
+                .all(|(left, right)| {
+                    (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0)
+                })
+    };
+    let plane = match (outlines.as_slice(), positional_frames.as_slice()) {
+        ([], []) => return None,
+        ([plane], []) | ([], [plane]) => plane,
+        ([outline], [positional]) if agrees(outline, positional) => outline,
+        _ => return None,
+    };
     Some((surface_id, plane.origin, plane.normal))
 }
 
 /// Collect every same-feature plane row only when all rows have complete,
-/// unambiguous outlines. Partial collections cannot establish ordered caps.
+/// unambiguous placed equations. Partial collections cannot establish ordered
+/// caps.
 fn feature_outline_planes(
     scan: &ContainerScan,
     feature_id: u32,
@@ -19554,10 +19590,7 @@ fn circular_sweep_cylinder_from_cap_outlines(
         .iter()
         .filter_map(|(_, _, _, corners)| cap_square_center_radius((*corners)?, axis_index))
         .collect::<Vec<_>>();
-    let [_, _] = circles.as_slice() else {
-        return None;
-    };
-    let (center, radius) = *circles.first()?;
+    let (center, radius) = circles.first().copied()?;
     let scale = center
         .iter()
         .chain(std::iter::once(&radius))
@@ -19708,26 +19741,41 @@ fn two_cap_circular_sweep_geometry(
     let [table] = tables.as_slice() else {
         return None;
     };
-    if table
-        .entries
-        .iter()
-        .map(|entry| entry.class_id)
-        .eq([204, 203, 200, 200])
-    {
-        return None;
-    }
-    let [first_plane, second_plane, first_cylinder, second_cylinder] = table.entry_ids.as_slice()
+    let [first_plane_entry, second_plane_entry, profile_entry, cylinder_entry] =
+        table.entries.as_slice()
     else {
         return None;
     };
-    let placed_planes = feature_outline_planes(scan, feature_id)?;
-    let [first, second] = placed_planes.as_slice() else {
-        return None;
-    };
-    if first.0 != *first_plane || second.0 != *second_plane {
+    if table.entry_ids
+        != [
+            first_plane_entry.entity_id,
+            second_plane_entry.entity_id,
+            profile_entry.entity_id,
+            cylinder_entry.entity_id,
+        ]
+        || [
+            first_plane_entry.class_id,
+            second_plane_entry.class_id,
+            profile_entry.class_id,
+            cylinder_entry.class_id,
+        ] != [204, 203, 200, 200]
+        || first_plane_entry.source_entity_id.is_some()
+        || second_plane_entry.source_entity_id.is_some()
+        || profile_entry.source_entity_id.is_none()
+        || cylinder_entry.source_entity_id.is_some()
+        || !table.surface_ids.contains(&first_plane_entry.entity_id)
+        || !table.surface_ids.contains(&second_plane_entry.entity_id)
+        || !table.surface_ids.contains(&cylinder_entry.entity_id)
+        || table.surface_ids.contains(&profile_entry.entity_id)
+        || !table
+            .non_surface_entity_ids
+            .contains(&profile_entry.entity_id)
+    {
         return None;
     }
-    let cap = |plane: &(u32, [f64; 3], [f64; 3])| {
+    let first = feature_outline_plane(scan, feature_id, first_plane_entry.entity_id)?;
+    let second = feature_outline_plane(scan, feature_id, second_plane_entry.entity_id)?;
+    let cap = |plane: FeatureOutlinePlane| {
         let envelopes = scan
             .planes
             .envelopes
@@ -19740,17 +19788,16 @@ fn two_cap_circular_sweep_geometry(
         };
         (plane.0, plane.1, plane.2, corners)
     };
-    let cylinder_ids = [*first_cylinder, *second_cylinder];
-    if cylinder_ids.iter().any(|id| {
-        !crate::surface::unique_surface_row(&scan.surfaces.rows, *id).is_some_and(|row| {
+    if !crate::surface::unique_surface_row(&scan.surfaces.rows, cylinder_entry.entity_id)
+        .is_some_and(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-    }) {
+    {
         return None;
     }
-    let (_, direction, termination) = hole_placement([*first, *second])?;
+    let (_, direction, termination) = hole_placement([first, second])?;
     Some(CircularSweepGeometry {
-        cylinder_ids: cylinder_ids.to_vec(),
+        cylinder_ids: vec![cylinder_entry.entity_id],
         section_definition_id: None,
         direction,
         extent: ExtrudeExtent::OneSided {
