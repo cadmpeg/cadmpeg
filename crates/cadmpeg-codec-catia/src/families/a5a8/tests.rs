@@ -111,6 +111,29 @@ fn a8_surface_header_rejects_an_incomplete_elided_program() {
 }
 
 #[test]
+fn a8_elided_surface_requires_length_closed_nested_children() {
+    let mut bytes = a8_elided_surface_stream();
+    let payload_len = u32::from_le_bytes(bytes[3..7].try_into().unwrap());
+    let a8_end = 11 + usize::try_from(payload_len).unwrap();
+    let child = [0xb5, 0x03, 0x5e, 0, 2, 0, 0, 0];
+    bytes.splice(a8_end..a8_end, child);
+    let new_payload_len = payload_len + u32::try_from(child.len()).unwrap();
+    bytes[3..7].copy_from_slice(&new_payload_len.to_le_bytes());
+
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one elided surface header");
+    assert!(header.poles_elided);
+
+    bytes[a8_end + 3] = 250;
+    let [header] = crate::families::a5a8::records::a8_surface_headers(&bytes)
+        .try_into()
+        .expect("one surface header");
+    assert!(!header.poles_elided);
+    assert!(crate::families::a5a8::records::resolved_a8_surfaces(&bytes).is_empty());
+}
+
+#[test]
 fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let bytes = a8_elided_surface_stream();
 

@@ -115,16 +115,6 @@ fn object_frame_flag(flag: u8) -> bool {
     matches!(flag, 0x03 | 0x13 | 0x83)
 }
 
-fn object_frame_start(data: &[u8], pos: usize) -> bool {
-    let Some(&family) = data.get(pos) else {
-        return false;
-    };
-    matches!(
-        family,
-        0xa5 | 0xa6 | 0xa7 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6
-    ) && data.get(pos + 1).copied().is_some_and(object_frame_flag)
-}
-
 fn object_stream_frame(data: &[u8], pos: usize) -> Option<ObjectStreamFrame> {
     if !object_frame_flag(*data.get(pos + 1)?) {
         return None;
@@ -1265,7 +1255,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     let tail_end = at.checked_add(141)?;
     let poles_elided = tail_end <= end
         && valid_a8_elided_tail(data, at, &v_distinct)
-        && (tail_end == end || object_frame_start(data, tail_end));
+        && closed_a8_child_run(data, tail_end, end);
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
