@@ -67,6 +67,12 @@ struct BodyDefinition<'a> {
     transform: Option<cadmpeg_ir::transform::Transform>,
 }
 
+struct SurfaceSupport<'a> {
+    id: &'a SurfaceId,
+    geometry: &'a cadmpeg_ir::geometry::SurfaceGeometry,
+    factor: f64,
+}
+
 fn compose_sense(left: Sense, right: Sense) -> Sense {
     if left == right {
         Sense::Forward
@@ -151,8 +157,7 @@ fn project_pcurve_uses(
 fn pcurves_agree(
     source: &CadIr,
     uses: &[(bool, u32)],
-    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
-    factor: f64,
+    support: &SurfaceSupport<'_>,
     expected_start: Point3,
     expected_end: Point3,
     tolerance: f64,
@@ -160,14 +165,18 @@ fn pcurves_agree(
     if uses.is_empty() {
         return true;
     }
+    let index = cadmpeg_ir::index::ModelIndex::new(source);
     let mapped = uses
         .iter()
         .map(|(_, sequence)| {
-            let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
-            let start = evaluation::pcurve(&geometry, range[0])
-                .and_then(|uv| evaluation::surface(surface, uv))?;
-            let end = evaluation::pcurve(&geometry, range[1])
-                .and_then(|uv| evaluation::surface(surface, uv))?;
+            let (geometry, range) =
+                pcurve_geometry(source, *sequence, support.geometry, support.factor)?;
+            let start = evaluation::pcurve(&geometry, range[0]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+            })?;
+            let end = evaluation::pcurve(&geometry, range[1]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, support.id, uv.u, uv.v)
+            })?;
             Some((start, end))
         })
         .collect::<Option<Vec<_>>>();
@@ -761,8 +770,11 @@ pub(super) fn project(
                                 pcurves_agree(
                                     ir,
                                     pcurves,
-                                    &support_geometry,
-                                    factor,
+                                    &SurfaceSupport {
+                                        id: &surface_id,
+                                        geometry: &support_geometry,
+                                        factor,
+                                    },
                                     expected,
                                     expected,
                                     tolerance,
@@ -824,8 +836,11 @@ pub(super) fn project(
                             pcurves_agree(
                                 ir,
                                 pcurves,
-                                &support_geometry,
-                                factor,
+                                &SurfaceSupport {
+                                    id: &surface_id,
+                                    geometry: &support_geometry,
+                                    factor,
+                                },
                                 expected_start,
                                 expected_end,
                                 tolerance,

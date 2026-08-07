@@ -573,10 +573,25 @@ pub(super) fn project(
                     let agrees = pcurves.len() == 1
                         && global.minimum_resolution_mm().is_some_and(|tolerance| {
                             let (geometry, range) = &pcurves[0];
-                            let mapped_start = evaluation::pcurve(geometry, range[0])
-                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
-                            let mapped_end = evaluation::pcurve(geometry, range[1])
-                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
+                            let index = cadmpeg_ir::index::ModelIndex::new(ir);
+                            let mapped_start =
+                                evaluation::pcurve(geometry, range[0]).and_then(|uv| {
+                                    cadmpeg_ir::eval::model_surface_point_by_id(
+                                        &index,
+                                        &surface_id,
+                                        uv.u,
+                                        uv.v,
+                                    )
+                                });
+                            let mapped_end =
+                                evaluation::pcurve(geometry, range[1]).and_then(|uv| {
+                                    cadmpeg_ir::eval::model_surface_point_by_id(
+                                        &index,
+                                        &surface_id,
+                                        uv.u,
+                                        uv.v,
+                                    )
+                                });
                             mapped_start.is_some_and(|point| {
                                 evaluation::distance(point, start) <= tolerance
                             }) && mapped_end

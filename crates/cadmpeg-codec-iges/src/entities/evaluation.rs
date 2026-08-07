@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact evaluation helpers for decoded neutral carriers.
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 fn add(origin: Point3, direction: Vector3, scale: f64) -> Point3 {
@@ -272,114 +272,6 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
         CurveGeometry::Composite { .. }
         | CurveGeometry::Procedural { .. }
         | CurveGeometry::Unknown { .. } => None,
-    }
-}
-
-fn nurbs_surface(surface: &NurbsSurface, uv: Point2) -> Option<Point3> {
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_basis = basis(
-        &surface.u_knots,
-        usize::try_from(surface.u_degree).ok()?,
-        u_count,
-        uv.u,
-    )?;
-    let v_basis = basis(
-        &surface.v_knots,
-        usize::try_from(surface.v_degree).ok()?,
-        v_count,
-        uv.v,
-    )?;
-    let mut point = Point3::new(0.0, 0.0, 0.0);
-    let mut denominator = 0.0;
-    for (u, u_value) in u_basis.into_iter().enumerate() {
-        for (v, v_value) in v_basis.iter().copied().enumerate() {
-            let index = u.checked_mul(v_count)?.checked_add(v)?;
-            let weight = surface
-                .weights
-                .as_ref()
-                .map_or(1.0, |weights| weights[index]);
-            let coefficient = u_value * v_value * weight;
-            point.x += coefficient * surface.control_points[index].x;
-            point.y += coefficient * surface.control_points[index].y;
-            point.z += coefficient * surface.control_points[index].z;
-            denominator += coefficient;
-        }
-    }
-    (denominator != 0.0).then(|| {
-        Point3::new(
-            point.x / denominator,
-            point.y / denominator,
-            point.z / denominator,
-        )
-    })
-}
-
-pub(super) fn surface(geometry: &SurfaceGeometry, uv: Point2) -> Option<Point3> {
-    match geometry {
-        SurfaceGeometry::Plane {
-            origin,
-            normal,
-            u_axis,
-        } => {
-            let point = add(*origin, *u_axis, uv.u);
-            Some(add(point, cross(*normal, *u_axis), uv.v))
-        }
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let side = cross(*axis, *ref_direction);
-            let point = add(*origin, *ref_direction, radius * uv.u.cos());
-            let point = add(point, side, radius * uv.u.sin());
-            Some(add(point, *axis, uv.v))
-        }
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } => {
-            let side = cross(*axis, *ref_direction);
-            let section_radius = radius + uv.v * half_angle.tan();
-            let point = add(*origin, *axis, uv.v);
-            let point = add(point, *ref_direction, section_radius * uv.u.cos());
-            Some(add(point, side, section_radius * ratio * uv.u.sin()))
-        }
-        SurfaceGeometry::Sphere {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let side = cross(*axis, *ref_direction);
-            let point = add(*center, *ref_direction, radius * uv.v.cos() * uv.u.cos());
-            let point = add(point, side, radius * uv.v.cos() * uv.u.sin());
-            Some(add(point, *axis, radius * uv.v.sin()))
-        }
-        SurfaceGeometry::Torus {
-            center,
-            axis,
-            ref_direction,
-            major_radius,
-            minor_radius,
-        } => {
-            let side = cross(*axis, *ref_direction);
-            let radial = major_radius + minor_radius * uv.v.cos();
-            let point = add(*center, *ref_direction, radial * uv.u.cos());
-            let point = add(point, side, radial * uv.u.sin());
-            Some(add(point, *axis, minor_radius * uv.v.sin()))
-        }
-        SurfaceGeometry::Nurbs(surface) => nurbs_surface(surface, uv),
-        SurfaceGeometry::Polygonal { .. } => None,
-        SurfaceGeometry::Transformed { .. } => {
-            cadmpeg_ir::eval::surface_point(geometry, uv.u, uv.v)
-        }
-        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 

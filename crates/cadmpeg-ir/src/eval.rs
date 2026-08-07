@@ -2112,6 +2112,86 @@ fn surface_second_partials_inner(
     }
 }
 
+/// Evaluate an exact construction before its solved cache. In particular, a
+/// rational-quadratic revolution cache represents the circle exactly but does
+/// not preserve the native linear angular parameterization.
+fn procedural_surface_point(
+    index: &crate::index::ModelIndex<'_>,
+    procedural: &crate::geometry::ProceduralSurface,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            parameter_interval,
+            ..
+        } => {
+            if parameter_interval.is_some_and(|range| {
+                !range[0].is_finite()
+                    || !range[1].is_finite()
+                    || range[0] > range[1]
+                    || u < range[0]
+                    || u > range[1]
+            }) {
+                return None;
+            }
+            model_curve_point_by_id(index, directrix, u)
+                .map(|point| offset(point, &[(v, *direction)]))
+        }
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+            ..
+        } => {
+            let (directrix_parameter, angle) = if *transposed { (v, u) } else { (u, v) };
+            if parameter_interval.is_some_and(|range| {
+                !range[0].is_finite()
+                    || !range[1].is_finite()
+                    || range[0] > range[1]
+                    || directrix_parameter < range[0]
+                    || directrix_parameter > range[1]
+            }) || !angular_interval.iter().all(|value| value.is_finite())
+                || !angle.is_finite()
+            {
+                return None;
+            }
+            let axis_length = axis_direction.norm();
+            if !axis_length.is_finite() || axis_length == 0.0 {
+                return None;
+            }
+            let axis = Vector3::new(
+                axis_direction.x / axis_length,
+                axis_direction.y / axis_length,
+                axis_direction.z / axis_length,
+            );
+            let point = model_curve_point_by_id(index, directrix, directrix_parameter)?;
+            let delta = Vector3::new(
+                point.x - axis_origin.x,
+                point.y - axis_origin.y,
+                point.z - axis_origin.z,
+            );
+            let axis_point = offset(*axis_origin, &[(delta.dot(axis), axis)]);
+            let radial = Vector3::new(
+                point.x - axis_point.x,
+                point.y - axis_point.y,
+                point.z - axis_point.z,
+            );
+            let tangent = cross(axis, radial);
+            Some(offset(
+                axis_point,
+                &[(angle.cos(), radial), (angle.sin(), tangent)],
+            ))
+        }
+        _ => None,
+    }
+}
+
 /// Evaluate a surface carrier with access to construction and child-carrier
 /// arenas in `ir`.
 pub fn model_surface_point(
@@ -2128,21 +2208,8 @@ pub fn model_surface_point(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
-    match &procedural.definition {
-        ProceduralSurfaceDefinition::Extrusion {
-            directrix,
-            direction,
-            ..
-        } => {
-            let curve = ir
-                .model
-                .curves
-                .iter()
-                .find(|curve| curve.id == *directrix)?;
-            curve_point(&curve.geometry, u).map(|point| offset(point, &[(v, *direction)]))
-        }
-        _ => None,
-    }
+    let index = crate::index::ModelIndex::new(ir);
+    procedural_surface_point(&index, procedural, u, v)
 }
 
 /// Evaluate a surface carrier selected by arena id.
@@ -2155,6 +2222,18 @@ pub fn model_surface_point_by_id(
     struct SurfaceEvaluation {
         point: Point3,
         oriented_normal: Option<Vector3>,
+    }
+
+    fn oriented_normal(partials: SurfacePartials) -> Option<Vector3> {
+        let normal = cross(partials.du, partials.dv);
+        let magnitude = normal.norm();
+        (magnitude.is_finite() && magnitude > 0.0).then(|| {
+            Vector3::new(
+                normal.x / magnitude,
+                normal.y / magnitude,
+                normal.z / magnitude,
+            )
+        })
     }
 
     fn evaluate(
@@ -2185,29 +2264,37 @@ pub fn model_surface_point_by_id(
                         oriented_normal: Some(normal),
                     })
                 }
-                _ => model_surface_point(index.ir(), &surface.geometry, u, v).map(|point| {
+                _ => procedural_surface_point(index, procedural, u, v).map(|point| {
                     SurfaceEvaluation {
                         point,
-                        oriented_normal: None,
+                        oriented_normal: surface_partials(&surface.geometry, u, v)
+                            .and_then(oriented_normal),
                     }
                 }),
             }
         } else {
-            surface_partials(&surface.geometry, u, v).map(|partials| {
-                let normal = cross(partials.du, partials.dv);
-                let magnitude = normal.norm();
-                let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
-                    Vector3::new(
-                        normal.x / magnitude,
-                        normal.y / magnitude,
-                        normal.z / magnitude,
-                    )
-                });
-                SurfaceEvaluation {
-                    point: partials.point,
-                    oriented_normal,
-                }
-            })
+            let procedural = index
+                .ir()
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|procedural| procedural.surface == *surface_id);
+            procedural
+                .and_then(|procedural| {
+                    procedural_surface_point(index, procedural, u, v).map(|point| {
+                        SurfaceEvaluation {
+                            point,
+                            oriented_normal: surface_partials(&surface.geometry, u, v)
+                                .and_then(oriented_normal),
+                        }
+                    })
+                })
+                .or_else(|| {
+                    surface_partials(&surface.geometry, u, v).map(|partials| SurfaceEvaluation {
+                        point: partials.point,
+                        oriented_normal: oriented_normal(partials),
+                    })
+                })
         };
         visiting.pop();
         result

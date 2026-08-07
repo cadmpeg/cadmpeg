@@ -1675,6 +1675,71 @@ fn surface_of_revolution_file() -> Vec<u8> {
     bytes
 }
 
+fn trimmed_surface_of_revolution_file() -> Vec<u8> {
+    let angle = 0.3_f64;
+    let pcurve = format!(
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,{angle},0,0.5,{},0,0,1;",
+        angle + std::f64::consts::TAU
+    );
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "PROFILE".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,1,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 120,
+            form: 0,
+            label: "REVOLVE".into(),
+            status: "00000000",
+            parameters: format!("120,1,3,0,{};", std::f64::consts::TAU),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "MODEL".into(),
+            status: "00010000",
+            parameters: format!(
+                "100,0.5,0,0,{},{},{},{};",
+                angle.cos(),
+                angle.sin(),
+                angle.cos(),
+                angle.sin()
+            ),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "PCURVE".into(),
+            status: "00010500",
+            parameters: pcurve,
+        },
+        OwnedTestEntity {
+            entity_type: 142,
+            form: 0,
+            label: "ON_SURF".into(),
+            status: "00010000",
+            parameters: "142,0,5,9,7,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "TRIMMED".into(),
+            status: "00000000",
+            parameters: "144,5,1,0,11;".into(),
+        },
+    ])
+}
+
 fn placed_surface_of_revolution_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -1741,6 +1806,34 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     assert!((point.y - expected).abs() < 1.0e-12);
     assert!((point.z - 1.0).abs() < 1.0e-12);
     assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_surface_of_revolution_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(
+        result
+            .ir
+            .model
+            .faces
+            .iter()
+            .any(|face| face.id.0 == "iges:model:face#D13"),
+        "losses={:#?}",
+        result.report.losses
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
