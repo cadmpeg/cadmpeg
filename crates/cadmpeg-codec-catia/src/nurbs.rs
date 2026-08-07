@@ -10,22 +10,49 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point2, Point3};
 
+fn finite_point2(point: Point2) -> bool {
+    [point.u, point.v].into_iter().all(f64::is_finite)
+}
+
+fn finite_point3(point: Point3) -> bool {
+    [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+}
+
+fn finite_nurbs_curve(nurbs: &NurbsCurve) -> bool {
+    nurbs.knots.iter().copied().all(f64::is_finite)
+        && nurbs.control_points.iter().copied().all(finite_point3)
+        && nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.iter().copied().all(f64::is_finite))
+}
+
 /// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
 pub(crate) fn reverse_pcurve_geometry(
     geometry: &PcurveGeometry,
     range: [f64; 2],
 ) -> Option<PcurveGeometry> {
-    if !range.into_iter().all(f64::is_finite) || range[0] >= range[1] {
+    if !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || !(range[1] - range[0]).is_finite()
+    {
         return None;
     }
     match geometry {
-        PcurveGeometry::Line { origin, direction } => Some(PcurveGeometry::Line {
-            origin: Point2::new(
-                origin.u + (range[0] + range[1]) * direction.u,
-                origin.v + (range[0] + range[1]) * direction.v,
-            ),
-            direction: Point2::new(-direction.u, -direction.v),
-        }),
+        PcurveGeometry::Line { origin, direction } => {
+            if !finite_point2(*origin) || !finite_point2(*direction) {
+                return None;
+            }
+            let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
+            let origin = Point2::new(origin.u + sum * direction.u, origin.v + sum * direction.v);
+            finite_point2(origin).then_some(PcurveGeometry::Line {
+                origin,
+                direction: Point2::new(-direction.u, -direction.v),
+            })
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -33,7 +60,18 @@ pub(crate) fn reverse_pcurve_geometry(
             weights,
             periodic,
         } => {
+            if !knots.iter().copied().all(f64::is_finite)
+                || !control_points.iter().copied().all(finite_point2)
+                || weights
+                    .as_ref()
+                    .is_some_and(|values| values.iter().copied().any(|value| !value.is_finite()))
+            {
+                return None;
+            }
             let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
             let mut reversed_knots = knots
                 .iter()
                 .rev()
@@ -43,6 +81,9 @@ pub(crate) fn reverse_pcurve_geometry(
                 if *knot == -0.0 {
                     *knot = 0.0;
                 }
+            }
+            if reversed_knots.iter().copied().any(|knot| !knot.is_finite()) {
+                return None;
             }
             Some(PcurveGeometry::Nurbs {
                 degree: *degree,
@@ -63,19 +104,32 @@ pub(crate) fn reverse_curve_geometry(
     geometry: &CurveGeometry,
     range: [f64; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
-    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+    if !range.into_iter().all(f64::is_finite)
+        || range[0] > range[1]
+        || !(range[1] - range[0]).is_finite()
+    {
         return None;
     }
     match geometry {
         CurveGeometry::Line { origin, direction } => {
+            if !finite_point3(*origin)
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+            {
+                return None;
+            }
             let length = range[1] - range[0];
-            Some((
-                CurveGeometry::Line {
-                    origin: (*origin).translated(*direction, range[1]),
-                    direction: (*direction).scale(-1.0),
-                },
-                [0.0, length],
-            ))
+            let origin = (*origin).translated(*direction, range[1]);
+            let direction = direction.scale(-1.0);
+            if !finite_point3(origin)
+                || ![direction.x, direction.y, direction.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+            {
+                return None;
+            }
+            Some((CurveGeometry::Line { origin, direction }, [0.0, length]))
         }
         CurveGeometry::Circle {
             center,
@@ -83,10 +137,31 @@ pub(crate) fn reverse_curve_geometry(
             ref_direction,
             radius,
         } => {
+            if !finite_point3(*center)
+                || ![
+                    axis.x,
+                    axis.y,
+                    axis.z,
+                    ref_direction.x,
+                    ref_direction.y,
+                    ref_direction.z,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                || !radius.is_finite()
+            {
+                return None;
+            }
             let sweep = range[1] - range[0];
             let tangent = (*axis).cross(*ref_direction);
             let end = range[1];
             let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
+            if ![ref_direction.x, ref_direction.y, ref_direction.z]
+                .into_iter()
+                .all(f64::is_finite)
+            {
+                return None;
+            }
             Some((
                 CurveGeometry::Circle {
                     center: *center,
@@ -98,6 +173,9 @@ pub(crate) fn reverse_curve_geometry(
             ))
         }
         CurveGeometry::Nurbs(nurbs) => {
+            if !finite_nurbs_curve(nurbs) {
+                return None;
+            }
             let sum = range[0] + range[1];
             if !sum.is_finite() {
                 return None;
@@ -108,6 +186,9 @@ pub(crate) fn reverse_curve_geometry(
                 .rev()
                 .map(|knot| sum - knot)
                 .collect::<Vec<_>>();
+            if knots.iter().copied().any(|knot| !knot.is_finite()) {
+                return None;
+            }
             Some((
                 CurveGeometry::Nurbs(NurbsCurve {
                     degree: nurbs.degree,
@@ -743,5 +824,35 @@ mod tests {
         assert!(
             circular_helix_cache(&definition(Vector3::new(radius, 0.0, 0.0)), 1.0e-4).is_none()
         );
+    }
+
+    #[test]
+    fn reversing_geometry_rejects_nonfinite_reconstruction() {
+        let pcurve_line = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(reverse_pcurve_geometry(&pcurve_line, [f64::MAX / 2.0, f64::MAX]).is_none());
+
+        let model_line = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(2.0, 0.0, 0.0),
+        };
+        assert!(reverse_curve_geometry(&model_line, [0.0, f64::MAX]).is_none());
+
+        let pcurve_nurbs = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![-f64::MAX, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        assert!(reverse_pcurve_geometry(&pcurve_nurbs, [0.0, f64::MAX]).is_none());
+
+        let nonfinite_line = PcurveGeometry::Line {
+            origin: Point2::new(f64::NAN, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(reverse_pcurve_geometry(&nonfinite_line, [0.0, 1.0]).is_none());
     }
 }
