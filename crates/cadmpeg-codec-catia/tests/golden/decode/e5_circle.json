@@ -476,6 +476,7 @@
       "transferred_consolidated_line_profile_count": 0,
       "transferred_consolidated_revolution_count": 0,
       "transferred_feature_count": 0,
+      "transferred_feature_parent_count": 0,
       "transferred_formula_design_record_count": 0,
       "transferred_legacy_formula_count": 0,
       "transferred_legacy_parameter_count": 0,

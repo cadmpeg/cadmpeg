@@ -104,6 +104,7 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+    design_feature_transfer.assign_feature_parents(&mut ir, &native);
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
         &native,
@@ -2893,6 +2894,14 @@ fn finish_decode(
         (
             "transferred_feature_count".to_string(),
             ir.model.features.len(),
+        ),
+        (
+            "transferred_feature_parent_count".to_string(),
+            ir.model
+                .features
+                .iter()
+                .filter(|feature| feature.parent.is_some())
+                .count(),
         ),
         (
             "transferred_parameter_count".to_string(),

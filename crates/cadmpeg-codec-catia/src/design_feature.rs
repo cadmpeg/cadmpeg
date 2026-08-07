@@ -69,6 +69,61 @@ impl DesignFeatureTransfer {
             parameter.owner = Some(feature_id);
         }
     }
+
+    /// Bind a neutral feature to a transferred structural parent.
+    ///
+    /// The object graph records an exact owner-design-object incidence. It is
+    /// a feature parent only when both endpoint design objects independently
+    /// satisfy a neutral feature transfer. Do not use a field relation here:
+    /// those relations are typed incidences, but their operation roles remain
+    /// unresolved. A malformed owner cycle is omitted as a whole rather than
+    /// creating a cyclic neutral history.
+    pub(crate) fn assign_feature_parents(&self, ir: &mut CadIr, native: &CatiaNative) {
+        let design_objects = native
+            .design_objects
+            .iter()
+            .map(|object| (object.id.as_str(), object))
+            .collect::<HashMap<_, _>>();
+        let parents = ir
+            .model
+            .features
+            .iter()
+            .filter_map(|feature| {
+                let native_ref = feature.native_ref.as_deref()?;
+                let object = design_objects.get(native_ref)?;
+                let parent_object = object.owner_design_object.as_deref()?;
+                let parent = self.feature_ids.get(parent_object)?;
+                (parent != &feature.id).then(|| (feature.id.clone(), parent.clone()))
+            })
+            .collect::<HashMap<_, _>>();
+
+        for feature in &mut ir.model.features {
+            if feature.parent.is_some() {
+                continue;
+            }
+            let Some(parent) = parents.get(&feature.id) else {
+                continue;
+            };
+            if feature_parent_chain_is_acyclic(&feature.id, &parents) {
+                feature.parent = Some(parent.clone());
+            }
+        }
+    }
+}
+
+fn feature_parent_chain_is_acyclic(
+    feature_id: &FeatureId,
+    parents: &HashMap<FeatureId, FeatureId>,
+) -> bool {
+    let mut current = Some(feature_id);
+    let mut visited = HashSet::new();
+    while let Some(id) = current {
+        if !visited.insert(id) {
+            return false;
+        }
+        current = parents.get(id);
+    }
+    true
 }
 
 /// Resolve one unique transferred feature on a complete structural owner chain.
@@ -298,4 +353,141 @@ fn complete_empty_declaration(
         && record.subtype == PayloadSubtype::Empty
         && record.payload.size == 1
         && record.payload.fields == [PayloadField::Terminator]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::units::Units;
+
+    fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
+        CatiaDesignObject {
+            id: id.to_string(),
+            parent: "graph".to_string(),
+            ordinal: 0,
+            first_field_byte_offset: 0,
+            owner_entity_id: 0,
+            owner_record: None,
+            owner_design_object: owner_design_object.map(str::to_string),
+            owner_class: None,
+            owner_storage_ref: None,
+            fields: Vec::new(),
+            field_classes: Vec::new(),
+            definition_values: Vec::new(),
+            definition_chain_values: Vec::new(),
+            relations: Vec::new(),
+            parallel_reference_table: None,
+        }
+    }
+
+    fn feature(id: &str, native_ref: &str) -> Feature {
+        Feature {
+            id: FeatureId::from(id),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::StoredGeometry,
+            native_ref: Some(native_ref.to_string()),
+        }
+    }
+
+    #[test]
+    fn assigns_parent_from_an_exact_transferred_owner_chain() {
+        let native = CatiaNative {
+            design_objects: vec![
+                design_object("parent-object", None),
+                design_object("child-object", Some("parent-object")),
+            ],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .features
+            .push(feature("parent-feature", "parent-object"));
+        ir.model
+            .features
+            .push(feature("child-feature", "child-object"));
+        let transfer = DesignFeatureTransfer {
+            feature_ids: HashMap::from([
+                (
+                    "parent-object".to_string(),
+                    FeatureId::from("parent-feature"),
+                ),
+                ("child-object".to_string(), FeatureId::from("child-feature")),
+            ]),
+            ..DesignFeatureTransfer::default()
+        };
+
+        transfer.assign_feature_parents(&mut ir, &native);
+
+        assert_eq!(ir.model.features[0].parent, None);
+        assert_eq!(
+            ir.model.features[1].parent,
+            Some(FeatureId::from("parent-feature"))
+        );
+    }
+
+    #[test]
+    fn does_not_assign_a_self_parent() {
+        let native = CatiaNative {
+            design_objects: vec![design_object("feature-object", Some("feature-object"))],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(feature("feature", "feature-object"));
+        let transfer = DesignFeatureTransfer {
+            feature_ids: HashMap::from([(
+                "feature-object".to_string(),
+                FeatureId::from("feature"),
+            )]),
+            ..DesignFeatureTransfer::default()
+        };
+
+        transfer.assign_feature_parents(&mut ir, &native);
+
+        assert_eq!(ir.model.features[0].parent, None);
+    }
+
+    #[test]
+    fn omits_all_parents_in_an_owner_cycle() {
+        let native = CatiaNative {
+            design_objects: vec![
+                design_object("first-object", Some("second-object")),
+                design_object("second-object", Some("first-object")),
+            ],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .features
+            .push(feature("first-feature", "first-object"));
+        ir.model
+            .features
+            .push(feature("second-feature", "second-object"));
+        let transfer = DesignFeatureTransfer {
+            feature_ids: HashMap::from([
+                ("first-object".to_string(), FeatureId::from("first-feature")),
+                (
+                    "second-object".to_string(),
+                    FeatureId::from("second-feature"),
+                ),
+            ]),
+            ..DesignFeatureTransfer::default()
+        };
+
+        transfer.assign_feature_parents(&mut ir, &native);
+
+        assert!(ir
+            .model
+            .features
+            .iter()
+            .all(|feature| feature.parent.is_none()));
+    }
 }

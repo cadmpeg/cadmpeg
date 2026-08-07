@@ -421,6 +421,8 @@ pub(crate) const TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT: CoverageKey =
 pub(crate) const TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT: CoverageKey =
     CoverageKey("transferred_consolidated_revolution_count");
 pub(crate) const TRANSFERRED_FEATURE_COUNT: CoverageKey = CoverageKey("transferred_feature_count");
+pub(crate) const TRANSFERRED_FEATURE_PARENT_COUNT: CoverageKey =
+    CoverageKey("transferred_feature_parent_count");
 pub(crate) const TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT: CoverageKey =
     CoverageKey("transferred_formula_design_record_count");
 pub(crate) const TRANSFERRED_LEGACY_FORMULA_COUNT: CoverageKey =
@@ -758,6 +760,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_CONSOLIDATED_LINE_PROFILE_COUNT,
     TRANSFERRED_CONSOLIDATED_REVOLUTION_COUNT,
     TRANSFERRED_FEATURE_COUNT,
+    TRANSFERRED_FEATURE_PARENT_COUNT,
     TRANSFERRED_FORMULA_DESIGN_RECORD_COUNT,
     TRANSFERRED_LEGACY_FORMULA_COUNT,
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
