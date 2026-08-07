@@ -4353,6 +4353,76 @@ fn resolved_loft_path(
     loft_path_from_edge_selection(&group.id, selection)
 }
 
+fn resolved_surface_patch_path(
+    groups: &[&DesignConstructionOperandGroup],
+    all_groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    scope: &DesignParameterScope,
+) -> cadmpeg_ir::features::PathRef {
+    use cadmpeg_ir::features::PathRef;
+
+    let paths = groups
+        .iter()
+        .map(|group| {
+            let selection = resolved_edge_group(
+                group,
+                all_groups,
+                operands,
+                identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                None,
+            );
+            loft_path_from_edge_selection(&group.id, selection)
+        })
+        .collect::<Vec<_>>();
+    if paths.is_empty() {
+        return PathRef::Native(scope.id.clone());
+    }
+    if let Some(state) = paths.iter().find_map(|path| {
+        let PathRef::HistoricalEdges { state, .. } = path else {
+            return None;
+        };
+        Some(state.clone())
+    }) {
+        if paths.iter().all(|path| {
+            matches!(
+                path,
+                PathRef::HistoricalEdges {
+                    state: candidate,
+                    ..
+                } if *candidate == state
+            )
+        }) {
+            let edges = paths
+                .into_iter()
+                .flat_map(|path| match path {
+                    PathRef::HistoricalEdges { edges, .. } => edges,
+                    _ => unreachable!("validated historical SurfacePatch paths"),
+                })
+                .collect();
+            return PathRef::HistoricalEdges {
+                state,
+                edges,
+                native: scope.id.clone(),
+            };
+        }
+    }
+    if paths.iter().all(|path| matches!(path, PathRef::Edges(_))) {
+        return PathRef::Edges(
+            paths
+                .into_iter()
+                .flat_map(|path| match path {
+                    PathRef::Edges(edges) => edges,
+                    _ => unreachable!("validated direct SurfacePatch paths"),
+                })
+                .collect(),
+        );
+    }
+    PathRef::Native(scope.id.clone())
+}
+
 pub(crate) fn loft_path_from_edge_selection(
     native: &str,
     selection: cadmpeg_ir::features::EdgeSelection,
@@ -5043,7 +5113,7 @@ pub(crate) fn project_surface_patch(
     edge_operands: &[DesignEdgeOperand],
     edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, SurfaceBoundary};
 
     if scope.kind != "SurfacePatch" {
         return None;
@@ -5158,7 +5228,13 @@ pub(crate) fn project_surface_patch(
             scope,
         )
     } else {
-        PathRef::Native(scope.id.clone())
+        resolved_surface_patch_path(
+            &groups,
+            construction_groups,
+            edge_operands,
+            edge_identity_operands,
+            scope,
+        )
     };
     Some(FeatureDefinition::FilledSurface {
         boundary: SurfaceBoundary::Path(boundary),

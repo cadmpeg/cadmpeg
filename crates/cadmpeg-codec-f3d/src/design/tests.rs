@@ -11221,6 +11221,81 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
     );
     assert_eq!(extended_payload.sides[0].entries.len(), 1);
+    let surface_patch = crate::design::decode::operands::surface_patch_recipe_structure(
+        &[
+            0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2,
+            1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
+        ],
+        4,
+    )
+    .expect("SurfacePatch two-clause recipe structure");
+    assert_eq!(surface_patch.root, 2);
+    assert_eq!(surface_patch.clauses.len(), 2);
+    assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
+    assert_eq!(surface_patch.clauses[0].edge_reference_ordinals, [0, 2]);
+    assert_eq!(surface_patch.clauses[0].payload_entry_count, 1);
+    assert_eq!(surface_patch.clauses[0].entries[0].selector, 0);
+    assert_eq!(surface_patch.clauses[1].face_reference_ordinals, [3, 1]);
+    assert_eq!(surface_patch.clauses[1].edge_reference_ordinals, [0, 3]);
+    assert_eq!(surface_patch.clauses[1].payload_entry_count, 0);
+    assert!(surface_patch.clauses[1].entries.is_empty());
+    assert!(
+        crate::design::decode::operands::surface_patch_recipe_structure(
+            &[
+                0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
+                2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
+                -1,
+            ],
+            3,
+        )
+        .is_none()
+    );
+    assert!(
+        crate::design::decode::operands::surface_patch_recipe_structure(
+            &[
+                0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
+                2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
+                7,
+            ],
+            4,
+        )
+        .is_none()
+    );
+    let mut surface_patch_operand = edge_operand.clone();
+    surface_patch_operand.surface_patch_recipe_structure = Some(surface_patch.clone());
+    surface_patch_operand.recipe_state_id = Some(8);
+    surface_patch_operand.resolved_edge_slot = Some(17);
+    let mut surface_patch_group = terminal_group.clone();
+    surface_patch_group.members = vec![100];
+    let surface_selection = crate::design::edge_resolve::resolved_edge_group(
+        &surface_patch_group,
+        std::slice::from_ref(&surface_patch_group),
+        std::slice::from_ref(&surface_patch_operand),
+        &[],
+        Some(8),
+        &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+        None,
+    );
+    assert!(matches!(
+        surface_selection,
+        cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
+            if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
+                "f3d:history-input:edge#13:surface-patch:8:17".into()
+            )]
+    ));
+    surface_patch_operand.resolved_edge_slot = None;
+    assert!(matches!(
+        crate::design::edge_resolve::resolved_edge_group(
+            &surface_patch_group,
+            std::slice::from_ref(&surface_patch_group),
+            std::slice::from_ref(&surface_patch_operand),
+            &[],
+            Some(8),
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
+            None,
+        ),
+        cadmpeg_ir::features::EdgeSelection::Native(_)
+    ));
     let face = crate::design::decode::operands::face_recipe_structure(&[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
     ])
@@ -19052,7 +19127,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     assert!(matches!(
         crate::design::feature_project::project_surface_patch(
             &patch_scope,
-            &[patch_group.clone(), second_patch_group],
+            &[patch_group.clone(), second_patch_group.clone()],
             &[],
             &[],
         ),
@@ -19063,6 +19138,54 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             ..
         }) if native == &patch_scope.id
     ));
+
+    patch_scope.previous_history_state_id = Some(8);
+    let edge_identity =
+        |record_index, group_record_index, edge| crate::records::DesignEdgeIdentityOperand {
+            id: format!("f3d:native:edge-identity#{record_index}"),
+            scope_record_index: patch_scope.record_index,
+            group_record_index,
+            group_member_ordinal: 0,
+            record_index,
+            byte_offset: 0,
+            class_tag: "297".into(),
+            compact_layout: false,
+            local_id: u64::from(record_index),
+            local_id_offset: 0,
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            historical_entity_kind: None,
+            historical_entity_ref: None,
+            historical_state_ids: Vec::new(),
+            treatment_radius_candidates: Vec::new(),
+            transition_edge_candidates: Vec::new(),
+            resolved_edge_slots: Vec::new(),
+            resolved_edge_slot: Some(edge),
+            resolution_identity_id: None,
+        };
+    let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
+    let resolved = crate::design::feature_project::project_surface_patch(
+        &patch_scope,
+        &[patch_group.clone(), second_patch_group],
+        &[],
+        &identities,
+    )
+    .expect("resolved multi-group SurfacePatch path");
+    let FeatureDefinition::FilledSurface {
+        boundary:
+            cadmpeg_ir::features::SurfaceBoundary::Path(
+                cadmpeg_ir::features::PathRef::HistoricalEdges { edges, native, .. },
+            ),
+        ..
+    } = resolved
+    else {
+        panic!("expected historical multi-group SurfacePatch path");
+    };
+    assert_eq!(edges.len(), 2);
+    assert_eq!(native, patch_scope.id);
+    patch_scope.previous_history_state_id = None;
 
     patch_scope.frame_length = 339;
     patch_scope.reference_members = vec![100, 200, 300];

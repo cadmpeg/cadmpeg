@@ -4113,6 +4113,14 @@ fn validate_edge_operands<'a>(
                 Some(&operand.id),
             );
         }
+        let expected_surface_patch_recipe_structure = scope
+            .filter(|scope| scope.kind == "SurfacePatch")
+            .and_then(|_| {
+                design::decode::operands::surface_patch_recipe_structure(
+                    &operand.recipe_program,
+                    operand.recipe_references.len(),
+                )
+            });
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -4149,6 +4157,7 @@ fn validate_edge_operands<'a>(
             })
             && design::decode::operands::edge_recipe_structure(&operand.recipe_program)
                 == operand.recipe_structure
+            && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && expected_faces == operand.candidate_faces
             && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((

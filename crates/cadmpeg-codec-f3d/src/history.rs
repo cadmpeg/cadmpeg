@@ -3802,6 +3802,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
+        if scope.kind == "SurfacePatch" && operand.surface_patch_recipe_structure.is_some() {
+            operand.resolved_edge_slot = surface_patch_edge_operand_slot(
+                operand.surface_patch_recipe_structure.as_ref(),
+                &operand.recipe_references,
+                topology,
+            );
+            continue;
+        }
         if crate::design::design_feature_family(&scope.kind)
             == Some(crate::design::DesignFeatureFamily::Sweep)
         {
@@ -3931,6 +3939,26 @@ fn bind_active_edge_operand_for_scope(
     terminal_topologies: &[(i64, &AsmHistoricalTopology)],
 ) {
     bind_active_edge_operand_candidates(operand, terminal_topologies);
+    if scope.kind == "SurfacePatch" && operand.surface_patch_recipe_structure.is_some() {
+        operand.recipe_state_id = None;
+        operand.resolved_edge_slot = None;
+        let mut matches = terminal_topologies
+            .iter()
+            .filter_map(|(state_id, topology)| {
+                surface_patch_edge_operand_slot(
+                    operand.surface_patch_recipe_structure.as_ref(),
+                    &operand.recipe_references,
+                    topology,
+                )
+                .map(|edge| (*state_id, edge))
+            });
+        if let Some((state_id, edge)) = matches.next() {
+            if matches.next().is_none() {
+                operand.recipe_state_id = Some(state_id);
+                operand.resolved_edge_slot = Some(edge);
+            }
+        }
+    }
     if crate::design::design_feature_family(&scope.kind)
         == Some(crate::design::DesignFeatureFamily::Revolve)
     {
@@ -3949,6 +3977,60 @@ fn bind_active_edge_operand_for_scope(
             operand.resolved_axis_direction = Some(direction);
         }
     }
+}
+
+fn surface_patch_edge_operand_slot(
+    structure: Option<&crate::records::DesignSurfacePatchRecipeStructure>,
+    recipe_references: &[crate::records::DesignRecipeReference],
+    topology: &AsmHistoricalTopology,
+) -> Option<i64> {
+    let structure = structure?;
+    let [first, second] = structure.clauses.as_slice() else {
+        return None;
+    };
+    let common_edge_reference = common_surface_patch_reference(
+        first.edge_reference_ordinals,
+        second.edge_reference_ordinals,
+    )?;
+    let common_face_reference = common_surface_patch_reference(
+        first.face_reference_ordinals,
+        second.face_reference_ordinals,
+    )?;
+    let edge_reference = recipe_references.get(usize::try_from(common_edge_reference).ok()?)?;
+    let face_reference = recipe_references.get(usize::try_from(common_face_reference).ok()?)?;
+    if edge_reference.candidate_edges.is_empty() {
+        return None;
+    }
+    let face_candidates = if face_reference.candidate_faces.is_empty() {
+        &face_reference.alternate_selector_faces
+    } else {
+        &face_reference.candidate_faces
+    };
+    let face_boundary_edges =
+        face_boundary_edges(&faces_in_topology(face_candidates, topology), topology);
+    let mut candidates = edge_reference
+        .candidate_edges
+        .iter()
+        .filter_map(|edge| stable_ref(&edge.0))
+        .filter(|edge| face_boundary_edges.contains(edge))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
+}
+
+fn common_surface_patch_reference(left: [u32; 2], right: [u32; 2]) -> Option<u32> {
+    let common = left
+        .into_iter()
+        .filter(|reference| right.contains(reference))
+        .collect::<Vec<_>>();
+    let [reference] = common.as_slice() else {
+        return None;
+    };
+    Some(*reference)
 }
 
 fn bind_active_edge_operand_candidates(
@@ -6314,6 +6396,92 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
+        use crate::history_records::{
+            AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+        use crate::records::{
+            DesignRecipeReference, DesignSurfacePatchRecipeClause,
+            DesignSurfacePatchRecipeStructure,
+        };
+        use cadmpeg_ir::ids::{EdgeId, FaceId};
+
+        let clause = |faces, edges| DesignSurfacePatchRecipeClause {
+            fields: Vec::new(),
+            face_reference_ordinals: faces,
+            edge_reference_ordinals: edges,
+            payload_entry_count: 0,
+            entries: Vec::new(),
+        };
+        let structure = DesignSurfacePatchRecipeStructure {
+            root: 2,
+            clauses: vec![clause([1, 2], [0, 3]), clause([4, 1], [0, 5])],
+        };
+        let reference = |candidate_faces, candidate_edges| DesignRecipeReference {
+            selector: 0,
+            selector_offset: 0,
+            token: String::new(),
+            token_offset: 0,
+            design_reference: 0,
+            design_reference_offset: 0,
+            candidate_faces,
+            candidate_edges,
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+        };
+        let references = vec![
+            reference(
+                Vec::new(),
+                vec![EdgeId("edge#22".into()), EdgeId("edge#23".into())],
+            ),
+            reference(vec![FaceId("face#10".into())], Vec::new()),
+            reference(Vec::new(), Vec::new()),
+            reference(Vec::new(), Vec::new()),
+            reference(Vec::new(), Vec::new()),
+            reference(Vec::new(), Vec::new()),
+        ];
+        let topology = AsmHistoricalTopology {
+            faces: vec![10],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![11],
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![12],
+            }],
+            coedge_topology: vec![AsmHistoricalCoedge {
+                coedge: 12,
+                owner_loop: 11,
+                edge: 22,
+                next: 12,
+                previous: 12,
+                radial_next: 12,
+            }],
+            ..Default::default()
+        };
+        assert_eq!(
+            super::surface_patch_edge_operand_slot(Some(&structure), &references, &topology,),
+            Some(22)
+        );
+
+        let mut ambiguous = topology.clone();
+        ambiguous.loop_coedges[0].member_refs.push(13);
+        ambiguous.coedge_topology.push(AsmHistoricalCoedge {
+            coedge: 13,
+            owner_loop: 11,
+            edge: 23,
+            next: 12,
+            previous: 12,
+            radial_next: 13,
+        });
+        assert_eq!(
+            super::surface_patch_edge_operand_slot(Some(&structure), &references, &ambiguous,),
+            None
+        );
+    }
+
     #[test]
     fn hem_bend_carriers_prove_directional_gap_forms() {
         use crate::history_records::AsmHistoricalCylinder;

@@ -2804,6 +2804,9 @@ pub(crate) fn parse_edge_operand(
         })
         .collect::<Vec<_>>();
     let recipe_structure = edge_recipe_structure(&recipe_program);
+    let surface_patch_recipe_structure = (scope.kind == "SurfacePatch")
+        .then(|| surface_patch_recipe_structure(&recipe_program, recipe_references.len()))
+        .flatten();
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
         edge_recipe_local_topology_references(structure, recipe_references.len())
     });
@@ -2828,6 +2831,7 @@ pub(crate) fn parse_edge_operand(
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
         recipe_structure,
+        surface_patch_recipe_structure,
         local_topology_references,
         candidate_faces: Vec::new(),
         result_candidate_faces: Vec::new(),
@@ -2859,6 +2863,85 @@ pub(crate) fn edge_recipe_structure(
     program: &[i32],
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
     edge_recipe_structure_tail(program.get(7..)?)
+}
+
+/// Decode the alternate two-clause edge-recipe grammar owned by `SurfacePatch`.
+///
+/// The six fields in each clause are delimiter-bounded by `-1`. The first and
+/// second fields name face references, the third and fifth fields name edge
+/// references, and the fourth and sixth fields are zero pairs. The final field
+/// is a counted sequence of the standard eight-word topology entries.
+pub(crate) fn surface_patch_recipe_structure(
+    program: &[i32],
+    reference_count: usize,
+) -> Option<crate::records::DesignSurfacePatchRecipeStructure> {
+    let mut remaining = program.get(7..)?;
+    let (&root, tail) = remaining.split_first()?;
+    if root != 2 {
+        return None;
+    }
+    remaining = tail;
+    let mut clauses = Vec::with_capacity(2);
+    for _ in 0..2 {
+        let mut fields = Vec::with_capacity(6);
+        for _ in 0..6 {
+            let delimiter_at = remaining.iter().position(|word| *word == -1)?;
+            let field = remaining.get(..delimiter_at)?.to_vec();
+            if field.is_empty() || field.iter().any(|word| *word < 0) {
+                return None;
+            }
+            remaining = remaining.get(delimiter_at + 1..)?;
+            fields.push(field);
+        }
+        let (&payload_entry_count, tail) = remaining.split_first()?;
+        let payload_entry_count = u32::try_from(payload_entry_count).ok()?;
+        let payload_word_count = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
+        let payload = tail.get(..payload_word_count)?;
+        let entries = edge_recipe_entries(payload)?;
+        if entries.len() != usize::try_from(payload_entry_count).ok()? {
+            return None;
+        }
+        let (&delimiter, tail) = tail.get(payload_word_count..)?.split_first()?;
+        if delimiter != -1 {
+            return None;
+        }
+        remaining = tail;
+        let [first, second, third, fourth, fifth, sixth] = fields.as_slice() else {
+            return None;
+        };
+        if !(first.len() == 1 || first.len() == 2 && first[0] == 2)
+            || second.len() != 1
+            || third.len() != 2
+            || third[0] != 2
+            || fourth.as_slice() != [0, 0]
+            || fifth.len() != 1
+            || sixth.as_slice() != [0, 0]
+        {
+            return None;
+        }
+        let ordinal = |field: &[i32], position: usize| {
+            let ordinal = usize::try_from(*field.get(position)?).ok()?;
+            (ordinal < reference_count).then_some(u32::try_from(ordinal).ok()?)
+        };
+        let face_reference_ordinals = [ordinal(first, first.len() - 1)?, ordinal(second, 0)?];
+        let edge_reference_ordinals = [ordinal(third, 1)?, ordinal(fifth, 0)?];
+        clauses.push(crate::records::DesignSurfacePatchRecipeClause {
+            fields,
+            face_reference_ordinals,
+            edge_reference_ordinals,
+            payload_entry_count,
+            entries,
+        });
+    }
+    if let Some(&delimiter) = remaining.first() {
+        if delimiter != 0 {
+            return None;
+        }
+        remaining = &remaining[1..];
+    }
+    remaining
+        .is_empty()
+        .then_some(crate::records::DesignSurfacePatchRecipeStructure { root, clauses })
 }
 
 pub(crate) fn edge_recipe_local_topology_references(

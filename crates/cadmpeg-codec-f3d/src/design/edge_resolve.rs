@@ -44,6 +44,87 @@ pub(crate) fn resolved_edge_group(
         }
     };
     let stream = native_stream(&group.id);
+    let has_surface_patch_operand = operands.iter().any(|operand| {
+        native_stream(&operand.id) == stream
+            && operand.scope_record_index == group.scope_record_index
+            && group.members.contains(&operand.record_index)
+            && operand.surface_patch_recipe_structure.is_some()
+    });
+    if has_surface_patch_operand {
+        let mut member_ids = HashSet::new();
+        if group
+            .members
+            .iter()
+            .any(|member| !member_ids.insert(*member))
+        {
+            return unmatched_selection(previous_state_id);
+        }
+        let matched_operands = group
+            .members
+            .iter()
+            .map(|member| {
+                let mut matches = operands.iter().filter(|operand| {
+                    native_stream(&operand.id) == stream
+                        && operand.scope_record_index == group.scope_record_index
+                        && operand.record_index == *member
+                });
+                let operand = matches.next()?;
+                matches.next().is_none().then_some(operand)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(matched_operands) = matched_operands else {
+            return unmatched_selection(previous_state_id);
+        };
+        if matched_operands
+            .iter()
+            .any(|operand| operand.surface_patch_recipe_structure.is_none())
+        {
+            return unmatched_selection(previous_state_id);
+        }
+        let state_id = previous_state_id.or_else(|| {
+            let mut states = matched_operands
+                .iter()
+                .filter_map(|operand| operand.recipe_state_id);
+            let state_id = states.next()?;
+            (states.all(|candidate| candidate == state_id)
+                && matched_operands
+                    .iter()
+                    .all(|operand| operand.recipe_state_id == Some(state_id)))
+            .then_some(state_id)
+        });
+        let Some(state_id) = state_id else {
+            return unmatched_selection(previous_state_id);
+        };
+        let Some(edges) = matched_operands
+            .iter()
+            .map(|operand| operand.resolved_edge_slot)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return unmatched_selection(Some(state_id));
+        };
+        let mut resolved_edges = Vec::new();
+        for edge_slot in edges {
+            if !resolved_edges.contains(&edge_slot) {
+                resolved_edges.push(edge_slot);
+            }
+        }
+        if resolved_edges.is_empty() {
+            return unmatched_selection(Some(state_id));
+        }
+        return EdgeSelection::Historical {
+            state: feature_input_topology_id(feature_id, state_id),
+            edges: resolved_edges
+                .into_iter()
+                .map(|edge_slot| {
+                    ids::history_input_edge_id(
+                        &ids::history_input_prefix(feature_key, state_id),
+                        edge_slot,
+                    )
+                })
+                .collect(),
+            native: group.id.clone(),
+        };
+    }
     let identity_matches = group
         .members
         .iter()

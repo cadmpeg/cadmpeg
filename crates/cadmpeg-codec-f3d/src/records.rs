@@ -3360,6 +3360,10 @@ pub struct DesignEdgeOperand {
     /// Standard two-side structure decoded from the recipe program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipe_structure: Option<DesignEdgeRecipeStructure>,
+    /// Alternate two-clause structure decoded from a `SurfacePatch` edge
+    /// recipe program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_patch_recipe_structure: Option<DesignSurfacePatchRecipeStructure>,
     /// Ordered local topology references when every nonzero root and side scalar
     /// is a valid prefix-reference ordinal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3602,6 +3606,33 @@ pub struct DesignEdgeRecipeStructure {
     pub root: i32,
     /// Ordered side clauses.
     pub sides: Vec<DesignTopologyRecipeSide>,
+}
+
+/// The alternate two-clause structure used by a fixed-path `SurfacePatch`
+/// edge recipe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSurfacePatchRecipeStructure {
+    /// Root discriminator. Value `2` identifies the two-clause form.
+    pub root: i32,
+    /// Ordered clauses in the recipe program.
+    pub clauses: Vec<DesignSurfacePatchRecipeClause>,
+}
+
+/// One clause in a `SurfacePatch` edge recipe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSurfacePatchRecipeClause {
+    /// Six delimiter-bounded fields before the counted topology payload.
+    pub fields: Vec<Vec<i32>>,
+    /// Zero-based face-reference ordinals named by the first two fields.
+    pub face_reference_ordinals: [u32; 2],
+    /// Zero-based edge-reference ordinals named by the third and fifth fields.
+    pub edge_reference_ordinals: [u32; 2],
+    /// Number of eight-word topology entries in the payload.
+    pub payload_entry_count: u32,
+    /// Ordered topology entries in the payload.
+    pub entries: Vec<DesignTopologyRecipeEntry>,
 }
 
 /// One delimiter-bounded side clause in a standard edge recipe.
