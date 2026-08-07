@@ -443,7 +443,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     // disappear merely because their source record has a larger instance id.
     let mut carrier_index = CarrierIndex::from_ir(ir);
     let deferred_ids = exchange
-        .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .entities_any(&[
+            "TRIMMED_CURVE",
+            "COMPOSITE_CURVE",
+            "BOUNDARY_CURVE",
+            "OUTER_BOUNDARY_CURVE",
+            "OFFSET_CURVE_3D",
+        ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
@@ -521,7 +527,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
             continue;
         }
-        if record.partial("COMPOSITE_CURVE").is_some() {
+        if composite_curve_parameters(record).is_some() {
             let missing = composite_curve_dependencies(record, exchange)
                 .into_iter()
                 .filter(|dependency| !carrier_index.curves.contains_key(dependency))
@@ -689,10 +695,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
-    for (id, _) in exchange.entities("COMPOSITE_CURVE") {
+    for (id, record) in
+        exchange.entities_any(&["COMPOSITE_CURVE", "BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"])
+    {
         if !carrier_index.curves.contains_key(&id) {
             warnings.push(format!(
-                "COMPOSITE_CURVE #{id} has invalid, cyclic, or unresolved segments"
+                "{} #{id} has invalid, cyclic, or unresolved segments",
+                record.simple_name().unwrap_or("COMPOSITE_CURVE")
             ));
         }
     }
@@ -704,7 +713,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     for (id, _) in exchange
-        .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .entities_any(&[
+            "TRIMMED_CURVE",
+            "COMPOSITE_CURVE",
+            "BOUNDARY_CURVE",
+            "OUTER_BOUNDARY_CURVE",
+            "OFFSET_CURVE_3D",
+        ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
@@ -2643,18 +2658,19 @@ fn wake_deferred_dependents(
 }
 
 fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
-    let complex = record.partials.len() > 1;
-    let offset = usize::from(!complex);
-    record
-        .partial("COMPOSITE_CURVE")
-        .and_then(|composite| composite.parameters.get(offset))
+    let Some((parameters, offset)) = composite_curve_parameters(record) else {
+        return Vec::new();
+    };
+    parameters
+        .get(offset)
         .and_then(Value::list)
         .into_iter()
         .flatten()
         .filter_map(Value::reference)
         .filter_map(|segment| exchange.records.get(&segment))
-        .filter(|segment| segment.simple_name() == Some("COMPOSITE_CURVE_SEGMENT"))
-        .filter_map(|segment| segment.parameter(2).and_then(Value::reference))
+        .filter_map(composite_curve_segment_parameters)
+        .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
+        .filter_map(|curve| curve_carrier_record(curve, exchange))
         .collect()
 }
 
@@ -2663,21 +2679,16 @@ fn composite_curve(
     exchange: &Exchange,
     decoded: &CarrierIndex,
 ) -> Option<CompositeCurveData> {
-    let complex = record.partials.len() > 1;
-    let composite = record.partial("COMPOSITE_CURVE")?;
-    let offset = usize::from(!complex);
-    let segments = composite
-        .parameters
+    let (parameters, offset) = composite_curve_parameters(record)?;
+    let segments = parameters
         .get(offset)?
         .list()?
         .iter()
         .map(|value| {
             let id = value.reference()?;
-            let record = exchange.records.get(&id)?;
-            if record.simple_name() != Some("COMPOSITE_CURVE_SEGMENT") {
-                return None;
-            }
-            let transition = match record.parameter(0)?.enumeration()? {
+            let segment = exchange.records.get(&id)?;
+            let parameters = composite_curve_segment_parameters(segment)?;
+            let transition = match parameters.first()?.enumeration()? {
                 "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
                 "CONTINUOUS" => CompositeCurveTransition::Continuous,
                 "CONTSAMEGRADIENT" => CompositeCurveTransition::ContSameGradient,
@@ -2686,12 +2697,13 @@ fn composite_curve(
                 }
                 _ => return None,
             };
-            let curve_step = record.parameter(2)?.reference()?;
+            let curve_step = parameters.get(2)?.reference()?;
+            let curve_step = curve_carrier_record(curve_step, exchange)?;
             decoded.curves.contains_key(&curve_step).then_some((
                 id,
                 CompositeCurveSegment {
                     curve: CurveId(format!("step:data:curve#{curve_step}")),
-                    same_sense: record.parameter(1)?.logical()?,
+                    same_sense: parameters.get(1)?.logical()?,
                     transition,
                 },
             ))
@@ -2699,12 +2711,30 @@ fn composite_curve(
         .collect::<Option<Vec<_>>>()?;
     (!segments.is_empty()).then_some((
         segments,
-        composite
-            .parameters
+        parameters
             .get(offset + 1)
             .and_then(logical_value)?
             .into_option(),
     ))
+}
+
+fn composite_curve_parameters(record: &RawRecord) -> Option<(&[Value], usize)> {
+    ["COMPOSITE_CURVE", "BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"]
+        .into_iter()
+        .find_map(|name| {
+            record.partial(name).map(|partial| {
+                (
+                    partial.parameters.as_slice(),
+                    usize::from(record.partials.len() == 1),
+                )
+            })
+        })
+}
+
+fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
+    record
+        .partial("COMPOSITE_CURVE_SEGMENT")
+        .map(|partial| partial.parameters.as_slice())
 }
 
 #[derive(Clone, Copy)]

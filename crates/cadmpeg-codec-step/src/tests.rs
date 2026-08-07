@@ -2872,6 +2872,60 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
 }
 
 #[test]
+fn direct_boundary_curve_builds_a_curve_bounded_surface() {
+    for boundary_type in ["BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"] {
+        let source = format!(
+            "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n\
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));\n\
+#3=CARTESIAN_POINT('',(0.,0.,0.));\n\
+#4=DIRECTION('',(0.,0.,1.));\n\
+#5=DIRECTION('',(1.,0.,0.));\n\
+#6=AXIS2_PLACEMENT_3D('',#3,#4,#5);\n\
+#7=CIRCLE('',#6,5.);\n\
+#8=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#7);\n\
+#9={boundary_type}('',(#8),.F.);\n\
+#10=PLANE('',#6);\n\
+#11=CURVE_BOUNDED_SURFACE('bounded',#10,(#9),.F.);\n\
+#12=GEOMETRIC_SET('',(#11));\n\
+#13=GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION('',(#12),#2);\n",
+        );
+        let result = decode_inline(&source);
+
+        let boundary = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == "step:data:curve#9")
+            .expect("boundary curve carrier");
+        assert!(matches!(
+            &boundary.geometry,
+            CurveGeometry::Composite { segments, .. }
+                if segments.len() == 1 && segments[0].curve.as_str() == "step:data:curve#7"
+        ));
+
+        let bounded = result
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "step:construction:curve_bounded_surface#11")
+            .expect("curve-bounded surface");
+        assert!(matches!(
+            &bounded.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }
+                if boundaries == &[CurveId("step:data:curve#9".to_owned())]
+        ));
+        assert!(!result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains("has invalid, cyclic, or unresolved segments")
+        }));
+        let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
 fn geometric_surface_representation_salvages_valid_sibling_sets() {
     let source = String::from_utf8(
         include_bytes!("../tests/fixtures/ap242_geometric_set.p21").to_vec(),
