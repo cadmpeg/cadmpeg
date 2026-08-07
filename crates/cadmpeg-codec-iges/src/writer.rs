@@ -2540,6 +2540,37 @@ fn oriented_curve_entity(
             };
             curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
         }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            // The hyperbola parameterization satisfies p(-u) = p(u) with its
+            // transverse axis reversed. Emit that equivalent frame with the
+            // reflected interval so the Type 104 endpoints follow the
+            // reversed coedge without introducing an approximation.
+            let reversed_geometry = CurveGeometry::Hyperbola {
+                center: *center,
+                axis: axis.scale(-1.0),
+                major_direction: *major_direction,
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            };
+            let reversed_range = [-span.range[1], -span.range[0]];
+            if reversed_range.iter().any(|value| !value.is_finite()) {
+                return Err(CodecError::Malformed(
+                    "IGES reversed hyperbola parameter range is non-finite".into(),
+                ));
+            }
+            let reversed_span = CurveSpan {
+                range: reversed_range,
+                start: span.end,
+                end: span.start,
+            };
+            curve_entity(&reversed_geometry, Some(&reversed_span))?
+        }
         _ => {
             return Err(CodecError::NotImplemented(format!(
                 "IGES reversed Type 142 edge carrier is unsupported ({geometry:?})"
@@ -4474,5 +4505,52 @@ fn number(value: f64) -> String {
         "0".into()
     } else {
         format!("{value:.17}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reversed_hyperbola_uses_an_equivalent_reflected_conic_frame() {
+        let geometry = CurveGeometry::Hyperbola {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 3.0,
+        };
+        let range = [0.2, 1.1];
+        let span = CurveSpan {
+            range,
+            start: curve_point(&geometry, range[0]).expect("start evaluates"),
+            end: curve_point(&geometry, range[1]).expect("end evaluates"),
+        };
+        let entity = oriented_curve_entity(&geometry, &span, Sense::Reversed)
+            .expect("a bounded hyperbola can be reversed exactly");
+        assert_eq!((entity.type_code, entity.form), (104, 2));
+        assert_eq!(
+            entity.transform.expect("hyperbola has a placement").rows,
+            [
+                [1.0, 0.0, 0.0, 1.0],
+                [0.0, -1.0, 0.0, 2.0],
+                [0.0, 0.0, -1.0, 3.0]
+            ]
+        );
+        let start = hyperbola_point(2.0, 3.0, -range[1]).expect("reflected start evaluates");
+        let end = hyperbola_point(2.0, 3.0, -range[0]).expect("reflected end evaluates");
+        assert_eq!(
+            String::from_utf8(entity.parameters).expect("parameters are ASCII"),
+            format!(
+                "104,{},0,{},0,0,-1,0,{},{},{},{};",
+                number(1.0 / 4.0),
+                number(-1.0 / 9.0),
+                number(start[0]),
+                number(start[1]),
+                number(end[0]),
+                number(end[1])
+            )
+        );
     }
 }
