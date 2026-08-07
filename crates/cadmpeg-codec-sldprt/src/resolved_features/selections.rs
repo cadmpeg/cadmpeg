@@ -16,7 +16,9 @@ use super::terminations::{
     compact_termination_reference_path_at,
 };
 use super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
-use crate::classification::{native_object_class, FeatureClass, NativeClassKind};
+use crate::classification::{
+    classify_type_token, native_object_class, FeatureClass, NativeClassKind,
+};
 use crate::records::{
     FeatureInputBodySelection, FeatureInputComponentPathEntry, FeatureInputEdgeSelection,
     FeatureInputLane, FeatureInputOperandKind, FeatureInputSurfaceSelection, SketchInputKind,
@@ -372,12 +374,19 @@ pub(super) fn compact_surface_selections(
     for (index, &(name, feature)) in objects.iter().enumerate() {
         let classified =
             native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-        let kind = if classified == NativeClassKind::Unknown
-            && matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut")
-        {
-            NativeClassKind::Extrusion
-        } else {
-            classified
+        let kind = match classified {
+            NativeClassKind::Unknown if matches!(feature.xml_tag.as_str(), "Extrusion" | "Cut") => {
+                NativeClassKind::Extrusion
+            }
+            NativeClassKind::Unknown => {
+                classify_type_token(&feature.kind).map_or(NativeClassKind::Unknown, |class| {
+                    match class {
+                        FeatureClass::Extrude => NativeClassKind::Extrusion,
+                        class => NativeClassKind::Operation(class),
+                    }
+                })
+            }
+            classified => classified,
         };
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
