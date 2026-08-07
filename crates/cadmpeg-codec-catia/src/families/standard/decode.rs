@@ -5601,8 +5601,13 @@ pub(crate) fn standard_pcurve_geometry(
             return None;
         }
         let center_uv = analytic_surface_uv(surface, *center)?;
-        let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
-        let range = ordered_range([range[0], unwrap_angle(range[1], range[0])]);
+        let range = if start == end {
+            let angle = (uv[0].v - center_uv.v).atan2(uv[0].u - center_uv.u);
+            [angle, angle + std::f64::consts::TAU]
+        } else {
+            let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
+            ordered_range([range[0], unwrap_angle(range[1], range[0])])
+        };
         let geometry = rational_pcurve_arc([center_uv.u, center_uv.v], *radius, range)?;
         return Some((geometry, range));
     }
@@ -5994,50 +5999,58 @@ pub(crate) fn build_standard_edge_curve(
             {
                 return (None, None);
             }
-            let candidates = [axis, axis.scale(-1.0)]
-                .into_iter()
-                .filter_map(|axis| {
-                    let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-                    let range = standard_circle_param_range(
-                        ir,
-                        bindings,
-                        surface_indices,
-                        brep,
-                        support,
-                        *center,
-                        *radius,
+            let (axis, ref_direction, param_range) = if points[0] == points[1] {
+                let Some((axis, ref_direction)) = full_circle_frame(*center, *radius, axis, start)
+                else {
+                    return (None, None);
+                };
+                (axis, ref_direction, Some([0.0, std::f64::consts::TAU]))
+            } else {
+                let candidates = [axis, axis.scale(-1.0)]
+                    .into_iter()
+                    .filter_map(|axis| {
+                        let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                        let range = standard_circle_param_range(
+                            ir,
+                            bindings,
+                            surface_indices,
+                            brep,
+                            support,
+                            *center,
+                            *radius,
+                            axis,
+                            ref_direction,
+                            start,
+                            end,
+                        )
+                        .or_else(|| {
+                            native_support.and_then(|native| {
+                                native_support_circle_param_range(
+                                    native,
+                                    *center,
+                                    *radius,
+                                    axis,
+                                    ref_direction,
+                                    start,
+                                    end,
+                                )
+                            })
+                        })?;
+                        Some((
+                            axis,
+                            ref_direction,
+                            crate::nurbs::canonical_periodic_range(range)?,
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                match candidates.as_slice() {
+                    [(axis, reference, range)] => (*axis, *reference, Some(*range)),
+                    _ => (
                         axis,
-                        ref_direction,
-                        start,
-                        end,
-                    )
-                    .or_else(|| {
-                        native_support.and_then(|native| {
-                            native_support_circle_param_range(
-                                native,
-                                *center,
-                                *radius,
-                                axis,
-                                ref_direction,
-                                start,
-                                end,
-                            )
-                        })
-                    })?;
-                    Some((
-                        axis,
-                        ref_direction,
-                        crate::nurbs::canonical_periodic_range(range)?,
-                    ))
-                })
-                .collect::<Vec<_>>();
-            let (axis, ref_direction, param_range) = match candidates.as_slice() {
-                [(axis, reference, range)] => (*axis, *reference, Some(*range)),
-                _ => (
-                    axis,
-                    cadmpeg_ir::geometry::derive_reference_direction(axis),
-                    None,
-                ),
+                        cadmpeg_ir::geometry::derive_reference_direction(axis),
+                        None,
+                    ),
+                }
             };
             (
                 CurveGeometry::Circle {
@@ -6565,6 +6578,27 @@ fn circle_axis_from_endpoints(
         .flatten()
 }
 
+fn full_circle_frame(
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    start: Point3,
+) -> Option<(Vector3, Vector3)> {
+    const TOLERANCE: f64 = 2e-3;
+
+    if !radius.is_finite() || radius <= 0.0 {
+        return None;
+    }
+    let axis = unit_vector(axis)?;
+    let radial = start.vector_from(center);
+    let radial_length = radial.norm();
+    if !radial_length.is_finite() || (radial_length - radius).abs() > TOLERANCE {
+        return None;
+    }
+    let ref_direction = unit_vector(radial)?;
+    (axis.dot(ref_direction).abs() <= TOLERANCE).then_some((axis, ref_direction))
+}
+
 pub(crate) fn circle_axis_from_carrier(
     center: Point3,
     circle_radius: f64,
@@ -6781,9 +6815,9 @@ mod route_tests {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::{pcurve_uv, surface_point};
     use cadmpeg_ir::geometry::{
-        CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
-        ProceduralSurface, ProceduralSurfaceDefinition, RollingBallJetDerivative,
-        RollingBallJetSite, Surface, SurfaceGeometry,
+        Curve, CurveGeometry, NurbsCurve, PcurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+        RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{FaceId, PointId, ShellId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -8919,6 +8953,114 @@ mod route_tests {
         });
         assert!(mapped[0].distance(start) <= 1e-9);
         assert!(mapped[1].distance(end) <= 1e-9);
+    }
+
+    #[test]
+    fn standard_plane_full_circle_pcurve_preserves_closed_carrier() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let center = Point3::new(0.0, 0.0, 0.0);
+        let radius = 2.0;
+        let start = Point3::new(radius, 0.0, 0.0);
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle { center, radius },
+        };
+        let carrier = CurveGeometry::Circle {
+            center,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+        let (geometry, range) =
+            standard_pcurve_geometry(&surface, &support, start, start, None, Some(&carrier))
+                .expect("closed contained plane circle pcurve");
+        assert_eq!(range, [0.0, std::f64::consts::TAU]);
+        let PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            ..
+        } = &geometry
+        else {
+            panic!("closed plane circle must use a rational arc");
+        };
+        assert_eq!(*degree, 2);
+        assert_eq!(knots.len(), 12);
+        assert_eq!(control_points.len(), 9);
+        assert_eq!(weights.as_ref().map(Vec::len), Some(9));
+        for parameter in [range[0], range[1]] {
+            let uv = pcurve_uv(&geometry, parameter).expect("closed pcurve endpoint");
+            let point = surface_point(&surface, uv.u, uv.v).expect("closed surface endpoint");
+            assert!(point.distance(start) <= 1e-9);
+        }
+        let midpoint_uv =
+            pcurve_uv(&geometry, std::f64::consts::PI).expect("closed pcurve midpoint");
+        let midpoint =
+            surface_point(&surface, midpoint_uv.u, midpoint_uv.v).expect("closed surface midpoint");
+        assert!(midpoint.distance(Point3::new(-radius, 0.0, 0.0)) <= 1e-9);
+    }
+
+    #[test]
+    fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.points.push(Point {
+            id: PointId("point-0".into()),
+            position: Point3::new(2.0, 0.0, 0.0),
+            source_object: None,
+        });
+        let surface_id = SurfaceId("surface-0".into());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+        };
+        let (curve, range) = build_standard_edge_curve(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &[(surface_id.clone(), false, 0)],
+            &HashMap::from([(surface_id, 0)]),
+            &[],
+            &support,
+            [0, 0],
+            None,
+            None,
+        );
+        assert_eq!(range, Some([0.0, std::f64::consts::TAU]));
+        let curve = curve.expect("closed circle support identifies a curve");
+        assert!(matches!(
+            ir.model.curves.iter().find(|candidate| candidate.id == curve),
+            Some(Curve {
+                geometry: CurveGeometry::Circle {
+                    axis,
+                    ref_direction,
+                    radius,
+                    ..
+                },
+                ..
+            }) if *axis == Vector3::new(0.0, 0.0, 1.0)
+                && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && *radius == 2.0
+        ));
     }
 
     #[test]
