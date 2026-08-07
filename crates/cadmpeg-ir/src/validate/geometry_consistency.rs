@@ -11,7 +11,7 @@ use crate::eval::{
     curve_parameter_near_point, curve_point, model_curve_point_by_id, pcurve_tangent, pcurve_uv,
     surface_partials, surface_point,
 };
-use crate::geometry::PcurveGeometry;
+use crate::geometry::{PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
 use crate::topology::Sense;
 
@@ -484,14 +484,34 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             .curve
             .as_ref()
             .and_then(|curve| curves.get(curve.0.as_str()).copied());
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            face.tolerance,
+            first.fit_tolerance,
+            last.fit_tolerance,
+        ]);
+        // Recovering an occurrence interval is a topological operation. A
+        // carrier fit tolerance may qualify the final image, but must not let
+        // inverse recovery move an explicitly ranged occurrence onto a
+        // different, merely nearby part of the carrier.
+        let recovery_bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
         // interval. Keep the declared interval as a candidate, but also solve
         // the mapped carrier against the topology endpoints whenever the
         // carrier can provide such a witness.
-        let recovered =
-            edge_pcurve_parameter_ranges(ir, geometry, curve_geometry, *start, *end, first, last)
-                .unwrap_or_default();
+        let recovered = edge_pcurve_parameter_ranges(
+            geometry,
+            curve_geometry,
+            *start,
+            *end,
+            first,
+            last,
+            recovery_bound,
+        )
+        .unwrap_or_default();
         let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(first, first_use.parameter_range, edge.param_range)
         } else {
@@ -515,14 +535,6 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         let Some(intervals) = intervals else {
             continue;
         };
-        let bound = allowance(&[
-            edge.tolerance,
-            *start_tol,
-            *end_tol,
-            face.tolerance,
-            first.fit_tolerance,
-            last.fit_tolerance,
-        ]);
         let Some(mismatch) = intervals
             .into_iter()
             .filter_map(|[t0, t1]| {
@@ -586,22 +598,25 @@ fn pcurve_parameter_ranges(
 }
 
 /// Recover an edge interval from its mapped pcurve when the STEP topology does
-/// not carry an explicit parameter range. The 3D and surface-space carriers
-/// can use different native parameterizations, so solve the mapped pcurve at
-/// each vertex instead of copying a parameter from one carrier to the other.
-/// A direct conic solve remains as a fallback for surfaces without a usable
-/// mapped inverse. Several seeds preserve the correct branch for periodic
-/// carriers.
+/// not carry a usable parameter range. A declared range remains a candidate,
+/// but malformed exports can retain a stale range while the carrier still
+/// reaches the edge vertices on another interval. The 3D and surface-space
+/// carriers can use different native parameterizations, so solve the mapped
+/// pcurve at each vertex instead of copying a parameter from one carrier to
+/// the other. `tolerance` is the topology allowance used for this inverse;
+/// carrier fit tolerances are applied only after recovery. A direct conic
+/// solve remains as a fallback for surfaces without a usable mapped inverse.
+/// Several seeds preserve the correct branch for periodic carriers.
 fn edge_pcurve_parameter_ranges(
-    ir: &CadIr,
     surface_geometry: &crate::geometry::SurfaceGeometry,
     curve_geometry: Option<&crate::geometry::CurveGeometry>,
     start: Point3,
     end: Point3,
     first: &crate::geometry::Pcurve,
     last: &crate::geometry::Pcurve,
+    tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
-    let start_parameters = pcurve_parameter_seeds(first)
+    let start_parameters = pcurve_parameter_seeds_on_surface(first, surface_geometry)
         .into_iter()
         .filter_map(|seed| {
             mapped_pcurve_parameter_near_point(
@@ -609,19 +624,21 @@ fn edge_pcurve_parameter_ranges(
                 &first.geometry,
                 start,
                 seed,
-                ir.tolerances.linear,
+                tolerance,
             )
         });
     let start_parameters = unique_finite(start_parameters);
-    let end_parameters = pcurve_parameter_seeds(last).into_iter().filter_map(|seed| {
-        mapped_pcurve_parameter_near_point(
-            surface_geometry,
-            &last.geometry,
-            end,
-            seed,
-            ir.tolerances.linear,
-        )
-    });
+    let end_parameters = pcurve_parameter_seeds_on_surface(last, surface_geometry)
+        .into_iter()
+        .filter_map(|seed| {
+            mapped_pcurve_parameter_near_point(
+                surface_geometry,
+                &last.geometry,
+                end,
+                seed,
+                tolerance,
+            )
+        });
     let end_parameters = unique_finite(end_parameters);
     let ranges = start_parameters
         .iter()
@@ -642,17 +659,17 @@ fn edge_pcurve_parameter_ranges(
     ) {
         return None;
     }
-    let seeds = pcurve_parameter_seeds(first)
+    let seeds = pcurve_parameter_seeds_on_surface(first, surface_geometry)
         .into_iter()
-        .chain(pcurve_parameter_seeds(last))
+        .chain(pcurve_parameter_seeds_on_surface(last, surface_geometry))
         .collect::<Vec<_>>();
-    let start_parameters = seeds.iter().filter_map(|&seed| {
-        curve_parameter_near_point(curve_geometry, start, seed, ir.tolerances.linear)
-    });
+    let start_parameters = seeds
+        .iter()
+        .filter_map(|&seed| curve_parameter_near_point(curve_geometry, start, seed, tolerance));
     let start_parameters = unique_finite(start_parameters);
-    let end_parameters = seeds.iter().filter_map(|&seed| {
-        curve_parameter_near_point(curve_geometry, end, seed, ir.tolerances.linear)
-    });
+    let end_parameters = seeds
+        .iter()
+        .filter_map(|&seed| curve_parameter_near_point(curve_geometry, end, seed, tolerance));
     let end_parameters = unique_finite(end_parameters);
     let ranges = start_parameters
         .into_iter()
@@ -745,6 +762,52 @@ fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
     unique_finite(seeds)
 }
 
+fn pcurve_parameter_seeds_on_surface(
+    pcurve: &crate::geometry::Pcurve,
+    surface: &SurfaceGeometry,
+) -> Vec<f64> {
+    let mut seeds = pcurve_parameter_seeds(pcurve);
+    let PcurveGeometry::Line { origin, direction } = &pcurve.geometry else {
+        return seeds;
+    };
+    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(surface) else {
+        return seeds;
+    };
+    for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
+        if direction.u != 0.0 {
+            seeds.push((boundary - origin.u) / direction.u);
+        }
+    }
+    for boundary in [v_lower, (v_lower + v_upper) * 0.5, v_upper] {
+        if direction.v != 0.0 {
+            seeds.push((boundary - origin.v) / direction.v);
+        }
+    }
+    unique_finite(seeds)
+}
+
+fn surface_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f64; 2]; 2]> {
+    match surface {
+        SurfaceGeometry::Nurbs(surface) => {
+            let u_count = usize::try_from(surface.u_count).ok()?;
+            let v_count = usize::try_from(surface.v_count).ok()?;
+            Some([
+                nurbs_parameter_domain(surface.u_degree, &surface.u_knots, u_count)?,
+                nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count)?,
+            ])
+        }
+        SurfaceGeometry::Transformed { basis, .. } => surface_parameter_domains(basis),
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. }
+        | SurfaceGeometry::Torus { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
 /// Explicit trim metadata, if the pcurve carrier itself supplies it. A raw
 /// NURBS knot domain is deliberately excluded: it bounds the carrier, not the
 /// edge occurrence.
@@ -789,8 +852,15 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
             ..
         } => nurbs_parameter_domain(*degree, knots, radial_control_points.len()),
         PcurveGeometry::Trimmed {
-            parameter_range, ..
-        } => Some(*parameter_range),
+            parameter_range,
+            basis,
+        } => {
+            if parameter_range[0] < parameter_range[1] {
+                Some(*parameter_range)
+            } else {
+                pcurve_parameter_domain(basis)
+            }
+        }
         PcurveGeometry::Offset { basis, .. } => pcurve_parameter_domain(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
@@ -823,12 +893,14 @@ fn nurbs_parameter_domain(
 #[cfg(test)]
 mod tests {
     use super::{
-        check_procedural_support_consistency, pcurve_parameter_domain, pcurve_parameter_ranges,
+        check_procedural_support_consistency, edge_pcurve_parameter_ranges,
+        pcurve_parameter_domain, pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface,
     };
     use crate::document::CadIr;
     use crate::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
-        ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,
+        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
+        SurfaceGeometry,
     };
     use crate::ids::{CurveId, ProceduralCurveId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
@@ -1143,5 +1215,76 @@ mod tests {
         };
         assert_eq!(pcurve_parameter_domain(&pcurve.geometry), Some([0.0, 1.0]));
         assert!(pcurve_parameter_ranges(&pcurve, None, None).is_none());
+    }
+
+    #[test]
+    fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
+        let geometry = PcurveGeometry::Trimmed {
+            parameter_range: [1.0, 1.0],
+            basis: Box::new(PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                weights: None,
+                periodic: true,
+            }),
+        };
+        assert_eq!(pcurve_parameter_domain(&geometry), Some([0.0, 1.0]));
+    }
+
+    #[test]
+    fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
+        // At v=0 the quadratic surface has a zero derivative. The ordinary
+        // seed at t=0 therefore cannot start Newton recovery; the finite
+        // surface domain supplies an interior seed on the same branch.
+        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 3,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 1.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let pcurve = Pcurve {
+            id: "pcurve".into(),
+            geometry: PcurveGeometry::Line {
+                origin: Point2::new(1.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        };
+        let seeds = pcurve_parameter_seeds_on_surface(&pcurve, &surface);
+        assert!(seeds.contains(&0.5));
+
+        let ranges = edge_pcurve_parameter_ranges(
+            &surface,
+            None,
+            Point3::new(1.0, 0.0, 0.5625),
+            Point3::new(1.0, 0.0, 0.0625),
+            &pcurve,
+            &pcurve,
+            1.0e-12,
+        )
+        .expect("finite NURBS surface domain should provide recovery seeds");
+        assert!(
+            ranges.iter().any(|[start, end]| {
+                (start - 0.75).abs() <= 1.0e-10 && (end - 0.25).abs() <= 1.0e-10
+            }),
+            "{ranges:?}"
+        );
     }
 }
