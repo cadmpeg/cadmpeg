@@ -6001,7 +6001,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     let (resolved, radius) = implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
         "feature-native",
-        FeatureInputOperandKind::Native(0x83fe),
+        FeatureInputOperandKind::Native(0x8ab6),
         0,
         5.0,
     )

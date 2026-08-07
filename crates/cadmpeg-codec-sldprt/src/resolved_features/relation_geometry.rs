@@ -702,7 +702,9 @@ pub(super) fn implicit_circle_marker<'a>(
     index: u16,
     expected_radius: f64,
 ) -> Option<(&'a SketchInputEntity, f64)> {
-    if operand_kind != FeatureInputOperandKind::Native(0x83fe)
+    // CircleDiameter selects the semantic family; native operand tags are only
+    // carrier kinds and must not narrow the geometric witness search.
+    if !matches!(operand_kind, FeatureInputOperandKind::Native(_))
         || !expected_radius.is_finite()
         || expected_radius <= 0.0
     {
