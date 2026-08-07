@@ -95,6 +95,20 @@ fn b5_circle_pcurve_rejects_nonfinite_derived_poles() {
 }
 
 #[test]
+fn b5_line_pcurve_rejects_nonfinite_derived_poles() {
+    let mut bytes = b5_closed_triangle_stream();
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        600,
+        &b5_analytic_line_pcurve_payload(0, [f64::MAX, 0.0], [f64::MAX, 0.0], [1.0, 2.0]),
+    );
+
+    let graph = crate::families::b5::graph::parse(&bytes).expect("length-closed B5 graph");
+    assert!(!graph.pcurves.contains_key(&600));
+}
+
+#[test]
 fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
     let mut bytes = a8_surface_stream();
     bytes[7..11].copy_from_slice(&0x1234u32.to_le_bytes());

@@ -4105,6 +4105,13 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
     if start >= end {
         return None;
     }
+    if control_points
+        .iter()
+        .flatten()
+        .any(|coordinate| !coordinate.is_finite())
+    {
+        return None;
+    }
     Some(B5Pcurve {
         object_id: record.object_id,
         surface,
