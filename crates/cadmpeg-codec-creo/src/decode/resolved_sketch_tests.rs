@@ -1912,6 +1912,172 @@ fn circle_remains_a_closed_extrusion_profile() {
 }
 
 #[test]
+fn interpolation_spline_remains_a_closed_extrusion_profile() {
+    let sketch_id = SketchId("creo:model:sketch#spline".to_string());
+    let spline_id = SketchEntityId("creo:model:sketch_entity#spline".to_string());
+    let first_line_id = SketchEntityId("creo:model:sketch_entity#first-line".to_string());
+    let second_line_id = SketchEntityId("creo:model:sketch_entity#second-line".to_string());
+    let spline = SketchGeometry::Nurbs {
+        degree: 3,
+        knots: vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0],
+        control_points: vec![
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 0.552_284_749_8),
+            Point2::new(0.552_284_749_8, 1.0),
+            Point2::new(0.0, 1.0),
+        ],
+        weights: Some(vec![1.0, 0.75, 0.75, 1.0]),
+        periodic: false,
+    };
+    let first_line = SketchGeometry::Line {
+        start: Point2::new(0.0, 1.0),
+        end: Point2::new(0.0, 0.0),
+    };
+    let second_line = SketchGeometry::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    };
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+        profiles: vec![vec![
+            SketchEntityUse {
+                entity: spline_id.clone(),
+                reversed: false,
+            },
+            SketchEntityUse {
+                entity: first_line_id.clone(),
+                reversed: false,
+            },
+            SketchEntityUse {
+                entity: second_line_id.clone(),
+                reversed: false,
+            },
+        ]],
+        native_ref: None,
+    });
+    for (id, geometry) in [
+        (spline_id, spline.clone()),
+        (first_line_id, first_line.clone()),
+        (second_line_id, second_line.clone()),
+    ] {
+        ir.model.sketch_entities.push(SketchEntity {
+            id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        });
+    }
+
+    let profiles = resolved_sketch_profiles(&ir, &sketch_id, 1).expect("spline profile");
+    assert_eq!(profiles[0][0].2, [1.0, 0.0]);
+    assert_eq!(profiles[0][0].3, [0.0, 1.0]);
+    let (ordered, area) = ordered_extrusion_profiles(profiles.clone()).expect("closed spline");
+    assert_eq!(ordered, profiles);
+    assert!(area > 0.0);
+    assert!(profile_strictly_contains(&profiles[0], [0.2, 0.2]));
+    assert!(!profile_strictly_contains(&profiles[0], [2.0, 2.0]));
+    let diagonal = (
+        SketchGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            weights: None,
+            periodic: false,
+        },
+        false,
+        [0.0, 0.0],
+        [1.0, 1.0],
+    );
+    let crossing_line = (
+        SketchGeometry::Line {
+            start: Point2::new(0.0, 1.0),
+            end: Point2::new(1.0, 0.0),
+        },
+        false,
+        [0.0, 1.0],
+        [1.0, 0.0],
+    );
+    assert!(profile_segments_intersect(&diagonal, &crossing_line, 1e-9));
+
+    for reversed in [false, true] {
+        let start = if reversed { [0.0, 1.0] } else { [1.0, 0.0] };
+        let end = if reversed { [1.0, 0.0] } else { [0.0, 1.0] };
+        let pcurve = extrusion_cap_pcurve(&spline, reversed, start, end);
+        let PcurveGeometry::Nurbs { weights, .. } = &pcurve else {
+            panic!("spline cap pcurve is not NURBS");
+        };
+        assert_eq!(weights, &Some(vec![1.0, 0.75, 0.75, 1.0]));
+        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 2.0).expect("spline start");
+        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 5.0).expect("spline end");
+        assert!((first.u - start[0]).abs() < 1e-12);
+        assert!((first.v - start[1]).abs() < 1e-12);
+        assert!((last.u - end[0]).abs() < 1e-12);
+        assert!((last.v - end[1]).abs() < 1e-12);
+        assert_eq!(
+            extrusion_side_uvs(
+                &spline,
+                reversed,
+                start,
+                end,
+                ExtrusionSpan {
+                    lower: -2.0,
+                    upper: 3.0,
+                },
+            ),
+            [
+                [[2.0, 0.0], [5.0, 0.0]],
+                [[5.0, 0.0], [5.0, 1.0]],
+                [[2.0, 1.0], [5.0, 1.0]],
+                [[2.0, 0.0], [2.0, 1.0]],
+            ]
+        );
+    }
+
+    let transform = crate::placement::FeatureSectionTransform {
+        definition_id: 1,
+        feature_id: Some(1),
+        origin: [10.0, 20.0, 30.0],
+        u_axis: [1.0, 0.0, 0.0],
+        v_axis: [0.0, 1.0, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        offset: 0,
+    };
+    let side = extrusion_brep_side_surface(
+        &transform,
+        &spline,
+        false,
+        [1.0, 0.0],
+        [0.0, 1.0],
+        ExtrusionSpan {
+            lower: -2.0,
+            upper: 3.0,
+        },
+    )
+    .expect("spline side surface");
+    let SurfaceGeometry::Nurbs(side) = side else {
+        panic!("spline side surface is not NURBS");
+    };
+    assert_eq!((side.u_degree, side.v_degree), (3, 1));
+    assert_eq!(side.u_knots, vec![2.0, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 5.0]);
+    assert_eq!(side.v_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(side.control_points[0], Point3::new(11.0, 20.0, 28.0));
+    assert_eq!(side.control_points[1], Point3::new(11.0, 20.0, 33.0));
+    assert_eq!(side.control_points[6], Point3::new(10.0, 21.0, 28.0));
+    assert_eq!(side.control_points[7], Point3::new(10.0, 21.0, 33.0));
+    assert_eq!(
+        side.weights,
+        Some(vec![1.0, 1.0, 0.75, 0.75, 0.75, 0.75, 1.0, 1.0])
+    );
+}
+
+#[test]
 fn extrusion_profiles_require_one_oppositely_oriented_hole() {
     let rectangle = |minimum: [f64; 2], maximum: [f64; 2], clockwise: bool| {
         let mut points = [

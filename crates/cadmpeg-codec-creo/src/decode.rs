@@ -6542,6 +6542,97 @@ fn extruded_nurbs_surface(directrix: &NurbsCurve, sweep: [f64; 3]) -> Option<Nur
     })
 }
 
+fn sketch_nurbs_curve(geometry: &SketchGeometry) -> Option<NurbsCurve> {
+    let SketchGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = geometry
+    else {
+        return None;
+    };
+    let nurbs = NurbsCurve {
+        degree: *degree,
+        knots: knots.clone(),
+        control_points: control_points
+            .iter()
+            .map(|point| Point3::new(point.u, point.v, 0.0))
+            .collect(),
+        weights: weights.clone(),
+        periodic: *periodic,
+    };
+    valid_positive_nurbs_curve(&nurbs).map(|()| nurbs)
+}
+
+fn oriented_sketch_nurbs_curve(geometry: &SketchGeometry, reversed: bool) -> Option<NurbsCurve> {
+    let nurbs = sketch_nurbs_curve(geometry)?;
+    if !reversed {
+        return Some(nurbs);
+    }
+    let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+    Some(NurbsCurve {
+        degree: nurbs.degree,
+        knots: nurbs
+            .knots
+            .iter()
+            .rev()
+            .map(|knot| lower + upper - knot)
+            .collect(),
+        control_points: nurbs.control_points.into_iter().rev().collect(),
+        weights: nurbs
+            .weights
+            .map(|weights| weights.into_iter().rev().collect()),
+        periodic: nurbs.periodic,
+    })
+}
+
+fn sketch_nurbs_pcurve(geometry: &SketchGeometry, reversed: bool) -> Option<PcurveGeometry> {
+    let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
+    Some(PcurveGeometry::Nurbs {
+        degree: nurbs.degree,
+        knots: nurbs.knots,
+        control_points: nurbs
+            .control_points
+            .into_iter()
+            .map(|point| Point2::new(point.x, point.y))
+            .collect(),
+        weights: nurbs.weights,
+        periodic: nurbs.periodic,
+    })
+}
+
+fn extrusion_brep_side_surface(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SketchGeometry,
+    reversed: bool,
+    start: [f64; 2],
+    end: [f64; 2],
+    span: ExtrusionSpan,
+) -> Option<SurfaceGeometry> {
+    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+        let directrix = oriented_sketch_nurbs_curve(geometry, reversed)?;
+        let placed = placed_section_nurbs(transform, &directrix);
+        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let sweep = transform
+            .normal
+            .map(|value| value * (span.upper - span.lower));
+        return Some(SurfaceGeometry::Nurbs(extruded_nurbs_surface(
+            &translated_nurbs_curve(&placed, lower_translation),
+            sweep,
+        )?));
+    }
+    let section_geometry = match geometry {
+        SketchGeometry::Line { .. } => SketchGeometry::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        },
+        value => value.clone(),
+    };
+    extruded_geometry_surface(transform, &section_geometry)
+}
+
 fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f64, f64)> {
     let close = |left: f64, right: f64| {
         (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
@@ -7291,6 +7382,18 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
             let seam = [center.u + radius.0, center.v];
             Some((seam, seam))
         }
+        SketchGeometry::Nurbs { .. } => {
+            let nurbs = sketch_nurbs_curve(geometry)?;
+            let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+            let carrier = CurveGeometry::Nurbs(nurbs);
+            let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
+            let last = cadmpeg_ir::eval::curve_point(&carrier, upper)?;
+            [first.x, first.y]
+                .into_iter()
+                .chain([last.x, last.y])
+                .all(f64::is_finite)
+                .then_some(([first.x, first.y], [last.x, last.y]))
+        }
         _ => None,
     }
 }
@@ -7465,6 +7568,9 @@ fn extrusion_cap_pcurve(
             let [start_angle, end_angle] = oriented_full_turn_angles(reversed);
             circular_pcurve([center.u, center.v], radius.0, start_angle, end_angle)
         }
+        SketchGeometry::Nurbs { .. } => {
+            sketch_nurbs_pcurve(geometry, reversed).unwrap_or_else(|| line_pcurve(start, end))
+        }
         _ => line_pcurve(start, end),
     }
 }
@@ -7476,6 +7582,18 @@ fn extrusion_side_uvs(
     end: [f64; 2],
     span: ExtrusionSpan,
 ) -> [[[f64; 2]; 2]; 4] {
+    if matches!(geometry, SketchGeometry::Nurbs { .. }) {
+        if let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, reversed) {
+            if let Some([lower, upper]) = nurbs_intrinsic_parameter_range(&nurbs) {
+                return [
+                    [[lower, 0.0], [upper, 0.0]],
+                    [[upper, 0.0], [upper, 1.0]],
+                    [[lower, 1.0], [upper, 1.0]],
+                    [[lower, 0.0], [lower, 1.0]],
+                ];
+            }
+        }
+    }
     let [first, second] = match geometry {
         SketchGeometry::Arc {
             start_angle,
@@ -7501,34 +7619,42 @@ fn extrusion_side_uvs(
 fn extrusion_profile_signed_area(
     profile: &[(SketchGeometry, bool, [f64; 2], [f64; 2])],
 ) -> Option<f64> {
-    let area_twice = profile
-        .iter()
-        .map(|(geometry, reversed, start, end)| {
-            let chord = start[0].mul_add(end[1], -(start[1] * end[0]));
-            let (center, radius, start_angle, end_angle) = match geometry {
-                SketchGeometry::Arc {
-                    center,
-                    radius,
-                    start_angle,
-                    end_angle,
-                } => (center, radius, start_angle.0, end_angle.0),
-                SketchGeometry::Circle { center, radius } => {
-                    (center, radius, 0.0, std::f64::consts::TAU)
-                }
-                _ => return chord,
-            };
-            let forward_sweep = forward_arc_sweep(start_angle, end_angle);
-            let sweep = if *reversed {
-                -forward_sweep
-            } else {
-                forward_sweep
-            };
-            center.u.mul_add(
-                end[1] - start[1],
-                -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
-            )
-        })
-        .sum::<f64>();
+    let mut area_twice = 0.0;
+    for (geometry, reversed, start, end) in profile {
+        let contribution = match geometry {
+            SketchGeometry::Nurbs { .. } => nurbs_profile_signed_area_twice(geometry, *reversed)?,
+            SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let forward_sweep = forward_arc_sweep(start_angle.0, end_angle.0);
+                let sweep = if *reversed {
+                    -forward_sweep
+                } else {
+                    forward_sweep
+                };
+                center.u.mul_add(
+                    end[1] - start[1],
+                    -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
+                )
+            }
+            SketchGeometry::Circle { center, radius } => {
+                let sweep = if *reversed {
+                    -std::f64::consts::TAU
+                } else {
+                    std::f64::consts::TAU
+                };
+                center.u.mul_add(
+                    end[1] - start[1],
+                    -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * sweep,
+                )
+            }
+            _ => start[0].mul_add(end[1], -(start[1] * end[0])),
+        };
+        area_twice += contribution;
+    }
     let scale = profile
         .iter()
         .flat_map(|(_, _, start, end)| start.iter().chain(end))
@@ -7754,11 +7880,235 @@ fn arcs_intersect(
     })
 }
 
+fn planar_point_segment_distance(point: [f64; 2], segment: [[f64; 2]; 2]) -> f64 {
+    let direction = [segment[1][0] - segment[0][0], segment[1][1] - segment[0][1]];
+    let relative = [point[0] - segment[0][0], point[1] - segment[0][1]];
+    let length_squared = direction[0].mul_add(direction[0], direction[1] * direction[1]);
+    if length_squared == 0.0 {
+        return relative[0].hypot(relative[1]);
+    }
+    let parameter = (relative[0].mul_add(direction[0], relative[1] * direction[1])
+        / length_squared)
+        .clamp(0.0, 1.0);
+    let nearest = [
+        segment[0][0] + parameter * direction[0],
+        segment[0][1] + parameter * direction[1],
+    ];
+    (point[0] - nearest[0]).hypot(point[1] - nearest[1])
+}
+
+const NURBS_AREA_GAUSS_NODES: [f64; 8] = [
+    -0.960_289_856_497_536_3,
+    -0.796_666_477_413_626_7,
+    -0.525_532_409_916_329,
+    -0.183_434_642_495_649_8,
+    0.183_434_642_495_649_8,
+    0.525_532_409_916_329,
+    0.796_666_477_413_626_7,
+    0.960_289_856_497_536_3,
+];
+const NURBS_AREA_GAUSS_WEIGHTS: [f64; 8] = [
+    0.101_228_536_290_376_3,
+    0.222_381_034_453_374_5,
+    0.313_706_645_877_887_3,
+    0.362_683_783_378_362,
+    0.362_683_783_378_362,
+    0.313_706_645_877_887_3,
+    0.222_381_034_453_374_5,
+    0.101_228_536_290_376_3,
+];
+
+struct NurbsProfileSpan<'a> {
+    carrier: &'a CurveGeometry,
+    start: f64,
+    end: f64,
+    start_point: [f64; 2],
+    end_point: [f64; 2],
+    tolerance: f64,
+    depth: usize,
+}
+
+fn append_nurbs_profile_span(
+    span: &NurbsProfileSpan<'_>,
+    points: &mut Vec<[f64; 2]>,
+) -> Option<()> {
+    const MAX_DEPTH: usize = 24;
+    const MAX_POINTS: usize = 262_145;
+    (span.start.is_finite() && span.end.is_finite() && span.start < span.end).then_some(())?;
+    let middle = span.start + (span.end - span.start) * 0.5;
+    if middle == span.start || middle == span.end {
+        (points.len() < MAX_POINTS).then_some(())?;
+        points.push(span.end_point);
+        return Some(());
+    }
+    let first_quarter = span.start + (span.end - span.start) * 0.25;
+    let third_quarter = span.start + (span.end - span.start) * 0.75;
+    let middle_point = cadmpeg_ir::eval::curve_point(span.carrier, middle)?;
+    let first_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, first_quarter)?;
+    let third_quarter_point = cadmpeg_ir::eval::curve_point(span.carrier, third_quarter)?;
+    let middle_point = [middle_point.x, middle_point.y];
+    let first_quarter_point = [first_quarter_point.x, first_quarter_point.y];
+    let third_quarter_point = [third_quarter_point.x, third_quarter_point.y];
+    let chord = [span.start_point, span.end_point];
+    let flatness = planar_point_segment_distance(first_quarter_point, chord)
+        .max(planar_point_segment_distance(middle_point, chord))
+        .max(planar_point_segment_distance(third_quarter_point, chord));
+    (flatness.is_finite() && span.tolerance.is_finite() && span.tolerance > 0.0).then_some(())?;
+    if flatness <= span.tolerance {
+        (points.len() < MAX_POINTS).then_some(())?;
+        points.push(span.end_point);
+        return Some(());
+    }
+    (span.depth < MAX_DEPTH).then_some(())?;
+    append_nurbs_profile_span(
+        &NurbsProfileSpan {
+            carrier: span.carrier,
+            start: span.start,
+            end: middle,
+            start_point: span.start_point,
+            end_point: middle_point,
+            tolerance: span.tolerance,
+            depth: span.depth + 1,
+        },
+        points,
+    )?;
+    append_nurbs_profile_span(
+        &NurbsProfileSpan {
+            carrier: span.carrier,
+            start: middle,
+            end: span.end,
+            start_point: middle_point,
+            end_point: span.end_point,
+            tolerance: span.tolerance,
+            depth: span.depth + 1,
+        },
+        points,
+    )
+}
+
+fn nurbs_profile_polyline(nurbs: &NurbsCurve, tolerance: f64) -> Option<Vec<[f64; 2]>> {
+    let [lower, upper] = nurbs_intrinsic_parameter_range(nurbs)?;
+    let carrier = CurveGeometry::Nurbs(nurbs.clone());
+    let first = cadmpeg_ir::eval::curve_point(&carrier, lower)?;
+    let first = [first.x, first.y];
+    let mut points = vec![first];
+    for pair in nurbs.knots.windows(2) {
+        let start = pair[0].max(lower);
+        let end = pair[1].min(upper);
+        if start >= end {
+            continue;
+        }
+        let start_point = cadmpeg_ir::eval::curve_point(&carrier, start)?;
+        let end_point = cadmpeg_ir::eval::curve_point(&carrier, end)?;
+        let start_point = [start_point.x, start_point.y];
+        let end_point = [end_point.x, end_point.y];
+        if points.last().copied() != Some(start_point) {
+            points.push(start_point);
+        }
+        append_nurbs_profile_span(
+            &NurbsProfileSpan {
+                carrier: &carrier,
+                start,
+                end,
+                start_point,
+                end_point,
+                tolerance,
+                depth: 0,
+            },
+            &mut points,
+        )?;
+    }
+    (points.len() >= 2 && points.iter().flatten().all(|value| value.is_finite())).then_some(points)
+}
+
+fn profile_nurbs_polyline(
+    segment: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
+    tolerance: f64,
+) -> Option<Vec<[f64; 2]>> {
+    let nurbs = oriented_sketch_nurbs_curve(&segment.0, segment.1)?;
+    nurbs_profile_polyline(&nurbs, tolerance)
+}
+
+fn nurbs_profile_signed_area_twice(geometry: &SketchGeometry, reversed: bool) -> Option<f64> {
+    let nurbs = oriented_sketch_nurbs_curve(geometry, reversed)?;
+    let [lower, upper] = nurbs_intrinsic_parameter_range(&nurbs)?;
+    let carrier = CurveGeometry::Nurbs(nurbs.clone());
+    let mut area_twice = 0.0;
+    for pair in nurbs.knots.windows(2) {
+        let start = pair[0].max(lower);
+        let end = pair[1].min(upper);
+        if start >= end {
+            continue;
+        }
+        let middle = 0.5 * (start + end);
+        let half_width = 0.5 * (end - start);
+        for (node, weight) in NURBS_AREA_GAUSS_NODES
+            .into_iter()
+            .zip(NURBS_AREA_GAUSS_WEIGHTS)
+        {
+            let parameter = middle + half_width * node;
+            let point = cadmpeg_ir::eval::curve_point(&carrier, parameter)?;
+            let tangent = cadmpeg_ir::eval::curve_tangent(&carrier, parameter)?;
+            area_twice += weight * (point.x * tangent.y - point.y * tangent.x) * half_width;
+        }
+    }
+    area_twice.is_finite().then_some(area_twice)
+}
+
+fn polylines_intersect(first: &[[f64; 2]], second: &[[f64; 2]], tolerance: f64) -> bool {
+    first.windows(2).any(|first_segment| {
+        second.windows(2).any(|second_segment| {
+            segments_intersect(
+                [first_segment[0], first_segment[1]],
+                [second_segment[0], second_segment[1]],
+                tolerance,
+            )
+        })
+    })
+}
+
 fn profile_segments_intersect(
     first: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     second: &(SketchGeometry, bool, [f64; 2], [f64; 2]),
     tolerance: f64,
 ) -> bool {
+    let first_nurbs = matches!(first.0, SketchGeometry::Nurbs { .. });
+    let second_nurbs = matches!(second.0, SketchGeometry::Nurbs { .. });
+    if first_nurbs || second_nurbs {
+        if first_nurbs {
+            if let Some(arc) = profile_arc(second) {
+                return profile_nurbs_polyline(first, tolerance).is_some_and(|polyline| {
+                    polyline
+                        .windows(2)
+                        .any(|segment| line_arc_intersect([segment[0], segment[1]], arc, tolerance))
+                });
+            }
+        }
+        if second_nurbs {
+            if let Some(arc) = profile_arc(first) {
+                return profile_nurbs_polyline(second, tolerance).is_some_and(|polyline| {
+                    polyline
+                        .windows(2)
+                        .any(|segment| line_arc_intersect([segment[0], segment[1]], arc, tolerance))
+                });
+            }
+        }
+        let Some(first_polyline) = (if first_nurbs {
+            profile_nurbs_polyline(first, tolerance)
+        } else {
+            Some(vec![first.2, first.3])
+        }) else {
+            return true;
+        };
+        let Some(second_polyline) = (if second_nurbs {
+            profile_nurbs_polyline(second, tolerance)
+        } else {
+            Some(vec![second.2, second.3])
+        }) else {
+            return true;
+        };
+        return polylines_intersect(&first_polyline, &second_polyline, tolerance);
+    }
     match (profile_arc(first), profile_arc(second)) {
         (None, None) => segments_intersect([first.2, first.3], [second.2, second.3], tolerance),
         (None, Some(arc)) => line_arc_intersect([first.2, first.3], arc, tolerance),
@@ -7768,6 +8118,12 @@ fn profile_segments_intersect(
 }
 
 fn profile_strictly_contains(profile: &ExtrusionProfile, point: [f64; 2]) -> bool {
+    let scale = profile
+        .iter()
+        .flat_map(|(_, _, start, end)| start.iter().chain(end))
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
     let mut winding = 0.0;
     for segment in profile {
         let mut accumulate = |first: [f64; 2], second: [f64; 2]| {
@@ -7777,7 +8133,14 @@ fn profile_strictly_contains(profile: &ExtrusionProfile, point: [f64; 2]) -> boo
                 .mul_add(second[1], -(first[1] * second[0]))
                 .atan2(first[0].mul_add(second[0], first[1] * second[1]));
         };
-        if let Some((center, radius, start, delta)) = profile_arc(segment) {
+        if matches!(segment.0, SketchGeometry::Nurbs { .. }) {
+            let Some(polyline) = profile_nurbs_polyline(segment, tolerance) else {
+                return false;
+            };
+            for pair in polyline.windows(2) {
+                accumulate(pair[0], pair[1]);
+            }
+        } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
             let pieces = (delta.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
             for piece in 0..pieces {
                 let first = start + delta * piece as f64 / pieces as f64;
@@ -7880,6 +8243,23 @@ fn add_extrusion_pcurve(
     source_offset: usize,
     geometry: PcurveGeometry,
 ) -> PcurveId {
+    let parameter_range = match &geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => usize::try_from(*degree)
+            .ok()
+            .and_then(|degree| {
+                (control_points.len() > degree && knots.len() == control_points.len() + degree + 1)
+                    .then_some(())?;
+                Some([*knots.get(degree)?, *knots.get(control_points.len())?])
+            })
+            .filter(|range| range[0] < range[1])
+            .unwrap_or([0.0, 1.0]),
+        _ => [0.0, 1.0],
+    };
     annotate(
         annotations,
         &id,
@@ -7893,7 +8273,7 @@ fn add_extrusion_pcurve(
         geometry,
         wrapper_reversed: None,
         native_tail_flags: None,
-        parameter_range: Some([0.0, 1.0]),
+        parameter_range: Some(parameter_range),
         fit_tolerance: None,
     });
     id
@@ -8790,7 +9170,10 @@ fn transfer_resolved_extrusion_breps(
         if profiles
             .iter()
             .flatten()
-            .any(|(geometry, _, _, _)| extruded_geometry_surface(transform, geometry).is_none())
+            .any(|(geometry, reversed, start, end)| {
+                extrusion_brep_side_surface(transform, geometry, *reversed, *start, *end, span)
+                    .is_none()
+            })
         {
             continue;
         }
@@ -8927,6 +9310,22 @@ fn transfer_resolved_extrusion_breps(
                                 radius: radius.0,
                             }
                         }
+                        SketchGeometry::Nurbs { .. } => {
+                            let Some(nurbs) = oriented_sketch_nurbs_curve(geometry, *reversed)
+                            else {
+                                continue;
+                            };
+                            let placed = placed_section_nurbs(transform, &nurbs);
+                            let translated = translated_nurbs_curve(
+                                &placed,
+                                [
+                                    offset * transform.normal[0],
+                                    offset * transform.normal[1],
+                                    offset * transform.normal[2],
+                                ],
+                            );
+                            CurveGeometry::Nurbs(translated)
+                        }
                         _ => unreachable!("profile family checked above"),
                     };
                     ir.model.curves.push(Curve {
@@ -8948,6 +9347,10 @@ fn transfer_resolved_extrusion_breps(
                         SketchGeometry::Circle { .. } => Some(
                             oriented_arc_parameterization(*reversed, 0.0, std::f64::consts::TAU).1,
                         ),
+                        SketchGeometry::Nurbs { .. } => {
+                            oriented_sketch_nurbs_curve(geometry, *reversed)
+                                .and_then(|nurbs| nurbs_intrinsic_parameter_range(&nurbs))
+                        }
                         _ => None,
                     };
                     ir.model.edges.push(Edge {
@@ -9096,19 +9499,14 @@ fn transfer_resolved_extrusion_breps(
                 let next = (index + 1) % count;
                 let surface_id =
                     SurfaceId(format!("{prefix}:surface:{profile_index}:side:{index}"));
-                let section_geometry = match geometry {
-                    SketchGeometry::Line { .. } => SketchGeometry::Line {
-                        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
-                        end: cadmpeg_ir::math::Point2::new(
-                            profile[index].3[0],
-                            profile[index].3[1],
-                        ),
-                    },
-                    value => value.clone(),
-                };
-                let Some(surface_geometry) =
-                    extruded_geometry_surface(transform, &section_geometry)
-                else {
+                let Some(surface_geometry) = extrusion_brep_side_surface(
+                    transform,
+                    geometry,
+                    profile[index].1,
+                    *start,
+                    profile[index].3,
+                    span,
+                ) else {
                     break;
                 };
                 ir.model.surfaces.push(Surface {
