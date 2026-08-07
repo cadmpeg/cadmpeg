@@ -1154,6 +1154,36 @@ pub(crate) fn project_marker_backed_sketches(
                                             return minor_arc_geometry(start, end, center, QUANTUM);
                                         }
                                     }
+                                    let [start_marker, end_marker] = endpoints.as_slice() else {
+                                        return None;
+                                    };
+                                    let [start_u, start_v] = start_marker.coordinates_m?;
+                                    let [end_u, end_v] = end_marker.coordinates_m?;
+                                    let candidates = object_markers
+                                        .iter()
+                                        .copied()
+                                        .filter(|candidate| {
+                                            candidate.id != start_marker.id
+                                                && candidate.id != end_marker.id
+                                        })
+                                        .filter_map(|candidate| {
+                                            let [u, v] = candidate.coordinates_m?;
+                                            Some(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR))
+                                        })
+                                        .collect::<Vec<_>>();
+                                    if let Some(center) = unique_arc_center_marker(
+                                        Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
+                                        Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
+                                        &candidates,
+                                        QUANTUM,
+                                    ) {
+                                        let center = transform.apply(quantize(center, QUANTUM))?;
+                                        let center = Point2::new(
+                                            center.0 as f64 * QUANTUM,
+                                            center.1 as f64 * QUANTUM,
+                                        );
+                                        return minor_arc_geometry(start, end, center, QUANTUM);
+                                    }
                                     if let Some([tu, tv]) =
                                         compact_bounded_curve_tangent(&lane.native_payload, offset)
                                     {

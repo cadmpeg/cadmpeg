@@ -428,7 +428,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     endpoint.ordinal = 2;
     endpoint.offset = 2;
     endpoint.links = point.links.clone();
-    let mut arc = marker("arc", Some([0.0, 0.0]));
+    let mut arc = marker("arc", None);
     arc.feature_ref = Some("sketch-native".into());
     arc.ordinal = 3;
     arc.offset = 3;
@@ -446,6 +446,10 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     arc_end.ordinal = 5;
     arc_end.offset = 5;
     arc_end.links = arc_start.links.clone();
+    let mut arc_center = marker("arc-center", Some([0.0, 0.0]));
+    arc_center.feature_ref = Some("sketch-native".into());
+    arc_center.ordinal = 6;
+    arc_center.offset = 6;
     let triangle_point = |id: &str, ordinal, offset, coordinates_m| {
         let mut point = marker(id, Some(coordinates_m));
         point.feature_ref = Some("sketch-native".into());
@@ -454,9 +458,9 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         point
     };
     let triangle_points = [
-        triangle_point("triangle-point-0", 6, 6, [0.010, 0.010]),
-        triangle_point("triangle-point-1", 7, 7, [0.020, 0.010]),
-        triangle_point("triangle-point-2", 8, 8, [0.015, 0.020]),
+        triangle_point("triangle-point-0", 7, 7, [0.010, 0.010]),
+        triangle_point("triangle-point-1", 8, 8, [0.020, 0.010]),
+        triangle_point("triangle-point-2", 9, 9, [0.015, 0.020]),
     ];
     let triangle_line = |id: &str, ordinal, offset, first: &str, second: &str| {
         let mut line = marker(id, Some([0.0, 0.0]));
@@ -477,13 +481,13 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         line
     };
     let triangle = [
-        triangle_line("triangle-0", 9, 9, "triangle-point-0", "triangle-point-1"),
-        triangle_line("triangle-1", 10, 10, "triangle-point-1", "triangle-point-2"),
-        triangle_line("triangle-2", 11, 11, "triangle-point-2", "triangle-point-0"),
+        triangle_line("triangle-0", 10, 10, "triangle-point-0", "triangle-point-1"),
+        triangle_line("triangle-1", 11, 11, "triangle-point-1", "triangle-point-2"),
+        triangle_line("triangle-2", 12, 12, "triangle-point-2", "triangle-point-0"),
     ];
     let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
     display_handle.feature_ref = Some("sketch-native".into());
-    display_handle.ordinal = 12;
+    display_handle.ordinal = 13;
     display_handle.offset = 300;
     display_handle.kind = SketchInputKind::Arc;
     payload.resize(400, 0);
@@ -533,7 +537,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         surface_selections: Vec::new(),
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
-        sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end]
+        sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end, arc_center]
             .into_iter()
             .chain(triangle_points)
             .chain(triangle)
@@ -553,7 +557,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
 
     assert_eq!(sketches.len(), 1);
-    assert_eq!(entities.len(), 12);
+    assert_eq!(entities.len(), 13);
     assert!(matches!(
         entities[0].geometry,
         SketchGeometry::Point { position }
@@ -604,7 +608,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         &lanes,
     );
     assert_eq!(sketches.len(), 1);
-    assert_eq!(entities.len(), 12);
+    assert_eq!(entities.len(), 13);
     assert!(matches!(
         &configured_features[1].definition,
         FeatureDefinition::Sketch {
@@ -637,7 +641,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
     );
     assert_eq!(replacement_sketches.len(), 1);
     assert_eq!(replacement_sketches[0].id, expected_sketch);
-    assert_eq!(replacement_entities.len(), 12);
+    assert_eq!(replacement_entities.len(), 13);
     assert!(replacement_entities
         .iter()
         .all(|entity| entity.sketch == expected_sketch));
