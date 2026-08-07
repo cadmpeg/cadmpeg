@@ -1592,7 +1592,9 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let geometry = flatten_curve(&curve.geometry)?;
         let span = edge_span(ir, edge, &geometry)?;
         let index = entities.len();
-        entities.push(curve_entity(&geometry, Some(&span))?);
+        let mut entity = curve_entity(&geometry, Some(&span))?;
+        entity.status = "00010000";
+        entities.push(entity);
         edge_indices.insert(edge.id.as_str().to_owned(), index);
         consumed_curves.insert(curve_id.as_str().to_owned());
         consumed_points.insert(vertex_point_id(ir, &edge.start)?.as_str().to_owned());
@@ -1650,22 +1652,41 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
     }
 
     let mut boundary_indices = BTreeMap::new();
+    let mut curve_on_surface_indices = BTreeMap::new();
     let mut faces = ir.model.faces.iter().collect::<Vec<_>>();
     faces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for face in &faces {
         let surface_index = *surface_indices
             .get(face.surface.as_str())
             .expect("validated face surface reference");
-        for loop_ in face_loop_order(ir, face)? {
-            let index = entities.len();
-            entities.push(boundary_entity(
-                ir,
-                loop_,
-                surface_index,
-                &edge_indices,
-                &pcurve_indices,
-            )?);
-            boundary_indices.insert(loop_.id.as_str().to_owned(), index);
+        let loops = face_loop_order(ir, face)?;
+        let bounded = loops
+            .iter()
+            .all(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+        for loop_ in loops {
+            if bounded {
+                let index = entities.len();
+                entities.push(boundary_entity(
+                    ir,
+                    loop_,
+                    surface_index,
+                    &edge_indices,
+                    &pcurve_indices,
+                )?);
+                boundary_indices.insert(loop_.id.as_str().to_owned(), index);
+            } else {
+                let curve_on_surface = curve_on_surface_entity(
+                    ir,
+                    loop_,
+                    surface_index,
+                    &edge_indices,
+                    &pcurve_indices,
+                    &mut entities,
+                )?;
+                let index = entities.len();
+                entities.push(curve_on_surface);
+                curve_on_surface_indices.insert(loop_.id.as_str().to_owned(), index);
+            }
         }
     }
 
@@ -1709,12 +1730,14 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 inner.len(),
                 outer.map_or_else(
                     || "0".into(),
-                    |loop_| reference_marker(boundary_indices[loop_.id.as_str()]),
+                    |loop_| reference_marker(curve_on_surface_indices[loop_.id.as_str()]),
                 )
             );
             for loop_ in inner {
                 parameters.push(',');
-                parameters.push_str(&reference_marker(boundary_indices[loop_.id.as_str()]));
+                parameters.push_str(&reference_marker(
+                    curve_on_surface_indices[loop_.id.as_str()],
+                ));
             }
             parameters
         };
@@ -1897,7 +1920,27 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                 ))
             })?;
         surface_entities(&surface.geometry, 0)?;
-        for loop_ in face_loop_order(ir, face)? {
+        let loops = face_loop_order(ir, face)?;
+        if loops.is_empty() {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer requires at least one boundary loop per face ({})",
+                face.id
+            )));
+        }
+        let has_unspecified_loop = loops
+            .iter()
+            .any(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
+        let has_explicit_loop = loops
+            .iter()
+            .any(|loop_| loop_.boundary_role != LoopBoundaryRole::Unspecified);
+        if has_unspecified_loop && has_explicit_loop {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES semantic writer cannot mix classified and unspecified boundary loops ({})",
+                face.id
+            )));
+        }
+        let trimmed = has_explicit_loop;
+        for loop_ in loops {
             if !used_loops.insert(loop_.id.as_str().to_owned()) {
                 return Err(CodecError::Malformed(format!(
                     "IGES face {} uses loop {} more than once",
@@ -1955,9 +1998,15 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                         coedge.id
                     )));
                 }
-                if coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
+                if trimmed && first_pcurve_count != 1 {
                     return Err(CodecError::NotImplemented(format!(
-                        "IGES Type 141 requires one pcurve representation per loop ({})",
+                        "IGES Type 144 requires exactly one parameter curve per coedge ({})",
+                        loop_.id
+                    )));
+                }
+                if !trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "IGES Type 141 requires consistent parameter-curve presence per loop ({})",
                         loop_.id
                     )));
                 }
@@ -2216,6 +2265,376 @@ fn boundary_entity(
         parameters: parameters.into_bytes(),
         transform: None,
     })
+}
+
+fn curve_on_surface_entity(
+    ir: &CadIr,
+    loop_: &Loop,
+    surface_index: usize,
+    edge_indices: &BTreeMap<String, usize>,
+    pcurve_indices: &BTreeMap<String, usize>,
+    entities: &mut Vec<Entity>,
+) -> Result<Entity, CodecError> {
+    let mut model_children = Vec::with_capacity(loop_.coedges.len());
+    let mut pcurve_children = Vec::new();
+    for coedge_id in &loop_.coedges {
+        let coedge = ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| coedge.id == *coedge_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES loop {} references missing coedge {}",
+                    loop_.id, coedge_id
+                ))
+            })?;
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES coedge {} references missing edge {}",
+                    coedge.id, coedge.edge
+                ))
+            })?;
+        let curve_id = edge.curve.as_ref().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "IGES Type 142 output does not encode carrier-less edge {}",
+                edge.id
+            ))
+        })?;
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *curve_id)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES edge {} references missing curve {}",
+                    edge.id, curve_id
+                ))
+            })?;
+        let geometry = flatten_curve(&curve.geometry)?;
+        let span = edge_span(ir, edge, &geometry)?;
+        let model_index = if coedge.sense == Sense::Forward {
+            *edge_indices.get(edge.id.as_str()).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES Type 142 loop {} references missing edge entity {}",
+                    loop_.id, edge.id
+                ))
+            })?
+        } else {
+            let index = entities.len();
+            entities.push(oriented_curve_entity(&geometry, &span, coedge.sense)?);
+            index
+        };
+        model_children.push(model_index);
+        for pcurve_use in &coedge.pcurves {
+            let pcurve = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES coedge {} references missing pcurve {}",
+                        coedge.id, pcurve_use.pcurve
+                    ))
+                })?;
+            let pcurve_index = if coedge.sense == Sense::Forward {
+                *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES Type 142 loop {} references missing pcurve entity {}",
+                        loop_.id, pcurve.id
+                    ))
+                })?
+            } else {
+                let index = entities.len();
+                entities.push(oriented_pcurve_entity(pcurve)?);
+                index
+            };
+            pcurve_children.push(pcurve_index);
+        }
+    }
+    if model_children.is_empty() || pcurve_children.is_empty() {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES Type 144 loop {} requires model and parameter curve carriers",
+            loop_.id
+        )));
+    }
+    let model_curve = if model_children.len() == 1 {
+        model_children[0]
+    } else {
+        push_composite_entity(entities, &model_children, "MODEL", "00010000")?
+    };
+    let parameter_curve = if pcurve_children.len() == 1 {
+        pcurve_children[0]
+    } else {
+        push_composite_entity(entities, &pcurve_children, "PCURVE", "00010500")?
+    };
+    Ok(Entity {
+        type_code: 142,
+        form: 0,
+        label: "CURVSURF",
+        status: "00010000",
+        parameters: format!(
+            "142,0,{},{},{},3;",
+            reference_marker(surface_index),
+            reference_marker(parameter_curve),
+            reference_marker(model_curve)
+        )
+        .into_bytes(),
+        transform: None,
+    })
+}
+
+fn push_composite_entity(
+    entities: &mut Vec<Entity>,
+    children: &[usize],
+    label: &'static str,
+    status: &'static str,
+) -> Result<usize, CodecError> {
+    if children.is_empty() {
+        return Err(CodecError::Malformed(
+            "IGES composite curve has no children".into(),
+        ));
+    }
+    let mut parameters = format!("102,{}", children.len());
+    for child in children {
+        parameters.push(',');
+        parameters.push_str(&reference_marker(*child));
+    }
+    parameters.push(';');
+    let index = entities.len();
+    entities.push(Entity {
+        type_code: 102,
+        form: 0,
+        label,
+        status,
+        parameters: parameters.into_bytes(),
+        transform: None,
+    });
+    Ok(index)
+}
+
+fn oriented_curve_entity(
+    geometry: &CurveGeometry,
+    span: &CurveSpan,
+    sense: Sense,
+) -> Result<Entity, CodecError> {
+    if sense == Sense::Forward {
+        let mut entity = curve_entity(geometry, Some(span))?;
+        entity.status = "00010000";
+        return Ok(entity);
+    }
+    let reversed_span = CurveSpan {
+        range: span.range,
+        start: span.end,
+        end: span.start,
+    };
+    let mut entity = match geometry {
+        CurveGeometry::Line { .. } => curve_entity(geometry, Some(&reversed_span))?,
+        CurveGeometry::Nurbs(nurbs) => {
+            let (reversed, range) = reverse_nurbs(nurbs, span.range)?;
+            let reversed_span = CurveSpan {
+                range,
+                ..reversed_span
+            };
+            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let reversed = crate::entities::curve_conversion::circular_arc_nurbs(
+                *center,
+                *axis,
+                *ref_direction,
+                *radius,
+                span.range,
+            )
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES reversed circular edge span is not convertible ({span:?})"
+                ))
+            })?;
+            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let reversed_span = CurveSpan {
+                range,
+                ..reversed_span
+            };
+            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+        }
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let reversed = crate::entities::curve_conversion::elliptical_arc_nurbs(
+                *center,
+                *axis,
+                *major_direction,
+                *major_radius,
+                *minor_radius,
+                span.range,
+            )
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES reversed elliptical edge span is not convertible ({span:?})"
+                ))
+            })?;
+            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let reversed_span = CurveSpan {
+                range,
+                ..reversed_span
+            };
+            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+        }
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => {
+            let reversed = crate::entities::curve_conversion::parabolic_arc_nurbs(
+                *vertex,
+                *axis,
+                *major_direction,
+                *focal_distance,
+                span.range,
+            )
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES reversed parabolic edge span is not convertible ({span:?})"
+                ))
+            })?;
+            let (reversed, range) = reverse_nurbs(&reversed, span.range)?;
+            let reversed_span = CurveSpan {
+                range,
+                ..reversed_span
+            };
+            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+        }
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => {
+            let values = polyline_parameters(points.len(), parameters.as_deref())?;
+            let original = NurbsCurve {
+                degree: 1,
+                knots: polyline_knots(&values),
+                control_points: points.clone(),
+                weights: None,
+                periodic: false,
+            };
+            let (reversed, range) = reverse_nurbs(&original, span.range)?;
+            let reversed_span = CurveSpan {
+                range,
+                ..reversed_span
+            };
+            curve_entity(&CurveGeometry::Nurbs(reversed), Some(&reversed_span))?
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "IGES reversed Type 142 edge carrier is unsupported ({geometry:?})"
+            )))
+        }
+    };
+    entity.status = "00010000";
+    Ok(entity)
+}
+
+fn oriented_pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
+    let range = pcurve.parameter_range.ok_or_else(|| {
+        CodecError::NotImplemented(format!(
+            "IGES semantic writer requires a parameter range for pcurve {}",
+            pcurve.id
+        ))
+    })?;
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    } = &pcurve.geometry
+    else {
+        return Err(CodecError::NotImplemented(format!(
+            "IGES semantic writer only encodes NURBS pcurves ({})",
+            pcurve.id
+        )));
+    };
+    let nurbs = NurbsCurve {
+        degree: *degree,
+        knots: knots.clone(),
+        control_points: control_points
+            .iter()
+            .map(|point| Point3::new(point.u, point.v, 0.0))
+            .collect(),
+        weights: weights.clone(),
+        periodic: *periodic,
+    };
+    let (reversed, range) = reverse_nurbs(&nurbs, range)?;
+    encode_nurbs(&reversed, range, "PCURVE")
+}
+
+fn reverse_nurbs(
+    nurbs: &NurbsCurve,
+    range: [f64; 2],
+) -> Result<(NurbsCurve, [f64; 2]), CodecError> {
+    let domain = nurbs_domain(nurbs)?;
+    if domain.iter().any(|value| !value.is_finite())
+        || domain[0] > domain[1]
+        || range.iter().any(|value| !value.is_finite())
+        || range[0] > range[1]
+        || range[0] < domain[0]
+        || range[1] > domain[1]
+        || nurbs.knots.iter().any(|value| !value.is_finite())
+        || nurbs.knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return Err(CodecError::Malformed(
+            "IGES reversed NURBS domain or parameter range is invalid".into(),
+        ));
+    }
+    let sum = domain[0] + domain[1];
+    if !sum.is_finite() {
+        return Err(CodecError::Malformed(
+            "IGES reversed NURBS parameter range is non-finite".into(),
+        ));
+    }
+    let knots = nurbs
+        .knots
+        .iter()
+        .rev()
+        .map(|knot| sum - knot)
+        .collect::<Vec<_>>();
+    let reversed_range = [sum - range[1], sum - range[0]];
+    if reversed_range.iter().any(|value| !value.is_finite())
+        || knots.iter().any(|knot| !knot.is_finite())
+    {
+        return Err(CodecError::Malformed(
+            "IGES reversed NURBS knot vector or parameter range is non-finite".into(),
+        ));
+    }
+    Ok((
+        NurbsCurve {
+            degree: nurbs.degree,
+            knots,
+            control_points: nurbs.control_points.iter().rev().copied().collect(),
+            weights: nurbs
+                .weights
+                .as_ref()
+                .map(|weights| weights.iter().rev().copied().collect()),
+            periodic: nurbs.periodic,
+        },
+        reversed_range,
+    ))
 }
 
 fn pcurve_entity(pcurve: &Pcurve) -> Result<Entity, CodecError> {
@@ -2659,6 +3078,7 @@ struct Placement {
     rows: [[f64; 4]; 3],
 }
 
+#[derive(Debug)]
 struct CurveSpan {
     range: [f64; 2],
     start: Point3,

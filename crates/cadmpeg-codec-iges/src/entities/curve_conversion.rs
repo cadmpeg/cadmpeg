@@ -37,7 +37,7 @@ pub(super) fn quarter_turn_spans(sweep: f64) -> usize {
     quarters.ceil().max(1.0) as usize
 }
 
-pub(super) fn circular_arc_nurbs(
+pub(crate) fn circular_arc_nurbs(
     center: Point3,
     axis: Vector3,
     reference: Vector3,
@@ -47,7 +47,7 @@ pub(super) fn circular_arc_nurbs(
     elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
 }
 
-pub(super) fn elliptical_arc_nurbs(
+pub(crate) fn elliptical_arc_nurbs(
     center: Point3,
     axis: Vector3,
     major_direction: Vector3,
@@ -123,7 +123,7 @@ pub(super) fn elliptical_arc_nurbs(
     })
 }
 
-pub(super) fn parabolic_arc_nurbs(
+pub(crate) fn parabolic_arc_nurbs(
     vertex: Point3,
     axis: Vector3,
     major_direction: Vector3,

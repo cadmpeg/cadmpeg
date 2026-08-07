@@ -9217,7 +9217,7 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary_role: LoopBoundaryRole::Outer,
-        coedges: coedge_ids,
+        coedges: coedge_ids.clone(),
         vertex_uses: Vec::new(),
     });
     ir.model.faces.push(Face {
@@ -9252,6 +9252,26 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         visible: None,
     });
 
+    let reversed_order = [
+        coedge_ids[3].clone(),
+        coedge_ids[2].clone(),
+        coedge_ids[1].clone(),
+        coedge_ids[0].clone(),
+    ];
+    ir.model.loops[0].coedges = reversed_order.to_vec();
+    for (index, coedge_id) in reversed_order.iter().enumerate() {
+        let coedge = ir
+            .model
+            .coedges
+            .iter_mut()
+            .find(|coedge| coedge.id == *coedge_id)
+            .unwrap();
+        coedge.sense = Sense::Reversed;
+        coedge.next = reversed_order[(index + 1) % reversed_order.len()].clone();
+        coedge.previous =
+            reversed_order[(index + reversed_order.len() - 1) % reversed_order.len()].clone();
+    }
+
     let plan = IgesEncoder::new(IgesWriteOptions::default())
         .plan(EncodeInput {
             ir: &ir,
@@ -9261,7 +9281,12 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
     let mut written = Vec::new();
     let report = plan.write_to(&mut written).unwrap();
     assert!(report.losses.is_empty(), "{:#?}", report.losses);
-    assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
+    assert_eq!(report.census.counts.get("102_composite_curve"), Some(&2));
+    assert_eq!(
+        report.census.counts.get("142_curve_on_parametric_surface"),
+        Some(&1)
+    );
+    assert_eq!(report.census.counts.get("141_boundary"), None);
     assert_eq!(report.census.counts.get("144_trimmed_surface"), Some(&1));
 
     let decoded = IgesCodec
@@ -9275,8 +9300,8 @@ fn encode_regenerates_a_single_face_trimmed_sheet() {
         .any(|body| body.kind == BodyKind::Sheet));
     assert_eq!(decoded.ir.model.faces.len(), 1);
     assert_eq!(decoded.ir.model.loops.len(), 1);
-    assert_eq!(decoded.ir.model.coedges.len(), 4);
-    assert_eq!(decoded.ir.model.pcurves.len(), 4);
+    assert_eq!(decoded.ir.model.coedges.len(), 1);
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
     assert!(
         decoded.report.losses.is_empty(),
         "{:#?}",
