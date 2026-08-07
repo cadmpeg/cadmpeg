@@ -203,9 +203,14 @@ semantics respectively. A complete Boolean header supplies the target and
 ordered tool selections. Target and tool selections retain input-local body
 identities atomically only when every serialized participant belongs to a
 segment body-image alias component and the participant sets are pairwise
-disjoint. An absent or invalid header, an unresolved body binding, or alias
-overlap leaves both native selections unresolved without discarding the
-operation family or Boolean kind.
+disjoint. When one feature-history namespace supplies an exact unique
+offset-store block for every participant, the selections retain those block
+identities as feature-local bodies when the participant sets are pairwise
+disjoint. This local projection does not bind an offset-store body to a saved
+segment image. An absent or invalid header, an unresolved body binding, an
+ambiguous block relation or namespace collision, or identity overlap leaves
+both native selections unresolved without discarding the operation family or
+Boolean kind.
 
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 reference_index ff`. The index uses the operation-header encoding and
