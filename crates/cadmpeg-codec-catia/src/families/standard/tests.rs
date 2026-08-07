@@ -127,6 +127,26 @@ fn trim_record_layout_indexes_extent_without_materializing_triangles() {
 }
 
 #[test]
+fn trim_record_rejects_invalid_present_frame_vector() {
+    let mut bytes = vec![0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
+    for value in [2.0f32, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
+
+    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
+    assert!(parse_trim_record(&bytes, 0, 2).is_none());
+    assert!(parse_trim_chain(&bytes, bytes.len(), 1, 2).is_none());
+
+    let mut non_finite = bytes[..8].to_vec();
+    for value in [f32::NAN, 0.0, 1.0] {
+        non_finite.extend_from_slice(&value.to_le_bytes());
+    }
+    non_finite.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
+    assert!(parse_trim_record_layout(&non_finite, 0, 2).is_none());
+}
+
+#[test]
 fn forced_trim_chain_has_no_recursive_depth_limit() {
     const RECORD_COUNT: usize = 10_000;
     let packet = triangle_packet([0, 0, 0]);

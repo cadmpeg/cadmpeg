@@ -736,8 +736,10 @@ pub(crate) fn parse_trim_record_layout(
         ];
         position += 12;
         let norm2 = components.iter().map(|value| value * value).sum::<f64>();
-        (components.iter().all(|value| value.is_finite()) && (norm2 - 1.0).abs() < 2e-4)
-            .then_some(components)
+        if !components.iter().all(|value| value.is_finite()) || (norm2 - 1.0).abs() >= 2e-4 {
+            return None;
+        }
+        Some(components)
     } else {
         None
     };
