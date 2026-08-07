@@ -2378,6 +2378,26 @@ impl<'a> Builder<'a> {
                     ),
                 ))
             }
+            ProceduralSurfaceDefinition::Subset {
+                support,
+                parameter_ranges,
+                u_sense: Some(u_sense),
+                v_sense: Some(v_sense),
+            } => {
+                let support = self.emit_surface(support.as_str())?;
+                Some(self.emitter.emit(
+                    "RECTANGULAR_TRIMMED_SURFACE",
+                    &format!(
+                        "'',{support},{},{},{},{},{},{}",
+                        real(parameter_ranges[0][0]),
+                        real(parameter_ranges[0][1]),
+                        real(parameter_ranges[1][0]),
+                        real(parameter_ranges[1][1]),
+                        if *u_sense { ".T." } else { ".F." },
+                        if *v_sense { ".T." } else { ".F." },
+                    ),
+                ))
+            }
             ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
                 let SurfaceGeometry::Torus {
                     center,

@@ -5,12 +5,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
-use cadmpeg_ir::eval::{pcurve_tangent, pcurve_uv, surface_partials, surface_point};
+use cadmpeg_ir::eval::{
+    model_surface_partials_by_id, model_surface_point_by_id, pcurve_tangent, pcurve_uv,
+};
 use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
+use cadmpeg_ir::index::ModelIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
@@ -2816,6 +2819,8 @@ fn select_associated_pcurve(
         .iter()
         .find(|surface| surface.id.0 == surface_identity)
         .map(|surface| &surface.geometry)?;
+    let surface_id = SurfaceId(surface_identity);
+    let index = ModelIndex::new(ir);
     let start = vdefs
         .get(&edge.start)
         .and_then(|vertex| point_positions.get(vertex.point))
@@ -2832,7 +2837,7 @@ fn select_associated_pcurve(
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == *candidate)?;
-            pcurve_endpoint_score(&pcurve.geometry, surface, start, end)
+            pcurve_endpoint_score(&index, &surface_id, &pcurve.geometry, surface, start, end)
         })
         .collect::<Option<Vec<_>>>()?;
     let (best_index, &best) = scores
@@ -2852,27 +2857,30 @@ fn select_associated_pcurve(
 }
 
 fn pcurve_endpoint_score(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
     surface: &SurfaceGeometry,
     start: Point3,
     end: Point3,
 ) -> Option<f64> {
-    let seeds = pcurve_selection_seeds(geometry, surface);
-    let start = pcurve_surface_distance(geometry, surface, start, &seeds)?;
-    let end = pcurve_surface_distance(geometry, surface, end, &seeds)?;
+    let seeds = pcurve_selection_seeds(index, surface_id, geometry, surface);
+    let start = pcurve_surface_distance(index, surface_id, geometry, start, &seeds)?;
+    let end = pcurve_surface_distance(index, surface_id, geometry, end, &seeds)?;
     Some(start.max(end))
 }
 
 fn pcurve_surface_distance(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
-    surface: &SurfaceGeometry,
     target: Point3,
     seeds: &[f64],
 ) -> Option<f64> {
     seeds
         .iter()
         .copied()
-        .filter_map(|seed| mapped_pcurve_distance(geometry, surface, target, seed))
+        .filter_map(|seed| mapped_pcurve_distance(index, surface_id, geometry, target, seed))
         .min_by(f64::total_cmp)
 }
 
@@ -2880,8 +2888,9 @@ fn pcurve_surface_distance(
 /// A pcurve and its 3D surface curve need not share parameter units, so this
 /// is an independent one-dimensional inverse rather than a parameter copy.
 fn mapped_pcurve_distance(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
     geometry: &PcurveGeometry,
-    surface: &SurfaceGeometry,
     target: Point3,
     seed: f64,
 ) -> Option<f64> {
@@ -2893,9 +2902,9 @@ fn mapped_pcurve_distance(
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate = |parameter: f64| {
         let uv = pcurve_uv(geometry, parameter)?;
-        let point = surface_point(surface, uv.u, uv.v)?;
+        let point = model_surface_point_by_id(index, surface_id, uv.u, uv.v)?;
         let tangent_uv = pcurve_tangent(geometry, parameter)?;
-        let partials = surface_partials(surface, uv.u, uv.v)?;
+        let partials = model_surface_partials_by_id(index, surface_id, uv.u, uv.v)?;
         let tangent = Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
@@ -2945,7 +2954,12 @@ fn mapped_pcurve_distance(
     best.is_finite().then_some(best)
 }
 
-fn pcurve_selection_seeds(geometry: &PcurveGeometry, surface: &SurfaceGeometry) -> Vec<f64> {
+fn pcurve_selection_seeds(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    surface: &SurfaceGeometry,
+) -> Vec<f64> {
     let mut seeds = vec![0.0];
     if let Some([start, end]) = pcurve_selection_parameter_domain(geometry) {
         seeds.extend([start, start + (end - start) * 0.5, end]);
@@ -2965,7 +2979,7 @@ fn pcurve_selection_seeds(geometry: &PcurveGeometry, surface: &SurfaceGeometry) 
     }
     if let PcurveGeometry::Line { origin, direction } = geometry {
         if let Some([[u_lower, u_upper], [v_lower, v_upper]]) =
-            surface_selection_parameter_domains(surface)
+            surface_selection_parameter_domains(index, surface_id, surface)
         {
             for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
                 if direction.u != 0.0 {
@@ -3027,7 +3041,34 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
     }
 }
 
-fn surface_selection_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f64; 2]; 2]> {
+fn surface_selection_parameter_domains(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    surface: &SurfaceGeometry,
+) -> Option<[[f64; 2]; 2]> {
+    if let Some(cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset {
+        parameter_ranges,
+        ..
+    }) = index
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface_id)
+        .map(|procedural| &procedural.definition)
+    {
+        let u_span = (parameter_ranges[0][1] - parameter_ranges[0][0]).abs();
+        let v_span = (parameter_ranges[1][1] - parameter_ranges[1][0]).abs();
+        if u_span.is_finite() && u_span > 0.0 && v_span.is_finite() && v_span > 0.0 {
+            return Some([[0.0, u_span], [0.0, v_span]]);
+        }
+    }
+    surface_selection_parameter_domains_from_geometry(surface)
+}
+
+fn surface_selection_parameter_domains_from_geometry(
+    surface: &SurfaceGeometry,
+) -> Option<[[f64; 2]; 2]> {
     match surface {
         SurfaceGeometry::Nurbs(surface) => {
             let u_count = usize::try_from(surface.u_count).ok()?;
@@ -3037,7 +3078,9 @@ fn surface_selection_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f6
                 selection_nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count)?,
             ])
         }
-        SurfaceGeometry::Transformed { basis, .. } => surface_selection_parameter_domains(basis),
+        SurfaceGeometry::Transformed { basis, .. } => {
+            surface_selection_parameter_domains_from_geometry(basis)
+        }
         SurfaceGeometry::Plane { .. }
         | SurfaceGeometry::Cylinder { .. }
         | SurfaceGeometry::Cone { .. }

@@ -200,6 +200,13 @@ segments resolve to bounded surface curves, bounded pcurves, or nested
 composite curves on that surface. A plain three-dimensional composite curve
 has a general curve role.
 
+`RECTANGULAR_TRIMMED_SURFACE` retains its basis surface, both parameter
+endpoint pairs, and both parameter-direction senses as a surface subset. Its
+local U and V domains are `0..abs(u2-u1)` and `0..abs(v2-v1)`. A local parameter
+maps to `u1 + s` or `u1 - s`, and to `v1 + t` or `v1 - t`, according to the
+stored senses. Its native entity is emitted again when those values are
+available.
+
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and
 oriented-shell orientation. Reversing a relation reverses the occurrence

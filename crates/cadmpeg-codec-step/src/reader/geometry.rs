@@ -970,10 +970,113 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
 
     carrier_index = CarrierIndex::from_ir(ir);
     let deferred_surface_count = exchange
-        .entities_any(&["CURVE_BOUNDED_SURFACE", "OFFSET_SURFACE"])
+        .entities_any(&[
+            "CURVE_BOUNDED_SURFACE",
+            "OFFSET_SURFACE",
+            "RECTANGULAR_TRIMMED_SURFACE",
+        ])
         .count();
     for _ in 0..=deferred_surface_count {
         let mut progress = false;
+        for (id, record) in exchange.entities("RECTANGULAR_TRIMMED_SURFACE") {
+            let surface = SurfaceId(format!("step:data:surface#{id}"));
+            if carrier_index.surfaces.contains_key(&id) {
+                continue;
+            }
+            let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
+                continue;
+            };
+            let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
+                continue;
+            };
+            let Some(mut parameter_ranges) = parameters
+                .get(2)
+                .and_then(Value::number)
+                .zip(parameters.get(3).and_then(Value::number))
+                .zip(
+                    parameters
+                        .get(4)
+                        .and_then(Value::number)
+                        .zip(parameters.get(5).and_then(Value::number)),
+                )
+                .map(|((u1, u2), (v1, v2))| [[u1, u2], [v1, v2]])
+            else {
+                continue;
+            };
+            let Some((u_sense, v_sense)) = parameters
+                .get(6)
+                .and_then(Value::logical)
+                .zip(parameters.get(7).and_then(Value::logical))
+            else {
+                continue;
+            };
+            if !parameter_ranges
+                .iter()
+                .flatten()
+                .all(|parameter| parameter.is_finite())
+                || parameter_ranges[0][0] == parameter_ranges[0][1]
+                || parameter_ranges[1][0] == parameter_ranges[1][1]
+            {
+                continue;
+            }
+            let Some(geometry) = carrier_index
+                .surfaces
+                .get(&support_step)
+                .and_then(|index| ir.model.surfaces.get(*index))
+                .map(|surface| surface.geometry.clone())
+            else {
+                continue;
+            };
+            let parameter_scales = surface_parameter_scales(&geometry, scale, angle_scale);
+            for (range, parameter_scale) in parameter_ranges.iter_mut().zip(parameter_scales) {
+                range[0] *= parameter_scale;
+                range[1] *= parameter_scale;
+            }
+            for ((range, sense), period) in parameter_ranges
+                .iter_mut()
+                .zip([u_sense, v_sense])
+                .zip(surface_parameter_periods(&geometry))
+            {
+                if let Some(period) = period {
+                    if sense && range[1] < range[0] {
+                        range[1] += period;
+                    } else if !sense && range[0] < range[1] {
+                        range[0] += period;
+                    }
+                }
+            }
+            if parameter_ranges
+                .iter()
+                .flatten()
+                .any(|parameter| !parameter.is_finite())
+            {
+                continue;
+            }
+            ir.model.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry,
+                source_object: None,
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!(
+                    "step:construction:rectangular_trimmed_surface#{id}"
+                )),
+                surface,
+                definition: ProceduralSurfaceDefinition::Subset {
+                    support: SurfaceId(format!("step:data:surface#{support_step}")),
+                    parameter_ranges,
+                    u_sense: Some(u_sense),
+                    v_sense: Some(v_sense),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            });
+            carrier_index
+                .surfaces
+                .insert(id, ir.model.surfaces.len() - 1);
+            typed.insert(id);
+            progress = true;
+        }
         for (id, record) in exchange.entities("CURVE_BOUNDED_SURFACE") {
             let surface = SurfaceId(format!("step:data:surface#{id}"));
             if carrier_index.surfaces.contains_key(&id) {
@@ -1148,6 +1251,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(surface_index);
         }
     }
+    for (id, _) in exchange.entities("RECTANGULAR_TRIMMED_SURFACE") {
+        if !carrier_index.surfaces.contains_key(&id) {
+            warnings.push(format!(
+                "RECTANGULAR_TRIMMED_SURFACE #{id} has invalid or unresolved basis/trim selectors"
+            ));
+        }
+    }
     for (id, _) in exchange.entities("CURVE_BOUNDED_SURFACE") {
         if !carrier_index.surfaces.contains_key(&id) {
             warnings.push(format!(
@@ -1184,7 +1294,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(curve_index);
         }
     }
-    for (id, _) in exchange.entities_any(&["CURVE_BOUNDED_SURFACE", "OFFSET_SURFACE"]) {
+    for (id, _) in exchange.entities_any(&[
+        "CURVE_BOUNDED_SURFACE",
+        "OFFSET_SURFACE",
+        "RECTANGULAR_TRIMMED_SURFACE",
+    ]) {
         let surface = SurfaceId(format!("step:data:surface#{id}"));
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
             let surface_index = ir.model.surfaces.len();
@@ -3533,6 +3647,52 @@ fn surface_parameter_scales(
         | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Unknown { .. } => [1.0, 1.0],
     }
+}
+
+fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
+    match geometry {
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            [Some(std::f64::consts::TAU), None]
+        }
+        SurfaceGeometry::Sphere { .. } => [Some(std::f64::consts::TAU), None],
+        SurfaceGeometry::Torus { .. } => [Some(std::f64::consts::TAU), Some(std::f64::consts::TAU)],
+        SurfaceGeometry::Nurbs(surface) => [
+            surface
+                .u_periodic
+                .then(|| {
+                    nurbs_surface_parameter_period(
+                        surface.u_degree,
+                        &surface.u_knots,
+                        surface.u_count,
+                    )
+                })
+                .flatten(),
+            surface
+                .v_periodic
+                .then(|| {
+                    nurbs_surface_parameter_period(
+                        surface.v_degree,
+                        &surface.v_knots,
+                        surface.v_count,
+                    )
+                })
+                .flatten(),
+        ],
+        SurfaceGeometry::Transformed { basis, .. } => surface_parameter_periods(basis),
+        SurfaceGeometry::Plane { .. }
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => [None, None],
+    }
+}
+
+fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Option<f64> {
+    let degree = usize::try_from(degree).ok()?;
+    let count = usize::try_from(count).ok()?;
+    let lower = *knots.get(degree)?;
+    let upper = *knots.get(count)?;
+    let period = upper - lower;
+    (period.is_finite() && period > 0.0).then_some(period)
 }
 
 /// Scale a pcurve's coordinates into the units of its owning surface.
