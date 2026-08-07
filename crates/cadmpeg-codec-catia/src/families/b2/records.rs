@@ -1138,16 +1138,22 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
     let knot_start = f64_le(data, at)?;
     let knot_end = f64_le(data, at + 8)?;
     at += 16;
-    if knot_start >= knot_end || compact_int(data, &mut at)? != 1 {
+    if !knot_start.is_finite()
+        || !knot_end.is_finite()
+        || knot_start >= knot_end
+        || compact_int(data, &mut at)? != 1
+    {
         return None;
     }
     let control_points = (0..control_count)
         .map(|_| {
-            let point = Point3::new(
-                f64_le(data, at)?,
-                f64_le(data, at + 8)?,
-                f64_le(data, at + 16)?,
-            );
+            let x = f64_le(data, at)?;
+            let y = f64_le(data, at + 8)?;
+            let z = f64_le(data, at + 16)?;
+            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                return None;
+            }
+            let point = Point3::new(x, y, z);
             at += 24;
             Some(point)
         })
@@ -1156,7 +1162,7 @@ fn parse_b2_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Nurbs
         .map(|_| {
             let weight = f64_le(data, at)?;
             at += 8;
-            (weight > 0.0).then_some(weight)
+            (weight.is_finite() && weight > 0.0).then_some(weight)
         })
         .collect::<Option<Vec<_>>>()?;
     if compact_int(data, &mut at)? != 1 || compact_int(data, &mut at)? != 1 {

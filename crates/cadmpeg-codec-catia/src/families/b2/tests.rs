@@ -1212,6 +1212,22 @@ fn b2_nurbs_curve_parser_rejects_broken_frame_invariants() {
     assert!(crate::families::b2::records::b2_nurbs_curves(&nonpositive_weight).is_empty());
 }
 
+#[test]
+fn b2_nurbs_curve_parser_rejects_nonfinite_knots_poles_and_weights() {
+    let mut nonfinite_knot = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    nonfinite_knot[8..16].copy_from_slice(&f64::NAN.to_le_bytes());
+    nonfinite_knot[155..163].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_nurbs_curves(&nonfinite_knot).is_empty());
+
+    let mut nonfinite_pole = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    nonfinite_pole[25..33].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert!(crate::families::b2::records::b2_nurbs_curves(&nonfinite_pole).is_empty());
+
+    let mut infinite_weight = b2_nurbs_curve_stream([1.0, 0.72, 1.31, 0.93]);
+    infinite_weight[121..129].copy_from_slice(&f64::INFINITY.to_le_bytes());
+    assert!(crate::families::b2::records::b2_nurbs_curves(&infinite_weight).is_empty());
+}
+
 fn b2_spatial_circle_stream() -> Vec<u8> {
     let cosine = 0.696_706_709_347_165_3_f64;
     let sine = 0.717_356_090_899_522_8_f64;
