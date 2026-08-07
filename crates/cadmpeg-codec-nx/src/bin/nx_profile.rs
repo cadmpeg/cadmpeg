@@ -490,6 +490,17 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
             .filter(|color| normalized_color(*color))
     });
 
+    // A body appearance is the base for every owned face that has no direct
+    // face color or face-scoped binding. Require unique topology ownership so
+    // an ambiguous face cannot inherit from an arbitrary body.
+    if direct_color.is_none() && bindings.is_empty() {
+        if let AppearanceTarget::Face(face_id) = target {
+            return unique_face_body(ir, face_id).is_some_and(|body| {
+                has_effective_color(ir, body.color, &AppearanceTarget::Body(body.id.clone()))
+            });
+        }
+    }
+
     match direct_color {
         Some(color) => match bindings.first() {
             None => normalized_color(color),
@@ -497,6 +508,33 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
         },
         None => bound_color.is_some(),
     }
+}
+
+fn unique_face_body<'a>(
+    ir: &'a CadIr,
+    face_id: &cadmpeg_ir::ids::FaceId,
+) -> Option<&'a cadmpeg_ir::topology::Body> {
+    let body_ids = ir
+        .model
+        .regions
+        .iter()
+        .filter_map(|region| {
+            let owns_face = region.shells.iter().any(|shell_id| {
+                ir.model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                    .is_some_and(|shell| shell.faces.iter().any(|face| face == face_id))
+            });
+            owns_face.then_some(region.body.clone())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut body_ids = body_ids.into_iter();
+    let body_id = body_ids.next()?;
+    if body_ids.next().is_some() {
+        return None;
+    }
+    ir.model.bodies.iter().find(|body| body.id == body_id)
 }
 
 fn normalized_color(color: Color) -> bool {
@@ -1167,6 +1205,22 @@ mod tests {
             }),
             &target,
         ));
+    }
+
+    #[test]
+    fn effective_face_color_inherits_unique_body_color() {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let body_color = Color {
+            r: 0.2,
+            g: 0.3,
+            b: 0.4,
+            a: 1.0,
+        };
+        ir.model.bodies[0].color = Some(body_color);
+
+        assert!(ir.model.faces.iter().all(|face| {
+            has_effective_color(&ir, face.color, &AppearanceTarget::Face(face.id.clone()))
+        }));
     }
 
     #[test]
