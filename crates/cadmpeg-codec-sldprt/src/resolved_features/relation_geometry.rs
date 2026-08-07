@@ -983,17 +983,23 @@ pub(crate) fn owned_relation_parameters(
         .collect::<HashMap<_, _>>();
     let mut claimed = HashSet::new();
     let mut owned = HashMap::new();
-    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
-        let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
-            continue;
-        };
-        let parameter = parameters_by_scalar
-            .get(scalar)
-            .map(|parameter| parameter.id.clone());
-        if let Some(parameter) = &parameter {
-            claimed.insert(parameter.clone());
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
+                continue;
+            };
+            let parameter = parameters_by_scalar
+                .get(scalar)
+                .map(|parameter| parameter.id.clone())
+                .or_else(|| {
+                    relation_parameter_by_driving_name(relation, lane, features, parameters)
+                        .map(|parameter| parameter.id.clone())
+                });
+            if let Some(parameter) = &parameter {
+                claimed.insert(parameter.clone());
+            }
+            owned.insert(relation.id.clone(), parameter);
         }
-        owned.insert(relation.id.clone(), parameter);
     }
     for lane in lanes {
         for relation in &lane.relation_instances {
@@ -1011,9 +1017,11 @@ pub(crate) fn owned_relation_parameters(
                 }
                 continue;
             }
-            let Some(parameter) =
-                relation_parameter_by_display_name(relation, lane, features, parameters)
-            else {
+            let parameter = relation_parameter_by_driving_name(
+                relation, lane, features, parameters,
+            )
+            .or_else(|| relation_parameter_by_display_name(relation, lane, features, parameters));
+            let Some(parameter) = parameter else {
                 continue;
             };
             if claimed.insert(parameter.id.clone()) {
@@ -1022,6 +1030,48 @@ pub(crate) fn owned_relation_parameters(
         }
     }
     owned
+}
+
+fn relation_parameter_by_driving_name<'a>(
+    relation: &FeatureInputRelationInstance,
+    lane: &FeatureInputLane,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &'a [cadmpeg_ir::features::DesignParameter],
+) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
+    let owner = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(relation.feature_ref.as_str()))?
+        .id
+        .clone();
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    let mut driving_names = relation
+        .parameter_scalar_ref
+        .as_deref()
+        .into_iter()
+        .chain(relation.scalar_refs.iter().map(String::as_str))
+        .filter_map(|scalar| scalars.get(scalar))
+        .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+        .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
+        .collect::<Vec<_>>();
+    driving_names.sort_unstable();
+    driving_names.dedup();
+    let [name] = driving_names.as_slice() else {
+        return None;
+    };
+    let mut matches = parameters.iter().filter(|parameter| {
+        parameter.owner.as_ref() == Some(&owner) && parameter.name.as_str() == *name
+    });
+    let parameter = matches.next()?;
+    matches.next().is_none().then_some(parameter)
 }
 
 pub(super) fn relation_parameter_by_display_name<'a>(

@@ -5700,6 +5700,44 @@ fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
     assert_eq!(ownership.len(), 1);
     assert_eq!(ownership["driving-relation"].as_ref(), Some(&parameter.id));
 
+    let mut driving_scalar = scalar.clone();
+    driving_scalar.id = "driving-by-name".into();
+    driving_scalar.ordinal = 1;
+    driving_scalar.offset = 20;
+    driving_scalar.object_id = 2;
+    driving_scalar.name = "driving-name".into();
+    driving_scalar.role = FeatureInputScalarRole::Driving;
+    let driving_relation = FeatureInputRelationInstance {
+        id: "driving-by-name-relation".into(),
+        parameter_scalar_ref: Some(driving_scalar.id.clone()),
+        display_scalar_ref: None,
+        scalar_refs: vec![driving_scalar.id.clone()],
+        ..relation.clone()
+    };
+    let driving_parameter = DesignParameter {
+        id: ParameterId("driving-by-name-parameter".into()),
+        name: "D".into(),
+        native_ref: None,
+        ..parameter.clone()
+    };
+    let mut driving_name = lane.names[0].clone();
+    driving_name.id = driving_scalar.name.clone();
+    driving_name.value = driving_parameter.name.clone();
+    let ownership = owned_relation_parameters(
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&driving_parameter),
+        std::slice::from_ref(&FeatureInputLane {
+            names: vec![lane.names[0].clone(), driving_name],
+            scalars: vec![scalar.clone(), driving_scalar],
+            relation_instances: vec![driving_relation],
+            ..lane.clone()
+        }),
+    );
+    assert_eq!(
+        ownership["driving-by-name-relation"].as_ref(),
+        Some(&driving_parameter.id)
+    );
+
     let mut detached = scalar;
     detached.id = "driver".into();
     detached.role = FeatureInputScalarRole::Driving;
