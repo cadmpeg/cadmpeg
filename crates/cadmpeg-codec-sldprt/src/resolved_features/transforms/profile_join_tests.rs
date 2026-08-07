@@ -2100,6 +2100,121 @@ fn point_marker_materializing_a_circle_binds_its_center() {
 }
 
 #[test]
+fn point_operand_canonicalizes_shared_endpoint_loci() {
+    let sketch_id = SketchId("sketch".into());
+    let sketch = Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch_id.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let first_id = SketchEntityId("a-first".into());
+    let second_id = SketchEntityId("z-second".into());
+    let first = SketchEntity {
+        id: first_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: vec!["first-start".into(), "shared".into()],
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        },
+    };
+    let second = SketchEntity {
+        id: second_id.clone(),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: vec!["shared".into(), "second-end".into()],
+        geometry: SketchGeometry::Line {
+            start: Point2::new(1.0, 0.0),
+            end: Point2::new(1.0, 1.0),
+        },
+    };
+    let mut first_start = marker("first-start", Some([0.0, 0.0]));
+    first_start.offset = 1;
+    let mut shared = marker("shared", Some([0.001, 0.0]));
+    shared.offset = 2;
+    let mut second_end = marker("second-end", Some([0.001, 0.001]));
+    second_end.offset = 3;
+    let relation = FeatureInputRelationInstance {
+        id: "point-relation".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 4,
+        family: FeatureInputRelationFamily::CircleDiameter,
+        class_ref: "class".into(),
+        feature_ref: "feature-native".into(),
+        scalar_refs: Vec::new(),
+        parameter_scalar_ref: None,
+        display_scalar_ref: None,
+        operands: vec![FeatureInputOperand {
+            offset: 5,
+            reference_ref: "shared-reference".into(),
+            kind: FeatureInputOperandKind::Native(0x8ab6),
+            entity_index: 0,
+            entity_ref: Some("shared".into()),
+        }],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![relation],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![first_start, shared, second_end],
+    };
+
+    let loci = profile_loci_by_marker(
+        &[feature],
+        std::slice::from_ref(&sketch),
+        &[first, second],
+        std::slice::from_ref(&lane),
+    );
+
+    assert_eq!(
+        loci["shared"],
+        vec![SketchLocus::End(first_id)],
+        "shared point markers use the canonical physical endpoint locus"
+    );
+}
+
+#[test]
 fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     let sketch = SketchId("sketch".into());
     let point = |id: &str, u: f64, v: f64| SketchEntity {

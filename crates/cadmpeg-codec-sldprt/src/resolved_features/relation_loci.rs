@@ -1892,7 +1892,10 @@ pub(super) fn profile_loci_by_marker(
         .filter(|operand| {
             matches!(
                 operand.kind,
-                FeatureInputOperandKind::Native(0x837b | 0xbc7c)
+                FeatureInputOperandKind::D6
+                    | FeatureInputOperandKind::Native(
+                        0x80cc | 0x8152 | 0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69,
+                    )
             )
         })
         .filter_map(|operand| operand.entity_ref.as_deref())
