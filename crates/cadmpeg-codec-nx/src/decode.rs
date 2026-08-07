@@ -2002,7 +2002,10 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
         .iter()
         .map(|body| body.id.clone())
         .collect::<BTreeSet<_>>();
-    if mapped != emitted || selected.is_empty() || selected.len() == emitted.len() {
+    // A complete terminal mapping resolves composition even when every emitted
+    // body is terminal. The absence of pruning is a valid result: it means the
+    // retained body images are all final, not that lineage was unresolved.
+    if mapped != emitted || selected.is_empty() {
         return false;
     }
 

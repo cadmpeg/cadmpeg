@@ -7923,6 +7923,40 @@ fn decode_retains_every_rmfastload_active_body() {
 }
 
 #[test]
+fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
+    let file = prt_with_two_terminal_bodies();
+    assert_eq!(extract_streams(&file).len(), 2);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("active_body_selector"))
+            .map(String::as_str),
+        Some("terminal_feature_body_lineage")
+    );
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("feature_terminal_body_count"))
+            .map(String::as_str),
+        Some("2")
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_selects_active_shell_when_body_record_is_absent() {
     let mut cur = Cursor::new(prt_with_missing_active_body_record());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

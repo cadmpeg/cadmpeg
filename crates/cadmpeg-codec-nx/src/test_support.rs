@@ -3129,6 +3129,54 @@ pub(crate) fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
     stream
 }
 
+/// Assemble two terminal partition images addressed by a self-bounded segment
+/// index. The body identity words are deliberately outside the payload so they
+/// cannot be mistaken for additional wrapper offsets.
+pub(crate) fn prt_with_two_terminal_bodies() -> Vec<u8> {
+    let compressed_streams = [
+        zlib_compress(&many_face_partition_stream(1_000)),
+        zlib_compress(&many_face_partition_stream(2_000)),
+    ];
+    let index_byte_len = 72usize;
+    let first_wrapper_offset = 96usize;
+    let second_wrapper_offset = first_wrapper_offset + 8 + compressed_streams[0].len();
+    let index_words = [
+        0,
+        0,
+        0,
+        1,
+        1,
+        index_byte_len as u32,
+        first_wrapper_offset as u32,
+        0,
+        0x1000_0001,
+        0x1000_0002,
+        19,
+        0,
+        second_wrapper_offset as u32,
+        0,
+        0x2000_0001,
+        0x2000_0002,
+        19,
+        0,
+    ];
+    let mut payload = index_words
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect::<Vec<_>>();
+    assert_eq!(payload.len(), index_byte_len);
+    payload.resize(first_wrapper_offset, 0);
+    for compressed in compressed_streams {
+        payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+        payload.extend_from_slice(&0u32.to_le_bytes());
+        payload.extend_from_slice(&compressed);
+        if payload.len() < second_wrapper_offset {
+            payload.resize(second_wrapper_offset, 0);
+        }
+    }
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)])
+}
+
 pub(crate) fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
