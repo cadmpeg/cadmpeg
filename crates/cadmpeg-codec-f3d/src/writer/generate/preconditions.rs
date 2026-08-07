@@ -762,9 +762,9 @@ pub(crate) fn validate_source_less_design_links(
                 tag.id
             )));
         };
-        if tag.token.is_empty() || tag.design_references.is_empty() {
+        if tag.token.is_empty() {
             return Err(CodecError::Malformed(format!(
-                "F3D persistent subentity tag {} requires a token and at least one reference",
+                "F3D persistent subentity tag {} requires a token",
                 tag.id
             )));
         }

@@ -258,6 +258,8 @@ A fixed-radius Fillet scope with exactly one counted construction-operand group 
 
 Standalone persistent-reference properties named `pt_tag`, `crv_primary_id`, and `crv_secondary_id` store the u32 pair `(2, 14)`, a 14-byte property slot, LP-ASCII `IntrinsicMetaTypeuint64`, and the referenced u64. The compact properties embedded in sketch point and curve records omit the `(2, 14)` pair and property slot.
 
+A generic face or edge tag group may carry a zero Design-reference count. Its selector and token remain native attribute data, but the group has no Design join and does not supply a recipe candidate. The group is retained and can be written with an empty reference run.
+
 A sketch point or curve record ends with `0x01 + u32 sketch_container_index + six zero bytes`. This final marked reference is the geometry record's direct owner backlink. It is independent of constraint membership and resolves to the sketch entity container with the same record index in the Design stream. For a NURBS curve, the backlink follows the complete knot, weight, and three-coordinate control-point arrays; the indexed NURBS subtype header is nested within the curve record and does not terminate it.
 
 A sketch-point geometry payload is three contiguous f64 coordinates `(u, v, w)`. All three coordinates use the record form's standard length conversion. A planar Sketch uses `(u,v)` and requires `w = 0`. A spatial Sketch transforms `(u,v,w)` through the owning placement into model space. Point and curve records with the same owner belong to one neutral Sketch domain; an owner with any non-planar curve is spatial and does not also form a planar Sketch.

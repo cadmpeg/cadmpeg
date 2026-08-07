@@ -9099,6 +9099,14 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             design_references: vec![511],
             ordinal: 0,
         },
+        PersistentSubentityTag {
+            id: "generated:persistent-subentity-tag#2".into(),
+            target: AttributeTarget::Face(face_id.clone()),
+            selector: 3,
+            token: "42".into(),
+            design_references: Vec::new(),
+            ordinal: 1,
+        },
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
         id: "generated:sketch-curve-link#0".into(),
@@ -9146,7 +9154,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.persistent_design_links[1].design_id, "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert!(native.persistent_design_links[1].is_current);
-    assert_eq!(native.persistent_subentity_tags.len(), 2);
+    assert_eq!(native.persistent_subentity_tags.len(), 3);
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
@@ -9155,6 +9163,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         tag.token == "-1"
             && tag.design_references == [511]
             && matches!(tag.target, AttributeTarget::Edge(_))
+    }));
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.token == "42"
+            && tag.design_references.is_empty()
+            && matches!(tag.target, AttributeTarget::Face(_))
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);

@@ -5898,7 +5898,7 @@ fn validate_subentity_tags(ctx: &Ctx, findings: &mut Vec<Finding>) {
             }
             _ => None,
         };
-        if target_key.is_none() || tag.token.is_empty() || tag.design_references.is_empty() {
+        if target_key.is_none() || tag.token.is_empty() {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
