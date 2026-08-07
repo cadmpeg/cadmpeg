@@ -9669,6 +9669,62 @@ fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() 
 }
 
 #[test]
+fn encode_regenerates_a_reversed_multi_pcurve_bounded_sheet() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(multi_pcurve_boundary_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let coedge = decoded.ir.model.coedges.first_mut().unwrap();
+    coedge.sense = Sense::Reversed;
+    coedge.pcurves.reverse();
+    let pcurve_ids = coedge
+        .pcurves
+        .iter()
+        .map(|pcurve_use| pcurve_use.pcurve.clone())
+        .collect::<Vec<_>>();
+    for pcurve_id in pcurve_ids {
+        let pcurve = decoded
+            .ir
+            .model
+            .pcurves
+            .iter_mut()
+            .find(|pcurve| pcurve.id == pcurve_id)
+            .unwrap();
+        let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+            panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
+        };
+        control_points.reverse();
+    }
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
+    assert_eq!(report.census.counts.get("143_bounded_surface"), Some(&1));
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.coedges.len(), 1);
+    assert_eq!(round_trip.ir.model.coedges[0].sense, Sense::Reversed);
+    assert_eq!(round_trip.ir.model.coedges[0].pcurves.len(), 2);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     let decoded = IgesCodec
         .decode(
@@ -9720,6 +9776,140 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(topology_edge_ids.len(), 6);
     assert_eq!(round_trip.ir.model.coedges.len(), 12);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_orients_a_source_less_brep_pcurve_for_a_reversed_edge_use() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let coedge_index = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .position(|coedge| coedge.sense == Sense::Reversed)
+        .unwrap();
+    let coedge_id = decoded.ir.model.coedges[coedge_index].id.clone();
+    let edge_id = decoded.ir.model.coedges[coedge_index].edge.clone();
+    let edge = decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == edge_id)
+        .unwrap();
+    let start = decoded
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == edge.start)
+        .and_then(|vertex| {
+            decoded
+                .ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+        })
+        .unwrap()
+        .position;
+    let end = decoded
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == edge.end)
+        .and_then(|vertex| {
+            decoded
+                .ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+        })
+        .unwrap()
+        .position;
+    let face = decoded
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| {
+            face.loops.iter().any(|loop_id| {
+                decoded
+                    .ir
+                    .model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == *loop_id)
+                    .is_some_and(|loop_| loop_.coedges.contains(&coedge_id))
+            })
+        })
+        .unwrap();
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .unwrap();
+    let start_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, start).unwrap();
+    let end_uv = cadmpeg_ir::eval::analytic_surface_parameters(&surface.geometry, end).unwrap();
+    let pcurve_id = PcurveId("pcurve#brep:source-less".into());
+    decoded.ir.model.pcurves.push(Pcurve {
+        id: pcurve_id.clone(),
+        geometry: PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![start_uv, end_uv],
+            weights: None,
+            periodic: false,
+        },
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: Some([0.0, 1.0]),
+        fit_tolerance: None,
+    });
+    decoded.ir.model.coedges[coedge_index]
+        .pcurves
+        .push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_id,
+            isoparametric: Some(false),
+            parameter_range: None,
+        });
+
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert_eq!(report.census.counts.get("508_loop"), Some(&4));
+
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.pcurves.len(), 1);
+    assert!(round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.pcurves.len() == 1));
     assert!(
         round_trip.report.losses.is_empty(),
         "{:#?}",

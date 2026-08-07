@@ -653,20 +653,16 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             used_vertices.insert(vertex.id.as_str().to_owned());
                             point_position(ir, &vertex.point)?;
                         }
-                        let (expected_start, expected_end) = if coedge.sense == Sense::Forward {
-                            (span.start, span.end)
-                        } else {
-                            (span.end, span.start)
-                        };
-                        validate_brep_pcurve_uses(
+                        let orientation = pcurve_orientation_context(
                             ir,
                             &surface.geometry,
-                            &coedge.pcurves,
-                            expected_start,
-                            expected_end,
+                            span.start,
+                            span.end,
+                            coedge.sense,
                             topology_edge_explicit_tolerance(ir, edge),
                             coedge.id.as_str(),
-                        )?;
+                        );
+                        validate_brep_pcurve_uses(&orientation, &coedge.pcurves)?;
                     }
                     for vertex_use in &loop_.vertex_uses {
                         if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
@@ -698,15 +694,16 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             })?;
                         used_vertices.insert(vertex.id.as_str().to_owned());
                         let position = point_position(ir, &vertex.point)?;
-                        validate_brep_pcurve_uses(
+                        let orientation = pcurve_orientation_context(
                             ir,
                             &surface.geometry,
-                            &vertex_use.pcurves,
                             position,
                             position,
+                            Sense::Forward,
                             cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
                             loop_.id.as_str(),
-                        )?;
+                        );
+                        validate_brep_pcurve_uses(&orientation, &vertex_use.pcurves)?;
                     }
                 }
             }
@@ -1147,6 +1144,28 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                 .ok_or_else(|| {
                     CodecError::Malformed(format!("IGES B-rep loop {loop_id} is missing"))
                 })?;
+            let face = ir
+                .model
+                .faces
+                .iter()
+                .find(|face| face.id == loop_.face)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES B-rep loop {} references missing face {}",
+                        loop_.id, loop_.face
+                    ))
+                })?;
+            let surface = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES B-rep face {} references missing surface {}",
+                        face.id, face.surface
+                    ))
+                })?;
             let use_count = loop_
                 .coedges
                 .len()
@@ -1173,6 +1192,50 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     ))
                 })?;
                 let sense = brep_sense(coedge.sense);
+                let edge = ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.id == coedge.edge)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES coedge {} references missing edge {}",
+                            coedge.id, coedge.edge
+                        ))
+                    })?;
+                let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "IGES B-rep coedge {} cannot orient pcurves for carrier-less edge {}",
+                        coedge.id, edge.id
+                    ))
+                })?;
+                let curve = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == *curve_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES edge {} references missing curve {}",
+                            edge.id, curve_id
+                        ))
+                    })?;
+                let geometry = flatten_curve(&curve.geometry)?;
+                let span = edge_span(ir, edge, &geometry)?;
+                let pcurve_entities = pcurve_orientation_context(
+                    ir,
+                    &surface.geometry,
+                    span.start,
+                    span.end,
+                    coedge.sense,
+                    topology_edge_explicit_tolerance(ir, edge),
+                    coedge.id.as_str(),
+                )
+                .oriented_entities(
+                    &coedge.pcurves,
+                    &pcurve_indices,
+                    &mut entities,
+                )?;
                 let _ = write!(
                     parameters,
                     ",0,{},{},{},{}",
@@ -1181,12 +1244,12 @@ fn brep_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
                     sense,
                     coedge.pcurves.len()
                 );
-                for pcurve_use in &coedge.pcurves {
+                for (pcurve_use, pcurve_index) in pcurve_entities {
                     let _ = write!(
                         parameters,
                         ",{},{}",
                         i32::from(pcurve_use.isoparametric.unwrap_or(false)),
-                        reference_marker(pcurve_indices[pcurve_use.pcurve.as_str()])
+                        reference_marker(pcurve_index)
                     );
                 }
                 for vertex_use in loop_
@@ -1680,26 +1743,36 @@ fn topology_entities(ir: &CadIr) -> Result<Vec<Entity>, CodecError> {
         let surface_index = *surface_indices
             .get(face.surface.as_str())
             .expect("validated face surface reference");
+        let surface = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("validated face surface reference");
         let loops = face_loop_order(ir, face)?;
         let bounded = loops
             .iter()
             .all(|loop_| loop_.boundary_role == LoopBoundaryRole::Unspecified);
         for loop_ in loops {
             if bounded {
-                let index = entities.len();
-                entities.push(boundary_entity(
+                let boundary = boundary_entity(
                     ir,
                     loop_,
                     surface_index,
+                    &surface.geometry,
                     &edge_indices,
                     &pcurve_indices,
-                )?);
+                    &mut entities,
+                )?;
+                let index = entities.len();
+                entities.push(boundary);
                 boundary_indices.insert(loop_.id.as_str().to_owned(), index);
             } else {
                 let curve_on_surface = curve_on_surface_entity(
                     ir,
                     loop_,
                     surface_index,
+                    &surface.geometry,
                     &edge_indices,
                     &pcurve_indices,
                     &mut entities,
@@ -2154,25 +2227,16 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     pcurve_entity(pcurve)?;
                     used_pcurves.insert(pcurve.id.as_str().to_owned());
                 }
-                let (expected_start, expected_end) = if trimmed {
-                    // Type 144 orients the raw model and pcurve carriers while
-                    // constructing each Type 142 pair. Validate the stored
-                    // pcurve chain against the edge's natural orientation.
-                    (span.start, span.end)
-                } else if coedge.sense == Sense::Forward {
-                    (span.start, span.end)
-                } else {
-                    (span.end, span.start)
-                };
-                validate_pcurve_chain(
+                let orientation = pcurve_orientation_context(
                     ir,
                     &surface.geometry,
-                    &coedge.pcurves,
-                    expected_start,
-                    expected_end,
+                    span.start,
+                    span.end,
+                    coedge.sense,
                     topology_edge_explicit_tolerance(ir, edge),
                     coedge.id.as_str(),
-                )?;
+                );
+                orientation.validate(&coedge.pcurves)?;
             }
         }
     }
@@ -2237,8 +2301,10 @@ fn boundary_entity(
     ir: &CadIr,
     loop_: &Loop,
     surface_index: usize,
+    surface: &SurfaceGeometry,
     edge_indices: &BTreeMap<String, usize>,
     pcurve_indices: &BTreeMap<String, usize>,
+    entities: &mut Vec<Entity>,
 ) -> Result<Entity, CodecError> {
     let coedges = loop_
         .coedges
@@ -2282,16 +2348,51 @@ fn boundary_entity(
         parameters.push(',');
         parameters.push_str(&reference_marker(edge_index));
         let _ = write!(parameters, ",{sense},{}", coedge.pcurves.len());
-        for pcurve_use in &coedge.pcurves {
-            let pcurve_index = pcurve_indices
-                .get(pcurve_use.pcurve.as_str())
-                .copied()
+        let pcurve_entities = if coedge.pcurves.is_empty() {
+            Vec::new()
+        } else {
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
                 .ok_or_else(|| {
                     CodecError::Malformed(format!(
-                        "IGES boundary loop {} references missing pcurve entity {}",
-                        loop_.id, pcurve_use.pcurve
+                        "IGES coedge {} references missing edge {}",
+                        coedge.id, coedge.edge
                     ))
                 })?;
+            let curve_id = edge.curve.as_ref().ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES boundary loop {} cannot orient pcurves for carrier-less edge {}",
+                    loop_.id, edge.id
+                ))
+            })?;
+            let curve = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *curve_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES edge {} references missing curve {}",
+                        edge.id, curve_id
+                    ))
+                })?;
+            let geometry = flatten_curve(&curve.geometry)?;
+            let span = edge_span(ir, edge, &geometry)?;
+            pcurve_orientation_context(
+                ir,
+                surface,
+                span.start,
+                span.end,
+                coedge.sense,
+                topology_edge_explicit_tolerance(ir, edge),
+                coedge.id.as_str(),
+            )
+            .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
+        };
+        for (_, pcurve_index) in pcurve_entities {
             parameters.push(',');
             parameters.push_str(&reference_marker(pcurve_index));
         }
@@ -2311,6 +2412,7 @@ fn curve_on_surface_entity(
     ir: &CadIr,
     loop_: &Loop,
     surface_index: usize,
+    surface: &SurfaceGeometry,
     edge_indices: &BTreeMap<String, usize>,
     pcurve_indices: &BTreeMap<String, usize>,
     entities: &mut Vec<Entity>,
@@ -2372,37 +2474,20 @@ fn curve_on_surface_entity(
             index
         };
         model_children.push(model_index);
-        let pcurve_uses = if coedge.sense == Sense::Forward {
-            coedge.pcurves.iter().collect::<Vec<_>>()
-        } else {
-            coedge.pcurves.iter().rev().collect::<Vec<_>>()
-        };
-        for pcurve_use in pcurve_uses {
-            let pcurve = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "IGES coedge {} references missing pcurve {}",
-                        coedge.id, pcurve_use.pcurve
-                    ))
-                })?;
-            let pcurve_index = if coedge.sense == Sense::Forward {
-                *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "IGES Type 142 loop {} references missing pcurve entity {}",
-                        loop_.id, pcurve.id
-                    ))
-                })?
-            } else {
-                let index = entities.len();
-                entities.push(oriented_pcurve_entity(pcurve)?);
-                index
-            };
-            pcurve_children.push(pcurve_index);
-        }
+        pcurve_children.extend(
+            pcurve_orientation_context(
+                ir,
+                surface,
+                span.start,
+                span.end,
+                coedge.sense,
+                topology_edge_explicit_tolerance(ir, edge),
+                coedge.id.as_str(),
+            )
+            .oriented_entities(&coedge.pcurves, pcurve_indices, entities)?
+            .into_iter()
+            .map(|(_, index)| index),
+        );
     }
     if model_children.is_empty() || pcurve_children.is_empty() {
         return Err(CodecError::NotImplemented(format!(
@@ -2816,30 +2901,26 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
 }
 
 fn validate_brep_pcurve_uses(
-    ir: &CadIr,
-    surface: &SurfaceGeometry,
+    orientation: &PcurveOrientationContext<'_>,
     uses: &[PcurveUse],
-    expected_start: Point3,
-    expected_end: Point3,
-    tolerance: f64,
-    owner: &str,
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
-        let pcurve = ir
+        let pcurve = orientation
+            .ir
             .model
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == pcurve_use.pcurve)
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
-                    "IGES B-rep {owner} references missing pcurve {}",
-                    pcurve_use.pcurve
+                    "IGES B-rep {} references missing pcurve {}",
+                    orientation.owner, pcurve_use.pcurve
                 ))
             })?;
         let range = pcurve.parameter_range.ok_or_else(|| {
             CodecError::NotImplemented(format!(
-                "IGES B-rep requires a parameter range for pcurve {}",
-                pcurve.id
+                "IGES B-rep {} requires a parameter range for pcurve {}",
+                orientation.owner, pcurve.id
             ))
         })?;
         if pcurve_use
@@ -2847,107 +2928,213 @@ fn validate_brep_pcurve_uses(
             .is_some_and(|use_range| !same_range(use_range, range))
         {
             return Err(CodecError::NotImplemented(format!(
-                "IGES B-rep cannot restrict pcurve use {}",
-                pcurve_use.pcurve
+                "IGES B-rep {} cannot restrict pcurve use {}",
+                orientation.owner, pcurve_use.pcurve
             )));
         }
         if pcurve.wrapper_reversed.is_some() || pcurve.native_tail_flags.is_some() {
             return Err(CodecError::NotImplemented(format!(
-                "IGES B-rep does not encode pcurve wrapper metadata {}",
-                pcurve.id
+                "IGES B-rep {} does not encode pcurve wrapper metadata {}",
+                orientation.owner, pcurve.id
             )));
         }
         pcurve_entity(pcurve)?;
     }
-    validate_pcurve_chain(
-        ir,
-        surface,
-        uses,
-        expected_start,
-        expected_end,
-        tolerance,
-        owner,
-    )?;
-    Ok(())
+    orientation.validate(uses)
 }
 
-fn validate_pcurve_chain(
-    ir: &CadIr,
-    surface: &SurfaceGeometry,
-    uses: &[PcurveUse],
-    expected_start: Point3,
-    expected_end: Point3,
-    explicit_tolerance: f64,
-    owner: &str,
-) -> Result<(), CodecError> {
-    if uses.is_empty() {
-        return Ok(());
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PcurveOrientation {
+    Natural,
+    Directed,
+}
+
+struct PcurveOrientationContext<'a> {
+    ir: &'a CadIr,
+    surface: &'a SurfaceGeometry,
+    natural_start: Point3,
+    natural_end: Point3,
+    sense: Sense,
+    tolerance: f64,
+    owner: &'a str,
+}
+
+impl PcurveOrientationContext<'_> {
+    fn validate(&self, uses: &[PcurveUse]) -> Result<(), CodecError> {
+        self.orientation(uses).map(|_| ())
     }
-    let tolerance = explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
-    let mut mapped = Vec::with_capacity(uses.len());
-    for pcurve_use in uses {
-        let pcurve = ir
-            .model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
-            .ok_or_else(|| {
-                CodecError::Malformed(format!(
-                    "IGES {owner} references missing pcurve {}",
-                    pcurve_use.pcurve
+
+    fn orientation(&self, uses: &[PcurveUse]) -> Result<PcurveOrientation, CodecError> {
+        if uses.is_empty() {
+            return Ok(PcurveOrientation::Directed);
+        }
+        let tolerance = if self.tolerance.is_finite() {
+            self.tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE)
+        } else {
+            cadmpeg_ir::units::COINCIDENCE_TOLERANCE
+        };
+        let mapped = self.map(uses)?;
+        let (directed_start, directed_end) = if self.sense == Sense::Forward {
+            (self.natural_start, self.natural_end)
+        } else {
+            (self.natural_end, self.natural_start)
+        };
+        if pcurve_chain_matches(&mapped, directed_start, directed_end, tolerance) {
+            return Ok(PcurveOrientation::Directed);
+        }
+        if self.sense == Sense::Reversed
+            && pcurve_chain_matches(&mapped, self.natural_start, self.natural_end, tolerance)
+        {
+            return Ok(PcurveOrientation::Natural);
+        }
+        Err(CodecError::Malformed(format!(
+            "IGES {} pcurve chain endpoints disagree with its directed support edge",
+            self.owner
+        )))
+    }
+
+    fn map(&self, uses: &[PcurveUse]) -> Result<Vec<(Point3, Point3)>, CodecError> {
+        let mut mapped = Vec::with_capacity(uses.len());
+        for pcurve_use in uses {
+            let pcurve = self
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES {} references missing pcurve {}",
+                        self.owner, pcurve_use.pcurve
+                    ))
+                })?;
+            let range = pcurve.parameter_range.ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "IGES {} requires a parameter range for pcurve {}",
+                    self.owner, pcurve.id
                 ))
             })?;
-        let range = pcurve.parameter_range.ok_or_else(|| {
-            CodecError::NotImplemented(format!(
-                "IGES {owner} requires a parameter range for pcurve {}",
-                pcurve.id
-            ))
-        })?;
-        if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
-            return Err(CodecError::Malformed(format!(
-                "IGES {owner} pcurve {} has an invalid parameter range",
-                pcurve.id
-            )));
+            if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
+                return Err(CodecError::Malformed(format!(
+                    "IGES {} pcurve {} has an invalid parameter range",
+                    self.owner, pcurve.id
+                )));
+            }
+            let start_uv = pcurve_uv(&pcurve.geometry, range[0]).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES {} pcurve {} start cannot be evaluated",
+                    self.owner, pcurve.id
+                ))
+            })?;
+            let end_uv = pcurve_uv(&pcurve.geometry, range[1]).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES {} pcurve {} end cannot be evaluated",
+                    self.owner, pcurve.id
+                ))
+            })?;
+            let start = model_surface_point(self.ir, self.surface, start_uv.u, start_uv.v)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "IGES {} pcurve {} start is outside its support",
+                        self.owner, pcurve.id
+                    ))
+                })?;
+            let end = model_surface_point(self.ir, self.surface, end_uv.u, end_uv.v).ok_or_else(
+                || {
+                    CodecError::Malformed(format!(
+                        "IGES {} pcurve {} end is outside its support",
+                        self.owner, pcurve.id
+                    ))
+                },
+            )?;
+            ensure_finite_point(start, &format!("{} pcurve {} start", self.owner, pcurve.id))?;
+            ensure_finite_point(end, &format!("{} pcurve {} end", self.owner, pcurve.id))?;
+            mapped.push((start, end));
         }
-        let start_uv = pcurve_uv(&pcurve.geometry, range[0]).ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "IGES {owner} pcurve {} start cannot be evaluated",
-                pcurve.id
-            ))
-        })?;
-        let end_uv = pcurve_uv(&pcurve.geometry, range[1]).ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "IGES {owner} pcurve {} end cannot be evaluated",
-                pcurve.id
-            ))
-        })?;
-        let start = model_surface_point(ir, surface, start_uv.u, start_uv.v).ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "IGES {owner} pcurve {} start is outside its support",
-                pcurve.id
-            ))
-        })?;
-        let end = model_surface_point(ir, surface, end_uv.u, end_uv.v).ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "IGES {owner} pcurve {} end is outside its support",
-                pcurve.id
-            ))
-        })?;
-        ensure_finite_point(start, &format!("{owner} pcurve {} start", pcurve.id))?;
-        ensure_finite_point(end, &format!("{owner} pcurve {} end", pcurve.id))?;
-        mapped.push((start, end));
+        Ok(mapped)
     }
-    if !same_point_with_tolerance(mapped[0].0, expected_start, tolerance)
-        || !same_point_with_tolerance(mapped[mapped.len() - 1].1, expected_end, tolerance)
-        || mapped
+
+    fn oriented_entities<'uses>(
+        &self,
+        uses: &'uses [PcurveUse],
+        pcurve_indices: &BTreeMap<String, usize>,
+        entities: &mut Vec<Entity>,
+    ) -> Result<Vec<(&'uses PcurveUse, usize)>, CodecError> {
+        let orientation = self.orientation(uses)?;
+        let reverse = self.sense == Sense::Reversed && orientation == PcurveOrientation::Natural;
+        let ordered_uses = if reverse {
+            uses.iter().rev().collect::<Vec<_>>()
+        } else {
+            uses.iter().collect::<Vec<_>>()
+        };
+        ordered_uses
+            .into_iter()
+            .map(|pcurve_use| {
+                let pcurve = self
+                    .ir
+                    .model
+                    .pcurves
+                    .iter()
+                    .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES {} references missing pcurve {}",
+                            self.owner, pcurve_use.pcurve
+                        ))
+                    })?;
+                let index = if reverse {
+                    let index = entities.len();
+                    entities.push(oriented_pcurve_entity(pcurve)?);
+                    index
+                } else {
+                    *pcurve_indices.get(pcurve.id.as_str()).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "IGES {} references missing pcurve entity {}",
+                            self.owner, pcurve.id
+                        ))
+                    })?
+                };
+                Ok((pcurve_use, index))
+            })
+            .collect()
+    }
+}
+
+fn pcurve_orientation_context<'a>(
+    ir: &'a CadIr,
+    surface: &'a SurfaceGeometry,
+    natural_start: Point3,
+    natural_end: Point3,
+    sense: Sense,
+    tolerance: f64,
+    owner: &'a str,
+) -> PcurveOrientationContext<'a> {
+    PcurveOrientationContext {
+        ir,
+        surface,
+        natural_start,
+        natural_end,
+        sense,
+        tolerance,
+        owner,
+    }
+}
+
+fn pcurve_chain_matches(
+    mapped: &[(Point3, Point3)],
+    expected_start: Point3,
+    expected_end: Point3,
+    tolerance: f64,
+) -> bool {
+    mapped
+        .first()
+        .is_some_and(|(start, _)| same_point_with_tolerance(*start, expected_start, tolerance))
+        && mapped
+            .last()
+            .is_some_and(|(_, end)| same_point_with_tolerance(*end, expected_end, tolerance))
+        && mapped
             .windows(2)
-            .any(|pair| !same_point_with_tolerance(pair[0].1, pair[1].0, tolerance))
-    {
-        return Err(CodecError::Malformed(format!(
-            "IGES {owner} pcurve chain endpoints disagree with its directed support edge"
-        )));
-    }
-    Ok(())
+            .all(|pair| same_point_with_tolerance(pair[0].1, pair[1].0, tolerance))
 }
 
 fn same_point(left: Point3, right: Point3) -> bool {
