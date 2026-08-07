@@ -661,6 +661,22 @@ fn guide_curve_parser_reads_position_and_unit_direction_jet() {
 }
 
 #[test]
+fn guide_curve_parser_rejects_nonfinite_jet_channels() {
+    for offset in [12, 124, 220] {
+        let mut bytes = a5_guide_curve_stream();
+        bytes[offset..offset + 8].copy_from_slice(&le_f64(f64::NAN));
+        assert!(
+            crate::families::a5a8::records::a5_guide_curves(&bytes).is_empty(),
+            "offset {offset}"
+        );
+    }
+
+    let mut repeated_knot = a5_guide_curve_stream();
+    repeated_knot[20..28].copy_from_slice(&le_f64(0.0));
+    assert!(crate::families::a5a8::records::a5_guide_curves(&repeated_knot).is_empty());
+}
+
+#[test]
 fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     let curves = crate::families::a5a8::records::a8_freeform_curves(&a8_freeform_curve_stream());
     assert_eq!(curves.len(), 1);

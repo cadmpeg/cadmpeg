@@ -583,7 +583,8 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     }
     at = consume_array_marker(data, at)?;
     let knots = f64_values(data, &mut at, count, frame.end)?;
-    if !monotonic(&knots) {
+    if knots.iter().any(|knot| !knot.is_finite()) || knots.windows(2).any(|pair| pair[0] >= pair[1])
+    {
         return None;
     }
     let block_bytes = count.checked_mul(48)?;
@@ -592,7 +593,13 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     }
     let block = |start: usize| -> Option<Vec<[f64; 6]>> {
         (0..count)
-            .map(|site| read_f64_array::<6>(data, start + site * 48))
+            .map(|site| {
+                let values = read_f64_array::<6>(data, start + site * 48)?;
+                values
+                    .iter()
+                    .all(|value| value.is_finite())
+                    .then_some(values)
+            })
             .collect()
     };
     let positions = block(at)?;
