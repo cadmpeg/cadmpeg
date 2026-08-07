@@ -8,8 +8,8 @@
 
 use super::*;
 use crate::eval::{
-    curve_parameter_near_point, curve_point, model_curve_point_by_id, pcurve_tangent, pcurve_uv,
-    surface_partials, surface_point,
+    curve_parameter_near_point, curve_point, model_curve_point_by_id, model_surface_partials_by_id,
+    model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
 use crate::geometry::{PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point3, Vector3};
@@ -47,12 +47,6 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         .curves
         .iter()
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
-        .collect::<HashMap<_, _>>();
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
         .collect::<HashMap<_, _>>();
     for procedural in &ir.model.procedural_curves {
         if let crate::geometry::ProceduralCurveDefinition::TolerantIntersection {
@@ -120,7 +114,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                         endpoints: [solved_start, solved_end],
                         distance: offset.abs(),
                     },
-                    &surfaces,
+                    &index,
                     bound,
                     &procedural.id.0,
                     findings,
@@ -145,7 +139,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
                 context,
                 None,
                 SupportEndpointContract::Coincident([base_start, base_end]),
-                &surfaces,
+                &index,
                 bound,
                 &procedural.id.0,
                 findings,
@@ -183,7 +177,7 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             context,
             third,
             SupportEndpointContract::Coincident([solved_start, solved_end]),
-            &surfaces,
+            &index,
             bound,
             &procedural.id.0,
             findings,
@@ -204,7 +198,7 @@ fn check_support_sides(
     context: &crate::geometry::IntcurveSupportContext,
     third: Option<&crate::geometry::IntcurveSupportSide>,
     contract: SupportEndpointContract,
-    surfaces: &HashMap<&str, &crate::geometry::SurfaceGeometry>,
+    index: &crate::index::ModelIndex<'_>,
     bound: f64,
     entity: &str,
     findings: &mut Vec<Finding>,
@@ -220,13 +214,10 @@ fn check_support_sides(
         let (Some(surface_id), Some(pcurve)) = (&side.surface, &side.pcurve) else {
             continue;
         };
-        let Some(surface) = surfaces.get(surface_id.0.as_str()) else {
-            continue;
-        };
         let support = context.parameter_range.map(|parameter| {
             side.pcurve_parameter(context.parameter_range, parameter)
                 .and_then(|parameter| pcurve_uv(pcurve, parameter))
-                .and_then(|uv| surface_point(surface, uv.u, uv.v))
+                .and_then(|uv| model_surface_point_by_id(index, surface_id, uv.u, uv.v))
         });
         let [Some(support_start), Some(support_end)] = support else {
             continue;
@@ -397,6 +388,7 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// Pcurve parameter sign and direction are independent of edge sense, so
 /// either sign and either endpoint assignment satisfy the check.
 pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let index = crate::index::ModelIndex::new(ir);
     let curves = ir
         .model
         .curves
@@ -413,6 +405,12 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .model
         .procedural_surfaces
         .iter()
+        .filter(|surface| {
+            !matches!(
+                &surface.definition,
+                crate::geometry::ProceduralSurfaceDefinition::Subset { .. }
+            )
+        })
         .map(|surface| surface.surface.0.as_str())
         .collect::<HashSet<_>>();
     let pcurves = ir
@@ -502,8 +500,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // interval. Keep the declared interval as a candidate, but also solve
         // the mapped carrier against the topology endpoints whenever the
         // carrier can provide such a witness.
-        let recovered = edge_pcurve_parameter_ranges(
+        let surface_context = SurfacePcurveContext {
+            index: &index,
+            surface_id: &face.surface,
             geometry,
+        };
+        let recovered = edge_pcurve_parameter_ranges(
+            &surface_context,
             curve_geometry,
             *start,
             *end,
@@ -543,8 +546,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                     pcurve_uv(&last.geometry, t1)?,
                 );
                 let (p0, p1) = (
-                    surface_point(geometry, uv0.u, uv0.v)?,
-                    surface_point(geometry, uv1.u, uv1.v)?,
+                    model_surface_point_by_id(&index, &face.surface, uv0.u, uv0.v)?,
+                    model_surface_point_by_id(&index, &face.surface, uv1.u, uv1.v)?,
                 );
                 let forward = distance(p0, *start).max(distance(p1, *end));
                 let reversed = distance(p0, *end).max(distance(p1, *start));
@@ -597,6 +600,12 @@ fn pcurve_parameter_ranges(
     (!ranges.is_empty()).then_some(ranges)
 }
 
+struct SurfacePcurveContext<'index, 'model> {
+    index: &'index crate::index::ModelIndex<'model>,
+    surface_id: &'index crate::ids::SurfaceId,
+    geometry: &'index SurfaceGeometry,
+}
+
 /// Recover an edge interval from its mapped pcurve when the STEP topology does
 /// not carry a usable parameter range. A declared range remains a candidate,
 /// but malformed exports can retain a stale range while the carrier still
@@ -608,7 +617,7 @@ fn pcurve_parameter_ranges(
 /// solve remains as a fallback for surfaces without a usable mapped inverse.
 /// Several seeds preserve the correct branch for periodic carriers.
 fn edge_pcurve_parameter_ranges(
-    surface_geometry: &crate::geometry::SurfaceGeometry,
+    context: &SurfacePcurveContext<'_, '_>,
     curve_geometry: Option<&crate::geometry::CurveGeometry>,
     start: Point3,
     end: Point3,
@@ -616,28 +625,16 @@ fn edge_pcurve_parameter_ranges(
     last: &crate::geometry::Pcurve,
     tolerance: f64,
 ) -> Option<Vec<[f64; 2]>> {
-    let start_parameters = pcurve_parameter_seeds_on_surface(first, surface_geometry)
+    let start_parameters = pcurve_parameter_seeds_on_surface(context, first)
         .into_iter()
         .filter_map(|seed| {
-            mapped_pcurve_parameter_near_point(
-                surface_geometry,
-                &first.geometry,
-                start,
-                seed,
-                tolerance,
-            )
+            mapped_pcurve_parameter_near_point(context, &first.geometry, start, seed, tolerance)
         });
     let start_parameters = unique_finite(start_parameters);
-    let end_parameters = pcurve_parameter_seeds_on_surface(last, surface_geometry)
+    let end_parameters = pcurve_parameter_seeds_on_surface(context, last)
         .into_iter()
         .filter_map(|seed| {
-            mapped_pcurve_parameter_near_point(
-                surface_geometry,
-                &last.geometry,
-                end,
-                seed,
-                tolerance,
-            )
+            mapped_pcurve_parameter_near_point(context, &last.geometry, end, seed, tolerance)
         });
     let end_parameters = unique_finite(end_parameters);
     let ranges = start_parameters
@@ -659,9 +656,9 @@ fn edge_pcurve_parameter_ranges(
     ) {
         return None;
     }
-    let seeds = pcurve_parameter_seeds_on_surface(first, surface_geometry)
+    let seeds = pcurve_parameter_seeds_on_surface(context, first)
         .into_iter()
-        .chain(pcurve_parameter_seeds_on_surface(last, surface_geometry))
+        .chain(pcurve_parameter_seeds_on_surface(context, last))
         .collect::<Vec<_>>();
     let start_parameters = seeds
         .iter()
@@ -683,7 +680,7 @@ fn edge_pcurve_parameter_ranges(
 /// partials; a short backtracking search keeps the iteration on the selected
 /// branch of a periodic or rational carrier.
 fn mapped_pcurve_parameter_near_point(
-    surface_geometry: &crate::geometry::SurfaceGeometry,
+    context: &SurfacePcurveContext<'_, '_>,
     pcurve_geometry: &PcurveGeometry,
     target: Point3,
     seed: f64,
@@ -697,9 +694,9 @@ fn mapped_pcurve_parameter_near_point(
         |parameter: f64| domain.map_or(parameter, |[lower, upper]| parameter.clamp(lower, upper));
     let evaluate = |parameter: f64| {
         let uv = pcurve_uv(pcurve_geometry, parameter)?;
-        let point = surface_point(surface_geometry, uv.u, uv.v)?;
+        let point = model_surface_point_by_id(context.index, context.surface_id, uv.u, uv.v)?;
         let tangent_uv = pcurve_tangent(pcurve_geometry, parameter)?;
-        let partials = surface_partials(surface_geometry, uv.u, uv.v)?;
+        let partials = model_surface_partials_by_id(context.index, context.surface_id, uv.u, uv.v)?;
         let tangent = Vector3::new(
             partials.du.x * tangent_uv.u + partials.dv.x * tangent_uv.v,
             partials.du.y * tangent_uv.u + partials.dv.y * tangent_uv.v,
@@ -763,14 +760,14 @@ fn pcurve_parameter_seeds(pcurve: &crate::geometry::Pcurve) -> Vec<f64> {
 }
 
 fn pcurve_parameter_seeds_on_surface(
+    context: &SurfacePcurveContext<'_, '_>,
     pcurve: &crate::geometry::Pcurve,
-    surface: &SurfaceGeometry,
 ) -> Vec<f64> {
     let mut seeds = pcurve_parameter_seeds(pcurve);
     let PcurveGeometry::Line { origin, direction } = &pcurve.geometry else {
         return seeds;
     };
-    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(surface) else {
+    let Some([[u_lower, u_upper], [v_lower, v_upper]]) = surface_parameter_domains(context) else {
         return seeds;
     };
     for boundary in [u_lower, (u_lower + u_upper) * 0.5, u_upper] {
@@ -786,8 +783,26 @@ fn pcurve_parameter_seeds_on_surface(
     unique_finite(seeds)
 }
 
-fn surface_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f64; 2]; 2]> {
-    match surface {
+fn surface_parameter_domains(context: &SurfacePcurveContext<'_, '_>) -> Option<[[f64; 2]; 2]> {
+    if let Some(crate::geometry::ProceduralSurfaceDefinition::Subset {
+        parameter_ranges, ..
+    }) = context
+        .index
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *context.surface_id)
+        .map(|procedural| &procedural.definition)
+    {
+        let [[u_start, u_end], [v_start, v_end]] = *parameter_ranges;
+        let u_span = (u_end - u_start).abs();
+        let v_span = (v_end - v_start).abs();
+        if u_span.is_finite() && u_span > 0.0 && v_span.is_finite() && v_span > 0.0 {
+            return Some([[0.0, u_span], [0.0, v_span]]);
+        }
+    }
+    match context.geometry {
         SurfaceGeometry::Nurbs(surface) => {
             let u_count = usize::try_from(surface.u_count).ok()?;
             let v_count = usize::try_from(surface.v_count).ok()?;
@@ -796,7 +811,13 @@ fn surface_parameter_domains(surface: &SurfaceGeometry) -> Option<[[f64; 2]; 2]>
                 nurbs_parameter_domain(surface.v_degree, &surface.v_knots, v_count)?,
             ])
         }
-        SurfaceGeometry::Transformed { basis, .. } => surface_parameter_domains(basis),
+        SurfaceGeometry::Transformed { basis, .. } => {
+            surface_parameter_domains(&SurfacePcurveContext {
+                index: context.index,
+                surface_id: context.surface_id,
+                geometry: basis,
+            })
+        }
         SurfaceGeometry::Plane { .. }
         | SurfaceGeometry::Cylinder { .. }
         | SurfaceGeometry::Cone { .. }
@@ -895,14 +916,15 @@ mod tests {
     use super::{
         check_procedural_support_consistency, edge_pcurve_parameter_ranges,
         pcurve_parameter_domain, pcurve_parameter_ranges, pcurve_parameter_seeds_on_surface,
+        SurfacePcurveContext,
     };
     use crate::document::CadIr;
     use crate::geometry::{
         Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsSurface, Pcurve,
-        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily,
-        SurfaceGeometry,
+        PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
     };
-    use crate::ids::{CurveId, ProceduralCurveId, SurfaceId};
+    use crate::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Sense, Vertex};
     use crate::units::Units;
@@ -1158,6 +1180,50 @@ mod tests {
     }
 
     #[test]
+    fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
+        let mut ir = untrimmed_surface_curve();
+        let base_id = SurfaceId("base-surface".into());
+        let base_geometry = ir.model.surfaces[0].geometry.clone();
+        ir.model.surfaces[0].id = base_id.clone();
+        ir.model.surfaces.push(Surface {
+            id: "surface".into(),
+            geometry: base_geometry,
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("trimmed-surface".into()),
+            surface: "surface".into(),
+            definition: ProceduralSurfaceDefinition::Subset {
+                support: base_id,
+                parameter_ranges: [[2.0, 0.0], [0.0, 2.0]],
+                u_sense: Some(false),
+                v_sense: Some(true),
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+        ir.model.points[0].position = Point3::new(1.0, 2.0, 0.0);
+        ir.model.points[1].position = Point3::new(2.0, 1.0, 0.0);
+        ir.model.curves[0].geometry = CurveGeometry::Circle {
+            center: Point3::new(1.0, 1.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        ir.model.pcurves[0].geometry = PcurveGeometry::Circle {
+            center: Point2::new(1.0, 1.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            radius: 1.0,
+        };
+        ir.model.pcurves[0].parameter_range = Some([0.0, std::f64::consts::PI]);
+
+        let mut findings = Vec::new();
+        super::check_pcurve_surface_consistency(&ir, &mut findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
     fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
         let mut ir = untrimmed_surface_curve();
         ir.model.pcurves[0].geometry = PcurveGeometry::Nurbs {
@@ -1256,6 +1322,14 @@ mod tests {
             u_periodic: false,
             v_periodic: false,
         });
+        let surface_id = SurfaceId("surface".to_string());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: surface.clone(),
+            source_object: None,
+        });
+        let index = crate::index::ModelIndex::new(&ir);
         let pcurve = Pcurve {
             id: "pcurve".into(),
             geometry: PcurveGeometry::Line {
@@ -1267,11 +1341,16 @@ mod tests {
             parameter_range: None,
             fit_tolerance: None,
         };
-        let seeds = pcurve_parameter_seeds_on_surface(&pcurve, &surface);
+        let context = SurfacePcurveContext {
+            index: &index,
+            surface_id: &surface_id,
+            geometry: &surface,
+        };
+        let seeds = pcurve_parameter_seeds_on_surface(&context, &pcurve);
         assert!(seeds.contains(&0.5));
 
         let ranges = edge_pcurve_parameter_ranges(
-            &surface,
+            &context,
             None,
             Point3::new(1.0, 0.0, 0.5625),
             Point3::new(1.0, 0.0, 0.0625),

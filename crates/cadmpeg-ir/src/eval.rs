@@ -2174,31 +2174,64 @@ pub fn model_surface_point_by_id(
         }
         visiting.push(surface_id.clone());
         let surface = index.surfaces(&surface_id.0)?;
-        let result = if let SurfaceGeometry::Procedural { construction } = &surface.geometry {
-            let procedural = index.procedural_surfaces(&construction.0)?;
-            if procedural.surface != *surface_id {
-                return None;
-            }
-            match &procedural.definition {
-                ProceduralSurfaceDefinition::Offset {
-                    support, distance, ..
-                } => {
-                    let support = evaluate(index, support, u, v, visiting)?;
-                    let normal = support.oriented_normal?;
-                    Some(SurfaceEvaluation {
-                        point: offset(support.point, &[(*distance, normal)]),
-                        oriented_normal: Some(normal),
-                    })
+        let procedural = index
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == *surface_id);
+        let result = match procedural.map(|procedural| &procedural.definition) {
+            Some(ProceduralSurfaceDefinition::Subset {
+                support,
+                parameter_ranges,
+                u_sense,
+                v_sense,
+            }) => {
+                let (support_u, support_v, u_derivative, v_derivative) =
+                    subset_support_parameters_with_derivatives(
+                        u,
+                        v,
+                        *parameter_ranges,
+                        *u_sense,
+                        *v_sense,
+                    )?;
+                let mut evaluation = evaluate(index, support, support_u, support_v, visiting)?;
+                if u_derivative * v_derivative < 0.0 {
+                    evaluation.oriented_normal = evaluation
+                        .oriented_normal
+                        .map(|normal| scale_vector(normal, -1.0));
                 }
-                _ => model_surface_point(index.ir(), &surface.geometry, u, v).map(|point| {
+                Some(evaluation)
+            }
+            Some(ProceduralSurfaceDefinition::ParallelOffset {
+                support, distance, ..
+            }) => {
+                let support = evaluate(index, support, u, v, visiting)?;
+                let normal = support.oriented_normal?;
+                Some(SurfaceEvaluation {
+                    point: offset(support.point, &[(*distance, normal)]),
+                    oriented_normal: Some(normal),
+                })
+            }
+            Some(ProceduralSurfaceDefinition::Offset {
+                support, distance, ..
+            }) => {
+                let support = evaluate(index, support, u, v, visiting)?;
+                let normal = support.oriented_normal?;
+                Some(SurfaceEvaluation {
+                    point: offset(support.point, &[(*distance, normal)]),
+                    oriented_normal: Some(normal),
+                })
+            }
+            _ if matches!(surface.geometry, SurfaceGeometry::Procedural { .. }) => {
+                model_surface_point(index.ir(), &surface.geometry, u, v).map(|point| {
                     SurfaceEvaluation {
                         point,
                         oriented_normal: None,
                     }
-                }),
+                })
             }
-        } else {
-            surface_partials(&surface.geometry, u, v).map(|partials| {
+            _ => surface_partials(&surface.geometry, u, v).map(|partials| {
                 let normal = cross(partials.du, partials.dv);
                 let magnitude = normal.norm();
                 let oriented_normal = (magnitude.is_finite() && magnitude > 0.0).then(|| {
@@ -2212,7 +2245,7 @@ pub fn model_surface_point_by_id(
                     point: partials.point,
                     oriented_normal,
                 }
-            })
+            }),
         };
         visiting.pop();
         result
@@ -2221,92 +2254,206 @@ pub fn model_surface_point_by_id(
     evaluate(index, surface, u, v, &mut Vec::new()).map(|evaluation| evaluation.point)
 }
 
-/// Evaluate an arena-selected direct or uniform-offset surface and its exact
-/// first partial derivatives.
+/// Evaluate an arena-selected direct, trimmed, or uniform-offset surface and
+/// its exact first partial derivatives.
 ///
-/// Nested offsets share the base surface's oriented unit normal, so their
-/// signed distances combine before differentiating the normal field.
+/// Subsets map the support parameterization through a linear local domain;
+/// offsets follow the support's oriented normal. The recursive carrier walk
+/// preserves both contracts before evaluating the final point and partials.
 pub fn model_surface_partials_by_id(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
     u: f64,
     v: f64,
 ) -> Option<SurfacePartials> {
-    let mut support = surface;
-    let mut distance = 0.0;
-    let mut visiting = Vec::new();
-    loop {
-        if visiting.contains(support) {
-            return None;
-        }
-        visiting.push(support.clone());
-        let carrier = index.surfaces(&support.0)?;
-        if let SurfaceGeometry::Procedural { construction } = &carrier.geometry {
-            let procedural = index.procedural_surfaces(&construction.0)?;
-            if procedural.surface != *support {
-                return None;
-            }
-            let ProceduralSurfaceDefinition::Offset {
-                support: next,
-                distance: increment,
-                ..
-            } = &procedural.definition
-            else {
-                return None;
-            };
-            distance += increment;
-            support = next;
-            continue;
-        }
+    model_surface_second_partials_by_id(index, surface, u, v).map(|partials| SurfacePartials {
+        point: partials.point,
+        du: partials.du,
+        dv: partials.dv,
+    })
+}
 
-        let base = surface_second_partials(&carrier.geometry, u, v)?;
-        let normal_vector = cross(base.du, base.dv);
-        let normal_magnitude = normal_vector.norm();
-        if !normal_magnitude.is_finite() || normal_magnitude == 0.0 {
-            return None;
-        }
-        let normal = Vector3::new(
-            normal_vector.x / normal_magnitude,
-            normal_vector.y / normal_magnitude,
-            normal_vector.z / normal_magnitude,
-        );
-        let normal_u_numerator = vector_sum(&[
-            (1.0, cross(base.duu, base.dv)),
-            (1.0, cross(base.du, base.duv)),
-        ]);
-        let normal_v_numerator = vector_sum(&[
-            (1.0, cross(base.duv, base.dv)),
-            (1.0, cross(base.du, base.dvv)),
-        ]);
-        let unit_normal_derivative = |derivative: Vector3| {
-            let normal_component =
-                normal.x * derivative.x + normal.y * derivative.y + normal.z * derivative.z;
-            Vector3::new(
-                (derivative.x - normal_component * normal.x) / normal_magnitude,
-                (derivative.y - normal_component * normal.y) / normal_magnitude,
-                (derivative.z - normal_component * normal.z) / normal_magnitude,
-            )
-        };
-        let normal_u = unit_normal_derivative(normal_u_numerator);
-        let normal_v = unit_normal_derivative(normal_v_numerator);
-        return Some(SurfacePartials {
-            point: Point3::new(
-                base.point.x + distance * normal.x,
-                base.point.y + distance * normal.y,
-                base.point.z + distance * normal.z,
-            ),
-            du: Vector3::new(
-                base.du.x + distance * normal_u.x,
-                base.du.y + distance * normal_u.y,
-                base.du.z + distance * normal_u.z,
-            ),
-            dv: Vector3::new(
-                base.dv.x + distance * normal_v.x,
-                base.dv.y + distance * normal_v.y,
-                base.dv.z + distance * normal_v.z,
-            ),
-        });
+fn model_surface_second_partials_by_id(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new())?;
+    let mut partials = offset_surface_second_partials(mapping.base, mapping.offset_distance)?;
+    partials.du = scale_vector(partials.du, mapping.u_scale);
+    partials.dv = scale_vector(partials.dv, mapping.v_scale);
+    partials.duu = scale_vector(partials.duu, mapping.u_scale * mapping.u_scale);
+    partials.duv = scale_vector(partials.duv, mapping.u_scale * mapping.v_scale);
+    partials.dvv = scale_vector(partials.dvv, mapping.v_scale * mapping.v_scale);
+    Some(partials)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct SurfaceMapping {
+    /// Direct support derivatives at the mapped support coordinates.
+    base: SurfaceSecondPartials,
+    /// Signed distance from `base` to the evaluated surface.
+    offset_distance: f64,
+    /// Derivative of support U/V with respect to the evaluated U/V.
+    u_scale: f64,
+    v_scale: f64,
+    /// Support normal orientation relative to the direct base normal.
+    orientation: f64,
+}
+
+fn model_surface_mapping(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    u: f64,
+    v: f64,
+    visiting: &mut Vec<crate::ids::SurfaceId>,
+) -> Option<SurfaceMapping> {
+    if visiting.contains(surface) {
+        return None;
     }
+    visiting.push(surface.clone());
+    let carrier = index.surfaces(&surface.0)?;
+    let procedural = index
+        .ir()
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface);
+    let result = match procedural.map(|procedural| &procedural.definition) {
+        Some(ProceduralSurfaceDefinition::Subset {
+            support,
+            parameter_ranges,
+            u_sense,
+            v_sense,
+        }) => {
+            let (support_u, support_v, u_derivative, v_derivative) =
+                subset_support_parameters_with_derivatives(
+                    u,
+                    v,
+                    *parameter_ranges,
+                    *u_sense,
+                    *v_sense,
+                )?;
+            let support = model_surface_mapping(index, support, support_u, support_v, visiting)?;
+            Some(SurfaceMapping {
+                base: support.base,
+                offset_distance: support.offset_distance,
+                u_scale: support.u_scale * u_derivative,
+                v_scale: support.v_scale * v_derivative,
+                orientation: support.orientation * u_derivative * v_derivative,
+            })
+        }
+        Some(
+            ProceduralSurfaceDefinition::ParallelOffset {
+                support, distance, ..
+            }
+            | ProceduralSurfaceDefinition::Offset {
+                support, distance, ..
+            },
+        ) => {
+            let support = model_surface_mapping(index, support, u, v, visiting)?;
+            Some(SurfaceMapping {
+                offset_distance: support.offset_distance + *distance * support.orientation,
+                ..support
+            })
+        }
+        _ => {
+            let base = surface_second_partials(&carrier.geometry, u, v)?;
+            Some(SurfaceMapping {
+                base,
+                offset_distance: 0.0,
+                u_scale: 1.0,
+                v_scale: 1.0,
+                orientation: 1.0,
+            })
+        }
+    };
+    visiting.pop();
+    result
+}
+
+fn subset_support_parameters_with_derivatives(
+    u: f64,
+    v: f64,
+    parameter_ranges: [[f64; 2]; 2],
+    u_sense: Option<bool>,
+    v_sense: Option<bool>,
+) -> Option<(f64, f64, f64, f64)> {
+    let (support_u, u_derivative) = subset_parameter(parameter_ranges[0], u, u_sense)?;
+    let (support_v, v_derivative) = subset_parameter(parameter_ranges[1], v, v_sense)?;
+    Some((support_u, support_v, u_derivative, v_derivative))
+}
+
+fn subset_parameter(range: [f64; 2], parameter: f64, sense: Option<bool>) -> Option<(f64, f64)> {
+    let span = (range[1] - range[0]).abs();
+    if !range[0].is_finite()
+        || !range[1].is_finite()
+        || !parameter.is_finite()
+        || span == 0.0
+        || parameter < 0.0
+        || parameter > span
+    {
+        return None;
+    }
+    let agrees = sense.unwrap_or(range[1] >= range[0]);
+    let derivative = if agrees { 1.0 } else { -1.0 };
+    Some((range[0] + derivative * parameter, derivative))
+}
+
+fn offset_surface_second_partials(
+    base: SurfaceSecondPartials,
+    distance: f64,
+) -> Option<SurfaceSecondPartials> {
+    let normal_vector = cross(base.du, base.dv);
+    let normal_magnitude = normal_vector.norm();
+    if !normal_magnitude.is_finite() || normal_magnitude == 0.0 || !distance.is_finite() {
+        return None;
+    }
+    let normal = Vector3::new(
+        normal_vector.x / normal_magnitude,
+        normal_vector.y / normal_magnitude,
+        normal_vector.z / normal_magnitude,
+    );
+    let normal_u_numerator = vector_sum(&[
+        (1.0, cross(base.duu, base.dv)),
+        (1.0, cross(base.du, base.duv)),
+    ]);
+    let normal_v_numerator = vector_sum(&[
+        (1.0, cross(base.duv, base.dv)),
+        (1.0, cross(base.du, base.dvv)),
+    ]);
+    let unit_normal_derivative = |derivative: Vector3| {
+        let normal_component =
+            normal.x * derivative.x + normal.y * derivative.y + normal.z * derivative.z;
+        Vector3::new(
+            (derivative.x - normal_component * normal.x) / normal_magnitude,
+            (derivative.y - normal_component * normal.y) / normal_magnitude,
+            (derivative.z - normal_component * normal.z) / normal_magnitude,
+        )
+    };
+    let normal_u = unit_normal_derivative(normal_u_numerator);
+    let normal_v = unit_normal_derivative(normal_v_numerator);
+    Some(SurfaceSecondPartials {
+        point: Point3::new(
+            base.point.x + distance * normal.x,
+            base.point.y + distance * normal.y,
+            base.point.z + distance * normal.z,
+        ),
+        du: Vector3::new(
+            base.du.x + distance * normal_u.x,
+            base.du.y + distance * normal_u.y,
+            base.du.z + distance * normal_u.z,
+        ),
+        dv: Vector3::new(
+            base.dv.x + distance * normal_v.x,
+            base.dv.y + distance * normal_v.y,
+            base.dv.z + distance * normal_v.z,
+        ),
+        duu: base.duu,
+        duv: base.duv,
+        dvv: base.dvv,
+    })
 }
 
 fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
@@ -2411,6 +2558,10 @@ fn affine_vector(transform: Transform, vector: Vector3) -> Vector3 {
             + transform.rows[2][1] * vector.y
             + transform.rows[2][2] * vector.z,
     )
+}
+
+fn scale_vector(vector: Vector3, factor: f64) -> Vector3 {
+    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
 }
 
 fn vector_sum(terms: &[(f64, Vector3)]) -> Vector3 {
@@ -3190,6 +3341,77 @@ mod tests {
             .expect("transformed plane evaluates");
         assert_eq!(partials.point, Point3::new(1.0e16, -1.0e16, -3.0));
         assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
+    }
+
+    #[test]
+    fn offset_of_reversed_subset_uses_the_local_surface_normal() {
+        let base_id = SurfaceId("base".into());
+        let subset_id = SurfaceId("subset".into());
+        let offset_id = SurfaceId("offset".into());
+        let subset_construction = ProceduralSurfaceId("subset-construction".into());
+        let offset_construction = ProceduralSurfaceId("offset-construction".into());
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.surfaces = vec![
+            Surface {
+                id: base_id.clone(),
+                geometry: plane.clone(),
+                source_object: None,
+            },
+            Surface {
+                id: subset_id.clone(),
+                geometry: plane,
+                source_object: None,
+            },
+            Surface {
+                id: offset_id.clone(),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            },
+        ];
+        ir.model.procedural_surfaces = vec![
+            ProceduralSurface {
+                id: subset_construction,
+                surface: subset_id.clone(),
+                definition: ProceduralSurfaceDefinition::Subset {
+                    support: base_id,
+                    parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+                    u_sense: Some(false),
+                    v_sense: Some(true),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+            ProceduralSurface {
+                id: offset_construction,
+                surface: offset_id.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: subset_id,
+                    distance: 2.0,
+                    u_sense: None,
+                    v_sense: None,
+                    extension_flags: Vec::new(),
+                    revision_form: None,
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        ];
+
+        let index = crate::index::ModelIndex::new(&ir);
+        assert_eq!(
+            model_surface_point_by_id(&index, &offset_id, 0.25, 0.5),
+            Some(Point3::new(-0.25, 0.5, -2.0))
+        );
+        let partials = model_surface_partials_by_id(&index, &offset_id, 0.25, 0.5)
+            .expect("offset of a reversed subset evaluates");
+        assert_eq!(partials.point, Point3::new(-0.25, 0.5, -2.0));
+        assert_eq!(partials.du, Vector3::new(-1.0, 0.0, 0.0));
         assert_eq!(partials.dv, Vector3::new(0.0, 1.0, 0.0));
     }
 

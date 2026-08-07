@@ -1861,6 +1861,8 @@ fn append_text_surface(
                 definition: ProceduralSurfaceDefinition::Subset {
                     support: basis_id,
                     parameter_ranges: *parameter_ranges,
+                    u_sense: None,
+                    v_sense: None,
                 },
                 record_bounds: None,
                 cache_fit_tolerance: None,

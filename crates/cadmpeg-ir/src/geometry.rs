@@ -639,8 +639,18 @@ pub enum ProceduralSurfaceDefinition {
     Subset {
         /// Surface being restricted.
         support: SurfaceId,
-        /// Ordered U and V parameter intervals.
+        /// U and V parameter endpoints in the support parameterization.
+        ///
+        /// The endpoint order is significant for cyclic and reversed
+        /// trims. A producer that does not carry direction metadata may
+        /// leave the sense fields absent and use increasing endpoints.
         parameter_ranges: [[f64; 2]; 2],
+        /// Whether the trimmed surface U direction agrees with the support.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_sense: Option<bool>,
+        /// Whether the trimmed surface V direction agrees with the support.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v_sense: Option<bool>,
     },
     /// Parallel offset from a support surface.
     ParallelOffset {
