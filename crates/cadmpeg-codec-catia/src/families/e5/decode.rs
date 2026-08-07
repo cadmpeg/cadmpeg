@@ -1627,6 +1627,9 @@ pub(crate) fn e5_pcurve_on_surface(
             ..
         } => {
             let angular_range = ordered_range([range[0] / radius, range[1] / radius]);
+            if !angular_range.into_iter().all(f64::is_finite) {
+                return None;
+            }
             let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
             let PcurveGeometry::Nurbs {
                 degree,
@@ -1639,13 +1642,22 @@ pub(crate) fn e5_pcurve_on_surface(
                 return None;
             };
             let scale = decoded_surface.uv_scale;
+            let control_points = control_points
+                .into_iter()
+                .map(|point| Point2::new(point.u * scale[0], point.v * scale[1]))
+                .collect::<Vec<_>>();
+            if !control_points.iter().copied().all(finite_point2)
+                || !knots.iter().copied().all(f64::is_finite)
+                || weights
+                    .as_ref()
+                    .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
+            {
+                return None;
+            }
             let geometry = PcurveGeometry::Nurbs {
                 degree,
                 knots,
-                control_points: control_points
-                    .into_iter()
-                    .map(|point| Point2::new(point.u * scale[0], point.v * scale[1]))
-                    .collect(),
+                control_points,
                 weights,
                 periodic,
             };
@@ -1656,15 +1668,11 @@ pub(crate) fn e5_pcurve_on_surface(
                     (center[1] + radius * angle.sin()) * scale[1],
                 )
             });
-            Some((
-                geometry,
-                angular_range,
-                endpoints
-                    .into_iter()
-                    .collect::<Option<Vec<_>>>()?
-                    .try_into()
-                    .ok()?,
-            ))
+            let endpoints = [endpoints[0]?, endpoints[1]?];
+            if !endpoints.iter().copied().all(finite_point3) {
+                return None;
+            }
+            Some((geometry, angular_range, endpoints))
         }
         crate::families::e5::graph::E5Pcurve::Jet {
             degree,
@@ -2644,6 +2652,29 @@ mod route_tests {
             origin: [2.0, 0.0],
             direction: [1.0, 0.0],
             range: [0.0, 1.0],
+        };
+        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+    }
+
+    #[test]
+    fn e5_pcurve_on_surface_rejects_nonfinite_scaled_circle() {
+        let surface = crate::families::e5::records::E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [f64::MAX, 1.0],
+        };
+        let pcurve = crate::families::e5::graph::E5Pcurve::Circle {
+            surface: 7,
+            center: [2.0, 0.0],
+            codes: [0, 0],
+            radius: 1.0,
+            range: [0.0, 1.0],
+            tail: [0.0, 0.0],
         };
         assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
     }
