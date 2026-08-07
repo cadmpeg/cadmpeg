@@ -8336,11 +8336,7 @@ fn transfer_resolved_circular_extrusion_breps(
         else {
             continue;
         };
-        let Some(span) = extrusion_span(
-            transform.origin,
-            transform.normal,
-            feature_plane_equations(scan, feature_id),
-        ) else {
+        let Some(span) = resolved_feature_extrusion_span(scan, ir, definition, transform) else {
             continue;
         };
         let prefix = format!("creo:feature:extrusion#{feature_id}");
