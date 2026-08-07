@@ -811,7 +811,8 @@ fn plan_e5_boundary(
                     endpoints,
                 ) {
                     if reversed {
-                        let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range)
+                        let Some(reversed_curve) =
+                            crate::nurbs::reverse_curve_geometry(&curve, curve_range)
                         else {
                             return None;
                         };
@@ -901,7 +902,9 @@ fn plan_e5_boundary(
                 continue;
             };
             if reversed {
-                let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range) else {
+                let Some(reversed_curve) =
+                    crate::nurbs::reverse_curve_geometry(&curve, curve_range)
+                else {
                     continue;
                 };
                 (curve, curve_range) = reversed_curve;
@@ -1721,71 +1724,6 @@ pub(crate) fn e5_boundary_curve(
     ))
 }
 
-pub(crate) fn reverse_e5_boundary_curve(
-    curve: &CurveGeometry,
-    range: [f64; 2],
-) -> Option<(CurveGeometry, [f64; 2])> {
-    match curve {
-        CurveGeometry::Line { origin, direction } => {
-            let length = range[1] - range[0];
-            (length >= 0.0).then_some((
-                CurveGeometry::Line {
-                    origin: (*origin).translated(*direction, range[1]),
-                    direction: (*direction).scale(-1.0),
-                },
-                [0.0, length],
-            ))
-        }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => {
-            let sweep = range[1] - range[0];
-            if sweep < 0.0 {
-                return None;
-            }
-            let tangent = (*axis).cross(*ref_direction);
-            let end = range[1];
-            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
-            Some((
-                CurveGeometry::Circle {
-                    center: *center,
-                    axis: (*axis).scale(-1.0),
-                    ref_direction,
-                    radius: *radius,
-                },
-                [0.0, sweep],
-            ))
-        }
-        CurveGeometry::Nurbs(nurbs) => {
-            let first = *nurbs.knots.first()?;
-            let last = *nurbs.knots.last()?;
-            let knots = nurbs
-                .knots
-                .iter()
-                .rev()
-                .map(|knot| first + (last - knot))
-                .collect::<Vec<_>>();
-            Some((
-                CurveGeometry::Nurbs(NurbsCurve {
-                    degree: nurbs.degree,
-                    knots,
-                    control_points: nurbs.control_points.iter().rev().copied().collect(),
-                    weights: nurbs
-                        .weights
-                        .as_ref()
-                        .map(|weights| weights.iter().rev().copied().collect()),
-                    periodic: nurbs.periodic,
-                }),
-                range,
-            ))
-        }
-        _ => None,
-    }
-}
-
 pub(crate) fn e5_occurrence_intersection_context(
     sides: &[(SurfaceId, PcurveGeometry, [f64; 2])],
 ) -> Option<IntcurveSupportContext> {
@@ -2060,7 +1998,7 @@ mod route_tests {
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
         e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
-        fit_rank_one_e5_plane_axes, parameter_ranges_reversed, reverse_e5_boundary_curve,
+        fit_rank_one_e5_plane_axes, parameter_ranges_reversed,
     };
 
     use crate::families::e5::graph::{E5Edge, E5Face, E5Loop, E5Topology};
@@ -2606,8 +2544,8 @@ mod route_tests {
             weights: None,
             periodic: false,
         });
-        let (reversed, range) =
-            reverse_e5_boundary_curve(&curve, [tiny, 2.0 * tiny]).expect("reversed NURBS");
+        let (reversed, range) = crate::nurbs::reverse_curve_geometry(&curve, [tiny, 2.0 * tiny])
+            .expect("reversed NURBS");
         let CurveGeometry::Nurbs(reversed) = reversed else {
             panic!("expected NURBS");
         };

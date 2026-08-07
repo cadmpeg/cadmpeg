@@ -5,7 +5,9 @@
 //! B-spline conversion, tensor-product NURBS isocurve extraction, circular
 //! interval canonicalization, and exact circular-helix fitting.
 
-use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+};
 use cadmpeg_ir::math::{Point2, Point3};
 
 /// Reverse a line or NURBS pcurve over an unchanged increasing parameter range.
@@ -54,6 +56,170 @@ pub(crate) fn reverse_pcurve_geometry(
         }
         _ => None,
     }
+}
+
+/// Reverse a supported model-space curve over an increasing native range.
+pub(crate) fn reverse_curve_geometry(
+    geometry: &CurveGeometry,
+    range: [f64; 2],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+        return None;
+    }
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            let length = range[1] - range[0];
+            Some((
+                CurveGeometry::Line {
+                    origin: (*origin).translated(*direction, range[1]),
+                    direction: (*direction).scale(-1.0),
+                },
+                [0.0, length],
+            ))
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let sweep = range[1] - range[0];
+            let tangent = (*axis).cross(*ref_direction);
+            let end = range[1];
+            let ref_direction = (*ref_direction).scale(end.cos()) + tangent.scale(end.sin());
+            Some((
+                CurveGeometry::Circle {
+                    center: *center,
+                    axis: (*axis).scale(-1.0),
+                    ref_direction,
+                    radius: *radius,
+                },
+                [0.0, sweep],
+            ))
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            let sum = range[0] + range[1];
+            if !sum.is_finite() {
+                return None;
+            }
+            let knots = nurbs
+                .knots
+                .iter()
+                .rev()
+                .map(|knot| sum - knot)
+                .collect::<Vec<_>>();
+            Some((
+                CurveGeometry::Nurbs(NurbsCurve {
+                    degree: nurbs.degree,
+                    knots,
+                    control_points: nurbs.control_points.iter().rev().copied().collect(),
+                    weights: nurbs
+                        .weights
+                        .as_ref()
+                        .map(|weights| weights.iter().rev().copied().collect()),
+                    periodic: nurbs.periodic,
+                }),
+                range,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Normalize the parameter interval for a periodic model-space carrier.
+pub(crate) fn canonical_model_curve_range(
+    geometry: &CurveGeometry,
+    range: [f64; 2],
+) -> Option<[f64; 2]> {
+    if !range.into_iter().all(f64::is_finite) || range[0] > range[1] {
+        return None;
+    }
+    match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            canonical_periodic_range(range)
+        }
+        _ => Some(range),
+    }
+}
+
+/// Reverse a cone-helix construction over its complete angular domain.
+///
+/// The construction uses the angle itself as the curve parameter. Reversing
+/// the interval therefore changes the radial frame, axial rise, and handedness
+/// while preserving the same increasing parameter range. Other procedural
+/// curve families require family-specific support-side mappings and are not
+/// admitted here.
+pub(crate) fn reverse_helix_definition(
+    definition: &ProceduralCurveDefinition,
+    range: [f64; 2],
+) -> Option<(ProceduralCurveDefinition, [f64; 2])> {
+    let ProceduralCurveDefinition::Helix {
+        angle_range,
+        center,
+        major,
+        minor,
+        pitch,
+        apex_factor,
+        axis,
+    } = definition
+    else {
+        return None;
+    };
+    if range != *angle_range
+        || !range.into_iter().all(f64::is_finite)
+        || range[0] >= range[1]
+        || ![center.x, center.y, center.z]
+            .into_iter()
+            .chain(
+                [major, minor, pitch, axis]
+                    .into_iter()
+                    .flat_map(|vector| [vector.x, vector.y, vector.z]),
+            )
+            .chain([*apex_factor])
+            .all(f64::is_finite)
+    {
+        return None;
+    }
+    let revolutions = (range[1] - range[0]) / std::f64::consts::TAU;
+    let radial_scale_at_end = 1.0 + *apex_factor * revolutions;
+    if !revolutions.is_finite() || !radial_scale_at_end.is_finite() || radial_scale_at_end == 0.0 {
+        return None;
+    }
+    let angle_sum = range[0] + range[1];
+    if !angle_sum.is_finite() {
+        return None;
+    }
+    let major_at_end = major.scale(angle_sum.cos()) + minor.scale(angle_sum.sin());
+    let minor_at_end = major.scale(angle_sum.sin()) - minor.scale(angle_sum.cos());
+    let major = major_at_end.scale(radial_scale_at_end);
+    let minor = minor_at_end.scale(radial_scale_at_end);
+    let center = center.translated(*pitch, revolutions);
+    let pitch = pitch.scale(-1.0);
+    let apex_factor = -*apex_factor / radial_scale_at_end;
+    let axis = axis.scale(-1.0);
+    if ![center.x, center.y, center.z, apex_factor]
+        .into_iter()
+        .chain(
+            [major, minor, pitch, axis]
+                .into_iter()
+                .flat_map(|vector| [vector.x, vector.y, vector.z]),
+        )
+        .all(f64::is_finite)
+    {
+        return None;
+    }
+    Some((
+        ProceduralCurveDefinition::Helix {
+            angle_range: *angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        },
+        range,
+    ))
 }
 
 /// Normalize an increasing circular interval to the canonical one-turn domain.
@@ -392,11 +558,16 @@ pub(crate) fn pole_count(multiplicities: &[u32], degree: u32) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, ProceduralCurveDefinition};
+    use cadmpeg_ir::eval::{curve_point, pcurve_uv};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-    use super::{circular_helix_cache, nurbs_surface_isocurve, reverse_pcurve_geometry};
+    use super::{
+        circular_helix_cache, nurbs_surface_isocurve, reverse_curve_geometry,
+        reverse_helix_definition, reverse_pcurve_geometry,
+    };
 
     #[test]
     fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
@@ -412,6 +583,94 @@ mod tests {
             assert!((actual.u - expected.u).abs() < 1e-12);
             assert!((actual.v - expected.v).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn reversed_model_carriers_preserve_endpoint_geometry() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(2.0, -1.0, 4.0),
+            direction: Vector3::new(3.0, 4.0, -2.0),
+        };
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(2.0, -1.0, 4.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        for (geometry, range) in [(line, [5.0, 9.0]), (circle, [0.25, 2.0])] {
+            let (reversed, reversed_range) =
+                reverse_curve_geometry(&geometry, range).expect("reversible model curve");
+            for (parameter, source_parameter) in
+                [(reversed_range[0], range[1]), (reversed_range[1], range[0])]
+            {
+                let actual = curve_point(&reversed, parameter).expect("reversed endpoint");
+                let expected = curve_point(&geometry, source_parameter).expect("source endpoint");
+                assert!(actual.distance(expected) < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn reversed_nurbs_preserves_active_subrange() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        let range = [0.2, 0.8];
+        let (reversed, reversed_range) =
+            reverse_curve_geometry(&geometry, range).expect("reversible NURBS");
+        for parameter in [range[0], 0.5, range[1]] {
+            let actual = curve_point(&reversed, parameter).expect("reversed NURBS point");
+            let expected = curve_point(&geometry, range[0] + range[1] - parameter)
+                .expect("source NURBS point");
+            assert!(actual.distance(expected) < 1e-12);
+        }
+        assert_eq!(reversed_range, range);
+    }
+
+    #[test]
+    fn reversed_helix_preserves_conical_path() {
+        let range = [0.25, 2.0];
+        let definition = ProceduralCurveDefinition::Helix {
+            angle_range: range,
+            center: Point3::new(1.0, -2.0, 3.0),
+            major: Vector3::new(2.0, 0.0, 0.0),
+            minor: Vector3::new(0.0, 2.0, 0.0),
+            pitch: Vector3::new(0.0, 0.0, 3.0),
+            apex_factor: 0.4,
+            axis: Vector3::new(0.0, 0.0, 1.0),
+        };
+        let (reversed, reversed_range) =
+            reverse_helix_definition(&definition, range).expect("reversible helix");
+        let evaluate = |definition: &ProceduralCurveDefinition, angle: f64| {
+            let ProceduralCurveDefinition::Helix {
+                angle_range,
+                center,
+                major,
+                minor,
+                pitch,
+                apex_factor,
+                ..
+            } = definition
+            else {
+                panic!("helix definition")
+            };
+            let fraction = (angle - angle_range[0]) / std::f64::consts::TAU;
+            let scale = 1.0 + apex_factor * fraction;
+            center
+                .translated(*major, scale * angle.cos())
+                .translated(*minor, scale * angle.sin())
+                .translated(*pitch, fraction)
+        };
+        for angle in [range[0], 0.75, range[1]] {
+            let actual = evaluate(&reversed, angle);
+            let expected = evaluate(&definition, range[0] + range[1] - angle);
+            assert!(actual.distance(expected) < 1e-12);
+        }
+        assert_eq!(reversed_range, range);
     }
 
     #[test]

@@ -458,7 +458,12 @@ current scores require those matrices and representative fixtures.
   transferred model-space curve, every member has a lifted model-space endpoint
   pair, and the oriented endpoint tape closes within the format tolerance. The
   wire contains one edge per face-local support occurrence and one vertex at
-  each cyclic join. This transfer does not assign source physical-edge
+  each cyclic join. A complete model-carrier parameter pair transfers to the
+  edge parameter range in loop direction; an opposite packed sense reverses
+  that range through an oriented direct carrier or a reversible helix
+  construction. Other procedural carriers without a reversible construction,
+  and incomplete or non-finite pairs, leave the range absent without discarding
+  the edge. This transfer does not assign source physical-edge
   identity, radial use, endpoint-incidence identity, or source body and shell
   ownership when no complete terminal ownership root covers the transferred
   loops; those native bindings remain unresolved.
