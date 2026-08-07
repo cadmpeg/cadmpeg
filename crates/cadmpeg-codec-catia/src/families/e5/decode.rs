@@ -1696,6 +1696,23 @@ pub(crate) fn e5_pcurve_on_surface(
                 .iter()
                 .map(|value| [value[0] * scale[0], value[1] * scale[1]])
                 .collect::<Vec<_>>();
+            if !scale.into_iter().all(f64::is_finite)
+                || !range.iter().copied().all(f64::is_finite)
+                || !knots.iter().copied().all(f64::is_finite)
+                || !points.iter().flatten().copied().all(f64::is_finite)
+                || !first_derivatives
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .all(f64::is_finite)
+                || !second_derivatives
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .all(f64::is_finite)
+            {
+                return None;
+            }
             let geometry = quintic_jet_pcurve(
                 *degree,
                 knots,
@@ -1703,17 +1720,30 @@ pub(crate) fn e5_pcurve_on_surface(
                 &first_derivatives,
                 &second_derivatives,
             )?;
+            let PcurveGeometry::Nurbs {
+                knots,
+                control_points,
+                weights,
+                ..
+            } = &geometry
+            else {
+                return None;
+            };
+            if !knots.iter().copied().all(f64::is_finite)
+                || !control_points.iter().copied().all(finite_point2)
+                || weights
+                    .as_ref()
+                    .is_some_and(|weights| !weights.iter().copied().all(f64::is_finite))
+            {
+                return None;
+            }
             let endpoints = [*points.first()?, *points.last()?]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
-            Some((
-                geometry,
-                *range,
-                endpoints
-                    .into_iter()
-                    .collect::<Option<Vec<_>>>()?
-                    .try_into()
-                    .ok()?,
-            ))
+            let endpoints = [endpoints[0]?, endpoints[1]?];
+            if !endpoints.iter().copied().all(finite_point3) {
+                return None;
+            }
+            Some((geometry, *range, endpoints))
         }
     }
 }
@@ -2675,6 +2705,31 @@ mod route_tests {
             radius: 1.0,
             range: [0.0, 1.0],
             tail: [0.0, 0.0],
+        };
+        assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
+    }
+
+    #[test]
+    fn e5_pcurve_on_surface_rejects_nonfinite_generated_jet_poles() {
+        let surface = crate::families::e5::records::E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [1.0, 1.0],
+        };
+        let pcurve = crate::families::e5::graph::E5Pcurve::Jet {
+            surface: 7,
+            degree: 5,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![6, 6],
+            points: vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            first_derivatives: vec![[f64::MAX, 0.0], [f64::MAX, 0.0]],
+            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
+            range: [0.0, 1.0],
         };
         assert!(e5_pcurve_on_surface(&pcurve, &surface).is_none());
     }
