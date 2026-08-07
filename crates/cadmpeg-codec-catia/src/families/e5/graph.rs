@@ -50,13 +50,7 @@ impl E5Topology {
         let edge = self.edges.get(&edge_ref)?;
         [edge.parameter_start, edge.parameter_end]
             .map(|bound_ref| {
-                let bounds = self.bounds.get(&bound_ref)?;
-                let mut entries = bounds
-                    .entries
-                    .iter()
-                    .filter(|entry| entry.representation == representation);
-                let parameter = entries.next()?.parameter;
-                entries.next().is_none().then_some(parameter)
+                bound_representation_parameter(&self.bounds, bound_ref, representation)
             })
             .into_iter()
             .collect::<Option<Vec<_>>>()?
@@ -396,6 +390,20 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 {
                     return None;
                 }
+                if [edge.parameter_start, edge.parameter_end]
+                    .iter()
+                    .any(|bound_ref| !bounds.contains_key(bound_ref))
+                    || raw.pcurves.iter().any(|pcurve| {
+                        [edge.parameter_start, edge.parameter_end]
+                            .iter()
+                            .any(|bound_ref| {
+                                bound_representation_parameter(&bounds, *bound_ref, *pcurve)
+                                    .is_none()
+                            })
+                    })
+                {
+                    return None;
+                }
                 let support = curve_supports.get(&edge.support)?;
                 if support
                     .pcurves
@@ -462,6 +470,20 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
 
 fn is_surface_carrier_class(class: u8) -> bool {
     matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc)
+}
+
+fn bound_representation_parameter(
+    bounds: &BTreeMap<u32, E5Bounds>,
+    bound_ref: u32,
+    representation: u32,
+) -> Option<f64> {
+    let bounds = bounds.get(&bound_ref)?;
+    let mut entries = bounds
+        .entries
+        .iter()
+        .filter(|entry| entry.representation == representation);
+    let parameter = entries.next()?.parameter;
+    entries.next().is_none().then_some(parameter)
 }
 
 fn parse_curve_support(record: &Record<'_>) -> Option<E5CurveSupport> {
@@ -1016,6 +1038,18 @@ mod tests {
         support_payload.extend_from_slice(&0.0_f64.to_le_bytes());
         support_payload.extend_from_slice(&1.0_f64.to_le_bytes());
         append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
+
+        let mut bound_payload = vec![0x83];
+        for pcurve in [100_u16, 101, 102] {
+            bound_payload.extend_from_slice(&[0x18]);
+            bound_payload.extend_from_slice(&pcurve.to_le_bytes());
+        }
+        bound_payload.push(0x83);
+        for parameter in [0.0_f64, 0.5, 1.0] {
+            bound_payload.extend_from_slice(&parameter.to_le_bytes());
+            bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        }
+        append_e5_record(&mut bytes, 0x0e, 0, &bound_payload);
 
         let mut loop_payload = vec![0x87];
         for reference in [100, 110, 101, 111, 102, 112] {

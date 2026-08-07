@@ -5504,6 +5504,13 @@ fn e5_torus_topology_stream() -> Vec<u8> {
         append_e5_record(&mut bytes, 0xc0, 70 + index as u32, &support);
     }
 
+    let mut bound_payload = vec![0x84, 0xbc, 0xbd, 0xbe, 0xbf, 0x84];
+    for parameter in [0.0_f64, 1.0, 0.0, 1.0] {
+        bound_payload.extend_from_slice(&le_f64(parameter));
+        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+    }
+    append_e5_record(&mut bytes, 0x0e, 0, &bound_payload);
+
     for (index, (start, end)) in [(10u8, 20u8), (20, 30), (30, 40), (40, 10)]
         .into_iter()
         .enumerate()

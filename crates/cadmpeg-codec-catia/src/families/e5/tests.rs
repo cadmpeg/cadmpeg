@@ -112,6 +112,17 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     support_payload.extend_from_slice(&le_f64(-10.0));
     support_payload.extend_from_slice(&le_f64(10.0));
     append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
+    let mut occurrence_bound_payload = vec![0x86];
+    for pcurve in [400_u16, 401, 402, 410, 411, 412] {
+        occurrence_bound_payload.push(0x18);
+        occurrence_bound_payload.extend_from_slice(&pcurve.to_le_bytes());
+    }
+    occurrence_bound_payload.push(0x86);
+    for parameter in [0.0_f64, 1.0, 0.0, 1.0, 0.0, 1.0] {
+        occurrence_bound_payload.extend_from_slice(&le_f64(parameter));
+        occurrence_bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+    }
+    append_e5_record(&mut bytes, 0x0e, 0, &occurrence_bound_payload);
     let mut bound_payload = vec![0x82, 0x18, 144, 1, 0x08, 200, 0x82];
     for (parameter, code) in [(0.25f64, 1u32), (0.75, 7)] {
         bound_payload.extend_from_slice(&le_f64(parameter));
@@ -224,6 +235,14 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         .expect("curve-support record");
     missing_support_pcurve[support_start + 15..support_start + 17].copy_from_slice(&[0xff, 0x0f]);
     assert!(crate::families::e5::graph::parse_topology(&missing_support_pcurve).is_none());
+
+    let mut missing_bounds = bytes.clone();
+    let bounds_start = missing_bounds
+        .windows(4)
+        .position(|window| window == [0xe5, 0x0d, 0x03, 0x0e])
+        .expect("parameter-bound record");
+    missing_bounds[bounds_start + 3] = 0x7f;
+    assert!(crate::families::e5::graph::parse_topology(&missing_bounds).is_none());
 
     let mut missing_pcurve_surface = bytes;
     let pcurve_start = missing_pcurve_surface
