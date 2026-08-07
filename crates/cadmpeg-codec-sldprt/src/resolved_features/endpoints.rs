@@ -342,8 +342,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         }
     }
     if curve.kind == SketchInputKind::LineOrCircle
-        && (extended_state_one_84_profile_line_uses_point_roster(payload, offset)
-            || extended_marker84_line_uses_point_roster(payload, offset)
+        && (extended_marker84_line_uses_point_roster(payload, offset)
             || extended_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_state_one_84_profile_line_uses_point_roster(payload, offset)
@@ -506,6 +505,15 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             })
             .collect::<Option<Vec<_>>>();
         if let Some(endpoints) = endpoints {
+            return endpoints;
+        }
+    }
+    if curve.kind == SketchInputKind::LineOrCircle
+        && extended_state_one_84_profile_line_uses_point_roster(payload, offset)
+    {
+        let endpoints =
+            coordinate_roster_curve_endpoint_markers_at(payload, curve, markers, Some(56));
+        if endpoints.len() == 2 {
             return endpoints;
         }
     }
