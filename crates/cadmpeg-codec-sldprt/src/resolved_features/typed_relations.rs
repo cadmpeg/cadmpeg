@@ -166,6 +166,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let mut exact_entities = marker
                 .links
                 .iter()
+                .filter(|link| !relation_link_identifies_owner(marker, link))
                 .flat_map(|link| {
                     let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
                         return Vec::new();
@@ -991,7 +992,12 @@ pub(super) fn unique_axis_aligned_linked_loci(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     horizontal: bool,
 ) -> Option<Vec<SketchLocus>> {
-    let [first_link, second_link] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    let [first_link, second_link] = links.as_slice() else {
         return None;
     };
     let first = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker);

@@ -1693,7 +1693,16 @@ pub(super) fn single_marker_line_entity(
         return Some(entity.clone());
     }
     let marker = markers_by_id.get(marker_id)?;
-    let [first_link, second_link] = marker.links.as_slice() else {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| {
+            link.entity_ref != marker_id
+                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                    || !relation_link_identifies_owner(marker, link))
+        })
+        .collect::<Vec<_>>();
+    let [first_link, second_link] = links.as_slice() else {
         return unique_line_containing_marker_point(
             marker_id,
             markers_by_id,
@@ -1841,7 +1850,11 @@ fn marker_line_entities_inner(
     let mut linked = marker
         .links
         .iter()
-        .filter(|link| link.entity_ref != marker_id)
+        .filter(|link| {
+            link.entity_ref != marker_id
+                && (!matches!(marker.kind, SketchInputKind::Relation(_))
+                    || !relation_link_identifies_owner(marker, link))
+        })
         .map(|link| {
             marker_line_entities_inner(
                 &link.entity_ref,

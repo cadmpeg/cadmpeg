@@ -3708,8 +3708,15 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let unrelated = point("unrelated", 8.0, 9.0);
     let first = marker("first-marker", Some([0.001, 0.002]));
     let second = marker("second-marker", None);
+    let collision = marker("collision-marker", Some([8.0, 9.0]));
     let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    relation.object_index = Some(7);
     relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: collision.id.clone(),
+        },
         SketchInputLink {
             local_id: 1,
             entity_ref: first.id.clone(),
@@ -3719,7 +3726,11 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             entity_ref: second.id.clone(),
         },
     ];
-    let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (collision.id.as_str(), &collision),
+    ]);
     let loci = HashMap::from([(
         first.id.clone(),
         vec![SketchLocus::Entity(first_entity.id.clone())],
@@ -3754,6 +3765,133 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             true,
         ),
         None
+    );
+}
+
+#[test]
+fn fixed_relation_ignores_self_identifying_geometry_link() {
+    let mut relation = marker("fixed", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Fixed);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "collision".into(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "point".into(),
+        },
+    ];
+    let mut collision = marker("collision", Some([3.0, 4.0]));
+    collision.kind = SketchInputKind::Point;
+    let mut point = marker("point", Some([1.0, 2.0]));
+    point.kind = SketchInputKind::Point;
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (collision.id.as_str(), &collision),
+        (point.id.as_str(), &point),
+    ]);
+    let point_id = SketchEntityId("point-entity".into());
+    let loci = HashMap::from([(
+        point.id.clone(),
+        vec![SketchLocus::Entity(point_id.clone())],
+    )]);
+    let point_entity = SketchEntity {
+        id: point_id.clone(),
+        sketch: SketchId("sketch".into()),
+        construction: false,
+        native_ref: Some(point.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(1.0, 2.0),
+        },
+    };
+
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &relation,
+            &SketchId("sketch".into()),
+            std::slice::from_ref(&point_entity),
+            &markers,
+            &loci,
+        ),
+        Some(SketchConstraintDefinition::Fixed { entity: point_id })
+    );
+}
+
+#[test]
+fn relation_line_identity_ignores_self_identifying_geometry_link() {
+    let sketch = SketchId("sketch".into());
+    let line_id = SketchEntityId("line".into());
+    let first_id = SketchEntityId("first".into());
+    let second_id = SketchEntityId("second".into());
+    let line = SketchEntity {
+        id: line_id.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        },
+    };
+    let point_entity = |id: SketchEntityId, position: Point2| SketchEntity {
+        id,
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let first_entity = point_entity(first_id.clone(), Point2::new(0.0, 0.0));
+    let second_entity = point_entity(second_id.clone(), Point2::new(2.0, 0.0));
+    let mut relation = marker("relation", None);
+    relation.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    relation.object_index = Some(7);
+    relation.links = vec![
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: "collision".into(),
+        },
+        SketchInputLink {
+            local_id: 1,
+            entity_ref: "first-marker".into(),
+        },
+        SketchInputLink {
+            local_id: 2,
+            entity_ref: "second-marker".into(),
+        },
+    ];
+    let collision = marker("collision", Some([8.0, 9.0]));
+    let first_marker = marker("first-marker", Some([0.0, 0.0]));
+    let second_marker = marker("second-marker", Some([2.0, 0.0]));
+    let markers = HashMap::from([
+        (relation.id.as_str(), &relation),
+        (collision.id.as_str(), &collision),
+        (first_marker.id.as_str(), &first_marker),
+        (second_marker.id.as_str(), &second_marker),
+    ]);
+    let loci = HashMap::from([
+        (first_marker.id.clone(), vec![SketchLocus::Entity(first_id)]),
+        (
+            second_marker.id.clone(),
+            vec![SketchLocus::Entity(second_id)],
+        ),
+    ]);
+
+    assert_eq!(
+        single_marker_line_entity(
+            &relation.id,
+            &markers,
+            &loci,
+            &[line, first_entity, second_entity],
+        ),
+        Some(line_id)
     );
 }
 
