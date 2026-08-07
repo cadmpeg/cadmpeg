@@ -624,6 +624,14 @@ fn profiled_hole_construction(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let points = entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && !entity.construction)
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some(position),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let same_point = |left: Point2, right: Point2| {
         (left.u - right.u).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
             && (left.v - right.v).abs() <= DISPLAY_DIMENSION_TOLERANCE_MM
@@ -633,6 +641,10 @@ fn profiled_hole_construction(
             (same_point(*start, first) && same_point(*end, second))
                 || (same_point(*start, second) && same_point(*end, first))
         })
+    };
+    let has_point_pair = |first: Point2, second: Point2| {
+        points.iter().any(|point| same_point(*point, first))
+            && points.iter().any(|point| same_point(*point, second))
     };
     let bore_radius = diameter / 2.0;
     let entry_radius = entry_diameter / 2.0;
@@ -656,10 +668,20 @@ fn profiled_hole_construction(
                         let wall_entry = point(0.0, entry_radius);
                         let wall_end = point(-depth, terminal_radius);
                         let axis_end = point(-depth, 0.0);
-                        if !has_line(axis_entry, wall_entry)
-                            || !has_line(wall_entry, wall_end)
-                            || !has_line(wall_end, axis_end)
-                            || !has_line(axis_end, axis_entry)
+                        let edges = [
+                            (axis_entry, wall_entry),
+                            (wall_entry, wall_end),
+                            (wall_end, axis_end),
+                            (axis_end, axis_entry),
+                        ];
+                        let materialized_edges = edges
+                            .iter()
+                            .filter(|(first, second)| has_line(*first, *second))
+                            .count();
+                        if materialized_edges < 2
+                            || edges.iter().any(|(first, second)| {
+                                !has_line(*first, *second) && !has_point_pair(*first, *second)
+                            })
                         {
                             continue;
                         }

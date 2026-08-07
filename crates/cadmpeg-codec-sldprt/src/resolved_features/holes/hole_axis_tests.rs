@@ -583,6 +583,55 @@ fn closed_tapered_axial_profile_resolves_conical_hole() {
 }
 
 #[test]
+fn tapered_profile_reconstructs_missing_edges_from_endpoint_points() {
+    let mut profile = native_history().features.remove(0);
+    profile.parameters = [
+        ("entry".into(), "<MOD-DIAM>12.2".into()),
+        ("terminal".into(), "<MOD-DIAM>13.66623".into()),
+        ("depth".into(), "42".into()),
+    ]
+    .into_iter()
+    .collect();
+    let sketch = SketchId("profile".into());
+    let point = |ordinal: usize, position| SketchEntity {
+        id: SketchEntityId(format!("profile-point-{ordinal}")),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let entities = [
+        point(0, Point2::new(0.0, 0.0)),
+        point(1, Point2::new(-42.0, 0.0)),
+        point(2, Point2::new(-42.0, 6.833_112_73)),
+        point(3, Point2::new(0.0, 6.1)),
+        profile_line(&sketch, 0, Point2::new(0.0, 0.0), Point2::new(-42.0, 0.0)),
+        profile_line(
+            &sketch,
+            1,
+            Point2::new(-42.0, 0.0),
+            Point2::new(-42.0, 6.833_112_73),
+        ),
+    ];
+
+    let construction =
+        profiled_hole_construction(&profile, &sketch, &entities).expect("endpoint proof");
+    assert_eq!(construction.diameter, Length(12.2));
+    assert_eq!(
+        construction.extent,
+        Termination::Blind {
+            length: Length(42.0)
+        }
+    );
+    assert_eq!(construction.kind, HoleKind::Simple);
+    assert_eq!(construction.bottom, Some(HoleBottom::Flat));
+    let Angle(taper_angle) = construction.taper_angle.expect("taper angle");
+    assert!((taper_angle - 2.0 * ((6.833_115 - 6.1) / 42.0_f64).atan()).abs() < 1.0e-12);
+}
+
+#[test]
 fn axial_profile_resolves_countersink_and_drill_point_roles() {
     let mut profile = native_history().features.remove(0);
     profile.parameters = [
