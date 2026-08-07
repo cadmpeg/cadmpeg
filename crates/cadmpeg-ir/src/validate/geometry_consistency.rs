@@ -480,7 +480,19 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // intervals, honoring an opposite-sign parameterization and a stored
         // range. Multiple images are checked from the first image's start
         // extreme to the last image's end extreme.
-        let intervals = if coedge.pcurves.len() == 1 {
+        let curve_geometry = edge
+            .curve
+            .as_ref()
+            .and_then(|curve| curves.get(curve.0.as_str()).copied());
+        // A malformed STEP export can retain a stale TRIMMED_CURVE interval
+        // even though its carrier still reaches the edge vertices on another
+        // interval. Keep the declared interval as a candidate, but also solve
+        // the mapped carrier against the topology endpoints whenever the
+        // carrier can provide such a witness.
+        let recovered =
+            edge_pcurve_parameter_ranges(ir, geometry, curve_geometry, *start, *end, first, last)
+                .unwrap_or_default();
+        let declared = if coedge.pcurves.len() == 1 {
             pcurve_parameter_ranges(first, first_use.parameter_range, edge.param_range)
         } else {
             match (
@@ -497,13 +509,9 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
                 _ => None,
             }
         }
-        .or_else(|| {
-            let curve_geometry = edge
-                .curve
-                .as_ref()
-                .and_then(|curve| curves.get(curve.0.as_str()).copied());
-            edge_pcurve_parameter_ranges(ir, geometry, curve_geometry, *start, *end, first, last)
-        });
+        .unwrap_or_default();
+        let intervals = declared.into_iter().chain(recovered).collect::<Vec<_>>();
+        let intervals = (!intervals.is_empty()).then_some(intervals);
         let Some(intervals) = intervals else {
             continue;
         };
@@ -1090,6 +1098,23 @@ mod tests {
             ],
             weights: Some(vec![1.0, 2.0_f64.sqrt() / 2.0, 1.0]),
             periodic: false,
+        };
+        let mut findings = Vec::new();
+        super::check_pcurve_surface_consistency(&ir, &mut findings);
+        assert!(findings.is_empty(), "{findings:#?}");
+    }
+
+    #[test]
+    fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
+        let mut ir = untrimmed_surface_curve();
+        ir.model.points[0].position = Point3::new(0.25, 0.0, 0.0);
+        ir.model.points[1].position = Point3::new(0.0, 0.0, 0.0);
+        ir.model.pcurves[0].geometry = PcurveGeometry::Trimmed {
+            parameter_range: [0.0, 1.0],
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(1.0, 0.0),
+            }),
         };
         let mut findings = Vec::new();
         super::check_pcurve_surface_consistency(&ir, &mut findings);
