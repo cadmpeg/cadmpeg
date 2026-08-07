@@ -4212,17 +4212,89 @@ fn normalize(vector: Vector3) -> Option<Vector3> {
     (norm.is_finite() && norm > 0.0).then(|| scale_vector(vector, 1.0 / norm))
 }
 
+fn subtract_vector(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+}
+
+fn project_axis(vector: Vector3, normal: Vector3) -> Option<Vector3> {
+    let vector = normalize(vector)?;
+    let normal = normalize(normal)?;
+    normalize(subtract_vector(
+        vector,
+        scale_vector(normal, dot(vector, normal)),
+    ))
+}
+
+fn second_project_axis(z_axis: Vector3, x_axis: Vector3, vector: Vector3) -> Option<Vector3> {
+    let vector = normalize(vector)?;
+    let z_axis = normalize(z_axis)?;
+    let x_axis = normalize(x_axis)?;
+    let projected = subtract_vector(
+        subtract_vector(vector, scale_vector(z_axis, dot(vector, z_axis))),
+        scale_vector(x_axis, dot(vector, x_axis)),
+    );
+    normalize(projected)
+}
+
+fn base_axis_3d(
+    axis1: Option<Vector3>,
+    axis2: Option<Vector3>,
+    axis3: Option<Vector3>,
+) -> Option<[Vector3; 3]> {
+    let z_axis = normalize(axis3.unwrap_or(Vector3::new(0.0, 0.0, 1.0)))?;
+    let default_x = if (z_axis.x == 1.0 || z_axis.x == -1.0) && z_axis.y == 0.0 && z_axis.z == 0.0 {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(1.0, 0.0, 0.0)
+    };
+    let x_axis = project_axis(axis1.unwrap_or(default_x), z_axis)?;
+    let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(Vector3::new(0.0, 1.0, 0.0)))?;
+    Some([x_axis, y_axis, z_axis])
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TransformationParameterError {
+    Invalid,
+}
+
+fn transformation_direction<T: Copy>(
+    record: &RawRecord,
+    name: &str,
+    index: usize,
+    directions: &BTreeMap<u64, T>,
+) -> Result<Option<T>, TransformationParameterError> {
+    match transformation_parameter(record, name, index)
+        .ok_or(TransformationParameterError::Invalid)?
+    {
+        Value::Omitted | Value::Derived => Ok(None),
+        Value::Reference(id) => directions
+            .get(id)
+            .copied()
+            .map(Some)
+            .ok_or(TransformationParameterError::Invalid),
+        _ => Err(TransformationParameterError::Invalid),
+    }
+}
+
 fn cartesian_transformation_operator(
     record: &RawRecord,
     points: &BTreeMap<u64, Point3>,
     directions: &BTreeMap<u64, Vector3>,
 ) -> Option<Transform> {
-    let axis_x = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 0)?
-        .reference()
-        .and_then(|id| directions.get(&id).copied())?;
-    let axis_y = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 1)?
-        .reference()
-        .and_then(|id| directions.get(&id).copied())?;
+    let axis1 = transformation_direction(
+        record,
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        0,
+        directions,
+    )
+    .ok()?;
+    let axis2 = transformation_direction(
+        record,
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        1,
+        directions,
+    )
+    .ok()?;
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
@@ -4233,11 +4305,14 @@ fn cartesian_transformation_operator(
     if !scale.is_finite() || scale <= 0.0 {
         return None;
     }
-    let axis_z = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_3D", 4) {
-        Some(Value::Reference(id)) => directions.get(id).copied()?,
-        Some(Value::Omitted | Value::Derived) | None => normalize(cross(axis_x, axis_y))?,
-        Some(_) => return None,
-    };
+    let axis3 = transformation_direction(
+        record,
+        "CARTESIAN_TRANSFORMATION_OPERATOR_3D",
+        4,
+        directions,
+    )
+    .ok()?;
+    let [axis_x, axis_y, axis_z] = base_axis_3d(axis1, axis2, axis3)?;
     Some(Transform {
         rows: [
             [
@@ -4268,16 +4343,21 @@ fn cartesian_transformation_operator_2d(
     points: &BTreeMap<u64, Point2>,
     directions: &BTreeMap<u64, Point2>,
 ) -> Option<Transform2> {
-    let axis1 = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 0) {
-        Some(Value::Reference(id)) => directions.get(id).copied()?,
-        Some(Value::Omitted | Value::Derived) | None => Point2::new(1.0, 0.0),
-        Some(_) => return None,
-    };
-    let axis2 = match transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 1) {
-        Some(Value::Reference(id)) => directions.get(id).copied()?,
-        Some(Value::Omitted | Value::Derived) | None => Point2::new(-axis1.v, axis1.u),
-        Some(_) => return None,
-    };
+    let axis1 = transformation_direction(
+        record,
+        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+        0,
+        directions,
+    )
+    .ok()?;
+    let axis2 = transformation_direction(
+        record,
+        "CARTESIAN_TRANSFORMATION_OPERATOR_2D",
+        1,
+        directions,
+    )
+    .ok()?;
+    let (axis1, axis2) = base_axis_2d(axis1, axis2)?;
     let origin = transformation_parameter(record, "CARTESIAN_TRANSFORMATION_OPERATOR_2D", 2)?
         .reference()
         .and_then(|id| points.get(&id).copied())?;
@@ -4295,6 +4375,27 @@ fn cartesian_transformation_operator_2d(
             [0.0, 0.0, 1.0],
         ],
     })
+}
+
+fn base_axis_2d(axis1: Option<Point2>, axis2: Option<Point2>) -> Option<(Point2, Point2)> {
+    match (axis1, axis2) {
+        (Some(axis1), axis2) => {
+            let axis1 = normalize2(axis1)?;
+            let mut perpendicular = Point2::new(-axis1.v, axis1.u);
+            if let Some(axis2) = axis2 {
+                let axis2 = normalize2(axis2)?;
+                if axis2.u * perpendicular.u + axis2.v * perpendicular.v < 0.0 {
+                    perpendicular = Point2::new(-perpendicular.u, -perpendicular.v);
+                }
+            }
+            Some((axis1, perpendicular))
+        }
+        (None, Some(axis2)) => {
+            let axis2 = normalize2(axis2)?;
+            Some((Point2::new(axis2.v, -axis2.u), axis2))
+        }
+        (None, None) => Some((Point2::new(1.0, 0.0), Point2::new(0.0, 1.0))),
+    }
 }
 
 fn scale_vector(vector: Vector3, scale: f64) -> Vector3 {

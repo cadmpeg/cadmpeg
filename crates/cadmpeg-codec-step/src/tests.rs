@@ -6905,6 +6905,100 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 }
 
 #[test]
+fn cartesian_transformation_operator_derives_optional_axes() {
+    let decoded = decode_inline(
+        "#1=CARTESIAN_POINT('',(10.,20.,30.));
+#2=CARTESIAN_TRANSFORMATION_OPERATOR_3D('', $,$,#1,$,$);
+#3=CARTESIAN_POINT('',(0.,0.,0.));
+#4=DIRECTION('',(1.,0.,0.));
+#5=VECTOR('',#4,1.);
+#6=LINE('',#3,#5);
+#7=CURVE_REPLICA('',#6,#2);
+#8=DIRECTION('',(1.,1.,0.));
+#9=DIRECTION('',(0.,0.,1.));
+#10=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#8,$,#3,2.,#9);
+#11=CURVE_REPLICA('',#6,#10);
+#12=GEOMETRIC_CURVE_SET('',(#7,#11));
+#13=SHAPE_REPRESENTATION('',(#12),$);",
+    );
+
+    let transform_for = |id: &str| {
+        decoded
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+            .and_then(|curve| match &curve.geometry {
+                CurveGeometry::Transformed { transform, .. } => Some(*transform),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("missing transformed curve {id}"))
+    };
+    let assert_rows = |actual: Transform, expected: [[f64; 4]; 4]| {
+        for (row, values) in expected.iter().enumerate() {
+            for (column, expected) in values.iter().enumerate() {
+                assert!(
+                    (actual.rows[row][column] - expected).abs() < 1.0e-12,
+                    "matrix coefficient [{row}][{column}] was {}, expected {expected}",
+                    actual.rows[row][column]
+                );
+            }
+        }
+    };
+
+    assert_rows(
+        transform_for("step:data:curve#7"),
+        [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 20.0],
+            [0.0, 0.0, 1.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    );
+    let root_two = 2.0_f64.sqrt();
+    assert_rows(
+        transform_for("step:data:curve#11"),
+        [
+            [root_two, -root_two, 0.0, 0.0],
+            [root_two, root_two, 0.0, 0.0],
+            [0.0, 0.0, 2.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    );
+}
+
+#[test]
+fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
+    use cadmpeg_ir::geometry::PcurveGeometry;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#55=DEFINITIONAL_REPRESENTATION('',(#54),#50);",
+            "#55=DEFINITIONAL_REPRESENTATION('',(#73),#50);\n#71=DIRECTION('',(1.,1.));\n#72=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',#71,$,#51,1.);\n#73=CURVE_REPLICA('',#54,#72);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode pcurve replica");
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("replica pcurve");
+    let PcurveGeometry::Transformed { transform, .. } = &pcurve.geometry else {
+        panic!("pcurve replica lost its transformation")
+    };
+    let root_two = 2.0_f64.sqrt();
+    assert!((transform.rows[0][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows[0][1] + 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows[1][0] - 1.0 / root_two).abs() < 1.0e-12);
+    assert!((transform.rows[1][1] - 1.0 / root_two).abs() < 1.0e-12);
+}
+
+#[test]
 fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
     let decoded = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

@@ -189,6 +189,15 @@ Complex `B_SPLINE_CURVE` and `B_SPLINE_SURFACE` records use the same defaults
 when one of these subtype leaves is present. Rational weight aggregates have
 the same shape as their control-point aggregates.
 
+`CARTESIAN_TRANSFORMATION_OPERATOR_3D` stores a required local origin and
+optional axis1, axis2, axis3, and scale attributes. Its transformation matrix
+columns are normalized and orthogonal: axis3 defaults to +Z, axis1 is projected
+onto the plane normal to axis3, and axis2 determines the sense of the projected
+second axis. The default axis1 is +X, except for an axis3 parallel to X, where
+it is +Y; the default axis2 is +Y. The 2D operator derives a perpendicular
+second axis from axis1 and uses axis2 only to select its sense. Omitted scale is
+1.
+
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the
 basis curve's parameterization. Its local parameter domain is the directed
