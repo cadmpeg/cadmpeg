@@ -883,6 +883,17 @@ pub struct DesignCoilPlacement {
     pub transform_offset: Option<u64>,
 }
 
+/// Direct rigid placement carried by the long ten-reference Coil form.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCoilTransform {
+    /// Row-major local-to-model rigid transform. Translation is in source
+    /// centimetres.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first matrix scalar.
+    pub transform_offset: u64,
+}
+
 /// Exact construction data of a solid primitive scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1678,6 +1689,9 @@ pub struct DesignParameterScope {
     /// Exact placement construction carried by a compact Coil scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub coil_placement: Option<DesignCoilPlacement>,
+    /// Direct rigid placement carried by the long ten-reference Coil form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_transform: Option<DesignCoilTransform>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
@@ -2209,6 +2223,7 @@ impl DesignParameterScope {
             coil_clockwise: None,
             coil_clockwise_offset: None,
             coil_placement: None,
+            coil_transform: None,
             feature_ordinal: 0,
             feature_ordinal_offset: 0,
             history_state_id: None,

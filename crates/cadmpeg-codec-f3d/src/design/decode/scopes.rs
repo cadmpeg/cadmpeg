@@ -4523,6 +4523,11 @@ pub(crate) fn parse_parameter_scope(
     } else {
         (None, None, None, None, None, None, None, None, None, None)
     };
+    let coil_transform = if family == Some(DesignFeatureFamily::Coil) {
+        exact_long_coil_transform(bytes, start, paired_at, kind, reference_members)
+    } else {
+        None
+    };
     Some(DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
@@ -4543,6 +4548,7 @@ pub(crate) fn parse_parameter_scope(
         coil_clockwise,
         coil_clockwise_offset,
         coil_placement: None,
+        coil_transform,
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
@@ -4987,6 +4993,38 @@ fn exact_long_coil_matrix(bytes: &[u8], start: usize) -> bool {
     values.iter().all(|value| value.is_finite())
         && values[12..15].iter().all(|value| *value == 0.0)
         && values[15] == 1.0
+}
+
+fn exact_long_coil_transform(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &str,
+    reference_members: &[u32],
+) -> Option<crate::records::DesignCoilTransform> {
+    if kind != "CoilPrimitive"
+        || reference_members.len() != 10
+        || paired_at.checked_sub(start)? != 578
+    {
+        return None;
+    }
+    let transform = exact_long_coil_transform_values(bytes, start)?;
+    Some(crate::records::DesignCoilTransform {
+        transform,
+        transform_offset: u64::try_from(start.checked_add(77)?).ok()?,
+    })
+}
+
+fn exact_long_coil_transform_values(bytes: &[u8], start: usize) -> Option<[[f64; 4]; 4]> {
+    let values = f64s_at(bytes, start.checked_add(77)?, 16)?;
+    if !exact_long_coil_matrix(bytes, start) {
+        return None;
+    }
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.into_iter().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    valid_right_handed_coil_transform(&transform).then_some(transform)
 }
 
 fn bind_coil_extent_from_parameters(

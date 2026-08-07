@@ -11211,6 +11211,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 220,
         history_state_id: None,

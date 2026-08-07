@@ -7506,6 +7506,17 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         Some(DesignExtrudeOperation::NewBody)
     );
     assert_eq!(new_body.coil_operation_offset, Some(22));
+    let transform = new_body.coil_transform.expect("long Coil placement");
+    assert_eq!(transform.transform_offset, 77);
+    assert_eq!(
+        transform.transform,
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
 }
 
 #[test]
@@ -9033,6 +9044,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -10459,6 +10471,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -10920,6 +10933,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -16728,6 +16742,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -16904,6 +16919,7 @@ fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: record_index,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -17103,6 +17119,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -18105,6 +18122,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -19200,6 +19218,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -19801,6 +19820,7 @@ fn parameter_expressions_project_feature_dependencies() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
@@ -19932,6 +19952,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: current,
@@ -20978,6 +20999,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
@@ -21405,6 +21427,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: Some(2),
@@ -22159,6 +22182,7 @@ fn component_insert_scope_joins_its_relation_carrier_role_and_transform() {
         coil_clockwise: None,
         coil_clockwise_offset: None,
         coil_placement: None,
+        coil_transform: None,
         feature_ordinal: 1,
         feature_ordinal_offset: 0,
         history_state_id: None,
