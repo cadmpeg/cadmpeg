@@ -10543,7 +10543,10 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
                 bodies: BodySelection::Resolved { bodies, native },
             } if bodies.is_empty() && !native.trim().is_empty() && feature.outputs.is_empty()
         );
-        if feature.suppressed != Some(true) && !is_exact_empty_base {
+        if feature.suppressed != Some(true)
+            && !is_exact_empty_base
+            && !output_free_native_snapshot(feature)
+        {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
                     && feature.outputs.iter().collect::<BTreeSet<_>>().len()
@@ -10563,7 +10566,9 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         }
         let family = match &feature.definition {
             FeatureDefinition::BaseFeature { bodies }
-                if !is_exact_empty_base && body_selection_is_incomplete(bodies) =>
+                if !is_exact_empty_base
+                    && !output_free_native_snapshot(feature)
+                    && body_selection_is_incomplete(bodies) =>
             {
                 "base feature"
             }
@@ -10829,6 +10834,21 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
+        && matches!(
+            &feature.definition,
+            FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Unresolved
+            }
+        )
+        && feature
+            .source_properties
+            .get("operation_record")
+            .is_some_and(|record| !record.trim().is_empty())
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(

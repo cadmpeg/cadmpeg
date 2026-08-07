@@ -9,6 +9,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 
+use crate::decode::output_free_native_snapshot;
+
 /// Why a saved-body census cannot yet be evaluated exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -574,21 +576,6 @@ fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) 
                 value.parse::<u32>().ok().map(|_| count + 1)
             })
             .is_some_and(|count| count > 0)
-}
-
-fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
-        && feature.name.as_deref() == Some("MASTER SNAPSHOT BODY")
-        && matches!(
-            &feature.definition,
-            FeatureDefinition::BaseFeature {
-                bodies: BodySelection::Unresolved
-            }
-        )
-        && feature
-            .source_properties
-            .get("operation_record")
-            .is_some_and(|record| !record.trim().is_empty())
 }
 
 fn complete_local_or_native_body_selection(selection: &BodySelection) -> bool {
