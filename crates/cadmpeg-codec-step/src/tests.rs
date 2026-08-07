@@ -4955,6 +4955,43 @@ fn complex_tessellated_face_retains_its_surface_carrier() {
 }
 
 #[test]
+fn complex_tessellation_partials_transfer_coordinates_and_indices() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#3=COORDINATES_LIST('triangle coordinates',3,((0.,0.,0.),(10.,0.,0.),(0.,10.,0.)));",
+        "#3=(COORDINATES_LIST(3,((0.,0.,0.),(10.,0.,0.),(0.,10.,0.))) GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('triangle coordinates') TESSELLATED_ITEM());",
+    )
+    .replace(
+        "#4=TRIANGULATED_FACE('triangle',#3,3,((0.,0.,1.)),$,(),((1,2,3)));",
+        "#4=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('triangle') TESSELLATED_FACE(#3,3,((0.,0.,1.)),$) TESSELLATED_ITEM() TESSELLATED_STRUCTURED_ITEM() TRIANGULATED_FACE((),((1,2,3))));",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex tessellation partials");
+
+    let mesh = decoded
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .find(|mesh| mesh.id.ends_with("#4"))
+        .expect("complex tessellated face");
+    assert_eq!(mesh.vertices.len(), 3);
+    assert_eq!(mesh.vertices[1], Point3::new(10.0, 0.0, 0.0));
+    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert_eq!(mesh.normals.len(), 3);
+    assert_eq!(
+        mesh.body.as_ref().map(cadmpeg_ir::ids::BodyId::as_str),
+        Some("step:data:body#38")
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_transfers_ap242_semantic_pmi() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
