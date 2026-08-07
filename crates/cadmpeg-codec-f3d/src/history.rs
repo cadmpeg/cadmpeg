@@ -826,36 +826,42 @@ pub(crate) fn bind_feature_body_selections(
             continue;
         }
         if let FeatureDefinition::BoundaryFill { tools, cells } = &mut feature.definition {
-            let Some(previous_state_id) = scope.previous_history_state_id else {
-                continue;
-            };
-            bind_body_recipe_body_selection(
-                tools,
-                &feature_id,
-                previous_state_id,
-                scope,
-                groups,
-                body_recipe_operands,
-            );
-            for cell in cells {
+            if let Some(previous_state_id) = scope.previous_history_state_id {
                 bind_body_recipe_body_selection(
-                    cell,
+                    tools,
                     &feature_id,
                     previous_state_id,
                     scope,
                     groups,
                     body_recipe_operands,
                 );
+                for cell in cells {
+                    bind_body_recipe_body_selection(
+                        cell,
+                        &feature_id,
+                        previous_state_id,
+                        scope,
+                        groups,
+                        body_recipe_operands,
+                    );
+                }
+            } else {
+                bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                for cell in cells {
+                    bind_direct_body_recipe_body_selection(cell, scope, inputs);
+                }
             }
             continue;
         }
         if let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition {
-            let BodySelection::Native(native) = target else {
-                continue;
-            };
             let (Some(state_id), Some(previous_state_id)) =
                 (scope.history_state_id, scope.previous_history_state_id)
             else {
+                bind_direct_body_recipe_body_selection(target, scope, inputs);
+                bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                continue;
+            };
+            let BodySelection::Native(native) = target else {
                 continue;
             };
             let Some((history, state, _)) =
@@ -1022,6 +1028,21 @@ pub(crate) fn bind_feature_body_selections(
             }
             continue;
         }
+        if let FeatureDefinition::DeleteBody { bodies, .. } = &mut feature.definition {
+            if let Some(previous_state_id) = scope.previous_history_state_id {
+                bind_body_recipe_body_selection(
+                    bodies,
+                    &feature_id,
+                    previous_state_id,
+                    scope,
+                    groups,
+                    body_recipe_operands,
+                );
+            } else {
+                bind_direct_body_recipe_body_selection(bodies, scope, inputs);
+            }
+            continue;
+        }
         let (bodies, proof) = match &mut feature.definition {
             FeatureDefinition::MoveBody { bodies, .. } => {
                 (bodies, BodySelectionProof::TopologyStableRevision)
@@ -1053,6 +1074,7 @@ pub(crate) fn bind_feature_body_selections(
         let (Some(state_id), Some(previous_state_id)) =
             (scope.history_state_id, scope.previous_history_state_id)
         else {
+            bind_direct_body_recipe_body_selection(bodies, scope, inputs);
             continue;
         };
         let Some(Some(state)) = states.get(&state_id) else {
@@ -1306,35 +1328,92 @@ fn bind_direct_body_recipe_body_selection(
     let regions = inputs.regions;
     let shells = inputs.shells;
 
-    let BodySelection::Native(group_id) = selection else {
-        return;
-    };
     let stream = crate::ids::native_stream(&scope.id);
-    let mut matching_groups = groups.iter().filter(|group| {
-        group.id == *group_id
-            && group.scope_record_index == scope.record_index
-            && matches!(
-                group.role,
-                0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
-            )
-            && crate::ids::native_stream(&group.id) == stream
-    });
-    let Some(group) = matching_groups.next() else {
-        return;
+    let native_members = match selection {
+        BodySelection::Native(group_id) => {
+            let mut matching_groups = groups.iter().filter(|group| {
+                group.id == *group_id
+                    && group.scope_record_index == scope.record_index
+                    && matches!(
+                        group.role,
+                        0x0000_0004_0000_0000 | 0x0000_0005_0000_0000 | 0x0000_0008_0000_0000
+                    )
+                    && crate::ids::native_stream(&group.id) == stream
+            });
+            let Some(group) = matching_groups.next() else {
+                return;
+            };
+            if matching_groups.next().is_some() || group.members.is_empty() {
+                return;
+            }
+            let mut selected = Vec::with_capacity(group.members.len());
+            for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+                let Ok(ordinal) = u32::try_from(ordinal) else {
+                    return;
+                };
+                let mut matching_operands = operands.iter().filter(|operand| {
+                    operand.owner.group() == Some((group.record_index, ordinal))
+                        && operand.record_index == record_index
+                        && crate::ids::native_stream(&operand.id) == stream
+                });
+                let Some(operand) = matching_operands.next() else {
+                    return;
+                };
+                if matching_operands.next().is_some() {
+                    return;
+                }
+                let Some(body) = direct_body_recipe_candidate(
+                    operand,
+                    construction_recipes,
+                    persistent_design_links,
+                    bodies,
+                    regions,
+                    shells,
+                ) else {
+                    return;
+                };
+                if selected.contains(&body) {
+                    return;
+                }
+                selected.push(body);
+            }
+            *selection = BodySelection::Resolved {
+                bodies: selected,
+                native: group.id.clone(),
+            };
+            return;
+        }
+        BodySelection::NativeSet(native) => native.clone(),
+        _ => return,
     };
-    if matching_groups.next().is_some() || group.members.is_empty() {
+    if native_members.is_empty()
+        || native_members
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != native_members.len()
+    {
         return;
     }
-
-    let mut selected = Vec::with_capacity(group.members.len());
-    for (ordinal, record_index) in group.members.iter().copied().enumerate() {
-        let Ok(ordinal) = u32::try_from(ordinal) else {
+    let mut selected = Vec::with_capacity(native_members.len());
+    for native in &native_members {
+        let Some((native_stream_name, record_index)) = native.rsplit_once(":design-record#") else {
             return;
         };
+        let Ok(record_index) = record_index.parse::<u32>() else {
+            return;
+        };
+        if Some(native_stream_name) != stream {
+            return;
+        }
         let mut matching_operands = operands.iter().filter(|operand| {
-            operand.owner.group() == Some((group.record_index, ordinal))
+            crate::ids::native_stream(&operand.id) == Some(native_stream_name)
+                && operand.scope_record_index == scope.record_index
+                && matches!(
+                    operand.owner,
+                    crate::records::DesignBodyRecipeOperandOwner::ScopeReference { .. }
+                )
                 && operand.record_index == record_index
-                && crate::ids::native_stream(&operand.id) == stream
         });
         let Some(operand) = matching_operands.next() else {
             return;
@@ -1357,10 +1436,9 @@ fn bind_direct_body_recipe_body_selection(
         }
         selected.push(body);
     }
-
-    *selection = BodySelection::Resolved {
+    *selection = BodySelection::ResolvedSet {
         bodies: selected,
-        native: group.id.clone(),
+        native: native_members,
     };
 }
 
@@ -6876,6 +6954,35 @@ mod tests {
                 std::slice::from_ref(&body),
             ),
             Some(body.id.clone())
+        );
+
+        let mut direct_operand = operand.clone();
+        direct_operand.owner = crate::records::DesignBodyRecipeOperandOwner::ScopeReference {
+            scope_reference_ordinal: 0,
+        };
+        let direct_inputs = super::FeatureBodySelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &[],
+            body_recipe_operands: std::slice::from_ref(&direct_operand),
+            construction_recipes: &[],
+            persistent_design_links: &[],
+            histories: &[],
+            bodies: std::slice::from_ref(&body),
+            regions: std::slice::from_ref(&region),
+            shells: std::slice::from_ref(&shell),
+        };
+        let native = format!(
+            "{}:design-record#21",
+            crate::ids::native_stream(&scope.id).expect("test scope stream")
+        );
+        let mut selection = BodySelection::NativeSet(vec![native.clone()]);
+        super::bind_direct_body_recipe_body_selection(&mut selection, &scope, &direct_inputs);
+        assert_eq!(
+            selection,
+            BodySelection::ResolvedSet {
+                bodies: vec![body.id.clone()],
+                native: vec![native],
+            }
         );
     }
 
