@@ -447,6 +447,39 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_116_indexed_arc`
+
+Spec §2 · layout: byte offsets · size: 116 B
+
+The relation tail is bounded by the following sketch marker at +116.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | The same geometry-locus arc header has a 116-byte relation-tail form |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind `0` geometry-locus |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | geometry-locus 104-byte bounded-arc form |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector bytes `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | endpoint indices at marker +56 and +58 are zero-based positions |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | endpoint indices at marker +56 and +58 are zero-based positions |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | u32 `1` at marker +60 |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | f64 `-1` at marker +64 |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | signed selector `1` or `-1` at marker +72 |
+| 76 | 2 | `center_index` | `u16` | little | spec | u16 center index at marker +76 |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | four i32 `-2` cells |
+| 94 | 8 | `relation_tail_padding` | `bytes[8]` | little | spec | zero bytes at marker +94 through +101 |
+| 102 | 4 | `relation_kind` | `u32` | little | spec | u32 `4` at marker +102 |
+| 106 | 6 | `relation_padding` | `bytes[6]` | little | spec | zero bytes at marker +106 through +111 |
+| 112 | 4 | `following_object_index` | `u32` | little | spec | nonzero, non-null u32 object index at marker +112 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_terminal_164_wide_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 164 B

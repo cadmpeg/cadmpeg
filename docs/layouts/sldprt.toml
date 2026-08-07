@@ -1314,6 +1314,156 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "extended_geometry_116_indexed_arc"
+kind = "byte"
+section = "2"
+anchor = "The same geometry-locus arc header has a 116-byte relation-tail form"
+size = 116
+endianness = "little"
+note = "The relation tail is bounded by the following sketch marker at +116."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "The same geometry-locus arc header has a 116-byte relation-tail form"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind `0` geometry-locus"
+
+[[record.field]]
+name = "geometry_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "geometry-locus 104-byte bounded-arc form"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector bytes `00 00 80 bf 00 00 04 00` at marker +31"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "endpoint indices at marker +56 and +58 are zero-based positions"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "endpoint indices at marker +56 and +58 are zero-based positions"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at marker +60"
+
+[[record.field]]
+name = "signed_radius_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at marker +64"
+
+[[record.field]]
+name = "arc_selector"
+offset = 72
+type = "i32"
+source = "spec"
+anchor = "signed selector `1` or `-1` at marker +72"
+
+[[record.field]]
+name = "center_index"
+offset = 76
+type = "u16"
+source = "spec"
+anchor = "u16 center index at marker +76"
+
+[[record.field]]
+name = "reference_sentinels"
+offset = 78
+type = "bytes[16]"
+source = "spec"
+anchor = "four i32 `-2` cells"
+
+[[record.field]]
+name = "relation_tail_padding"
+offset = 94
+type = "bytes[8]"
+source = "spec"
+anchor = "zero bytes at marker +94 through +101"
+
+[[record.field]]
+name = "relation_kind"
+offset = 102
+type = "u32"
+source = "spec"
+anchor = "u32 `4` at marker +102"
+
+[[record.field]]
+name = "relation_padding"
+offset = 106
+type = "bytes[6]"
+source = "spec"
+anchor = "zero bytes at marker +106 through +111"
+
+[[record.field]]
+name = "following_object_index"
+offset = 112
+type = "u32"
+source = "spec"
+anchor = "nonzero, non-null u32 object index at marker +112"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this geometry-locus layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The geometry locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state value begins at +48; bytes +39 through +47 are reserved."
+
+[[record]]
 name = "extended_terminal_164_wide_profile_curve"
 kind = "byte"
 section = "2"
