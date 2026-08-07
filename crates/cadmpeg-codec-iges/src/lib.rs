@@ -27,6 +27,23 @@ use std::io::Cursor;
 
 pub(crate) const SOURCE_IMAGE_ID: &str = "iges:file:source-image#0";
 
+/// IGES specification version selected for semantic output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum IgesVersion {
+    /// IGES 5.3, the fixed-ASCII envelope implemented by this crate.
+    #[default]
+    V5_3,
+    /// IGES 5.2, recognized as a separate target but not emitted yet.
+    V5_2,
+}
+
+/// Options controlling a semantic IGES write.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct IgesWriteOptions {
+    /// Target specification version.
+    pub version: IgesVersion,
+}
+
 /// Codec for IGES files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
@@ -104,7 +121,31 @@ impl Encoder for IgesCodec {
     }
 
     fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
-        writer::plan(input)
+        writer::plan(input, IgesWriteOptions::default())
+    }
+}
+
+/// IGES encoder with explicit target-version options.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct IgesEncoder {
+    options: IgesWriteOptions,
+}
+
+impl IgesEncoder {
+    /// Construct an encoder for `options`.
+    #[must_use]
+    pub const fn new(options: IgesWriteOptions) -> Self {
+        Self { options }
+    }
+}
+
+impl Encoder for IgesEncoder {
+    fn id(&self) -> &'static str {
+        "iges"
+    }
+
+    fn plan<'a>(&self, input: EncodeInput<'a>) -> Result<ExportPlan<'a>, CodecError> {
+        writer::plan(input, self.options)
     }
 }
 

@@ -4,7 +4,7 @@
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
 //! CADIR, validates and compares CADIR models, projects report and CADIR JSON
-//! through `query`, and writes CADIR, STEP AP214, `.FCStd`, `.f3d`, or
+//! through `query`, and writes CADIR, STEP AP214, IGES 5.3, `.FCStd`, `.f3d`, or
 //! `.sldprt` output. See the package README for workflows, format limits, loss
 //! reporting, and exit-status semantics.
 
@@ -41,6 +41,28 @@ impl StepTarget {
             Self::Ap242e1 => cadmpeg_codec_step::StepSchema::Ap242Edition1,
             Self::Ap242e2 => cadmpeg_codec_step::StepSchema::Ap242Edition2,
             Self::Ap242e3 => cadmpeg_codec_step::StepSchema::Ap242Edition3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum IgesTarget {
+    /// IGES 5.3 Fixed ASCII.
+    #[default]
+    #[value(name = "5.3", alias = "v5.3", alias = "v5_3")]
+    V5_3,
+    /// IGES 5.2, which is recognized but not emitted by this build.
+    #[value(name = "5.2", alias = "v5.2", alias = "v5_2")]
+    V5_2,
+}
+
+impl IgesTarget {
+    const fn options(self) -> cadmpeg_codec_iges::IgesWriteOptions {
+        cadmpeg_codec_iges::IgesWriteOptions {
+            version: match self {
+                Self::V5_3 => cadmpeg_codec_iges::IgesVersion::V5_3,
+                Self::V5_2 => cadmpeg_codec_iges::IgesVersion::V5_2,
+            },
         }
     }
 }
@@ -98,6 +120,9 @@ enum Format {
     /// Rhino `.3dm`.
     #[value(alias = "3dm")]
     Rhino,
+    /// IGES `.igs` or `.iges`.
+    #[value(alias = "igs")]
+    Iges,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -136,6 +161,7 @@ impl Format {
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
             "3dm" => Some(Self::Rhino),
+            "iges" | "igs" => Some(Self::Iges),
             _ => None,
         }
     }
@@ -143,7 +169,7 @@ impl Format {
     fn is_geometry_export(self) -> bool {
         matches!(
             self,
-            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
+            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino | Self::Iges
         )
     }
 
@@ -167,6 +193,7 @@ impl Format {
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
             Self::Rhino => "rhino",
+            Self::Iges => "iges",
         }
     }
 }
@@ -431,6 +458,9 @@ enum Command {
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
+        /// Target IGES specification version; valid only for IGES output.
+        #[arg(long, value_enum, default_value_t)]
+        iges_target: IgesTarget,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -506,6 +536,9 @@ enum Command {
         /// Target Rhino archive version; valid only for Rhino output.
         #[arg(long, value_enum)]
         rhino_version: Option<RhinoVersion>,
+        /// Target IGES specification version; valid only for IGES output.
+        #[arg(long, value_enum, default_value_t)]
+        iges_target: IgesTarget,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -623,6 +656,7 @@ fn main() -> ExitCode {
             allow_empty,
             reject_lossy,
             rhino_version,
+            iges_target,
             input_args,
             decode,
             step,
@@ -644,6 +678,7 @@ fn main() -> ExitCode {
                         reject_lossy,
                         rhino_version: rhino_version.map(RhinoVersion::codec),
                         step_options: step.options(),
+                        iges_options: iges_target.options(),
                         forced_input: input_args.forced(),
                     },
                     &decode,
@@ -688,6 +723,7 @@ fn main() -> ExitCode {
             allow_empty,
             reject_lossy,
             rhino_version,
+            iges_target,
             input_args,
             decode,
             step,
@@ -709,6 +745,7 @@ fn main() -> ExitCode {
                         reject_lossy,
                         rhino_version: rhino_version.map(RhinoVersion::codec),
                         step_options: step.options(),
+                        iges_options: iges_target.options(),
                         forced_input: input_args.forced(),
                     },
                     &decode,

@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
+use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::WritePath;
@@ -7821,12 +7822,49 @@ fn encode_regenerates_an_edited_point_from_neutral_ir() {
 }
 
 #[test]
+fn encode_regenerates_a_finite_line_from_neutral_ir() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir;
+    ir.model.points[0].position.x += 1.0;
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: Some(&decoded.source_fidelity),
+        })
+        .unwrap();
+    assert_eq!(plan.write_path(), WritePath::Synthesized);
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == cadmpeg_ir::LossKind::PassthroughRecordOmitted }));
+    let round_trip = IgesCodec
+        .decode(
+            &mut Cursor::new(written.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(round_trip.ir.model.curves.len(), 1);
+    assert_eq!(round_trip.ir.model.edges.len(), 1);
+    assert!(matches!(
+        round_trip.ir.model.curves[0].geometry,
+        CurveGeometry::Line { .. }
+    ));
+    assert!(round_trip.report.losses.is_empty());
+}
+
+#[test]
 fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
     let decoded = IgesCodec
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
+    let mut ir = decoded.ir;
+    ir.model.curves[0].geometry = CurveGeometry::Unknown { record: None };
     let Err(error) = IgesCodec.plan(EncodeInput {
-        ir: &decoded.ir,
+        ir: &ir,
         fidelity: None,
     }) else {
         panic!("unsupported curve geometry was accepted")
@@ -7834,9 +7872,63 @@ fn encode_refuses_unsupported_curve_geometry_instead_of_dropping_it() {
     assert!(
         error
             .to_string()
-            .contains("does not encode model arena edges"),
+            .contains("does not encode this curve geometry"),
         "{error}"
     );
+}
+
+#[test]
+fn encode_regenerates_supported_analytic_and_spline_curves() {
+    let fixtures = [
+        ("circle", circular_arc_file()),
+        (
+            "ellipse",
+            conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;"),
+        ),
+        (
+            "hyperbola",
+            conic_arc_file(
+                2,
+                b"104,0.25,0,-0.1111111111111111,0,0,-1,0,2,0,3.086161269630487,3.525603580931404;",
+            ),
+        ),
+        (
+            "parabola",
+            conic_arc_file(3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;"),
+        ),
+        ("nurbs", nurbs_curve_file()),
+        (
+            "polyline",
+            copious_data_file(11, b"106,1,2,0,0,0,1,0;", "00000000"),
+        ),
+    ];
+    for (name, bytes) in fixtures {
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let plan = IgesCodec
+            .plan(EncodeInput {
+                ir: &decoded.ir,
+                fidelity: None,
+            })
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let mut written = Vec::new();
+        plan.write_to(&mut written)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let round_trip = IgesCodec
+            .decode(
+                &mut Cursor::new(written.as_slice()),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert!(
+            round_trip.report.losses.is_empty(),
+            "{name}: {:?}",
+            round_trip.report.losses
+        );
+        let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+        assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
+    }
 }
 
 #[test]
