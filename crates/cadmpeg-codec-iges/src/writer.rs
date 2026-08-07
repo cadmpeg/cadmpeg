@@ -9,7 +9,7 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{EncodeInput, ExportPlan};
-use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv};
 use cadmpeg_ir::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, SurfaceGeometry,
 };
@@ -637,7 +637,7 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                                 ))
                             })?;
                         let geometry = flatten_curve(&curve.geometry)?;
-                        edge_span(ir, edge, &geometry)?;
+                        let span = edge_span(ir, edge, &geometry)?;
                         for vertex_id in [&edge.start, &edge.end] {
                             let vertex = ir
                                 .model
@@ -653,7 +653,20 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                             used_vertices.insert(vertex.id.as_str().to_owned());
                             point_position(ir, &vertex.point)?;
                         }
-                        validate_brep_pcurve_uses(ir, &coedge.pcurves, coedge.id.as_str())?;
+                        let (expected_start, expected_end) = if coedge.sense == Sense::Forward {
+                            (span.start, span.end)
+                        } else {
+                            (span.end, span.start)
+                        };
+                        validate_brep_pcurve_uses(
+                            ir,
+                            &surface.geometry,
+                            &coedge.pcurves,
+                            expected_start,
+                            expected_end,
+                            topology_edge_explicit_tolerance(ir, edge),
+                            coedge.id.as_str(),
+                        )?;
                     }
                     for vertex_use in &loop_.vertex_uses {
                         if !loop_.coedges.is_empty() && vertex_use.after.is_none() {
@@ -684,8 +697,16 @@ fn validate_brep_topology(ir: &CadIr) -> Result<(), CodecError> {
                                 ))
                             })?;
                         used_vertices.insert(vertex.id.as_str().to_owned());
-                        point_position(ir, &vertex.point)?;
-                        validate_brep_pcurve_uses(ir, &vertex_use.pcurves, loop_.id.as_str())?;
+                        let position = point_position(ir, &vertex.point)?;
+                        validate_brep_pcurve_uses(
+                            ir,
+                            &surface.geometry,
+                            &vertex_use.pcurves,
+                            position,
+                            position,
+                            cadmpeg_ir::units::COINCIDENCE_TOLERANCE,
+                            loop_.id.as_str(),
+                        )?;
                     }
                 }
             }
@@ -2039,7 +2060,7 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                         edge.id, curve_id
                     )));
                 }
-                edge_span(
+                let span = edge_span(
                     ir,
                     edge,
                     &flatten_curve(
@@ -2133,6 +2154,25 @@ fn validate_trimmed_sheet_topology(ir: &CadIr) -> Result<(), CodecError> {
                     pcurve_entity(pcurve)?;
                     used_pcurves.insert(pcurve.id.as_str().to_owned());
                 }
+                let (expected_start, expected_end) = if trimmed {
+                    // Type 144 orients the raw model and pcurve carriers while
+                    // constructing each Type 142 pair. Validate the stored
+                    // pcurve chain against the edge's natural orientation.
+                    (span.start, span.end)
+                } else if coedge.sense == Sense::Forward {
+                    (span.start, span.end)
+                } else {
+                    (span.end, span.start)
+                };
+                validate_pcurve_chain(
+                    ir,
+                    &surface.geometry,
+                    &coedge.pcurves,
+                    expected_start,
+                    expected_end,
+                    topology_edge_explicit_tolerance(ir, edge),
+                    coedge.id.as_str(),
+                )?;
             }
         }
     }
@@ -2777,7 +2817,11 @@ fn same_range(left: [f64; 2], right: [f64; 2]) -> bool {
 
 fn validate_brep_pcurve_uses(
     ir: &CadIr,
+    surface: &SurfaceGeometry,
     uses: &[PcurveUse],
+    expected_start: Point3,
+    expected_end: Point3,
+    tolerance: f64,
     owner: &str,
 ) -> Result<(), CodecError> {
     for pcurve_use in uses {
@@ -2814,6 +2858,94 @@ fn validate_brep_pcurve_uses(
             )));
         }
         pcurve_entity(pcurve)?;
+    }
+    validate_pcurve_chain(
+        ir,
+        surface,
+        uses,
+        expected_start,
+        expected_end,
+        tolerance,
+        owner,
+    )?;
+    Ok(())
+}
+
+fn validate_pcurve_chain(
+    ir: &CadIr,
+    surface: &SurfaceGeometry,
+    uses: &[PcurveUse],
+    expected_start: Point3,
+    expected_end: Point3,
+    explicit_tolerance: f64,
+    owner: &str,
+) -> Result<(), CodecError> {
+    if uses.is_empty() {
+        return Ok(());
+    }
+    let tolerance = explicit_tolerance.max(cadmpeg_ir::units::COINCIDENCE_TOLERANCE);
+    let mut mapped = Vec::with_capacity(uses.len());
+    for pcurve_use in uses {
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == pcurve_use.pcurve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "IGES {owner} references missing pcurve {}",
+                    pcurve_use.pcurve
+                ))
+            })?;
+        let range = pcurve.parameter_range.ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "IGES {owner} requires a parameter range for pcurve {}",
+                pcurve.id
+            ))
+        })?;
+        if range.iter().any(|value| !value.is_finite()) || range[0] > range[1] {
+            return Err(CodecError::Malformed(format!(
+                "IGES {owner} pcurve {} has an invalid parameter range",
+                pcurve.id
+            )));
+        }
+        let start_uv = pcurve_uv(&pcurve.geometry, range[0]).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES {owner} pcurve {} start cannot be evaluated",
+                pcurve.id
+            ))
+        })?;
+        let end_uv = pcurve_uv(&pcurve.geometry, range[1]).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES {owner} pcurve {} end cannot be evaluated",
+                pcurve.id
+            ))
+        })?;
+        let start = model_surface_point(ir, surface, start_uv.u, start_uv.v).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES {owner} pcurve {} start is outside its support",
+                pcurve.id
+            ))
+        })?;
+        let end = model_surface_point(ir, surface, end_uv.u, end_uv.v).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES {owner} pcurve {} end is outside its support",
+                pcurve.id
+            ))
+        })?;
+        ensure_finite_point(start, &format!("{owner} pcurve {} start", pcurve.id))?;
+        ensure_finite_point(end, &format!("{owner} pcurve {} end", pcurve.id))?;
+        mapped.push((start, end));
+    }
+    if !same_point_with_tolerance(mapped[0].0, expected_start, tolerance)
+        || !same_point_with_tolerance(mapped[mapped.len() - 1].1, expected_end, tolerance)
+        || mapped
+            .windows(2)
+            .any(|pair| !same_point_with_tolerance(pair[0].1, pair[1].0, tolerance))
+    {
+        return Err(CodecError::Malformed(format!(
+            "IGES {owner} pcurve chain endpoints disagree with its directed support edge"
+        )));
     }
     Ok(())
 }

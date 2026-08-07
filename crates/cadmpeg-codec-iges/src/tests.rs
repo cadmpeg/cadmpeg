@@ -9596,6 +9596,34 @@ fn encode_regenerates_decoded_parametric_bounded_sheet_without_source_bytes() {
 }
 
 #[test]
+fn encode_rejects_a_bounded_sheet_with_disagreeing_pcurve_endpoints() {
+    let mut decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(parametrically_bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let pcurve = decoded.ir.model.pcurves.first_mut().unwrap();
+    let PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry else {
+        panic!("decoded bounded-sheet pcurve is not a NURBS carrier");
+    };
+    control_points[0].u += 0.25;
+
+    let Err(error) = IgesCodec.plan(EncodeInput {
+        ir: &decoded.ir,
+        fidelity: None,
+    }) else {
+        panic!("disagreeing pcurve endpoints were accepted")
+    };
+    assert!(
+        error
+            .to_string()
+            .contains("pcurve chain endpoints disagree with its directed support edge"),
+        "{error}"
+    );
+}
+
+#[test]
 fn encode_regenerates_decoded_multi_pcurve_bounded_sheet_without_source_bytes() {
     let decoded = IgesCodec
         .decode(
