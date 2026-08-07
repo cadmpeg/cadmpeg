@@ -3,12 +3,18 @@
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, EncodeInput, Encoder};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, Surface,
+    SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::WritePath;
-use cadmpeg_ir::topology::Point;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::CadIr;
 
@@ -8279,6 +8285,26 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.surfaces.len(), 2);
+    let plane = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == SurfaceId("iges:model:surface#D5".into()))
+        .unwrap();
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &plane.geometry
+    else {
+        panic!("expected a decoded plane");
+    };
+    assert!((origin.x - 4.0).abs() < 1.0e-10);
+    assert!((origin.y - 5.0).abs() < 1.0e-10);
+    assert!((origin.z - 6.0).abs() < 1.0e-10);
+    assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
     assert!(
         decoded.report.losses.is_empty(),
         "{:#?}",
@@ -8293,6 +8319,277 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
     assert!(entities.iter().any(|record| {
         record.field("entity_type").and_then(|value| value.as_i64()) == Some(128)
     }));
+}
+
+#[test]
+fn encode_regenerates_a_single_face_trimmed_sheet() {
+    let surface_id = SurfaceId("surface#sheet".into());
+    let body_id = BodyId("body#sheet".into());
+    let region_id = RegionId("region#sheet".into());
+    let shell_id = ShellId("shell#sheet".into());
+    let face_id = FaceId("face#sheet".into());
+    let loop_id = LoopId("loop#sheet".into());
+    let positions = [
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ];
+    let point_ids = (0..4)
+        .map(|index| PointId(format!("point#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let vertex_ids = (0..4)
+        .map(|index| VertexId(format!("vertex#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let edge_ids = (0..4)
+        .map(|index| EdgeId(format!("edge#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let curve_ids = (0..4)
+        .map(|index| CurveId(format!("curve#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let coedge_ids = (0..4)
+        .map(|index| CoedgeId(format!("coedge#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let pcurve_ids = (0..4)
+        .map(|index| PcurveId(format!("pcurve#sheet:{index}")))
+        .collect::<Vec<_>>();
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: surface_id.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    for (index, position) in positions.into_iter().enumerate() {
+        ir.model.points.push(Point {
+            id: point_ids[index].clone(),
+            source_object: None,
+            position,
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex_ids[index].clone(),
+            point: point_ids[index].clone(),
+            tolerance: None,
+        });
+    }
+    for index in 0..4 {
+        let end = (index + 1) % 4;
+        ir.model.curves.push(Curve {
+            id: curve_ids[index].clone(),
+            geometry: CurveGeometry::Line {
+                origin: positions[index],
+                direction: positions[index].vector_from(positions[end]),
+            },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: edge_ids[index].clone(),
+            curve: Some(curve_ids[index].clone()),
+            start: vertex_ids[index].clone(),
+            end: vertex_ids[end].clone(),
+            param_range: Some([0.0, 1.0]),
+            tolerance: None,
+        });
+        let start = positions[index];
+        let end_position = positions[end];
+        ir.model.pcurves.push(Pcurve {
+            id: pcurve_ids[index].clone(),
+            geometry: PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(start.x, start.y),
+                    Point2::new(end_position.x, end_position.y),
+                ],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: Some([0.0, 1.0]),
+            fit_tolerance: None,
+        });
+        ir.model.coedges.push(Coedge {
+            id: coedge_ids[index].clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_ids[index].clone(),
+            next: coedge_ids[end].clone(),
+            previous: coedge_ids[(index + 3) % 4].clone(),
+            radial_next: coedge_ids[index].clone(),
+            sense: Sense::Forward,
+            pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                pcurve: pcurve_ids[index].clone(),
+                isoparametric: Some(false),
+                parameter_range: None,
+            }],
+            use_curve: None,
+            use_curve_parameter_range: None,
+        });
+    }
+    ir.model.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face_id.clone(),
+        boundary_role: LoopBoundaryRole::Outer,
+        coedges: coedge_ids,
+        vertex_uses: Vec::new(),
+    });
+    ir.model.faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: surface_id,
+        sense: Sense::Forward,
+        loops: vec![loop_id],
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: vec![face_id],
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
+    ir.model.regions.push(Region {
+        id: region_id,
+        body: body_id.clone(),
+        shells: vec![shell_id],
+    });
+    ir.model.bodies.push(Body {
+        id: body_id,
+        kind: BodyKind::Sheet,
+        regions: vec![RegionId("region#sheet".into())],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    let plan = IgesEncoder::new(IgesWriteOptions::default())
+        .plan(EncodeInput {
+            ir: &ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    let report = plan.write_to(&mut written).unwrap();
+    assert!(report.losses.is_empty(), "{:#?}", report.losses);
+    assert_eq!(report.census.counts.get("141_boundary"), Some(&1));
+    assert_eq!(report.census.counts.get("144_trimmed_surface"), Some(&1));
+
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Sheet));
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    assert_eq!(decoded.ir.model.loops.len(), 1);
+    assert_eq!(decoded.ir.model.coedges.len(), 4);
+    assert_eq!(decoded.ir.model.pcurves.len(), 4);
+    assert!(
+        decoded.report.losses.is_empty(),
+        "{:#?}",
+        decoded.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_a_decoded_trimmed_sheet_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_decoded_trimmed_sheet_inner_loop_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_with_inner_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 2);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn encode_regenerates_decoded_model_curve_bounded_sheet_without_source_bytes() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = IgesCodec
+        .plan(EncodeInput {
+            ir: &decoded.ir,
+            fidelity: None,
+        })
+        .unwrap();
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.loops.len(), 1);
+    assert!(
+        round_trip.report.losses.is_empty(),
+        "{:#?}",
+        round_trip.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&round_trip.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

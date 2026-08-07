@@ -43,7 +43,8 @@ and inspected by name and refused for semantic decode.
 `IgesCodec` replays an unchanged decoded source image byte for byte when its
 retained source record and document baseline are intact. `IgesEncoder` accepts
 an explicit target version. The semantic writer supports standalone points,
-finite lines, analytic conic arcs, NURBS curves, and piecewise-linear curves;
+finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
+surfaces, and one-face trimmed sheet bodies with NURBS parameter curves;
 unsupported neutral or native content is refused before output. Edited source
 documents may report `passthrough_record_omitted` losses for native display or
 occurrence-expansion records that are not regenerated.
