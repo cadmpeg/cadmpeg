@@ -1998,6 +1998,7 @@ fn attach_feature_operations(
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
         if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
+            source_properties.insert("primary_body_reference".to_string(), reference.id.clone());
             if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
                 if let [use_] = uses.as_slice() {
                     source_properties
@@ -2027,6 +2028,10 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("body_reference.{}", reference.ordinal),
                 reference.body_object_index.to_string(),
+            );
+            source_properties.insert(
+                format!("body_reference_occurrence.{}", reference.ordinal),
+                reference.id.clone(),
             );
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
@@ -2816,6 +2821,22 @@ fn attach_feature_operations(
                     .clone()
                     .unwrap_or_else(|| operand.operand_object_index.to_string()),
             );
+            source_properties.insert(
+                format!(
+                    "operation_body_operand_record.{}.{}",
+                    operand.body_reference_ordinal, operand.ordinal
+                ),
+                operand.id.clone(),
+            );
+            for (binding_ordinal, binding) in operand.segment_body_bindings.iter().enumerate() {
+                source_properties.insert(
+                    format!(
+                        "operation_body_operand_segment_binding.{}.{}.{}",
+                        operand.body_reference_ordinal, operand.ordinal, binding_ordinal
+                    ),
+                    binding.clone(),
+                );
+            }
         }
         for binding in parameter_bindings_by_operation
             .get(label.id.as_str())

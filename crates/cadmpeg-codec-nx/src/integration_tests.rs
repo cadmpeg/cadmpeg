@@ -273,6 +273,30 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
         newer.dependencies.as_slice(),
         std::slice::from_ref(&older.id)
     );
+    assert_eq!(
+        older.source_properties.get("primary_body_reference"),
+        Some(&String::from(
+            "nx:feature-history:body-reference#0000000000-0000000001",
+        )),
+    );
+    assert_eq!(
+        older.source_properties.get("body_reference_occurrence.0"),
+        Some(&String::from(
+            "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000",
+        )),
+    );
+    assert_eq!(
+        newer.source_properties.get("primary_body_reference"),
+        Some(&String::from(
+            "nx:feature-history:body-reference#0000000000-0000000000",
+        )),
+    );
+    assert_eq!(
+        newer.source_properties.get("body_reference_occurrence.0"),
+        Some(&String::from(
+            "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
+        )),
+    );
     assert_eq!(result.ir.model.feature_result_topologies.len(), 2);
     assert_valid(&result);
 }
