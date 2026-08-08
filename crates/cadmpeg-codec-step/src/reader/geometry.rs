@@ -2181,6 +2181,40 @@ pub(super) fn associate_surface_curve_bases(
     }
 }
 
+/// Associate boundaries retained by a curve-bounded surface.
+///
+/// Unsupported boundary wrappers can remain as neutral curve carriers while
+/// the parent `CURVE_BOUNDED_SURFACE` remains an opaque surface. The explicit
+/// boundary list is still a source ownership edge, so retain it through the
+/// parent surface association instead of reporting the wrapper as orphaned.
+pub(super) fn associate_curve_bounded_surface_boundaries(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) {
+    for (surface_id, record) in exchange.entities("CURVE_BOUNDED_SURFACE") {
+        let Some(boundaries) = record.parameter(2).and_then(Value::list) else {
+            continue;
+        };
+        for boundary_id in boundaries.iter().filter_map(Value::reference) {
+            let Some(boundary_index) = index.curves.get(&boundary_id).copied() else {
+                continue;
+            };
+            ir.model.curves[boundary_index]
+                .source_object
+                .get_or_insert_with(|| SourceObjectAssociation {
+                    format: "step".into(),
+                    object_id: format!("#{surface_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                });
+        }
+    }
+}
+
 /// Associate surfaces referenced only as PCURVE supports with their STEP
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate

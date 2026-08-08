@@ -1325,7 +1325,7 @@ fn free_surface_curve_keeps_its_three_d_basis_reachable() {
         .expect("fixture is UTF-8")
         .replace(
             "ENDSEC;\nEND-ISO-10303-21;",
-            "#80=CARTESIAN_POINT('',(20.,0.,0.));\n#81=DIRECTION('',(1.,0.,0.));\n#82=VECTOR('',#81,1.);\n#83=LINE('',#80,#82);\n#84=SURFACE_CURVE('',#83,(#56),.PCURVE_S1.);\n#85=GEOMETRIC_SET('free surface curve',(#84));\nENDSEC;\nEND-ISO-10303-21;",
+            "#80=CARTESIAN_POINT('',(20.,0.,0.));\n#81=DIRECTION('',(1.,0.,0.));\n#82=VECTOR('',#81,1.);\n#83=LINE('',#80,#82);\n#84=SURFACE_CURVE('',#83,(#56),.PCURVE_S1.);\n#85=GEOMETRIC_SET('free surface curve',(#84));\n#86=OUTER_BOUNDARY_CURVE('',(#84),.F.);\n#87=CURVE_BOUNDED_SURFACE('free bounded surface',#28,(#86),.F.);\nENDSEC;\nEND-ISO-10303-21;",
         );
     let result = StepCodec::default()
         .decode(
@@ -1348,10 +1348,27 @@ fn free_surface_curve_keeps_its_three_d_basis_reachable() {
             .map(|source| source.object_id.as_str()),
         Some("#84")
     );
+    let boundary = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#86")
+        .expect("outer-boundary curve");
+    assert_eq!(
+        boundary
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#87")
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(!validation.findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::report::Check::CarrierReachability
-            && finding.entity.as_deref() == Some("step:data:curve#83")
+            && matches!(
+                finding.entity.as_deref(),
+                Some("step:data:curve#83" | "step:data:curve#86")
+            )
     }));
 }
 

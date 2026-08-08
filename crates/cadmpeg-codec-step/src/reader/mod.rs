@@ -133,6 +133,8 @@ fn decode_exchange_mode(
     geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
     charge_semantic_stage(ctx, exchange, "step_surface_curve_association")?;
     geometry::associate_surface_curve_bases(exchange, &mut ir, &carrier_index);
+    charge_semantic_stage(ctx, exchange, "step_curve_bounded_surface_association")?;
+    geometry::associate_curve_bounded_surface_boundaries(exchange, &mut ir, &carrier_index);
     charge_semantic_stage(ctx, exchange, "step_pcurve_association")?;
     geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
     charge_semantic_stage(ctx, exchange, "step_annotation_plane_association")?;
