@@ -276,7 +276,7 @@ impl<'a> Lexer<'a> {
         while self
             .input
             .get(self.at)
-            .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
+            .is_some_and(|b| b.is_ascii_alphanumeric() || matches!(*b, b'_' | b'-'))
         {
             self.at += 1;
         }

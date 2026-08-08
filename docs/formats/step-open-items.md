@@ -840,17 +840,15 @@ the input is forced to STEP.
 
 ### EL-03. Enumeration name characters
 
-**Question.** Which characters may an enumeration name contain?
+**Resolved.** An enumeration name begins with an ASCII letter and accepts
+ASCII letters, digits, underscore, and hyphen until its closing dot.
 
 **Known.** `step.md` §3 gives `enumeration = "." standard_name "."` and
 `standard_name = letter (letter | digit | "_" | "-")*`.
 
-**Conflict.** `Lexer::enumeration` accepts only alphanumerics and `_`
-(`crates/cadmpeg-codec-step/src/lex.rs:272-289`), while `Lexer::name` in the
-same file accepts `-` for the same production (`lex.rs:184-192`). An
-enumeration containing a hyphen fails to lex, and the whole exchange
-structure is rejected as malformed rather than the one record. No test covers
-the character class. The item needs a decision.
+**Rule.** The lexer applies the same `standard_name` character class to
+enumerations and entity names. A name without its closing dot remains a lexical
+error.
 
 ### EL-04. Signature section boundary
 

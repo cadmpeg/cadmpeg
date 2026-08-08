@@ -92,6 +92,14 @@ fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
 }
 
 #[test]
+fn lexer_accepts_hyphens_in_enumeration_names() {
+    assert_eq!(
+        crate::lex::lex(b".USER-DEFINED.").unwrap()[0].kind,
+        crate::lex::TokenKind::Enumeration("USER-DEFINED".into())
+    );
+}
+
+#[test]
 fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
     let nested = format!("{}1{}", "(".repeat(300), ")".repeat(300));
     let source = format!(
