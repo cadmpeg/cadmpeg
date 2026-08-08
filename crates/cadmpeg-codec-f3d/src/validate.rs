@@ -37,6 +37,75 @@ fn valid_design_guid(value: &str) -> bool {
         })
 }
 
+fn valid_sketch_profile_region_selection(
+    profile: &records::DesignSketchProfileOperand,
+    selection: &records::DesignSketchProfileRegionSelection,
+) -> bool {
+    let Some(expected_region_count_offset) = selection.byte_offset.checked_add(36) else {
+        return false;
+    };
+    if profile.record_index.checked_add(3) != Some(selection.record_index)
+        || selection.byte_offset <= profile.paired_byte_offset
+        || selection.class_tag.len() != 3
+        || !selection
+            .class_tag
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+        || selection.region_count_offset != expected_region_count_offset
+        || selection.regions.is_empty()
+        || selection.companion_class_tag.len() != 3
+        || !selection
+            .companion_class_tag
+            .bytes()
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return false;
+    }
+    let Some(mut cursor) = selection.byte_offset.checked_add(40) else {
+        return false;
+    };
+    for (region_ordinal, region) in selection.regions.iter().enumerate() {
+        if region_ordinal != 0 {
+            let Some(next) = cursor.checked_add(1) else {
+                return false;
+            };
+            cursor = next;
+        }
+        if region.member_count_offset != cursor || region.members.is_empty() {
+            return false;
+        }
+        let Some(next) = cursor.checked_add(4) else {
+            return false;
+        };
+        cursor = next;
+        for member in &region.members {
+            let (Some(curve_primary_id_offset), Some(incidence_words_offset), Some(next)) = (
+                cursor.checked_add(4),
+                cursor.checked_add(8),
+                cursor.checked_add(40),
+            ) else {
+                return false;
+            };
+            if member.kind != 3
+                || member.kind_offset != cursor
+                || member.curve_primary_id == 0
+                || member.curve_primary_id > u64::from(u32::MAX)
+                || member.curve_primary_id_offset != curve_primary_id_offset
+                || member.incidence_words_offset != incidence_words_offset
+                || member.incidence_words[..3] != [0; 3]
+                || !matches!(member.incidence_words[3], 0 | 1)
+                || !matches!(member.incidence_words[4], 1 | 2)
+                || !matches!(member.incidence_words[5], 1 | 2)
+                || member.incidence_words[6..] != [0; 2]
+            {
+                return false;
+            }
+            cursor = next;
+        }
+    }
+    cursor.checked_add(5) == Some(selection.companion_byte_offset)
+}
+
 use std::collections::{HashMap, HashSet};
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -669,6 +738,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && profile.asset_id_offset > profile.byte_offset
                 && profile.entity_reference_offset > profile.asset_id_offset
                 && profile.paired_byte_offset > profile.entity_reference_offset
+                && profile.region_selection.as_ref().is_none_or(|selection| {
+                    valid_sketch_profile_region_selection(profile, selection)
+                })
                 && profile.paired_class_tag.len() == 3
                 && profile
                     .paired_class_tag

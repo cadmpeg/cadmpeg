@@ -558,6 +558,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         entity_id: format!("{stream}:sketch#7"),
         entity_suffix: 7,
         entity_reference_offset: 0,
+        region_selection: None,
         paired_class_tag: "264".into(),
         paired_byte_offset: 0,
     });
@@ -6406,6 +6407,7 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         entity_id: "0_2718".into(),
         entity_suffix: 2718,
         entity_reference_offset: 32_080,
+        region_selection: None,
         paired_class_tag: "258".into(),
         paired_byte_offset: 32_180,
     });
@@ -11062,6 +11064,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         entity_id: "0_172".into(),
         entity_suffix: 172,
         entity_reference_offset: 3120,
+        region_selection: None,
         paired_class_tag: "259".into(),
         paired_byte_offset: 3200,
     });
@@ -17798,6 +17801,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             entity_id: "0_172".into(),
             entity_suffix: 172,
             entity_reference_offset: 420,
+            region_selection: None,
             paired_class_tag: "259".into(),
             paired_byte_offset: 520,
         }),
@@ -18735,6 +18739,91 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             ..
         } if id == &start_group.id
     ));
+}
+
+#[test]
+fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
+    use cadmpeg_ir::features::{
+        BooleanOp, LoftSection, PathRef, SheetMetalThicknessSide, SketchSpace,
+    };
+    use cadmpeg_ir::sketches::SpatialSketchId;
+
+    let feature = |id: &str, ordinal, definition| Feature {
+        id: FeatureId(id.into()),
+        ordinal,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition,
+        native_ref: None,
+    };
+    let planar_sketch = SketchId("f3d:sketch:planar".into());
+    let spatial_sketch = SpatialSketchId("f3d:sketch:spatial".into());
+    let planar_feature = feature(
+        "f3d:feature:planar-sketch",
+        0,
+        FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(planar_sketch.clone()),
+        },
+    );
+    let spatial_feature = feature(
+        "f3d:feature:spatial-sketch",
+        1,
+        FeatureDefinition::SpatialSketch {
+            sketch: Some(spatial_sketch.clone()),
+        },
+    );
+    let base_flange = feature(
+        "f3d:feature:base-flange",
+        2,
+        FeatureDefinition::SheetMetalBaseFlange {
+            profile: ProfileRef::Sketch(planar_sketch.clone()),
+            thickness: Length(1.0),
+            side: SheetMetalThicknessSide::Forward,
+        },
+    );
+    let loft = feature(
+        "f3d:feature:loft",
+        3,
+        FeatureDefinition::Loft {
+            sections: vec![
+                LoftSection::Profile(ProfileRef::SpatialSketchProfiles {
+                    sketch: spatial_sketch.clone(),
+                    profiles: vec![2],
+                }),
+                LoftSection::Profile(ProfileRef::SpatialSketchProfiles {
+                    sketch: spatial_sketch.clone(),
+                    profiles: vec![5],
+                }),
+            ],
+            guides: vec![PathRef::SpatialSketchSelection {
+                sketch: spatial_sketch,
+                selections: vec!["f3d:native:guide".into()],
+            }],
+            centerline: Some(PathRef::Sketch(planar_sketch)),
+            op: BooleanOp::Join,
+            closed: false,
+            solid: true,
+            ruled: false,
+            max_degree: None,
+            check_compatibility: None,
+            allow_multi_profile_faces: None,
+        },
+    );
+    let expected_dependencies = [spatial_feature.id.clone(), planar_feature.id.clone()];
+    let mut features = vec![planar_feature, spatial_feature, base_flange, loft];
+
+    crate::design::feature_project::bind_sketch_feature_geometry(&mut features, &[], &[], &[], &[]);
+
+    assert_eq!(features[2].dependencies, [features[0].id.clone()]);
+    assert_eq!(features[3].dependencies, expected_dependencies);
 }
 
 #[test]

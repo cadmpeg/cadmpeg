@@ -2566,7 +2566,7 @@ impl DesignBaseFeatureConstruction {
     }
 }
 
-/// Sketch-profile selection frame named by an Extrude scope.
+/// Sketch-profile selection frame named by a profile-based feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignSketchProfileOperand {
@@ -2588,10 +2588,61 @@ pub struct DesignSketchProfileOperand {
     pub entity_suffix: u64,
     /// Byte offset of the suffix's UTF-16LE code units.
     pub entity_reference_offset: u64,
+    /// Exact nested profile-region selection, when its complete frame closes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
     pub paired_class_tag: String,
     /// Byte offset of the same-index paired header.
     pub paired_byte_offset: u64,
+}
+
+/// Nested ordered region selection carried by a sketch-profile operand.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSketchProfileRegionSelection {
+    /// Indexed identity of the region-selection record.
+    pub record_index: u32,
+    /// Byte offset of the region-selection indexed header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII region-selection class tag.
+    pub class_tag: String,
+    /// Byte offset of the selected-region count.
+    pub region_count_offset: u64,
+    /// Selected regions in source order.
+    pub regions: Vec<DesignSketchProfileRegion>,
+    /// Source per-file dynamic three-digit ASCII companion class tag.
+    pub companion_class_tag: String,
+    /// Byte offset of the same-index companion header.
+    pub companion_byte_offset: u64,
+}
+
+/// One selected region in a nested sketch-profile selection.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSketchProfileRegion {
+    /// Byte offset of this region's member count.
+    pub member_count_offset: u64,
+    /// Persistent curve members in source order.
+    pub members: Vec<DesignSketchProfileRegionMember>,
+}
+
+/// One fixed-width persistent curve member of a selected sketch region.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignSketchProfileRegionMember {
+    /// Native member-kind code. Profile-region curve members use value three.
+    pub kind: u32,
+    /// Byte offset of the member-kind code.
+    pub kind_offset: u64,
+    /// Primary persistent identity of the selected Sketch curve.
+    pub curve_primary_id: u64,
+    /// Byte offset of the persistent curve identity.
+    pub curve_primary_id_offset: u64,
+    /// Structural region-incidence words retained in source order.
+    pub incidence_words: [u32; 8],
+    /// Byte offset of the first incidence word.
+    pub incidence_words_offset: u64,
 }
 
 /// Counted selection group owned by an Extrude parameter scope.

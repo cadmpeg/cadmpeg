@@ -11252,6 +11252,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
         entity_id: "0_10".into(),
         entity_suffix: 10,
         entity_reference_offset: 250,
+        region_selection: None,
         paired_class_tag: "260".into(),
         paired_byte_offset: 300,
     };

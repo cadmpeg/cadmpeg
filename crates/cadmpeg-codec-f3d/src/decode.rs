@@ -286,6 +286,41 @@ fn face_selection_is_resolved(selection: &cadmpeg_ir::features::FaceSelection) -
     }
 }
 
+fn loft_profile_is_resolved(profile: &cadmpeg_ir::features::ProfileRef) -> bool {
+    use cadmpeg_ir::features::ProfileRef;
+
+    match profile {
+        ProfileRef::Unresolved(_)
+        | ProfileRef::Native(_)
+        | ProfileRef::SketchSelection { .. }
+        | ProfileRef::SpatialSketchSelection { .. } => false,
+        ProfileRef::Sketch(_) | ProfileRef::Feature(_) => true,
+        ProfileRef::SketchProfiles { profiles, .. }
+        | ProfileRef::SpatialSketchProfiles { profiles, .. } => !profiles.is_empty(),
+        ProfileRef::SketchRegions { regions, .. } => !regions.is_empty(),
+        ProfileRef::SketchEntities { entities, .. } => !entities.is_empty(),
+        ProfileRef::HistoricalFaces { faces, .. } => !faces.is_empty(),
+        ProfileRef::Generated { curves, .. } => !curves.is_empty(),
+        ProfileRef::Faces(faces) => !faces.is_empty(),
+    }
+}
+
+fn loft_path_is_resolved(path: &cadmpeg_ir::features::PathRef) -> bool {
+    use cadmpeg_ir::features::PathRef;
+
+    match path {
+        PathRef::Unresolved(_) | PathRef::Native(_) | PathRef::SpatialSketchSelection { .. } => {
+            false
+        }
+        PathRef::Sketch(_) => true,
+        PathRef::SketchCurves { curves, .. } => !curves.is_empty(),
+        PathRef::SpatialSketchCurves { curves, .. } => !curves.is_empty(),
+        PathRef::Edges(edges) => !edges.is_empty(),
+        PathRef::Curves(curves) => !curves.is_empty(),
+        PathRef::HistoricalEdges { edges, .. } => !edges.is_empty(),
+    }
+}
+
 fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDefinition) -> bool {
     use cadmpeg_ir::features::{FeatureDefinition, PatternKind, SketchSpace};
 
@@ -359,6 +394,30 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
                 }
+        }
+        FeatureDefinition::Loft {
+            sections,
+            guides,
+            centerline,
+            ..
+        } => {
+            sections.len() < 2
+                || sections.iter().any(|section| match section {
+                    cadmpeg_ir::features::LoftSection::Profile(profile) => {
+                        !loft_profile_is_resolved(profile)
+                    }
+                    cadmpeg_ir::features::LoftSection::Point(
+                        cadmpeg_ir::features::LoftPointSection::Native(_),
+                    ) => true,
+                    cadmpeg_ir::features::LoftSection::Point(
+                        cadmpeg_ir::features::LoftPointSection::Point(_)
+                        | cadmpeg_ir::features::LoftPointSection::Vertex(_),
+                    ) => false,
+                })
+                || guides.iter().any(|path| !loft_path_is_resolved(path))
+                || centerline
+                    .as_ref()
+                    .is_some_and(|path| !loft_path_is_resolved(path))
         }
         FeatureDefinition::FullRoundFillet { groups } => {
             groups.is_empty()
@@ -974,6 +1033,28 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }) {
                     gaps.path_selections += 1;
                 }
+            }
+            FeatureDefinition::Loft {
+                sections,
+                guides,
+                centerline,
+                ..
+            } => {
+                gaps.profile_selections += sections
+                    .iter()
+                    .filter(|section| {
+                        matches!(
+                            section,
+                            cadmpeg_ir::features::LoftSection::Profile(profile)
+                                if !loft_profile_is_resolved(profile)
+                        )
+                    })
+                    .count();
+                gaps.path_selections += guides
+                    .iter()
+                    .chain(centerline.iter())
+                    .filter(|path| !loft_path_is_resolved(path))
+                    .count();
             }
             FeatureDefinition::Shell {
                 bodies,
@@ -1645,6 +1726,8 @@ fn finish_model_decode<'a>(
             sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
             spatial_sketch_entities: &ir.model.spatial_sketch_entities,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
         &mut ir.model.features,
     )?;
@@ -2183,6 +2266,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             sketch_entities: &ir.model.sketch_entities,
             spatial_sketches: &ir.model.spatial_sketches,
             spatial_sketch_entities: &ir.model.spatial_sketch_entities,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
         &mut ir.model.features,
     )?;
@@ -4373,6 +4458,69 @@ mod tests {
             design_projection_gaps(&ir, &F3dNative::default()).incomplete_features,
             0
         );
+    }
+
+    #[test]
+    fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let resolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
+            "definition": "loft",
+            "sections": [
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [2, 3]}
+                },
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                }
+            ],
+            "guides": [{
+                "kind": "spatial_sketch_curves",
+                "value": {"sketch": "spatial-sketch", "curves": ["curve"]}
+            }],
+            "op": "join"
+        }))
+        .expect("resolved Loft definition");
+        assert!(!feature_definition_is_incomplete(&resolved));
+
+        let unresolved: FeatureDefinition = serde_json::from_value(serde_json::json!({
+            "definition": "loft",
+            "sections": [
+                {"kind": "native", "value": "native:profile"},
+                {
+                    "kind": "spatial_sketch_profiles",
+                    "value": {"sketch": "spatial-sketch", "profiles": [1, 4]}
+                }
+            ],
+            "guides": [{"kind": "native", "value": "native:guide"}],
+            "op": "join"
+        }))
+        .expect("unresolved Loft definition");
+        assert!(feature_definition_is_incomplete(&unresolved));
+
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("feature:loft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: Some("Loft".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: unresolved,
+            native_ref: None,
+        });
+
+        let gaps = design_projection_gaps(&ir, &F3dNative::default());
+        assert_eq!(gaps.incomplete_features, 1);
+        assert_eq!(gaps.profile_selections, 1);
+        assert_eq!(gaps.path_selections, 1);
     }
 
     #[test]

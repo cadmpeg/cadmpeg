@@ -1670,7 +1670,7 @@ pub fn bind_sketch_feature_geometry(
     sketches: &[cadmpeg_ir::sketches::Sketch],
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, PathRef, ProfileRef};
 
     for feature in features.iter_mut() {
         if !matches!(
@@ -1792,21 +1792,84 @@ pub fn bind_sketch_feature_geometry(
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    let profile_dependency = |profile: &ProfileRef| match profile {
+        ProfileRef::Sketch(sketch)
+        | ProfileRef::SketchProfiles { sketch, .. }
+        | ProfileRef::SketchRegions { sketch, .. }
+        | ProfileRef::SketchEntities { sketch, .. }
+        | ProfileRef::SketchSelection { sketch, .. } => sketch_features.get(sketch).cloned(),
+        ProfileRef::SpatialSketchProfiles { sketch, .. }
+        | ProfileRef::SpatialSketchSelection { sketch, .. } => {
+            spatial_sketch_features.get(sketch).cloned()
+        }
+        _ => None,
+    };
+    let path_dependency = |path: &PathRef| match path {
+        PathRef::Sketch(sketch) | PathRef::SketchCurves { sketch, .. } => {
+            sketch_features.get(sketch).cloned()
+        }
+        PathRef::SpatialSketchSelection { sketch, .. }
+        | PathRef::SpatialSketchCurves { sketch, .. } => {
+            spatial_sketch_features.get(sketch).cloned()
+        }
+        _ => None,
+    };
     for feature in features.iter_mut() {
-        let dependency = match &feature.definition {
-            FeatureDefinition::Extrude {
-                profile: ProfileRef::Sketch(sketch),
+        let mut dependencies = Vec::new();
+        match &feature.definition {
+            FeatureDefinition::Extrude { profile, .. } => {
+                dependencies.extend(profile_dependency(profile));
+            }
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+                dependencies.extend(profile_dependency(profile));
+            }
+            FeatureDefinition::Revolve { construction, .. } => {
+                dependencies.extend(construction.profile.as_ref().and_then(profile_dependency));
+                dependencies.extend(
+                    construction
+                        .axis_reference
+                        .as_ref()
+                        .and_then(path_dependency),
+                );
+            }
+            FeatureDefinition::Sweep {
+                section,
+                sections,
+                path,
+                guide_rail,
                 ..
-            } => sketch_features.get(sketch),
-            FeatureDefinition::Extrude {
-                profile: ProfileRef::SpatialSketchProfiles { sketch, .. },
+            } => {
+                dependencies.extend(
+                    std::iter::once(section)
+                        .chain(sections)
+                        .filter_map(|section| section.referenced_profile())
+                        .filter_map(profile_dependency),
+                );
+                dependencies.extend(path.as_ref().and_then(path_dependency));
+                dependencies.extend(
+                    guide_rail
+                        .as_ref()
+                        .and_then(|guide| path_dependency(&guide.path)),
+                );
+            }
+            FeatureDefinition::Loft {
+                sections,
+                guides,
+                centerline,
                 ..
-            } => spatial_sketch_features.get(sketch),
-            _ => None,
-        };
-        if let Some(dependency) = dependency {
-            if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                feature.dependencies.push(dependency.clone());
+            } => {
+                dependencies.extend(sections.iter().filter_map(|section| match section {
+                    LoftSection::Profile(profile) => profile_dependency(profile),
+                    LoftSection::Point(_) => None,
+                }));
+                dependencies.extend(guides.iter().filter_map(path_dependency));
+                dependencies.extend(centerline.as_ref().and_then(path_dependency));
+            }
+            _ => {}
+        }
+        for dependency in dependencies {
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                feature.dependencies.push(dependency);
             }
         }
     }

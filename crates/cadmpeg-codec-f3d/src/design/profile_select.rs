@@ -17,7 +17,8 @@ use crate::ids::{
 use crate::records::{
     DesignConstructionOperandGroup, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, SketchCurveIdentity, SketchRelationOperand,
+    DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand,
+    DesignSketchProfileRegionMember, SketchCurveIdentity, SketchRelationOperand,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -1642,6 +1643,8 @@ pub(crate) struct LoftSketchResolution<'a> {
     pub(crate) sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     pub(crate) spatial_sketches: &'a [cadmpeg_ir::sketches::SpatialSketch],
     pub(crate) spatial_sketch_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+    pub(crate) linear_tolerance: f64,
+    pub(crate) angular_tolerance: f64,
 }
 
 impl<'a> LoftSketchResolution<'a> {
@@ -1819,6 +1822,159 @@ fn resolved_loft_entity_selection_path(
     resolve_entity_selection_path(group, &path_resolution)
 }
 
+fn spatial_profile_member_entity<'a>(
+    stream: &str,
+    owner_reference: u32,
+    member: &DesignSketchProfileRegionMember,
+    spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
+    curve_identities: &[SketchCurveIdentity],
+    spatial_entities: &'a [cadmpeg_ir::sketches::SpatialSketchEntity],
+) -> Option<&'a cadmpeg_ir::sketches::SpatialSketchEntity> {
+    let mut curves = curve_identities.iter().filter(|curve| {
+        native_stream(&curve.id) == Some(stream)
+            && curve.owner_reference == Some(owner_reference)
+            && curve.primary_id == member.curve_primary_id
+    });
+    let curve = curves.next()?;
+    if curves.next().is_some() {
+        return None;
+    }
+    let entity_id =
+        neutral_spatial_sketch_curve_id(&spatial_sketch.id, curve.primary_id, curve.secondary_id);
+    let mut entities = spatial_entities
+        .iter()
+        .filter(|entity| entity.sketch == spatial_sketch.id && entity.id == entity_id);
+    let entity = entities.next()?;
+    entities.next().is_none().then_some(entity)
+}
+
+fn coincident_spatial_profile_geometry(
+    first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+
+    let (
+        SpatialSketchGeometry::Circle {
+            center: first_center,
+            normal: first_normal,
+            radius: first_radius,
+            ..
+        },
+        SpatialSketchGeometry::Circle {
+            center: second_center,
+            normal: second_normal,
+            radius: second_radius,
+            ..
+        },
+    ) = (first, second)
+    else {
+        return false;
+    };
+    if !linear_tolerance.is_finite()
+        || linear_tolerance < 0.0
+        || !angular_tolerance.is_finite()
+        || angular_tolerance < 0.0
+    {
+        return false;
+    }
+    let center_delta = Vector3::new(
+        first_center.x - second_center.x,
+        first_center.y - second_center.y,
+        first_center.z - second_center.z,
+    );
+    let Some((first_normal, second_normal)) = first_normal.unit().zip(second_normal.unit()) else {
+        return false;
+    };
+    let normal_angle = first_normal.dot(second_normal).abs().clamp(0.0, 1.0).acos();
+    center_delta.x * center_delta.x
+        + center_delta.y * center_delta.y
+        + center_delta.z * center_delta.z
+        <= linear_tolerance * linear_tolerance
+        && (first_radius.0 - second_radius.0).abs() <= linear_tolerance
+        && normal_angle <= angular_tolerance
+}
+
+fn resolved_spatial_sketch_profile_regions(
+    stream: &str,
+    profile: &DesignSketchProfileOperand,
+    spatial_sketch: &cadmpeg_ir::sketches::SpatialSketch,
+    resolution: &LoftSketchResolution<'_>,
+) -> Option<Vec<u32>> {
+    let selection = profile.region_selection.as_ref()?;
+    let owner_reference = u32::try_from(profile.entity_suffix).ok()?;
+    let mut resolved = Vec::with_capacity(selection.regions.len());
+    for region in &selection.regions {
+        let first = spatial_profile_member_entity(
+            stream,
+            owner_reference,
+            region.members.first()?,
+            spatial_sketch,
+            resolution.curve_identities,
+            resolution.spatial_sketch_entities,
+        )?;
+        let mut matching_profiles =
+            spatial_sketch
+                .profiles
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| {
+                    candidate
+                        .boundary
+                        .iter()
+                        .any(|use_| use_.entity == first.id)
+                });
+        let (profile_index, selected_profile) = matching_profiles.next()?;
+        if matching_profiles.next().is_some() {
+            return None;
+        }
+        for member in &region.members[1..] {
+            let entity = spatial_profile_member_entity(
+                stream,
+                owner_reference,
+                member,
+                spatial_sketch,
+                resolution.curve_identities,
+                resolution.spatial_sketch_entities,
+            )?;
+            if selected_profile
+                .boundary
+                .iter()
+                .any(|use_| use_.entity == entity.id)
+            {
+                continue;
+            }
+            let coincident = selected_profile.boundary.iter().any(|use_| {
+                resolution
+                    .spatial_sketch_entities
+                    .iter()
+                    .find(|candidate| {
+                        candidate.sketch == spatial_sketch.id && candidate.id == use_.entity
+                    })
+                    .is_some_and(|candidate| {
+                        coincident_spatial_profile_geometry(
+                            &candidate.geometry,
+                            &entity.geometry,
+                            resolution.linear_tolerance,
+                            resolution.angular_tolerance,
+                        )
+                    })
+            });
+            if !coincident {
+                return None;
+            }
+        }
+        let profile_index = u32::try_from(profile_index).ok()?;
+        if resolved.contains(&profile_index) {
+            return None;
+        }
+        resolved.push(profile_index);
+    }
+    (!resolved.is_empty()).then_some(resolved)
+}
+
 pub(crate) fn bind_loft_sketch_selections(
     scan: &ContainerScan,
     groups: &[DesignConstructionOperandGroup],
@@ -1865,19 +2021,40 @@ pub(crate) fn bind_loft_sketch_selections(
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
                     && placement.entity_id == profile.entity_id
-                    && !resolution
-                        .spatial_sketches
-                        .iter()
-                        .any(|sketch| sketch.id == neutral_spatial_sketch_id(placement))
             })
             .collect::<Vec<_>>();
         let [placement] = matches.as_slice() else {
             continue;
         };
-        resolved_profiles.insert(
-            group.id.clone(),
-            ProfileRef::Sketch(neutral_sketch_id(placement)),
-        );
+        let spatial_sketch_id = neutral_spatial_sketch_id(placement);
+        let resolved = if let Some(spatial_sketch) = resolution
+            .spatial_sketches
+            .iter()
+            .find(|sketch| sketch.id == spatial_sketch_id)
+        {
+            resolved_spatial_sketch_profile_regions(stream, &profile, spatial_sketch, resolution)
+                .map_or_else(
+                    || ProfileRef::SpatialSketchSelection {
+                        sketch: spatial_sketch_id.clone(),
+                        selections: vec![group.id.clone()],
+                    },
+                    |profiles| ProfileRef::SpatialSketchProfiles {
+                        sketch: spatial_sketch_id.clone(),
+                        profiles,
+                    },
+                )
+        } else {
+            let sketch = neutral_sketch_id(placement);
+            if !resolution
+                .sketches
+                .iter()
+                .any(|candidate| candidate.id == sketch)
+            {
+                continue;
+            }
+            ProfileRef::Sketch(sketch)
+        };
+        resolved_profiles.insert(group.id.clone(), resolved);
     }
     let mut resolved_entity_paths = HashMap::new();
     for group in groups.iter().filter(|group| {
@@ -1952,7 +2129,7 @@ pub(crate) fn bind_loft_sketch_selections(
             },
         );
     }
-    for feature in features {
+    for feature in features.iter_mut() {
         let FeatureDefinition::Loft {
             sections,
             guides,
@@ -1962,7 +2139,7 @@ pub(crate) fn bind_loft_sketch_selections(
         else {
             continue;
         };
-        for section in sections {
+        for section in sections.iter_mut() {
             let LoftSection::Profile(ProfileRef::Native(native)) = section else {
                 continue;
             };
@@ -1970,7 +2147,7 @@ pub(crate) fn bind_loft_sketch_selections(
                 *section = LoftSection::Profile(profile.clone());
             }
         }
-        for guide in guides {
+        for guide in guides.iter_mut() {
             let PathRef::Native(native) = guide else {
                 continue;
             };
@@ -1991,7 +2168,8 @@ pub(crate) fn bind_loft_sketch_selections(
 mod tests {
     use super::{
         resolve_entity_selection_path, resolved_loft_entity_selection_path,
-        EntitySelectionPathResolution, LoftSketchResolution,
+        resolved_spatial_sketch_profile_regions, EntitySelectionPathResolution,
+        LoftSketchResolution,
     };
     use crate::ids::{
         neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
@@ -1999,13 +2177,15 @@ mod tests {
     };
     use crate::records::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignEntitySelectionOperand, DesignSketchPlacement, SketchCurveIdentity,
+        DesignEntitySelectionOperand, DesignSketchPlacement, DesignSketchProfileOperand,
+        DesignSketchProfileRegion, DesignSketchProfileRegionMember,
+        DesignSketchProfileRegionSelection, SketchCurveIdentity,
     };
-    use cadmpeg_ir::features::PathRef;
-    use cadmpeg_ir::math::{Point2, Point3};
+    use cadmpeg_ir::features::{Length, PathRef};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchGeometry, SketchPlacement, SpatialSketch, SpatialSketchEntity,
-        SpatialSketchGeometry,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchProfile,
     };
 
     fn group() -> DesignConstructionOperandGroup {
@@ -2131,7 +2311,141 @@ mod tests {
             sketch_entities,
             spatial_sketches: &[],
             spatial_sketch_entities: &[],
+            linear_tolerance: 1.0e-7,
+            angular_tolerance: 1.0e-9,
         }
+    }
+
+    fn profile_region_member(curve_primary_id: u64) -> DesignSketchProfileRegionMember {
+        DesignSketchProfileRegionMember {
+            kind: 3,
+            kind_offset: 0,
+            curve_primary_id,
+            curve_primary_id_offset: 0,
+            incidence_words: [0, 0, 0, 0, 1, 1, 0, 0],
+            incidence_words_offset: 0,
+        }
+    }
+
+    #[test]
+    fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
+        let placement = placement();
+        let sketch_id = neutral_spatial_sketch_id(&placement);
+        let curves = [curve(30, 100, 0), curve(31, 200, 0), curve(32, 201, 0)];
+        let entity_id = |primary| neutral_spatial_sketch_curve_id(&sketch_id, primary, 0);
+        let circle = |primary, radius, normal| SpatialSketchEntity {
+            id: entity_id(primary),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal,
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: Length(radius),
+            },
+        };
+        let spatial_entities = [
+            circle(100, 2.0, Vector3::new(0.0, 0.0, 1.0)),
+            circle(200, 1.0, Vector3::new(0.0, 0.0, 1.0)),
+            circle(201, 1.0, Vector3::new(0.0, 0.0, -1.0)),
+        ];
+        let profile = |primary| SpatialSketchProfile {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: vec![SpatialSketchEntityUse {
+                entity: entity_id(primary),
+                reversed: false,
+            }],
+        };
+        let spatial_sketches = [SpatialSketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            profiles: vec![profile(100), profile(200), profile(201)],
+            native_ref: None,
+        }];
+        let profile_operand = DesignSketchProfileOperand {
+            scope_reference_ordinal: 0,
+            record_index: 10,
+            byte_offset: 0,
+            class_tag: "300".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            entity_id: placement.entity_id.clone(),
+            entity_suffix: placement.entity_suffix,
+            entity_reference_offset: 0,
+            region_selection: Some(DesignSketchProfileRegionSelection {
+                record_index: 13,
+                byte_offset: 0,
+                class_tag: "303".into(),
+                region_count_offset: 0,
+                regions: vec![
+                    DesignSketchProfileRegion {
+                        member_count_offset: 0,
+                        members: vec![profile_region_member(100)],
+                    },
+                    DesignSketchProfileRegion {
+                        member_count_offset: 0,
+                        members: vec![
+                            profile_region_member(200),
+                            profile_region_member(201),
+                            profile_region_member(200),
+                        ],
+                    },
+                ],
+                companion_class_tag: "304".into(),
+                companion_byte_offset: 0,
+            }),
+            paired_class_tag: "301".into(),
+            paired_byte_offset: 0,
+        };
+        let placements = [placement];
+        let resolution = LoftSketchResolution {
+            entities: &[],
+            entity_selection_operands: &[],
+            placements: &placements,
+            curve_identities: &curves,
+            sketches: &[],
+            sketch_entities: &[],
+            spatial_sketches: &spatial_sketches,
+            spatial_sketch_entities: &spatial_entities,
+            linear_tolerance: 1.0e-7,
+            angular_tolerance: 1.0e-9,
+        };
+
+        assert_eq!(
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &profile_operand,
+                &spatial_sketches[0],
+                &resolution,
+            ),
+            Some(vec![0, 1])
+        );
+
+        let mut noncoincident_entities = spatial_entities.to_vec();
+        let SpatialSketchGeometry::Circle { center, .. } = &mut noncoincident_entities[2].geometry
+        else {
+            unreachable!()
+        };
+        center.x = 0.1;
+        let noncoincident_resolution = LoftSketchResolution {
+            spatial_sketch_entities: &noncoincident_entities,
+            ..resolution
+        };
+        assert_eq!(
+            resolved_spatial_sketch_profile_regions(
+                "stream",
+                &profile_operand,
+                &spatial_sketches[0],
+                &noncoincident_resolution,
+            ),
+            None
+        );
     }
 
     #[test]
