@@ -34,7 +34,7 @@ use super::{
     extended_declared_inline_line_endpoints, extended_direct_object_line_endpoint_ids,
     extended_geometry_locus_construction_line_endpoint_indices,
     extended_identity_inline_line_endpoints, extended_linked_inline_line_endpoints,
-    extended_profile_roster_construction_line_endpoint_indices,
+    extended_profile_roster_construction_line_endpoint_indices, extended_selector44_indexed_line,
     extended_shifted_construction_line_endpoint_indices,
     extended_state_one_84_profile_line_uses_point_roster,
     extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
@@ -4557,6 +4557,60 @@ fn extended_terminal_profile_record_is_a_line() {
 
     payload[142..144].fill(0);
     assert!(!extended_terminal_profile_line(&payload, 0));
+}
+
+#[test]
+fn extended_selector44_indexed_line_requires_a_known_body_ending() {
+    let base = |size, locus| {
+        let mut payload = vec![0; size];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(locus);
+        payload[27..31].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[56..58].copy_from_slice(&0u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&1u16.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload
+    };
+
+    let mut continuation = base(
+        84 + LEGACY_EXTENDED_SKETCH_MARKER.len(),
+        &[0x04, 0x00, 0x02, 0x00],
+    );
+    continuation[39..48].copy_from_slice(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    continuation[72..84].copy_from_slice(&[
+        0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+    ]);
+    continuation[84..89].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    assert!(extended_selector44_indexed_line(&continuation, 0));
+    assert_eq!(
+        coordinate_roster_endpoint_offset(&continuation, 0),
+        Some(56)
+    );
+
+    let mut counted = base(144, &[0x05, 0x00, 0x01, 0x00]);
+    counted[128..132].copy_from_slice(&2u32.to_le_bytes());
+    counted[138..142].fill(0xff);
+    assert!(extended_selector44_indexed_line(&counted, 0));
+    assert_eq!(coordinate_roster_endpoint_offset(&counted, 0), Some(56));
+    counted[128..132].fill(0);
+    assert!(!extended_selector44_indexed_line(&counted, 0));
+
+    let mut control = base(170, &[0x05, 0x00, 0x01, 0x00]);
+    control[142..144].copy_from_slice(&[0x08, 0x80]);
+    control[154..170].copy_from_slice(&[
+        0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+        0x00,
+    ]);
+    assert!(extended_selector44_indexed_line(&control, 0));
+    assert_eq!(coordinate_roster_endpoint_offset(&control, 0), Some(56));
+    control[37] = 0x04;
+    assert!(!extended_selector44_indexed_line(&control, 0));
 }
 
 #[test]

@@ -2540,6 +2540,33 @@ fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
 }
 
 #[test]
+fn selector44_terminal_indexed_curve_is_a_line() {
+    let mut curve = vec![0; 170];
+    curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    curve[5..13].fill(0xff);
+    curve[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    curve[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    curve[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00]);
+    curve[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    curve[56..58].copy_from_slice(&0u16.to_le_bytes());
+    curve[58..60].copy_from_slice(&1u16.to_le_bytes());
+    curve[60..64].copy_from_slice(&1u32.to_le_bytes());
+    curve[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    curve[142..144].copy_from_slice(&[0x08, 0x80]);
+    curve[154..170].copy_from_slice(&[
+        0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00,
+        0x00,
+    ]);
+
+    assert_eq!(
+        legacy_extended_profile_curve_kind(&curve, 0),
+        Some(SketchInputKind::LineOrCircle)
+    );
+    curve[37] = 0x04;
+    assert_eq!(legacy_extended_profile_curve_kind(&curve, 0), None);
+}
+
+#[test]
 fn geometry_locus_role_excludes_display_handles() {
     let mut payload = vec![0; 27];
     payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);

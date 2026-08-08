@@ -117,6 +117,73 @@ pub(super) fn extended_direct_object_line_endpoint_ids(
         .then_some(endpoints)
 }
 
+pub(super) fn extended_selector44_indexed_line(payload: &[u8], offset: usize) -> bool {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(offset + 17..offset + 21) != Some(&0u32.to_le_bytes())
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some([0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+        )
+        || payload.get(offset + 27..offset + 31) != Some(&[0x01, 0x00, 0x01, 0x00])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x44, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+    {
+        return false;
+    }
+    let endpoint = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 2)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+    };
+    let endpoints = [endpoint(56), endpoint(58)];
+    if !matches!(
+        endpoints,
+        [Some(first), Some(second)]
+            if first != second && first != u16::MAX && second != u16::MAX
+    ) {
+        return false;
+    }
+    let non_null_u32 = |relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|value| value != 0 && value != u32::MAX)
+    };
+    let counted_terminal = payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 72..offset + 128) == Some(&[0; 56])
+        && non_null_u32(128)
+        && payload.get(offset + 132..offset + 138) == Some(&[0; 6])
+        && payload.get(offset + 138..offset + 142) == Some(&[0xff; 4])
+        && payload.get(offset + 142..offset + 144) == Some(&[0; 2]);
+    let control_terminal = payload.get(offset + 39..offset + 48) == Some(&[0; 9])
+        && payload.get(offset + 72..offset + 142) == Some(&[0; 70])
+        && payload.get(offset + 142..offset + 144) == Some(&[0x08, 0x80])
+        && payload.get(offset + 144..offset + 154) == Some(&[0; 10])
+        && payload.get(offset + 154..offset + 170)
+            == Some(&[
+                0x01, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x02, 0x00,
+                0x00, 0x00,
+            ]);
+    let continuation = payload.get(offset + 39..offset + 48)
+        == Some(&[0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        && payload.get(offset + 72..offset + 84)
+            == Some(&[
+                0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00,
+            ])
+        && offset
+            .checked_add(84)
+            .is_some_and(|next| sketch_marker_prefix_at(payload, next));
+    counted_terminal || control_terminal || continuation
+}
+
 struct LinkedProfileCurveRecord {
     inline: [f64; 2],
     references: [u32; 2],
@@ -345,7 +412,8 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             || extended_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_compact_84_profile_line_uses_point_roster(payload, offset)
             || legacy_state_one_84_profile_line_uses_point_roster(payload, offset)
-            || legacy_state_one_profile_line_uses_point_roster(payload, offset))
+            || legacy_state_one_profile_line_uses_point_roster(payload, offset)
+            || extended_selector44_indexed_line(payload, offset))
     {
         let endpoints = coordinate_roster_curve_endpoint_markers(payload, curve, markers);
         if endpoints.len() == 2 {
@@ -3352,6 +3420,7 @@ pub(super) fn coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -
         {
             Some(64)
         } else if extended_indexed_arc_uses_point_roster(payload, offset)
+            || extended_selector44_indexed_line(payload, offset)
             || extended_state_one_84_profile_line_uses_point_roster(payload, offset)
             || extended_marker84_line_uses_point_roster(payload, offset)
             || extended_compact_84_profile_line_uses_point_roster(payload, offset)

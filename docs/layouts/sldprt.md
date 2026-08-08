@@ -517,6 +517,63 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_selector44_indexed_line_continuation`
+
+Spec §2 · layout: byte offsets · size: 84 B
+
+The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind-`0` selector-`44` indexed line |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind-`0` selector-`44` indexed line |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` or geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector bytes `00 00 80 bf 00 00 44 00` at marker +31 |
+| 39 | 9 | `continuation_header` | `bytes[9]` | little | spec | A continuation ending instead stores `00 00 01 00 00 00 00 00 00` at marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct zero-based indices in the feature-owned coordinate-bearing point roster |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct zero-based indices in the feature-owned coordinate-bearing point roster |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +60 stores u32 `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` |
+| 72 | 12 | `continuation_body` | `bytes[12]` | little | spec | `00 00 01 00 02 00 00 00 02 00 00 00` at marker +72 through +83 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this indexed-line layout.
+- `21..23` (2 B): The locus begins at +23; bytes +21 through +22 are reserved.
+
+## `extended_selector44_indexed_line_control_terminal`
+
+Spec §2 · layout: byte offsets · size: 170 B
+
+The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix kind-`0` selector-`44` indexed line |
+| 17 | 4 | `native_kind` | `u32` | little | spec | kind-`0` selector-`44` indexed line |
+| 23 | 4 | `locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` or geometry locus `05 00 01 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector bytes `00 00 80 bf 00 00 44 00` at marker +31 |
+| 39 | 9 | `terminal_prefix` | `bytes[9]` | little | spec | Both terminal endings store zero bytes at marker +39 through +47 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | distinct zero-based indices in the feature-owned coordinate-bearing point roster |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | distinct zero-based indices in the feature-owned coordinate-bearing point roster |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | Marker +60 stores u32 `1` |
+| 64 | 8 | `signed_selector` | `f64` | little | spec | marker +64 stores f64 `-1` |
+| 72 | 70 | `terminal_padding` | `bytes[70]` | little | spec | A control terminal ending stores zero bytes at marker +72 through +141 |
+| 142 | 2 | `terminal_tag` | `bytes[2]` | little | spec | `08 80` at marker +142 through +143 |
+| 144 | 10 | `terminal_suffix` | `bytes[10]` | little | spec | zero bytes at marker +144 through +153 |
+| 154 | 16 | `control_sequence` | `bytes[16]` | little | spec | the control sequence `01 00 01 00 02 00 00 00 03 00 00 00 02 00 00 00` at marker +154 through +169 |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this indexed-line layout.
+- `21..23` (2 B): The locus begins at +23; bytes +21 through +22 are reserved.
+
 ## `extended_terminal_164_wide_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 164 B

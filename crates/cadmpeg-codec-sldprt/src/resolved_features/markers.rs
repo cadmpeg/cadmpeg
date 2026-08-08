@@ -6,11 +6,11 @@ use super::endpoints::{
     compact_legacy_90_geometry_line_roster_indices, current_compact_104_profile_line,
     current_direct_92_profile_line_endpoint_indices,
     extended_geometry_locus_construction_line_endpoint_indices,
-    extended_identity_inline_line_record, extended_tagged_indexed_curve_endpoint_indices,
-    extended_terminal_profile_line, extended_wide_horizontal_relation_endpoint_indices,
-    legacy_compact_profile_line, legacy_referenced_wide_arc_endpoint_indices,
-    marker_is_selected_construction_line, marker_profile_curve_role,
-    wide_indexed_curve_endpoint_indices,
+    extended_identity_inline_line_record, extended_selector44_indexed_line,
+    extended_tagged_indexed_curve_endpoint_indices, extended_terminal_profile_line,
+    extended_wide_horizontal_relation_endpoint_indices, legacy_compact_profile_line,
+    legacy_referenced_wide_arc_endpoint_indices, marker_is_selected_construction_line,
+    marker_profile_curve_role, wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
 use super::relation_records::relation_signature;
@@ -2387,6 +2387,9 @@ pub(super) fn legacy_extended_profile_curve_kind(
         || marker_profile_curve_role(payload, offset) != Some(1)
     {
         return None;
+    }
+    if extended_selector44_indexed_line(payload, offset) {
+        return Some(SketchInputKind::LineOrCircle);
     }
     let next = offset.checked_add(84)?;
     sketch_marker_prefix_at(payload, next).then(|| {

@@ -1642,6 +1642,247 @@ size = 9
 note = "The state value begins at +48; bytes +39 through +47 are reserved."
 
 [[record]]
+name = "extended_selector44_indexed_line_continuation"
+kind = "byte"
+section = "2"
+anchor = "An extended-prefix kind-`0` selector-`44` indexed line"
+size = 84
+endianness = "little"
+note = "The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix kind-`0` selector-`44` indexed line"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind-`0` selector-`44` indexed line"
+
+[[record.field]]
+name = "locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00` or geometry locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector bytes `00 00 80 bf 00 00 44 00` at marker +31"
+
+[[record.field]]
+name = "continuation_header"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "A continuation ending instead stores `00 00 01 00 00 00 00 00 00` at marker +39 through +47"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "distinct zero-based indices in the feature-owned coordinate-bearing point roster"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "distinct zero-based indices in the feature-owned coordinate-bearing point roster"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "Marker +60 stores u32 `1`"
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "marker +64 stores f64 `-1`"
+
+[[record.field]]
+name = "continuation_body"
+offset = 72
+type = "bytes[12]"
+source = "spec"
+anchor = "`00 00 01 00 02 00 00 00 02 00 00 00` at marker +72 through +83"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this indexed-line layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record]]
+name = "extended_selector44_indexed_line_control_terminal"
+kind = "byte"
+section = "2"
+anchor = "A control terminal ending stores zero bytes at marker +72 through +141"
+size = 170
+endianness = "little"
+note = "The endpoint fields are zero-based indices in the feature-owned coordinate-bearing point roster."
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "An extended-prefix kind-`0` selector-`44` indexed line"
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "kind-`0` selector-`44` indexed line"
+
+[[record.field]]
+name = "locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00` or geometry locus `05 00 01 00`"
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "selector bytes `00 00 80 bf 00 00 44 00` at marker +31"
+
+[[record.field]]
+name = "terminal_prefix"
+offset = 39
+type = "bytes[9]"
+source = "spec"
+anchor = "Both terminal endings store zero bytes at marker +39 through +47"
+
+[[record.field]]
+name = "state_value"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+
+[[record.field]]
+name = "endpoint_first"
+offset = 56
+type = "u16"
+source = "spec"
+anchor = "distinct zero-based indices in the feature-owned coordinate-bearing point roster"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 58
+type = "u16"
+source = "spec"
+anchor = "distinct zero-based indices in the feature-owned coordinate-bearing point roster"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "Marker +60 stores u32 `1`"
+
+[[record.field]]
+name = "signed_selector"
+offset = 64
+type = "f64"
+source = "spec"
+anchor = "marker +64 stores f64 `-1`"
+
+[[record.field]]
+name = "terminal_padding"
+offset = 72
+type = "bytes[70]"
+source = "spec"
+anchor = "A control terminal ending stores zero bytes at marker +72 through +141"
+
+[[record.field]]
+name = "terminal_tag"
+offset = 142
+type = "bytes[2]"
+source = "spec"
+anchor = "`08 80` at marker +142 through +143"
+
+[[record.field]]
+name = "terminal_suffix"
+offset = 144
+type = "bytes[10]"
+source = "spec"
+anchor = "zero bytes at marker +144 through +153"
+
+[[record.field]]
+name = "control_sequence"
+offset = 154
+type = "bytes[16]"
+source = "spec"
+anchor = "the control sequence `01 00 01 00 02 00 00 00 03 00 00 00 02 00 00 00` at marker +154 through +169"
+
+[[record.gap]]
+offset = 5
+size = 12
+note = "The marker header does not define bytes +5 through +16 for this indexed-line layout."
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The locus begins at +23; bytes +21 through +22 are reserved."
+
+[[record]]
 name = "extended_terminal_164_wide_profile_curve"
 kind = "byte"
 section = "2"
