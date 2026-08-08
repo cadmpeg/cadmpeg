@@ -544,18 +544,10 @@ identifies an occurrence placement.
 **Question.** How many measure items may one geometric-validation
 representation carry?
 
-**Known.** `step.md` §8 "Geometric validation properties read area, volume,
-and centroid values through inherited `REPRESENTATION`,
-`MEASURE_REPRESENTATION_ITEM`, and `MEASURE_WITH_UNIT` partials" states the
-partial chain and not the item count. The decoder reads item 0 of the
-representation only
-(`crates/cadmpeg-codec-step/src/reader/validation.rs:45-61`).
-
-**Need.** A representation that lists an area item and a volume item reports
-the first and drops the second with no diagnostic. The unsupported-value
-warning at `validation.rs:126-129` cannot fire for the dropped item, because
-that branch needs the first item to fail. We must know whether a validation
-representation may carry more than one property.
+**Resolved.** A validation representation transfers every referenced item.
+Area, volume, and centroid items are evaluated independently. An unsupported
+item reports a warning naming that item and does not suppress other items in
+the same representation. Repeated item references are evaluated once.
 
 ## 11. Annotation, presentation, and tessellation
 

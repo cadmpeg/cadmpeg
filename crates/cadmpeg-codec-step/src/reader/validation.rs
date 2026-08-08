@@ -48,15 +48,14 @@ pub(super) fn decode(
             let representation = record
                 .partial("REPRESENTATION")
                 .or_else(|| record.partial("SHAPE_REPRESENTATION"))?;
-            Some((
-                id,
-                representation
-                    .parameters
-                    .get(1)
-                    .and_then(ValueExt::list)?
-                    .first()?
-                    .reference()?,
-            ))
+            let items = representation
+                .parameters
+                .get(1)
+                .and_then(ValueExt::list)?
+                .iter()
+                .filter_map(ValueExt::reference)
+                .collect::<BTreeSet<_>>();
+            (!items.is_empty()).then_some((id, items))
         })
         .collect::<BTreeMap<_, _>>();
     let properties = exchange
@@ -117,54 +116,60 @@ pub(super) fn decode(
         else {
             continue;
         };
-        let Some(&item_id) = representations.get(&representation_id) else {
+        let Some(item_ids) = representations.get(&representation_id) else {
             continue;
         };
-        let Some(item) = exchange.records.get(&item_id) else {
-            continue;
-        };
-        let scale = geometry
-            .length_scales
-            .get(&item_id)
-            .copied()
-            .or_else(|| geometry.length_scales.get(&representation_id).copied())
-            .unwrap_or(geometry.length_scale);
-        let expected = expected_value(item, exchange, scale, &mut losses);
-        let Some(expected) = expected else {
-            warnings.push(format!(
-                "geometric validation property #{property_id} has an unsupported value"
-            ));
-            continue;
-        };
-        if matches!(expected, Expected::Centroid(_)) {
-            validation_points.insert(item_id);
-        }
         validation_representations.insert(representation_id);
-        typed.extend([property_id, relation_id, representation_id, item_id]);
-        if let Some(unit) = measure_unit(item) {
-            collect_unit_records(unit, exchange, &mut typed);
-        }
-        let (kind, expected_text, actual) = match expected {
-            Expected::Area(value) => ("surface area", value.to_string(), computed.map(|p| p.area)),
-            Expected::Volume(value) => ("volume", value.to_string(), computed.map(|p| p.volume)),
-            Expected::Centroid(value) => (
-                "centroid",
-                format!("({},{},{})", value.x, value.y, value.z),
-                computed.map(|p| p.centroid_distance(value)),
-            ),
-        };
-        if let Some(actual) = actual {
-            let actual_text = match expected {
-                Expected::Centroid(_) => format!("distance {actual}"),
-                _ => actual.to_string(),
+        for &item_id in item_ids {
+            let Some(item) = exchange.records.get(&item_id) else {
+                continue;
             };
-            notes.push(format!(
-                "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
-            ));
-        } else {
-            notes.push(format!(
-                "geometric validation {kind} {description}: expected {expected_text}"
-            ));
+            let scale = geometry
+                .length_scales
+                .get(&item_id)
+                .copied()
+                .or_else(|| geometry.length_scales.get(&representation_id).copied())
+                .unwrap_or(geometry.length_scale);
+            let expected = expected_value(item, exchange, scale, &mut losses);
+            let Some(expected) = expected else {
+                warnings.push(format!(
+                    "geometric validation property #{property_id} has unsupported item #{item_id}"
+                ));
+                continue;
+            };
+            if matches!(expected, Expected::Centroid(_)) {
+                validation_points.insert(item_id);
+            }
+            typed.extend([property_id, relation_id, representation_id, item_id]);
+            if let Some(unit) = measure_unit(item) {
+                collect_unit_records(unit, exchange, &mut typed);
+            }
+            let (kind, expected_text, actual) = match expected {
+                Expected::Area(value) => {
+                    ("surface area", value.to_string(), computed.map(|p| p.area))
+                }
+                Expected::Volume(value) => {
+                    ("volume", value.to_string(), computed.map(|p| p.volume))
+                }
+                Expected::Centroid(value) => (
+                    "centroid",
+                    format!("({},{},{})", value.x, value.y, value.z),
+                    computed.map(|p| p.centroid_distance(value)),
+                ),
+            };
+            if let Some(actual) = actual {
+                let actual_text = match expected {
+                    Expected::Centroid(_) => format!("distance {actual}"),
+                    _ => actual.to_string(),
+                };
+                notes.push(format!(
+                    "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
+                ));
+            } else {
+                notes.push(format!(
+                    "geometric validation {kind} {description}: expected {expected_text}"
+                ));
+            }
         }
     }
     let mut referenced_validation_points = BTreeSet::new();
