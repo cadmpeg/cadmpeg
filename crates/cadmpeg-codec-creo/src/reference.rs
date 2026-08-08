@@ -258,6 +258,9 @@ fn coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, u
 }
 
 fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    // Arc rows use the first-coordinate lane for every stored coordinate.
+    // Its overlapping prefixes have different mappings in the model-reference
+    // lane, so that lane is only a fallback for tokens with no arc form.
     if data.get(offset) == Some(&0x18)
         && (scalar::decode_tabulated_cylinder_first_coordinate(data, offset + 1, cache).is_some()
             || scalar::decode_model_reference_coordinate(data, offset + 1, cache).is_some())
@@ -1461,6 +1464,38 @@ mod tests {
         assert_eq!(circle.start[0], -30.0);
         assert_eq!(circle.end[0], -30.0);
         assert!((circle.axis[0].abs() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn arc_z_rows_prefer_the_tabulated_first_coordinate_lane() {
+        let center_x = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        let endpoint_x = [0xed, 0xc0, 0x08, 0, 0, 0, 0, 0, 0];
+        let zero = [0x0f];
+        let one = [0xe4];
+        let mut body = Vec::new();
+        body.extend_from_slice(&center_x);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&one);
+        body.extend_from_slice(&endpoint_x);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&zero);
+        body.extend_from_slice(&center_x);
+        body.extend_from_slice(&one);
+        body.extend_from_slice(&zero);
+
+        let circle = arc_z_fields(&body, &ScalarCache::from_section(&body), 10)
+            .expect("tabulated-cylinder first-coordinate lane circle");
+        assert_eq!(circle.center, [-2.0, 0.0, 0.0]);
+        assert_eq!(circle.start, [-3.0, 0.0, 0.0]);
+        assert_eq!(circle.end, [-2.0, 1.0, 0.0]);
+        assert_eq!(circle.axis, [0.0, 0.0, -1.0]);
+
+        let negative_collision = [0x2d, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(
+            arc_z_coordinate(&negative_collision, 0, &ScalarCache::default()),
+            Some((2.0, 8))
+        );
     }
 
     #[test]

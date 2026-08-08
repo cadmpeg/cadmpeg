@@ -3769,6 +3769,10 @@ may satisfy the endpoint distance and stored-length invariant.
 An `ent_list(arc_z)` positional row uses the same repeated-identifier and
 `e2` body framing. Its explicit scalar form stores `center.xyz`, positive
 `radius`, `end1.xyz`, and `end2.xyz` consecutively after the fixed row prefix.
+Its coordinate suffix uses the tabulated-cylinder first-coordinate scalar
+lane. That lane has precedence when a prefix has a different model-reference
+mapping; a token without a first-coordinate form falls back to the
+model-reference lane.
 Both endpoints lie at the stored radius. For non-antipodal endpoints, their
 ordered radial vectors define the circle-plane normal by their cross product.
 A compressed diameter form omits the explicit center; its endpoint distance is

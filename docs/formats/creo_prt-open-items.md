@@ -120,14 +120,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to solve the section variable.
 
-### SE-16. `MdlRefInfo` arc row scalar lane
-
-**Question.** Which scalar lane do the coordinates of an `ent_list(arc_z)` row use?
-
-**Known.** `creo_prt.md` §2.3 "Lane-specific seven-byte forms include" defines the lane-specific prefix tables. `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" gives the lane-specific priority rule. The tabulated-cylinder first-coordinate lane and the model-reference lane assign opposite signs to prefixes `46` and `2d`, and different magnitudes to prefixes `af`, `b0`, and `b1`.
-
-**Need.** We must know the lane to give the arc its correct sign. `reference.rs` `arc_z_coordinate` tries the tabulated-cylinder first-coordinate lane before the model-reference lane, where the sibling function `coordinate` uses the model-reference lane alone for line and conic rows of the same section. A sign inversion shared by every point of one arc keeps the circle invariants true, so no gate rejects it.
-
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
