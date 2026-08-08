@@ -252,9 +252,16 @@ rules as anchor values.
 
 REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
 Entity and value occurrence integers are unique across both prefixes, and
-neither may collide with a local DATA entity instance. A URI target outside the
-exchange structure is an external dependency. External names do not enter the
-local DATA instance graph.
+neither may collide with a local DATA entity instance. A URI without a
+fragment resolves to `$`. A fragment-only URI whose fragment is not a UUID
+resolves to the same-named local ANCHOR; a missing local anchor resolves to
+`$`. A fragment-only UUID requires a resource locator or registry. A URI with
+a resource path is resolved against that resource; its fragment must identify
+an ANCHOR that supplies an entity for a `#id` occurrence or a value for an
+`@id` occurrence. If an ANCHOR forwards another URI, resolution repeats, and a
+failed or cyclic resolution produces `$`. A resource path or UUID that cannot
+be obtained remains an external dependency until the caller supplies resource
+access. External occurrence names do not create local DATA entity identities.
 Each SIGNATURE section follows the exchange terminator. Its content is a CMS
 signature with external content, encoded as RFC 4648 Base64. The Base64
 content begins after `SIGNATURE;` and ends at its next `ENDSEC;`. The signature
