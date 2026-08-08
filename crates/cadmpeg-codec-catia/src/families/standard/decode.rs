@@ -3687,7 +3687,10 @@ fn attach_standard_topology(
         }
     }
     if let Some(options) = &mut constrained_endpoint_options {
-        bind_ordered_standard_curve_branches(&supports, options);
+        // A same-incidence row relation is not an endpoint identity. Keep its
+        // complete candidate domain for the mesh solver; allocation-rank
+        // reduction is valid only after the solver has fixed the surrounding
+        // face frontier and the remaining branch relation can be checked.
         diagnostics.empty_endpoint_domains =
             options.iter().filter(|domain| domain.is_empty()).count();
         diagnostics.singleton_endpoint_domains =
