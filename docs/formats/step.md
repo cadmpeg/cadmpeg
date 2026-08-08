@@ -392,6 +392,14 @@ connected-face subset resolves its own member list. Its parent reference must
 resolve to the matching parent set type for the subset record to be typed;
 parent lineage remains in the source records.
 
+Each distinct topology root is an ownership boundary. When one distinct root
+exists, source edge and vertex identities remain shared within that root. When
+multiple distinct roots exist, every root scopes its shell, edge, and vertex
+identities by root instance; aliases with the same root key reuse the committed
+body. A root with multiple shell owners also scopes carriers by shell. This
+prevents independent roots from claiming one global CADIR identity and does
+not depend on source record order.
+
 Sheet and wire representations commit each independently resolvable shell or
 connected set. A failed member produces a decode loss. Solid roots, including
 every shell in `BREP_WITH_VOIDS`, commit atomically. A mandatory member failure
@@ -421,9 +429,10 @@ reversal through face sense and boundary traversal. A base `EDGE` emits a
 curve-less CADIR edge when both endpoint vertices have point carriers. A base
 `VERTEX` whose point carrier is absent makes its containing member mandatory and
 unrepresentable. Sheet and wire members containing that vertex are omitted;
-the solid-root transaction rejects it. A geometric set with surface members
-forms a sheet carrier. Curve-only and point-only sets remain standalone
-geometry.
+the solid-root transaction rejects it. CADIR has no tolerant-point or
+partial-solid carrier and does not infer coordinates. A geometric set with
+surface members forms a sheet carrier. Curve-only and point-only sets remain
+standalone geometry.
 
 A face has at most one `FACE_OUTER_BOUND`. Other face bounds are not outer
 bounds. When malformed input declares more than one outer bound, the decoder
@@ -441,13 +450,17 @@ cycles and graphs at depth 256 or greater remain opaque; the recursion guard
 releases its active record on every return path. An unrecognized composite 2D
 carrier remains opaque rather than becoming an approximate pcurve.
 An unsupported 2D representation stays opaque and remains detached from the
-coedge. When a source curve has multiple pcurve candidates on its owning
-surface, the decoder maps each candidate through that surface and selects it
-when one candidate has a unique endpoint-continuous fit for the coedge. If
-several candidates tie, the decoder compares their mapped loci over the
-endpoint interval. Candidates with equivalent model-space loci are one
-semantic carrier and the first source candidate is retained. Distinct tied or
-otherwise unresolved candidates remain detached and produce a topology loss.
+coedge. A `SEAM_EDGE` uses its explicit pcurve reference only when that
+reference belongs to the edge's `SEAM_CURVE` associated geometry and the face
+surface. The reader does not replace an invalid reference with a guessed
+branch. For a non-seam source curve with multiple pcurve candidates on its
+owning surface, the decoder maps each candidate through that surface and
+selects it when one candidate has a unique endpoint-continuous fit for the
+coedge. If several candidates tie, the decoder compares their mapped loci
+over the endpoint interval. Candidates with equivalent model-space loci are
+one semantic carrier and the first source candidate is retained. Distinct
+tied or otherwise unresolved candidates remain detached and produce a
+topology loss.
 
 The source pcurve carrier is immutable. A chart variant derived from one
 coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns that

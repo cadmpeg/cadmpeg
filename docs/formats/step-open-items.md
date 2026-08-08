@@ -172,46 +172,33 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### TP-01. Shared-edge ownership
 
-**Question.** When one STEP edge or vertex is referenced by multiple independent
-shell owners, should CADIR preserve one shared identity, create one occurrence
-identity per owner, or reject the conflicting topology?
-
-**Known.** The decoder uses owner-scoped edge and vertex identities when the
-source ownership is ambiguous. It keeps the per-occurrence rule and reports an
-identity collision when two committed drafts still claim the same destination
-identity.
-
-**Need.** We need a standards-valid shared-edge construction and its ownership
-semantics before changing the current rule.
+**Resolved.** A distinct committed topology root is an ownership boundary. If
+one distinct root key exists, source edge and vertex identities remain shared
+within that root. If multiple distinct root keys exist, every root scopes its
+shell, edge, and vertex identities by the root instance. Aliases with the same
+root key reuse the committed body. A root with multiple shell owners also
+scopes carriers by shell. The reader does not invent sharing between
+independent roots and does not make identity selection depend on source record
+order.
 
 ### TP-02. Seam pcurve selection
 
-**Question.** Which same-surface pcurve belongs to each seam coedge when a seam
-curve carries more than one candidate pcurve?
-
-**Known.** The source curve can carry multiple pcurves for one surface. The
-decoder maps each candidate through the owning surface and selects a candidate
-when its endpoint fit is uniquely continuous within the topology tolerance. A
-tie between candidates with equivalent model-space loci is one semantic
-carrier; the decoder retains the first source candidate. Distinct tied or
-unresolved candidates remain detached from the coedge and produce a topology
-loss.
-
-**Need.** Endpoint continuity does not distinguish distinct seam branches with
-the same endpoints. We need the standards-valid UV branch and orientation rule
-for selecting one of those tied candidates. Serialized occurrence order is
-not a sufficient rule.
+**Resolved.** A `SEAM_EDGE` supplies the authoritative pcurve reference. The
+reference must be a decoded `PCURVE` in the edge's `SEAM_CURVE` associated
+geometry and on the coedge's face surface. The reader does not replace an
+invalid seam reference with an endpoint or serialization-order guess. A
+non-seam oriented edge uses endpoint continuity only when one same-surface
+pcurve is selected, or when tied candidates have the same model-space locus;
+distinct unresolved candidates remain detached and produce a topology loss.
 
 ### TP-05. Partial solid and tolerant point carriers
 
-**Question.** Should CADIR gain a tolerant point carrier or a partial-solid
-representation for a solid with one missing mandatory vertex point?
-
-**Known.** Solid roots commit atomically. A missing mandatory point rejects the
-complete solid and reports the failed STEP carrier.
-
-**Need.** We need measured loss rates and an IR design before changing the
-atomic-solid invariant.
+**Resolved.** CADIR has no tolerant-point or partial-solid carrier. A
+`VERTEX_POINT` without a resolvable `CARTESIAN_POINT`, and every solid root
+with a missing mandatory carrier, is rejected atomically. The reader retains
+the source records as opaque data and emits a `TopologyNotTransferred` error;
+it does not infer coordinates or create a partial body. Salvage applies only
+to independent sheet or wire members that are complete.
 
 ### TP-06. Implicit face-plane orientation
 

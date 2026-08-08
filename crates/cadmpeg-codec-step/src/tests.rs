@@ -4034,6 +4034,36 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
+    let source = equivalent_seam_source()
+        .replace(
+            "#22=ORIENTED_EDGE('',*,*,#19,.T.);",
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#75);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#72=CARTESIAN_POINT('',(0.,0.));\n#73=LINE('',#72,#53);\n#74=DEFINITIONAL_REPRESENTATION('',(#73),#50);\n#75=PCURVE('',#28,#74);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode seam edge with an unlisted pcurve");
+
+    assert!(decoded.ir.model.coedges.iter().all(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .all(|use_| use_.pcurve.as_str() != "step:data:pcurve#75")
+    }));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("SEAM_EDGE #22")
+            && loss.message.contains("belongs to its edge curve")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn equivalent_seam_source() -> String {
     String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -5719,6 +5749,12 @@ fn distinct_roots_with_shared_topology_get_owner_scopes() {
         .edges
         .iter()
         .any(|edge| edge.id.as_str().contains("root-70")));
+    assert!(decoded
+        .ir
+        .model
+        .edges
+        .iter()
+        .any(|edge| edge.id.as_str().contains("root-31")));
     assert!(decoded
         .ir
         .model

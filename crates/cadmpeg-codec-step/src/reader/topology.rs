@@ -368,15 +368,22 @@ pub(super) fn decode(
         .iter()
         .map(|pcurve| pcurve.id.clone())
         .collect::<BTreeSet<_>>();
-    let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
-    let mut representation_cache = BTreeMap::new();
-    for (id, record) in exchange.entities_any(&[
+    let topology_root_types = [
         "SHELL_BASED_SURFACE_MODEL",
         "FACE_BASED_SURFACE_MODEL",
         "FACETED_BREP",
         "MANIFOLD_SOLID_BREP",
         "BREP_WITH_VOIDS",
-    ]) {
+    ];
+    let distinct_root_count = exchange
+        .entities_any(&topology_root_types)
+        .filter_map(|(_, record)| root_key(record, exchange, &shells))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let scope_distinct_roots = distinct_root_count > 1;
+    let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
+    let mut representation_cache = BTreeMap::new();
+    for (id, record) in exchange.entities_any(&topology_root_types) {
         let Some(key) = root_key(record, exchange, &shells) else {
             result.warnings.push(format!(
                 "STEP topology root #{id} does not resolve to a complete connected topology graph",
@@ -397,10 +404,10 @@ pub(super) fn decode(
         }
         // A STEP file can define independent topology roots that reuse a
         // global edge or vertex without reusing the shell record. CADIR
-        // identities are global, so every root after the first committed root
-        // receives an owner scope. This preserves each root when source
-        // topology ownership crosses shell boundaries.
-        let scope_root = !built_roots.is_empty();
+        // identities are global, so every distinct root receives an owner
+        // scope when more than one root is present. This preserves each root
+        // without making the result depend on source record order.
+        let scope_root = scope_distinct_roots;
         let outcome = build(
             id,
             record,
@@ -1184,6 +1191,7 @@ struct OrientedDef {
     edge: u64,
     forward: bool,
     pcurve: Option<u64>,
+    seam_edge: bool,
 }
 
 fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
@@ -1356,6 +1364,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
                 OrientedDef {
                     edge: oriented_edge_reference(r)?,
                     forward: oriented_edge_forward(r)?,
+                    seam_edge: most_specific(r, &["SEAM_EDGE"]).is_some(),
                     pcurve: r
                         .partials
                         .iter()
@@ -2486,23 +2495,42 @@ fn build_one(
                     )?;
                     let edge =
                         require_carrier(edefs.get(&o.edge), failure, o.edge, "edge definition")?;
-                    let explicit_pcurve = surface_step.and_then(|surface_step| {
-                        o.pcurve.and_then(|pcurve_step| {
-                            let pcurve = exchange.records.get(&pcurve_step)?;
-                            (has_type(pcurve, "PCURVE")
-                                && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
-                                    == surface_step
-                                && decoded_pcurves
-                                    .contains(&PcurveId(format!("step:data:pcurve#{pcurve_step}"))))
-                            .then_some(PcurveId(format!("step:data:pcurve#{pcurve_step}")))
-                        })
-                    });
-                    let associated = explicit_pcurve.into_iter().collect::<Vec<_>>();
                     let cid = CoedgeId(format!(
                         "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
                     ));
-                    let associated = if associated.is_empty() {
-                        match (surface_step, edge.curve) {
+                    let pcurves: Vec<(PcurveId, Option<[f64; 2]>)> = if o.seam_edge {
+                        let explicit_pcurve = surface_step.and_then(|surface_step| {
+                            let pcurve_step = o.pcurve?;
+                            let pcurve = exchange.records.get(&pcurve_step)?;
+                            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
+                            let edge_curve = edge.curve?;
+                            let associated = associated_pcurves(
+                                edge_curve,
+                                surface_step,
+                                exchange,
+                                decoded_pcurves,
+                            );
+                            (has_type(pcurve, "PCURVE")
+                                && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
+                                    == surface_step
+                                && associated.contains(&pcurve_id))
+                            .then_some(pcurve_id)
+                        });
+                        if let Some(pcurve) = explicit_pcurve {
+                            vec![(pcurve, None)]
+                        } else {
+                            losses.push(LossNote {
+                                code: LossKind::ReferenceGraphNotClosed,
+                                severity: Severity::Warning,
+                                message: format!(
+                                    "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
+                                ),
+                                provenance: None,
+                            });
+                            Vec::new()
+                        }
+                    } else {
+                        let associated = match (surface_step, edge.curve) {
                             (Some(surface_step), Some(curve)) => {
                                 associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
                             }
@@ -2518,53 +2546,51 @@ fn build_one(
                                 });
                                 Vec::new()
                             }
-                        }
-                    } else {
-                        associated
-                    };
-                    let pcurves = match associated.as_slice() {
-                        [] => associated
-                            .into_iter()
-                            .map(|pcurve| (pcurve, None))
-                            .collect(),
-                        candidates => {
-                            let selected = surface_step.and_then(|surface| {
-                                select_associated_pcurve(
-                                    ir,
-                                    surface,
-                                    edge,
-                                    vdefs,
-                                    point_positions,
-                                    candidates,
-                                )
-                            });
-                            if let Some(selected) = selected {
-                                let (pcurve, variant) =
-                                    materialize_pcurve_variant(ir, &selected, &cid);
-                                if let Some(variant) = variant {
-                                    pcurve_variants.push(variant);
-                                }
-                                vec![(pcurve, selected.parameter_range)]
-                            } else {
-                                let n = candidates.len();
-                                let message = match (edge.curve, surface_step, n) {
-                                    (Some(curve), Some(surface), 1) => format!(
-                                        "curve #{curve} has one pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices, so the coedge has no pcurve"
-                                    ),
-                                    (Some(curve), Some(surface), _) => format!(
-                                        "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                    ),
-                                    _ => format!(
-                                        "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                    ),
-                                };
-                                losses.push(LossNote {
-                                    code: LossKind::ReferenceGraphNotClosed,
-                                    severity: Severity::Warning,
-                                    message,
-                                    provenance: None,
+                        };
+                        match associated.as_slice() {
+                            [] => associated
+                                .into_iter()
+                                .map(|pcurve| (pcurve, None))
+                                .collect(),
+                            candidates => {
+                                let selected = surface_step.and_then(|surface| {
+                                    select_associated_pcurve(
+                                        ir,
+                                        surface,
+                                        edge,
+                                        vdefs,
+                                        point_positions,
+                                        candidates,
+                                    )
                                 });
-                                Vec::new()
+                                if let Some(selected) = selected {
+                                    let (pcurve, variant) =
+                                        materialize_pcurve_variant(ir, &selected, &cid);
+                                    if let Some(variant) = variant {
+                                        pcurve_variants.push(variant);
+                                    }
+                                    vec![(pcurve, selected.parameter_range)]
+                                } else {
+                                    let n = candidates.len();
+                                    let message = match (edge.curve, surface_step, n) {
+                                        (Some(curve), Some(surface), 1) => format!(
+                                            "curve #{curve} has one pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices, so the coedge has no pcurve"
+                                        ),
+                                        (Some(curve), Some(surface), _) => format!(
+                                            "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                        ),
+                                        _ => format!(
+                                            "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                        ),
+                                    };
+                                    losses.push(LossNote {
+                                        code: LossKind::ReferenceGraphNotClosed,
+                                        severity: Severity::Warning,
+                                        message,
+                                        provenance: None,
+                                    });
+                                    Vec::new()
+                                }
                             }
                         }
                     };
