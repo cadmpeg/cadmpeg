@@ -9057,6 +9057,55 @@ fn face_appearance_binding_styles_the_advanced_face() {
     assert!(face_line.is_some(), "styled item must reference a face");
 }
 
+#[test]
+fn vertex_appearance_binding_styles_the_vertex_point() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::AppearanceId;
+
+    let mut ir = unit_cube();
+    let vertex = ir.model.vertices[0].id.clone();
+    ir.model.appearances.push(Appearance {
+        id: AppearanceId("test:appearance#vertex".to_string()),
+        name: Some("vertex green".to_string()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color {
+            r: 0.125,
+            g: 0.75,
+            b: 0.25,
+            a: 1.0,
+        }),
+        properties: std::collections::BTreeMap::default(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:appearance-binding#vertex".to_string(),
+        target: AppearanceTarget::Vertex(vertex),
+        appearance: AppearanceId("test:appearance#vertex".to_string()),
+        source_entity_id: None,
+        object_type: None,
+        channels: std::collections::BTreeMap::default(),
+    });
+
+    let text = export(&ir);
+    assert!(text.contains("POINT_STYLE"));
+    assert!(text.contains("COLOUR_RGB('vertex green',0.125,0.75,0.25)"));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode vertex appearance");
+    assert!(decoded.ir.model.appearance_bindings.iter().any(|binding| {
+        matches!(
+            &binding.target,
+            AppearanceTarget::Vertex(vertex) if vertex.as_str().starts_with("step:data:vertex#")
+        )
+    }));
+}
+
 /// The soccer-ball case: a body carries a base color and one face overrides it.
 /// Every face must be styled (body color pushed down onto the faces that do not
 /// override it), and the overriding face must carry its own color.

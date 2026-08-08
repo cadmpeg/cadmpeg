@@ -783,12 +783,13 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
+                AppearanceTarget::Vertex(id) => {
+                    (self.vertex_refs.get(id.as_str()).copied(), "point")
+                }
                 AppearanceTarget::Tessellation(id) => {
                     (self.tessellation_step_refs.get(id).copied(), "surface")
                 }
-                AppearanceTarget::Body(_)
-                | AppearanceTarget::Vertex(_)
-                | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -797,10 +798,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Curve(id) => id.0.clone(),
                     AppearanceTarget::Edge(id) => id.0.clone(),
                     AppearanceTarget::Point(id) => id.0.clone(),
+                    AppearanceTarget::Vertex(id) => id.0.clone(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
-                    AppearanceTarget::Body(_)
-                    | AppearanceTarget::Vertex(_)
-                    | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
