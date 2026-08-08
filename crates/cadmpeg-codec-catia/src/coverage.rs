@@ -435,6 +435,8 @@ pub(crate) const TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_legacy_selector_parameter_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_count");
+pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT: CoverageKey =
+    CoverageKey("transferred_native_operation_definition_chain_value_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT: CoverageKey =
     CoverageKey("transferred_native_operation_definition_value_count");
 pub(crate) const TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT: CoverageKey =
@@ -791,6 +793,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_LEGACY_PARAMETER_COUNT,
     TRANSFERRED_LEGACY_SELECTOR_PARAMETER_COUNT,
     TRANSFERRED_NATIVE_OPERATION_COUNT,
+    TRANSFERRED_NATIVE_OPERATION_DEFINITION_CHAIN_VALUE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_DEFINITION_VALUE_COUNT,
     TRANSFERRED_NATIVE_OPERATION_PARAMETER_COUNT,
     TRANSFERRED_OBJECT_STREAM_FACE_COUNT,

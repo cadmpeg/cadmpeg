@@ -17,6 +17,7 @@ pub(crate) struct DesignFeatureTransfer {
     pub(crate) feature_ids: HashMap<String, FeatureId>,
     pub(crate) native_operation_records: HashSet<String>,
     pub(crate) native_operation_definition_value_count: usize,
+    pub(crate) native_operation_definition_chain_value_count: usize,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
@@ -523,7 +524,7 @@ fn transfer_native_operation(
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
-    let (properties, definition_value_count) =
+    let (properties, definition_value_count, definition_chain_value_count) =
         native_operation_definition_properties(object, entities);
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
@@ -550,19 +551,23 @@ fn transfer_native_operation(
         .native_operation_records
         .insert(candidate.owner_record.id.clone());
     transfer.native_operation_definition_value_count += definition_value_count;
+    transfer.native_operation_definition_chain_value_count += definition_chain_value_count;
 }
 
 /// Retain complete definition-bound values on the exact native operation
 /// object that owns them. A one-definition value carries a source definition
-/// and a typed suffix payload, but it does not establish a neutral parameter
-/// type or operation role. Store its exact selectors and payload state as
-/// native properties until that role grammar is settled.
+/// and a typed suffix payload, while a two-definition value carries its
+/// repeated selector, role, and selected payload. Neither production assigns
+/// an operation role here. Store the exact selectors and payload state as
+/// native properties; supported two-definition roles are also exposed through
+/// the independent typed-parameter transfer.
 fn native_operation_definition_properties(
     object: &CatiaDesignObject,
     entities: &HashMap<&str, &CatiaEntityRecord>,
-) -> (BTreeMap<String, String>, usize) {
+) -> (BTreeMap<String, String>, usize, usize) {
     let mut properties = BTreeMap::new();
-    let mut value_count = 0;
+    let mut definition_value_count = 0;
+    let mut definition_chain_value_count = 0;
 
     for (ordinal, entity_id) in object.definition_values.iter().enumerate() {
         let Some(entity) = entities.get(entity_id.as_str()) else {
@@ -571,7 +576,7 @@ fn native_operation_definition_properties(
         let Some(value) = entity.definition_value.as_ref() else {
             continue;
         };
-        value_count += 1;
+        definition_value_count += 1;
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
         insert_schema_value_properties(
@@ -593,7 +598,34 @@ fn native_operation_definition_properties(
         }
     }
 
-    (properties, value_count)
+    for (ordinal, entity_id) in object.definition_chain_values.iter().enumerate() {
+        let Some(entity) = entities.get(entity_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = entity.definition_chain_value.as_ref() else {
+            continue;
+        };
+        definition_chain_value_count += 1;
+        let prefix = format!("catia_definition_chain_value_{ordinal}");
+        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        insert_schema_value_properties(
+            &mut properties,
+            &format!("{prefix}_selector"),
+            &value.selector,
+        );
+        insert_schema_value_properties(&mut properties, &format!("{prefix}_role"), &value.role);
+        insert_schema_selected_value_properties(
+            &mut properties,
+            &format!("{prefix}_value"),
+            &value.value,
+        );
+    }
+
+    (
+        properties,
+        definition_value_count,
+        definition_chain_value_count,
+    )
 }
 
 fn insert_schema_value_properties(
@@ -858,9 +890,9 @@ mod tests {
     use cadmpeg_ir::units::Units;
 
     use crate::native::{
-        CatiaDefinitionValue, CatiaDesignClass, CatiaEntityEvaluation,
+        CatiaDefinitionChainValue, CatiaDefinitionValue, CatiaDesignClass, CatiaEntityEvaluation,
         CatiaEntityEvaluationEncoding, CatiaEntityRecord, CatiaEntitySchemaValue,
-        CatiaEntitySuffixPayload, CatiaObjectGraph, CatiaObjectOwner,
+        CatiaEntitySuffixPayload, CatiaEntitySuffixSchemaValue, CatiaObjectGraph, CatiaObjectOwner,
     };
     use crate::object_graph::ObjectPayload;
 
@@ -1312,6 +1344,129 @@ mod tests {
             ])
         );
         assert_eq!(transfer.native_operation_definition_value_count, 1);
+    }
+
+    #[test]
+    fn transfers_exact_definition_chains_as_opaque_native_properties() {
+        let mut operation = native_operation_object(
+            "operation-object",
+            None,
+            1,
+            "operation-record",
+            "Prism_ThickThin1",
+            "operation-entry",
+        );
+        operation
+            .definition_chain_values
+            .push("definition-chain-entity".to_string());
+        let mut chain_entity = entity_record("definition-chain-entity", "operation-record", 20, 1);
+        chain_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
+            selector: CatiaEntitySchemaValue {
+                offset: 4,
+                ordinal: 2,
+                entry: "selector-entry".to_string(),
+                value: "Length".to_string(),
+            },
+            role: CatiaEntitySchemaValue {
+                offset: 8,
+                ordinal: 3,
+                entry: "role-entry".to_string(),
+                value: "UnsupportedRole".to_string(),
+            },
+            value: CatiaEntitySuffixSchemaValue::Evaluation {
+                opcode_offset: 12,
+                evaluation: CatiaEntityEvaluation::Scalar {
+                    bits: 12.5_f64.to_bits(),
+                },
+            },
+        });
+        let native = CatiaNative {
+            design_objects: vec![operation],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![object_record(
+                    "operation-record",
+                    None,
+                    Some(1),
+                    None,
+                    Some("Prism_ThickThin1"),
+                    Some("operation-entry"),
+                )],
+            }],
+            entity_records: vec![chain_entity],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+
+        let FeatureDefinition::Native { properties, .. } = &ir.model.features[0].definition else {
+            panic!("expected an opaque native operation");
+        };
+        assert_eq!(
+            properties,
+            &BTreeMap::from([
+                (
+                    "catia_definition_chain_value_0_entity".to_string(),
+                    "definition-chain-entity".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_entry".to_string(),
+                    "role-entry".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_offset".to_string(),
+                    "8".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_ordinal".to_string(),
+                    "3".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_value".to_string(),
+                    "UnsupportedRole".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_entry".to_string(),
+                    "selector-entry".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_offset".to_string(),
+                    "4".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_ordinal".to_string(),
+                    "2".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_value".to_string(),
+                    "Length".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_evaluation".to_string(),
+                    "scalar".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_evaluation_bits".to_string(),
+                    format!("{:016x}", 12.5_f64.to_bits()),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_kind".to_string(),
+                    "evaluation".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_opcode_offset".to_string(),
+                    "12".to_string(),
+                ),
+            ])
+        );
+        assert_eq!(transfer.native_operation_definition_chain_value_count, 1);
     }
 
     #[test]

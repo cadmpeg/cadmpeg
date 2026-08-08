@@ -1049,6 +1049,7 @@
       "transferred_legacy_parameter_count": 0,
       "transferred_legacy_selector_parameter_count": 0,
       "transferred_native_operation_count": 0,
+      "transferred_native_operation_definition_chain_value_count": 0,
       "transferred_native_operation_definition_value_count": 0,
       "transferred_native_operation_parameter_count": 0,
       "transferred_parameter_count": 0,
