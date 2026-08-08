@@ -298,7 +298,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know its lanes and terminal fields to read and write the complete record.
 
-**Note.** `a5a8::records` accepts a continuation of up to 4096 bytes and rejects a longer one. The bound is not in `catia.md`. A record in a longer length class is dropped, so its exact rolling-ball surface and both limit curves are not transferred. The `a8` parser instead requires the 59-byte tail that the specification states.
+**Note.** The enclosing frame closes the continuation after the three aligned jet blocks; its fields remain unresolved. The decoder transfers the complete known jet without imposing a fixed continuation-size limit. The `a8` parser instead requires the 59-byte tail that the specification states.
 
 ### SN-03. Width-coded class-`0x5e` header token
 

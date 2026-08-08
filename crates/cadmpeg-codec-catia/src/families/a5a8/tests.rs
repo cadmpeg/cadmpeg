@@ -683,6 +683,20 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
 }
 
 #[test]
+fn a5_curve_parser_accepts_frame_bounded_continuation() {
+    let mut bytes = a5_freeform_curve_stream();
+    bytes.extend(std::iter::repeat_n(0, 4097));
+    let payload_len = u32::try_from(bytes.len() - 8).expect("test frame fits u32");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    let [curve] = crate::families::a5a8::records::a5_freeform_curves(&bytes)
+        .try_into()
+        .expect("one rolling-ball jet");
+    assert_eq!(curve.knots, [0.0, 1.0]);
+    assert_eq!(curve.sites[1].radius, 2.0);
+}
+
+#[test]
 fn rolling_ball_limit_curves_reproduce_stored_endpoint_sites() {
     let [jet] = crate::families::a5a8::records::a5_freeform_curves(&a5_freeform_curve_stream())
         .try_into()

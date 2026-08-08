@@ -950,7 +950,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         return None;
     }
     let block_bytes = count.checked_mul(80)?;
-    if at.checked_add(3 * block_bytes)? > end || end - (at + 3 * block_bytes) > 4096 {
+    if at.checked_add(block_bytes.checked_mul(3)?)? > end {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {
