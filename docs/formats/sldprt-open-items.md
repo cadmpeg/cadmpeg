@@ -850,14 +850,6 @@ There is no unresolved branch for code `11` and no loss. A joining form-`11` obj
 
 **Need.** We must know the identifier space to bind a body to its last history feature.
 
-### DI-32. Compact line-reference width
-
-**Question.** What distinguishes the eight-scalar compact line-reference form from the nine-scalar form when both final-triple interpretations are unit vectors?
-
-**Known.** Both forms contain scalar triples that can satisfy the unit-vector invariant.
-
-**Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators
