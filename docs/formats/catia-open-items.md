@@ -670,14 +670,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
-### ZE-07. Face roster to support-run binding
-
-**Question.** Which field binds a zero-entity face to its surface-support run?
-
-**Known.** `catia.md` §8 "Record families:" gives "The complete face roster aligns positionally with the complete surface-support-run roster." `zero_entity::records` builds the two rosters with independent filters. A face leaves the roster when its terminal control is not `03` or `05`, which is the byte of ZE-01. A run leaves the roster when one `21xx` support in it does not parse. The code binds the two rosters when their lengths are equal.
-
-**Need.** One drop in each roster at different positions keeps the lengths equal and moves every face between the two positions to the wrong run. We must know the field to bind a face when a roster is incomplete.
-
 ## 6. E5 `0D 03`
 
 ### E5-01. `0xa0` circle branch

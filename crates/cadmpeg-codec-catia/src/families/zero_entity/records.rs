@@ -619,7 +619,20 @@ pub fn zero_entity_support_runs(data: &[u8]) -> Vec<ZeroEntitySupportRun> {
             loop_index = loop_end;
         }
     }
-    if faces.len() == runs.len() {
+    let face_population = records
+        .iter()
+        .filter(|record| record.tag[0] == 0x5f)
+        .count();
+    let surface_population = records
+        .iter()
+        .filter(|record| zero_entity_surface_carrier_tag(record.tag))
+        .count();
+    // Equal filtered lengths are not enough: independent drops can shift the
+    // positional rosters. Bind only when every framed candidate survived.
+    let rosters_are_complete = faces.len() == face_population
+        && runs.len() == surface_population
+        && faces.len() == runs.len();
+    if rosters_are_complete {
         for (run, mut face) in runs.iter_mut().zip(faces) {
             bind_face_support_occurrences(&mut face, &run.supports);
             run.face = Some(face);
@@ -1671,16 +1684,27 @@ fn tagged_u32(data: &[u8], at: usize) -> Option<u32> {
 }
 
 pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<SurfaceGeometry> {
+    let tag = [*data.get(record + 2)?, *data.get(record + 3)?];
+    if !zero_entity_surface_carrier_tag(tag) {
+        return None;
+    }
     let payload_end = record.checked_add(*data.get(record + 3)? as usize + 12)?;
     let payload = data.get(record + 4..payload_end)?;
-    match (*data.get(record + 2)?, *data.get(record + 3)?) {
-        (0x27, 0x6a) => zero_entity_plane(payload),
-        (0x28, 0x8a) => zero_entity_cylinder(payload),
-        (0x29, 0xb8) => zero_entity_cone(payload),
-        (0x2b, 0xc8) => zero_entity_torus(payload),
-        (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, record),
+    match tag {
+        [0x27, 0x6a] => zero_entity_plane(payload),
+        [0x28, 0x8a] => zero_entity_cylinder(payload),
+        [0x29, 0xb8] => zero_entity_cone(payload),
+        [0x2b, 0xc8] => zero_entity_torus(payload),
+        [0x34, 0xc8 | 0x5e] => zero_entity_nurbs_surface(data, record),
         _ => None,
     }
+}
+
+fn zero_entity_surface_carrier_tag(tag: [u8; 2]) -> bool {
+    matches!(
+        tag,
+        [0x27, 0x6a] | [0x28, 0x8a] | [0x29, 0xb8] | [0x2b | 0x34, 0xc8] | [0x34, 0x5e]
+    )
 }
 
 fn zero_entity_nurbs_shape(tag: [u8; 2]) -> Option<(usize, usize, usize)> {
@@ -2637,6 +2661,28 @@ mod tests {
         let [run] = runs.as_slice() else {
             panic!("one support run")
         };
+        assert!(run.face.is_none());
+    }
+
+    #[test]
+    fn independently_incomplete_rosters_do_not_shift_face_bindings() {
+        let mut stream = zero_entity_support_stream();
+        stream[38..62].fill(0);
+        stream.extend(zero_entity_support_stream());
+
+        let face_stream = zero_entity_face_support_stream();
+        let face_start = zero_entity_support_stream().len();
+        let valid_face = face_stream[face_start..].to_vec();
+        stream.extend_from_slice(&valid_face);
+        let mut invalid_face = valid_face;
+        *invalid_face.last_mut().expect("face terminal") = 0x04;
+        stream.extend(invalid_face);
+
+        let runs = zero_entity_support_runs(&stream);
+        let [run] = runs.as_slice() else {
+            panic!("one complete support run")
+        };
+        assert_eq!(run.carrier_record_ordinal, 3);
         assert!(run.face.is_none());
     }
 
