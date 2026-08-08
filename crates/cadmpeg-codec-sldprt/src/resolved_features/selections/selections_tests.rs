@@ -668,7 +668,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     payload.extend(COMPACT_EDGE_VECTOR_MARKER);
     payload.extend([0, 0]);
     let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
-    for (index, id) in [2u32, 1, 11].into_iter().enumerate() {
+    for (index, id) in [2u32, 1, 11, 14, 15, 16, 17].into_iter().enumerate() {
         payload.extend((0x8c20u32 + index as u32).to_le_bytes());
         payload.extend(signature);
         payload.extend(id.to_le_bytes());
@@ -690,7 +690,11 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
         vec![
             (Some(0x8c20), signature, Some(2)),
             (Some(0x8c21), signature, Some(1)),
-            (Some(0x8c22), signature, Some(11))
+            (Some(0x8c22), signature, Some(11)),
+            (Some(0x8c23), signature, Some(14)),
+            (Some(0x8c24), signature, Some(15)),
+            (Some(0x8c25), signature, Some(16)),
+            (Some(0x8c26), signature, Some(17))
         ]
     );
     payload[12 + 18 + 24 + 4] ^= 1;

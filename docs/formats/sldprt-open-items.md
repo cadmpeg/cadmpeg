@@ -1018,22 +1018,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the position. A window bound also drops a valid vector that lies past it.
 
-### DI-46. Compact surface selection entry count
-
-**Question.** How many entries can a compact surface-selection vector hold?
-
-**Known.** `sldprt.md` §2 "A `moCompSurfaceBody_c` child of `moThicken_c` carries the selected surface components." states that the word at marker −12 is a schema word and that the vector ends when the shared entry signature ends.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:867` tests that schema word against `6`, which is correct, and then reuses `6` as an entry limit at `selections.rs:876`:
-
-```rust
-while components.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice())
-```
-
-A vector with more entries yields a short list. The decoder records no loss, so the truncated selection reads as complete.
-
-**Need.** We must know the entry count. The schema word is not an entry limit.
-
 ### DI-47. Offset-plane frame source
 
 **Question.** Which datum is the source plane when more than one decoded datum frame is parallel to an offset plane at the absolute `D1` distance?

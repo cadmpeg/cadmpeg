@@ -897,8 +897,7 @@ pub(super) fn compact_surface_selection_at(
     let mut cursor = marker + 18;
     let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
     let mut components = Vec::new();
-    while components.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice())
-    {
+    while payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice()) {
         components.push(FeatureInputComponentPathEntry {
             instance: Some(u16::from_le_bytes(
                 payload.get(cursor..cursor + 2)?.try_into().ok()?,
