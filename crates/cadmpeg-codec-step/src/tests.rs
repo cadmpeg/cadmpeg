@@ -128,6 +128,43 @@ fn lexer_ignores_controls_inside_tokens_and_print_controls_between_tokens() {
 }
 
 #[test]
+fn lexer_ignores_controls_inside_escaped_literals_and_directives() {
+    use crate::lex::{lex, BinaryValue, TokenKind};
+
+    let token = lex(b"'it'\x01''").expect("apostrophe escape with ignored control")[0]
+        .kind
+        .clone();
+    let TokenKind::String(bytes) = token else {
+        panic!("expected string token");
+    };
+    assert_eq!(crate::strings::decode(&bytes).unwrap(), "it'");
+
+    let token = lex(b"'a\\\x01N\x02\\b'").expect("string print control with ignored controls")[0]
+        .kind
+        .clone();
+    let TokenKind::String(bytes) = token else {
+        panic!("expected string token");
+    };
+    assert_eq!(crate::strings::decode(&bytes).unwrap(), "ab");
+
+    assert_eq!(
+        lex(b"\"0\\\x01F\x02\\A\"").unwrap()[0].kind,
+        TokenKind::Binary(BinaryValue {
+            bit_len: 4,
+            data: vec![0xa0],
+        })
+    );
+
+    let tokens = lex(b"1\\\x01N\x02\\2").expect("print control separator with ignored controls");
+    assert_eq!(tokens.len(), 2);
+    assert!(matches!(tokens[0].kind, TokenKind::Integer(1)));
+    assert!(matches!(tokens[1].kind, TokenKind::Integer(2)));
+
+    let error = lex(b"<a\\\x01N\x02\\b>").expect_err("resource print control");
+    assert!(error.message.contains("resource"));
+}
+
+#[test]
 fn lexer_accepts_exponent_before_trailing_decimal_point() {
     let token = crate::lex::lex(b"6E-16.").expect("real with trailing decimal point")[0]
         .kind

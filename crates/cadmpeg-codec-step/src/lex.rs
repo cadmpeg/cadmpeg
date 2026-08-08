@@ -234,14 +234,14 @@ impl<'a> Lexer<'a> {
             while self.input.get(self.at).is_some_and(u8::is_ascii_control) {
                 self.at += 1;
             }
-            if self.is_print_control_at(self.at) {
+            if let Some(end) = self.print_control_end(self.at) {
                 if !self.allow_print_controls {
                     return Err(Self::error(
                         self.at,
                         "print control directive is not allowed in this section",
                     ));
                 }
-                self.at += 3;
+                self.at = end;
                 continue;
             }
             if self.input.get(self.at) == Some(&b' ') {
@@ -491,9 +491,11 @@ impl<'a> Lexer<'a> {
                 return Err(Self::error(start, "string exceeds maximum stored length"));
             }
             match self.input.get(self.at).copied() {
-                Some(b'\'') if self.input.get(self.at + 1) == Some(&b'\'') => {
+                Some(b'\'') if self.match_exact_ignoring_controls(self.at, b"''").is_some() => {
                     bytes.extend_from_slice(b"''");
-                    self.at += 2;
+                    self.at = self
+                        .match_exact_ignoring_controls(self.at, b"''")
+                        .expect("doubled apostrophe matched above");
                 }
                 Some(b'\'') => {
                     self.at += 1;
@@ -502,15 +504,26 @@ impl<'a> Lexer<'a> {
                 Some(byte) if byte.is_ascii_control() => {
                     self.at += 1;
                 }
-                Some(b'\\') if self.is_print_control_at(self.at) => {
+                Some(b'\\') if self.print_control_end(self.at).is_some() => {
                     if !self.allow_print_controls {
                         return Err(Self::error(
                             self.at,
                             "print control directive is not allowed in this section",
                         ));
                     }
-                    bytes.extend_from_slice(&self.input[self.at..self.at + 3]);
-                    self.at += 3;
+                    let end = self
+                        .print_control_end(self.at)
+                        .expect("print control matched above");
+                    let directive = if self
+                        .match_exact_ignoring_controls(self.at, b"\\N\\")
+                        .is_some()
+                    {
+                        b"\\N\\"
+                    } else {
+                        b"\\F\\"
+                    };
+                    bytes.extend_from_slice(directive);
+                    self.at = end;
                 }
                 Some(byte) => {
                     bytes.push(byte);
@@ -532,14 +545,16 @@ impl<'a> Lexer<'a> {
                     self.at += 1;
                 }
                 Some(byte) if byte.is_ascii_control() => self.at += 1,
-                Some(b'\\') if self.is_print_control_at(self.at) => {
+                Some(b'\\') if self.print_control_end(self.at).is_some() => {
                     if !self.allow_print_controls {
                         return Err(Self::error(
                             self.at,
                             "print control directive is not allowed in this section",
                         ));
                     }
-                    self.at += 3;
+                    self.at = self
+                        .print_control_end(self.at)
+                        .expect("print control matched above");
                 }
                 _ => break,
             }
@@ -599,7 +614,7 @@ impl<'a> Lexer<'a> {
             if byte == b'>' {
                 break;
             }
-            if self.is_print_control_at(self.at) {
+            if self.print_control_end(self.at).is_some() {
                 return Err(Self::error(
                     self.at,
                     "print control directive is not allowed in a resource",
@@ -640,10 +655,22 @@ impl<'a> Lexer<'a> {
             .collect()
     }
 
-    fn is_print_control_at(&self, at: usize) -> bool {
-        self.input
-            .get(at..at + 3)
-            .is_some_and(|bytes| matches!(bytes, b"\\N\\" | b"\\F\\"))
+    fn print_control_end(&self, at: usize) -> Option<usize> {
+        self.match_exact_ignoring_controls(at, b"\\N\\")
+            .or_else(|| self.match_exact_ignoring_controls(at, b"\\F\\"))
+    }
+
+    fn match_exact_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
+        for &byte in expected {
+            while self.input.get(at).is_some_and(u8::is_ascii_control) {
+                at += 1;
+            }
+            if self.input.get(at) != Some(&byte) {
+                return None;
+            }
+            at += 1;
+        }
+        Some(at)
     }
 
     fn match_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
