@@ -1093,7 +1093,7 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             }
             0xe5 if blob_declared_end(bytes, at) == Some(bytes.len()) => return None,
             0x3c => {
-                let Some((count, advance)) = atom(bytes, at + 1) else {
+                let Some((_, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
@@ -1105,21 +1105,24 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 let table_count = u32_le(bytes, table_at).unwrap_or(u32::MAX);
                 if usize::try_from(table_count)
                     .ok()
-                    .is_some_and(|count| count <= bytes.len())
+                    .is_some_and(|table_count| {
+                        table_at
+                            .checked_add(4)
+                            .is_some_and(|end| end <= bytes.len())
+                            && table_count <= bytes.len()
+                    })
                 {
-                    fields.push(PayloadField::BulkTable {
-                        count,
-                        table_count,
-                        offset,
-                    });
-                    at = table_at + 4;
-                } else {
-                    fields.push(PayloadField::Atom {
-                        value: 0x3c,
-                        offset,
-                    });
-                    at += 1;
+                    // DI-26: the extent of this unassigned form is not known.
+                    // Do not choose a bulk-table interpretation from a bounded
+                    // integer alone. The literal interpretation is also valid,
+                    // and the two walks consume different bytes.
+                    return None;
                 }
+                fields.push(PayloadField::Atom {
+                    value: 0x3c,
+                    offset,
+                });
+                at += 1;
             }
             0x3b => {
                 if bytes.get(at + 1) == Some(&0xfe) {

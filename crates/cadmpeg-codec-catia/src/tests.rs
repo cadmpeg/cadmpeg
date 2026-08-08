@@ -2251,12 +2251,19 @@ fn object_graph_vm_stream() -> Vec<u8> {
     object_graph_from_records(&[
         object_graph_record(
             &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
-            &[
-                0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0x3c, 0x82, 1, 0, 0, 0, 0x0d, 0xfe,
-            ],
+            &[0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0xfe],
         ),
         object_graph_record(&[0x04, 0x01, 0x82, 0x83], &[0xfe]),
     ])
+}
+
+fn object_graph_ambiguous_3c_stream() -> Vec<u8> {
+    object_graph_from_records(&[object_graph_record(
+        &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
+        &[
+            0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0x3c, 0x82, 1, 0, 0, 0, 0x0d, 0xfe,
+        ],
+    )])
 }
 
 fn catalog_stream(entries: &[&str]) -> Vec<u8> {
@@ -11166,12 +11173,12 @@ fn object_graph_payload_does_not_consume_terminator_as_paged_atom_data() {
 }
 
 #[test]
-fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
+fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
     let graph = crate::object_graph::parse(&object_graph_vm_stream()).unwrap();
     assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
-    assert_eq!(graph.records[0].subtype, PayloadSubtype::BulkTable);
+    assert_eq!(graph.records[0].subtype, PayloadSubtype::ListAggregator);
     assert!(matches!(
         &graph.records[0].payload.fields[0],
         PayloadField::List { items, .. }
@@ -11190,14 +11197,32 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
                 },
             ]
     ));
-    assert!(matches!(
-        graph.records[0].payload.fields[1],
-        PayloadField::BulkTable {
-            count: 2,
-            table_count: 1,
-            ..
-        }
-    ));
+}
+
+#[test]
+fn outer_object_graph_rejects_an_unresolved_3c_bulk_header() {
+    assert!(crate::object_graph::parse(&object_graph_ambiguous_3c_stream()).is_none());
+}
+
+#[test]
+fn object_graph_payload_keeps_3c_as_literal_when_no_bulk_extent_is_possible() {
+    use crate::object_graph::PayloadField;
+
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x83],
+        &[0x3c, 0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("literal 3c payload");
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::Atom {
+                value: 0x3c,
+                offset: 0,
+            },
+            PayloadField::Terminator,
+        ]
+    );
 }
 
 #[test]
