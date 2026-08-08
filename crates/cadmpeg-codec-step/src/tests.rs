@@ -7,14 +7,14 @@
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 use cadmpeg_ir::eval::{
-    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id,
+    model_curve_point_by_id, model_surface_partials_by_id, model_surface_point_by_id, pcurve_uv,
 };
 use cadmpeg_ir::index::ModelIndex;
 
 use cadmpeg_core::decode::{DecodeMode, InspectOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1255,6 +1255,29 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode source with invalid pcurve");
+    assert!(decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("one pcurve")
+            && loss.message.contains("not continuous")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn surface_curve_retains_direct_surface_support() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -2112,6 +2135,32 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
 }
 
 #[test]
+fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#53=VECTOR('',#52,1.);", "#53=VECTOR('',#52,10.);")
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=TRIMMED_CURVE('',#71,(PARAMETER_VALUE(-1.)),(PARAMETER_VALUE(2.)),.T.,.PARAMETER.);\n#71=LINE('',#51,#53);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode stale pcurve trim");
+    let pcurve = cadmpeg_ir::ids::PcurveId("step:data:pcurve#56".into());
+    let use_ = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| &coedge.pcurves)
+        .find(|use_| use_.pcurve == pcurve)
+        .expect("stale trimmed pcurve use");
+    assert_eq!(use_.parameter_range, Some([0.0, 1.0]));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn a_protected_unowned_pcurve_stays_opaque() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -2196,6 +2245,57 @@ fn retention_reports_every_deleted_carrier_category() {
         .all(|point| point.id.as_str() != "step:data:point#74"));
 }
 
+fn align_sheet_edge_to_pcurve(ir: &mut CadIr, geometry: &PcurveGeometry) {
+    let pcurve_id = ir.model.pcurves[0].id.clone();
+    let edge_id = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| {
+            coedge
+                .pcurves
+                .iter()
+                .any(|pcurve| pcurve.pcurve == pcurve_id)
+        })
+        .expect("sheet pcurve coedge")
+        .edge
+        .clone();
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == edge_id)
+        .expect("sheet pcurve edge");
+    let vertex_ids = [edge.start.clone(), edge.end.clone()];
+    let point_ids = vertex_ids.map(|vertex_id| {
+        ir.model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == vertex_id)
+            .expect("sheet edge vertex")
+            .point
+            .clone()
+    });
+    let parameter_range = match geometry {
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => *parameter_range,
+        _ => [0.0, 1.0],
+    };
+    let positions = parameter_range.map(|parameter| {
+        let uv = pcurve_uv(geometry, parameter).expect("test pcurve endpoint");
+        Point3::new(uv.u, uv.v, 0.0)
+    });
+    for (point_id, position) in point_ids.into_iter().zip(positions) {
+        ir.model
+            .points
+            .iter_mut()
+            .find(|point| point.id == point_id)
+            .expect("sheet edge point")
+            .position = position;
+    }
+}
+
 #[test]
 fn writer_round_trips_rational_nurbs_pcurves() {
     let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
@@ -2208,11 +2308,13 @@ fn writer_round_trips_rational_nurbs_pcurves() {
         knots: vec![0.0, 0.0, 1.0, 1.0],
         control_points: vec![
             cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::math::Point2::new(10.0, 0.0),
         ],
         weights: Some(vec![1.0, 2.0]),
         periodic: false,
     };
+    let geometry = ir.model.pcurves[0].geometry.clone();
+    align_sheet_edge_to_pcurve(&mut ir, &geometry);
 
     let mut output = Vec::new();
     write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write NURBS pcurve");
@@ -2301,6 +2403,7 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
     for geometry in cases {
         let mut ir = template.clone();
         ir.model.pcurves[0].geometry = geometry.clone();
+        align_sheet_edge_to_pcurve(&mut ir, &geometry);
         let mut output = Vec::new();
         write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write exact pcurve");
         let output_text = String::from_utf8(output).expect("STEP output is UTF-8");
@@ -2334,6 +2437,10 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
         .replace(
             "#52=DIRECTION('',(1.,0.));",
             "#52=CARTESIAN_POINT('',(1.,2.));",
+        )
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(3.,2.,0.));",
         )
         .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
         .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
@@ -2388,7 +2495,16 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace("SI_UNIT(.MILLI.,.METRE.)", "SI_UNIT(.CENTI.,.METRE.)")
-        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,10.);")
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(1.,0.,0.));",
+        )
+        .replace("#13=VECTOR('',#10,10.);", "#13=VECTOR('',#10,1.);")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#70=CARTESIAN_POINT('',(0.,-1.,0.));\n#71=DIRECTION('',(1.,0.,0.));\n#72=DIRECTION('',(0.,1.,0.));\n#27=AXIS2_PLACEMENT_3D('',#70,#71,#72);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,1.);")
         .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -6307,7 +6423,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
         .expect("fixture is UTF-8")
         .replace(
             "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));",
-            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));\n#58=CARTESIAN_POINT('',(1.,0.));",
+            "#51=CARTESIAN_POINT('',(0.,0.));\n#52=DIRECTION('',(1.,0.));\n#58=CARTESIAN_POINT('',(10.,0.));",
         )
         .replace(
             "#54=LINE('',#51,#53);",
@@ -8608,6 +8724,10 @@ fn pcurve_replica_derives_orthogonal_two_dimensional_axes() {
         .replace(
             "#55=DEFINITIONAL_REPRESENTATION('',(#54),#50);",
             "#55=DEFINITIONAL_REPRESENTATION('',(#73),#50);\n#71=DIRECTION('',(1.,1.));\n#72=CARTESIAN_TRANSFORMATION_OPERATOR_2D('',#71,$,#51,1.);\n#73=CURVE_REPLICA('',#54,#72);",
+        )
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(0.7071067811865476,0.7071067811865476,0.));",
         );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

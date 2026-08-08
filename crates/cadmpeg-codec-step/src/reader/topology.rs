@@ -2336,7 +2336,10 @@ fn build_one(
                         associated
                     };
                     let pcurves = match associated.as_slice() {
-                        [] | [_] => associated,
+                        [] => associated
+                            .into_iter()
+                            .map(|pcurve| (pcurve, None))
+                            .collect(),
                         candidates => {
                             let selected = surface_step.and_then(|surface| {
                                 select_associated_pcurve(
@@ -2349,11 +2352,14 @@ fn build_one(
                                 )
                             });
                             if let Some(selected) = selected {
-                                vec![selected]
+                                vec![(selected.id, selected.parameter_range)]
                             } else {
                                 let n = candidates.len();
-                                let message = match (edge.curve, surface_step) {
-                                    (Some(curve), Some(surface)) => format!(
+                                let message = match (edge.curve, surface_step, n) {
+                                    (Some(curve), Some(surface), 1) => format!(
+                                        "curve #{curve} has one pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices, so the coedge has no pcurve"
+                                    ),
+                                    (Some(curve), Some(surface), _) => format!(
                                         "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
                                     ),
                                     _ => format!(
@@ -2388,10 +2394,10 @@ fn build_one(
                         },
                         pcurves: pcurves
                             .into_iter()
-                            .map(|pcurve| PcurveUse {
+                            .map(|(pcurve, parameter_range)| PcurveUse {
                                 pcurve,
                                 isoparametric: None,
-                                parameter_range: None,
+                                parameter_range,
                             })
                             .collect(),
                         use_curve: None,
@@ -3022,6 +3028,11 @@ fn associated_pcurves(
 /// Distinct candidates that tie remain unresolved, while candidates that map
 /// to the same model-space locus are equivalent carriers and may be reduced
 /// to one deterministic identity.
+struct SelectedPcurve {
+    id: PcurveId,
+    parameter_range: Option<[f64; 2]>,
+}
+
 fn select_associated_pcurve(
     ir: &CadIr,
     surface_step: u64,
@@ -3029,7 +3040,7 @@ fn select_associated_pcurve(
     vdefs: &BTreeMap<u64, VertexDef>,
     point_positions: &CarrierIndex,
     candidates: &[PcurveId],
-) -> Option<PcurveId> {
+) -> Option<SelectedPcurve> {
     let surface_identity = format!("step:data:surface#{surface_step}");
     let surface = ir
         .model
@@ -3067,13 +3078,38 @@ fn select_associated_pcurve(
     if !best.is_finite() || !bound.is_finite() || best > bound {
         return None;
     }
+    let selected = |candidate_index: usize| {
+        let pcurve = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == candidates[candidate_index])?;
+        let parameter_range = pcurve_declared_parameter_range(&pcurve.geometry).and_then(|range| {
+            let declared = pcurve_declared_endpoint_fit(
+                &index,
+                &surface_id,
+                &pcurve.geometry,
+                range,
+                start,
+                end,
+            )?;
+            (declared.is_finite() && declared > bound).then_some([
+                fits[candidate_index].start_parameter,
+                fits[candidate_index].end_parameter,
+            ])
+        });
+        Some(SelectedPcurve {
+            id: candidates[candidate_index].clone(),
+            parameter_range,
+        })
+    };
     let tie_tolerance = 1.0e-9_f64.max(best * 1.0e-9);
     let equally_good = scores
         .iter()
         .filter(|score| (**score - best).abs() <= tie_tolerance)
         .count();
     if equally_good == 1 {
-        return Some(candidates[best_index].clone());
+        return selected(best_index);
     }
 
     let best_pcurve = ir
@@ -3114,13 +3150,14 @@ fn select_associated_pcurve(
             )
         });
     equivalent_ties.then(|| {
-        candidates
+        let selected_index = candidates
             .iter()
             .enumerate()
             .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
-            .map(|(_, candidate)| candidate.clone())
-            .expect("tied candidate set is non-empty")
-    })
+            .map(|(candidate_index, _)| candidate_index)
+            .expect("tied candidate set is non-empty");
+        selected(selected_index)
+    })?
 }
 
 #[derive(Clone, Copy)]
@@ -3146,6 +3183,45 @@ fn pcurve_endpoint_fit(
         end_parameter: end.1,
         score: start.0.max(end.0),
     })
+}
+
+fn pcurve_declared_parameter_range(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            pcurve_declared_parameter_range(basis)
+        }
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Nurbs { .. } => None,
+    }
+}
+
+fn pcurve_declared_endpoint_fit(
+    index: &ModelIndex<'_>,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    range: [f64; 2],
+    start: Point3,
+    end: Point3,
+) -> Option<f64> {
+    let first_uv = pcurve_uv(geometry, range[0])?;
+    let last_uv = pcurve_uv(geometry, range[1])?;
+    let first = model_surface_point_by_id(index, surface_id, first_uv.u, first_uv.v)?;
+    let last = model_surface_point_by_id(index, surface_id, last_uv.u, last_uv.v)?;
+    let forward = first.distance(start).max(last.distance(end));
+    let reversed = first.distance(end).max(last.distance(start));
+    Some(forward.min(reversed))
 }
 
 fn pcurve_surface_closest(
