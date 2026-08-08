@@ -2729,7 +2729,8 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        let thread_face_candidates = (crate::design::design_feature_family(&scope.kind)
+        let feature_family = crate::design::design_feature_family(&scope.kind);
+        let thread_face_candidates = (feature_family
             == Some(crate::design::DesignFeatureFamily::Thread))
         .then(|| {
             exact_face_selection_group(operand, scope, operand_groups)?;
@@ -2743,9 +2744,20 @@ pub(crate) fn bind_face_operand_history_candidates(
                 crate::design::face_resolve::nested_bounded_face_history_candidates(operand)
             })
             .flatten();
+        let grouped_reference_face_candidates = (!matches!(
+            feature_family,
+            Some(
+                crate::design::DesignFeatureFamily::Thread
+                    | crate::design::DesignFeatureFamily::Split
+            )
+        ))
+        .then(|| grouped_reference_face_candidate(operand, topology, &changed_faces))
+        .flatten()
+        .map(|face| vec![face]);
         let history_candidates = thread_face_candidates
             .clone()
             .or(nested_split_face_candidates)
+            .or_else(|| grouped_reference_face_candidates.clone())
             .unwrap_or_else(|| {
                 crate::design::face_resolve::historical_face_operand_candidates(operand)
             });
@@ -2762,7 +2774,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
         );
-        let preserves_stable_face_set = crate::design::design_feature_family(&scope.kind)
+        let preserves_stable_face_set = feature_family
             == Some(crate::design::DesignFeatureFamily::Shell)
             || operand
                 .group_record_index
@@ -2813,7 +2825,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     bounded
                 } else {
                     let pattern = {
-                        (crate::design::design_feature_family(&scope.kind)
+                        (feature_family
                             == Some(crate::design::DesignFeatureFamily::CircularPattern))
                         .then(|| {
                             resolve_pattern_face_by_surface_radius(
@@ -2839,15 +2851,22 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .collect();
         }
-        if crate::design::design_feature_family(&scope.kind)
-            == Some(crate::design::DesignFeatureFamily::Split)
-        {
+        if let Some(candidates) = &grouped_reference_face_candidates {
+            // A grouped frame's unique changed topology-face reference is its
+            // exact historical selection lane.
+            operand.resolved_face_slots =
+                crate::design::face_resolve::resolve_face_operand_history_candidate_from(
+                    operand, candidates,
+                )
+                .into_iter()
+                .collect();
+        }
+        if feature_family == Some(crate::design::DesignFeatureFamily::Split) {
             operand.resolved_face_slots = resolve_split_tool_face(operand, topology)
                 .into_iter()
                 .collect();
         }
-        if crate::design::design_feature_family(&scope.kind)
-            == Some(crate::design::DesignFeatureFamily::Loft)
+        if feature_family == Some(crate::design::DesignFeatureFamily::Loft)
             && operand.recipe_kind == crate::records::ConstructionRecipeKind::BoundedFace
             && state
                 .transition
@@ -2962,6 +2981,33 @@ fn effective_faces(
     } else {
         &reference.candidate_faces
     }
+}
+
+fn grouped_reference_face_candidate(
+    operand: &crate::records::DesignFaceOperand,
+    topology: &AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+) -> Option<cadmpeg_ir::ids::FaceId> {
+    if operand.recipe_kind != crate::records::ConstructionRecipeKind::BoundedFace
+        || !crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(
+            &operand.recipe_prefix_bytes,
+        )
+    {
+        return None;
+    }
+    let topology_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut candidates = operand
+        .recipe_references
+        .iter()
+        .map(|reference| reference.design_reference)
+        .filter(|reference| topology_faces.contains(reference) && changed_faces.contains(reference))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [face] = candidates.as_slice() else {
+        return None;
+    };
+    Some(cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(*face)))
 }
 
 fn relation_members(
@@ -10101,6 +10147,86 @@ mod tests {
         let changed = [10, 11, 12, 30, 31, 32].into_iter().collect();
         assert_eq!(
             profile_face_group_cardinality_candidates(&ambiguous, &changed, 3),
+            None
+        );
+    }
+
+    #[test]
+    fn grouped_face_reference_selects_one_changed_topology_face() {
+        use crate::records::DesignFaceOperand;
+
+        let mut prefix = vec![0; 10];
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&5u32.to_le_bytes());
+        for (token, references) in [
+            ("1", [10u32, 20].as_slice()),
+            ("2", [30u32].as_slice()),
+            ("3", [40u32].as_slice()),
+            ("4", [50u32].as_slice()),
+            ("5", [60u32].as_slice()),
+        ] {
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(token.as_bytes());
+            prefix.extend_from_slice(&[0; 4]);
+            prefix.extend_from_slice(
+                &u32::try_from(references.len())
+                    .expect("synthetic reference count")
+                    .to_le_bytes(),
+            );
+            for reference in references {
+                prefix.extend_from_slice(&reference.to_le_bytes());
+            }
+        }
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+
+        let mut operand = serde_json::from_value::<DesignFaceOperand>(serde_json::json!({
+            "id": "f3d:Design/BulkStream.dat:design-face-operand#1",
+            "scope_record_index": 1,
+            "scope_reference_ordinal": 0,
+            "record_index": 2,
+            "byte_offset": 0,
+            "class_tag": "277",
+            "paired_byte_offset": 0,
+            "paired_class_tag": "259",
+            "recipe_record_index": 5,
+            "recipe_record_byte_offset": 0,
+            "recipe_id": "f3d:Design/BulkStream.dat:construction-recipe#5",
+            "recipe_prefix_offset": 0,
+            "recipe_prefix_bytes": "",
+            "recipe_references": [],
+            "recipe_kind": "bounded_face",
+            "recipe_program_offset": 0,
+            "recipe_program": [0],
+            "recipe_node_offsets": [],
+            "recipe_nodes": [],
+            "next_record_index": 6,
+            "next_byte_offset": 0
+        }))
+        .expect("grouped face operand");
+        operand.recipe_prefix_bytes = prefix;
+        operand.recipe_references =
+            crate::design::decode::dimension_frames::decode_recipe_references(
+                &operand.recipe_prefix_bytes,
+                0,
+            );
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 20],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10])),
+            Some(cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(10)))
+        );
+        assert_eq!(
+            grouped_reference_face_candidate(&operand, &topology, &HashSet::from([10, 20])),
+            None
+        );
+        let mut trailing = operand;
+        trailing.recipe_prefix_bytes.extend_from_slice(&[0; 4]);
+        assert_eq!(
+            grouped_reference_face_candidate(&trailing, &topology, &HashSet::from([10])),
             None
         );
     }

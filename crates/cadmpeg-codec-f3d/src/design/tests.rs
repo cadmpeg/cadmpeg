@@ -2843,6 +2843,122 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
 }
 
 #[test]
+fn face_recipe_decodes_five_group_reference_sequence() {
+    fn operand(prefix: &mut Vec<u8>, selector: u32, token: &str, references: &[u32]) {
+        prefix.extend_from_slice(&selector.to_le_bytes());
+        prefix.extend_from_slice(token.as_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(
+            &u32::try_from(references.len())
+                .expect("synthetic reference count")
+                .to_le_bytes(),
+        );
+        for reference in references {
+            prefix.extend_from_slice(&reference.to_le_bytes());
+        }
+    }
+
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&5u32.to_le_bytes());
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    operand(&mut prefix, 2, "-4", &[401, 402]);
+    let first_operand_end = prefix.len();
+    operand(&mut prefix, 3, "8", &[501]);
+
+    let second_group_count_at = prefix.len();
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    operand(&mut prefix, 4, "-9", &[601, 602]);
+
+    for (selector, token, reference) in [(5, "7", 701), (6, "-1", 801), (7, "0", 901)] {
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        operand(&mut prefix, selector, token, &[reference]);
+    }
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| {
+                (
+                    reference.selector,
+                    reference.token.as_str(),
+                    reference.design_reference,
+                )
+            })
+            .collect::<Vec<_>>(),
+        [
+            (2, "-4", 401),
+            (2, "-4", 402),
+            (3, "8", 501),
+            (4, "-9", 601),
+            (4, "-9", 602),
+            (5, "7", 701),
+            (6, "-1", 801),
+            (7, "0", 901),
+        ]
+    );
+    assert_eq!(references[0].selector_offset, 1_022);
+    assert_eq!(references[0].token_offset, 1_026);
+    assert_eq!(references[0].design_reference_offset, 1_036);
+    assert_eq!(references[1].design_reference_offset, 1_040);
+
+    let mut wrong_first_group_count = prefix.clone();
+    wrong_first_group_count[18..22].copy_from_slice(&3u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(
+            &wrong_first_group_count,
+            1_000,
+        )
+        .is_empty()
+    );
+    let mut wrong_group_count = prefix.clone();
+    wrong_group_count[14..18].copy_from_slice(&4u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(
+            &wrong_group_count,
+            1_000,
+        )
+        .is_empty()
+    );
+    let mut empty_group = prefix.clone();
+    empty_group[second_group_count_at..second_group_count_at + 4]
+        .copy_from_slice(&0u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&empty_group, 1_000)
+            .is_empty()
+    );
+    let mut length_prefixed_token = prefix.clone();
+    length_prefixed_token.splice(26..26, 2u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(
+            &length_prefixed_token,
+            1_000,
+        )
+        .is_empty()
+    );
+    let mut locally_terminated_operand = prefix.clone();
+    locally_terminated_operand.splice(first_operand_end..first_operand_end, 0u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(
+            &locally_terminated_operand,
+            1_000,
+        )
+        .is_empty()
+    );
+    let mut trailing = prefix.clone();
+    trailing.extend_from_slice(&0u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+            .is_empty()
+    );
+    assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
+}
+
+#[test]
 fn dimension_recipe_rejects_non_decimal_reference_tokens() {
     for token in [b"-".as_slice(), b"+1", b"1-"] {
         let mut prefix = vec![0; 10];

@@ -162,6 +162,7 @@ pub(crate) fn decode_recipe_references(
     match u32_at(prefix, 14) {
         Some(2) => decode_paired_recipe_references(prefix, prefix_offset),
         Some(3) => decode_standard_recipe_references(prefix, prefix_offset),
+        Some(5) => decode_grouped_recipe_references(prefix, prefix_offset),
         _ => Vec::new(),
     }
 }
@@ -183,7 +184,8 @@ fn decode_standard_recipe_references(
             prefix,
             prefix_offset,
             at,
-            RecipeReferenceOperandFrame::StandardTerminated,
+            RecipeReferenceTokenFrame::Either,
+            true,
         ) else {
             return Vec::new();
         };
@@ -219,7 +221,8 @@ fn decode_paired_recipe_references(
             prefix,
             prefix_offset,
             at,
-            RecipeReferenceOperandFrame::PairedPacked,
+            RecipeReferenceTokenFrame::Packed,
+            false,
         ) else {
             return Vec::new();
         };
@@ -228,7 +231,8 @@ fn decode_paired_recipe_references(
             prefix,
             prefix_offset,
             at,
-            RecipeReferenceOperandFrame::PairedLengthPrefixed,
+            RecipeReferenceTokenFrame::LengthPrefixed,
+            true,
         ) else {
             return Vec::new();
         };
@@ -251,26 +255,74 @@ fn decode_paired_recipe_references(
     operands.into_iter().flatten().collect()
 }
 
+fn decode_grouped_recipe_references(
+    prefix: &[u8],
+    prefix_offset: u64,
+) -> Vec<crate::records::DesignRecipeReference> {
+    const MINIMUM_PACKED_OPERAND_SIZE: usize = 17;
+    const GROUP_COUNT: usize = 5;
+
+    let mut references = Vec::new();
+    let mut at = 18usize;
+    for _ in 0..GROUP_COUNT {
+        let Some(operand_count) = usize::try_from(u32_at(prefix, at).unwrap_or(0)).ok() else {
+            return Vec::new();
+        };
+        let Some(next) = at.checked_add(4) else {
+            return Vec::new();
+        };
+        at = next;
+        if operand_count == 0
+            || operand_count > prefix.len().saturating_sub(at) / MINIMUM_PACKED_OPERAND_SIZE
+        {
+            return Vec::new();
+        }
+        for _ in 0..operand_count {
+            let Some((mut operand_references, next)) = decode_recipe_reference_operand(
+                prefix,
+                prefix_offset,
+                at,
+                RecipeReferenceTokenFrame::Packed,
+                false,
+            ) else {
+                return Vec::new();
+            };
+            references.append(&mut operand_references);
+            at = next;
+        }
+    }
+    if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
+        references
+    } else {
+        Vec::new()
+    }
+}
+
 pub(crate) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool {
     u32_at(prefix, 14) == Some(2) && !decode_recipe_references(prefix, 0).is_empty()
 }
 
+pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
+    u32_at(prefix, 14) == Some(5) && !decode_recipe_references(prefix, 0).is_empty()
+}
+
 #[derive(Clone, Copy)]
-enum RecipeReferenceOperandFrame {
-    StandardTerminated,
-    PairedPacked,
-    PairedLengthPrefixed,
+enum RecipeReferenceTokenFrame {
+    Either,
+    Packed,
+    LengthPrefixed,
 }
 
 fn decode_recipe_reference_operand(
     prefix: &[u8],
     prefix_offset: u64,
     at: usize,
-    frame: RecipeReferenceOperandFrame,
+    token_frame: RecipeReferenceTokenFrame,
+    terminated: bool,
 ) -> Option<(Vec<crate::records::DesignRecipeReference>, usize)> {
     let selector = u32_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(frame, RecipeReferenceOperandFrame::PairedPacked))
+    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
         .then(|| {
             lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
                 |(token, marker_at)| {
@@ -281,7 +333,7 @@ fn decode_recipe_reference_operand(
             )
         })
         .flatten();
-    let packed = (!matches!(frame, RecipeReferenceOperandFrame::PairedLengthPrefixed))
+    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
         .then(|| {
             (1usize..=8).find_map(|length| {
                 let token =
@@ -304,15 +356,13 @@ fn decode_recipe_reference_operand(
         return None;
     }
     let references_end = references_at.checked_add(reference_bytes)?;
-    let next = match frame {
-        RecipeReferenceOperandFrame::StandardTerminated
-        | RecipeReferenceOperandFrame::PairedLengthPrefixed => {
-            if u32_at(prefix, references_end) != Some(0) {
-                return None;
-            }
-            references_end.checked_add(4)?
+    let next = if terminated {
+        if u32_at(prefix, references_end) != Some(0) {
+            return None;
         }
-        RecipeReferenceOperandFrame::PairedPacked => references_end,
+        references_end.checked_add(4)?
+    } else {
+        references_end
     };
     let references = (0..reference_count)
         .map(|reference_ordinal| {
