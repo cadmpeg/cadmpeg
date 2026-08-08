@@ -214,6 +214,50 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
 }
 
 #[test]
+fn hole_outline_placement_preserves_stored_plane_order() {
+    let row = |id| crate::surface::SurfaceRow {
+        id,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 911,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let plane = |id, z| crate::surface::OutlinePlane {
+        surface_id: id,
+        origin: [0.0, 0.0, z],
+        normal: [0.0, 0.0, 1.0],
+        u_axis: [1.0, 0.0, 0.0],
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.extend([row(902), row(701)]);
+    scan.planes
+        .outlines
+        .extend([plane(902, 0.0), plane(701, 6.5)]);
+
+    assert_eq!(
+        feature_outline_planes(&scan, 911),
+        Some(vec![
+            (902, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0]),
+            (701, [0.0, 0.0, 6.5], [0.0, 0.0, 1.0]),
+        ])
+    );
+    assert_eq!(
+        hole_placement(feature_outline_planes(&scan, 911).expect("complete planes")),
+        Some((
+            902,
+            [0.0, 0.0, 1.0],
+            Termination::Blind {
+                length: Length(6.5),
+            },
+        ))
+    );
+}
+
+#[test]
 fn surface_prototype_dependencies_point_from_consumers_to_unique_producers() {
     let mut dependencies = BTreeMap::new();
     add_surface_prototype_feature_dependencies(&mut dependencies, 40, &[0, 40, 286, 286, 1111]);

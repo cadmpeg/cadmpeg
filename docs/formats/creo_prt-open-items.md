@@ -618,16 +618,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the grammar to bind every generated-entity table, affected-geometry array, and loop-history entry to its owning feature. `feature/rows.rs` accepts a start at a known feature identifier followed by one of the three constants `eb 04`, `90 01`, and `c8 10`, and ends the row at the next such start. The three constants appear in no specification or layout table. A row family with a fourth header value folds into the preceding row and gives that feature the other feature's affected geometry.
 
-### SP-27. Class-911 hole entry-plane order
-
-**Question.** Which order gives the entry plane and the termination plane of a class-911 hole?
-
-**Known.** `creo_prt.md` §6 "When a class-911 hole owns exactly two complete outline-backed plane rows, their" states that the stored order of the two plane rows is the entry and termination order, and that the first plane row is the hole's native placement-face selection.
-
-**Conflict.** The specification gives stored row order. `decode.rs` `feature_outline_planes` collects the row identifiers into a `BTreeSet`, which replaces stored order with ascending surface identifier. `hole_placement` then takes the first element as the entry plane. The two orders agree only when the surface identifiers increase in row order.
-
-**Need.** We must know the order to give the hole its placement face and its direction. `hole_extent_and_direction` orients the hole from the first plane toward the second, so a reversed order reverses the hole and names the blind bottom as the placement face. The depth magnitude stays correct, so no gate rejects it.
-
 ### SP-28. Material feature precedence
 
 **Question.** Which field orders two material features for the base-body selection?

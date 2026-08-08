@@ -5397,8 +5397,6 @@ fn feature_outline_planes(
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .map(|row| row.id)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
         .map(|id| feature_outline_plane(scan, feature_id, id))
         .collect()
 }

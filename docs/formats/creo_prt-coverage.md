@@ -140,6 +140,9 @@ fixtures, claims above L1 remain unproven.
   use generated face references only when those identities and their producer
   dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
   remain native selections.
+- Class-911 hole cap planes retain their stored surface-row order. The first
+  complete outline-backed plane is the placement face, and the second defines
+  the signed blind direction and depth.
 - Unique feature-owned `crv_array` topology rows now emit feature-result edge
   identities. Fillet and chamfer affected-edge selections use generated edge
   references only when the topology row is unique and its producer result
