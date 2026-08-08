@@ -553,8 +553,8 @@ impl Parser<'_> {
                 records: ids,
             });
         }
-        if implementation_level == ImplementationLevel::LegacyEdition1 && data.is_empty() {
-            return self.err("2;1 requires one DATA section");
+        if implementation_level != ImplementationLevel::Edition3 && data.is_empty() {
+            return self.err("historical implementation levels require one DATA section");
         }
         if implementation_level == ImplementationLevel::Edition3
             && data.len() == 1

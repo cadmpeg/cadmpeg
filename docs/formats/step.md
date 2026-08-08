@@ -37,8 +37,8 @@ below `4` interpret character bytes as ISO-8859-1. Edition 3 uses
 implementation levels `4;1`, `4;2`, and `4;3` and interprets direct character
 bytes as UTF-8. Historical levels `1`, `2`, `2;1`, and `2;2` require one
 unparameterized DATA section and no FILE_POPULATION, SECTION_LANGUAGE, or
-SECTION_CONTEXT header entity. Levels
-`3;1` and `3;2` forbid ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE
+SECTION_CONTEXT header entity. Levels `3;1` and `3;2` require at least one
+DATA section and forbid ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE
 sections. Every UTF-8 sequence uses the shortest form, encodes one Unicode
 scalar value, and excludes surrogate code points.
 
