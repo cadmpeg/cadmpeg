@@ -261,9 +261,9 @@ complex `PCURVE` support before extending the typed domain.
 
 ### TP-08. Face-bound partial dispatch
 
-**Question.** Which partial supplies the `bound` and `orientation` attributes
-of a complex instance that carries both a `FACE_BOUND` and a
-`FACE_OUTER_BOUND` partial?
+**Resolved.** The partial with the boundary parameters supplies the inherited
+`FACE_BOUND` attributes. An empty `FACE_OUTER_BOUND` partial supplies the
+outer-role classification.
 
 **Known.** `has_type` matches a partial name exactly and does not walk the
 EXPRESS subtype hierarchy
@@ -274,14 +274,11 @@ first (`topology.rs:2978`). `FACE_OUTER_BOUND` adds no attributes to
 `FACE_BOUND`, so the second site reads attribute 1 of an empty partial and
 returns no loop.
 
-**Need.** A face bound that is written as a complex instance decodes in the
-shell reader and fails in the implicit-plane reader, so a base `FACE` with
-such a bound silently gets no implicit plane. We need one dispatch rule for
-attribute-less subtypes. The `most_specific` doc comment (`topology.rs:4637`)
-states subtype-first as the convention, but subtype-first is wrong when the
-subtype adds no attributes, and `most_specific` is used for both classifying
-the governing subtype and locating attributes. Those two jobs need opposite
-orders.
+**Rule.** Face-bound classification reads the presence of
+`FACE_OUTER_BOUND`, while attribute lookup selects the first face-bound
+partial that carries the three boundary parameters. The shell reader and
+implicit-plane reader use this same dispatch. The synthesized complex-face
+fixture covers the inherited-attribute form.
 
 ## 7. Units and measures
 

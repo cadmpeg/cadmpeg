@@ -2199,14 +2199,13 @@ fn build_one(
                     return None;
                 }
                 let is_outer_bound = has_type(br, "FACE_OUTER_BOUND");
+                let Some(bound_type) = face_bound_attribute_type(br) else {
+                    note_failure(failure, bound_step, "face bound attributes");
+                    return None;
+                };
                 if is_outer_bound {
                     outer_bound_count += 1;
                 }
-                let bound_type = if has_type(br, "FACE_BOUND") {
-                    "FACE_BOUND"
-                } else {
-                    "FACE_OUTER_BOUND"
-                };
                 let loop_step = require_carrier(
                     named_reference(br, bound_type, 1, 0),
                     failure,
@@ -2265,11 +2264,6 @@ fn build_one(
                     continue;
                 }
                 if has_type(lr, "POLY_LOOP") {
-                    let bound_type = if has_type(br, "FACE_BOUND") {
-                        "FACE_BOUND"
-                    } else {
-                        "FACE_OUTER_BOUND"
-                    };
                     let bound_forward = require_carrier(
                         named_logical(br, bound_type, 2, 0),
                         failure,
@@ -2370,11 +2364,6 @@ fn build_one(
                     note_failure(failure, loop_step, "edge loop carrier");
                     return None;
                 }
-                let bound_type = if has_type(br, "FACE_BOUND") {
-                    "FACE_BOUND"
-                } else {
-                    "FACE_OUTER_BOUND"
-                };
                 let bound_forward = require_carrier(
                     named_logical(br, bound_type, 2, 0),
                     failure,
@@ -2975,13 +2964,7 @@ fn implicit_face_points(
 
     candidates.into_iter().find_map(|bound_step| {
         let bound = exchange.records.get(&bound_step)?;
-        let bound_type = if has_type(bound, "FACE_OUTER_BOUND") {
-            "FACE_OUTER_BOUND"
-        } else if has_type(bound, "FACE_BOUND") {
-            "FACE_BOUND"
-        } else {
-            return None;
-        };
+        let bound_type = face_bound_attribute_type(bound)?;
         let loop_step = named_reference(bound, bound_type, 1, 0)?;
         let loop_record = exchange.records.get(&loop_step)?;
         let bound_forward = named_logical(bound, bound_type, 2, 0)?;
@@ -4632,6 +4615,32 @@ fn refs(value: &Value) -> Option<Vec<u64>> {
 
 fn has_type(record: &RawRecord, name: &str) -> bool {
     record.partials.iter().any(|partial| partial.name == name)
+}
+
+/// Selects the partial that carries inherited `FACE_BOUND` attributes.
+/// `FACE_OUTER_BOUND` adds the outer role but may be empty in a complex
+/// instance, so subtype classification and attribute lookup are separate.
+fn face_bound_attribute_type(record: &RawRecord) -> Option<&'static str> {
+    if record
+        .partial("FACE_OUTER_BOUND")
+        .is_some_and(|partial| partial.parameters.len() >= 3)
+    {
+        return Some("FACE_OUTER_BOUND");
+    }
+    if record
+        .partial("FACE_BOUND")
+        .is_some_and(|partial| partial.parameters.len() >= 3)
+    {
+        return Some("FACE_BOUND");
+    }
+    record
+        .partial("FACE_BOUND")
+        .map(|_| "FACE_BOUND")
+        .or_else(|| {
+            record
+                .partial("FACE_OUTER_BOUND")
+                .map(|_| "FACE_OUTER_BOUND")
+        })
 }
 
 /// Returns the first partial name present in a subtype-first dispatch chain.

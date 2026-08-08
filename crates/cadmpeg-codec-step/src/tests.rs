@@ -1868,6 +1868,36 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
 }
 
 #[test]
+fn complex_outer_face_bound_uses_inherited_attributes() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#26=FACE_OUTER_BOUND('',#25,.T.);",
+            "#26=(FACE_BOUND('',#25,.T.) FACE_OUTER_BOUND());",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#26));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex face bound");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(decoded.ir.model.faces.len(), 1);
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("implicit face plane");
+    assert!(matches!(surface.geometry, SurfaceGeometry::Plane { .. }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn implicit_face_plane_uses_the_outer_loop_only() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

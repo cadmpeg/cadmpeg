@@ -268,10 +268,13 @@ implicit plane from the first `FACE_OUTER_BOUND` in source order, or from the
 first valid boundary when no outer bound is declared. The selected loop keeps
 its ordered points and applies `FACE_BOUND.orientation`; its signed polygon
 area defines the plane normal, and its first non-degenerate edge defines the
-u-axis. A ring whose signed area is at most `1e-12` times the square of its
-largest point displacement is degenerate and does not produce a plane. An
-`ORIENTED_FACE` keeps the base plane carrier orientation and composes its
-reversal through face sense and boundary traversal. A base `EDGE` emits a
+u-axis. In a complex face-bound instance, the partial with the boundary
+parameters supplies the inherited `FACE_BOUND` attributes; an empty
+`FACE_OUTER_BOUND` partial supplies only the outer role. A ring whose signed
+area is at most `1e-12` times the square of its largest point displacement is
+degenerate and does not produce a plane. An `ORIENTED_FACE` keeps the base
+plane carrier orientation and composes its reversal through face sense and
+boundary traversal. A base `EDGE` emits a
 curve-less CADIR edge when both endpoint vertices have point carriers. A base
 `VERTEX` whose point carrier is absent makes its containing member mandatory and
 unrepresentable. Sheet and wire members containing that vertex are omitted;
