@@ -3767,7 +3767,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn shifted_reserved_triplet_classifies_principal_planes_in_order() {
+    fn shifted_reserved_triplet_does_not_classify_principal_planes() {
         let mut scene = feature("scene", Some("2"), 0);
         let mut front = feature("front", Some("3"), 1);
         let mut top = feature("top", Some("4"), 2);
@@ -3784,15 +3784,15 @@ mod history_reference_tests {
 
         assert_eq!(
             principal_plane_in_history(&front, &by_source, &features),
-            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+            None
         );
         assert_eq!(
             principal_plane_in_history(&top, &by_source, &features),
-            Some(cadmpeg_ir::features::PrincipalPlane::Top)
+            None
         );
         assert_eq!(
             principal_plane_in_history(&right, &by_source, &features),
-            Some(cadmpeg_ir::features::PrincipalPlane::Right)
+            None
         );
     }
 
@@ -3886,7 +3886,7 @@ mod history_reference_tests {
         let right = feature("right", None, 12);
         let mut successor = feature("origin", None, 13);
         successor.kind = "Other".into();
-        let records = [front.clone(), top, right, successor];
+        let records = [front.clone(), top.clone(), right.clone(), successor.clone()];
 
         assert_eq!(
             principal_plane_in_history(&front, &HashMap::new(), &records),
@@ -3897,6 +3897,26 @@ mod history_reference_tests {
         unbounded[3].kind = unbounded[0].kind.clone();
         assert_eq!(
             principal_plane_in_history(&front, &HashMap::new(), &unbounded),
+            None
+        );
+
+        let second_front = feature("front-2", None, 20);
+        let second_top = feature("top-2", None, 21);
+        let second_right = feature("right-2", None, 22);
+        let mut second_successor = feature("origin-2", None, 23);
+        second_successor.kind = "Other".into();
+        let ambiguous = [
+            front,
+            top,
+            right,
+            successor,
+            second_front,
+            second_top,
+            second_right,
+            second_successor,
+        ];
+        assert_eq!(
+            principal_plane_in_history(&ambiguous[0], &HashMap::new(), &ambiguous),
             None
         );
     }
@@ -7375,50 +7395,58 @@ fn principal_plane_in_history(
         }
     }
 
-    history_features.windows(4).find_map(|records| {
-        let [front, top, right, successor] = records else {
-            return None;
-        };
-        let triplet = [front, top, right];
-        if !triplet.into_iter().all(|record| {
-            record.xml_tag.eq_ignore_ascii_case("Feature")
-                && record.parameters.is_empty()
-                && !record.kind.is_empty()
-                && match record.input_class.as_deref() {
-                    Some(class) => {
-                        native_object_class(class).kind == NativeClassKind::ReferencePlane
+    let triplets = history_features
+        .windows(4)
+        .filter_map(|records| {
+            let [front, top, right, successor] = records else {
+                return None;
+            };
+            let triplet = [front, top, right];
+            if !triplet.into_iter().all(|record| {
+                record.xml_tag.eq_ignore_ascii_case("Feature")
+                    && record.parameters.is_empty()
+                    && !record.kind.is_empty()
+                    && match record.input_class.as_deref() {
+                        Some(class) => {
+                            native_object_class(class).kind == NativeClassKind::ReferencePlane
+                        }
+                        None => record.properties.is_empty(),
                     }
-                    None => record.properties.is_empty(),
-                }
-                && record.source_id.is_none()
-                && record.tree_parent.is_none()
-                && record.parent_source_id.is_none()
-        }) || front.kind != top.kind
-            || front.kind != right.kind
-            || top.ordinal != front.ordinal + 1
-            || right.ordinal != top.ordinal + 1
-            || !successor.xml_tag.eq_ignore_ascii_case("Feature")
-            || !successor.parameters.is_empty()
-            || !successor.properties.is_empty()
-            || successor.kind.is_empty()
-            || successor.input_class.as_deref().is_some_and(|class| {
-                native_object_class(class).kind != NativeClassKind::OriginProfileFeature
-            })
-            || successor.source_id.is_some()
-            || successor.tree_parent.is_some()
-            || successor.parent_source_id.is_some()
-            || successor.ordinal != right.ordinal + 1
-            || successor.kind == front.kind
-        {
-            return None;
-        }
-        match feature.id.as_str() {
-            id if id == front.id => Some(PrincipalPlane::Front),
-            id if id == top.id => Some(PrincipalPlane::Top),
-            id if id == right.id => Some(PrincipalPlane::Right),
-            _ => None,
-        }
-    })
+                    && record.source_id.is_none()
+                    && record.tree_parent.is_none()
+                    && record.parent_source_id.is_none()
+            }) || front.kind != top.kind
+                || front.kind != right.kind
+                || top.ordinal != front.ordinal + 1
+                || right.ordinal != top.ordinal + 1
+                || !successor.xml_tag.eq_ignore_ascii_case("Feature")
+                || !successor.parameters.is_empty()
+                || !successor.properties.is_empty()
+                || successor.kind.is_empty()
+                || successor.input_class.as_deref().is_some_and(|class| {
+                    native_object_class(class).kind != NativeClassKind::OriginProfileFeature
+                })
+                || successor.source_id.is_some()
+                || successor.tree_parent.is_some()
+                || successor.parent_source_id.is_some()
+                || successor.ordinal != right.ordinal + 1
+                || successor.kind == front.kind
+            {
+                return None;
+            }
+            Some([front, top, right])
+        })
+        .collect::<Vec<_>>();
+    let [triplet] = triplets.as_slice() else {
+        return None;
+    };
+    let [front, top, right] = *triplet;
+    match feature.id.as_str() {
+        id if id == front.id => Some(PrincipalPlane::Front),
+        id if id == top.id => Some(PrincipalPlane::Top),
+        id if id == right.id => Some(PrincipalPlane::Right),
+        _ => None,
+    }
 }
 
 fn project_extrude(

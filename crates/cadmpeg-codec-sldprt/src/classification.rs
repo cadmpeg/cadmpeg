@@ -499,7 +499,7 @@ pub(crate) fn principal_plane_with_siblings(
     let start = if complete_triplet(2) {
         2
     } else if complete_triplet(3) {
-        3
+        return None;
     } else {
         return principal_plane(feature);
     };

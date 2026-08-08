@@ -731,6 +731,8 @@ Built-in reference-plane history records have native class `moRefPlane_c` and no
 
 Legacy compound histories without feature-input classes identify the same principal planes by a complete triplet of classless, parameterless, propertyless `Feature` records at source IDs `2`, `3`, and `4` with one shared nonempty native type token. An incomplete triplet or differing type tokens has no principal-plane identity.
 
+Native-class principal-plane roles require the source IDs `2`, `3`, and `4`. A native-class triplet at source IDs `3`, `4`, and `5` has no principal-plane role. A classless `Feature` triplet with no source IDs uses its ordered records as Front, Top, and Right only when exactly one complete candidate triplet exists; a history with more than one complete candidate triplet does not bind any of them.
+
 Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the annotations container and `Sketch` source ID `5` is the model origin. Other source IDs are positions in an optional-node sequence rather than role codes.
 
 A classless Keywords `Feature` whose `Type` token is `EquationDriven` is the equation container node. The token is a role code and identifies the container independently of its source identifier, its display name, and its dimension children. The container's dimensions are document-global: an unqualified expression identifier that names no dimension of the referencing feature resolves to the same-named container dimension.

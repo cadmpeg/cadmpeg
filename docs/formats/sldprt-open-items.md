@@ -1040,20 +1040,6 @@ The caller at `reference_geometry.rs:862` anchors the scan to `moPlaneInterAxisD
 
 **Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
 
-### DI-52. Identity of an ID-less principal-plane triplet
-
-**Question.** What identifies the Front, Top, and Right planes in a legacy history whose records carry no source identifier?
-
-**Known.** `sldprt.md` §2 "Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the" defines principal-plane identity by source IDs `2`, `3`, and `4`. It defines no rule for records without a source identifier.
-
-`crates/cadmpeg-codec-sldprt/src/../history.rs:7294` takes the first four-record window whose ordinals are consecutive and whose fourth record has a different kind, and gives positions 0, 1, and 2 the Front, Top, and Right identities. The window is bounded on the successor side and not on the predecessor side, so a run of four same-kind records shifts the identities by one. The triplet-member test checks `properties.is_empty()` in the classless branch only, so a member with a decoded frame passes.
-
-**Need.** We must know the identity rule. A shifted triplet gives every principal plane the wrong fixed frame.
-
-**Note.** The shifted source-identifier layout has the same question and a different answer. `crates/cadmpeg-codec-sldprt/src/classification.rs:499` accepts a triplet that starts at source identifier `3` and maps `3`, `4`, and `5` to Front, Top, and Right by position in the triplet. `sldprt.md` §2 binds the identities to the identifier values: source IDs `2`, `3`, and `4` are Front, Top, and Right. Read against the values, identifier `3` is Top. `sldprt.md` §2 places three `moRefPlane_c` records at `3`, `4`, and `5` in the origin-at-six layout and does not say which of them is Front, so the specification does not settle the shifted case. The decoder chose the positional reading and a test pins it.
-
-Also unresolved here: `history.rs:7294` has no cross-history uniqueness gate, so two disjoint matching runs each produce a Front, a Top, and a Right.
-
 ### DI-53. Reference-plane frame encoding precedence
 
 **Question.** Which field selects the frame encoding of a constructed reference plane?
