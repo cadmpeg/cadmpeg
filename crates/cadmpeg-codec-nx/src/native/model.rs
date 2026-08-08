@@ -430,6 +430,8 @@ impl NativeModel {
         let feature_body_segment_uses = feature_body_segment_uses(
             &feature_body_references,
             &feature_body_data_block_uses,
+            &feature_input_blocks,
+            &data_blocks,
             &segment_body_bindings,
         );
         let feature_input_block_identity_groups =
@@ -763,6 +765,7 @@ impl NativeModel {
             &feature_boolean_operations,
             &feature_operation_body_operands,
             &segment_body_bindings,
+            &feature_input_blocks,
         )
         .unwrap_or_default();
         let expression_declarations = expression_declarations(container);

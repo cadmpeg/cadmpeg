@@ -7,7 +7,7 @@
 )]
 use super::*;
 use crate::native::features::{
-    FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation,
+    FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
 use crate::native::om::{DataBlock, OmSchemaRole};
@@ -144,9 +144,14 @@ pub struct SegmentOmLink {
 /// Return body objects whose latest decoded writer is not consumed by a later
 /// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
 /// the retained history area unless a decoded operation writes them. Primary
-/// references resolved in an offset-store block namespace do not participate
-/// in object-identity lineage. The label arena is source/newest-first; all
-/// history positions below use oldest-first order within each section.
+/// primary references from operations with resolved offset-store inputs do not
+/// participate in object-identity lineage, including missing or ambiguous
+/// body ordinals. The label arena is source/newest-first; all history
+/// positions below use oldest-first order within each section.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The lineage rule consumes independent native relation arenas; keeping them explicit preserves those format-level dependencies."
+)]
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
@@ -155,14 +160,20 @@ pub fn terminal_feature_body_indices(
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
+    inputs: &[FeatureInputBlock],
 ) -> Option<BTreeSet<u32>> {
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
         .collect::<BTreeSet<_>>();
+    let offset_store_operations =
+        crate::native::features::feature_input_store_operations(inputs, data_blocks);
     let object_references = references
         .iter()
-        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
+        .filter(|reference| {
+            !offset_store_references.contains(reference.id.as_str())
+                && !offset_store_operations.contains(reference.operation_label.as_str())
+        })
         .collect::<Vec<_>>();
     if object_references.is_empty() && bindings.is_empty() {
         return None;
@@ -276,6 +287,10 @@ pub fn terminal_feature_body_indices(
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "The lineage rule consumes independent native relation arenas; keeping them explicit preserves those format-level dependencies."
+)]
 pub fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
@@ -284,6 +299,7 @@ pub fn segment_body_lineage_statuses(
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
+    inputs: &[FeatureInputBlock],
 ) -> Option<Vec<SegmentBodyLineageStatus>> {
     let terminal = terminal_feature_body_indices(
         labels,
@@ -293,6 +309,7 @@ pub fn segment_body_lineage_statuses(
         booleans,
         operands,
         bindings,
+        inputs,
     )?;
     bindings
         .iter()
@@ -805,6 +822,7 @@ mod tests {
                 &booleans,
                 &[],
                 &[],
+                &[],
             ),
             Some([10].into_iter().collect())
         );
@@ -864,7 +882,16 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &[], &booleans, &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &[],
+                &[],
+                &[],
+                &booleans,
+                &[],
+                &bindings,
+                &[],
+            ),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -939,6 +966,7 @@ mod tests {
                 &booleans,
                 &[],
                 &bindings,
+                &[],
             ),
             Some([10, 11, 20, 21].into_iter().collect())
         );
@@ -985,6 +1013,7 @@ mod tests {
                 &[],
                 &[],
                 &bindings,
+                &[],
             ),
             Some(std::collections::BTreeSet::new())
         );
@@ -1031,6 +1060,7 @@ mod tests {
             &[],
             &[],
             &bindings,
+            &[],
         )
         .expect("complete delete-only lineage");
         assert_eq!(statuses.len(), 2);
@@ -1085,6 +1115,77 @@ mod tests {
             &[],
             &[],
             &bindings,
+            &[],
+        )
+        .expect("segment binding establishes lineage");
+        assert_eq!(statuses.len(), 1);
+        assert!(statuses[0].terminal);
+    }
+
+    #[test]
+    fn feature_body_lineage_excludes_missing_offset_store_ordinal_collisions() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBodyReference, FeatureInputBlock, FeatureOperationLabel,
+        };
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [FeatureBodyReference {
+            id: "reference#11".to_string(),
+            operation_label: "operation#delete".to_string(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 0,
+        }];
+        let inputs = [FeatureInputBlock {
+            id: "input#3".to_string(),
+            operation_label: "operation#delete".to_string(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "block#3".to_string(),
+            source_offset: 0,
+        }];
+        let blocks = [DataBlock {
+            id: "block#3".to_string(),
+            section_ordinal: 3,
+            block_ordinal: 3,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        }];
+        let bindings = [SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: "partition".to_string(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+
+        let statuses = super::segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &[],
+            &blocks,
+            &[],
+            &[],
+            &bindings,
+            &inputs,
         )
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
@@ -1154,6 +1255,7 @@ mod tests {
                 &booleans,
                 &[],
                 &bindings,
+                &[],
             ),
             Some([10, 11, 20, 21].into_iter().collect())
         );
@@ -1204,6 +1306,7 @@ mod tests {
                 &[],
                 &[],
                 &bindings,
+                &[],
             ),
             Some([10, 11].into_iter().collect())
         );
@@ -1254,6 +1357,7 @@ mod tests {
                 &[],
                 &[],
                 &bindings,
+                &[],
             ),
             Some(std::collections::BTreeSet::new())
         );
@@ -1306,6 +1410,7 @@ mod tests {
                 &[],
                 &[],
                 &booleans,
+                &[],
                 &[],
                 &[],
             ),
@@ -1370,6 +1475,7 @@ mod tests {
                 &booleans,
                 &[],
                 &bindings,
+                &[],
             ),
             Some(std::collections::BTreeSet::new())
         );
@@ -1411,7 +1517,16 @@ mod tests {
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &[], &[], &operands, &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &[],
+                &[],
+                &[],
+                &[],
+                &operands,
+                &bindings,
+                &[],
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1452,7 +1567,16 @@ mod tests {
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &[], &[], &operands, &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &[],
+                &[],
+                &[],
+                &[],
+                &operands,
+                &bindings,
+                &[],
+            ),
             Some([20, 30].into_iter().collect())
         );
     }

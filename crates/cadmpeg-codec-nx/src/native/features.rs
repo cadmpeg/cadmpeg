@@ -3530,15 +3530,21 @@ pub fn feature_body_reference_occurrences(
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
         .collect::<BTreeSet<_>>();
+    let offset_store_operations = feature_input_store_operations(inputs, blocks);
     references
         .iter()
-        .filter(|reference| !offset_store_references.contains(reference.id.as_str()))
+        .filter(|reference| {
+            !offset_store_references.contains(reference.id.as_str())
+                && !offset_store_operations.contains(reference.operation_label.as_str())
+        })
         .filter_map(|reference| {
             let matches = bindings
                 .iter()
@@ -3561,26 +3567,58 @@ pub fn feature_body_segment_uses(
         .collect()
 }
 
+/// Return operations with at least one resolved input field in an offset store.
+///
+/// The operation selects the namespace before its primary body ordinal is
+/// resolved. A missing ordinal or multiple selected stores therefore remains
+/// unresolved in the offset-store namespace; it does not become a
+/// segment-object reference through integer equality.
+pub(crate) fn feature_input_store_operations(
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> BTreeSet<String> {
+    feature_input_store_sections(inputs, blocks)
+        .into_iter()
+        .filter_map(|(operation_label, sections)| (!sections.is_empty()).then_some(operation_label))
+        .collect()
+}
+
+/// Group resolved operation-header inputs by their indexed offset-store section.
+pub(crate) fn feature_input_store_sections(
+    inputs: &[FeatureInputBlock],
+    blocks: &[crate::native::om::DataBlock],
+) -> BTreeMap<String, BTreeSet<u32>> {
+    let blocks_by_id = blocks
+        .iter()
+        .map(|block| (block.id.as_str(), block))
+        .collect::<BTreeMap<_, _>>();
+    let mut sections_by_operation = BTreeMap::<String, BTreeSet<u32>>::new();
+    for input in inputs {
+        let Some(block) = blocks_by_id.get(input.data_block.as_str()) else {
+            continue;
+        };
+        sections_by_operation
+            .entry(input.operation_label.clone())
+            .or_default()
+            .insert(block.section_ordinal);
+    }
+    sections_by_operation
+}
+
 /// Resolve primary feature body fields in an unambiguous operation input store.
 pub fn feature_body_data_block_uses(
     references: &[FeatureBodyReference],
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Vec<FeatureBodyDataBlockUse> {
-    let blocks_by_id = blocks
-        .iter()
-        .map(|block| (block.id.as_str(), block))
-        .collect::<BTreeMap<_, _>>();
+    let store_sections = feature_input_store_sections(inputs, blocks);
     references
         .iter()
         .filter_map(|reference| {
-            let section_ordinals = inputs
-                .iter()
-                .filter(|input| input.operation_label == reference.operation_label)
-                .filter_map(|input| blocks_by_id.get(input.data_block.as_str()))
-                .map(|block| block.section_ordinal)
-                .collect::<BTreeSet<_>>();
-            let section_ordinals = section_ordinals.into_iter().collect::<Vec<_>>();
+            let section_ordinals = store_sections
+                .get(reference.operation_label.as_str())
+                .map(|sections| sections.iter().copied().collect::<Vec<_>>())
+                .unwrap_or_default();
             let [section_ordinal] = section_ordinals.as_slice() else {
                 return None;
             };
@@ -10499,6 +10537,7 @@ mod tests {
                 binding("binding#0", 0, "partition", 10, 11),
                 binding("binding#1", 1, "plain", 20, 21),
             ],
+            &[],
         )
         .expect("required invariant");
         assert_eq!(statuses.len(), 2);
@@ -10530,14 +10569,21 @@ mod tests {
         let uses = feature_body_segment_uses(
             std::slice::from_ref(&reference),
             &[],
+            &[],
+            &[],
             std::slice::from_ref(&binding),
         );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].feature_body_reference, reference.id);
         assert_eq!(uses[0].segment_body_binding, binding.id);
-        assert!(
-            feature_body_segment_uses(&[reference], &[], &[binding.clone(), binding]).is_empty()
-        );
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[],
+            &[],
+            &[],
+            &[binding.clone(), binding]
+        )
+        .is_empty());
     }
 
     #[test]
@@ -10567,7 +10613,113 @@ mod tests {
             stream_role: 19,
             source_offset: 40,
         };
-        assert!(feature_body_segment_uses(&[reference], &[data_block_use], &[binding]).is_empty());
+        assert!(
+            feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_missing_offset_store_ordinals() {
+        use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#99".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 99,
+            raw_body_object_index: vec![99],
+            source_offset: 90,
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "block#3".into(),
+            source_offset: 80,
+        };
+        let block = DataBlock {
+            id: "block#3".into(),
+            section_ordinal: 2,
+            block_ordinal: 3,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "plain".into(),
+            body_object_index: 99,
+            body_alias_object_index: 100,
+            stream_role: 19,
+            source_offset: 40,
+        };
+
+        assert!(
+            feature_body_segment_uses(&[reference], &[], &[input], &[block], &[binding]).is_empty()
+        );
+    }
+
+    #[test]
+    fn feature_body_segment_uses_exclude_ambiguous_offset_store_namespaces() {
+        use super::{feature_body_segment_uses, FeatureBodyReference, FeatureInputBlock};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#99".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 99,
+            raw_body_object_index: vec![99],
+            source_offset: 90,
+        };
+        let input = |slot: u8, object_index: u32, data_block: &str| FeatureInputBlock {
+            id: format!("input#{slot}"),
+            operation_label: reference.operation_label.clone(),
+            input_slot: slot,
+            object_index,
+            raw_object_index: vec![object_index as u8],
+            data_block: data_block.into(),
+            source_offset: 80 + u64::from(slot),
+        };
+        let block = |id: &str, section_ordinal: u32, block_ordinal: u32| DataBlock {
+            id: id.into(),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 10,
+            byte_len: 19,
+            sha256: "00".into(),
+            source_entry: "part".into(),
+            source_offset: 20,
+        };
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "plain".into(),
+            body_object_index: 99,
+            body_alias_object_index: 100,
+            stream_role: 19,
+            source_offset: 40,
+        };
+
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[],
+            &[input(0, 3, "block#3"), input(1, 4, "block#4"),],
+            &[block("block#3", 2, 3), block("block#4", 3, 4)],
+            &[binding],
+        )
+        .is_empty());
     }
 
     #[test]
@@ -10673,6 +10825,7 @@ mod tests {
             &booleans,
             &[],
             &bindings,
+            &[],
         )
         .expect("required invariant");
         assert_eq!(statuses.len(), 3);
