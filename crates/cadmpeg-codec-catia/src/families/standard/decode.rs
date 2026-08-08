@@ -3418,11 +3418,22 @@ fn attach_standard_topology(
             })
             .collect::<Vec<_>>();
         for edge in 0..allowed_faces.len() {
+            let mut exhausted = false;
             allowed_faces[edge].retain(|face| {
                 let mut trial = edge_faces.clone();
                 trial[edge][1] = *face;
-                missing_edge::face_endpoint_candidates_close(&trial, options, *face)
+                match missing_edge::face_endpoint_candidates_close(&trial, options, *face) {
+                    missing_edge::FaceEndpointClosureOutcome::Closed => true,
+                    missing_edge::FaceEndpointClosureOutcome::Rejected => false,
+                    missing_edge::FaceEndpointClosureOutcome::Exhausted => {
+                        exhausted = true;
+                        true
+                    }
+                }
             });
+            if exhausted {
+                return Err(StandardTopologyFailure::TopologySearchExhausted);
+            }
         }
         if let Some(completed) =
             missing_edge::resolve_standard_duplicate_edge_faces(brep, &edge_faces, &allowed_faces)

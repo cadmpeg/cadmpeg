@@ -554,14 +554,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The neutral face orientation is the product of the stored face sense and this normal, so the sense is not a gauge. Two coaxial caps of one boss take the same normal from the same cylinder axis, so one of the two is reversed. A plane target that one exact face and one derived face share can also lose its exact normal, because the merge sees two different values and keeps none. We must know the sense field, or we must withhold the normal as the no-witness path already does.
 
-### SN-34. Duplicate face slot under a refused search
-
-**Question.** Which field gives the second face of an edge whose `0x60` row names one face twice?
-
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" gives the validity predicate for a face assignment. It gives no search bound. `missing_edge::face_endpoint_candidates_close` bounds its search at 65536 branch states and returns `Option<bool>`, where `None` is a refusal and `Some(false)` is a proof that no closing selection exists. The caller collapses the two with `unwrap_or(false)`.
-
-**Need.** A refusal then removes a candidate face from the domain. Two candidate faces become one, and `missing_edge::unique_duplicate_face_assignment` accepts the survivor as the unique answer. A refusal must withhold, as the sibling budget in the same file does. We must know the field to bind the second face without a search.
-
 ### SN-37. Same-class edge row interchange
 
 **Question.** Which rows may exchange their endpoint pairs without changing the transferred body?

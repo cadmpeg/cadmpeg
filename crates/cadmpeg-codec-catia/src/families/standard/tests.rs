@@ -37,8 +37,8 @@ use crate::solve::missing_edge::{
     bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
     face_endpoint_candidates_close, motif_port_points, propagate_edge_port_points,
     propagate_partial_edge_port_points, resolve_edge_faces_from_runs, same_unordered_pair,
-    unique_duplicate_face_assignment, MeshBoundaryEdgeCandidate, MeshEdgeRun,
-    MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
+    unique_duplicate_face_assignment, FaceEndpointClosureOutcome, MeshBoundaryEdgeCandidate,
+    MeshEdgeRun, MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain,
 };
 use crate::solve::UnionFind;
 use cadmpeg_core::decode::WorkBudget;
@@ -6256,16 +6256,14 @@ fn duplicate_face_slots_do_not_budget_forced_assignments() {
 #[test]
 fn face_endpoint_candidates_require_one_closed_local_cycle() {
     let faces = [[0, 1], [0, 2], [0, 3]];
-    assert!(face_endpoint_candidates_close(
-        &faces,
-        &[vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]],
-        0,
-    ));
-    assert!(!face_endpoint_candidates_close(
-        &faces,
-        &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]],
-        0,
-    ));
+    assert_eq!(
+        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]], 0,),
+        FaceEndpointClosureOutcome::Closed
+    );
+    assert_eq!(
+        face_endpoint_candidates_close(&faces, &[vec![[0, 1]], vec![[1, 2]], vec![[3, 4]]], 0,),
+        FaceEndpointClosureOutcome::Rejected
+    );
 }
 
 #[test]
@@ -6276,7 +6274,24 @@ fn face_endpoint_candidates_do_not_budget_fixed_cycle_size() {
         .map(|edge| vec![[edge, (edge + 1) % EDGE_COUNT]])
         .collect::<Vec<_>>();
 
-    assert!(face_endpoint_candidates_close(&faces, &candidates, 0));
+    assert_eq!(
+        face_endpoint_candidates_close(&faces, &candidates, 0),
+        FaceEndpointClosureOutcome::Closed
+    );
+}
+
+#[test]
+fn face_endpoint_candidates_report_an_incomplete_search() {
+    const EDGE_COUNT: usize = 17;
+    let faces = vec![[0, 0]; EDGE_COUNT];
+    let candidates = (0..EDGE_COUNT)
+        .map(|edge| vec![[edge * 2, edge * 2 + 1], [100 + edge * 2, 101 + edge * 2]])
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        face_endpoint_candidates_close(&faces, &candidates, 0),
+        FaceEndpointClosureOutcome::Exhausted
+    );
 }
 
 #[test]
