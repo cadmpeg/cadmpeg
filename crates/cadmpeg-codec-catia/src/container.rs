@@ -997,24 +997,43 @@ fn declaration_class_pair(data: &[u8]) -> Option<(String, String)> {
     ))
 }
 
-/// Reconstruct the logical BREP buffer: the largest `MainDataStream` followed by
-/// the largest `SurfacicReps` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
-/// catalogues the BREP body carries both a substantial `MainDataStream` and a
-/// `SurfacicReps`; the contiguous-body exception has neither and returns `None`.
+/// Reconstruct the logical BREP buffer: the uniquely largest canonical
+/// `MainDataStream` followed by the uniquely largest canonical `SurfacicReps`
+/// ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
+/// catalogues the BREP body carries both canonical streams; the contiguous-body
+/// exception has neither and returns `None`.
 pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
-    let main = dir
-        .descriptors
-        .iter()
-        .filter(|d| d.name == "MainDataStream")
-        .max_by_key(|d| d.logical_length)?;
-    let surf = dir
-        .descriptors
-        .iter()
-        .filter(|d| d.name.contains("Surf"))
-        .max_by_key(|d| d.logical_length)?;
+    let main = unique_largest_descriptor(
+        dir.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == "MainDataStream"),
+    )?;
+    let surf = unique_largest_descriptor(
+        dir.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.name == "SurfacicReps"),
+    )?;
     let mut out = reconstruct_logical_stream(data, main, dir.inner);
     out.extend(reconstruct_logical_stream(data, surf, dir.inner));
     Some(out)
+}
+
+fn unique_largest_descriptor<'a>(
+    descriptors: impl IntoIterator<Item = &'a Descriptor>,
+) -> Option<&'a Descriptor> {
+    let mut selected = None;
+    let mut selected_length = 0;
+    let mut equal_count = 0;
+    for descriptor in descriptors {
+        if selected.is_none() || descriptor.logical_length > selected_length {
+            selected = Some(descriptor);
+            selected_length = descriptor.logical_length;
+            equal_count = 1;
+        } else if descriptor.logical_length == selected_length {
+            equal_count += 1;
+        }
+    }
+    (equal_count == 1).then_some(selected).flatten()
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -1337,6 +1356,19 @@ mod tests {
         bytes
     }
 
+    fn test_descriptor(name: &str, physical_offset: u32, length: u32) -> Descriptor {
+        Descriptor {
+            name: name.to_string(),
+            desc_offset: 0,
+            logical_length: length,
+            extents: vec![Extent {
+                phys_off: physical_offset,
+                phys_len: length,
+                flags: 0,
+            }],
+        }
+    }
+
     #[test]
     fn coherent_e5_stream_overrides_nested_fbb_markers() {
         let inner = InnerDir {
@@ -1397,6 +1429,42 @@ mod tests {
             }
         }
         assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn brep_stream_requires_unique_canonical_descriptors() {
+        let data = (0..32u8).collect::<Vec<_>>();
+        let tied = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("MainDataStream", 4, 4),
+                test_descriptor("SurfacicReps", 8, 2),
+            ],
+        };
+        assert!(super::brep_stream(&data, &tied).is_none());
+
+        let noncanonical = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("SurfacicRepsAlias", 4, 4),
+            ],
+        };
+        assert!(super::brep_stream(&data, &noncanonical).is_none());
+
+        let unique = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                test_descriptor("MainDataStream", 0, 4),
+                test_descriptor("MainDataStream", 4, 5),
+                test_descriptor("SurfacicReps", 9, 2),
+            ],
+        };
+        assert_eq!(
+            super::brep_stream(&data, &unique),
+            Some(data[4..9].iter().chain(&data[9..11]).copied().collect())
+        );
     }
 
     #[test]
