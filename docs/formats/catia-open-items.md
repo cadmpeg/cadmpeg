@@ -58,6 +58,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The name selects the BREP streams (CR-04) and names the stream in the container report. An empty or wrong name makes `container::identify_variant` report `Variant::InnerNoDirectory` for a file that has a directory. We must know the offset to read a name that is not the longest run in that window.
 
+### CR-06. Alias row graph binding without a part container
+
+**Question.** Which object graph does the `f1[2]` ordinal of an outer alias row index when the file declares no outer container?
+
+**Known.** `catia.md` §7.5 "The low 24 bits of `tag` are the persistent roster tag" gives "`f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream", and gives the negative case: "A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link."
+
+**Need.** The binding publishes `object_graph`, `object_record`, and `design_object` on every alias row. We must know the graph to bind a row in a file with no outer container declaration, or the rows must carry no link.
+
+**Conflict.** `native` selects the graph with the most records when the outer container declarations are empty, and requires only that the maximum is unique. A file with no declaration has a missing part-container graph, so the specification requires no link and the decoder supplies one. The specification names no record-count rule. The fallback predates the specification sentence that excludes it: the tree that added the `CATPrtCont` path kept the record-count rule below it.
+
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics
@@ -619,6 +629,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §6.5 `b2 03 60` gives "Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener." `b2::records` stops the group at the next opener or 2500 bytes after the opener, whichever comes first. Each embedded frame is about 100 bytes, so the bound truncates a group after about 24 cylinders.
 
 **Need.** A truncated group leaves its remaining cylinders undecoded. They are not framed `b2 03 28` records, so no other path recovers them, and the edge sides that need them stay unbound. We must know the extent rule, or the bound must come from the opener.
+
+### SN-42. Consolidated record census by marker
+
+**Question.** Where does the consolidated A/B record cluster start, so that a frame walk can enumerate it?
+
+**Known.** `catia.md` §6 "Header width and flag are independent" gives "The frame is length-closed (walking lands exactly on each next record and on the cluster end)", and gives "A literal marker scan ... is both lossy ... and noisy (in-payload coincidences); census by the frame walk, not by marker hits."
+
+**Need.** `wire::records::consolidated_records` is the only record source for the consolidated, `a5a8`, `b2`, freeform, and standard paths, and its complement defines where `05 08 01` vertex rows are read. It is a marker scan: it accepts an offset when the lead byte is in `a5..a7` or `b2..b4`, the next byte is `03`, `13`, or `83`, and the declared length stays in bounds. It applies no length-closure test. We must know the cluster start to walk the frames as the specification requires.
+
+**Note.** Two properties make in-payload coincidences reachable. After it accepts a record the scanner advances by one byte, so it re-examines the accepted record's own header, where a payload-length byte of `0xa5` to `0xa7` or `0xb2` to `0xb4` can open a phantom record. Suppression holds one payload range only, so a phantom overwrites the real record's range and stops suppressing it. An A-family phantom takes its length from payload bytes, so it can also claim a large range and hide the real records inside it.
 
 ## 4. Object stream
 
