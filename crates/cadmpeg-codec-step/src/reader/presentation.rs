@@ -136,6 +136,7 @@ pub(super) fn decode(
         let Some(name) =
             partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 0).and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     layer_id,
@@ -158,6 +159,7 @@ pub(super) fn decode(
         let description = partial_parameter(layer, "PRESENTATION_LAYER_ASSIGNMENT", 1)
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     layer_id,
@@ -880,6 +882,7 @@ fn find_color(
                     },
                     name_value.and_then(|value| {
                         decode_text(
+                            exchange,
                             value,
                             losses,
                             id,
@@ -900,6 +903,7 @@ fn find_color(
                         .and_then(|partial| partial.parameters.first())
                 }?;
                 let name = decode_text(
+                    exchange,
                     name_value,
                     losses,
                     id,

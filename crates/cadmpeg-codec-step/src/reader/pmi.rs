@@ -60,6 +60,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let identification = named_parameter(record, "DATUM", 0)
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -74,6 +75,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -122,6 +124,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             id,
             shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -157,6 +160,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .flat_map(|partial| &partial.parameters)
             .find_map(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -174,6 +178,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                     .flat_map(|partial| partial.parameters.iter().rev())
                     .find_map(|value| {
                         decode_text(
+                            exchange,
                             value,
                             &mut losses,
                             id,
@@ -242,6 +247,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(0)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -254,6 +260,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(1)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -266,6 +273,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(2)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -278,6 +286,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                             .parameter(3)
                             .and_then(|value| {
                                 decode_text(
+                                    exchange,
                                     value,
                                     &mut losses,
                                     *reference,
@@ -444,6 +453,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 .or_else(|| record.parameter(0))
                 .and_then(|value| {
                     decode_text(
+                        exchange,
                         value,
                         &mut losses,
                         id,
@@ -550,6 +560,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 .or_else(|| record.parameter(0))
                 .and_then(|value| {
                     decode_text(
+                        exchange,
                         value,
                         &mut losses,
                         id,
@@ -832,6 +843,7 @@ fn find_annotation_text(
         .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
     {
         if let Some(text) = decode_text(
+            exchange,
             value,
             losses,
             id,

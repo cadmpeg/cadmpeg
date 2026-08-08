@@ -2178,6 +2178,7 @@ fn build_one(
             let fid = FaceId(format!("step:data:face#{face_step}{face_suffix}"));
             let name = face_info.name.as_ref().and_then(|value| {
                 super::decode_text(
+                    exchange,
                     value,
                     losses,
                     face_step,

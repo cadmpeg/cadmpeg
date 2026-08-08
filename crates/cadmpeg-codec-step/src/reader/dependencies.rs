@@ -29,6 +29,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                         .first()
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,
@@ -41,6 +42,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                         .get(1)
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,
@@ -61,9 +63,9 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             let parameters = record.partial("EXTERNAL_SOURCE")?.parameters.as_slice();
             Some((
                 id,
-                parameters
-                    .first()
-                    .and_then(|value| source_text(value, &mut losses, id, "external source")),
+                parameters.first().and_then(|value| {
+                    source_text(exchange, value, &mut losses, id, "external source")
+                }),
             ))
         })
         .filter_map(|(id, source)| source.map(|source| (id, source)))
@@ -83,6 +85,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                 .get(1)
                 .and_then(|value| {
                     decode_text(
+                        exchange,
                         value,
                         &mut losses,
                         id,
@@ -105,7 +108,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             let item = partial
                 .parameters
                 .first()
-                .and_then(|value| source_text(value, &mut losses, id, "external item"))
+                .and_then(|value| source_text(exchange, value, &mut losses, id, "external item"))
                 .unwrap_or_default();
             notes.insert(format!("external source {source} item {item}"));
             typed.extend([id, source_id]);
@@ -134,6 +137,7 @@ fn document_reference_parameters(record: &RawRecord) -> Option<&[Value]> {
 }
 
 fn source_text(
+    exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,
     record_id: u64,
@@ -141,13 +145,14 @@ fn source_text(
 ) -> Option<String> {
     match value {
         Value::String(_) => decode_text(
+            exchange,
             value,
             losses,
             record_id,
             field,
             LossKind::MetadataNotTransferred,
         ),
-        Value::Typed(_, value) => source_text(value, losses, record_id, field),
+        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
         _ => None,
     }
 }

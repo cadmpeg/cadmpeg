@@ -1887,6 +1887,7 @@ pub(super) fn associate_free_geometric_set_members(
                 .and_then(representation_item_name)
                 .and_then(|value| {
                     super::decode_text(
+                        exchange,
                         value,
                         losses,
                         member,
@@ -1960,6 +1961,7 @@ pub(super) fn associate_free_representation_members(
                 .and_then(representation_item_name)
                 .and_then(|value| {
                     super::decode_text(
+                        exchange,
                         value,
                         losses,
                         member,
@@ -2052,6 +2054,7 @@ fn associate_presentation_carrier(
         .and_then(representation_item_name)
         .and_then(|value| {
             super::decode_text(
+                exchange,
                 value,
                 losses,
                 target,

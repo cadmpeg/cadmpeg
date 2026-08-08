@@ -119,6 +119,7 @@ pub(super) fn decode(
         stored_parameters.insert("source_type".into(), name.into());
         for (index, value) in parameters.iter().enumerate() {
             if let Some(value) = value_text(
+                exchange,
                 value,
                 &mut losses,
                 id,
@@ -315,6 +316,7 @@ fn add_sheet_revision_usages(
             }
             if let Some(sequence) = sequence.and_then(|value| {
                 value_text(
+                    target_context.exchange,
                     value,
                     losses,
                     usage_id,
@@ -460,6 +462,7 @@ fn value_reference(value: &Value) -> Option<u64> {
 }
 
 fn value_text(
+    exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,
     record_id: u64,
@@ -471,6 +474,7 @@ fn value_text(
         Value::Real(value) => Some(value.to_string()),
         Value::Enumeration(value) => Some(format!(".{value}.")),
         Value::String(_) => decode_text(
+            exchange,
             value,
             losses,
             record_id,
@@ -490,11 +494,10 @@ fn value_text(
         Value::Derived => Some("*".into()),
         Value::List(values) => values
             .iter()
-            .map(|value| value_text(value, losses, record_id, field))
+            .map(|value| value_text(exchange, value, losses, record_id, field))
             .collect::<Option<Vec<_>>>()
             .map(|values| format!("({})", values.join(","))),
-        Value::Typed(name, value) => {
-            value_text(value, losses, record_id, field).map(|value| format!("{name}({value})"))
-        }
+        Value::Typed(name, value) => value_text(exchange, value, losses, record_id, field)
+            .map(|value| format!("{name}({value})")),
     }
 }

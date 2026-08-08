@@ -15,6 +15,24 @@ pub struct StringError {
 
 /// Decode the bytes between a Part 21 string token's apostrophe delimiters.
 pub fn decode(input: &[u8]) -> Result<String, StringError> {
+    decode_with_direct_encoding(input, DirectEncoding::Iso8859_1)
+}
+
+/// Decode a Part 21 string whose direct bytes use UTF-8.
+pub fn decode_utf8(input: &[u8]) -> Result<String, StringError> {
+    decode_with_direct_encoding(input, DirectEncoding::Utf8)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectEncoding {
+    Iso8859_1,
+    Utf8,
+}
+
+fn decode_with_direct_encoding(
+    input: &[u8],
+    direct_encoding: DirectEncoding,
+) -> Result<String, StringError> {
     let mut output = String::new();
     let mut at = 0;
     let mut page = b'A';
@@ -67,9 +85,24 @@ pub fn decode(input: &[u8]) -> Result<String, StringError> {
             },
             b'\'' => return error(at, "unpaired apostrophe"),
             b'\\' => return error(at, "unknown reverse-solidus escape"),
-            byte => {
-                output.push(char::from(byte));
-                at += 1;
+            _ => {
+                let start = at;
+                while at < input.len() && !matches!(input[at], b'\'' | b'\\') {
+                    at += 1;
+                }
+                let direct = &input[start..at];
+                match direct_encoding {
+                    DirectEncoding::Iso8859_1 => {
+                        output.extend(direct.iter().map(|byte| char::from(*byte)));
+                    }
+                    DirectEncoding::Utf8 => {
+                        let text = std::str::from_utf8(direct).map_err(|error| StringError {
+                            offset: start + error.valid_up_to(),
+                            message: "invalid UTF-8 direct string bytes".into(),
+                        })?;
+                        output.push_str(text);
+                    }
+                }
             }
         }
     }

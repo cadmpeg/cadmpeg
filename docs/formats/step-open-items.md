@@ -787,23 +787,14 @@ of every strip faces inward. We must confirm the rule from the standard.
 
 ### EL-01. Character encoding selection
 
-**Question.** How does a reader determine whether an exchange structure
-encodes its character bytes as ISO-8859-1 or as UTF-8?
+**Resolved.** The major value in the raw `FILE_DESCRIPTION`
+`implementation_level` selects the direct string repertoire. Values `4;1`,
+`4;2`, and `4;3` use UTF-8. Earlier implementation levels use ISO-8859-1.
+The reader applies this selection to every semantic string and retains
+`\X2\` and `\X4\` escape decoding in both repertoires. Invalid direct UTF-8
+bytes produce a metadata loss.
 
-**Known.** `step.md` §2 "Outside string escape sequences, editions 1 and 2
-interpret character bytes as ISO-8859-1. Edition 3 also accepts UTF-8."
-states that both apply.
-
-**Conflict.** The decoder implements the first sentence only. Every direct
-string byte becomes `char::from(byte)`, which is the ISO-8859-1 mapping
-(`crates/cadmpeg-codec-step/src/strings.rs:50-55`, `:70-73`). Nothing reads
-the implementation level or the schema edition, and no code path tries UTF-8
-on string bytes. An edition-3 file with UTF-8 names decodes to mojibake, and
-`decode_text` records no loss because the function does not fail. The same
-byte class gets a different encoding elsewhere: the resource token is strict
-UTF-8 (`crates/cadmpeg-codec-step/src/lex.rs:378`) and `FILE_SCHEMA` uses
-`from_utf8_lossy` (`crates/cadmpeg-codec-step/src/reader/mod.rs:744`). The
-item needs the edition-selection rule.
+**Known.** `step.md` §2 and §6 define the repertoire and its header selector.
 
 ### EL-02. Exchange-structure detection
 

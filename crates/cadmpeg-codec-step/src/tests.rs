@@ -30,7 +30,7 @@ use crate::{
 
 #[test]
 fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
-    use crate::strings::{decode, encode};
+    use crate::strings::{decode, decode_utf8, encode};
 
     assert_eq!(decode(b"it''s").unwrap(), "it's");
     assert_eq!(decode(b"a\\\\b").unwrap(), "a\\b");
@@ -47,6 +47,15 @@ fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
     assert_eq!(decode(b"\\PG\\\\S\\A").unwrap(), "Α");
     assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
     assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
+    assert_eq!(decode_utf8(b"caf\xC3\xA9").unwrap(), "café");
+    assert_eq!(
+        decode_utf8(b"caf\xC3\xA9\\X2\\03A9\\X0\\").unwrap(),
+        "caféΩ"
+    );
+    assert_eq!(
+        decode_utf8(b"caf\xE9").unwrap_err().message,
+        "invalid UTF-8 direct string bytes"
+    );
 
     for text in ["ASCII", "it's \\ quoted", "café Ω 🙂"] {
         assert_eq!(decode(encode(text).as_bytes()).unwrap(), text);
@@ -6627,8 +6636,43 @@ fn invalid_step_string_escape_is_reported_as_metadata_loss() {
             && loss.severity == cadmpeg_ir::Severity::Warning
             && loss
                 .message
-                .contains("STEP record #1 has an invalid product identifier string escape")
+                .contains("STEP record #1 has an invalid product identifier string")
     }));
+}
+
+#[test]
+fn edition_three_direct_utf8_text_uses_the_file_description_level() {
+    let mut source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'4;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=PRODUCT('P\xC3\xA9','N\xC3\xB8','',());\nENDSEC;\nEND-ISO-10303-21;\n".to_vec();
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&mut source), &DecodeOptions::default())
+        .expect("decode edition-three UTF-8 product");
+    let product = decoded
+        .ir
+        .model
+        .product_definitions
+        .first()
+        .expect("product definition");
+    assert_eq!(product.source_name.as_deref(), Some("Nø"));
+    assert_eq!(product.part_number.as_deref(), Some("Pé"));
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message.contains("invalid product identifier string")
+            || loss.message.contains("invalid product name string")
+    }));
+}
+
+#[test]
+fn legacy_direct_single_byte_text_keeps_iso_8859_1_mapping() {
+    let mut source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'3;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=PRODUCT('P\xE9','N','',());\nENDSEC;\nEND-ISO-10303-21;\n".to_vec();
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&mut source), &DecodeOptions::default())
+        .expect("decode legacy ISO-8859-1 product");
+    let product = decoded
+        .ir
+        .model
+        .product_definitions
+        .first()
+        .expect("product definition");
+    assert_eq!(product.part_number.as_deref(), Some("Pé"));
 }
 
 fn oriented_closed_shell_source(derived_slot: bool) -> String {

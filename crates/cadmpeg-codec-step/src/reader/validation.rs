@@ -65,6 +65,7 @@ pub(super) fn decode(
             let property = record.partial("PROPERTY_DEFINITION")?;
             let name = property.parameters.first().and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     id,
@@ -80,6 +81,7 @@ pub(super) fn decode(
                         .get(1)
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,

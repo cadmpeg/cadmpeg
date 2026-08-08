@@ -73,6 +73,7 @@ pub(super) fn decode(
         };
         let Some(description) = parameters.get(1).and_then(|value| {
             decode_text(
+                exchange,
                 value,
                 &mut losses,
                 id,
@@ -101,6 +102,7 @@ pub(super) fn decode(
             .first()
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     step_id,
@@ -113,6 +115,7 @@ pub(super) fn decode(
             .get(1)
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     step_id,
@@ -125,6 +128,7 @@ pub(super) fn decode(
             .get(2)
             .and_then(|value| {
                 decode_text(
+                    exchange,
                     value,
                     &mut losses,
                     step_id,
@@ -187,6 +191,7 @@ pub(super) fn decode(
             let name =
                 named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 1).and_then(|value| {
                     decode_text(
+                        exchange,
                         value,
                         &mut losses,
                         id,

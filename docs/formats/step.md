@@ -31,10 +31,11 @@ reference_entry = reference_name "=" resource ";"
 reference_name  = resource | instance_name
 ```
 
-Outside string escape sequences, editions 1 and 2 interpret character bytes as
-ISO-8859-1. Edition 3 also accepts UTF-8. Every UTF-8 sequence uses the
-shortest form, encodes one Unicode scalar value, and excludes surrogate code
-points.
+Outside string escape sequences, implementation levels with a major value
+below `4` interpret character bytes as ISO-8859-1. Edition 3 uses
+implementation levels `4;1`, `4;2`, and `4;3` and interprets direct character
+bytes as UTF-8. Every UTF-8 sequence uses the shortest form, encodes one
+Unicode scalar value, and excludes surrogate code points.
 
 Whitespace consists of space, horizontal tab, carriage return, and line feed.
 The `/*` delimiter starts a comment, and `*/` ends it. Comment delimiters form
@@ -136,7 +137,9 @@ links to other named opaque records.
 
 The header contains `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` in that
 order. `FILE_DESCRIPTION` supplies description strings and implementation
-level. `FILE_NAME` supplies name, timestamp, authors, organizations,
+level. The major value in `implementation_level` selects the direct string
+repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
+`FILE_NAME` supplies name, timestamp, authors, organizations,
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
 supplies one or more schema identifiers. Schema identifiers select the
 application protocol and edition. ASCII case differences compare equal.

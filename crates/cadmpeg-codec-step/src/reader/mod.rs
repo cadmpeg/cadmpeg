@@ -717,7 +717,35 @@ fn schema_name(exchange: &Exchange) -> String {
     names.join(",")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StringEncoding {
+    Iso8859_1,
+    Utf8,
+}
+
+fn string_encoding(exchange: &Exchange) -> StringEncoding {
+    let edition = exchange
+        .header
+        .iter()
+        .find(|record| record.name == "FILE_DESCRIPTION")
+        .and_then(|record| record.parameters.get(1))
+        .and_then(|value| match value {
+            Value::String(bytes) => bytes
+                .split(|byte| *byte == b';')
+                .next()
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .and_then(|edition| edition.parse::<u8>().ok()),
+            _ => None,
+        });
+    if edition == Some(4) {
+        StringEncoding::Utf8
+    } else {
+        StringEncoding::Iso8859_1
+    }
+}
+
 pub(super) fn decode_text(
+    exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,
     record_id: u64,
@@ -727,15 +755,17 @@ pub(super) fn decode_text(
     let Value::String(bytes) = value else {
         return None;
     };
-    match crate::strings::decode(bytes) {
+    let decoded = match string_encoding(exchange) {
+        StringEncoding::Iso8859_1 => crate::strings::decode(bytes),
+        StringEncoding::Utf8 => crate::strings::decode_utf8(bytes),
+    };
+    match decoded {
         Ok(text) => Some(text),
         Err(error) => {
             losses.push(LossNote {
                 code,
                 severity: Severity::Warning,
-                message: format!(
-                    "STEP record #{record_id} has an invalid {field} string escape: {error}"
-                ),
+                message: format!("STEP record #{record_id} has an invalid {field} string: {error}"),
                 provenance: None,
             });
             None
