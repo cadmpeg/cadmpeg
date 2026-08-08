@@ -2240,12 +2240,10 @@ pub(super) fn associate_styled_item_carriers(
     owned: &OwnedCarriers,
 ) {
     for (&style_id, style) in exchange.records.iter().filter(|(_, record)| {
-        matches!(
-            record.simple_name(),
-            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
-        )
+        record.partial("STYLED_ITEM").is_some()
+            || record.partial("OVER_RIDING_STYLED_ITEM").is_some()
     }) {
-        let Some(target) = style.parameter(2).and_then(Value::reference) else {
+        let Some(target) = styled_item_target(style) else {
             continue;
         };
         let mut targets = BTreeSet::new();
@@ -2283,6 +2281,19 @@ pub(super) fn associate_styled_item_carriers(
             }
         }
     }
+}
+
+fn styled_item_target(record: &RawRecord) -> Option<u64> {
+    record
+        .partial("STYLED_ITEM")
+        .and_then(|partial| partial.parameters.last())
+        .and_then(Value::reference)
+        .or_else(|| {
+            record
+                .partial("OVER_RIDING_STYLED_ITEM")
+                .and_then(|partial| partial.parameters.iter().rev().nth(1))
+                .and_then(Value::reference)
+        })
 }
 
 fn collect_styled_item_targets(

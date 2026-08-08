@@ -1496,7 +1496,7 @@ fn styled_free_curve_is_a_reachable_source_carrier() {
         "#1=CARTESIAN_POINT('',(0.,0.,0.));\
          #2=CARTESIAN_POINT('',(1.,0.,0.));\
          #7=POLYLINE('',(#1,#2));\
-         #10=STYLED_ITEM('',(),#7);",
+         #10=(GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('') STYLED_ITEM((),#7));",
     );
     let curve = result
         .ir
