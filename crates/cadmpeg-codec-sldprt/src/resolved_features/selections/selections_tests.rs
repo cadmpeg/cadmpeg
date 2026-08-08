@@ -371,7 +371,7 @@ fn compact_edge_selection_accepts_root_and_zero_run_separators() {
 }
 
 #[test]
-fn compact_edge_selection_accepts_wide_component_entries() {
+fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -392,20 +392,28 @@ fn compact_edge_selection_accepts_wide_component_entries() {
     let fourth = third + 28;
     entry(&mut payload, fourth, 0x8141, 0);
 
-    assert_eq!(
-        compact_edge_selection_at(&payload, marker),
-        Some(vec![0, 2, 1, 0])
-    );
-    let path = compact_edge_component_path_at(&payload, marker).unwrap();
-    assert_eq!(
-        path.iter()
-            .map(|component| component.local_id)
-            .collect::<Vec<_>>(),
-        [Some(0), Some(2), Some(1), Some(0)]
-    );
-    assert!(path
-        .iter()
-        .all(|component| component.type_signature == signature));
+    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+}
+
+#[test]
+fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
+    let marker = 12;
+    let mut payload = vec![0; 120];
+    payload[..4].copy_from_slice(&2u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let signature = [0x2a, 0x81, 0x2c, 1, 28, 0, 0, 0, 0x24, 1, 0xd3, 0x48];
+    let first = marker + 18;
+    payload[first..first + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+    payload[first + 4..first + 16].copy_from_slice(&signature);
+    let second = first + 24;
+    payload[second..second + 2].copy_from_slice(&0x8141u16.to_le_bytes());
+    payload[second + 4..second + 16].copy_from_slice(&signature);
+    payload[second + 20..second + 24].copy_from_slice(&5u32.to_le_bytes());
+
+    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&payload, marker), None);
 }
 
 #[test]

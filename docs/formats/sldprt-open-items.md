@@ -919,20 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-44. Component-path entry grammar
-
-**Question.** Which field selects between the wide and narrow component-path entry layouts, and which separator width applies in a mixed path?
-
-**Known.** `sldprt.md` §2 "A `moCompEdge_c` child carries an ordered compact edge-selection vector." states both entry forms and says wide vectors use one width for every entry. It gives no discriminator. `sldprt.md` §2 gives the mixed-path fill as "zero or `ff` word fill of 4, 8, or 12 bytes".
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:1424` tries wide, then heterogeneous, then sparse, and takes the first that parses. The wide layout is separated from the narrow one only by four zero bytes at `+16`, which is the narrow layout's `local_id` field, so the two grammars are not disjoint. A narrow vector whose entries all carry `local_id == 0` parses as wide, and each `local_id` is then read from the following entry.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:981` sorts five candidate parses by length and takes the longest. It compares only the candidates of equal length, so a shorter parse that disagrees is discarded with no test.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:1918` and `terminations.rs:1531` apply the uniqueness rule to the same question: collect every parse and refuse more than one. That is the correct shape and it is used in some sites and not in others.
-
-**Need.** We must know the discriminator. Until we know it, every path parser must collect the alternatives and withhold when more than one completes.
-
 ### DI-45. Termination reference vector position
 
 **Question.** What fixes the position of the component vector in an extrusion end specification?

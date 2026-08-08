@@ -1001,33 +1001,42 @@ pub(super) fn mirror_pattern_component_path_at(
     ))
     .ok()
     .filter(|count| (2..=65).contains(count))?;
-    let mut candidates = [
-        compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)
-            .map(|(components, _)| components),
+    let candidates = [
+        compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1),
         (cell_count > 2)
             .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
-            .flatten()
-            .map(|(components, _)| components),
-        compact_mixed_component_path(payload, marker + 18, cell_count, true)
-            .map(|(components, _)| components),
-        compact_mixed_component_path(payload, marker + 18, cell_count - 1, true)
-            .map(|(components, _)| components),
+            .flatten(),
+        compact_mixed_component_path(payload, marker + 18, cell_count, true),
+        compact_mixed_component_path(payload, marker + 18, cell_count - 1, true),
         (cell_count > 2)
             .then(|| compact_mixed_component_path(payload, marker + 18, cell_count - 2, true))
-            .flatten()
-            .map(|(components, _)| components),
+            .flatten(),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
-    candidates.sort_unstable_by_key(Vec::len);
-    let longest = candidates.pop()?;
-    (!candidates
-        .iter()
-        .rev()
-        .take_while(|candidate| candidate.len() == longest.len())
-        .any(|candidate| candidate != &longest))
-    .then_some(longest)
+    let candidates = distinct_candidates(
+        // A shorter root-slot interpretation is incomplete when another valid
+        // entry follows its end; the remaining entry is part of this path.
+        candidates
+            .into_iter()
+            .filter(|(_, end)| !component_path_continues(payload, *end, true)),
+    );
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.0.clone())
+}
+
+fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -> bool {
+    [0usize, 2, 4, 6, 8, 10, 12].into_iter().any(|gap| {
+        let root_separator = root_separators
+            && gap == 10
+            && payload.get(end..end + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        (compact_component_separator(payload, end, gap) || root_separator)
+            && (compact_heterogeneous_component_path(payload, end + gap, 1).is_some()
+                || compact_mixed_component_path(payload, end + gap, 1, root_separators).is_some())
+    })
 }
 
 pub(super) fn compact_mixed_component_path(
@@ -1406,17 +1415,27 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     if !(1..=64).contains(&count) {
         return None;
     }
-    compact_homogeneous_edge_ids(payload, marker + 18, count)
-        .or_else(|| {
-            compact_edge_component_path(payload, marker, count).and_then(|(components, _)| {
-                let ids = components
-                    .into_iter()
-                    .filter_map(|component| component.local_id)
-                    .collect::<Vec<_>>();
-                (!ids.is_empty()).then_some(ids)
-            })
-        })
-        .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
+    let mut candidates = Vec::new();
+    if let Some(ids) = compact_homogeneous_edge_ids(payload, marker + 18, count) {
+        candidates.push(ids);
+    }
+    for (components, _) in compact_edge_component_path_candidates(payload, marker, count) {
+        let ids = components
+            .into_iter()
+            .filter_map(|component| component.local_id)
+            .collect::<Vec<_>>();
+        if !ids.is_empty() {
+            candidates.push(ids);
+        }
+    }
+    if let Some(ids) = compact_u16_edge_ids(payload, marker + 18, count) {
+        candidates.push(ids);
+    }
+    let candidates = distinct_candidates(candidates);
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 pub(crate) fn compact_edge_component_path_at(
@@ -1444,29 +1463,76 @@ fn compact_edge_component_path(
     marker: usize,
     count: usize,
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
-    let component_path = |count| {
-        compact_wide_component_path(payload, marker + 18, count)
-            .or_else(|| compact_heterogeneous_component_path(payload, marker + 18, count))
-            .or_else(|| compact_sparse_component_path(payload, marker + 18, count))
+    let candidates = compact_edge_component_path_candidates(payload, marker, count);
+    let [candidate] = candidates.as_slice() else {
+        return None;
     };
-    (count > 1)
-        .then(|| {
-            let (components, end) = component_path(count - 1)?;
-            let trailer = payload.get(end..end + 36)?;
-            if trailer[..8] != [1, 0, 0, 0, 0, 0, 0, 0]
-                || trailer[8..12] != [0x4a, 0x80, 0, 0]
-                || trailer[12..14] == [0, 0]
-                || trailer[14..16] != [0x37, 0]
-                || trailer[20..24].iter().all(|byte| *byte == 0)
-                || trailer[24..].iter().any(|byte| *byte != 0)
-            {
-                return None;
-            }
-            let source = u32::from_le_bytes(trailer[16..20].try_into().ok()?);
-            (source != 0).then_some((components, Some(source)))
-        })
-        .flatten()
-        .or_else(|| component_path(count).map(|(components, _)| (components, None)))
+    Some(candidate.clone())
+}
+
+fn compact_edge_component_path_candidates(
+    payload: &[u8],
+    marker: usize,
+    count: usize,
+) -> Vec<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
+    let component_paths = |entry_count| {
+        let candidates = [
+            compact_wide_component_path(payload, marker + 18, entry_count),
+            compact_heterogeneous_component_path(payload, marker + 18, entry_count),
+            compact_sparse_component_path(payload, marker + 18, entry_count),
+        ];
+        distinct_candidates(candidates.into_iter().flatten())
+    };
+    let terminal_paths = if count > 1 {
+        component_paths(count - 1)
+            .into_iter()
+            .filter_map(|(components, end)| {
+                Some((components, end, edge_terminal_source_at(payload, end)?))
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let mut candidates = terminal_paths
+        .iter()
+        .map(|(components, _, source)| (components.clone(), Some(*source)))
+        .collect::<Vec<_>>();
+    candidates.extend(
+        component_paths(count)
+            .into_iter()
+            .filter(|(components, end)| {
+                !terminal_paths.iter().any(|(prefix, prefix_end, _)| {
+                    *prefix_end < *end && components.starts_with(prefix)
+                })
+            })
+            .map(|(components, _)| (components, None)),
+    );
+    distinct_candidates(candidates)
+}
+
+fn edge_terminal_source_at(payload: &[u8], end: usize) -> Option<u32> {
+    let trailer = payload.get(end..end + 36)?;
+    if trailer[..8] != [1, 0, 0, 0, 0, 0, 0, 0]
+        || trailer[8..12] != [0x4a, 0x80, 0, 0]
+        || trailer[12..14] == [0, 0]
+        || trailer[14..16] != [0x37, 0]
+        || trailer[20..24].iter().all(|byte| *byte == 0)
+        || trailer[24..].iter().any(|byte| *byte != 0)
+    {
+        return None;
+    }
+    let source = u32::from_le_bytes(trailer[16..20].try_into().ok()?);
+    (source != 0).then_some(source)
+}
+
+fn distinct_candidates<T: PartialEq>(candidates: impl IntoIterator<Item = T>) -> Vec<T> {
+    let mut distinct = Vec::new();
+    for candidate in candidates {
+        if !distinct.contains(&candidate) {
+            distinct.push(candidate);
+        }
+    }
+    distinct
 }
 
 pub(crate) fn compact_edge_owner_feature_at(
