@@ -1030,18 +1030,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
 
-### DI-53. Reference-plane frame encoding precedence
-
-**Question.** Which field selects the frame encoding of a constructed reference plane?
-
-**Known.** `sldprt.md` §2 names five encodings: matrix, fixed, angular, minimal, and compact. It gives the 97-byte fixed layout. It defines no precedence and no discriminator.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1353` tries them in a fixed order and states the reason in its own comment: shorter layouts "can occur as incidental aligned scalar runs later in the same feature record, so they only participate when no matrix is present." Each tier is uniqueness-gated inside itself. The precedence between tiers is the choice.
-
-`reference_geometry.rs:1841` resolves the omitted `v_z` sign inside the compact form by trying `[omitted, -omitted]` and keeping whichever reproduces the stored partial normal.
-
-**Need.** We must know the discriminator so that a record's own encoding, and not the tier order, selects the frame.
-
 ### DI-54. Helix fit thresholds
 
 **Question.** What residual bound promotes a helix mesh fit to a placed helix, and does any record support axis snapping?

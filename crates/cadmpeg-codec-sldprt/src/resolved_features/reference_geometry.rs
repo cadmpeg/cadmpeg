@@ -1295,21 +1295,16 @@ const COMPACT_REFERENCE_PLANE_FRAME_LEN: usize = 82;
 pub(super) fn explicit_reference_plane_frame(
     payload: &[u8],
 ) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
-    // The complete matrix stores all three basis columns and a redundant normal.
-    // Shorter layouts can occur as incidental aligned scalar runs later in the
-    // same feature record, so they only participate when no matrix is present.
-    if let Some(frame) = matrix_reference_plane_frame(payload) {
-        return Ok(Some(frame));
-    }
-    let mut frames = payload
-        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
-        .filter_map(fixed_reference_plane_frame)
-        .collect::<Vec<_>>();
-    if frames.is_empty() {
-        frames.extend(angled_reference_plane_frame(payload));
-        frames.extend(minimal_reference_plane_frame(payload));
-        frames.extend(compact_reference_plane_frame(payload));
-    }
+    let mut frames = matrix_reference_plane_frames(payload);
+    frames.extend(
+        payload
+            .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+            .filter_map(fixed_reference_plane_frame)
+            .collect::<Vec<_>>(),
+    );
+    frames.extend(angled_reference_plane_frame(payload));
+    frames.extend(minimal_reference_plane_frame(payload));
+    frames.extend(compact_reference_plane_frame(payload));
     frames.sort_by_key(reference_plane_frame_key);
     frames.dedup_by(|left, right| left == right);
     match frames.as_slice() {
@@ -1326,8 +1321,13 @@ pub(super) fn constraint_reference_plane_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let body = class_offset.checked_add(6 + class_name.len())?;
     match class_name {
-        "moConstraintPerpPlnTanOneCylinderRefplaneData_c" => {
+        "moConstraintPerpPlnTanOneCylinderRefplaneData_c" | "moFixedRefPlnData_c" => {
             fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
+        }
+        "moDefaultRefPlnData_c" | "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => {
+            minimal_reference_plane_frame(
+                payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
+            )
         }
         "moFaceRefPlnData_c" => {
             fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
@@ -1337,9 +1337,6 @@ pub(super) fn constraint_reference_plane_frame(
                     )
                 })
         }
-        "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => minimal_reference_plane_frame(
-            payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
-        ),
         _ => None,
     }
 }

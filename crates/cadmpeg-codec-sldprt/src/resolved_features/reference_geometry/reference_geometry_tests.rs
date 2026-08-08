@@ -540,6 +540,68 @@ fn offset_plane_face_reference_owns_a_fixed_plane_frame() {
 }
 
 #[test]
+fn named_reference_plane_data_classes_anchor_frame_lengths() {
+    let payload_for = |class: &str, frame: &[u8]| {
+        let root = 7;
+        let mut payload = vec![0xaa; root];
+        payload.extend(CLASS_MARKER);
+        payload.extend((class.len() as u16).to_le_bytes());
+        payload.extend(class.as_bytes());
+        payload.extend_from_slice(frame);
+        (payload, root)
+    };
+
+    let mut fixed = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+    for (offset, value) in [
+        (0, 0.0125_f64),
+        (24, 1.0),
+        (49, 0.0),
+        (57, 0.0),
+        (65, 1.0),
+        (73, 0.0),
+        (81, 1.0),
+        (89, 0.0),
+    ] {
+        fixed[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    fixed[48] = 1;
+    let (payload, root) = payload_for("moFixedRefPlnData_c", &fixed);
+    assert_eq!(
+        constraint_reference_plane_frame(&payload, root, "moFixedRefPlnData_c"),
+        Some((
+            Point3::new(12.5, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    let mut minimal = [0; MINIMAL_REFERENCE_PLANE_FRAME_LEN];
+    for (offset, value) in [
+        (0, 0.0125_f64),
+        (8, -0.002),
+        (16, 0.003),
+        (24, 0.0),
+        (32, 0.0),
+        (40, 1.0),
+        (57, -0.0),
+        (65, -0.003),
+        (73, 1.0),
+    ] {
+        minimal[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    minimal[56] = 0x80;
+    let (payload, root) = payload_for("moDefaultRefPlnData_c", &minimal);
+    assert_eq!(
+        constraint_reference_plane_frame(&payload, root, "moDefaultRefPlnData_c"),
+        Some((
+            Point3::new(12.5, -2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ))
+    );
+}
+
+#[test]
 fn offset_plane_reference_matches_parallel_frame_at_declared_distance() {
     let reference = (
         Point3::new(0.0, 0.0, 0.0),
@@ -721,7 +783,7 @@ fn matrix_reference_plane_uses_basis_columns() {
 }
 
 #[test]
-fn complete_reference_plane_frames_precede_compact_byte_patterns() {
+fn ambiguous_reference_plane_frame_encodings_are_withheld() {
     let mut payload = vec![0; 260];
     let matrix = 3;
     for (relative, value) in [
@@ -764,14 +826,7 @@ fn complete_reference_plane_frames_precede_compact_byte_patterns() {
     payload[compact + 81] = 0;
 
     assert!(compact_reference_plane_frame(&payload).is_some());
-    assert_eq!(
-        explicit_reference_plane_frame(&payload),
-        Ok(Some((
-            Point3::new(35.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        )))
-    );
+    assert_eq!(explicit_reference_plane_frame(&payload), Err(()));
 }
 
 #[test]
