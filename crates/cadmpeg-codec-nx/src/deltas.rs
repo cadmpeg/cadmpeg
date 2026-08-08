@@ -3016,19 +3016,23 @@ fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
 }
 
 fn consume_intersection_auxiliary(stream: &[u8], offset: usize) -> Option<Record> {
-    let (kind, xmt, references, end) =
-        if let Some((chart, end)) = crate::intersection::chart_source_record_at(stream, offset) {
-            (40, chart.xmt, Vec::new(), end)
-        } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
-            (41, term.xmt, Vec::new(), end)
-        } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
-            let mut references = bound.header_references.to_vec();
-            references.extend([bound.boundary_index, bound.blend_surface]);
-            (59, bound.xmt, references, end)
-        } else {
-            let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
-            (204, support_uv.xmt, Vec::new(), end)
-        };
+    let (kind, xmt, references, end) = if let Some((chart, end)) =
+        crate::intersection::chart_source_record_at(
+            stream,
+            offset,
+            crate::intersection::ChartPointLayout::Ext11,
+        ) {
+        (40, chart.xmt, Vec::new(), end)
+    } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
+        (41, term.xmt, Vec::new(), end)
+    } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
+        let mut references = bound.header_references.to_vec();
+        references.extend([bound.boundary_index, bound.blend_surface]);
+        (59, bound.xmt, references, end)
+    } else {
+        let (support_uv, end) = crate::intersection::support_uv_record_at(stream, offset)?;
+        (204, support_uv.xmt, Vec::new(), end)
+    };
     Some(Record {
         kind,
         xmt,

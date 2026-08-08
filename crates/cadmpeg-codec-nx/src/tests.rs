@@ -2356,7 +2356,7 @@ fn intersection_construction_recovers_one_missing_term_from_unique_edge_endpoint
         .position(|window| window == [0, 38, 0, 12])
         .expect("intersection record");
     put_ref(&mut stream, intersection + 25, 1);
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert_eq!(scan.constructions.len(), 1);
     assert_eq!(scan.curves.len(), 1);
     assert_eq!(
@@ -2379,7 +2379,7 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
         .expect("chart record");
     put_f64(&mut stream, chart + 60, 0.005);
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert_eq!(scan.constructions.len(), 1);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
@@ -2398,7 +2398,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
 
     let mut chart = charted_intersection_curve_topology_partition_stream();
     append_record(&mut chart, &[0, 40, 0, 0, 0, 2, 0, 20], 108);
-    let scan = crate::intersection::scan(&chart);
+    let scan = crate::intersection::scan(&chart, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
     assert_eq!(
@@ -2416,7 +2416,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut term = base_term.clone();
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
     assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
-    let scan = crate::intersection::scan(&term);
+    let scan = crate::intersection::scan(&term, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
     assert_eq!(
@@ -2433,7 +2433,10 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let mut uv = charted_intersection_curve_topology_partition_stream();
     append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);
     assert!(crate::intersection::support_uv_records(&uv).is_empty());
-    let [curve] = crate::intersection::scan(&uv).curves.try_into().unwrap();
+    let [curve] = crate::intersection::scan(&uv, crate::intersection::ChartPointLayout::Xyz3)
+        .curves
+        .try_into()
+        .unwrap();
     assert_eq!(curve.support_uv, [None, None]);
 
     let mut blend_bound = blend_bound_charted_intersection_curve_stream();
@@ -2452,7 +2455,7 @@ fn intersection_rejection_census_requires_resolved_supports() {
     put_ref(&mut stream, intersection + 21, 999);
     put_ref(&mut stream, intersection + 23, 997);
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     assert!(scan.constructions.is_empty());
     assert!(scan.curves.is_empty());
     assert_eq!(
@@ -2472,7 +2475,7 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         put_ref(&mut stream, intersection + offset, 1);
     }
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     let [uncharted] = scan.uncharted.as_slice() else {
         panic!("one bounded uncharted intersection");
     };
@@ -2485,7 +2488,11 @@ fn uncharted_intersection_requires_exact_topology_bounds() {
         .position(|window| window == [0, 16, 0, 8])
         .expect("edge record");
     stream[edge + 10..edge + 18].copy_from_slice(&f64::NAN.to_be_bytes());
-    assert!(crate::intersection::scan(&stream).uncharted.is_empty());
+    assert!(
+        crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3)
+            .uncharted
+            .is_empty()
+    );
 }
 
 #[test]
@@ -2497,16 +2504,34 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
         .expect("ext11 chart");
     let complement = ext11[ext11_start..ext11_start + 236].to_vec();
 
-    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let base = charted_intersection_curve_topology_partition_stream();
+    let mut stream = base.clone();
     stream.extend_from_slice(&complement);
-    let [curve] = crate::intersection::scan(&stream)
-        .curves
-        .try_into()
-        .expect("complemented curve");
+    let [curve] =
+        crate::intersection::scan_with_auxiliary_replacements(&stream, &base, &[&complement])
+            .curves
+            .try_into()
+            .expect("complemented curve");
     assert_eq!(curve.parameters, [2.0, 5.0]);
 
-    stream.extend_from_slice(&complement);
-    let scan = crate::intersection::scan(&stream);
+    let base_chart = crate::intersection::chart_source_records(
+        &base,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )[0]
+    .pos;
+    let (_, base_chart_end) = crate::intersection::chart_source_record_at(
+        &base,
+        base_chart,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .expect("base chart bounds");
+    let duplicate_chart = base[base_chart..base_chart_end].to_vec();
+    let mut duplicate_stream = base.clone();
+    duplicate_stream.extend_from_slice(&duplicate_chart);
+    let scan = crate::intersection::scan(
+        &duplicate_stream,
+        crate::intersection::ChartPointLayout::Xyz3,
+    );
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
 }
@@ -3332,11 +3357,19 @@ fn deltas_rejects_denormal_point_payload_coincidences() {
 
 #[test]
 fn deltas_walks_complete_intersection_auxiliary_records() {
-    let source = charted_intersection_curve_topology_partition_stream();
+    let source = ext11_charted_intersection_curve_stream();
     let blend_source = blend_bound_charted_intersection_curve_stream();
-    let chart_pos = crate::intersection::chart_source_records(&source)[0].pos;
-    let (_, chart_end) =
-        crate::intersection::chart_source_record_at(&source, chart_pos).expect("chart");
+    let chart_pos = crate::intersection::chart_source_records(
+        &source,
+        crate::intersection::ChartPointLayout::Ext11,
+    )[0]
+    .pos;
+    let (_, chart_end) = crate::intersection::chart_source_record_at(
+        &source,
+        chart_pos,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .expect("chart");
     let term_pos = crate::intersection::term_use_records(&source)[0].pos;
     let (_, term_end) = crate::intersection::term_use_at(&source, term_pos).expect("term use");
     let support_uv_pos = crate::intersection::support_uv_records(&source)[0].pos;
@@ -4733,7 +4766,8 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
 #[test]
 fn decode_emits_ext11_deltas_intersection_chart() {
     let stream = ext11_charted_intersection_curve_stream();
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition = charted_intersection_curve_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let curve_id = &result.ir.model.procedural_curves[0].curve;
@@ -4754,7 +4788,9 @@ fn decode_emits_ext11_deltas_intersection_chart() {
 #[test]
 fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -4780,7 +4816,9 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
 #[test]
 fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let surfaces = [
         result.ir.model.surfaces[0].id.clone(),
@@ -4969,13 +5007,57 @@ fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
         .position(|window| window == [0, 40])
         .expect("chart record");
     put_f64(&mut stream, chart + 28, f64::MAX);
-    assert!(crate::intersection::curves(&stream).is_empty());
+    assert!(
+        crate::intersection::curves(&stream, crate::intersection::ChartPointLayout::Xyz3)
+            .is_empty()
+    );
+}
+
+#[test]
+fn intersection_chart_layout_is_selected_by_stream_kind() {
+    let ext11 = ext11_charted_intersection_curve_stream();
+    assert!(crate::intersection::chart_source_records(
+        &ext11,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .is_empty());
+    let [chart] = crate::intersection::chart_source_records(
+        &ext11,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .try_into()
+    .expect("one ext11 chart");
+    assert_eq!(
+        chart.point_layout,
+        crate::intersection::ChartPointLayout::Ext11
+    );
+    assert_eq!(chart.native_parameters, Some(vec![2.0, 5.0]));
+}
+
+#[test]
+fn intersection_chart_accepts_finite_model_coordinates_without_magnitude_bound() {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let chart = stream
+        .windows(2)
+        .position(|window| window == [0, 40])
+        .expect("chart record");
+    put_vec3(&mut stream, chart + 60, [1_000.0, 0.0, 0.0]);
+    put_vec3(&mut stream, chart + 84, [1_000.01, 0.0, 0.0]);
+    let [chart] = crate::intersection::chart_source_records(
+        &stream,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .try_into()
+    .expect("one large-coordinate chart");
+    assert_eq!(chart.points[0].x, 1_000_000.0);
+    assert_eq!(chart.points[1].x, 1_000_010.0);
 }
 
 #[test]
 fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let stream = two_support_ext11_charted_intersection_curve_stream(true);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition = two_support_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -4990,7 +5072,9 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
 #[test]
 fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let stream = partial_ext11_charted_intersection_curve_stream();
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5101,7 +5185,9 @@ fn completed_intersection_support_lane_attaches_after_topology_emission() {
 #[test]
 fn ext11_uv_completion_runs_after_support_incidence_resolution() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5140,7 +5226,9 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
 #[test]
 fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5179,7 +5267,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
     use cadmpeg_ir::ids::{ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let spine_id = result.ir.model.procedural_curves[0].id.clone();
     let spine_curve = result.ir.model.procedural_curves[0].curve.clone();
@@ -5320,7 +5410,9 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
 #[test]
 fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -5368,7 +5460,9 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
 #[test]
 fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
     let stream = two_support_ext11_charted_intersection_curve_stream(false);
-    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let partition =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
     let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural_id = result.ir.model.procedural_curves[0].id.clone();
     let ProceduralCurveDefinition::Intersection { context, .. } =
@@ -6803,7 +6897,7 @@ fn intersection_support_order_follows_type_38_values_marker() {
         .expect("support UV record");
     stream[uv + 8] = 3;
 
-    let scan = crate::intersection::scan(&stream);
+    let scan = crate::intersection::scan(&stream, crate::intersection::ChartPointLayout::Xyz3);
     let [curve] = scan.curves.as_slice() else {
         panic!("one charted intersection");
     };
@@ -8967,22 +9061,6 @@ mod golden {
                 charted_intersection_with_approximated_term_stream(),
             ),
             (
-                "ext11_charted_intersection_curve_stream",
-                ext11_charted_intersection_curve_stream(),
-            ),
-            (
-                "two_support_ext11_charted_intersection_curve_stream",
-                two_support_ext11_charted_intersection_curve_stream(false),
-            ),
-            (
-                "two_support_ext11_charted_intersection_curve_stream_ambiguous",
-                two_support_ext11_charted_intersection_curve_stream(true),
-            ),
-            (
-                "partial_ext11_charted_intersection_curve_stream",
-                partial_ext11_charted_intersection_curve_stream(),
-            ),
-            (
                 "two_support_charted_intersection_curve_stream",
                 two_support_charted_intersection_curve_stream(),
             ),
@@ -9198,6 +9276,36 @@ mod golden {
         ];
         for (name, partition, delta) in deltas_pairs {
             f.push((name, prt_with_streams(&[&partition, &delta])));
+        }
+
+        let ext11_pairs = [
+            (
+                "ext11_charted_intersection_curve_stream",
+                charted_intersection_curve_topology_partition_stream(),
+                ext11_charted_intersection_curve_stream(),
+            ),
+            (
+                "two_support_ext11_charted_intersection_curve_stream",
+                two_support_charted_intersection_curve_stream_with_second_plane_axis([
+                    0.0, 0.0, 1.0,
+                ]),
+                two_support_ext11_charted_intersection_curve_stream(false),
+            ),
+            (
+                "two_support_ext11_charted_intersection_curve_stream_ambiguous",
+                two_support_charted_intersection_curve_stream(),
+                two_support_ext11_charted_intersection_curve_stream(true),
+            ),
+            (
+                "partial_ext11_charted_intersection_curve_stream",
+                two_support_charted_intersection_curve_stream_with_second_plane_axis([
+                    0.0, 0.0, 1.0,
+                ]),
+                partial_ext11_charted_intersection_curve_stream(),
+            ),
+        ];
+        for (name, partition, ext11) in ext11_pairs {
+            f.push((name, prt_with_ext11_intersection(&partition, &ext11)));
         }
 
         f

@@ -1325,7 +1325,10 @@ pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> 
         if !stream.kind.is_parasolid() {
             continue;
         }
-        for chart in crate::intersection::chart_source_records(&stream.inflated) {
+        let Some(point_layout) = stream.kind.chart_point_layout() else {
+            continue;
+        };
+        for chart in crate::intersection::chart_source_records(&stream.inflated, point_layout) {
             records.push(ParasolidChartRecord {
                 id: format!(
                     "nx:s{stream_ordinal}:chart-record#{}-{}",

@@ -1861,6 +1861,14 @@ pub(crate) fn two_support_ext11_charted_intersection_curve_stream(ambiguous: boo
         put_f64(&mut entries, at + 80, x);
     }
     stream.splice(chart + 60..chart + 108, entries);
+    if !ambiguous {
+        let uv = stream
+            .windows(8)
+            .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
+            .expect("UV record");
+        put_f64(&mut stream, uv + 9 + 6 * 8, 0.0);
+        put_f64(&mut stream, uv + 9 + 7 * 8, 0.01);
+    }
     stream
 }
 
@@ -1880,7 +1888,45 @@ pub(crate) fn partial_ext11_charted_intersection_curve_stream() -> Vec<u8> {
     stream
 }
 
+/// Wrap a partition topology and its ext11 intersection auxiliaries as a paired
+/// partition/deltas stream set.
+pub(crate) fn prt_with_ext11_intersection(partition: &[u8], ext11: &[u8]) -> Vec<u8> {
+    let chart = crate::intersection::chart_source_records(
+        ext11,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .into_iter()
+    .next()
+    .expect("ext11 chart record");
+    let (_, chart_end) = crate::intersection::chart_source_record_at(
+        ext11,
+        chart.pos,
+        crate::intersection::ChartPointLayout::Ext11,
+    )
+    .expect("ext11 chart bounds");
+    let mut deltas = DELTAS_PREAMBLE.to_vec();
+    deltas.extend_from_slice(&ext11[chart.pos..chart_end]);
+    for term in crate::intersection::term_use_records(ext11) {
+        let (_, end) = crate::intersection::term_use_at(ext11, term.pos).expect("term bounds");
+        deltas.extend_from_slice(&ext11[term.pos..end]);
+    }
+    let support_uv = crate::intersection::support_uv_records(ext11)
+        .into_iter()
+        .next()
+        .expect("ext11 support UV");
+    let (_, support_uv_end) =
+        crate::intersection::support_uv_record_at(ext11, support_uv.pos).expect("UV bounds");
+    deltas.extend_from_slice(&ext11[support_uv.pos..support_uv_end]);
+    prt_with_streams(&[partition, &deltas])
+}
+
 pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
+    two_support_charted_intersection_curve_stream_with_second_plane_axis([1.0, 0.0, 0.0])
+}
+
+pub(crate) fn two_support_charted_intersection_curve_stream_with_second_plane_axis(
+    second_plane_axis: [f64; 3],
+) -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
         .windows(4)
@@ -1908,7 +1954,7 @@ pub(crate) fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
     second_plane[18] = b'+';
     put_vec3(&mut second_plane, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut second_plane, 43, [0.0, 1.0, 0.0]);
-    put_vec3(&mut second_plane, 67, [1.0, 0.0, 0.0]);
+    put_vec3(&mut second_plane, 67, second_plane_axis);
     stream.extend(second_plane);
     stream
 }
