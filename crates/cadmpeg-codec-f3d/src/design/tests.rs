@@ -3843,6 +3843,22 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         (feature_ordinal_at + 41) as u64
     );
 
+    for tail_length in [82, 104] {
+        let mut variant = bytes[..feature_ordinal_at].to_vec();
+        let mut tail = vec![0; tail_length];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        variant.extend_from_slice(&tail);
+        variant.extend_from_slice(&3u32.to_le_bytes());
+        variant.extend_from_slice(b"261");
+        variant.extend_from_slice(&12u32.to_le_bytes());
+        let decoded =
+            parse_parameter_scope(&variant, &IndexedRecordOffsets::build(&variant), &header)
+                .expect("scope with extended no-history fixed tail");
+        assert_eq!(decoded.kind, "Sketch");
+        assert_eq!(decoded.previous_history_state_id, None);
+        assert_eq!(decoded.previous_history_state_id_offset, 0);
+    }
+
     let mut copy_scope = Vec::new();
     copy_scope.extend_from_slice(&3u32.to_le_bytes());
     copy_scope.extend_from_slice(b"316");
@@ -22134,6 +22150,39 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(axial_frames[0].transform_offset, 39);
     assert_eq!(axial_frames[1].reference_offset, 168);
     assert_eq!(axial_frames[1].transform_offset, 178);
+
+    let mut short_axial_bytes = axial_assembly_bytes[..705].to_vec();
+    short_axial_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    short_axial_bytes.extend_from_slice(b"261");
+    short_axial_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
+    let mut short_axial_owners = rectangular_owners.to_vec();
+    short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
+    let short_axial_scope = DesignParameterScope {
+        frame_length: 705,
+        paired_byte_offset: 705,
+        paired_class_tag: "261".into(),
+        reference_members: vec![50, 51, 52, 53, 64, 65],
+        ..scope.clone()
+    };
+    let short_axial_alignment = exact_assembly_alignment(
+        &short_axial_bytes,
+        &IndexedRecordOffsets::build(&short_axial_bytes),
+        &short_axial_scope,
+        &short_axial_owners,
+    )
+    .expect("short axial assembly alignment and operand frames");
+    assert_eq!(short_axial_alignment.angle, 0.5);
+    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+    assert_eq!(short_axial_alignment.owner_record_indices, [64, 65]);
+    assert!(short_axial_alignment.operand_paths.is_none());
+    let short_axial_frames = short_axial_alignment
+        .operand_frames
+        .as_ref()
+        .expect("short axial operand frames");
+    assert_eq!(short_axial_frames[0].reference_offset, 29);
+    assert_eq!(short_axial_frames[0].transform_offset, 39);
+    assert_eq!(short_axial_frames[1].reference_offset, 168);
+    assert_eq!(short_axial_frames[1].transform_offset, 178);
 
     let mut first_joint_origin = scope.clone();
     first_joint_origin.kind = "JointOrigin".into();

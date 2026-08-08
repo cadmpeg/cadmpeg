@@ -687,6 +687,7 @@ pub(crate) fn exact_assembly_alignment(
     }
     let alignment_lanes = match lanes.len() {
         4 => &lanes[..],
+        6 => &lanes[4..],
         8 => &lanes[4..],
         10 => &lanes[8..],
         _ => return None,
@@ -1153,7 +1154,7 @@ fn exact_assembly_operand_frames(
     ) {
         (_, "259", 637 | 692) | ("459", "264", 627) => ((28, 40, 168, 180), FrameVariant::Standard),
         (_, "258", 633 | 732) => ((24, 36, 164, 176), FrameVariant::Compact),
-        (_, "261", 772) => ((28, 39, 167, 178), FrameVariant::Axial),
+        (_, "261", 705 | 772) => ((28, 39, 167, 178), FrameVariant::Axial),
         _ => return None,
     };
     if usize::try_from(scope.paired_byte_offset).ok()?
@@ -1218,6 +1219,9 @@ fn exact_assembly_operand_paths(
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Option<[DesignAssemblyOperandPath; 2]> {
+    if matches!(scope.frame_length, 705 | 772) {
+        return None;
+    }
     let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
     let construction_at =
         records.first_at_or_after(search_start, frames[0].reference_record_index)?;
@@ -4356,8 +4360,10 @@ pub(crate) fn parse_parameter_scope(
         (76, false),
         (77, false),
         (78, false),
+        (82, false),
         (87, false),
         (88, false),
+        (104, false),
         (110, false),
     ];
     tail_candidates.extend((0..=256).map(|label_code_units| (78 + label_code_units * 2, true)));

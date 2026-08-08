@@ -243,7 +243,7 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 
 **Question.** Where does the second container generation store the two `Assemble` operand occurrence paths, and how does each path join to its operand frame?
 
-**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 732-, and 772-byte forms, and `f3d.md` §3.1 "Except in the 772-byte class-261 form" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
+**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the operand-frame layout of the 627-, 633-, 637-, 692-, 705-, 732-, and 772-byte forms, and `f3d.md` §3.1 "Except in the 705- and 772-byte class-261 forms" gives the two occurrence-path records, their record indices five and two below the first operand construction in a four-owner scope, and 39 and 36 below it in an eight-owner scope.
 
 The paired class tag does not select the frame layout. `f3d.md` §3.1 "A parameter scope is one logical indexed record" already states that both class tags are per-file dynamic values. Documents exist whose `Assemble` scopes pair with class 262 and whose 633- and 637-byte frames satisfy every fixed member of the 633- and 637-byte layouts: the marked operand references stand at scope offsets 24 and 164 and at 28 and 168, the two rigid row-major transforms stand at offsets 36 and 176 and at 40 and 180, and every zero-byte run between them holds zero. So frame length alone selects the layout.
 
@@ -261,11 +261,13 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
 
-### DR-33. Joined occurrences of a 772-byte class-261 `Assemble` scope
+### DR-33. Joined occurrences of 705- and 772-byte class-261 `Assemble` scopes
 
-**Question.** What names the two joined component occurrences of a 772-byte class-261 `Assemble` scope?
+**Question.** What names the two joined component occurrences of a 705- or 772-byte class-261 `Assemble` scope?
 
-**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §3.1 "Except in the 772-byte class-261 form" states that this form stores no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
+**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its ten owner lanes. `f3d.md` §3.1 "Except in the 705- and 772-byte class-261 forms" states that these forms store no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
+
+The 705-byte class-261 form has the same axial connector offsets, no occurrence-path records, and six owner lanes: four placement lanes followed by `alignAngle` and `alignOffset`. The decoder reads its connector frames and scalar alignment values, and the validator accepts the pathless form. Its first frame reference names a construction carrier and its second frame reference may name a `JointOrigin` scope, but neither frame carries a component occurrence identity. `f3d.md` §3.1 "Except in the 705- and 772-byte class-261 forms" states that both class-261 forms omit occurrence paths.
 
 A neutral assembly joint needs one occurrence per operand. Every other form supplies it from the first occurrence GUID of the operand's path record. This form has no path record, so each operand is identified only by the marked reference the frame stores, which names a construction record after the scope's paired header.
 

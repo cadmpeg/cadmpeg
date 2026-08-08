@@ -1050,14 +1050,15 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     (scope.paired_class_tag.as_str(), scope.frame_length),
                     ("258", 633 | 732)
                 );
-                let frame_reference_offsets = if scope.frame_length == 772 {
+                let axial_frames = matches!(scope.frame_length, 705 | 772);
+                let frame_reference_offsets = if axial_frames {
                     [29, 168]
                 } else if compact_frames {
                     [25, 165]
                 } else {
                     [29, 169]
                 };
-                let frame_transform_offsets = if scope.frame_length == 772 {
+                let frame_transform_offsets = if axial_frames {
                     [39, 178]
                 } else if compact_frames {
                     [36, 176]
@@ -1089,16 +1090,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.operand_paths.as_ref(),
                 ) {
                     (None, None) => true,
-                    // The class-261 form stores exact connector frames but no
+                    // The class-261 forms store exact connector frames but no
                     // occurrence-path records that qualify them.
-                    (Some(_), None) => scope.frame_length == 772,
+                    (Some(_), None) => axial_frames,
                     (Some(frames), Some(paths)) => {
                         let (first_delta, second_delta) = if scope.frame_length == 732 {
                             (39, 36)
                         } else {
                             (5, 2)
                         };
-                        scope.frame_length != 772
+                        !axial_frames
                             && paths[0].record_index.checked_add(first_delta)
                                 == Some(frames[0].reference_record_index)
                             && paths[1].record_index.checked_add(second_delta)
@@ -1178,7 +1179,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)
-                    && matches!(assembly_owner_count, 4 | 8 | 10)
+                    && matches!(assembly_owner_count, 4 | 6 | 8 | 10)
                     && matches!(alignment.owner_record_indices.len(), 2 | 4)
                     && alignment.value_offsets.len() == alignment.owner_record_indices.len()
                     && alignment
@@ -1195,7 +1196,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     && owner.local_ordinal
                                         == ordinal as u32
                                             + match assembly_owner_count {
-                                                8 => 4,
+                                                6 | 8 => 4,
                                                 10 => 8,
                                                 _ => 0,
                                             }
