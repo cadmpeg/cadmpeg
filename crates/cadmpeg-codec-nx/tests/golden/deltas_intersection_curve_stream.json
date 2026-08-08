@@ -77,7 +77,7 @@
             "parasolid_deltas_records": [
               {
                 "byte_len": 30,
-                "family": "GROUP",
+                "family": "INTERSECTION_DATA",
                 "id": "nx:s0:deltas-record#145-12",
                 "inflated_offset": 145,
                 "kind": 90,

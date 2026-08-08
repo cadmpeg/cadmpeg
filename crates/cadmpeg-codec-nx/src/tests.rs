@@ -3517,6 +3517,10 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     let census = crate::deltas::walk(&stream);
     assert_eq!(census.records.len(), 1);
     assert_eq!(census.records[0].kind, 90);
+    assert_eq!(
+        crate::deltas::record_family_name(&census.records[0]),
+        Some("INTERSECTION_DATA")
+    );
     assert_eq!(census.records[0].xmt, 12);
     assert_eq!(census.records[0].offset, record_offset);
     assert_eq!(

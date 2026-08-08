@@ -80,14 +80,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the tail fields to transfer the complete body revision state.
 
-### PS-09. Delta tag `0x5a` name
-
-**Question.** What is the canonical later-schema node-type name for delta tag `0x5a`?
-
-**Known.** `siemens_nx.md` §4.1 "Type 38 is the XT `INTERSECTION` node." and `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" define tag `0x5a` as the `intersection_data` layout shared with type 38.
-
-**Need.** We must know the name to give the node one stable schema identity.
-
 ### PS-10. Deltas type 45
 
 **Question.** What is the canonical node-type name of deltas type 45 (`002d`), and what does each value mean?

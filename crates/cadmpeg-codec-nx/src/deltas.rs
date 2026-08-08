@@ -669,7 +669,7 @@ pub fn walk(stream: &[u8]) -> Census {
         ) {
             census.bytes_decoded += record.end - offset;
             let name =
-                family_name(record.kind).expect("shared records have admitted deltas families");
+                record_family_name(&record).expect("shared records have admitted deltas families");
             *census.full_counts.entry(name).or_default() += 1;
             offset = record.end;
             census.records.push(record);
@@ -3159,6 +3159,17 @@ pub(crate) fn family_name(kind: u16) -> Option<&'static str> {
         204 => "SUPPORT_UV",
         _ => return None,
     })
+}
+
+/// Resolve the semantic family after the record-form discriminator is known.
+/// Numeric tag 90 is `GROUP` in the two-byte fixed-record form and
+/// `INTERSECTION_DATA` in the schema-anchored single-byte form.
+pub(crate) fn record_family_name(record: &Record) -> Option<&'static str> {
+    if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+        Some("INTERSECTION_DATA")
+    } else {
+        family_name(record.kind)
+    }
 }
 
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {

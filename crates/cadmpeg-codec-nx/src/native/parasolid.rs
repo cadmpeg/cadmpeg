@@ -498,7 +498,7 @@ pub(crate) fn parasolid_deltas_events(streams: &[Stream]) -> ParasolidDeltasEven
                 });
         }
         for record in census.records {
-            let family = crate::deltas::family_name(record.kind)
+            let family = crate::deltas::record_family_name(&record)
                 .expect("the deltas walker admits only named record families");
             events.records.push(ParasolidDeltasRecord {
                 id: format!(

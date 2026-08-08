@@ -586,7 +586,10 @@ Lengths are logical, before escape/large-index shifts. Each code is a Parasolid 
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
-Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `intersection_data` layout.
+Type 38 is the XT `INTERSECTION` node. The canonical later-schema name of a
+single-byte delta `0x5a` record is `INTERSECTION_DATA`; it uses the
+`intersection_data` layout and is distinct from the two-byte type-90 `GROUP`
+record.
 
 ### 4.2 Deltas-stream framing
 
