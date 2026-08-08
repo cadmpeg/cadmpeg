@@ -576,8 +576,12 @@ current scores require those matrices and representative fixtures.
   Exact circular-helix constructions retain degree-1 sampled caches whose first
   and last knots are bit-identical to the analytic angular interval, so their
   edge ranges remain inside the canonical cache domain.
-  Loop-to-oriented-use, oriented-use-to-incidence, physical endpoint identity,
-  and body/shell binding remain unresolved.
+  Each transferred object-stream loop retains an ordered vertex use for every
+  oriented edge occurrence. The vertex use selects the traversed endpoint from
+  the solved edge sense and anchors it after the corresponding coedge; the
+  endpoint identity is the same topology vertex identity used by the edge.
+  Loop-to-oriented-use and oriented-use-to-incidence source relations remain
+  unresolved.
 
 ## Evidence required to raise a score
 

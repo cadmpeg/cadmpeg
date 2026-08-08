@@ -7,11 +7,11 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId,
+    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PcurveId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell,
+    Body, BodyKind, Coedge, Face, Loop, LoopBoundaryRole, Region, Sense, Shell, VertexUse,
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -458,6 +458,19 @@ pub(super) fn emit_faces(
                 .iter()
                 .map(|member| coedge_ids_by_member[*member].clone())
                 .collect();
+            let vertex_uses: Vec<VertexUse> = member_order
+                .iter()
+                .map(|&member| {
+                    let edge = loop_.edges[member];
+                    let endpoints = graph.edge_vertices[&edge];
+                    let endpoint = endpoints[1 - usize::from(senses[member])];
+                    VertexUse {
+                        vertex: VertexId(format!("catia:b5:vertex#{endpoint}")),
+                        after: Some(coedge_ids_by_member[member].clone()),
+                        pcurves: Vec::new(),
+                    }
+                })
+                .collect();
             annotate(
                 annotations,
                 &loop_id,
@@ -467,7 +480,8 @@ pub(super) fn emit_faces(
             );
             annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges");
+                .derived(&loop_id, "coedges")
+                .derived(&loop_id, "vertex_uses");
             let boundary_role = boundary_roles
                 .get(loop_position)
                 .copied()
@@ -480,7 +494,7 @@ pub(super) fn emit_faces(
                 face: face_id.clone(),
                 boundary_role,
                 coedges: coedge_ids.clone(),
-                vertex_uses: Vec::new(),
+                vertex_uses,
             });
             for (position, &member) in member_order.iter().enumerate() {
                 let edge = loop_.edges[member];

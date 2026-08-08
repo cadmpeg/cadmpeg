@@ -1710,6 +1710,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             [None, Some([1.0, 0.5]), None]
         );
+        assert_eq!(ir.model.loops.len(), 1);
+        assert_eq!(
+            ir.model.loops[0]
+                .vertex_uses
+                .iter()
+                .map(|use_| use_.vertex.0.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "catia:b5:vertex#1",
+                "catia:b5:vertex#2",
+                "catia:b5:vertex#0"
+            ]
+        );
+        assert_eq!(
+            ir.model.loops[0]
+                .vertex_uses
+                .iter()
+                .map(|use_| use_.after.as_ref().map(|coedge| coedge.0.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                Some("catia:b5:coedge#2-0"),
+                Some("catia:b5:coedge#2-1"),
+                Some("catia:b5:coedge#2-2")
+            ]
+        );
     }
 
     #[test]
