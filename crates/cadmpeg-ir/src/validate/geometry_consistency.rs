@@ -21,21 +21,26 @@ fn distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
-/// The per-entity coincidence allowance: the shared bound widened by any
-/// stored edge/vertex tolerances.
-fn allowance(tolerances: &[Option<f64>]) -> f64 {
+/// The coincidence allowance combines the document-wide uncertainty with any
+/// stored edge, vertex, face, or carrier tolerances.
+fn allowance(document_tolerance: f64, tolerances: &[Option<f64>]) -> f64 {
+    let document_tolerance = if document_tolerance.is_finite() && document_tolerance > 0.0 {
+        document_tolerance
+    } else {
+        0.0
+    };
     tolerances
         .iter()
         .flatten()
         .copied()
-        .fold(COINCIDENCE_TOLERANCE, f64::max)
+        .fold(COINCIDENCE_TOLERANCE.max(document_tolerance), f64::max)
 }
 
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
-/// replaces, rather than supplements, its baseline when it is larger.
-fn procedural_support_allowance(cache_fit_tolerance: Option<f64>) -> f64 {
-    COINCIDENCE_TOLERANCE + allowance(&[cache_fit_tolerance])
+/// widens that allowance when it is larger.
+fn procedural_support_allowance(document_tolerance: f64, cache_fit_tolerance: Option<f64>) -> f64 {
+    COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -100,7 +105,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
             let [Some(solved_start), Some(solved_end)] = solved else {
                 continue;
             };
-            let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
+            let bound =
+                procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance);
             let Some(base) = curves.get(base.0.as_str()) else {
                 continue;
             };
@@ -172,7 +178,8 @@ pub(super) fn check_procedural_support_consistency(ir: &CadIr, findings: &mut Ve
         let [Some(solved_start), Some(solved_end)] = solved else {
             continue;
         };
-        let bound = procedural_support_allowance(procedural.cache_fit_tolerance);
+        let bound =
+            procedural_support_allowance(ir.tolerances.linear, procedural.cache_fit_tolerance);
         check_support_sides(
             context,
             third,
@@ -303,15 +310,18 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[
-            edge.tolerance,
-            *start_tol,
-            *end_tol,
-            curve_cache_tolerances
-                .get(curve_id.0.as_str())
-                .copied()
-                .flatten(),
-        ]);
+        let bound = allowance(
+            ir.tolerances.linear,
+            &[
+                edge.tolerance,
+                *start_tol,
+                *end_tol,
+                curve_cache_tolerances
+                    .get(curve_id.0.as_str())
+                    .copied()
+                    .flatten(),
+            ],
+        );
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -359,15 +369,18 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[
-            edge.tolerance,
-            *start_tol,
-            *end_tol,
-            curve_cache_tolerances
-                .get(curve_id.0.as_str())
-                .copied()
-                .flatten(),
-        ]);
+        let bound = allowance(
+            ir.tolerances.linear,
+            &[
+                edge.tolerance,
+                *start_tol,
+                *end_tol,
+                curve_cache_tolerances
+                    .get(curve_id.0.as_str())
+                    .copied()
+                    .flatten(),
+            ],
+        );
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {
@@ -482,19 +495,25 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             .curve
             .as_ref()
             .and_then(|curve| curves.get(curve.0.as_str()).copied());
-        let bound = allowance(&[
-            edge.tolerance,
-            *start_tol,
-            *end_tol,
-            face.tolerance,
-            first.fit_tolerance,
-            last.fit_tolerance,
-        ]);
+        let bound = allowance(
+            ir.tolerances.linear,
+            &[
+                edge.tolerance,
+                *start_tol,
+                *end_tol,
+                face.tolerance,
+                first.fit_tolerance,
+                last.fit_tolerance,
+            ],
+        );
         // Recovering an occurrence interval is a topological operation. A
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
-        let recovery_bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let recovery_bound = allowance(
+            ir.tolerances.linear,
+            &[edge.tolerance, *start_tol, *end_tol, face.tolerance],
+        );
         // A malformed STEP export can retain a stale TRIMMED_CURVE interval
         // even though its carrier still reaches the edge vertices on another
         // interval. Keep the declared interval as a candidate, but also solve

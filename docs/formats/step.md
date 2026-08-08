@@ -298,7 +298,8 @@ use the document fallback scale. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects a
 whose unit resolves to a length unit. When several length measures are
 present, the one named `distance_accuracy_value` is selected; otherwise a
 unique length measure is required. An ambiguous set does not define a linear
-tolerance.
+tolerance. Geometric-consistency checks use the selected document tolerance as
+their baseline. Entity and solved-carrier tolerances can widen that baseline.
 
 A conical surface accepts zero reference radius at its placement origin. Its
 finite half-angle converts from the representation's plane-angle unit to
