@@ -40,9 +40,23 @@ pub struct FeatureOperationLabel {
 pub(crate) fn feature_operation_chronological_labels(
     labels: &[FeatureOperationLabel],
 ) -> Vec<&FeatureOperationLabel> {
-    labels
-        .chunk_by(|first, second| first.section_link == second.section_link)
-        .flat_map(|section| section.iter().rev())
+    let mut sections = Vec::<(&str, Vec<&FeatureOperationLabel>)>::new();
+    for label in labels {
+        if let Some((_, section)) = sections
+            .iter_mut()
+            .find(|(section_link, _)| *section_link == label.section_link)
+        {
+            section.push(label);
+        } else {
+            sections.push((label.section_link.as_str(), vec![label]));
+        }
+    }
+    sections
+        .into_iter()
+        .flat_map(|(_, mut section)| {
+            section.reverse();
+            section
+        })
         .collect()
 }
 
@@ -11185,6 +11199,40 @@ mod tests {
             label("first", 0, "newest-first"),
             label("first", 1, "oldest-first"),
             label("second", 0, "newest-second"),
+            label("second", 1, "oldest-second"),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-first",
+                "newest-first",
+                "oldest-second",
+                "newest-second"
+            ]
+        );
+    }
+
+    #[test]
+    fn operation_history_groups_interleaved_sections_before_reversing() {
+        let label = |section: &str, ordinal, value: &str| super::FeatureOperationLabel {
+            id: format!("{section}-{ordinal}"),
+            section_link: section.to_string(),
+            ordinal,
+            value: value.to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: u64::from(ordinal),
+        };
+        let labels = [
+            label("first", 0, "newest-first"),
+            label("second", 0, "newest-second"),
+            label("first", 1, "oldest-first"),
             label("second", 1, "oldest-second"),
         ];
 
