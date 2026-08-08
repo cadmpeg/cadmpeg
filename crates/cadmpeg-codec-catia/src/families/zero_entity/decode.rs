@@ -457,6 +457,15 @@ fn transfer_closed_wire_loops(
                 } else {
                     (curve.clone(), None)
                 };
+                let param_range = param_range.and_then(|range| {
+                    ir.model
+                        .curves
+                        .iter()
+                        .find(|candidate| candidate.id == curve_id)
+                        .and_then(|candidate| {
+                            crate::nurbs::canonical_model_curve_range(&candidate.geometry, range)
+                        })
+                });
                 annotate(
                     annotations,
                     &edge_id,
@@ -933,7 +942,7 @@ pub(crate) fn try_decode_zero_entity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve};
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, ProceduralCurve};
     use cadmpeg_ir::math::Vector3;
 
     fn support(
@@ -963,6 +972,84 @@ mod tests {
             model_midpoint: None,
             model_endpoints: Some(endpoints),
         }
+    }
+
+    #[test]
+    fn closed_wire_clamps_nurbs_range_at_the_domain_boundary() {
+        let first = Point3::new(0.0, 0.0, 0.0);
+        let corner = Point3::new(1.0, 0.0, 0.0);
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(Curve {
+            id: CurveId("catia:test:nurbs#0".to_string()),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![first, corner],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.curves.push(Curve {
+            id: CurveId("catia:test:line#1".to_string()),
+            geometry: CurveGeometry::Line {
+                origin: corner,
+                direction: Vector3::new(-1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let support_runs = vec![
+            crate::families::zero_entity::records::ZeroEntitySupportRun {
+                carrier_pos: 0,
+                carrier_record_ordinal: 1,
+                face: Some(crate::families::zero_entity::records::ZeroEntityFace {
+                    pos: 10,
+                    record_ordinal: 2,
+                    tag: [0x5f, 0x0c],
+                    allocations: vec![8],
+                    loop_terminals: vec![1],
+                    loops: vec![crate::families::zero_entity::records::ZeroEntityLoop {
+                        pos: 20,
+                        record_ordinal: 3,
+                        tag: [0x62, 0x14],
+                        member_ids: vec![7, 6],
+                        typed_references: vec![1, 2],
+                        support_record_ordinals: vec![4, 5],
+                        terminal_id: 8,
+                        gap: 1,
+                        loop_class: 0x41,
+                        forward_senses: vec![true, true],
+                        oriented_model_endpoints: vec![[first, corner], [corner, first]],
+                    }],
+                    terminal_control: 0x05,
+                }),
+                supports: vec![
+                    support_with_parameters(
+                        4,
+                        30,
+                        [first, corner],
+                        Some([-1.0e-12, 1.0 + 1.0e-12]),
+                    ),
+                    support(5, 40, [corner, first]),
+                ],
+            },
+        ];
+        let support_curve_ids = HashMap::from([
+            (4, CurveId("catia:test:nurbs#0".to_string())),
+            (5, CurveId("catia:test:line#1".to_string())),
+        ]);
+        let mut annotations = AnnotationBuilder::new();
+
+        let counts = transfer_closed_wire_loops(
+            &mut ir,
+            &mut annotations,
+            &support_runs,
+            &support_curve_ids,
+            None,
+        );
+
+        assert_eq!(counts.edges, 2);
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     }
 
     #[test]

@@ -257,7 +257,7 @@ pub(crate) fn reverse_curve_geometry(
     }
 }
 
-/// Normalize the parameter interval for a periodic model-space carrier.
+/// Normalize the parameter interval for a model-space carrier.
 pub(crate) fn canonical_model_curve_range(
     geometry: &CurveGeometry,
     range: [f64; 2],
@@ -268,6 +268,18 @@ pub(crate) fn canonical_model_curve_range(
     match geometry {
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             canonical_periodic_range(range)
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
+            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
+            if nurbs.periodic {
+                (range[1] - range[0] <= upper - lower + tolerance).then_some(range)
+            } else if range[0] >= lower && range[1] <= upper {
+                Some(range)
+            } else {
+                ((range[0] - lower).abs().max((range[1] - upper).abs()) <= tolerance)
+                    .then_some([lower, upper])
+            }
         }
         _ => Some(range),
     }
@@ -794,9 +806,27 @@ mod tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
     use super::{
-        circular_helix_cache, nurbs_surface_isocurve, quintic_jet_bspline, reverse_curve_geometry,
-        reverse_helix_definition, reverse_pcurve_geometry,
+        canonical_model_curve_range, circular_helix_cache, nurbs_surface_isocurve,
+        quintic_jet_bspline, reverse_curve_geometry, reverse_helix_definition,
+        reverse_pcurve_geometry,
     };
+
+    #[test]
+    fn canonical_nurbs_range_clamps_rounding_at_the_domain_boundary() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+
+        assert_eq!(
+            canonical_model_curve_range(&geometry, [-1.0e-12, 1.0 + 1.0e-12]),
+            Some([0.0, 1.0])
+        );
+        assert_eq!(canonical_model_curve_range(&geometry, [-1.0e-4, 1.0]), None);
+    }
 
     #[test]
     fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {

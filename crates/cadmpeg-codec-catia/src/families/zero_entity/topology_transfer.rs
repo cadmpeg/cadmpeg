@@ -206,12 +206,9 @@ pub(crate) fn transfer_closed_face_topology(
             &curve_geometry,
             cadmpeg_ir::geometry::CurveGeometry::Procedural { .. }
         ) {
-            source_range
-                .and_then(|range| normalize_curve_parameter_range(&curve_geometry, range))
-                .map(|range| (range, false))
+            source_range.map(|range| (range, false))
         } else {
             source_range.and_then(|range| {
-                let range = normalize_curve_parameter_range(&curve_geometry, range)?;
                 curve_orientation(&curve_geometry, range, occurrence.raw_endpoints)
                     .map(|reversed| (range, reversed))
             })
@@ -236,7 +233,7 @@ pub(crate) fn transfer_closed_face_topology(
                     match reversed_geometry {
                         Some((geometry, parameter_range)) => {
                             if let Some(parameter_range) =
-                                normalize_curve_parameter_range(&geometry, parameter_range)
+                                canonical_model_curve_range(&geometry, parameter_range)
                             {
                                 curve.geometry = geometry;
                                 annotations.derived(&occurrence.curve, "geometry");
@@ -769,27 +766,6 @@ fn pcurve_parameter_range(pcurve: &PcurveGeometry) -> Option<[f64; 2]> {
     let degree = usize::try_from(*degree).ok()?;
     let range = [*knots.get(degree)?, *knots.get(control_points.len())?];
     (range.iter().copied().all(f64::is_finite) && range[0] < range[1]).then_some(range)
-}
-
-fn normalize_curve_parameter_range(
-    geometry: &cadmpeg_ir::geometry::CurveGeometry,
-    range: [f64; 2],
-) -> Option<[f64; 2]> {
-    if !range.iter().copied().all(f64::is_finite) || range[0] >= range[1] {
-        return None;
-    }
-    match geometry {
-        cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) => {
-            let [lower, upper] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?;
-            if range[0] >= lower && range[1] <= upper {
-                return Some(range);
-            }
-            let tolerance = 1.0e-9_f64.max((upper - lower).abs() * 1.0e-9);
-            ((range[0] - lower).abs().max((range[1] - upper).abs()) <= tolerance)
-                .then_some([lower, upper])
-        }
-        _ => Some(range),
-    }
 }
 
 fn curve_orientation(
