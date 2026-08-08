@@ -8655,7 +8655,8 @@ pub(crate) fn complete_exact_boundary_intersection_pcurves(
             _ => continue,
         }
         if cache_backed {
-            procedural.cache_fit_tolerance = Some(tolerance);
+            procedural.cache_fit_tolerance =
+                Some(procedural.cache_fit_tolerance.unwrap_or(0.0).max(tolerance));
         }
         if tolerant {
             bounded_tolerant_curves.push((curve, range));

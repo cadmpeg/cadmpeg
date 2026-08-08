@@ -1601,6 +1601,130 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
 }
 
 #[test]
+fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
+    use cadmpeg_ir::geometry::{
+        Curve, IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve, Surface,
+    };
+    use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first_support = SurfaceId("nx:test:boundary-plane-a".into());
+    let second_support = SurfaceId("nx:test:boundary-plane-b".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second_support.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let curve = CurveId("nx:test:boundary-line".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let points = [
+        (
+            PointId("nx:test:boundary-point-0".into()),
+            Point3::new(0.0, 0.0, 0.0),
+        ),
+        (
+            PointId("nx:test:boundary-point-1".into()),
+            Point3::new(10.0, 0.0, 0.0),
+        ),
+    ];
+    ir.model
+        .points
+        .extend(points.iter().map(|(id, position)| Point {
+            id: id.clone(),
+            position: *position,
+            source_object: None,
+        }));
+    let vertices = [
+        VertexId("nx:test:boundary-vertex-0".into()),
+        VertexId("nx:test:boundary-vertex-1".into()),
+    ];
+    ir.model.vertices.extend([
+        Vertex {
+            id: vertices[0].clone(),
+            point: points[0].0.clone(),
+            tolerance: None,
+        },
+        Vertex {
+            id: vertices[1].clone(),
+            point: points[1].0.clone(),
+            tolerance: None,
+        },
+    ]);
+    ir.model.edges.push(Edge {
+        id: EdgeId("nx:test:boundary-edge".into()),
+        curve: Some(curve.clone()),
+        start: vertices[0].clone(),
+        end: vertices[1].clone(),
+        param_range: None,
+        tolerance: Some(1.0e-8),
+    });
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("nx:test:serialized-boundary".into()),
+        curve,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(first_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: Some(second_support.clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: Some(0.25),
+    });
+
+    crate::decode::complete_exact_boundary_intersection_pcurves(
+        &mut ir,
+        &mut cadmpeg_ir::AnnotationBuilder::new(),
+    );
+
+    let procedural = ir
+        .model
+        .procedural_curves
+        .last()
+        .expect("boundary construction");
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.25));
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        panic!("intersection construction");
+    };
+    assert!(context.sides.iter().all(|side| side.pcurve.is_some()));
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
