@@ -713,21 +713,27 @@ pub(super) fn typed_relation_definition(
                 .find(|entity| {
                     entity.sketch == *sketch
                         && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
-                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                        && matches!(
+                            entity.geometry,
+                            SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
+                        )
                 })
                 .map(|entity| entity.id.clone())
                 .or_else(|| {
                     marker(0).and_then(|marker| {
-                        if sketch_entities.is_empty() {
-                            single_marker_entity(marker, markers_by_id, loci_by_marker)
-                        } else {
-                            single_marker_curve_entity(
-                                marker,
-                                markers_by_id,
-                                loci_by_marker,
-                                sketch_entities,
-                            )
-                        }
+                        marker_center_dimensioned_entity(marker, sketch, sketch_entities, parameter)
+                            .or_else(|| {
+                                if sketch_entities.is_empty() {
+                                    single_marker_entity(marker, markers_by_id, loci_by_marker)
+                                } else {
+                                    single_marker_curve_entity(
+                                        marker,
+                                        markers_by_id,
+                                        loci_by_marker,
+                                        sketch_entities,
+                                    )
+                                }
+                            })
                     })
                 });
             let authoritative = resolved_entity.is_some();
@@ -1528,6 +1534,54 @@ fn relation_line_point_marker<'a>(
         return None;
     };
     Some(*marker)
+}
+
+fn marker_center_dimensioned_entity(
+    marker_id: &str,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let expected_radius = match parameter.display {
+        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+        None => return None,
+    };
+    let centers = sketch_entities
+        .iter()
+        .filter(|entity| {
+            entity.sketch == *sketch
+                && entity.native_ref.as_deref() == Some(marker_id)
+                && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .collect::<Vec<_>>();
+    let [center_entity] = centers.as_slice() else {
+        return None;
+    };
+    let SketchGeometry::Point { position: center } = center_entity.geometry else {
+        return None;
+    };
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter_map(|entity| {
+            let (candidate_center, radius) = match entity.geometry {
+                SketchGeometry::Circle { center, radius }
+                | SketchGeometry::Arc { center, radius, .. } => (center, radius.0),
+                _ => return None,
+            };
+            (quantize(candidate_center, 1.0e-8) == quantize(center, 1.0e-8)
+                && same_dimension_length(radius, expected_radius))
+            .then_some(entity.id.clone())
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_dimensioned_circle_entity(

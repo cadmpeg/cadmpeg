@@ -2,9 +2,9 @@
 
 use super::super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
 use super::{
-    compact_radial_circle_index, extended_radial_circle_index,
+    compact_radial_circle_index, dimensioned_arc_native_geometry, extended_radial_circle_index,
     extended_terminal_repeated_radial_circle_index, project_relation_point_dimensioned_circles,
-    radial_dimension_radius, terminal_repeated_radial_circle_pairs,
+    radial_dimension_radius, terminal_repeated_radial_circle_pairs, DimensionedCurveNative,
 };
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -324,6 +324,144 @@ fn point_dimension_projects_only_from_one_same_sketch_center_witness() {
         Some(SketchGeometry::Circle { center, radius: Length(2.0) })
             if *center == Point2::new(3.0, 4.0)
     ));
+}
+
+#[test]
+fn arc_dimension_center_requires_one_matching_radial_witness() {
+    let marker = |id: &str, offset: u64, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let center = marker("center", 10, SketchInputKind::Arc, Some([0.1, 0.2]));
+    let radial = marker("radial", 20, SketchInputKind::Point, Some([0.103, 0.2]));
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![center.clone(), radial],
+    };
+
+    assert!(matches!(
+        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0),
+        Some(DimensionedCurveNative::Circle { center: [u, v] })
+            if [u, v] == [0.1, 0.2]
+    ));
+
+    let mut ambiguous_lane = lane;
+    ambiguous_lane.sketch_entities.push(marker(
+        "second-radial",
+        30,
+        SketchInputKind::ConstrainedPoint,
+        Some([0.1, 0.203]),
+    ));
+    assert!(dimensioned_arc_native_geometry(
+        std::slice::from_ref(&ambiguous_lane),
+        &ambiguous_lane.sketch_entities[0],
+        3.0
+    )
+    .is_none());
+}
+
+#[test]
+fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
+    let marker = |id: &str, offset: u64, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: u32::try_from(offset).unwrap(),
+        offset,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m: Some(coordinates_m),
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let center = SketchInputEntity {
+        id: "center".into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 1,
+        offset: 10,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::Arc,
+        state_value: Some(1.0),
+        coordinates_m: Some([0.0, 0.0]),
+        links: vec![
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "start".into(),
+            },
+            SketchInputLink {
+                local_id: 0,
+                entity_ref: "end".into(),
+            },
+        ],
+        link_selector: None,
+    };
+    let start = marker("start", 20, [0.003, 0.0]);
+    let end = marker("end", 30, [0.0, 0.003]);
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: vec![center.clone(), start, end],
+    };
+
+    let Some(DimensionedCurveNative::Arc(arc)) =
+        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0)
+    else {
+        panic!("two endpoints should define a bounded arc");
+    };
+    assert_eq!(arc.center, [0.0, 0.0]);
+    assert_eq!(arc.start, [0.003, 0.0]);
+    assert_eq!(arc.end, [0.0, 0.003]);
+    assert_eq!(arc.endpoint_refs, vec!["start", "end"]);
+
+    let mut invalid_end = lane.sketch_entities[2].clone();
+    invalid_end.coordinates_m = Some([0.0, 0.004]);
+    let invalid_lane = FeatureInputLane {
+        sketch_entities: vec![center, lane.sketch_entities[1].clone(), invalid_end],
+        ..lane
+    };
+    assert!(dimensioned_arc_native_geometry(
+        std::slice::from_ref(&invalid_lane),
+        &invalid_lane.sketch_entities[0],
+        3.0
+    )
+    .is_none());
 }
 
 #[test]
