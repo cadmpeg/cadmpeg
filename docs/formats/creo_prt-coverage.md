@@ -172,6 +172,10 @@ fixtures, claims above L1 remain unproven.
   table is present. A joined saved circle also seeds its
   radius-reference component. Disagreement with stored or constraint-derived
   coordinates or radii withholds the inconsistent derivation.
+- Type-zero and type-three coincidence incidences add point-coordinate
+  equalities when their selected point rows are unique. This includes the
+  two-sense-zero-point form of type three; contradictory components retain
+  stored non-conflicting coordinates.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and

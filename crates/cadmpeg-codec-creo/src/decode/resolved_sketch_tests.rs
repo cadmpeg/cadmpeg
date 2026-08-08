@@ -12202,6 +12202,60 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             .definition,
         SketchConstraintDefinition::Native { .. }
     ));
+    let mut point_coincidence_definition = definition.clone();
+    point_coincidence_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points = vec![
+        crate::feature::FeatureSectionPoint {
+            point_id: 4,
+            u: Some(1.0),
+            v: Some(2.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 6,
+            u: None,
+            v: Some(2.0),
+        },
+    ];
+    let point_segment = point_coincidence_definition
+        .segments
+        .as_mut()
+        .expect("segments");
+    point_segment.declared_count = 6;
+    point_segment.rows.push(crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Point,
+        directions: [None; 3],
+        point_ids: [6, 6],
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: None,
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 17,
+        body: Vec::new(),
+        offset: 45,
+    });
+    point_coincidence_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[8]
+        .items = vec![
+        crate::feature::FeatureSkampItem {
+            entity_id: 14,
+            sense: 0,
+        },
+        crate::feature::FeatureSkampItem {
+            entity_id: 17,
+            sense: 0,
+        },
+    ];
+    assert_eq!(
+        resolved_section_points(&point_coincidence_definition).get(&6),
+        Some(&[1.0, 2.0])
+    );
     let mut distance_definition = definition.clone();
     let distance_segment = &mut distance_definition
         .segments

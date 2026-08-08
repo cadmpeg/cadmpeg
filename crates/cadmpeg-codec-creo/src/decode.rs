@@ -3155,6 +3155,10 @@ pub(crate) fn resolved_section_coordinates(
                     let first_point = section_skamp_point_entity_id(definition, first);
                     let second_point = section_skamp_point_entity_id(definition, second);
                     match (first_point, second_point) {
+                        (Some(first), Some(second)) => Some([
+                            SectionPointSource::Point(first),
+                            SectionPointSource::Point(second),
+                        ]),
                         (Some(point), None) => Some([
                             SectionPointSource::Point(point),
                             section_skamp_selected_point(definition, second)?,
