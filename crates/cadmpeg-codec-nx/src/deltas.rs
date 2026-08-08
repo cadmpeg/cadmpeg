@@ -2371,22 +2371,13 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
         .records
         .iter()
         .filter(|record| {
-            record.offset >= revision_start
-                && matches!(
-                    record.kind,
-                    38
-                        | 40
-                        | 41
-                        | 45
-                        | 59
-                        | 81..=84
-                        | 91
-                        | 125..=128
-                        | 135..=136
-                        | 141
-                        | 204
-                )
-                || record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a)
+            let is_current = record.offset >= revision_start;
+            let is_semantic = matches!(
+                record.kind,
+                38 | 40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204
+            ) || record.kind == 90
+                && record.canonical_bytes.first() == Some(&0x5a);
+            is_current && is_semantic
         })
         .map(|record| {
             if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {

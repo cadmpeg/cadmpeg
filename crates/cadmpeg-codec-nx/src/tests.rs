@@ -3557,6 +3557,16 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
 }
 
 #[test]
+fn semantic_residual_does_not_reemit_historical_intersection_data() {
+    let mut stream = deltas_intersection_curve_stream();
+    stream.extend_from_slice(&deltas_body_revision(2));
+
+    let residual = crate::deltas::semantic_residual(&stream);
+
+    assert_eq!(residual.len(), stream.len());
+}
+
+#[test]
 fn deltas_rejects_single_byte_intersection_data_before_its_schema_anchor() {
     let mut stream = vec![0x5a];
     stream.extend_from_slice(&12u16.to_be_bytes());
