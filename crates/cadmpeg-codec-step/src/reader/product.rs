@@ -899,18 +899,8 @@ fn mapped_item_placement(
 }
 
 fn mapped_item_transform(origin: u64, target: u64, geometry: &GeometryResult) -> Option<Transform> {
-    let from = geometry
-        .placements
-        .get(&origin)
-        .copied()
-        .map(placement_transform)
-        .or_else(|| geometry.transformation_operators.get(&origin).copied())?;
-    let to = geometry
-        .placements
-        .get(&target)
-        .copied()
-        .map(placement_transform)
-        .or_else(|| geometry.transformation_operators.get(&target).copied())?;
+    let from = transformation_item(origin, geometry)?;
+    let to = transformation_item(target, geometry)?;
     Some(to.compose(from.try_inverse_affine()?))
 }
 
@@ -990,9 +980,18 @@ fn occurrence_placement(
         (false, true) => (item_two, item_one),
         _ => return None,
     };
-    let from = geometry.placements.get(&from_id)?;
-    let to = geometry.placements.get(&to_id)?;
-    Some((usage, between(*from, *to)))
+    let from = transformation_item(from_id, geometry)?;
+    let to = transformation_item(to_id, geometry)?;
+    Some((usage, to.compose(from.try_inverse_affine()?)))
+}
+
+fn transformation_item(id: u64, geometry: &GeometryResult) -> Option<Transform> {
+    geometry
+        .placements
+        .get(&id)
+        .copied()
+        .map(placement_transform)
+        .or_else(|| geometry.transformation_operators.get(&id).copied())
 }
 
 fn representation_links(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
@@ -1045,32 +1044,6 @@ fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64
         .iter()
         .filter_map(ValueExt::reference);
     Some((references.next()?, references.next()?))
-}
-
-fn between(from: (Point3, Vector3, Vector3), to: (Point3, Vector3, Vector3)) -> Transform {
-    let from_basis = basis(from.1, from.2);
-    let to_basis = basis(to.1, to.2);
-    let mut rotation = [[0.0; 3]; 3];
-    for row in 0..3 {
-        for column in 0..3 {
-            rotation[row][column] = (0..3)
-                .map(|axis| to_basis[row][axis] * from_basis[column][axis])
-                .sum();
-        }
-    }
-    let source = [from.0.x, from.0.y, from.0.z];
-    let target = [to.0.x, to.0.y, to.0.z];
-    let mut rows = Transform::identity().rows;
-    for row in 0..3 {
-        for column in 0..3 {
-            rows[row][column] = rotation[row][column];
-        }
-        rows[row][3] = target[row]
-            - (0..3)
-                .map(|column| rotation[row][column] * source[column])
-                .sum::<f64>();
-    }
-    Transform { rows }
 }
 
 fn placement_transform((origin, z_axis, x_axis): (Point3, Vector3, Vector3)) -> Transform {

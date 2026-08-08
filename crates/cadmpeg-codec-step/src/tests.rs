@@ -6464,6 +6464,40 @@ fn occurrence_transform_resolves_through_placed_shape_representation() {
 }
 
 #[test]
+fn occurrence_transform_accepts_cartesian_operator_endpoints() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap242_assembly.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#34=AXIS2_PLACEMENT_3D('',#30,#32,#33);",
+            "#34=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#33,$,#30,1.,#32);",
+        )
+        .replace(
+            "#35=AXIS2_PLACEMENT_3D('',#31,#32,#33);",
+            "#35=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#33,$,#31,1.,#32);",
+        );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.into_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode operator-based occurrence transform");
+
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
+        .expect("placed child occurrence");
+    assert_eq!(child.transform.rows[0][3], 25.0);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred));
+}
+
+#[test]
 fn unresolved_occurrence_transform_is_reported_as_error() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
