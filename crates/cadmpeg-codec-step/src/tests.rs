@@ -1330,6 +1330,45 @@ fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
 }
 
 #[test]
+fn surface_of_revolution_selects_profile_parameter_pcurve() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#28=PLANE('',#27);",
+            "#69=AXIS1_PLACEMENT('',#3,#9);\n#28=SURFACE_OF_REVOLUTION('',#16,#69);",
+        )
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode surface of revolution sheet");
+
+    let surface_id = SurfaceId("step:data:surface#28".into());
+    let index = ModelIndex::new(&decoded.ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 0.0, 10.0),
+        Some(Point3::new(10.0, 0.0, 0.0))
+    );
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !coedge.pcurves.is_empty())
+            .count(),
+        1
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("curve #57")
+            && loss.message.contains("no pcurve")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

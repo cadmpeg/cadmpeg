@@ -1476,6 +1476,77 @@ fn model_curve_differential_by_id_inner(
     })
 }
 
+fn unit_axis(direction: Vector3) -> Option<Vector3> {
+    let length = direction.norm();
+    (length.is_finite() && length > f64::EPSILON).then(|| scale_vector(direction, 1.0 / length))
+}
+
+fn rotate_vector_about_axis(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
+    let cosine = angle.cos();
+    let sine = angle.sin();
+    vector_sum(&[
+        (cosine, vector),
+        (sine, cross(axis, vector)),
+        (axis.dot(vector) * (1.0 - cosine), axis),
+    ])
+}
+
+fn model_axis_revolution_point(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    axis_origin: Point3,
+    axis_direction: Vector3,
+    angle: f64,
+    parameter: f64,
+) -> Option<Point3> {
+    if !angle.is_finite() {
+        return None;
+    }
+    let axis = unit_axis(axis_direction)?;
+    let point = model_curve_point_by_id(index, directrix, parameter)?;
+    let relative = Vector3::new(
+        point.x - axis_origin.x,
+        point.y - axis_origin.y,
+        point.z - axis_origin.z,
+    );
+    Some(offset(
+        axis_origin,
+        &[(1.0, rotate_vector_about_axis(relative, axis, angle))],
+    ))
+}
+
+fn model_axis_revolution_partials(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    axis_origin: Point3,
+    axis_direction: Vector3,
+    angle: f64,
+    parameter: f64,
+) -> Option<SurfaceSecondPartials> {
+    if !angle.is_finite() {
+        return None;
+    }
+    let axis = unit_axis(axis_direction)?;
+    let differential = model_curve_differential_by_id(index, directrix, parameter)?;
+    let relative = Vector3::new(
+        differential.point.x - axis_origin.x,
+        differential.point.y - axis_origin.y,
+        differential.point.z - axis_origin.z,
+    );
+    let rotated = rotate_vector_about_axis(relative, axis, angle);
+    let rotated_tangent = rotate_vector_about_axis(differential.tangent, axis, angle);
+    let rotated_acceleration = rotate_vector_about_axis(differential.acceleration, axis, angle);
+    let du = cross(axis, rotated);
+    Some(SurfaceSecondPartials {
+        point: offset(axis_origin, &[(1.0, rotated)]),
+        du,
+        dv: rotated_tangent,
+        duu: cross(axis, du),
+        duv: cross(axis, rotated_tangent),
+        dvv: rotated_acceleration,
+    })
+}
+
 fn model_curve_point_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
@@ -2351,20 +2422,25 @@ pub fn model_surface_point(
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)?;
-    let (ProceduralSurfaceDefinition::Extrusion {
-        directrix,
-        direction,
-        ..
-    }
-    | ProceduralSurfaceDefinition::LinearSweep {
-        directrix,
-        direction,
-    }) = &procedural.definition
-    else {
-        return None;
-    };
     let index = crate::index::ModelIndex::new(ir);
-    model_curve_point_by_id(&index, directrix, u).map(|point| offset(point, &[(v, *direction)]))
+    match &procedural.definition {
+        ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            ..
+        }
+        | ProceduralSurfaceDefinition::LinearSweep {
+            directrix,
+            direction,
+        } => model_curve_point_by_id(&index, directrix, u)
+            .map(|point| offset(point, &[(v, *direction)])),
+        ProceduralSurfaceDefinition::AxisRevolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+        } => model_axis_revolution_point(&index, directrix, *axis_origin, *axis_direction, u, v),
+        _ => None,
+    }
 }
 
 /// Evaluate a surface carrier selected by arena id.
@@ -2398,6 +2474,17 @@ pub fn model_surface_point_by_id(
             .iter()
             .find(|procedural| procedural.surface == *surface_id);
         let result = match procedural.map(|procedural| &procedural.definition) {
+            Some(ProceduralSurfaceDefinition::AxisRevolution {
+                directrix,
+                axis_origin,
+                axis_direction,
+            }) => {
+                model_axis_revolution_point(index, directrix, *axis_origin, *axis_direction, u, v)
+                    .map(|point| SurfaceEvaluation {
+                        point,
+                        oriented_normal: None,
+                    })
+            }
             Some(
                 ProceduralSurfaceDefinition::Extrusion {
                     directrix,
@@ -2526,7 +2613,11 @@ fn model_surface_second_partials_by_id(
     v: f64,
 ) -> Option<SurfaceSecondPartials> {
     let mapping = model_surface_mapping(index, surface, u, v, &mut Vec::new())?;
-    let mut partials = offset_surface_second_partials(mapping.base, mapping.offset_distance)?;
+    let mut partials = if mapping.offset_distance == 0.0 {
+        mapping.base
+    } else {
+        offset_surface_second_partials(mapping.base, mapping.offset_distance)?
+    };
     partials.du = scale_vector(partials.du, mapping.u_scale);
     partials.dv = scale_vector(partials.dv, mapping.v_scale);
     partials.duu = scale_vector(partials.duu, mapping.u_scale * mapping.u_scale);
@@ -2567,6 +2658,24 @@ fn model_surface_mapping(
         .iter()
         .find(|procedural| procedural.surface == *surface);
     let result = match procedural.map(|procedural| &procedural.definition) {
+        Some(ProceduralSurfaceDefinition::AxisRevolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+        }) => Some(SurfaceMapping {
+            base: model_axis_revolution_partials(
+                index,
+                directrix,
+                *axis_origin,
+                *axis_direction,
+                u,
+                v,
+            )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
         Some(
             ProceduralSurfaceDefinition::Extrusion {
                 directrix,
@@ -2597,7 +2706,11 @@ fn model_surface_mapping(
         }
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
             let source = model_surface_mapping(index, source, u, v, visiting)?;
-            let base = offset_surface_second_partials(source.base, source.offset_distance)?;
+            let base = if source.offset_distance == 0.0 {
+                source.base
+            } else {
+                offset_surface_second_partials(source.base, source.offset_distance)?
+            };
             Some(SurfaceMapping {
                 base: transform_surface_second_partials(base, *transform),
                 offset_distance: 0.0,
@@ -3789,6 +3902,61 @@ mod tests {
         assert_eq!(second_partials.duu, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(second_partials.duv, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(second_partials.dvv, Vector3::new(0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn axis_revolution_surface_evaluation_rotates_the_profile_parameterization() {
+        let directrix_id = CurveId("profile".into());
+        let surface_id = SurfaceId("revolution".into());
+        let mut ir = CadIr::empty(crate::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: directrix_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(2.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("revolution-construction".into()),
+            surface: surface_id.clone(),
+            definition: ProceduralSurfaceDefinition::AxisRevolution {
+                directrix: directrix_id,
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        let index = crate::index::ModelIndex::new(&ir);
+        let point =
+            model_surface_point_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
+                .expect("axis revolution point");
+        assert!(point.x.abs() < 1.0e-12);
+        assert!((point.y - 2.0).abs() < 1.0e-12);
+        assert!((point.z - 1.5).abs() < 1.0e-12);
+        let partials =
+            model_surface_partials_by_id(&index, &surface_id, std::f64::consts::FRAC_PI_2, 1.5)
+                .expect("axis revolution partials");
+        assert!((partials.du.x + 2.0).abs() < 1.0e-12);
+        assert!(partials.du.y.abs() < 1.0e-12);
+        assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+        let second_partials = model_surface_second_partials_by_id(
+            &index,
+            &surface_id,
+            std::f64::consts::FRAC_PI_2,
+            1.5,
+        )
+        .expect("axis revolution second partials");
+        assert!((second_partials.duu.y + 2.0).abs() < 1.0e-12);
+        assert!(second_partials.duv.norm() < 1.0e-12);
+        assert!(second_partials.dvv.norm() < 1.0e-12);
     }
 
     #[test]

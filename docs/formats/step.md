@@ -228,6 +228,12 @@ domain. Deferred surface dependencies resolve by graph fixpoint, including
 forward and nested replicas. Its native entity is emitted again when those
 values are available.
 
+`SURFACE_OF_LINEAR_EXTRUSION` uses the directrix parameter as U and the stored
+vector as the V-direction displacement. `SURFACE_OF_REVOLUTION` uses the axis
+placement origin and direction as its rotation axis, the directrix parameter as
+V, and the plane angle in radians as U. A pcurve on either surface maps into
+the same U/V parameterization as its owning surface.
+
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and
 oriented-shell orientation. Reversing a relation reverses the occurrence

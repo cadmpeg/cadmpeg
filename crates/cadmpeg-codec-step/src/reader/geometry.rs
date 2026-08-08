@@ -1392,7 +1392,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             step_instance_id(&surface.id.0).map(|id| {
                 (
                     id,
-                    surface_parameter_scales(&surface.geometry, scale, angle_scale),
+                    surface_parameter_scales_for_step(
+                        ir,
+                        &surface.id,
+                        &surface.geometry,
+                        scale,
+                        angle_scale,
+                    ),
                 )
             })
         })
@@ -3812,6 +3818,26 @@ fn surface_parameter_scales(
     }
 }
 
+fn surface_parameter_scales_for_step(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+) -> [f64; 2] {
+    if ir.model.procedural_surfaces.iter().any(|procedural| {
+        procedural.surface == *surface_id
+            && matches!(
+                procedural.definition,
+                ProceduralSurfaceDefinition::AxisRevolution { .. }
+            )
+    }) {
+        [angle_scale, 1.0]
+    } else {
+        surface_parameter_scales(geometry, length_scale, angle_scale)
+    }
+}
+
 fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
     match geometry {
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
@@ -4557,6 +4583,39 @@ mod tests {
         assert_eq!(
             surface_parameter_scales(&SurfaceGeometry::Unknown { record: None }, 10.0, 0.25),
             [1.0, 1.0]
+        );
+    }
+
+    #[test]
+    fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
+        let surface_id = SurfaceId("surface".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("construction".into()),
+            surface: surface_id.clone(),
+            definition: ProceduralSurfaceDefinition::AxisRevolution {
+                directrix: CurveId("directrix".into()),
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        assert_eq!(
+            surface_parameter_scales_for_step(
+                &ir,
+                &surface_id,
+                &ir.model.surfaces[0].geometry,
+                10.0,
+                std::f64::consts::PI / 180.0,
+            ),
+            [std::f64::consts::PI / 180.0, 1.0]
         );
     }
 
