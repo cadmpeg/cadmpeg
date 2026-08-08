@@ -101,8 +101,8 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
                     v_count: descriptor.v_count as u32,
                     control_points,
                     weights,
-                    u_periodic: descriptor.u_form == 6,
-                    v_periodic: descriptor.v_form == 6,
+                    u_periodic: descriptor.u_periodic,
+                    v_periodic: descriptor.v_periodic,
                 }),
             })
         })
@@ -154,7 +154,7 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
                     knots,
                     control_points,
                     weights,
-                    periodic: descriptor.form == 6,
+                    periodic: descriptor.periodic,
                 },
             })
         })
@@ -211,7 +211,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                     knots,
                     control_points,
                     weights,
-                    periodic: descriptor.form == 6,
+                    periodic: descriptor.periodic,
                 }),
             })
         })
@@ -445,8 +445,10 @@ struct SurfaceDescriptor {
     v_degree: u16,
     u_count: usize,
     v_count: usize,
-    u_form: u8,
-    v_form: u8,
+    u_periodic: bool,
+    v_periodic: bool,
+    u_knot_type: u8,
+    v_knot_type: u8,
     u_distinct: usize,
     v_distinct: usize,
     u_mult: u32,
@@ -501,20 +503,22 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
     let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
     (xmt > 10).then_some(())?;
     let shift = escape + xmt_len - 2;
+    let u_periodic = logical_at(bytes, pos + 4 + shift)?;
+    let v_periodic = logical_at(bytes, pos + 5 + shift)?;
     let u_degree = be_u16(bytes, pos + 6 + shift)?;
     let v_degree = be_u16(bytes, pos + 8 + shift)?;
     let u_count = be_u16(bytes, pos + 12 + shift)? as usize;
     let v_count = be_u16(bytes, pos + 16 + shift)? as usize;
-    let u_form = *bytes.get(pos + 18 + shift)?;
-    let v_form = *bytes.get(pos + 19 + shift)?;
+    let u_knot_type = *bytes.get(pos + 18 + shift)?;
+    let v_knot_type = *bytes.get(pos + 19 + shift)?;
     let u_distinct = be_u32(bytes, pos + 20 + shift)? as usize;
     let v_distinct = be_u32(bytes, pos + 24 + shift)? as usize;
     ((1..=10).contains(&u_degree)
         && (1..=10).contains(&v_degree)
         && (2..=2000).contains(&u_count)
         && (2..=2000).contains(&v_count)
-        && [1, 4, 5, 6].contains(&u_form)
-        && [1, 4, 5, 6].contains(&v_form)
+        && valid_knot_type(u_knot_type)
+        && valid_knot_type(v_knot_type)
         && (2..2000).contains(&u_distinct)
         && (2..2000).contains(&v_distinct))
     .then_some(())?;
@@ -571,8 +575,10 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_degree,
             u_count,
             v_count,
-            u_form,
-            v_form,
+            u_periodic,
+            v_periodic,
+            u_knot_type,
+            v_knot_type,
             u_distinct,
             v_distinct,
             u_mult,
@@ -591,7 +597,8 @@ struct CurveDescriptor {
     poles: usize,
     dimension: u16,
     distinct: usize,
-    form: u8,
+    knot_type: u8,
+    periodic: bool,
     mult: u32,
     knots: u32,
     references: Vec<u32>,
@@ -642,12 +649,13 @@ fn curve_descriptor_at(
     let poles = be_u16(bytes, pos + 8 + shift)? as usize;
     let dimension = be_u16(bytes, pos + 10 + shift)?;
     let distinct = be_u16(bytes, pos + 14 + shift)? as usize;
-    let form = *bytes.get(pos + 16 + shift)?;
+    let knot_type = *bytes.get(pos + 16 + shift)?;
+    let periodic = logical_at(bytes, pos + 17 + shift)?;
     ((1..=10).contains(&degree)
         && (2..=2000).contains(&poles)
         && matches!(dimension, 2..=4)
         && (2..=2000).contains(&distinct)
-        && [1, 4, 5, 6].contains(&form))
+        && valid_knot_type(knot_type))
     .then_some(())?;
     if matches!(
         bytes.get(pos + 17 + shift..pos + 21 + shift),
@@ -674,7 +682,8 @@ fn curve_descriptor_at(
                     poles,
                     dimension,
                     distinct,
-                    form,
+                    knot_type,
+                    periodic,
                     mult: references[1],
                     knots: references[2],
                     references: references.to_vec(),
@@ -693,7 +702,8 @@ fn curve_descriptor_at(
             poles,
             dimension,
             distinct,
-            form,
+            knot_type,
+            periodic,
             mult,
             knots,
             references: vec![mult, knots],
@@ -787,6 +797,18 @@ fn read_enveloped_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     let escape = usize::from(bytes.get(at) == Some(&0xff));
     let (value, len) = read_xmt(bytes, at + escape)?;
     Some((value, escape + len))
+}
+
+fn logical_at(bytes: &[u8], at: usize) -> Option<bool> {
+    match bytes.get(at)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn valid_knot_type(value: u8) -> bool {
+    (1..=6).contains(&value)
 }
 
 /// Codec-local ceiling on the total expanded knot count. Multiplicities are

@@ -266,14 +266,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
 
-### PS-34. B-spline form-code semantics
-
-**Question.** What does each B-spline form code mean?
-
-**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinc" names the form-code field. `siemens_nx.md` §9.3 "The B-spline form code does not determine whether a control grid is rational. The contro" excludes one interpretation. No section assigns a meaning to a form-code value.
-
-**Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
-
 ### PS-35. Escaped and direct fixed-record disambiguation
 
 **Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?

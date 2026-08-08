@@ -4897,6 +4897,93 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
 }
 
 #[test]
+fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
+    let mut surface = bspline_partition_stream();
+    let surface_descriptor = surface
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    surface[surface_descriptor + 4] = 1;
+    surface[surface_descriptor + 5] = 0;
+    surface[surface_descriptor + 18] = 2;
+    surface[surface_descriptor + 19] = 3;
+    let [surface] = crate::nurbs::surfaces(&surface)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(surface) = surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert!(surface.u_periodic);
+    assert!(!surface.v_periodic);
+
+    let mut open_surface = bspline_partition_stream();
+    let surface_descriptor = open_surface
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    open_surface[surface_descriptor + 4] = 0;
+    open_surface[surface_descriptor + 18] = 6;
+    let [open_surface] = crate::nurbs::surfaces(&open_surface)
+        .try_into()
+        .expect("one surface");
+    let SurfaceGeometry::Nurbs(open_surface) = open_surface.geometry else {
+        panic!("expected NURBS surface");
+    };
+    assert!(!open_surface.u_periodic);
+
+    let mut curve = bspline_partition_stream();
+    let curve_descriptor = curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    curve[curve_descriptor + 16] = 2;
+    curve[curve_descriptor + 17] = 1;
+    let [curve] = crate::nurbs::curves(&curve).try_into().expect("one curve");
+    let CurveGeometry::Nurbs(curve) = curve.geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert!(curve.periodic);
+
+    let mut open_curve = bspline_partition_stream();
+    let curve_descriptor = open_curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    open_curve[curve_descriptor + 16] = 6;
+    open_curve[curve_descriptor + 17] = 0;
+    let [open_curve] = crate::nurbs::curves(&open_curve)
+        .try_into()
+        .expect("one curve");
+    let CurveGeometry::Nurbs(open_curve) = open_curve.geometry else {
+        panic!("expected NURBS curve");
+    };
+    assert!(!open_curve.periodic);
+
+    let mut pcurve = bspline_partition_stream();
+    let pcurve_descriptor = pcurve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("pcurve descriptor");
+    put_ref(&mut pcurve, pcurve_descriptor + 10, 2);
+    pcurve[pcurve_descriptor + 16] = 6;
+    pcurve[pcurve_descriptor + 17] = 0;
+    let payload = pcurve
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("pcurve payload");
+    for (index, value) in [0.0, 0.0, 1.0, 0.02, 0.0, 1.0].into_iter().enumerate() {
+        put_f64(&mut pcurve, payload + 15 + index * 8, value);
+    }
+    let [pcurve] = crate::nurbs::pcurves(&pcurve)
+        .try_into()
+        .expect("one pcurve");
+    let PcurveGeometry::Nurbs { periodic, .. } = pcurve.geometry else {
+        panic!("expected NURBS pcurve");
+    };
+    assert!(!periodic);
+}
+
+#[test]
 fn nurbs_carriers_reject_invalid_basis_cardinality() {
     let mut surface = bspline_partition_stream();
     let descriptor = surface

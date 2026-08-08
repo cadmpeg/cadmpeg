@@ -987,11 +987,11 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 | Type | Tag    | Role                                                                                                                                                        |
 | ---: | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 |  125 | `007d` | B-surface control-grid payload (`double_count` near `+91`, then values)                                                                                     |
-|  126 | `007e` | B-surface descriptor: `u_degree +6`, `v_degree +8`, `u_pole_count +12`, `v_pole_count +16`, forms `+18/+19`, distinct-knot counts `+20/+24`, mult/knot refs |
+|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +12`, `v_pole_count +16`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, mult/knot refs |
 |  127 | `007f` | multiplicity arrays (`alloc`, ref, `alloc × u16`)                                                                                                           |
 |  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
 |  135 | `0087` | B-curve control payload                                                                                                                                     |
-|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +8`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+14`, form `+16`, mult/knot refs `+23/+25`                  |
+|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +8`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+14`, knot type `+16`, periodic/closed/rational `+17/+18/+19`, curve form `+20`, mult/knot refs `+23/+25`                  |
 
 Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt. This
 shifts every subsequent logical field by one byte. Type 135 may place a second
@@ -1007,7 +1007,9 @@ ordered as term-use, multiplicity, and knot references. Every reference is
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional forms, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+
+The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4` and `+5`, after the optional envelope/index shift. The bytes at `+18` and `+19` are U/V knot-type values, not periodicity flags. Type 136 stores its knot type at `+16` and its periodic logical flag at `+17`. A type-136 dimension-2 carrier is a pcurve and uses the same periodic flag. Knot types use the Parasolid values `1` = unset, `2` = non-uniform, `3` = uniform, `4` = quasi-uniform, `5` = piecewise Bézier, and `6` = Bézier ends. Knot type does not determine rationality or periodicity. Rationality comes from the control-grid stride.
 
 ### 6.3 Procedural intersection curves (type 38 / `0x5a`)
 
@@ -1746,13 +1748,13 @@ A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
 is `01` or `02`. Its XMT is non-null. A type-135 counted control payload is
 distinct and ends after its declared finite-double lane.
 
-A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinct-knot counts, multiplicity references, and knot references. It has a short layout with two-byte references and a large-index layout with variable-width references, a `007d` payload-kind marker, and a control-payload reference. A deltas layout instead terminates after five non-null variable-width references, each followed by status `00`; its control-payload reference is carried by the owning type-124 wrapper.
+A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole counts, U/V knot types, distinct-knot counts, multiplicity references, and knot references. It has a short layout with two-byte references and a large-index layout with variable-width references, a `007d` payload-kind marker, and a control-payload reference. A deltas layout instead terminates after five non-null variable-width references, each followed by status `00`; its control-payload reference is carried by the owning type-124 wrapper.
 
-A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, form, control-data index, multiplicity reference, and knot reference.
+A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-data index, multiplicity reference, and knot reference.
 
 Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and stores `value[count]:f64 BE`; every type-128 value is finite. Counts are nonzero and XMT identities are non-null. Each record ends after its declared value lane.
 
-The B-spline form code does not determine whether a control grid is rational. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
+The B-spline knot type does not determine whether a control grid is rational or periodic. The control-grid stride determines the representation: stride 3 stores xyz and stride 4 stores xyzw.
 
 ### 9.4 Attributes and expressions
 

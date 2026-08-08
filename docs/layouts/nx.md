@@ -9,8 +9,9 @@ Table source: `docs/layouts/nx.toml`.
 
 Covers the SPLMSSTR container (§2), the Parasolid XT fixed record families
 (§4.1), the topology node field maps (§5.1), the analytic payload offsets
-(§6.1), the trimmed and SP curve carriers (§6.4), the rolling-ball blend
-(§6.5), and the CHART_s preamble (§6.3).
+(§6.1), the B-spline descriptor prefixes (§6.2), the trimmed and SP curve
+carriers (§6.4), the rolling-ball blend (§6.5), and the CHART_s preamble
+(§6.3).
 
 Endianness follows the two lanes §1 states: SPLMSSTR and UG_PART table fields
 are little-endian, Parasolid neutral-binary payload fields are big-endian. Each
@@ -699,6 +700,63 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-nx/src/intersection.rs` — The parser's sentinel matches the stated absent-parameter pair.
 
+## `nurbs_surface_descriptor_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 28 B
+
+Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 1 | `u_periodic` | `u8` | big | spec | `u_periodic +4`, `v_periodic +5` |
+| 5 | 1 | `v_periodic` | `u8` | big | spec | `u_periodic +4`, `v_periodic +5` |
+| 6 | 2 | `u_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
+| 8 | 2 | `v_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
+| 12 | 2 | `u_pole_count` | `u16` | big | spec | `u_pole_count +12`, `v_pole_count +16` |
+| 16 | 2 | `v_pole_count` | `u16` | big | spec | `u_pole_count +12`, `v_pole_count +16` |
+| 18 | 1 | `u_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
+| 19 | 1 | `v_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
+| 20 | 4 | `u_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+| 24 | 4 | `v_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
+
+Unstated regions:
+
+- `0..4` (4 B): Type tag and the encoded XMT identity.
+- `10..12` (2 B): Unassigned bytes between the V degree and U pole count in the NX descriptor prefix.
+- `14..16` (2 B): Unassigned bytes between the U and V pole counts in the NX descriptor prefix.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the two logical flags at the declared shifted offsets.
+
+## `nurbs_curve_descriptor_prefix`
+
+Spec §6.2 · layout: byte offsets · size: 21 B
+
+Offsets are relative to the type tag after the optional envelope and large-index shift. The reference lane begins at +21 or +23 depending on the selected descriptor framing.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 4 | 2 | `degree` | `u16` | big | spec | `degree +4`, `pole_count +8` |
+| 8 | 2 | `pole_count` | `u16` | big | spec | `pole_count +8`, `dimension +10` |
+| 10 | 2 | `dimension` | `u16` | big | spec | `dimension +10` (2=UV, 3=XYZ) |
+| 14 | 2 | `distinct_knot_count` | `u16` | big | spec | distinct-knot `+14` |
+| 16 | 1 | `knot_type` | `u8` | big | spec | knot type `+16` |
+| 17 | 1 | `periodic` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 18 | 1 | `closed` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 19 | 1 | `rational` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
+| 20 | 1 | `curve_form` | `u8` | big | spec | curve form `+20` |
+
+Unstated regions:
+
+- `0..4` (4 B): Type tag and the encoded XMT identity.
+- `6..8` (2 B): Unassigned bytes between degree and pole count in the NX descriptor prefix.
+- `12..14` (2 B): Unassigned bytes between dimension and distinct-knot count in the NX descriptor prefix.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-nx/src/nurbs.rs` — The parser reads the curve and pcurve periodic flag at the declared shifted offset.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -706,4 +764,4 @@ Cross-checked against code:
 | OM record grammars (§7.1) | §3.3 | About sixty fixed-literal token grammars with sequential field positions but no stated absolute offsets. They are slot layouts over a variable-width compact-index lane, so no byte arithmetic closes. |
 | `b5`-style deltas record grammars (§4.2, §9.2-§9.4) | §4.2 | Every reference slot is a variable-width encoded XMT index followed by a status byte, so field positions shift per record. The spec states field order and inline schema-header byte strings, not offsets. |
 | Int32 Compressed Data Packet Mk. 2 (§2.3) | §2.3 | A most-significant-bit-first bit stream with `u6` and `u3` sub-fields; there are no byte offsets to state. |
-| B_SURFACE and B_CURVE support records (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays whose element counts drive every later position, and each may place one or two `ff` envelope escapes that shift the remaining fields. |
+| B_SURFACE and B_CURVE counted payload and reference tails (§6.2) | §6.2 | Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above. |
