@@ -3199,6 +3199,18 @@ pub(crate) fn resolved_section_coordinates(
         .filter_map(|skamp| section_skamp_saved_point_on_line(definition, skamp))
         .filter(|(point_id, _, _)| !ambiguous_point_ids.contains(point_id))
         .collect::<Vec<_>>();
+    let line_midpoint_constraints = active_complete_section_skamps(definition)
+        .filter_map(|skamp| section_skamp_line_midpoint_sources(definition, skamp))
+        .filter(|(point_ids, point)| {
+            point_ids
+                .iter()
+                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+                && match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                }
+        })
+        .collect::<Vec<_>>();
     let symmetric_point_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
         .filter(|(axis, first, second, _)| {
@@ -3334,6 +3346,15 @@ pub(crate) fn resolved_section_coordinates(
         equations.push(SectionCoordinateEquation::point_value(
             point, coordinate, value,
         ));
+    }
+    for &(point_ids, point) in &line_midpoint_constraints {
+        for coordinate in 0..2 {
+            let mut equation = SectionCoordinateEquation::default();
+            equation.add_point(point_ids[0], coordinate, 1.0);
+            equation.add_point(point_ids[1], coordinate, 1.0);
+            equation.add_source(point, coordinate, -2.0);
+            equations.push(equation);
+        }
     }
     for &(axis, first, second, fixed_coordinate) in &symmetric_point_constraints {
         let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
@@ -11622,6 +11643,36 @@ fn section_skamp_is_circular(
             )
         })
     }
+}
+
+fn section_skamp_line_midpoint_sources(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<([u32; 2], SectionPointSource)> {
+    let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    let target = |item: &crate::feature::FeatureSkampItem| {
+        if item.sense == 4 {
+            return unique_centered_line_segment(definition, item.entity_id)
+                .map(|line| [line.center_id, line.center_id]);
+        }
+        if item.sense != 0 {
+            return None;
+        }
+        let segment = unique_decoded_section_segment(definition, item.entity_id)?;
+        (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(segment.point_ids)
+    };
+    let point =
+        |item: &crate::feature::FeatureSkampItem| section_skamp_selected_point(definition, item);
+    let candidates = [(first, second), (second, first)]
+        .into_iter()
+        .filter_map(|(target_item, point_item)| Some((target(target_item)?, point(point_item)?)))
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn section_skamp_active(status: u32) -> bool {

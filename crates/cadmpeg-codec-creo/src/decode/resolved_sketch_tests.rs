@@ -10539,6 +10539,43 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }
     );
     midpoint_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points = vec![
+        crate::feature::FeatureSectionPoint {
+            point_id: 1,
+            u: Some(0.0),
+            v: Some(0.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 2,
+            u: Some(4.0),
+            v: Some(2.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 4,
+            u: None,
+            v: None,
+        },
+    ];
+    assert_eq!(
+        resolved_section_points(&midpoint_definition),
+        BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
+    );
+    midpoint_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .last_mut()
+        .expect("midpoint point")
+        .u = Some(3.0);
+    assert_eq!(
+        resolved_section_coordinates(&midpoint_definition).get(&4),
+        Some(&[Some(3.0), Some(1.0)])
+    );
+    midpoint_definition
         .relations
         .as_mut()
         .expect("relations")
