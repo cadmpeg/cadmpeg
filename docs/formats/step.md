@@ -211,6 +211,13 @@ reference direction is omitted or parallel to its axis: +X is projected onto
 the plane normal to the axis, except for an axis parallel to X, where +Y is
 projected.
 
+The IR stores the longer `ELLIPSE` semi-axis as `major_direction` and
+`major_radius`. If the first STEP semi-axis is shorter than the second, the
+canonical parameter is `v = u - π/2`; numeric `TRIMMED_CURVE` selectors are
+mapped by that phase after their angular unit conversion. Cartesian selectors
+invert the canonical carrier and therefore need no phase adjustment. The
+phase is inherited by curve replicas, trims, and spatial offsets.
+
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the
 basis curve's parameterization. Its local parameter domain is the directed

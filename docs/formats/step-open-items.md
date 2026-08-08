@@ -434,22 +434,12 @@ semantics.
 
 ### PC-07. Ellipse semi-axis canonicalization
 
-**Question.** May the decoder reorder an `ELLIPSE` semi-axis pair?
-
-**Known.** ISO 10303-42 parameterizes an ellipse as
-`center + semi_axis_1·cos(u)·x + semi_axis_2·sin(u)·y`, with `x` the
-placement reference direction, and does not require `semi_axis_1` to be the
-longer one. When `semi_axis_1` is shorter, the decoder swaps the two radii and
-rotates the major direction to `cross(axis, reference_direction)`
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:381-393`).
-
-**Need.** The swap is the substitution `v = u − π/2`, and no compensating
-phase shift is applied to trims on that curve. A `TRIMMED_CURVE` with
-`.PARAMETER.` selects states its parameters in the source parameterization, so
-a trim on a swapped-axis ellipse selects the wrong arc. No fixture combines a
-swapped-axis ellipse with a parameter trim, so the reparameterization is never
-observed. We must decide whether the IR ellipse carries the source
-parameterization or a canonical one, and where the phase shift belongs.
+**Resolved.** The IR keeps `major_radius ≥ minor_radius`. For
+`semi_axis_1 < semi_axis_2`, it stores `cross(axis, ref_direction)` as the
+major direction and maps the source parameter with `v = u − π/2`. Numeric
+`TRIMMED_CURVE` selectors apply that phase after angular unit conversion;
+Cartesian selectors invert the canonical geometry directly. Replicas, nested
+trims, and spatial offsets inherit the phase.
 
 ## 9. Body and root identity
 

@@ -6702,6 +6702,44 @@ fn reversed_step_ellipse_axes_are_canonicalized() {
 }
 
 #[test]
+fn reversed_step_ellipse_trim_preserves_source_parameterization() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=ELLIPSE('',#4,2.,6.);
+#6=TRIMMED_CURVE('',#5,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(1.5707963267948966)),.T.,.PARAMETER.);
+#7=GEOMETRIC_CURVE_SET('',(#6));
+#8=SHAPE_REPRESENTATION('',(#7),$);",
+    );
+    let index = ModelIndex::new(&result.ir);
+    let start = model_curve_point_by_id(&index, &CurveId("step:data:curve#6".into()), 0.0)
+        .expect("trimmed ellipse start");
+    let end = model_curve_point_by_id(
+        &index,
+        &CurveId("step:data:curve#6".into()),
+        std::f64::consts::FRAC_PI_2,
+    )
+    .expect("trimmed ellipse end");
+    assert!((start.x - 2.0).abs() < 1.0e-12);
+    assert!(start.y.abs() < 1.0e-12);
+    assert!(end.x.abs() < 1.0e-12);
+    assert!((end.y - 6.0).abs() < 1.0e-12);
+    assert!(result.ir.model.procedural_curves.iter().any(|curve| {
+        matches!(
+            &curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range: [start, end],
+                ..
+            } if curve.id.as_str() == "step:construction:trimmed_curve#6"
+                && (*start + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+                && end.abs() < 1.0e-12
+        )
+    }));
+}
+
+#[test]
 fn decode_transfers_ap242_presentation_pmi() {
     use cadmpeg_ir::pmi::PmiDefinition;
 

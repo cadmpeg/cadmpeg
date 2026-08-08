@@ -332,6 +332,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             pcurve_geometries.insert(*curve, decoded.clone());
         }
     }
+    let mut curve_parameter_offsets = BTreeMap::<u64, f64>::new();
     for (id, record) in exchange.entities_any(&[
         "LINE",
         "CIRCLE",
@@ -368,6 +369,18 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         }
         let record_scale = unit_scales.length(id, scale);
+        let parameter_offset = if curve_type == "ELLIPSE" {
+            let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number);
+            let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number);
+            first_radius
+                .zip(second_radius)
+                .filter(|(first, second)| first.is_finite() && second.is_finite())
+                .and_then(|(first, second)| {
+                    (first < second).then_some(-std::f64::consts::FRAC_PI_2)
+                })
+        } else {
+            None
+        };
         let geometry = match curve_type {
             "LINE" => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
@@ -469,6 +482,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             _ => unreachable!("curve type was selected from the dispatch list"),
         };
         if let Some(geometry) = geometry {
+            if let Some(offset) = parameter_offset {
+                curve_parameter_offsets.insert(id, offset);
+            }
             ir.model.curves.push(Curve {
                 id: CurveId(format!("step:data:curve#{id}")),
                 geometry,
@@ -573,6 +589,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 cache_fit_tolerance: None,
             });
             carrier_index.curves.insert(id, curve_index);
+            if let Some(offset) = curve_parameter_offsets.get(&parent_step).copied() {
+                curve_parameter_offsets.insert(id, offset);
+            }
             typed.insert(id);
             typed.insert(operator_step);
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
@@ -603,6 +622,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             };
             let record_scale = unit_scales.length(id, scale);
             let record_angle_scale = unit_scales.angle(id, angle_scale);
+            let parameter_offset = curve_parameter_offsets
+                .get(&basis_step)
+                .copied()
+                .unwrap_or(0.0);
             let linear_parameter_scale =
                 line_parameter_scale(exchange, basis_reference_step, record_scale, &mut losses);
             let (start, end) = {
@@ -611,6 +634,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     geometry: &geometry,
                     angle_scale: record_angle_scale,
                     linear_parameter_scale,
+                    parameter_offset,
                     tolerance: ir.tolerances.linear,
                     master_representation,
                     record_id: id,
@@ -646,6 +670,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 cache_fit_tolerance: Some(0.0),
             });
             carrier_index.curves.insert(id, curve_index);
+            if parameter_offset != 0.0 {
+                curve_parameter_offsets.insert(id, parameter_offset);
+            }
             typed.insert(id);
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
             continue;
@@ -742,6 +769,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             cache_fit_tolerance: None,
         });
         carrier_index.curves.insert(id, curve_index);
+        if let Some(offset) = curve_parameter_offsets.get(&source_step).copied() {
+            curve_parameter_offsets.insert(id, offset);
+        }
         typed.insert(id);
         wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
     }
@@ -2247,6 +2277,7 @@ struct TrimParameterContext<'a> {
     geometry: &'a CurveGeometry,
     angle_scale: f64,
     linear_parameter_scale: f64,
+    parameter_offset: f64,
     tolerance: f64,
     master_representation: TrimMasterRepresentation,
     record_id: u64,
@@ -3230,21 +3261,14 @@ fn is_parameter_trim_value(value: &Value) -> bool {
 }
 
 fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
+    let scale = parameter_scale(
+        context.geometry,
+        context.angle_scale,
+        context.linear_parameter_scale,
+    );
     match value {
-        Value::Integer(value) => Some(
-            parameter_scale(
-                context.geometry,
-                context.angle_scale,
-                context.linear_parameter_scale,
-            ) * *value as f64,
-        ),
-        Value::Real(value) => Some(
-            parameter_scale(
-                context.geometry,
-                context.angle_scale,
-                context.linear_parameter_scale,
-            ) * *value,
-        ),
+        Value::Integer(value) => Some(scale * *value as f64 + context.parameter_offset),
+        Value::Real(value) => Some(scale * *value + context.parameter_offset),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
             trim_parameter_value(value, context)
         }
