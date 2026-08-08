@@ -1301,63 +1301,62 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     }
 
     carrier_index = CarrierIndex::from_ir(ir);
-    let deferred_surface_count = exchange
+    let deferred_surface_ids = exchange
         .entities_any(&["CURVE_BOUNDED_SURFACE", "OFFSET_SURFACE"])
-        .count();
-    for _ in 0..=deferred_surface_count {
-        let mut progress = false;
-        for (id, record) in exchange.entities("CURVE_BOUNDED_SURFACE") {
-            let surface = SurfaceId(format!("step:data:surface#{id}"));
-            if carrier_index.surfaces.contains_key(&id) {
-                continue;
-            }
-            let Some(parameters) = entity_parameters(record, "CURVE_BOUNDED_SURFACE") else {
+        .map(|(id, _)| id)
+        .collect::<Vec<_>>();
+    let mut deferred_surface_queue = VecDeque::from(deferred_surface_ids.clone());
+    let mut surface_waiting_on = HashMap::<u64, Vec<u64>>::new();
+    while let Some(id) = deferred_surface_queue.pop_front() {
+        if carrier_index.surfaces.contains_key(&id) {
+            continue;
+        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        if let Some(parameters) = entity_parameters(record, "CURVE_BOUNDED_SURFACE") {
+            let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
-            let support_step = parameters.get(1).and_then(Value::reference);
-            let support =
-                support_step.map(|support| SurfaceId(format!("step:data:surface#{support}")));
-            let boundary_steps = parameters.get(2).and_then(references);
-            let boundaries = boundary_steps.as_ref().map(|boundaries| {
-                boundaries
-                    .iter()
-                    .copied()
-                    .map(|boundary| CurveId(format!("step:data:curve#{boundary}")))
-                    .collect::<Vec<_>>()
-            });
+            let Some(support_index) = carrier_index.surfaces.get(&support_step).copied() else {
+                surface_waiting_on.entry(support_step).or_default().push(id);
+                continue;
+            };
+            let Some(geometry) = ir
+                .model
+                .surfaces
+                .get(support_index)
+                .map(|surface| surface.geometry.clone())
+            else {
+                continue;
+            };
+            let Some(boundary_steps) = parameters.get(2).and_then(references) else {
+                continue;
+            };
+            let boundaries = boundary_steps
+                .iter()
+                .copied()
+                .map(|boundary| CurveId(format!("step:data:curve#{boundary}")))
+                .collect::<Vec<_>>();
+            if boundaries.is_empty()
+                || !boundaries.iter().all(|curve| {
+                    step_instance_id(&curve.0)
+                        .is_some_and(|curve_id| carrier_index.curves.contains_key(&curve_id))
+                })
+            {
+                continue;
+            }
             let boundary_pcurves = boundary_steps
                 .iter()
-                .flatten()
-                .flat_map(|boundary| {
-                    support_step
-                        .into_iter()
-                        .flat_map(|support| boundary_pcurve_steps(*boundary, support, exchange))
-                })
+                .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
                 .map(|pcurve| PcurveId(format!("step:data:pcurve#{pcurve}")))
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .collect::<Vec<_>>();
-            let implicit_outer = parameters.get(3).and_then(Value::logical);
-            let Some((support, boundaries, implicit_outer, geometry)) = support_step
-                .and_then(|support| carrier_index.surfaces.get(&support))
-                .and_then(|index| ir.model.surfaces.get(*index))
-                .map(|surface| surface.geometry.clone())
-                .zip(support)
-                .zip(boundaries)
-                .zip(implicit_outer)
-                .map(|(((geometry, support), boundaries), implicit_outer)| {
-                    (support, boundaries, implicit_outer, geometry)
-                })
-                .filter(|(_, boundaries, _, _)| {
-                    !boundaries.is_empty()
-                        && boundaries.iter().all(|curve| {
-                            step_instance_id(&curve.0)
-                                .is_some_and(|id| carrier_index.curves.contains_key(&id))
-                        })
-                })
-            else {
+            let Some(implicit_outer) = parameters.get(3).and_then(Value::logical) else {
                 continue;
             };
+            let surface = SurfaceId(format!("step:data:surface#{id}"));
             let surface_index = ir.model.surfaces.len();
             ir.model.surfaces.push(Surface {
                 id: surface.clone(),
@@ -1368,7 +1367,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 id: ProceduralSurfaceId(format!("step:construction:curve_bounded_surface#{id}")),
                 surface,
                 definition: ProceduralSurfaceDefinition::CurveBounded {
-                    support,
+                    support: SurfaceId(format!("step:data:surface#{support_step}")),
                     boundaries,
                     boundary_pcurves,
                     implicit_outer,
@@ -1378,57 +1377,50 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             });
             carrier_index.surfaces.insert(id, surface_index);
             typed.insert(id);
-            progress = true;
+            wake_deferred_dependents(id, &mut surface_waiting_on, &mut deferred_surface_queue);
+            continue;
         }
-        for (id, record) in exchange.entities("OFFSET_SURFACE") {
-            let surface = SurfaceId(format!("step:data:surface#{id}"));
-            if carrier_index.surfaces.contains_key(&id) {
-                continue;
-            }
-            let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
-                continue;
-            };
-            let support = parameters
-                .get(1)
-                .and_then(Value::reference)
-                .filter(|support| carrier_index.surfaces.contains_key(support))
-                .map(|support| SurfaceId(format!("step:data:surface#{support}")));
-            let distance = parameters.get(2).and_then(Value::number);
-            let self_intersect = parameters
-                .get(3)
-                .and_then(logical_value)
-                .map(StepLogical::into_option);
-            let Some((support, distance, self_intersect)) = support
-                .zip(distance)
-                .zip(self_intersect)
-                .map(|((support, distance), self_intersect)| (support, distance, self_intersect))
-            else {
-                continue;
-            };
-            let surface_index = ir.model.surfaces.len();
-            ir.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: None,
-            });
-            ir.model.procedural_surfaces.push(ProceduralSurface {
-                id: ProceduralSurfaceId(format!("step:construction:offset_surface#{id}")),
-                surface,
-                definition: ProceduralSurfaceDefinition::ParallelOffset {
-                    support,
-                    distance: distance * scale,
-                    self_intersect,
-                },
-                cache_fit_tolerance: None,
-                record_bounds: None,
-            });
-            carrier_index.surfaces.insert(id, surface_index);
-            typed.insert(id);
-            progress = true;
+        let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
+            continue;
+        };
+        let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
+            continue;
+        };
+        if !carrier_index.surfaces.contains_key(&support_step) {
+            surface_waiting_on.entry(support_step).or_default().push(id);
+            continue;
         }
-        if !progress {
-            break;
-        }
+        let Some(distance) = parameters.get(2).and_then(Value::number) else {
+            continue;
+        };
+        let Some(self_intersect) = parameters
+            .get(3)
+            .and_then(logical_value)
+            .map(StepLogical::into_option)
+        else {
+            continue;
+        };
+        let surface = SurfaceId(format!("step:data:surface#{id}"));
+        let surface_index = ir.model.surfaces.len();
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("step:construction:offset_surface#{id}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::ParallelOffset {
+                support: SurfaceId(format!("step:data:surface#{support_step}")),
+                distance: distance * scale,
+                self_intersect,
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+        carrier_index.surfaces.insert(id, surface_index);
+        typed.insert(id);
+        wake_deferred_dependents(id, &mut surface_waiting_on, &mut deferred_surface_queue);
     }
     let surface_replica_ids = exchange
         .entities("SURFACE_REPLICA")
