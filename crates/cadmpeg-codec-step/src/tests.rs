@@ -481,6 +481,37 @@ fn opaque_links_retain_typed_step_targets() {
 }
 
 #[test]
+fn opaque_links_retain_fallback_carrier_targets() {
+    let result = decode_inline(
+        "#1=TRIMMED_CURVE('',#99,(0.),(1.),.T.,.PARAMETER.);\
+         #2=EXAMPLE_RECORD('',#1);\
+         #99=EXAMPLE_RECORD('missing basis');",
+    );
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.0 == "step:data:curve#1"));
+
+    let unknowns = result
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown records");
+    let example = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:data:example_record#2")
+        .expect("opaque record referencing fallback carrier");
+    assert!(example.links.contains(&"step:data:curve#1".to_string()));
+
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:curve#1")
+    }));
+}
+
+#[test]
 fn decode_accounts_for_every_part21_byte() {
     let bytes = include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21");
     let result = StepCodec::default()
