@@ -29,8 +29,9 @@ unacceptable decode behaviour.
 **Current control.** The inference pass reuses one model index. NURBS Newton
 search and certified interval search have fixed bounds. Deferred curve and
 surface constructors resolve through dependency worklists instead of rescanning
-the full population for every chain level. The decode session charges the
-worst-case range-inference allowance before the pass.
+the full population for every chain level. Periodic endpoint sweeps reduce
+through `rem_euclid` instead of adding one period per turn. The decode session
+charges the worst-case range-inference allowance before the pass.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic

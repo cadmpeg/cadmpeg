@@ -159,10 +159,7 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
     if !period.is_finite() || period <= 0.0 {
         return None;
     }
-    let mut sweep = end - start;
-    while sweep < 0.0 {
-        sweep += period;
-    }
+    let sweep = (end - start).rem_euclid(period);
     let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
     if sweep <= 0.0 || sweep > period + tolerance {
         return None;
@@ -4047,6 +4044,21 @@ mod tests {
         let [start, end] = edge_parameter_range(&geometry, tau, tau + 0.5).expect("edge range");
         assert!(start.abs() < 1.0e-12);
         assert!((end - 0.5).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn periodic_edge_range_reduces_large_reverse_sweeps_in_constant_time() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let [start, end] =
+            edge_parameter_range(&geometry, 0.0, -1.0e300).expect("large periodic range");
+        assert!(start.abs() < 1.0e-12);
+        let expected = (-1.0e300_f64).rem_euclid(std::f64::consts::TAU);
+        assert!((end - expected).abs() < expected.abs() * 1.0e-12);
     }
 
     #[test]
