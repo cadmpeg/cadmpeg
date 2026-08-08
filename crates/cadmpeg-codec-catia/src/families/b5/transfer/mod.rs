@@ -43,7 +43,8 @@ use pcurves::{
 };
 use vertices::transfer_vertex_tolerances;
 
-const POINT_TOLERANCE: f64 = 1.5e-3;
+/// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
+const POINT_TOLERANCE: f64 = 1e-3;
 
 type B5Support = (u32, u32, [f64; 2]);
 type B5SupportPlan = HashMap<u32, Vec<B5Support>>;

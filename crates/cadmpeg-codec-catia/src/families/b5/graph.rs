@@ -1872,7 +1872,7 @@ fn incidence_vertex_coordinates(
                 .flatten()
                 .collect::<Vec<_>>();
             let point = *points.first()?;
-            let tolerance_squared = INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE;
+            let tolerance_squared = POINT_TOLERANCE * POINT_TOLERANCE;
             points
                 .iter()
                 .all(|candidate| distance_squared(*candidate, point) <= tolerance_squared)
@@ -2268,7 +2268,7 @@ fn propagate_vertex_component(
                   locus| {
         if let Some(&previous) = mapping.get(&vertex) {
             let residual = distance_squared(points[previous], points[locus]);
-            if !residual.is_finite() || residual > INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE {
+            if !residual.is_finite() || residual > POINT_TOLERANCE * POINT_TOLERANCE {
                 *consistent = false;
             }
         } else {
@@ -2475,8 +2475,7 @@ fn pcurve_endpoints(
 }
 
 /// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
-const INCIDENCE_TOLERANCE: f64 = 1e-3;
-const POINT_TOLERANCE: f64 = 1.5e-3;
+const POINT_TOLERANCE: f64 = 1e-3;
 
 fn point_cell(point: [f64; 3]) -> [i64; 3] {
     point.map(|coordinate| (coordinate / POINT_TOLERANCE).floor() as i64)
@@ -2527,7 +2526,7 @@ fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
 
 fn endpoint_matches(left: [f64; 3], right: [f64; 3]) -> bool {
     let residual = distance_squared(left, right);
-    residual.is_finite() && residual <= INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE
+    residual.is_finite() && residual <= POINT_TOLERANCE * POINT_TOLERANCE
 }
 
 fn direction_is_unit(direction: [f64; 3]) -> bool {
@@ -5972,6 +5971,17 @@ mod tests {
             &[],
         );
         assert!(mismatched.edges.is_empty());
+    }
+
+    #[test]
+    fn canonical_point_uses_the_on_carrier_tolerance() {
+        let points = [[0.0, 0.0, 0.0]];
+        let index = point_index(&points);
+        assert_eq!(canonical_point(&points, &index, [1e-3, 0.0, 0.0]), Some(0));
+        assert_eq!(
+            canonical_point(&points, &index, [1.0001e-3, 0.0, 0.0]),
+            None
+        );
     }
 
     #[test]

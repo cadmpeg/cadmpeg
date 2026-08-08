@@ -638,14 +638,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it. That binding is the subject of OS-21.
 
-### OS-18. Endpoint-to-row match radius
-
-**Question.** What radius binds a lifted endpoint to an `05 08 01` coordinate row?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "Coincident `05 08 01` rows share an endpoint locus", and gives the lowest serialized matching row for a subset whose allocation identity is otherwise unresolved. `graph::canonical_point` accepts every row inside a ball of `1.5e-3` mm and keeps the lowest row index. `b5::transfer` uses the same `1.5e-3` value as an acceptance gate for oriented line, circle, and NURBS plans, and as the floor of every logical vertex tolerance. `catia.md` §12 gives `1e-3` mm as the on-carrier incidence tolerance, and §5.4 and §6.3 give `2e-3` mm. No section gives `1.5e-3`, and §12 gives full `f64` storage for this family.
-
-**Need.** Two distinct vertices closer than the radius collapse into one. The lowest-row rule that the specification gives is scoped to coincident rows, not to a ball. We must know the radius, or the identity relation that removes the radius.
-
 ### OS-21. External pole grid binding
 
 **Question.** Which field binds an external pole grid allocation to its elided-pole `a8 03 34` carrier?
