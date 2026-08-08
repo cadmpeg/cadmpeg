@@ -1889,6 +1889,7 @@ pub(crate) fn try_decode_standard(
         report,
         annotations,
         unknowns,
+        standard_face_population: true,
     })
 }
 

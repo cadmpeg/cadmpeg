@@ -69,6 +69,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                     out.report,
                     out.annotations,
                     out.unknowns,
+                    out.standard_face_population,
                 );
             }
         }
@@ -76,7 +77,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, &scan, ir, report, annotations, unknowns)
+    finish_decode(ctx, &scan, ir, report, annotations, unknowns, false)
 }
 
 fn finish_decode(
@@ -86,6 +87,7 @@ fn finish_decode(
     mut report: DecodeReport,
     mut annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
+    standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
     ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
     let native = CatiaNative::decode(&scan.data);
@@ -122,7 +124,9 @@ fn finish_decode(
         &mut ir,
         &native,
         modeling_graph_scope.as_ref(),
-        scan.brep.as_deref(),
+        standard_face_population
+            .then_some(scan.brep.as_deref())
+            .flatten(),
     );
     let object_record_count: usize = native
         .object_graphs

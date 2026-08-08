@@ -36,7 +36,7 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     native: &CatiaNative,
     graph_scope: Option<&HashSet<String>>,
-    brep: Option<&[u8]>,
+    standard_fbb: Option<&[u8]>,
 ) -> TransferResult {
     let initial_assets = ir.model.appearances.len();
     let initial_bindings = ir.model.appearance_bindings.len();
@@ -83,7 +83,7 @@ pub(crate) fn transfer(
         insert_appearance(ir, rgba);
     }
 
-    let positional_colors = brep
+    let positional_colors = standard_fbb
         .and_then(standard_face_colors)
         .filter(|colors| colors.len() == ir.model.faces.len())
         .filter(|colors| match all_faces.as_slice() {
@@ -447,6 +447,26 @@ mod tests {
             ),
             (6, 0, 6, 0)
         );
+    }
+
+    #[test]
+    fn positional_colors_require_standard_face_population_provenance() {
+        let rgba = [0xd1, 0x1a, 0x1f, 0x99];
+        let fields = (0..6)
+            .map(|_| inline(0xec, &[3, rgba[0], rgba[1], rgba[2], rgba[3]]))
+            .collect::<Vec<_>>();
+        let mut ir = model(6);
+        let result = transfer(&mut ir, &native(fields), None, None);
+        assert_eq!(
+            (
+                result.decoded_packets,
+                result.transferred_packets,
+                result.unresolved_packets,
+                result.emitted_bindings,
+            ),
+            (6, 0, 6, 0)
+        );
+        assert!(ir.model.appearance_bindings.is_empty());
     }
 
     #[test]

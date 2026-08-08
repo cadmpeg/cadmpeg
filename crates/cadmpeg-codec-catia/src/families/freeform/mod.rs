@@ -529,6 +529,7 @@ pub(crate) fn try_decode_freeform_surfaces(
         },
         annotations,
         unknowns,
+        standard_face_population: false,
     })
 }
 
