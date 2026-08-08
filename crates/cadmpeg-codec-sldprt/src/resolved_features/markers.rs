@@ -392,6 +392,8 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
             let extended_profile_point = extended_profile_point_coordinates(payload, offset);
             let additional_linked_profile_point =
                 additional_linked_profile_point_coordinates(payload, offset);
+            let extended_four_link_profile_point =
+                extended_four_link_profile_point_coordinates(payload, offset);
             let compact_profile_point =
                 legacy_extended_linked_profile_point_coordinates(payload, offset);
             let single_incidence_profile_point =
@@ -413,6 +415,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 .map(|(coordinates, _)| coordinates)
                 .or(extended_profile_point)
                 .or(additional_linked_profile_point)
+                .or(extended_four_link_profile_point)
                 .or(compact_profile_point)
                 .or(single_incidence_profile_point)
                 .or(legacy_140_profile_point_variant)
@@ -431,6 +434,7 @@ pub(super) fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchI
                 || legacy_declared_handle_coordinates(payload, offset).is_some()
                 || extended_profile_point.is_some()
                 || additional_linked_profile_point.is_some()
+                || extended_four_link_profile_point.is_some()
                 || compact_profile_point.is_some()
                 || single_incidence_profile_point.is_some()
                 || legacy_140_profile_point_variant.is_some()
@@ -809,6 +813,9 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if let Some((coordinates, _)) = linked_profile_point(payload, offset) {
         return Some(coordinates);
     }
+    if let Some(coordinates) = extended_four_link_profile_point_coordinates(payload, offset) {
+        return Some(coordinates);
+    }
     let compact_indexed_value_body =
         matches!(
             payload.get(offset..offset + SKETCH_MARKER.len()),
@@ -873,6 +880,55 @@ pub(super) fn finite_coordinate_pair(payload: &[u8], offset: usize) -> Option<[f
     let first = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
     let second = f64::from_le_bytes(payload.get(offset + 8..offset + 16)?.try_into().ok()?);
     (first.is_finite() && second.is_finite()).then_some([first, second])
+}
+
+pub(super) fn extended_four_link_profile_point_coordinates(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[f64; 2]> {
+    let valid_trailer_marker = [146, 150, 162, 174].into_iter().any(|relative| {
+        offset
+            .checked_add(relative)
+            .is_some_and(|candidate| sketch_marker_prefix_at(payload, candidate))
+    });
+    let cells = [78, 86].map(|relative| {
+        let cell = payload.get(offset + relative..offset + relative + 8)?;
+        Some((
+            u16::from_le_bytes(cell[..2].try_into().ok()?),
+            u16::from_le_bytes(cell[2..4].try_into().ok()?),
+            cell[4..8] == [0xff; 4],
+        ))
+    });
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&[0; 2])
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+        || payload.get(offset + 56..offset + 58) != Some(&[0x1e, 0x00])
+        || payload.get(offset + 74..offset + 76) != Some(&[0; 2])
+        || payload.get(offset + 76..offset + 78) != Some(&4u16.to_le_bytes())
+        || payload.get(offset + 94..offset + 100) != Some(&[0x00, 0x00, 0xfe, 0xff, 0xff, 0xff])
+        || payload.get(offset + 100..offset + 134) != Some(&[0; 34])
+        || payload.get(offset + 134..offset + 136) != Some(&[0x02, 0x00])
+        || !valid_trailer_marker
+        || !matches!(
+            cells,
+            [Some((first_tag, first_id, true)), Some((second_tag, second_id, true))]
+                if first_tag != 0
+                    && first_tag != u16::MAX
+                    && second_tag != 0
+                    && second_tag != u16::MAX
+                    && (first_tag, first_id) != (second_tag, second_id)
+        )
+    {
+        return None;
+    }
+    finite_coordinate_pair(payload, offset + 58)
 }
 
 fn legacy_extended_linked_profile_point_coordinates(

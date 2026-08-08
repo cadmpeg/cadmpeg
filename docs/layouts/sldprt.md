@@ -672,6 +672,39 @@ Unstated regions:
 - `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_four_link_state_profile_point_prefix`
+
+Spec §2 · layout: byte offsets · size: not stated
+
+The fixed prefix emits a point; the trailer is variable and carries a family-specific marker prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An extended-prefix four-link-state profile point |
+| 5 | 8 | `header` | `bytes[8]` | little | spec | eight `ff` bytes at marker +5 |
+| 13 | 4 | `sentinel` | `f32` | little | spec | the little-endian f32 `-1.0` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | native value u32 `0` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` |
+| 27 | 2 | `role` | `u16` | little | spec | role u16 `1` |
+| 29 | 2 | `state_at_29` | `u16` | little | spec | zero state u16 at marker +29 |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector `00 00 80 bf 00 00 04 00` at marker +31 |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `coordinate_tag` | `bytes[2]` | little | spec | coordinate tag `1e 00` at marker +56 |
+| 58 | 8 | `coordinate_first` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 66 | 8 | `coordinate_second` | `f64` | little | spec | finite f64 coordinates at marker +58 and +66 |
+| 74 | 2 | `zero_link_prefix` | `bytes[2]` | little | spec | Marker +74 is zero |
+| 76 | 2 | `link_count` | `u16` | little | spec | marker +76 stores link count `4` |
+| 78 | 8 | `incidence_first` | `bytes[8]` | little | spec | incidence cells at marker +78 and +86 |
+| 86 | 8 | `incidence_second` | `bytes[8]` | little | spec | incidence cells at marker +78 and +86 |
+| 94 | 6 | `link_terminator` | `bytes[6]` | little | spec | The link terminator `00 00 fe ff ff ff` begins at marker +94 |
+| 100 | 34 | `zero_trailer_prefix` | `bytes[34]` | little | spec | Bytes +100 through +133 are zero |
+| 134 | 2 | `trailer_state` | `u16` | little | spec | marker +134 stores trailer state `2` |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_geometry_locus_138_point`
 
 Spec §2 · layout: byte offsets · size: 138 B
