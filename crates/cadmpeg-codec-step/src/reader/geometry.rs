@@ -2711,7 +2711,16 @@ fn unit_scale_radians_inner(
     let result = (|| {
         let record = exchange.records.get(&id)?;
         if let Some(unit) = record.partial("SI_UNIT") {
-            (unit.parameters.get(1)?.enumeration()? == "RADIAN").then_some(1.0)
+            if unit.parameters.get(1)?.enumeration()? == "RADIAN" {
+                let prefix = match unit.parameters.first()? {
+                    Value::Omitted => 1.0,
+                    Value::Enumeration(prefix) => si_prefix(prefix)?,
+                    _ => return None,
+                };
+                Some(prefix)
+            } else {
+                None
+            }
         } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
             let factor_id = unit.parameters.get(1)?.reference()?;
             let factor = exchange.records.get(&factor_id)?;
@@ -4736,6 +4745,22 @@ mod tests {
         for (prefix, factor) in expected {
             assert_eq!(si_prefix(prefix), Some(factor), "prefix {prefix}");
         }
+    }
+
+    #[test]
+    fn prefixed_plane_angle_units_scale_to_radians() {
+        let (exchange, _) = crate::parse::parse(
+            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
+#1=(NAMED_UNIT(*) SI_UNIT(.MILLI.,.RADIAN.));\
+#2=(NAMED_UNIT(*) SI_UNIT($,.RADIAN.));\
+ENDSEC;END-ISO-10303-21;",
+        )
+        .expect("parse plane-angle units");
+        let mut active = BTreeSet::new();
+        assert_eq!(unit_scale_radians(1, &exchange, &mut active), Some(1.0e-3));
+        assert!(active.is_empty());
+        assert_eq!(unit_scale_radians(2, &exchange, &mut active), Some(1.0));
+        assert!(active.is_empty());
     }
 
     #[test]

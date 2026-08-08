@@ -332,20 +332,17 @@ file states. We must know the selection rule to read the declared tolerance.
 
 ### UM-03. SI prefix on plane-angle units
 
-**Question.** Does an SI prefix apply to a plane-angle `SI_UNIT`?
+**Resolved.** An SI prefix applies to a plane-angle `SI_UNIT` before the
+unit is converted to radians. An omitted prefix has factor 1.
 
 **Known.** `step.md` §8 "SI prefixes apply before conversion-based-unit
 factors." states the rule without restriction to a unit kind.
 
-**Conflict.** `unit_scale_radians_inner` reads only parameter 1, the unit name,
-and returns 1.0 for `RADIAN`
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:2713-2714`). It never reads
-parameter 0, the prefix. The length path reads the prefix and applies
-`si_prefix` (`geometry.rs:2753-2760`). `SI_UNIT(.MILLI.,.RADIAN.)` therefore
-resolves to 1.0 instead of 1e-3, and every conical half-angle, conic trim
-parameter, and angular pcurve axis is 1000 times too large. No warning is
-emitted, because the unit resolves. No test uses a prefixed radian. The
-decoder disagrees with `step.md` §8 and needs a decision.
+**Rule.** The angular unit resolver reads the optional prefix in parameter 0,
+uses the same SI prefix factors as the length resolver, and multiplies the
+resulting factor into conversion-based-unit factors. The rule is covered by
+the parser-level `MILLI` and omitted-prefix regression cases in
+`reader/geometry.rs`.
 
 ## 8. Parameter charts and unit repair
 
