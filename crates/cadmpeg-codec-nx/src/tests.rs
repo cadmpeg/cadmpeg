@@ -6889,6 +6889,29 @@ fn decode_emits_both_intersection_support_pcurves() {
 }
 
 #[test]
+fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
+    let stream =
+        two_support_charted_intersection_curve_stream_with_second_plane_axis([0.0, 0.0, 1.0]);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides[0].pcurve.is_some());
+    let Some(PcurveGeometry::Nurbs { control_points, .. }) = context.sides[1].pcurve.as_ref()
+    else {
+        panic!("completed second support pcurve");
+    };
+    assert_eq!(control_points.first(), Some(&Point2::new(0.0, 0.0)));
+    assert_eq!(control_points.last(), Some(&Point2::new(0.0, 10.0)));
+    assert!(control_points.iter().all(|point| point.u == 0.0));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn intersection_support_order_follows_type_38_values_marker() {
     let mut stream = two_support_charted_intersection_curve_stream();
     let uv = stream

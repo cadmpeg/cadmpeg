@@ -1398,7 +1398,14 @@ fn try_decode_geometry(
                 id: procedural_id,
                 curve: curve_id.clone(),
                 definition: if let Some(charted) = charted {
-                    let mut support_uv = charted.support_uv.clone();
+                    let mut support_uv = validate_serialized_support_uv(
+                        &ir,
+                        &surfaces_by_xmt,
+                        charted.supports,
+                        &charted.points,
+                        charted.fit_tolerance,
+                        &charted.support_uv,
+                    );
                     if let Some(ext_support_uv) = assign_ext11_support_uv(
                         &ir,
                         &surfaces_by_xmt,
@@ -2319,6 +2326,59 @@ pub(crate) fn assign_ext11_support_uv(
     )
 }
 
+fn validate_serialized_support_uv(
+    ir: &CadIr,
+    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
+    supports: [u32; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> [Option<Vec<[f64; 2]>>; 2] {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    std::array::from_fn(|side| {
+        let surface = surfaces_by_xmt.get(&supports[side])?;
+        let values = lanes[side].as_deref()?;
+        let tolerance = blend_spine_cache_fit_tolerance(ir, surface, fit_tolerance);
+        support_uv_lane_matches_surface(ir, &index, surface, points, tolerance, Some(values))
+            .then(|| values.to_vec())
+    })
+}
+
+fn support_uv_lane_matches_surface(
+    ir: &CadIr,
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    points: &[Point3],
+    fit_tolerance: f64,
+    values: Option<&[[f64; 2]]>,
+) -> bool {
+    let Some(values) = values.filter(|values| values.len() == points.len()) else {
+        return false;
+    };
+    let Some(geometry) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+        .map(|surface| &surface.geometry)
+    else {
+        return false;
+    };
+    values.iter().zip(points).all(|(uv, point)| {
+        if uv
+            .iter()
+            .any(|value| !value.is_finite() || missing_support_parameter(*value))
+        {
+            return false;
+        }
+        let Some(uv) = surface_parameters(geometry, *uv) else {
+            return false;
+        };
+        decoded_surface_point_inner(index, surface, uv.u, uv.v, 0)
+            .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
+    })
+}
+
 pub(crate) fn assign_ext11_support_uv_to_surfaces(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
@@ -2328,28 +2388,14 @@ pub(crate) fn assign_ext11_support_uv_to_surfaces(
 ) -> Option<[Option<Vec<[f64; 2]>>; 2]> {
     let index = cadmpeg_ir::index::ModelIndex::new(ir);
     let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
-        let Some(values) = lanes[lane]
-            .as_deref()
-            .filter(|values| values.len() == points.len())
-        else {
-            return false;
-        };
-        let Some(geometry) = ir
-            .model
-            .surfaces
-            .iter()
-            .find(|candidate| &candidate.id == surface)
-            .map(|surface| &surface.geometry)
-        else {
-            return false;
-        };
-        values.iter().zip(points).all(|(uv, point)| {
-            let Some(uv) = surface_parameters(geometry, *uv) else {
-                return false;
-            };
-            model_surface_point_by_id(&index, surface, uv.u, uv.v)
-                .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
-        })
+        support_uv_lane_matches_surface(
+            ir,
+            &index,
+            surface,
+            points,
+            fit_tolerance,
+            lanes[lane].as_deref(),
+        )
     };
     let matches = [
         [

@@ -266,14 +266,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
 
-### PS-32. Procedural-intersection support ordering
-
-**Question.** Which reference of a type-38 construction is the primary support?
-
-**Known.** `siemens_nx.md` §6.3 "For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for t" gives the rule: the `0x5a` twin has a fixed layout, and a type-38 construction takes its primary reference from the `0x00cc` marker, where marker 2 selects reference 0 and marker 3 selects reference 1.
-
-**Conflict.** The decoder does not apply this rule. `construction_supports` in `crates/cadmpeg-codec-nx/src/intersection.rs` tests reference 0 and then reference 1 for surface identity and takes the first that is a surface. The marker is decoded and retained, but it selects only the tuple width. The two rules agree when one reference is a type-59 bridge, and they disagree when both references resolve to surface records and the marker is 3. The support lane then attaches to the wrong surface. `siemens_nx.md` §6.3 also requires every evaluable lane point to reproduce its chart point inside the chart tolerance; the serialized-lane path does not apply that test, so nothing later rejects the wrong attachment.
-
 ### PS-34. B-spline form-code semantics
 
 **Question.** What does each B-spline form code mean?
