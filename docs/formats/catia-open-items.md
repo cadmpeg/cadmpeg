@@ -528,16 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-32. Same-incidence row endpoint assignment
-
-**Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
-
-**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" gives "lexicographic ordering does not bind a row because it is not a serialized endpoint identity", and gives allocation rank as "a final gauge reduction only after the mesh constraints leave an equivalent complete relation". `decode::bind_ordered_standard_curve_branches` orders each vertex-row partition and binds the row of rank `k` to the vertex row of rank `k` in each partition. It tests that the relation is complete bipartite. It does not test that the remaining matchings are equivalent.
-
-**Need.** A complete bipartite relation over `n` rows admits `n!` matchings, and the vertex rows are distinct points, so the matchings are not equivalent. A wrong matching gives a wrong line origin, a wrong direction, wrong edge endpoints, and a wrong parameter range. We must know the relation to bind the row.
-
-**Note.** The function runs before the topology solvers and writes a singleton domain, so the correct matching is no longer reachable. `catia.md` §5.6 states three "only when" conditions for the rank stages. The decoder evaluates none of them. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" and `catia.md` §5.6 "Same-incidence spline or line rows" disagree about the same construct.
-
 ### SN-33. Derived plane normal sense
 
 **Question.** Which field gives the sense of a plane normal that no trim-packet frame vector gives?

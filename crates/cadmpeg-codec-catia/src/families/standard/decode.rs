@@ -8190,6 +8190,30 @@ mod route_tests {
     }
 
     #[test]
+    fn standard_line_rows_keep_complete_relation_before_face_frontiers() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Line,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let candidates = [domain.clone(), domain];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let assignment = [None, None];
+
+        let constrained = standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &assignment,
+        )
+        .expect("unresolved branch relation remains admissible");
+
+        assert_eq!(constrained, candidates);
+    }
+
+    #[test]
     fn standard_spline_rows_bind_the_unordered_prebound_side_by_opposite_rank() {
         let supports = [10, 11].map(|tag| StandardCurveSupport {
             pos: tag as usize,
