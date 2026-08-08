@@ -580,6 +580,10 @@ current scores require those matrices and representative fixtures.
   boundary edge occurrence. The vertex use points to the boundary traversal
   endpoint and anchors after the corresponding coedge; the endpoint identity is
   the same topology vertex identity used by the emitted edge.
+  Each transferred E5 loop retains an ordered vertex use for every oriented
+  edge occurrence. The loop solver selects the traversed endpoint from the
+  edge's stored vertex identity and member sense, and the use anchors after the
+  corresponding coedge.
   Each transferred object-stream loop retains an ordered vertex use for every
   oriented edge occurrence. The vertex use selects the traversed endpoint from
   the solved edge sense and anchors it after the corresponding coedge; the

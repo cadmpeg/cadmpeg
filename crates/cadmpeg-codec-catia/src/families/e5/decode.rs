@@ -14,7 +14,7 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossNote, Severity};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex, VertexUse,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -895,6 +895,7 @@ pub(crate) fn transfer_e5_topology(
         &surface_for_ref,
         &face_shell,
         &edge_ids,
+        &vertex_for_ref,
         &pcurve_plan,
         &pcurve_use_reversed,
     ) {
@@ -1519,6 +1520,7 @@ fn emit_e5_faces_loops_coedges(
     surface_for_ref: &HashMap<u32, (SurfaceId, &crate::families::e5::records::E5Surface)>,
     face_shell: &HashMap<u32, ShellId>,
     edge_ids: &HashMap<u32, EdgeId>,
+    vertex_for_ref: &HashMap<u32, VertexId>,
     pcurve_plan: &BTreeMap<u32, (PcurveGeometry, [f64; 2])>,
     pcurve_use_reversed: &BTreeMap<(u32, usize), bool>,
 ) -> bool {
@@ -1568,6 +1570,26 @@ fn emit_e5_faces_loops_coedges(
                 .iter()
                 .map(|member| coedge_ids_by_member[member.serialized_index].clone())
                 .collect();
+            let Some(vertex_uses) = members
+                .iter()
+                .map(|member| {
+                    let edge_ref = loop_.edge_uses[member.serialized_index];
+                    let edge = topology.edges.get(&edge_ref)?;
+                    let endpoint_ref = if member.reversed {
+                        edge.start_vertex
+                    } else {
+                        edge.end_vertex
+                    };
+                    Some(VertexUse {
+                        vertex: vertex_for_ref.get(&endpoint_ref)?.clone(),
+                        after: Some(coedge_ids_by_member[member.serialized_index].clone()),
+                        pcurves: Vec::new(),
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
+                return false;
+            };
             annotate(
                 annotations,
                 &loop_id,
@@ -1578,7 +1600,8 @@ fn emit_e5_faces_loops_coedges(
             );
             annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges");
+                .derived(&loop_id, "coedges")
+                .derived(&loop_id, "vertex_uses");
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
@@ -1588,7 +1611,7 @@ fn emit_e5_faces_loops_coedges(
                     cadmpeg_ir::topology::LoopBoundaryRole::Inner
                 },
                 coedges: coedge_ids.clone(),
-                vertex_uses: Vec::new(),
+                vertex_uses,
             });
             for (position, member) in members.iter().enumerate() {
                 let index = member.serialized_index;
@@ -2573,6 +2596,14 @@ mod route_tests {
         assert_eq!(
             ir.model.coedges[0].pcurves[0].parameter_range,
             Some([1.0, 0.0])
+        );
+        let [vertex_use] = ir.model.loops[0].vertex_uses.as_slice() else {
+            panic!("E5 edge emission must retain one vertex use");
+        };
+        assert_eq!(vertex_use.vertex, VertexId("catia:e5:v#1".to_string()));
+        assert_eq!(
+            vertex_use.after.as_ref().map(|id| id.0.as_str()),
+            Some("catia:e5:coedge#2-0")
         );
     }
 
