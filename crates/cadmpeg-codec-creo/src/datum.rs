@@ -56,7 +56,7 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
             .enumerate()
             .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
             .collect::<Vec<_>>();
-        let Some(axis) = held.first() else {
+        let [axis] = held.as_slice() else {
             continue;
         };
         let Some(plane_offset) = outline[*axis].value else {
@@ -298,6 +298,20 @@ mod tests {
                 offset_in_payload: 0
             }]
         );
+    }
+
+    #[test]
+    fn withholds_positional_outline_with_multiple_held_coordinates() {
+        let mut data = vec![4, 0x22, 1, 1, 0, 0];
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(4.0));
+        data.extend(ieee8(-2.0));
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(4.0));
+
+        assert!(planes(&data).is_empty());
     }
 
     #[test]

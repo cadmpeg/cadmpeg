@@ -143,6 +143,9 @@ fixtures, claims above L1 remain unproven.
 - Class-911 hole cap planes retain their stored surface-row order. The first
   complete outline-backed plane is the placement face, and the second defines
   the signed blind direction and depth.
+- Positional `ActDatums` outlines require exactly one held coordinate. Outlines
+  with zero or multiple held coordinate pairs remain unresolved instead of
+  selecting an arbitrary plane normal.
 - Unique feature-owned `crv_array` topology rows now emit feature-result edge
   identities. Fillet and chamfer affected-edge selections use generated edge
   references only when the topology row is unique and its producer result

@@ -664,13 +664,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SP-33. Datum outline held-axis selection
 
-**Question.** Which axis holds the plane equation when two corner-coordinate pairs of a datum outline compare equal?
+**Question.** Which axis holds the plane equation when a named datum outline has multiple paired standalone-zero coordinates?
 
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry" states that `outline` stores two diagonal corners, and that for `k = argmin_i |p0[i] - p1[i]|` the plane equation is `x_k = p0[k]`.
+**Known.** `creo_prt.md` §3.4 "When exactly one coordinate is held constant across both corners" and §6 "`ActDatums` stores datum-plane geometry" require exactly one equal coordinate pair for a positional outline; zero or multiple equal pairs leave that plane unresolved. `creo_prt.md` §8.1 "In a named datum outline" gives paired standalone-zero slots precedence for a named plane at zero offset. `datum.rs` `planes` now rejects positional outlines with multiple held axes. `datum.rs` `named_plane` selects a paired standalone-zero axis before applying the unique-equal-pair rule to other named outlines.
 
-**Conflict.** The specification gives the smallest coordinate difference. `datum.rs` `planes` compares each pair with a relative tolerance and takes the lowest axis index that falls inside the band. The sibling function `named_plane` in the same file rejects the row when two axes fall inside the band.
+**Conflict.** The specification does not state whether multiple paired standalone-zero coordinates are a valid named standard-plane form or how to rank them. `datum.rs` `named_plane` currently selects the first such axis in coordinate order.
 
-**Need.** We must know the selection to give the datum its normal and offset. An outline whose second extent is float noise selects the noise axis, and the datum plane surface reaches the IR with the wrong normal and an offset near zero.
+**Need.** We must know whether to retain or withhold a named plane when more than one standalone-zero pair is present, and if it is valid, which axis supplies its normal. This affects the model-space normal and every sketch placement that references the datum.
 
 ### SP-34. Section line without an `order_table` row
 

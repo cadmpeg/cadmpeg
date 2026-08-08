@@ -2868,7 +2868,7 @@ the nested reference-plane geometry identifies one datum parent by
 `ActDatums.srf_array.feat_id`; the other unique datum parent is the sketch
 plane.
 
-`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For datum planes, `outline` stores two diagonal corners. Let `k = argmin_i |p0[i] - p1[i]|`; the plane equation is `x_k = p0[k]`. Datum names do not define their geometric orientation.
+`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For positional datum rows, `outline` stores two diagonal corners. Exactly one corresponding coordinate pair must compare equal; that pair supplies the positive plane normal and equation `x_k = p0[k]`. Zero or multiple equal pairs leave the positional plane unresolved. Datum names do not define their geometric orientation.
 
 The datum surface row's `feat_id` is the owning modeling feature identifier.
 The row's `geom_id` remains the separate datum-geometry identifier used by

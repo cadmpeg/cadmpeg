@@ -3814,7 +3814,12 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
 fn decode_transfers_strong_parents_as_ordered_dependencies() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
-    datum.extend([0x0f; 6]);
+    datum.extend([0x46, 0, 0, 0, 0, 0, 0, 0]);
+    datum.push(0x0f);
+    datum.extend([0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    datum.extend([0x2d, 0, 0, 0, 0, 0, 0, 0]);
+    datum.push(0x0f);
+    datum.extend([0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04\xe0\x01parent_table\0\xf8\x01\x01\
@@ -3856,7 +3861,12 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
 fn decode_resolves_feature_dependencies_independently_of_storage_order() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
-    datum.extend([0x0f; 6]);
+    datum.extend([0x46, 0, 0, 0, 0, 0, 0, 0]);
+    datum.push(0x0f);
+    datum.extend([0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    datum.extend([0x2d, 0, 0, 0, 0, 0, 0, 0]);
+    datum.push(0x0f);
+    datum.extend([0x2d, 0x08, 0, 0, 0, 0, 0, 0]);
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = b"\x04\xeb\x04\xe0\x01parent_table\0\xf8\x01\x01\
