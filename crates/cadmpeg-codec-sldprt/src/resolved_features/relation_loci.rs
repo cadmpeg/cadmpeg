@@ -1983,6 +1983,11 @@ pub(super) fn profile_loci_by_marker(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
+    let native_point_markers_with_nonpoint_carrier = sketch_entities
+        .iter()
+        .filter(|entity| !matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .filter_map(|entity| entity.native_ref.as_deref())
+        .collect::<HashSet<_>>();
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -2001,7 +2006,11 @@ pub(super) fn profile_loci_by_marker(
         .iter()
         .filter_map(|entity| {
             let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
-                (marker, false)
+                (
+                    marker,
+                    matches!(entity.geometry, SketchGeometry::Point { .. })
+                        && native_point_markers_with_nonpoint_carrier.contains(marker.as_str()),
+                )
             } else {
                 let reference = entity.geometry_ref.as_ref().filter(|reference| {
                     reference.starts_with("sldprt:feature-input:sketch-entity#")

@@ -7598,6 +7598,43 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
                 SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
+    let loci = profile_loci_by_marker(
+        std::slice::from_ref(&feature),
+        &[],
+        &entities,
+        std::slice::from_ref(&lane),
+    );
+    let point_entity = entities
+        .iter()
+        .find(|entity| {
+            entity.construction
+                && entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+                && matches!(entity.geometry, SketchGeometry::Point { .. })
+        })
+        .expect("relation point");
+    assert_eq!(
+        loci[point_marker.id.as_str()],
+        vec![SketchLocus::Center(SketchEntityId(
+            "dimension-carrier".into()
+        ))]
+    );
+    assert_eq!(
+        loci[&super::qualified_point_marker_key(&point_marker.id)],
+        vec![SketchLocus::Entity(point_entity.id.clone())]
+    );
+    let markers = lane
+        .sketch_entities
+        .iter()
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(
+        marker_entities(&point_marker.id, &markers, &loci),
+        vec![SketchEntityId("dimension-carrier".into())]
+    );
+    assert_eq!(
+        marker_point_locus(&point_marker.id, &markers, &loci),
+        Some(SketchLocus::Entity(point_entity.id.clone()))
+    );
 }
 
 #[test]
