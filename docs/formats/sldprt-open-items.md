@@ -842,14 +842,6 @@ There is no unresolved branch for code `11` and no loss. A joining form-`11` obj
 
 **Need.** We must know the other codes to construct the sweep result operation.
 
-### DI-31. Last-body-modifying feature identity
-
-**Question.** What identifier space does the `LAST_BODY_MODIFYING_FEATURE_ID` body attribute use?
-
-**Known.** Its values are not native feature object identifiers.
-
-**Need.** We must know the identifier space to bind a body to its last history feature.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators

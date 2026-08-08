@@ -49,6 +49,8 @@ pub struct Facts {
     pub face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub face_atoms: Vec<super::attrib::FaceAtom>,
+    /// Body-to-history ordinals carried by Parasolid attributes.
+    pub body_modifiers: Vec<super::attrib::BodyModifier>,
 }
 
 #[derive(Debug, Clone)]
@@ -223,6 +225,7 @@ pub fn scan(body: &[u8]) -> Facts {
         cluster_bodies: cluster_chain_bodies(&entities),
         face_colors: face_colors.into_values().collect(),
         face_atoms: super::attrib::scan(body),
+        body_modifiers: super::attrib::scan_body_modifiers(body),
     }
 }
 

@@ -875,6 +875,8 @@ A `00 51` attribute instance whose u16 at body +6 is zero carries the u16 defini
 
 `ATOM_ID_2001` is the persistent face-identity family. Its instances hang on face bridge records and reference one integer list of five through seven values whose value 3 is zero. Value 1 is the native object id of the history feature that produced the face and value 4 is that producer's feature-local face identity. That pair is the persistent identity a `moSingleFaceRef_w` path or a generated-surface component path selects: the selected face is the surviving face whose `ATOM_ID_2001` carries the path's terminal owner and feature-local face id. A feature whose produced faces survive is a producer of every body owning one of them.
 
+`LAST_BODY_MODIFYING_FEATURE_ID` is the persistent body-history family. Its instances hang on explicit body entity records and resolve one distinct `00 52` integer-list payload containing one positive u32. The value is a one-based ordinal in the ordered Keywords modeling-feature records after metadata records are excluded; it is not a native feature object id or a `source_id`. Ordinal 1 names the first modeling feature. The body attribute names `sldprt:brep:body#<attr>`. A zero, missing, non-scalar, conflicting, absent, or history-ambiguous ordinal leaves the body-history relation unresolved. A resolved relation adds that body to the named feature's output bodies without fabricating a body or replacing an explicit body scope.
+
 ---
 
 ## 6. Body records

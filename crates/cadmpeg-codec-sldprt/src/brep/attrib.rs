@@ -9,14 +9,18 @@
 //! references by node id.
 //!
 //! The `ATOM_ID_2001` family binds a face to the history feature that produced
-//! it. Deltas streams carry no attribute dictionary, so a deltas body yields no
-//! bindings.
+//! it. The `LAST_BODY_MODIFYING_FEATURE_ID` family binds a body to the last
+//! modeling-history ordinal that wrote it. Deltas streams carry no attribute
+//! dictionary, so a deltas body yields no bindings.
 
 use super::{u16_be, u32_be};
 use std::collections::HashMap;
 
 /// Attribute family binding a face to its producing feature.
 const ATOM_ID: &str = "ATOM_ID_2001";
+
+/// Attribute family carrying a body's last modeling-history ordinal.
+const LAST_BODY_MODIFIER: &str = "LAST_BODY_MODIFYING_FEATURE_ID";
 
 /// Record tags that terminate an instance record's trailing reference run.
 const NODE_TAGS: [u8; 6] = [0x4f, 0x50, 0x51, 0x52, 0x53, 0x54];
@@ -45,6 +49,19 @@ pub struct FaceAtom {
     /// Byte offset of the attribute-instance record.
     pub offset: usize,
     /// Emitted face identity, resolved once the graph retains its faces.
+    pub target: Option<String>,
+}
+
+/// One body's last modifying history ordinal.
+#[derive(Debug, Clone)]
+pub struct BodyModifier {
+    /// Attribute id of the body carrying the attribute.
+    pub body_attr: u16,
+    /// One-based ordinal in the ordered Keywords modeling-feature records.
+    pub history_ordinal: u32,
+    /// Byte offset of the attribute-instance record.
+    pub offset: usize,
+    /// Emitted body identity, resolved once the graph retains its bodies.
     pub target: Option<String>,
 }
 
@@ -141,19 +158,22 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
     out
 }
 
-/// The face-identity payload an instance references, when exactly one distinct
-/// payload qualifies.
-fn atom_payload<'a>(
+/// Return one distinct integer-list payload referenced by an instance.
+fn referenced_payload<'a, F>(
     buf: &[u8],
     from: usize,
     lists: &'a HashMap<u16, Vec<u32>>,
-) -> Option<&'a [u32]> {
+    accepts: F,
+) -> Option<&'a [u32]>
+where
+    F: Fn(&[u32]) -> bool,
+{
     let mut found: Option<&[u32]> = None;
     let mut at = from;
     while at + 2 <= buf.len() && !opens_record(buf, at) {
         let node = u16_be(buf, at)?;
         if let Some(values) = lists.get(&node) {
-            if ATOM_WIDTHS.contains(&values.len()) && values[ATOM_GUARD] == 0 {
+            if accepts(values) {
                 match found {
                     Some(previous) if previous != values.as_slice() => return None,
                     _ => found = Some(values),
@@ -163,6 +183,18 @@ fn atom_payload<'a>(
         at += 2;
     }
     found
+}
+
+/// The face-identity payload an instance references, when exactly one distinct
+/// payload qualifies.
+fn atom_payload<'a>(
+    buf: &[u8],
+    from: usize,
+    lists: &'a HashMap<u16, Vec<u32>>,
+) -> Option<&'a [u32]> {
+    referenced_payload(buf, from, lists, |values| {
+        ATOM_WIDTHS.contains(&values.len()) && values[ATOM_GUARD] == 0
+    })
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
@@ -211,6 +243,62 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
     out
 }
 
+/// Decode every body-level last-modifier binding carried by one stream body.
+pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
+    let definitions = definitions(buf);
+    if !definitions.values().any(|name| name == LAST_BODY_MODIFIER) {
+        return Vec::new();
+    }
+    let lists = integer_lists(buf);
+    let mut found = HashMap::<u16, Option<BodyModifier>>::new();
+    for off in 0..buf.len() {
+        let Some(p) = record_body(buf, off, 0x51) else {
+            continue;
+        };
+        if u16_be(buf, p + 6) != Some(0) {
+            continue;
+        }
+        let Some(definition) = u16_be(buf, p + 10) else {
+            continue;
+        };
+        if definitions.get(&definition).map(String::as_str) != Some(LAST_BODY_MODIFIER) {
+            continue;
+        }
+        let Some(body_attr) = u16_be(buf, p + 12).filter(|attr| *attr > 1) else {
+            continue;
+        };
+        let Some(values) = referenced_payload(buf, p + 14, &lists, |values| {
+            values.len() == 1 && values[0] > 0
+        }) else {
+            found.insert(body_attr, None);
+            continue;
+        };
+        let modifier = BodyModifier {
+            body_attr,
+            history_ordinal: values[0],
+            offset: off,
+            target: None,
+        };
+        match found.get_mut(&body_attr) {
+            Some(slot)
+                if slot.as_ref().is_some_and(|previous| {
+                    previous.history_ordinal != modifier.history_ordinal
+                }) =>
+            {
+                *slot = None;
+            }
+            Some(None) => {}
+            Some(Some(_)) => {}
+            None => {
+                found.insert(body_attr, Some(modifier));
+            }
+        }
+    }
+    let mut out = found.into_values().flatten().collect::<Vec<_>>();
+    out.sort_by_key(|modifier| modifier.body_attr);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +329,36 @@ mod tests {
         out
     }
 
+    /// Serialize one body-modifier family, one scalar list, and one instance.
+    fn body_modifier_stream(payloads: &[&[u32]], body_attr: u16) -> Vec<u8> {
+        let mut out = vec![0x00, 0x4f];
+        out.extend((LAST_BODY_MODIFIER.len() as u32).to_be_bytes());
+        out.extend(15_u16.to_be_bytes());
+        out.extend(LAST_BODY_MODIFIER.as_bytes());
+        out.extend([0x00, 0x50]);
+        out.extend(2_u32.to_be_bytes());
+        out.extend(16_u16.to_be_bytes());
+        for (index, payload) in payloads.iter().enumerate() {
+            out.extend([0x00, 0x52]);
+            out.extend((payload.len() as u32).to_be_bytes());
+            out.extend((300 + index as u16).to_be_bytes());
+            for value in *payload {
+                out.extend(value.to_be_bytes());
+            }
+        }
+        out.extend([0x00, 0x51]);
+        out.extend(4_u32.to_be_bytes());
+        out.extend(301_u16.to_be_bytes());
+        out.extend(0_u16.to_be_bytes());
+        out.extend(302_u16.to_be_bytes());
+        out.extend(16_u16.to_be_bytes());
+        out.extend(body_attr.to_be_bytes());
+        for index in 0..payloads.len() {
+            out.extend((300 + index as u16).to_be_bytes());
+        }
+        out
+    }
+
     #[test]
     fn instance_binds_face_to_producing_feature() {
         let atoms = scan(&stream(&[74, 75, 1_390_698_820, 0, 3], 333));
@@ -260,5 +378,20 @@ mod tests {
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body[8] = b'X';
         assert!(scan(&body).is_empty());
+    }
+
+    #[test]
+    fn body_modifier_binds_one_history_ordinal() {
+        let modifiers = scan_body_modifiers(&body_modifier_stream(&[&[2]], 333));
+        assert_eq!(modifiers.len(), 1);
+        assert_eq!(modifiers[0].body_attr, 333);
+        assert_eq!(modifiers[0].history_ordinal, 2);
+    }
+
+    #[test]
+    fn body_modifier_rejects_non_scalar_and_conflicting_payloads() {
+        assert!(scan_body_modifiers(&body_modifier_stream(&[&[0]], 333)).is_empty());
+        assert!(scan_body_modifiers(&body_modifier_stream(&[&[2, 3]], 333)).is_empty());
+        assert!(scan_body_modifiers(&body_modifier_stream(&[&[2], &[3]], 333)).is_empty());
     }
 }

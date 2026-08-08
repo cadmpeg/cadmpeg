@@ -1999,6 +1999,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
     target.face_atoms.append(&mut source.face_atoms);
+    target.body_modifiers.append(&mut source.body_modifiers);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.source_entity_records += source.stats.source_entity_records;
@@ -2256,10 +2257,21 @@ fn build_geometry_ir(
                 .map(|target| (target, atom.feature_source_id))
         })
         .collect::<Vec<_>>();
+    let body_modifiers = brep
+        .body_modifiers
+        .iter()
+        .filter_map(|modifier| {
+            modifier
+                .target
+                .clone()
+                .map(|target| (target, modifier.history_ordinal))
+        })
+        .collect::<Vec<_>>();
     crate::history::derive_feature_outputs(
         &mut ir.model.features,
         &histories,
         &face_producers,
+        &body_modifiers,
         &ir.model.faces,
         &ir.model.shells,
         &ir.model.regions,

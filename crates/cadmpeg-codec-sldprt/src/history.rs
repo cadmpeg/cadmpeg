@@ -2466,6 +2466,74 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn body_modifier_uses_one_based_modeling_history_ordinal() {
+        let first = feature("first-native", Some("700"), 0);
+        let second = feature("second-native", Some("900"), 1);
+        let histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second],
+        }];
+        let mut projected = project_features(&histories);
+        let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+
+        derive_feature_outputs(
+            &mut projected,
+            &histories,
+            &[],
+            &body_modifiers,
+            &[],
+            &[],
+            &[],
+        );
+
+        assert!(projected[0].outputs.is_empty());
+        assert_eq!(
+            projected[1].outputs,
+            [cadmpeg_ir::ids::BodyId("sldprt:brep:body#333".into())]
+        );
+    }
+
+    #[test]
+    fn body_modifier_ordinal_is_unresolved_when_history_is_ambiguous() {
+        let histories = vec![
+            FeatureHistory {
+                id: "history-a".into(),
+                part_name: None,
+                properties: BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature("a", None, 0), feature("a-next", None, 1)],
+            },
+            FeatureHistory {
+                id: "history-b".into(),
+                part_name: None,
+                properties: BTreeMap::new(),
+                content: Vec::new(),
+                configurations: Vec::new(),
+                features: vec![feature("b", None, 0), feature("b-next", None, 1)],
+            },
+        ];
+        let mut projected = project_features(&histories);
+        let body_modifiers = vec![("sldprt:brep:body#333".into(), 2)];
+
+        derive_feature_outputs(
+            &mut projected,
+            &histories,
+            &[],
+            &body_modifiers,
+            &[],
+            &[],
+            &[],
+        );
+
+        assert!(projected.iter().all(|feature| feature.outputs.is_empty()));
+    }
+
+    #[test]
     fn native_operation_identity_selects_surface_and_solid_projectors() {
         let mut dome = feature("dome", Some("1"), 0);
         dome.kind = "Dome".into();
@@ -6247,14 +6315,53 @@ fn face_owner_bodies(
 /// the history feature that produced it. A feature outputs every body owning at
 /// least one face it produced. Features whose produced faces did not survive
 /// regeneration keep an empty output list.
+///
+/// `body_modifiers` pairs an emitted body identity with its one-based ordinal in
+/// the ordered, non-metadata Keywords feature records. A resolved ordinal adds
+/// that body to the corresponding feature's outputs. An ordinal that is absent
+/// or ambiguous across history records is ignored.
 pub fn derive_feature_outputs(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
     face_producers: &[(String, u32)],
+    body_modifiers: &[(String, u32)],
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
 ) {
+    let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
+    for history in histories {
+        let mut ordinal = 0_u32;
+        for record in history
+            .features
+            .iter()
+            .filter(|record| !is_history_metadata_record(record, &history.features))
+        {
+            ordinal = ordinal.saturating_add(1);
+            match feature_ids_by_ordinal.entry(ordinal) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(record.id.as_str()));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+    for (body, ordinal) in body_modifiers {
+        let Some(Some(native_ref)) = feature_ids_by_ordinal.get(ordinal) else {
+            continue;
+        };
+        for feature in features
+            .iter_mut()
+            .filter(|feature| feature.native_ref.as_deref() == Some(native_ref))
+        {
+            let body = cadmpeg_ir::ids::BodyId(body.clone());
+            if !feature.outputs.contains(&body) {
+                feature.outputs.push(body);
+            }
+        }
+    }
     if face_producers.is_empty() {
         return;
     }

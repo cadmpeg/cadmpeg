@@ -70,6 +70,8 @@ pub struct Brep {
     pub face_colors: Vec<entity::FaceColor>,
     /// Per-face producing-feature identities resolved from Parasolid attributes.
     pub face_atoms: Vec<attrib::FaceAtom>,
+    /// Body-to-history ordinals resolved from Parasolid attributes.
+    pub body_modifiers: Vec<attrib::BodyModifier>,
     /// Loss accounting for this decode.
     pub stats: Stats,
 }
@@ -203,6 +205,11 @@ impl Brep {
         }
         for atom in &mut self.face_atoms {
             if let Some(target) = &mut atom.target {
+                *target = qualify(target);
+            }
+        }
+        for modifier in &mut self.body_modifiers {
+            if let Some(target) = &mut modifier.target {
                 *target = qualify(target);
             }
         }
@@ -503,6 +510,9 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
                 facts.face_atoms.append(&mut scanned_facts.face_atoms);
+                facts
+                    .body_modifiers
+                    .append(&mut scanned_facts.body_modifiers);
                 facts.entity_count += scanned_facts.entity_count;
             } else {
                 tables = scanned_tables;
@@ -514,6 +524,9 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
             facts.face_atoms.append(&mut scanned_facts.face_atoms);
+            facts
+                .body_modifiers
+                .append(&mut scanned_facts.body_modifiers);
             facts.entity_count += scanned_facts.entity_count;
         }
     }
@@ -527,6 +540,29 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     decode_graph(&carriers, &t, entity_facts, stream)
 }
 
+fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::BodyModifier> {
+    let mut by_attr = HashMap::<u16, Option<attrib::BodyModifier>>::new();
+    for modifier in modifiers {
+        match by_attr.entry(modifier.body_attr) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(modifier));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry
+                    .get()
+                    .as_ref()
+                    .is_some_and(|previous| previous.history_ordinal != modifier.history_ordinal)
+                {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+    let mut out = by_attr.into_values().flatten().collect::<Vec<_>>();
+    out.sort_by_key(|modifier| modifier.body_attr);
+    out
+}
+
 fn decode_graph(
     carriers: &CarrierIndex,
     t: &topology::Tables,
@@ -535,10 +571,12 @@ fn decode_graph(
 ) -> Brep {
     let mut body_records = entity_facts.bodies;
     let cluster_bodies = entity_facts.cluster_bodies;
+    let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
         face_atoms: entity_facts.face_atoms,
+        body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             ..Stats::default()
@@ -1251,6 +1289,29 @@ fn decode_graph(
             color: None,
             visible: None,
         });
+    }
+
+    let mut body_ids_by_attr = HashMap::<u16, Option<String>>::new();
+    for body in &out.bodies {
+        let Some(attr) = body
+            .id
+            .0
+            .strip_prefix("sldprt:brep:body#")
+            .and_then(|value| value.parse::<u16>().ok())
+        else {
+            continue;
+        };
+        match body_ids_by_attr.entry(attr) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(body.id.0.clone()));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+    for modifier in &mut out.body_modifiers {
+        modifier.target = body_ids_by_attr.get(&modifier.body_attr).cloned().flatten();
     }
 
     for curve in &out.curves {
