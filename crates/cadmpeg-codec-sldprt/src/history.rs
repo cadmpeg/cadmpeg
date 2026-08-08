@@ -2798,7 +2798,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn offset_plane_face_reference_accepts_the_serialized_signed_side() {
+    fn offset_plane_face_reference_does_not_mirror_the_serialized_origin() {
         let surface = Surface {
             id: cadmpeg_ir::ids::SurfaceId("surface".into()),
             geometry: SurfaceGeometry::Plane {
@@ -2820,25 +2820,18 @@ mod history_reference_tests {
         };
         let surfaces = HashMap::from([(&surface.id, &surface)]);
         let mut selection = FaceSelection::Native("component-path".into());
-        let mut origin = Point3::new(0.0, 0.0, 5.0);
+        let origin = Point3::new(0.0, 0.0, 5.0);
 
         resolve_offset_plane_face_selection(
             &mut selection,
-            &mut origin,
+            origin,
             Vector3::new(0.0, 0.0, 1.0),
-            Length(5.0),
             std::slice::from_ref(&face),
             &surfaces,
         );
 
-        assert_eq!(origin, Point3::new(0.0, 0.0, -5.0));
-        assert_eq!(
-            selection,
-            FaceSelection::Resolved {
-                faces: vec![face.id],
-                native: "component-path".into(),
-            }
-        );
+        assert_eq!(origin, Point3::new(0.0, 0.0, 5.0));
+        assert_eq!(selection, FaceSelection::Native("component-path".into()));
     }
 
     #[test]
@@ -6339,13 +6332,12 @@ pub fn bind_topology_selections(
                         normal,
                         ..
                     }),
-                distance,
+                ..
             } => {
                 resolve_offset_plane_face_selection(
                     reference,
-                    origin,
+                    *origin,
                     *normal,
-                    *distance,
                     faces,
                     &surfaces_by_id,
                 );
@@ -6617,30 +6609,15 @@ fn resolve_planar_face_selection(
 
 fn resolve_offset_plane_face_selection(
     selection: &mut FaceSelection,
-    origin: &mut Point3,
+    origin: Point3,
     normal: Vector3,
-    distance: Length,
     faces: &[Face],
     surfaces: &HashMap<&cadmpeg_ir::ids::SurfaceId, &Surface>,
 ) {
-    let native = matches!(selection, FaceSelection::Native(_));
-    resolve_planar_face_selection(selection, *origin, normal, faces, surfaces);
-    if !native || !matches!(selection, FaceSelection::Native(_)) {
-        return;
-    }
-    let signed_distance = distance.0;
-    if !signed_distance.is_finite() || signed_distance.abs() <= f64::EPSILON {
-        return;
-    }
-    let alternate_origin = Point3::new(
-        origin.x - normal.x * signed_distance * 2.0,
-        origin.y - normal.y * signed_distance * 2.0,
-        origin.z - normal.z * signed_distance * 2.0,
-    );
-    resolve_planar_face_selection(selection, alternate_origin, normal, faces, surfaces);
     if !matches!(selection, FaceSelection::Native(_)) {
-        *origin = alternate_origin;
+        return;
     }
+    resolve_planar_face_selection(selection, origin, normal, faces, surfaces);
 }
 
 fn resolve_profile_ref(

@@ -1018,27 +1018,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the position. A window bound also drops a valid vector that lies past it.
 
-### DI-48. Offset-plane support face position
-
-**Question.** Where is the support plane of an offset datum plane?
-
-**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states one translation with one sign: "the support origin equals the constructed origin plus `D1` times the constructed normal", and states the same translation again for the omitted-frame case.
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/resolved_features/../history.rs:6515` tries the stated position, and then tries the mirrored position when the first finds no face:
-
-```rust
-let alternate_origin = Point3::new(
-    origin.x - normal.x * signed_distance * 2.0, ...);
-resolve_planar_face_selection(selection, alternate_origin, normal, faces, surfaces);
-if !matches!(selection, FaceSelection::Native(_)) {
-    *origin = alternate_origin;
-}
-```
-
-The second probe accepts any non-empty match. When it succeeds it also overwrites the decoded support origin. The producer of the native face path at `resolved_features/reference_geometry.rs:236` is uniqueness-gated, so an exact face path exists and the geometric probe overrides it.
-
-**Need.** We must use the stated translation. A decoded support origin must not be replaced by a probe result.
-
 ### DI-49. Reference-axis frame layout
 
 **Question.** What layout does a reference-axis record use, and what fixes the position of its frame?
