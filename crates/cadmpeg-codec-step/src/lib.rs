@@ -4307,7 +4307,7 @@ impl Codec for StepCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        if prefix.starts_with(b"ISO-10303-21;") {
+        if starts_with_step_magic(prefix) {
             Confidence::High
         } else if is_part28_xml(prefix) {
             Confidence::Medium
@@ -4503,6 +4503,29 @@ impl Codec for StepCodec {
             },
         )
     }
+}
+
+fn starts_with_step_magic(bytes: &[u8]) -> bool {
+    let mut at = 0;
+    loop {
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        if bytes.get(at..at + 2) != Some(b"/*") {
+            break;
+        }
+        let Some(relative_end) = bytes[at + 2..]
+            .windows(2)
+            .position(|window| window == b"*/")
+        else {
+            return false;
+        };
+        at += relative_end + 4;
+    }
+    let magic = b"ISO-10303-21;";
+    bytes
+        .get(at..at + magic.len())
+        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(magic))
 }
 
 fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {

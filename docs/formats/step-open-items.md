@@ -824,21 +824,19 @@ item needs the edition-selection rule.
 
 ### EL-02. Exchange-structure detection
 
-**Question.** Which byte sequence identifies a clear-text exchange structure?
+**Resolved.** Detection skips leading Part 21 whitespace and complete comments
+and compares the `ISO-10303-21;` keyword sequence without ASCII case. A byte
+order mark is not Part 21 whitespace and remains invalid.
 
 **Known.** `step.md` §2 gives the outer grammar and applies whitespace and
 comments at token boundaries. `step.md` §3 "ignore ASCII case. Canonical
 spelling uses uppercase." makes keywords case-insensitive, and the lexer
 implements that.
 
-**Conflict.** `detect` requires the exact bytes `ISO-10303-21;` at offset 0
-(`crates/cadmpeg-codec-step/src/lib.rs:4309-4317`), and `decode_impl`
-re-applies it (`lib.rs:4326-4328`, `:4495-4497`). A file that begins
-`iso-10303-21;`, or that carries a leading comment, a leading blank line, or
-a byte-order mark, is refused with `WrongFormat`, although `parse::parse`
-accepts all of them. Because `decode_impl` repeats the check, `--input-format
-step` cannot override it. The detector and the parser implement different
-rules for one grammar and the item needs a decision.
+**Rule.** `detect`, `inspect`, and semantic decode apply the same leading
+trivia and case-insensitive magic check as the parser. An incomplete leading
+comment is not a recognized exchange; the parser reports it as malformed when
+the input is forced to STEP.
 
 ### EL-03. Enumeration name characters
 

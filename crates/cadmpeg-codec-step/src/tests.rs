@@ -373,6 +373,17 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
 }
 
 #[test]
+fn codec_detection_matches_part21_trivia_and_keyword_rules() {
+    let source = b"/* preamble */\n  iso-10303-21;HEADER;ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
+    let codec = StepCodec::default();
+
+    assert_eq!(codec.detect(source), Confidence::High);
+    codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("Part 21 leading trivia and case-insensitive magic");
+}
+
+#[test]
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
     let cases: &[(&[u8], &str)] = &[
