@@ -3257,8 +3257,15 @@ pub(crate) fn resolved_section_coordinates(
             let [Some(first), Some(second), _, _] = vectors[0] else {
                 return None;
             };
-            let coordinate =
-                section_linear_distance_coordinate(definition, &segments, first, second, &points)?;
+            let coordinate = section_linear_distance_coordinate(
+                definition,
+                &segments,
+                first,
+                second,
+                &points,
+                &saved_segment_points,
+                &ambiguous_point_ids,
+            )?;
             let magnitude = section_relation_length_dimension(definition, relation)?
                 .value
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
@@ -3420,6 +3427,8 @@ fn section_linear_distance_coordinate(
     first: u32,
     second: u32,
     coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    saved_segment_points: &[(u32, [f64; 2])],
+    ambiguous_point_ids: &BTreeSet<u32>,
 ) -> Option<usize> {
     let matching_segments = segments
         .iter()
@@ -3447,16 +3456,38 @@ fn section_linear_distance_coordinate(
     };
     has_unique_incident_entity(first).then_some(())?;
     has_unique_incident_entity(second).then_some(())?;
-    let equal_coordinate = |coordinate: usize| -> Option<bool> {
-        let first = coordinates.get(&first).and_then(|point| point[coordinate]);
-        let second = coordinates.get(&second).and_then(|point| point[coordinate]);
-        match (first, second) {
-            (Some(first), Some(second)) => {
-                let scale = first.abs().max(second.abs()).max(1.0);
-                Some((first - second).abs() <= 1e-9 * scale)
-            }
-            _ => None,
+    let point_coordinate = |point_id: u32, coordinate: usize| -> Option<f64> {
+        if ambiguous_point_ids.contains(&point_id) {
+            return None;
         }
+        let mut values = Vec::new();
+        if let Some(value) = coordinates
+            .get(&point_id)
+            .and_then(|point| point[coordinate])
+        {
+            value.is_finite().then_some(())?;
+            values.push(value);
+        }
+        for &(_, point) in saved_segment_points
+            .iter()
+            .filter(|(saved_point_id, _)| *saved_point_id == point_id)
+        {
+            let value = point[coordinate];
+            value.is_finite().then_some(())?;
+            values.push(value);
+        }
+        let first = values.first().copied()?;
+        let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+        values
+            .iter()
+            .all(|value| (*value - first).abs() <= 1e-9 * scale)
+            .then_some(first)
+    };
+    let equal_coordinate = |coordinate: usize| -> Option<bool> {
+        let first = point_coordinate(first, coordinate)?;
+        let second = point_coordinate(second, coordinate)?;
+        let scale = first.abs().max(second.abs()).max(1.0);
+        Some((first - second).abs() <= 1e-9 * scale)
     };
     let equal_u = equal_coordinate(0);
     let equal_v = equal_coordinate(1);

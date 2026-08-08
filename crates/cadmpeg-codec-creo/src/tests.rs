@@ -5321,6 +5321,128 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         crate::decode::resolved_section_coordinates(&definition).get(&8),
         Some(&[None, Some(40.0)])
     );
+
+    let mut saved_endpoint_definition = definition.clone();
+    saved_endpoint_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .extend([
+            crate::feature::FeatureSectionPoint {
+                point_id: 10,
+                u: None,
+                v: None,
+            },
+            crate::feature::FeatureSectionPoint {
+                point_id: 11,
+                u: None,
+                v: Some(3.0),
+            },
+        ]);
+    let segments = saved_endpoint_definition
+        .segments
+        .as_mut()
+        .expect("segments");
+    segments.declared_count = 7;
+    segments.rows.extend([
+        crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [10, 12],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 10,
+            body: Vec::new(),
+            offset: 0,
+        },
+        crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [13, 11],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 11,
+            body: Vec::new(),
+            offset: 0,
+        },
+    ]);
+    let dimensions = saved_endpoint_definition
+        .dimensions
+        .as_mut()
+        .expect("dimensions");
+    dimensions.declared_count = 3;
+    dimensions.rows.push(crate::feature::FeatureDimension {
+        dimension_type: 2,
+        value: Some(15.0),
+        value_body: Vec::new(),
+        unresolved_value_token: None,
+        value_unit: crate::feature::DimensionUnit::Millimeters,
+        direction_byte: 0,
+        auxiliary_value: Some(0.0),
+        auxiliary_body: Vec::new(),
+        external_id: 3,
+        offset: 0,
+    });
+    let relations = saved_endpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations");
+    relations.declared_count = 7;
+    relations.rows.push(crate::feature::FeatureRelation {
+        relation_id: 5,
+        used: 1,
+        operands: Vec::new(),
+        operand_vectors: Some([
+            [Some(10), Some(11), None, Some(1)],
+            [Some(1), Some(1), Some(0), Some(1)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ]),
+        sign: 1,
+        dimension_id: 2,
+        relation_type: 0,
+        body: Vec::new(),
+        offset: 0,
+    });
+    saved_endpoint_definition.order_table = Some(crate::feature::FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![crate::feature::FeatureOrderRow {
+            external_id: 10,
+            internal_id: 10,
+            bitmask: 0,
+            offset: 0,
+        }],
+        offset: 0,
+    });
+    saved_endpoint_definition.saved_section = Some(crate::feature::FeatureSavedSection {
+        entities: vec![crate::feature::FeatureSavedEntity::Line(
+            crate::feature::FeatureSavedLine {
+                entity_id: 10,
+                references: Vec::new(),
+                attributes: Vec::new(),
+                endpoints: [
+                    [Some(2.0), Some(3.0), Some(0.0)],
+                    [Some(0.0), Some(0.0), Some(0.0)],
+                ],
+                body: Vec::new(),
+                offset: 0,
+            },
+        )],
+        offset: 0,
+    });
+    assert_eq!(
+        crate::decode::resolved_section_points(&saved_endpoint_definition).get(&11),
+        Some(&[17.0, 3.0])
+    );
+
     let mut incomplete_variables = definition.clone();
     incomplete_variables
         .variables
