@@ -1414,6 +1414,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             && owner.scope_record_index == scope.record_index
                     })
                     .count();
+                let alignment_lane_bounds = design::assembly::alignment_lane_bounds(
+                    scope.frame_length,
+                    assembly_owner_count,
+                );
                 let operand_frames_link = alignment.operand_frames.as_ref().is_none_or(|frames| {
                     frames[0].reference_record_index != frames[1].reference_record_index
                         && frames.iter().enumerate().all(|(ordinal, frame)| {
@@ -1536,31 +1540,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && scope
                         .reference_members
                         .ends_with(&alignment.owner_record_indices)
-                    && matches!(assembly_owner_count, 4 | 6 | 8 | 10)
-                    && matches!(alignment.owner_record_indices.len(), 2 | 4)
                     && alignment.value_offsets.len() == alignment.owner_record_indices.len()
-                    && alignment
-                        .owner_record_indices
-                        .iter()
-                        .zip(&alignment.value_offsets)
-                        .zip(values)
-                        .enumerate()
-                        .all(|(ordinal, ((record_index, value_offset), value))| {
-                            native.design_parameter_owners.iter().any(|owner| {
-                                design_stream(&owner.id) == native_stream
-                                    && owner.record_index == *record_index
-                                    && owner.scope_record_index == scope.record_index
-                                    && owner.local_ordinal
-                                        == ordinal as u32
-                                            + match assembly_owner_count {
-                                                6 | 8 => 4,
-                                                10 => 8,
-                                                _ => 0,
-                                            }
-                                    && owner.evaluated_value == value
-                                    && owner.evaluated_value_offset == *value_offset
-                            })
-                        })
+                    && alignment_lane_bounds.is_some_and(|(alignment_start, alignment_end)| {
+                        alignment.owner_record_indices.len()
+                            == alignment_end.saturating_sub(alignment_start)
+                            && alignment
+                                .owner_record_indices
+                                .iter()
+                                .zip(&alignment.value_offsets)
+                                .zip(values)
+                                .enumerate()
+                                .all(|(ordinal, ((record_index, value_offset), value))| {
+                                    native.design_parameter_owners.iter().any(|owner| {
+                                        design_stream(&owner.id) == native_stream
+                                            && owner.record_index == *record_index
+                                            && owner.scope_record_index == scope.record_index
+                                            && owner.local_ordinal
+                                                == (alignment_start + ordinal) as u32
+                                            && owner.evaluated_value == value
+                                            && owner.evaluated_value_offset == *value_offset
+                                    })
+                                })
+                    })
             }
         };
         let component_insert_link = match &scope.component_insert_construction {

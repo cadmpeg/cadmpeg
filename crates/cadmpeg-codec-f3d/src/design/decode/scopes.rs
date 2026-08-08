@@ -1134,13 +1134,9 @@ pub(crate) fn exact_assembly_alignment(
     {
         return None;
     }
-    let alignment_lanes = match lanes.len() {
-        4 => &lanes[..],
-        6 => &lanes[4..],
-        8 => &lanes[4..],
-        10 => &lanes[8..],
-        _ => return None,
-    };
+    let (alignment_start, alignment_end) =
+        crate::design::assembly::alignment_lane_bounds(scope.frame_length, lanes.len())?;
+    let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
     let (angle, offset, owner_record_indices, value_offsets) = match alignment_lanes {
         [angle, offset_x, offset_y, offset_z] => (
             *angle,

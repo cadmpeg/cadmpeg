@@ -14,6 +14,23 @@ use crate::records::{
     DesignParameterScope,
 };
 
+/// Return the half-open owner-lane range that carries assembly alignment.
+///
+/// The serialized frame length fixes both the Cartesian/axial form and the
+/// number of placement lanes that precede the alignment values.
+pub(crate) const fn alignment_lane_bounds(
+    frame_length: u64,
+    owner_count: usize,
+) -> Option<(usize, usize)> {
+    match (frame_length, owner_count) {
+        (627 | 633 | 637 | 692, 4) => Some((0, 4)),
+        (732, 8) => Some((4, 8)),
+        (705, 6) => Some((4, 6)),
+        (772, 10) => Some((8, 10)),
+        _ => None,
+    }
+}
+
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
@@ -304,6 +321,30 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
+    }
+
+    #[test]
+    fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
+        for (frame_length, owner_count, expected) in [
+            (627, 4, (0, 4)),
+            (633, 4, (0, 4)),
+            (637, 4, (0, 4)),
+            (692, 4, (0, 4)),
+            (732, 8, (4, 8)),
+            (705, 6, (4, 6)),
+            (772, 10, (8, 10)),
+        ] {
+            assert_eq!(
+                super::alignment_lane_bounds(frame_length, owner_count),
+                Some(expected)
+            );
+        }
+        for (frame_length, owner_count) in [(627, 6), (732, 6), (705, 8), (772, 8), (604, 4)] {
+            assert_eq!(
+                super::alignment_lane_bounds(frame_length, owner_count),
+                None
+            );
+        }
     }
 
     #[test]

@@ -23132,6 +23132,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
 
     scope.kind = "Assemble".into();
+    scope.frame_length = 627;
     scope.reference_members = vec![50, 51, 52, 53];
     let alignment = exact_assembly_alignment(
         &bytes,
@@ -23154,6 +23155,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         owner(63, 7, 6.0, 604),
     ]);
     scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63];
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &placement_and_alignment_owners,
+    )
+    .is_none());
+    scope.frame_length = 732;
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -23165,9 +23174,38 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.offset, [4.0, 5.0, 6.0]);
     assert_eq!(alignment.owner_record_indices, [60, 61, 62, 63]);
 
+    let mut short_axial_owners = rectangular_owners.to_vec();
+    short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
+    scope.reference_members = vec![50, 51, 52, 53, 64, 65];
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &short_axial_owners,
+    )
+    .is_none());
+    scope.frame_length = 705;
+    let short_axial_alignment = exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &short_axial_owners,
+    )
+    .expect("six-owner alignment belongs to the 705-byte axial frame");
+    assert_eq!(short_axial_alignment.angle, 0.5);
+    assert_eq!(short_axial_alignment.offset, [0.0, 0.0, 2.0]);
+
     let mut legacy_alignment_owners = placement_and_alignment_owners.clone();
     legacy_alignment_owners.extend([owner(64, 8, 0.5, 605), owner(65, 9, 2.0, 606)]);
     scope.reference_members = vec![50, 51, 52, 53, 60, 61, 62, 63, 64, 65];
+    assert!(exact_assembly_alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &legacy_alignment_owners,
+    )
+    .is_none());
+    scope.frame_length = 772;
     let alignment = exact_assembly_alignment(
         &bytes,
         &IndexedRecordOffsets::build(&bytes),
@@ -23347,8 +23385,6 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     short_axial_bytes.extend_from_slice(&3_u32.to_le_bytes());
     short_axial_bytes.extend_from_slice(b"261");
     short_axial_bytes.extend_from_slice(&scope_record_index.to_le_bytes());
-    let mut short_axial_owners = rectangular_owners.to_vec();
-    short_axial_owners.extend([owner(64, 4, 0.5, 605), owner(65, 5, 2.0, 606)]);
     let short_axial_scope = DesignParameterScope {
         frame_length: 705,
         paired_byte_offset: 705,
