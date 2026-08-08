@@ -125,6 +125,7 @@ fn decode_exchange_mode(
         &mut ir,
         &carrier_index,
         geometry.plane_angle_scale,
+        &geometry.plane_angle_scales,
     );
     geometry::repair_angular_pcurve_units(
         &mut ir,

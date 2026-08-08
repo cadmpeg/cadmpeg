@@ -37,6 +37,7 @@ pub(super) struct GeometryResult {
     pub length_scale: f64,
     pub plane_angle_scale: f64,
     pub length_scales: BTreeMap<u64, f64>,
+    pub plane_angle_scales: BTreeMap<u64, f64>,
 }
 
 struct UnitScales {
@@ -1550,6 +1551,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         length_scale: scale,
         plane_angle_scale: angle_scale,
         length_scales: unit_scales.length,
+        plane_angle_scales: unit_scales.angle,
     }
 }
 

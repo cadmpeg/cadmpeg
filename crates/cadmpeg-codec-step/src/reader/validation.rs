@@ -123,7 +123,13 @@ pub(super) fn decode(
         let Some(item) = exchange.records.get(&item_id) else {
             continue;
         };
-        let expected = expected_value(item, exchange, geometry.length_scale, &mut losses);
+        let scale = geometry
+            .length_scales
+            .get(&item_id)
+            .copied()
+            .or_else(|| geometry.length_scales.get(&representation_id).copied())
+            .unwrap_or(geometry.length_scale);
+        let expected = expected_value(item, exchange, scale, &mut losses);
         let Some(expected) = expected else {
             warnings.push(format!(
                 "geometric validation property #{property_id} has an unsupported value"

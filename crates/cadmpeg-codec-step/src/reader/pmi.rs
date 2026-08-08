@@ -48,14 +48,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     let mut annotations = BTreeMap::<u64, usize>::new();
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
-    let characteristic_values = {
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
-        characteristic_values(exchange, &mut measurements)
-    };
+    let characteristic_values = characteristic_values(exchange, geometry, &mut losses);
     for (id, record) in exchange.entities("DATUM") {
         let identification = named_parameter(record, "DATUM", 0)
             .and_then(|value| {
@@ -97,11 +90,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .find_map(ValueExt::list)
             .unwrap_or_default();
         let mut datum_records = BTreeSet::new();
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let datum_references = constituents
             .iter()
             .enumerate()
@@ -300,11 +289,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let mut measurements = MeasureContext {
-                length_scale: geometry.length_scale,
-                angle_scale: geometry.plane_angle_scale,
-                losses: &mut losses,
-            };
+            let mut measurements = measure_context(geometry, id, &mut losses);
             let lower = limits
                 .parameters()
                 .first()
@@ -380,11 +365,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                         .collect::<Vec<_>>()
                 },
             );
-        let mut measurements = MeasureContext {
-            length_scale: geometry.length_scale,
-            angle_scale: geometry.plane_angle_scale,
-            losses: &mut losses,
-        };
+        let mut measurements = measure_context(geometry, id, &mut losses);
         let magnitude = record
             .partials
             .iter()
@@ -1061,10 +1042,12 @@ fn modifier_values(value: &Value) -> Vec<String> {
 
 fn characteristic_values(
     exchange: &Exchange,
-    measurements: &mut MeasureContext<'_>,
+    geometry: &GeometryResult,
+    losses: &mut Vec<LossNote>,
 ) -> BTreeMap<u64, Vec<PmiValue>> {
     let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
-    for (_, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
+    for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
+        let mut measurements = measure_context(geometry, id, losses);
         let parameters = record
             .partials
             .iter()
@@ -1086,10 +1069,30 @@ fn characteristic_values(
         result.entry(characteristic).or_default().extend(
             parameters
                 .iter()
-                .filter_map(|value| measure(value, exchange, measurements)),
+                .filter_map(|value| measure(value, exchange, &mut measurements)),
         );
     }
     result
+}
+
+fn measure_context<'a>(
+    geometry: &GeometryResult,
+    id: u64,
+    losses: &'a mut Vec<LossNote>,
+) -> MeasureContext<'a> {
+    MeasureContext {
+        length_scale: geometry
+            .length_scales
+            .get(&id)
+            .copied()
+            .unwrap_or(geometry.length_scale),
+        angle_scale: geometry
+            .plane_angle_scales
+            .get(&id)
+            .copied()
+            .unwrap_or(geometry.plane_angle_scale),
+        losses,
+    }
 }
 
 fn measure(

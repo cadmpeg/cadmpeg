@@ -195,6 +195,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
     plane_angle_scale: f64,
+    plane_angle_scales: &BTreeMap<u64, f64>,
 ) -> TopologyResult {
     let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
@@ -417,7 +418,10 @@ pub(super) fn decode(
             &decoded_pcurves,
             &surface_parameter_maps,
             point_positions,
-            plane_angle_scale,
+            plane_angle_scales
+                .get(&id)
+                .copied()
+                .unwrap_or(plane_angle_scale),
             scope_root,
             &mut result.warnings,
             &mut result.losses,
