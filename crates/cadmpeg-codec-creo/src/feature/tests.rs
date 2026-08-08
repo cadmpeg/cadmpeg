@@ -10,8 +10,8 @@ use crate::scalar;
 #[test]
 fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
     let payload = [
-        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 7, 0x90, 0x01, 0xe3, 0xf6, 0x83,
-        0x91, 0xe1, 0xbb,
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 0xe3, 7, 0x90, 0x01, 0xe3, 0xf6,
+        0x83, 0x91, 0xe1, 0xbb,
     ];
     let feature_ids = BTreeSet::from([7]);
 
@@ -30,8 +30,8 @@ fn rows_retain_distinct_root_schema_classes_for_one_feature_id() {
 #[test]
 fn rows_suppress_repeated_same_class_candidates() {
     let payload = [
-        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 7, 0x90, 0x01, 0xe3, 0xf6, 0x83,
-        0x95, 0xe1, 0xbb,
+        7, 0xeb, 0x04, 0, 0, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa, 0xe3, 7, 0x90, 0x01, 0xe3, 0xf6,
+        0x83, 0x95, 0xe1, 0xbb,
     ];
     let feature_ids = BTreeSet::from([7]);
 
@@ -39,6 +39,62 @@ fn rows_suppress_repeated_same_class_candidates() {
 
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].root_schema_class, Some(917));
+}
+
+#[test]
+fn rows_accept_an_unlisted_header_with_the_fixed_root_prefix() {
+    let payload = [
+        7, 0x88, 0x01, 0x00, 0x88, 0x00, 0x00, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].header, [0x88, 0x01]);
+    assert_eq!(decoded[0].root_schema_class, Some(949));
+}
+
+#[test]
+fn rows_require_the_root_marker_after_the_row_header() {
+    let payload = [7, 0x88, 0x01, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
+    let feature_ids = BTreeSet::from([7]);
+
+    assert!(rows(&payload, &feature_ids).is_empty());
+}
+
+#[test]
+fn rows_accept_a_root_marker_immediately_after_the_header() {
+    let payload = [40, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0xaa];
+    let feature_ids = BTreeSet::from([40]);
+
+    assert_eq!(rows(&payload, &feature_ids).len(), 1);
+}
+
+#[test]
+fn rows_accept_a_row_after_the_raw_section_header() {
+    let mut payload = b"#AllFeatur\n".to_vec();
+    payload.extend_from_slice(&[7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5, 0xe1, 0xbb]);
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].offset, b"#AllFeatur\n".len());
+}
+
+#[test]
+fn rows_ignore_a_valid_prefix_inside_an_existing_row() {
+    let payload = [
+        7, 0xeb, 0x04, 0xe3, 0xf6, 0x83, 0x95, 0xe1, 0x11, 7, 0x88, 0x01, 0xe3, 0xf6, 0x83, 0xb5,
+        0xe1, 0xbb,
+    ];
+    let feature_ids = BTreeSet::from([7]);
+
+    let decoded = rows(&payload, &feature_ids);
+
+    assert_eq!(decoded.len(), 1);
+    assert_eq!(decoded[0].header, [0xeb, 0x04]);
 }
 
 #[test]

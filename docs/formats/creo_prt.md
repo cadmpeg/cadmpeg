@@ -2328,12 +2328,25 @@ construction transfers a carrier only when the feature has exactly one
 unplaced materialized cylinder row and every support plane satisfies these
 constraints.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The
-compact integer is the root `FeatDefs` schema class for that feature. This
-class dispatches the row to its operation-definition grammar. Class 916 is a
-subtractive section-sweep definition and class 917 is an additive
-section-sweep definition; their recipes discriminate linear extrusion from
-rotation. Class 911 is a hole definition, class 913 is a round definition,
+An `AllFeatur` feature row starts at section-body offset zero, immediately
+after the section's `#<name>\n` header, or immediately after an `e3` compound
+close. Its leading canonical compact feature identifier is followed by a
+two-byte row header. The row-header bytes are retained but are not a fixed
+allowlist for row discovery. Within the first 16 bytes after the feature
+identifier, after that row header, the fixed prefix contains
+`e3 f6 <compact-class> e1`. The compact integer is the root `FeatDefs`
+schema class for that feature. A candidate without this complete prefix is
+not a row. A row ends immediately before the next candidate satisfying the
+same boundary and prefix rules with a different feature-identifier/schema-
+class pair, or at the section end. Within one stream, a feature identifier
+and root schema class pair identifies one row; a later candidate with the
+same pair does not create a separate boundary. A feature identifier and
+row-shaped bytes inside an existing row do not create a boundary.
+
+The root schema class dispatches the row to its operation-definition grammar.
+Class 916 is a subtractive section-sweep definition and class 917 is an
+additive section-sweep definition; their recipes discriminate linear
+extrusion from rotation. Class 911 is a hole definition, class 913 is a round definition,
 class 914 is a chamfer definition, class 923 is a datum-plane definition, and
 class 926 is a saved section. In a DEPDB recipe prefix, the root schema class
 performs the same dispatch. Class 979 with the exact model-reference name

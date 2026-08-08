@@ -560,16 +560,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
 
-### SP-26. `AllFeatur` row start grammar
-
-**Question.** Which bytes begin an `AllFeatur` feature row, and what bounds the row?
-
-**Known.** `creo_prt.md` §6 states that a feature owns each mixed generated-entity table bounded by its `AllFeatur` row, and that the fixed prefix contains `f6 <class> e1`. It states that the row's leading identifier occupies a row-local numeric namespace that can collide with model-feature identifiers, and that numeric equality alone does not establish ownership. The specification does not give the row-start grammar.
-
-**Need.** We must know the grammar to bind every generated-entity table, affected-geometry array, and loop-history entry to its owning feature. `feature/rows.rs` accepts a start at a known feature identifier followed by one of the three constants `eb 04`, `90 01`, and `c8 10`, and ends the row at the next such start. The three constants appear in no specification or layout table.
-
-**Note.** This grammar does not reach every feature. Many feature identifiers that carry a current operation state get no `AllFeatur` row, and a part can yield no row at all while its operation states name many features. One part uses one header constant for nearly every row, so the constant looks like a property of the writing generation rather than of the feature family. Both observations say the accepted set is a subset of the real row-start forms, so this item ranks above every other row-scoped item: each unreached row is a feature whose generated-entity tables and affected geometry are absent, not wrong.
-
 ### SP-33. Datum outline held-axis selection
 
 **Question.** Which axis holds the plane equation when a named datum outline has multiple paired standalone-zero coordinates?

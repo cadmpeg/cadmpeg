@@ -163,6 +163,11 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   preceding feature-generated class-200 producer.
+- `AllFeatur` rows are discovered at section start, after the raw section
+  header, or after an `e3` boundary only when a known feature identifier and
+  the complete bounded `e3 f6 <compact-class> e1` root prefix are present.
+  Row headers are retained without a fixed-value allowlist, and row-shaped
+  bytes inside an existing row do not split its owned tables.
 - Class-913 and class-914 unanchored replay rows accept explicit affected-array
   pairs only with a bounded compound-close or generated-array separator prefix
   and exact consumption through the repeated-row suffix.
