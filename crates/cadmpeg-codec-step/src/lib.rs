@@ -1263,12 +1263,14 @@ impl<'a> Builder<'a> {
                 .as_deref()
                 .or(product.source_name.as_deref())
                 .unwrap_or(product_id);
+            let description = product.description.as_deref().unwrap_or("");
             let product_ref = self.emitter.emit(
                 "PRODUCT",
                 &format!(
-                    "{},{},'',({product_context})",
+                    "{},{},{},({product_context})",
                     string(product_id),
-                    string(name)
+                    string(name),
+                    string(description)
                 ),
             );
             self.product_step_refs
@@ -1279,7 +1281,11 @@ impl<'a> Builder<'a> {
             );
             let definition = self.emitter.emit(
                 "PRODUCT_DEFINITION",
-                &format!("{},'',{formation},{definition_context}", string(product_id)),
+                &format!(
+                    "{},{},{formation},{definition_context}",
+                    string(product_id),
+                    string(description)
+                ),
             );
             let shape = self
                 .emitter
@@ -1316,12 +1322,17 @@ impl<'a> Builder<'a> {
 
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
-                if !is_identity(&occurrence.transform.rows) {
+                let transform = if occurrence.link_transform.unwrap_or(false) {
+                    occurrence.transform.compose(occurrence.prototype_transform)
+                } else {
+                    occurrence.transform
+                };
+                if !is_identity(&transform.rows) || occurrence.scale != [1.0; 3] {
                     self.loss(
                         LossKind::BodyTransformNotApplied,
                         Severity::Warning,
                         format!(
-                            "root occurrence '{}' has a non-identity placement",
+                            "root occurrence '{}' has a placement or scale that is not representable",
                             occurrence.id
                         ),
                     );
@@ -3727,6 +3738,209 @@ impl<'a> Builder<'a> {
                     "{} subdivision surface(s) were omitted because this STEP writer \
                      does not encode SubD control cages",
                     self.ir.model.subds.len()
+                ),
+            );
+        }
+        let design_arenas = [
+            ("feature", self.ir.model.features.len()),
+            (
+                "feature input topology",
+                self.ir.model.feature_input_topologies.len(),
+            ),
+            (
+                "feature result topology",
+                self.ir.model.feature_result_topologies.len(),
+            ),
+            ("configuration", self.ir.model.configurations.len()),
+            ("parameter", self.ir.model.parameters.len()),
+            ("sketch", self.ir.model.sketches.len()),
+            ("sketch entity", self.ir.model.sketch_entities.len()),
+            ("sketch constraint", self.ir.model.sketch_constraints.len()),
+            ("spatial sketch", self.ir.model.spatial_sketches.len()),
+            (
+                "spatial sketch entity",
+                self.ir.model.spatial_sketch_entities.len(),
+            ),
+            (
+                "spatial sketch constraint",
+                self.ir.model.spatial_sketch_constraints.len(),
+            ),
+            ("spreadsheet", self.ir.model.spreadsheets.len()),
+        ];
+        let design_record_count = design_arenas.iter().map(|(_, count)| count).sum::<usize>();
+        if design_record_count > 0 {
+            let details = design_arenas
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::ParametricRecordOmitted,
+                Severity::Info,
+                format!(
+                    "{design_record_count} parametric/design record(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
+        let presentation_arenas = [
+            ("drawing", self.ir.model.drawings.len()),
+            (
+                "presentation document",
+                self.ir.model.presentation_documents.len(),
+            ),
+            ("view presentation", self.ir.model.view_presentations.len()),
+        ];
+        let presentation_record_count = presentation_arenas
+            .iter()
+            .map(|(_, count)| count)
+            .sum::<usize>();
+        if presentation_record_count > 0 {
+            let details = presentation_arenas
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{presentation_record_count} drawing/presentation record(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
+        if !self.ir.model.semantic_annotations.is_empty() {
+            self.omit(
+                LossKind::PmiOmitted,
+                Severity::Warning,
+                format!(
+                    "{} semantic annotation(s) were not represented in STEP",
+                    self.ir.model.semantic_annotations.len()
+                ),
+            );
+        }
+        if !self.ir.model.assets.is_empty() {
+            self.omit(
+                LossKind::AssetNotTransferred,
+                Severity::Info,
+                format!(
+                    "{} document asset(s) were not represented in STEP",
+                    self.ir.model.assets.len()
+                ),
+            );
+        }
+        if !self.ir.model.assembly_joints.is_empty() {
+            self.omit(
+                LossKind::AssemblyPlacementsNotTransferred,
+                Severity::Info,
+                format!(
+                    "{} assembly joint(s) were not represented in STEP",
+                    self.ir.model.assembly_joints.len()
+                ),
+            );
+        }
+        let non_part_products = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|product| {
+                !matches!(
+                    &product.kind,
+                    cadmpeg_ir::products::ProductDefinitionKind::Part
+                )
+            })
+            .count();
+        if non_part_products > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{non_part_products} product definition(s) use a non-part kind not represented in STEP"
+                ),
+            );
+        }
+        let bom_property_count = self
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .map(|product| product.bom_properties.len())
+            .sum::<usize>();
+        if bom_property_count > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{bom_property_count} product BOM property value(s) were not represented in STEP"
+                ),
+            );
+        }
+        let external_occurrences = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                matches!(
+                    &occurrence.prototype,
+                    cadmpeg_ir::products::PrototypeReference::External { .. }
+                )
+            })
+            .count();
+        if external_occurrences > 0 {
+            self.omit(
+                LossKind::AssemblyComponentsExternal,
+                Severity::Warning,
+                format!(
+                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP"
+                ),
+            );
+        }
+        let unresolved_occurrences = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                matches!(
+                    &occurrence.prototype,
+                    cadmpeg_ir::products::PrototypeReference::Unresolved
+                )
+            })
+            .count();
+        if unresolved_occurrences > 0 {
+            self.omit(
+                LossKind::MetadataNotTransferred,
+                Severity::Warning,
+                format!(
+                    "{unresolved_occurrences} occurrence(s) have no writable product definition"
+                ),
+            );
+        }
+        let occurrence_metadata = self
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .map(|occurrence| {
+                usize::from(!occurrence.linked_subelements.is_empty())
+                    + usize::from(occurrence.visible.is_some())
+                    + usize::from(occurrence.element_component.is_some())
+                    + usize::from(occurrence.claim_child.is_some())
+                    + usize::from(occurrence.copy_on_change.is_some())
+                    + usize::from(occurrence.copy_on_change_source.is_some())
+                    + usize::from(occurrence.copy_on_change_group.is_some())
+                    + usize::from(occurrence.copy_on_change_touched.is_some())
+            })
+            .sum::<usize>();
+        if occurrence_metadata > 0 {
+            self.loss(
+                LossKind::MetadataNotTransferred,
+                Severity::Info,
+                format!(
+                    "{occurrence_metadata} occurrence metadata value(s) were not represented in STEP"
                 ),
             );
         }

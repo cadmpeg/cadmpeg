@@ -59,6 +59,35 @@ pub(super) fn decode(
             Some((id, *formations.get(&parameters.get(2)?.reference()?)?))
         })
         .collect::<BTreeMap<_, _>>();
+    let mut definition_descriptions = BTreeMap::<u64, String>::new();
+    for (id, record) in exchange.entities_any(PRODUCT_DEFINITION_TYPES) {
+        let Some(parameters) = product_definition_parameters(record) else {
+            continue;
+        };
+        let Some(product) = parameters
+            .get(2)
+            .and_then(ValueExt::reference)
+            .and_then(|formation| formations.get(&formation).copied())
+        else {
+            continue;
+        };
+        let Some(description) = parameters.get(1).and_then(|value| {
+            decode_text(
+                value,
+                &mut losses,
+                id,
+                "product definition description",
+                LossKind::MetadataNotTransferred,
+            )
+        }) else {
+            continue;
+        };
+        if !description.is_empty() {
+            definition_descriptions
+                .entry(product)
+                .or_insert(description);
+        }
+    }
     let shape_bindings = shape_bindings(exchange, &definitions, topology);
 
     for (step_id, record) in exchange.entities("PRODUCT") {
@@ -92,6 +121,19 @@ pub(super) fn decode(
                 )
             })
             .filter(|name| !name.is_empty());
+        let description = parameters
+            .get(2)
+            .and_then(|value| {
+                decode_text(
+                    value,
+                    &mut losses,
+                    step_id,
+                    "product description",
+                    LossKind::MetadataNotTransferred,
+                )
+            })
+            .filter(|description| !description.is_empty())
+            .or_else(|| definition_descriptions.get(&step_id).cloned());
         let has_shape_binding = shape_bindings.contains_key(&step_id);
         let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
         let missing = bodies
@@ -128,7 +170,7 @@ pub(super) fn decode(
             kind: ProductDefinitionKind::Part,
             source_name: name.clone(),
             label: name,
-            description: None,
+            description,
             part_number: Some(product_id),
             bom_properties: BTreeMap::new(),
             bodies,

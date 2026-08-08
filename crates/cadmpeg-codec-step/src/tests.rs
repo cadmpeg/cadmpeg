@@ -3842,6 +3842,179 @@ fn geometric_bounded_surface_representation_reaches_its_product() {
 }
 
 #[test]
+fn product_descriptions_transfer_from_product_and_definition() {
+    let decoded = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','Product description',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('part','Definition description',#4,#5);
+#7=PRODUCT('Q','Second part','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('second','Fallback description',#8,#5);",
+    );
+    let descriptions = decoded
+        .ir
+        .model
+        .product_definitions
+        .iter()
+        .map(|product| product.description.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        descriptions,
+        [Some("Product description"), Some("Fallback description")]
+    );
+
+    let mut ir = unit_cube();
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: "test:product#described".into(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Described part".into()),
+            label: Some("Described part".into()),
+            description: Some("Round-tripped description".into()),
+            part_number: Some("DESCRIBED".into()),
+            bom_properties: std::collections::BTreeMap::new(),
+            bodies: vec![ir.model.bodies[0].id.clone()],
+            native_ref: None,
+        });
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write described product");
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode described product");
+    assert_eq!(
+        roundtrip.ir.model.product_definitions[0]
+            .description
+            .as_deref(),
+        Some("Round-tripped description")
+    );
+}
+
+#[test]
+fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
+    let mut ir = unit_cube();
+    ir.model.assets.push(cadmpeg_ir::assets::Asset {
+        id: cadmpeg_ir::assets::AssetId("test:asset#texture".into()),
+        name: Some("texture".into()),
+        media_type: Some("image/png".into()),
+        content: cadmpeg_ir::assets::AssetContent::External {
+            uri: "urn:test:texture".into(),
+        },
+        native_ref: None,
+    });
+    ir.model
+        .semantic_annotations
+        .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+            id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId("test:semantic#note".into()),
+            object: "note".into(),
+            kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+            runtime_type: "TextNote".into(),
+            order: 0,
+            text: vec!["inspection note".into()],
+            references: std::collections::BTreeMap::new(),
+            value: None,
+            format: None,
+            position: None,
+            parameters: std::collections::BTreeMap::new(),
+            assets: Vec::new(),
+            native_ref: "native-note".into(),
+        });
+    let mut bom_properties = std::collections::BTreeMap::new();
+    bom_properties.insert("stock_code".into(), "A-1".into());
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: "test:product#group".into(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
+            source_name: Some("Group".into()),
+            label: Some("Group".into()),
+            description: None,
+            part_number: None,
+            bom_properties,
+            bodies: Vec::new(),
+            native_ref: None,
+        });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes representable geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AssetNotTransferred
+            && loss.message.contains("1 document asset")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PmiOmitted
+            && loss.message.contains("1 semantic annotation")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
+            && loss.message.contains("non-part kind")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
+            && loss.message.contains("1 product BOM property")
+    }));
+}
+
+#[test]
+fn writer_reports_root_occurrence_scale() {
+    let mut ir = unit_cube();
+    let product = cadmpeg_ir::ids::ProductDefinitionId("test:product#scaled".into());
+    ir.model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition {
+            id: product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Scaled part".into()),
+            label: Some("Scaled part".into()),
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::new(),
+            bodies: vec![ir.model.bodies[0].id.clone()],
+            native_ref: None,
+        });
+    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
+        id: "test:occurrence#scaled".into(),
+        prototype: cadmpeg_ir::products::PrototypeReference::Local {
+            definition: product,
+        },
+        parent: cadmpeg_ir::products::OccurrenceParent::Root,
+        ordinal: 0,
+        transform: Transform::identity(),
+        prototype_transform: Transform::identity(),
+        scale: [2.0, 1.0, 1.0],
+        name: Some("Scaled root".into()),
+        linked_subelements: Vec::new(),
+        visible: None,
+        element_component: None,
+        claim_child: None,
+        copy_on_change: None,
+        copy_on_change_source: None,
+        copy_on_change_group: None,
+        copy_on_change_touched: None,
+        link_transform: None,
+        native_ref: None,
+    });
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes unscaled geometry");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::BodyTransformNotApplied
+            && loss.message.contains("placement or scale")
+    }));
+}
+
+#[test]
 fn aliased_topology_root_reuses_the_committed_body_identity() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
