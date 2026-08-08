@@ -2924,6 +2924,32 @@ fn class_942_linear_sweep_requires_a_numbered_extrude_reference() {
 }
 
 #[test]
+fn class_942_schema_state_precedes_surface_body_tree_fallback() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .operations
+        .push(crate::feature::FeatureOperation {
+            feature_id: 942,
+            kind: "Surface".to_string(),
+            display_name_stored: true,
+            stored_name: Some("Surface id 942".to_string()),
+            stored_name_bytes: Some(b"Surface id 942".to_vec()),
+            identifier_keyword: Some("id".to_string()),
+            stored_name_prefix: None,
+            recipe: None,
+            root_schema_class: Some(942),
+            parent_feature_id: None,
+            offset: 0,
+            state_offset: 0,
+        });
+
+    assert!(matches!(
+        schema_feature_definition(&scan, &CadIr::empty(Units::default()), 942, 942, "Surface"),
+        IrFeatureDefinition::Native { kind, .. } if kind == "Surface"
+    ));
+}
+
+#[test]
 fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features
