@@ -320,6 +320,11 @@ current scores require those matrices and representative fixtures.
   nonzero component of the `u_axis` to be positive. A missing or ambiguous
   normal, non-finite endpoint, non-orthonormal fit, or residual above the
   tolerance leaves the plane carrier unresolved.
+- E5 curve-support sides admit direct p-curves and finite acyclic chains of
+  intersection-support wrappers. Missing sides and wrapper cycles reject the
+  graph. When a wrapper side does not resolve directly, the two radial loop
+  occurrences supply the ordered support sides only after endpoint and
+  parameter-range agreement.
 - Zero-entity face-local support occurrences with complete lifted endpoint
   tapes form radial endpoint-pair candidates when two occurrences have one
   reciprocal unordered model-space endpoint match and the surrounding

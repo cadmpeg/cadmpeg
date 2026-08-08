@@ -405,11 +405,9 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                     return None;
                 }
                 let support = curve_supports.get(&edge.support)?;
-                if support
-                    .pcurves
-                    .iter()
-                    .any(|pcurve| !pcurves.contains_key(pcurve))
-                {
+                if support.pcurves.iter().any(|reference| {
+                    !curve_support_reference_closes(*reference, &pcurves, &curve_supports)
+                }) {
                     return None;
                 }
                 reachable_edges.insert(*edge_id);
@@ -470,6 +468,53 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
 
 fn is_surface_carrier_class(class: u8) -> bool {
     matches!(class, 0xc8 | 0xc9 | 0xca | 0xcc)
+}
+
+/// Checks that a curve-support side resolves to a direct p-curve or to a
+/// finite, acyclic chain of intersection-support wrappers.
+fn curve_support_reference_closes(
+    reference: u32,
+    pcurves: &BTreeMap<u32, E5Pcurve>,
+    supports: &BTreeMap<u32, E5CurveSupport>,
+) -> bool {
+    if pcurves.contains_key(&reference) {
+        return true;
+    }
+    let mut visiting = HashSet::new();
+    let mut stack = vec![(reference, false)];
+    while let Some((reference, leaving)) = stack.pop() {
+        if pcurves.contains_key(&reference) {
+            continue;
+        }
+        let Some(support) = supports
+            .get(&reference)
+            .filter(|support| support.intersection)
+        else {
+            return false;
+        };
+        if leaving {
+            visiting.remove(&reference);
+            continue;
+        }
+        if !visiting.insert(reference) {
+            return false;
+        }
+        stack.push((reference, true));
+        for child in support.pcurves.iter().rev() {
+            if pcurves.contains_key(child) {
+                continue;
+            }
+            if !supports
+                .get(child)
+                .is_some_and(|support| support.intersection)
+                || visiting.contains(child)
+            {
+                return false;
+            }
+            stack.push((*child, false));
+        }
+    }
+    true
 }
 
 fn bound_representation_parameter(
@@ -1000,8 +1045,9 @@ fn solve_loop_chain(edge_ids: &[u32], edges: &BTreeMap<u32, E5Edge>) -> Option<V
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_jet_pcurve, parse_topology, solve_absolute_orientation, solve_loop_chain,
-        E5BoundEntry, E5Bounds, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+        curve_support_reference_closes, parse_jet_pcurve, parse_topology,
+        solve_absolute_orientation, solve_loop_chain, E5BoundEntry, E5Bounds, E5CurveSupport,
+        E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
     };
     use std::collections::BTreeMap;
 
@@ -1034,7 +1080,11 @@ mod tests {
             }
             append_e5_record(&mut bytes, 0x96, pcurve, &payload);
         }
-        let mut support_payload = vec![0x82, 0x08, 100, 0x08, 101, 0x81, 0, 0];
+        let mut wrapper_payload = vec![0x82, 0x08, 100, 0x08, 102, 0x81, 0, 0];
+        wrapper_payload.extend_from_slice(&0.0_f64.to_le_bytes());
+        wrapper_payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        append_e5_record(&mut bytes, 0xc1, 201, &wrapper_payload);
+        let mut support_payload = vec![0x82, 0x08, 201, 0x08, 101, 0x81, 0, 0];
         support_payload.extend_from_slice(&0.0_f64.to_le_bytes());
         support_payload.extend_from_slice(&1.0_f64.to_le_bytes());
         append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
@@ -1073,6 +1123,29 @@ mod tests {
         assert_eq!(topology.faces[0].surface, 258);
         assert_eq!(topology.faces[0].loops[0].edge_uses, [110, 111, 112]);
         assert_eq!(topology.faces[0].loops[0].outer, Some(true));
+    }
+
+    #[test]
+    fn curve_support_wrapper_cycles_are_rejected() {
+        let pcurves = BTreeMap::from([(
+            3,
+            E5Pcurve::Line {
+                surface: 10,
+                origin: [0.0, 0.0],
+                direction: [1.0, 0.0],
+                range: [0.0, 1.0],
+            },
+        )]);
+        let support = |record_id, pcurves| E5CurveSupport {
+            record_id,
+            intersection: true,
+            pcurves,
+            mode: 0,
+            range: [0.0, 1.0],
+            tail: Vec::new(),
+        };
+        let supports = BTreeMap::from([(1, support(1, vec![2, 3])), (2, support(2, vec![1, 3]))]);
+        assert!(!curve_support_reference_closes(1, &pcurves, &supports));
     }
 
     #[test]
