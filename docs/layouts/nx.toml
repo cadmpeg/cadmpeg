@@ -965,9 +965,9 @@ size = 8
 note = "Type tag, XMT index, and the `node_id:u32` at record offset +4 (§5.1 states `Types carrying 'node_id:u32' place it at record offset '+4'`)."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "14 => 39,"
-note = "The parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly."
 
 [[record]]
 name = "edge_node"
@@ -1046,9 +1046,9 @@ size = 8
 note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "16 => 32,"
-note = "The parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly."
 
 [[record]]
 name = "fin_node"
@@ -1135,9 +1135,9 @@ size = 4
 note = "Type tag and XMT index. FIN carries no `node_id`, so its field block starts at +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "17 => 23,"
-note = "The parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly."
 
 [[record]]
 name = "vertex_node"
@@ -1202,9 +1202,9 @@ size = 8
 note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "18 => 28,"
-note = "The parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly."
 
 [[record]]
 name = "loop_node"
@@ -1248,9 +1248,9 @@ size = 8
 note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "15 => 16,"
-note = "The parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly."
 
 [[record]]
 name = "shell_node"
@@ -1329,9 +1329,9 @@ size = 4
 note = "Type tag and XMT index; the spec's field list starts at the `node_id` at +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "12 | 13 => 24,"
-note = "The parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly."
 
 [[record]]
 name = "point_node"
@@ -1382,9 +1382,9 @@ size = 8
 note = "Type tag, XMT index, and the `node_id:u32` at record offset +4."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "29 => 40,"
-note = "The parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly."
 
 # --- §6.1 Analytic payloads ------------------------------------------------
 
@@ -1417,9 +1417,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x1e, 67),  // line"
-note = "The parser pairs tag 0x1e with the 67-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "30 => 67,"
+note = "The shared framing parser's type 30 length matches the declared 67 bytes, which the field list closes exactly."
 
 [[record]]
 name = "circle_payload"
@@ -1463,9 +1463,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x1f, 99),  // circle"
-note = "The parser pairs tag 0x1f with the 99-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "31 => 99,"
+note = "The shared framing parser's type 31 length matches the declared 99 bytes, which the field list closes exactly."
 
 [[record]]
 name = "ellipse_payload"
@@ -1516,9 +1516,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x20, 107), // ellipse"
-note = "The parser pairs tag 0x20 with the 107-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "32 => 107,"
+note = "The shared framing parser's type 32 length matches the declared 107 bytes, which the field list closes exactly."
 
 [[record]]
 name = "plane_payload"
@@ -1555,9 +1555,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x32, 91),  // plane"
-note = "The parser pairs tag 0x32 with the 91-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "50 => 91,"
+note = "The shared framing parser's type 50 length matches the declared 91 bytes, which the field list closes exactly."
 
 [[record]]
 name = "cylinder_payload"
@@ -1601,9 +1601,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x33, 99),  // cylinder"
-note = "The parser pairs tag 0x33 with the 99-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "51 => 99,"
+note = "The shared framing parser's type 51 length matches the declared 99 bytes, which the field list closes exactly."
 
 [[record]]
 name = "cone_payload"
@@ -1661,9 +1661,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x34, 115), // cone"
-note = "The parser pairs tag 0x34 with the 115-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "52 => 115,"
+note = "The shared framing parser's type 52 length matches the declared 115 bytes, which the field list closes exactly."
 
 [[record]]
 name = "sphere_payload"
@@ -1708,9 +1708,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x35, 99),  // sphere"
-note = "The parser pairs tag 0x35 with the 99-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "53 => 99,"
+note = "The shared framing parser's type 53 length matches the declared 99 bytes, which the field list closes exactly."
 
 [[record]]
 name = "torus_payload"
@@ -1761,9 +1761,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/geometry.rs"
-contains = "(0x36, 107), // torus"
-note = "The parser pairs tag 0x36 with the 107-byte record length this table closes."
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
+contains = "54 => 107,"
+note = "The shared framing parser's type 54 length matches the declared 107 bytes, which the field list closes exactly."
 
 # --- §6.1 / §6.4 Derived carriers ------------------------------------------
 
@@ -1810,9 +1810,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "60 => 31,"
-note = "The parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly."
 
 [[record]]
 name = "trimmed_curve_payload"
@@ -1864,9 +1864,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "133 => 85,"
-note = "The parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly."
 
 [[record]]
 name = "sp_curve_payload"
@@ -1910,9 +1910,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "137 => 33,"
-note = "The parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly."
+note = "The shared framing parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly."
 
 [[record]]
 name = "intersection_type_38"
@@ -1971,9 +1971,9 @@ size = 19
 note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sense +18`."
 
 [[record.code]]
-path = "crates/cadmpeg-codec-nx/src/topology.rs"
+path = "crates/cadmpeg-codec-nx/src/framing.rs"
 contains = "38 => 31,"
-note = "The parser's fixed length for type 38, which §4.1 does not state."
+note = "The shared framing parser's fixed length for type 38, which §4.1 does not state."
 
 [[record]]
 name = "chart_s_preamble"

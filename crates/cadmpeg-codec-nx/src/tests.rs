@@ -669,7 +669,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [0.0, 0.0, 0.0]);
 
-    assert!(crate::geometry::points(&stream).is_empty());
+    assert_eq!(crate::geometry::points(&stream).len(), 1);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
@@ -8161,27 +8161,28 @@ fn decode_tracks_geometry_envelope_escape_shift() {
 }
 
 #[test]
-fn cylinder_gate_rejects_denormal_radius() {
-    // A coincidental byte alignment can present a unit axis and a model-scale
-    // origin alongside a denormal (near-zero) double at the radius slot; the radius
-    // floor must reject it rather than emit a fabricated zero-radius cylinder.
+fn analytic_scanner_accepts_positive_subnormal_radius() {
     let mut cy = record(0x33, 99);
+    put_ref(&mut cy, 2, 2);
+    cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.003_175, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cy, 67, f64::from_bits(1)); // smallest positive subnormal
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
-    assert!(crate::geometry::surfaces(&cy).is_empty());
+    assert_eq!(crate::geometry::surfaces(&cy).len(), 1);
 }
 
 #[test]
 fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     let mut cylinder = record(0x33, 99);
+    put_ref(&mut cylinder, 2, 2);
+    cylinder[18] = b'+';
     put_vec3(&mut cylinder, 19, [1_001.0, 0.0, 0.0]);
     put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cylinder, 67, f64::from_bits(1));
     put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
 
-    assert!(crate::geometry::surfaces(&cylinder).is_empty());
+    assert_eq!(crate::geometry::surfaces(&cylinder).len(), 1);
     let geometry =
         crate::geometry::decode_surface_record(&cylinder, 0x33, 0).expect("graph-owned cylinder");
     let SurfaceGeometry::Cylinder { origin, radius, .. } = geometry else {
@@ -8197,6 +8198,8 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
 #[test]
 fn ellipse_requires_ordered_serialized_radii() {
     let mut ellipse = record(0x20, 107);
+    put_ref(&mut ellipse, 2, 2);
+    ellipse[18] = b'+';
     put_vec3(&mut ellipse, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut ellipse, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut ellipse, 67, [1.0, 0.0, 0.0]);
@@ -8219,7 +8222,7 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
         .expect("point record");
     put_vec3(&mut stream, point + 16, [1_001.0, f64::from_bits(1), 0.0]);
 
-    assert!(crate::geometry::points(&stream).is_empty());
+    assert_eq!(crate::geometry::points(&stream).len(), 1);
     let graph = crate::topology::Graph::parse(&stream);
     assert_eq!(
         graph
@@ -8247,6 +8250,8 @@ fn decoded_tolerance_has_no_model_magnitude_limit() {
 #[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     let mut plane = record(0x32, 91);
+    put_ref(&mut plane, 2, 2);
+    plane[18] = b'+';
     put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut plane, 67, [0.0, 0.0, 1.0]);
@@ -8257,8 +8262,30 @@ fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
 }
 
 #[test]
+fn analytic_scanner_does_not_rescan_a_complete_invalid_frame() {
+    let mut stream = vec![0; 91];
+    stream[1] = 0x32;
+    put_ref(&mut stream, 2, 2);
+    stream[18] = b'+';
+
+    // A valid LINE-looking record begins inside the complete PLANE frame. The
+    // outer plane remains invalid because its normal reads the line origin.
+    stream[24] = 0;
+    stream[25] = 0x1e;
+    put_ref(&mut stream, 26, 3);
+    stream[42] = b'+';
+    put_vec3(&mut stream, 43, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 67, [1.0, 0.0, 0.0]);
+
+    assert!(crate::geometry::surfaces(&stream).is_empty());
+    assert!(crate::geometry::curves(&stream).is_empty());
+}
+
+#[test]
 fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
     let mut cone = record(0x34, 115);
+    put_ref(&mut cone, 2, 2);
+    cone[18] = b'+';
     put_vec3(&mut cone, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cone, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cone, 67, 0.0);
@@ -8276,44 +8303,70 @@ fn cone_gate_rejects_nonfinite_or_degenerate_half_angle() {
 
 #[test]
 fn analytic_scanners_include_extended_reference_shifts_in_record_ownership() {
-    let mut surfaces = vec![0; 182];
+    let mut surfaces = vec![0; 184];
     surfaces[1] = 0x32;
+    surfaces[2..6].copy_from_slice(&encoded_xmt(32_768));
+    surfaces[20] = b'+';
     put_vec3(&mut surfaces, 21, [0.0, 0.0, 0.0]);
     put_vec3(&mut surfaces, 45, [0.0, 0.0, 1.0]);
     put_vec3(&mut surfaces, 69, [1.0, 0.0, 0.0]);
-    surfaces[91] = 0;
-    surfaces[92] = 0x32;
-    put_vec3(&mut surfaces, 110, [0.0, 0.0, 0.0]);
-    put_vec3(&mut surfaces, 134, [0.0, 0.0, 1.0]);
-    put_vec3(&mut surfaces, 158, [1.0, 0.0, 0.0]);
-    assert_eq!(crate::geometry::surfaces(&surfaces).len(), 1);
+    surfaces[93] = 0;
+    surfaces[94] = 0x32;
+    put_ref(&mut surfaces, 95, 3);
+    surfaces[111] = b'+';
+    put_vec3(&mut surfaces, 112, [0.0, 0.0, 0.0]);
+    put_vec3(&mut surfaces, 136, [0.0, 0.0, 1.0]);
+    put_vec3(&mut surfaces, 160, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::surfaces(&surfaces).len(), 2);
 
-    let mut curves = vec![0; 134];
+    let mut curves = vec![0; 136];
     curves[1] = 0x1e;
+    curves[2..6].copy_from_slice(&encoded_xmt(32_768));
+    curves[20] = b'+';
     put_vec3(&mut curves, 21, [0.0, 0.0, 0.0]);
     put_vec3(&mut curves, 45, [1.0, 0.0, 0.0]);
-    curves[67] = 0;
-    curves[68] = 0x1e;
-    put_vec3(&mut curves, 86, [0.0, 0.0, 0.0]);
-    put_vec3(&mut curves, 110, [1.0, 0.0, 0.0]);
-    assert_eq!(crate::geometry::curves(&curves).len(), 1);
+    curves[69] = 0;
+    curves[70] = 0x1e;
+    put_ref(&mut curves, 71, 3);
+    curves[87] = b'+';
+    put_vec3(&mut curves, 88, [0.0, 0.0, 0.0]);
+    put_vec3(&mut curves, 112, [1.0, 0.0, 0.0]);
+    assert_eq!(crate::geometry::curves(&curves).len(), 2);
+}
+
+#[test]
+fn analytic_scanner_resolves_envelope_escape_framing() {
+    let mut plane = vec![0; 92];
+    plane[1] = 0x32;
+    plane[2] = 0xff;
+    put_ref(&mut plane, 3, 2);
+    plane[19] = b'+';
+    put_vec3(&mut plane, 20, [0.0, 0.0, 0.0]);
+    put_vec3(&mut plane, 44, [0.0, 0.0, 1.0]);
+    put_vec3(&mut plane, 68, [1.0, 0.0, 0.0]);
+
+    assert_eq!(crate::geometry::surfaces(&plane).len(), 1);
 }
 
 #[test]
 fn analytic_record_ownership_is_shared_across_carrier_families() {
     let mut stream = vec![0; 158];
     stream[1] = 0x1e;
-    put_vec3(&mut stream, 21, [0.0, 0.0, 0.0]);
-    put_vec3(&mut stream, 45, [1.0, 0.0, 0.0]);
+    put_ref(&mut stream, 2, 2);
+    stream[18] = b'+';
+    put_vec3(&mut stream, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut stream, 43, [1.0, 0.0, 0.0]);
 
     stream[67] = 0;
     stream[68] = 0x32;
+    put_ref(&mut stream, 69, 3);
+    stream[85] = b'+';
     put_vec3(&mut stream, 86, [0.0, 0.0, 0.0]);
     put_vec3(&mut stream, 110, [0.0, 0.0, 1.0]);
     put_vec3(&mut stream, 134, [1.0, 0.0, 0.0]);
 
     assert_eq!(crate::geometry::curves(&stream).len(), 1);
-    assert!(crate::geometry::surfaces(&stream).is_empty());
+    assert_eq!(crate::geometry::surfaces(&stream).len(), 1);
     assert!(crate::geometry::points(&stream).is_empty());
 }
 

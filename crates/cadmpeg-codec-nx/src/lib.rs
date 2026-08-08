@@ -75,6 +75,7 @@ pub mod container;
 pub mod decode;
 pub mod deltas;
 pub mod evaluation;
+mod framing;
 pub mod geometry;
 pub mod intersection;
 mod jt;

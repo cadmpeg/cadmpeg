@@ -301,7 +301,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 14 matches the declared 39 bytes, which the field list closes exactly.
 
 ## `edge_node`
 
@@ -325,7 +325,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 16 matches the declared 32 bytes, which the field list closes exactly.
 
 ## `fin_node`
 
@@ -352,7 +352,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 17 matches the declared 23 bytes, which the field list closes exactly.
 
 ## `vertex_node`
 
@@ -374,7 +374,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 18 matches the declared 28 bytes, which the field list closes exactly.
 
 ## `loop_node`
 
@@ -393,7 +393,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 15 matches the declared 16 bytes, which the field list closes exactly.
 
 ## `shell_node`
 
@@ -417,7 +417,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 13 matches the declared 24 bytes, which the field list closes exactly.
 
 ## `point_node`
 
@@ -437,7 +437,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 29 matches the declared 40 bytes, which the field list closes exactly.
 
 ## `line_payload`
 
@@ -456,7 +456,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x1e with the 67-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 30 length matches the declared 67 bytes, which the field list closes exactly.
 
 ## `circle_payload`
 
@@ -475,7 +475,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x1f with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 31 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `ellipse_payload`
 
@@ -495,7 +495,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x20 with the 107-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 32 length matches the declared 107 bytes, which the field list closes exactly.
 
 ## `plane_payload`
 
@@ -513,7 +513,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x32 with the 91-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 50 length matches the declared 91 bytes, which the field list closes exactly.
 
 ## `cylinder_payload`
 
@@ -532,7 +532,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x33 with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 51 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `cone_payload`
 
@@ -553,7 +553,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x34 with the 115-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 52 length matches the declared 115 bytes, which the field list closes exactly.
 
 ## `sphere_payload`
 
@@ -574,7 +574,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x35 with the 99-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 53 length matches the declared 99 bytes, which the field list closes exactly.
 
 ## `torus_payload`
 
@@ -594,7 +594,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/geometry.rs` — The parser pairs tag 0x36 with the 107-byte record length this table closes.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's type 54 length matches the declared 107 bytes, which the field list closes exactly.
 
 ## `offset_surf_payload`
 
@@ -615,7 +615,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 60 matches the declared 31 bytes, which the field list closes exactly.
 
 ## `trimmed_curve_payload`
 
@@ -637,7 +637,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 133 matches the declared 85 bytes, which the field list closes exactly.
 
 ## `sp_curve_payload`
 
@@ -656,7 +656,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 137 matches the declared 33 bytes, which the field list closes exactly.
 
 ## `intersection_type_38`
 
@@ -679,7 +679,7 @@ Unstated regions:
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-nx/src/topology.rs` — The parser's fixed length for type 38, which §4.1 does not state.
+- `crates/cadmpeg-codec-nx/src/framing.rs` — The shared framing parser's fixed length for type 38, which §4.1 does not state.
 
 ## `chart_s_preamble`
 

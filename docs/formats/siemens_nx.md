@@ -579,7 +579,7 @@ Lengths are logical, before escape/large-index shifts. Each code is a Parasolid 
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
 |   32 | ELLIPSE |    107 |      |               |            |
 
-Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and either zero or normal; a candidate containing a subnormal coordinate is a payload coincidence.
+Types carrying `node_id:u32` place it at record offset `+4` (after shifts). FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
 Type 38 is the XT `INTERSECTION` node. Delta-stream `0x5a` records use the `intersection_data` layout.
 
@@ -842,7 +842,19 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 
 **Common header** for analytic curve/surface types 30–32, 50–54: `attributes +8`, `owner +10`, `next +12`, `previous +14`, `group +16`, `sense +18`.
 
-Any fixed record may place an envelope escape byte `ff` between its type and xmt fields. The xmt begins one byte later and all logical payload offsets shift by one. When the first xmt byte is also `ff`, both the escaped and unescaped large-index forms are structurally possible; the complete family field grammar disambiguates them.
+Fixed-record lengths are logical lengths before framing bytes. A frame begins at
+the type tag, resolves an optional envelope escape byte `ff`, reads the compact
+or extended xmt, and then parses the complete family field grammar. Each
+extended xmt in a field that the family grammar admits inserts two bytes before
+the remaining logical fields and extends the frame by two bytes. The complete
+frame therefore establishes every shifted field offset and the first byte after
+the record.
+
+Any fixed record may place an envelope escape byte `ff` between its type and xmt
+fields. The xmt begins one byte later and all logical payload offsets shift by
+one. When the first xmt byte is also `ff`, both the escaped and unescaped
+large-index forms are structurally possible; the complete family field grammar
+and the following frame boundary disambiguate them.
 
 When both readings are complete, exactly one reading must end at the stream
 boundary or immediately before a complete recognized fixed-record tag. If both
@@ -975,7 +987,7 @@ Payload offsets are relative to the record's type tag, after the common header (
 
 Every analytic normal or axis and its x-axis are finite unit vectors with an absolute dot product below `1e-6`. A non-unit or non-orthogonal frame rejects the analytic carrier.
 
-Each extended reference in the five-reference common header shifts the analytic payload and record end by two bytes. The shifts accumulate across the header. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
+Each extended reference in the five-reference common header shifts the analytic payload and record end by two bytes. The shifts accumulate across the header. Analytic scanner candidates use this same complete fixed-record frame as graph-owned carriers; a candidate is not admitted from a payload field shift alone. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
 
 Validity gates: CIRCLE, ELLIPSE, CYLINDER, SPHERE, and TORUS radii are positive. ELLIPSE has `major >= minor`. CONE reference radius is nonnegative and has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has a unit axis; a horn torus has `major == minor`.
 

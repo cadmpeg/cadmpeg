@@ -242,14 +242,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
 
-### PS-30. Fixed-record field shift selection
-
-**Question.** Which field establishes the escape and large-index shift of a fixed analytic record, and what bounds a record that the ownership graph does not own?
-
-**Known.** `siemens_nx.md` §4.1 "Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node ty" defines the tags and the record lengths before escape and large-index shifts. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
-
-**Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
-
 ### PS-31. `OFFSET_SURF` discriminator and true-offset roles
 
 **Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?

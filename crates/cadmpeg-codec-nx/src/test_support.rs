@@ -851,11 +851,13 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // POINT (type 29): xyz at +16, metres.
     let mut pt = record(0x1d, 40);
+    put_ref(&mut pt, 2, 2);
     put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]); // 62.5, 0, 12.7 mm
     s.extend_from_slice(&pt);
 
     // PLANE (type 50): origin +19, normal +43, x_axis +67.
     let mut pl = record(0x32, 91);
+    put_ref(&mut pl, 2, 3);
     pl[18] = b'+';
     put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]); // 76.2 mm
     put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
@@ -864,6 +866,7 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // CYLINDER (type 51): origin +19, axis +43, radius +67, x_axis +75.
     let mut cy = record(0x33, 99);
+    put_ref(&mut cy, 2, 4);
     cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
@@ -873,6 +876,7 @@ pub(crate) fn partition_stream() -> Vec<u8> {
 
     // LINE (type 30): point +19, direction +43.
     let mut ln = record(0x1e, 67);
+    put_ref(&mut ln, 2, 5);
     ln[18] = b'+';
     put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
     put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
