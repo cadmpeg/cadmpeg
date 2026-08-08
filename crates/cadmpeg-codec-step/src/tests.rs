@@ -134,7 +134,11 @@ fn parser_enforces_the_part21_header_contract() {
             "FILE_NAME has invalid parameters",
         ),
         (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','ap242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "FILE_SCHEMA has invalid or duplicate schema identifiers",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP24\\X\\32'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "FILE_SCHEMA has invalid or duplicate schema identifiers",
         ),
         (

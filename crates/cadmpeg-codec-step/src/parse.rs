@@ -919,12 +919,20 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
         || !identifiers
             .iter()
             .all(|value| matches!(value, Value::String(_)))
-        || identifiers
-            .iter()
-            .enumerate()
-            .any(|(index, value)| identifiers[..index].contains(value))
     {
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+    }
+    let mut normalized_identifiers = BTreeSet::new();
+    for value in identifiers {
+        let Value::String(bytes) = value else {
+            unreachable!("FILE_SCHEMA identifiers were checked as strings");
+        };
+        let Ok(identifier) = crate::strings::decode(bytes) else {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        };
+        if !normalized_identifiers.insert(identifier.to_ascii_uppercase()) {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        }
     }
     Ok(implementation_level)
 }
