@@ -1102,6 +1102,15 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     {
         return Err("FILE_DESCRIPTION has invalid string encoding");
     }
+    if !string_list_within_limit(description.first(), implementation_level, 256)
+        || !string_within_limit(
+            description.get(1).expect("FILE_DESCRIPTION has two values"),
+            implementation_level,
+            256,
+        )
+    {
+        return Err("FILE_DESCRIPTION contains a string longer than 256 characters");
+    }
 
     let file_name = &header[1].parameters;
     // Producer metadata after the author and organization lists may be unset.
@@ -1139,6 +1148,42 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     {
         return Err("FILE_NAME has invalid string encoding");
     }
+    if !string_within_limit(
+        file_name.first().expect("FILE_NAME has seven values"),
+        implementation_level,
+        256,
+    ) || !string_within_limit(
+        file_name.get(1).expect("FILE_NAME has seven values"),
+        implementation_level,
+        256,
+    ) || !string_list_within_limit(file_name.get(2), implementation_level, 256)
+        || !string_list_within_limit(file_name.get(3), implementation_level, 256)
+        || !string_or_omitted_within_limit(
+            file_name.get(4).expect("FILE_NAME has seven values"),
+            implementation_level,
+            256,
+        )
+        || !string_or_omitted_within_limit(
+            file_name.get(5).expect("FILE_NAME has seven values"),
+            implementation_level,
+            256,
+        )
+        || !string_or_omitted_within_limit(
+            file_name.get(6).expect("FILE_NAME has seven values"),
+            implementation_level,
+            256,
+        )
+    {
+        return Err("FILE_NAME contains a string longer than 256 characters");
+    }
+    let time_stamp = decoded_string(
+        file_name.get(1).expect("FILE_NAME has seven values"),
+        implementation_level,
+    )
+    .expect("FILE_NAME timestamp was checked as decodable");
+    if !time_stamp.is_empty() && !valid_timestamp_text(&time_stamp) {
+        return Err("FILE_NAME has an invalid timestamp");
+    }
 
     let schema = &header[2].parameters;
     let Some(Value::List(identifiers)) = schema.first() else {
@@ -1160,6 +1205,9 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
         let Ok(identifier) = decode_string(bytes, implementation_level) else {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         };
+        if !valid_schema_identifier(&identifier) {
+            return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+        }
         if !normalized_identifiers.insert(identifier.to_ascii_uppercase()) {
             return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
         }
@@ -1263,8 +1311,8 @@ fn valid_schema_population(
                 return false;
             };
             decoded_bytes(address, implementation_level).is_some()
-                && is_decodable_string_or_omitted(time_stamp, implementation_level)
-                && is_decodable_string_or_omitted(digest, implementation_level)
+                && valid_optional_timestamp(time_stamp, implementation_level)
+                && valid_optional_base64(digest, implementation_level)
         })
 }
 
@@ -1280,7 +1328,9 @@ fn valid_file_population(
     let Some(schema) = decoded_bytes(schema, implementation_level) else {
         return false;
     };
-    if decoded_bytes(determination, implementation_level).is_none() {
+    if !valid_schema_identifier(&schema)
+        || decoded_bytes(determination, implementation_level).is_none()
+    {
         return false;
     }
     if !schema_identifier_matches(schema_identifiers, &schema) {
@@ -1369,6 +1419,204 @@ fn is_decodable_string_or_omitted(
     implementation_level: ImplementationLevel,
 ) -> bool {
     matches!(value, Value::Omitted) || is_decodable_string(value, implementation_level)
+}
+
+fn string_within_limit(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    limit: usize,
+) -> bool {
+    decoded_string(value, implementation_level).is_some_and(|value| value.chars().count() <= limit)
+}
+
+fn string_list_within_limit(
+    value: Option<&Value>,
+    implementation_level: ImplementationLevel,
+    limit: usize,
+) -> bool {
+    matches!(
+        value,
+        Some(Value::List(values))
+            if !values.is_empty()
+                && values.iter().all(|value| {
+                    string_within_limit(value, implementation_level, limit)
+                })
+    )
+}
+
+fn string_or_omitted_within_limit(
+    value: &Value,
+    implementation_level: ImplementationLevel,
+    limit: usize,
+) -> bool {
+    matches!(value, Value::Omitted) || string_within_limit(value, implementation_level, limit)
+}
+
+fn valid_optional_timestamp(value: &Value, implementation_level: ImplementationLevel) -> bool {
+    match value {
+        Value::Omitted => true,
+        Value::String(_) => decoded_string(value, implementation_level)
+            .is_some_and(|value| valid_timestamp_text(&value)),
+        _ => false,
+    }
+}
+
+fn valid_timestamp_text(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 19
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+        || !all_ascii_digits(&bytes[0..4])
+        || !all_ascii_digits(&bytes[5..7])
+        || !all_ascii_digits(&bytes[8..10])
+        || !all_ascii_digits(&bytes[11..13])
+        || !all_ascii_digits(&bytes[14..16])
+        || !all_ascii_digits(&bytes[17..19])
+    {
+        return false;
+    }
+    let year = parse_ascii_digits(&bytes[0..4]);
+    let month = parse_ascii_digits(&bytes[5..7]);
+    let day = parse_ascii_digits(&bytes[8..10]);
+    let hour = parse_ascii_digits(&bytes[11..13]);
+    let minute = parse_ascii_digits(&bytes[14..16]);
+    let second = parse_ascii_digits(&bytes[17..19]);
+    let Some(days) = days_in_month(year, month) else {
+        return false;
+    };
+    if day == 0
+        || day > days
+        || minute > 59
+        || second > 60
+        || hour > 24
+        || (hour == 24 && (minute != 0 || second != 0))
+    {
+        return false;
+    }
+
+    let mut at = 19;
+    if matches!(bytes.get(at), Some(b'.' | b',')) {
+        at += 1;
+        let fraction_start = at;
+        while bytes.get(at).is_some_and(u8::is_ascii_digit) {
+            at += 1;
+        }
+        if at == fraction_start {
+            return false;
+        }
+    }
+    match bytes.get(at).copied() {
+        None => true,
+        Some(b'Z') => at + 1 == bytes.len(),
+        Some(b'+' | b'-') => {
+            at += 1;
+            at + 5 == bytes.len()
+                && all_ascii_digits(&bytes[at..at + 2])
+                && bytes[at + 2] == b':'
+                && all_ascii_digits(&bytes[at + 3..at + 5])
+                && parse_ascii_digits(&bytes[at..at + 2]) <= 23
+                && parse_ascii_digits(&bytes[at + 3..at + 5]) <= 59
+        }
+        Some(_) => false,
+    }
+}
+
+fn days_in_month(year: usize, month: usize) -> Option<usize> {
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(400) || (year.is_multiple_of(4) && !year.is_multiple_of(100)) => {
+            29
+        }
+        2 => 28,
+        _ => return None,
+    };
+    Some(days)
+}
+
+fn all_ascii_digits(bytes: &[u8]) -> bool {
+    !bytes.is_empty() && bytes.iter().all(u8::is_ascii_digit)
+}
+
+fn parse_ascii_digits(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .fold(0, |value, byte| value * 10 + usize::from(byte - b'0'))
+}
+
+fn valid_optional_base64(value: &Value, implementation_level: ImplementationLevel) -> bool {
+    match value {
+        Value::Omitted => true,
+        Value::String(_) => decoded_string(value, implementation_level)
+            .is_some_and(|value| valid_base64_text(value.as_bytes())),
+        _ => false,
+    }
+}
+
+fn valid_base64_text(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+    let mut quantum_len = 0;
+    let mut padding = 0;
+    let mut finished = false;
+    for &byte in bytes {
+        let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
+        if finished || (padding != 0 && is_alphabet) {
+            return false;
+        }
+        if is_alphabet {
+            quantum_len += 1;
+        } else if byte == b'=' {
+            if quantum_len < 2 || padding == 2 {
+                return false;
+            }
+            padding += 1;
+            quantum_len += 1;
+        } else {
+            return false;
+        }
+        if quantum_len == 4 {
+            finished = padding != 0;
+            quantum_len = 0;
+            padding = 0;
+        }
+    }
+    quantum_len == 0
+}
+
+fn valid_schema_identifier(identifier: &str) -> bool {
+    let identifier = identifier.to_ascii_uppercase();
+    if identifier.is_empty() || identifier.chars().count() > 1024 {
+        return false;
+    }
+    let (name, object_identifier) = match identifier.split_once('{') {
+        Some((name, object_identifier)) => {
+            let Some(object_identifier) = object_identifier.strip_suffix('}') else {
+                return false;
+            };
+            (name.trim_end(), Some(object_identifier))
+        }
+        None => (identifier.as_str(), None),
+    };
+    if name.is_empty()
+        || name.trim() != name
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return false;
+    }
+    object_identifier.is_none_or(|value| {
+        let mut components = value.split_whitespace();
+        components.next().is_some()
+            && components.all(|component| {
+                !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    })
 }
 
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
@@ -1470,7 +1718,9 @@ fn valid_data_parameters(
     }
     let schema_name = decode_string(schema_name, implementation_level)
         .map_err(|_| "DATA section parameters contain an invalid string")?;
-    if !schema_identifier_matches(schema_identifiers, &schema_name) {
+    if !valid_schema_identifier(&schema_name)
+        || !schema_identifier_matches(schema_identifiers, &schema_name)
+    {
         return Err("DATA section schema is not listed in FILE_SCHEMA");
     }
     Ok(())

@@ -230,6 +230,65 @@ fn parser_enforces_the_part21_header_contract() {
 }
 
 #[test]
+fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
+    fn source(file_name: &str, schema: &str, extra: &str) -> String {
+        format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME({file_name});FILE_SCHEMA(({schema}));{extra}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        )
+    }
+
+    let valid = source(
+        "'name','2026-02-28T23:59:59.123+02:30',('author'),('organization'),'preprocessor','',''",
+        "'AP242 { 1 0 10303 442 3 1 4 }'",
+        "SCHEMA_POPULATION((('part.step','2026-02-28T00:00:00Z','YWJjZA==')));",
+    );
+    crate::parse::parse(valid.as_bytes()).expect("valid header metadata");
+
+    let invalid = [
+        source(
+            "'name','2026-02-30T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { 1 invalid }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242 { }'",
+            "",
+        ),
+        source(
+            "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+            "'AP242'",
+            "SCHEMA_POPULATION((('part.step','2026-02-28T00:00:00Z','not*base64')));",
+        ),
+    ];
+    for source in invalid {
+        assert!(crate::parse::parse(source.as_bytes()).is_err());
+    }
+
+    let long_description = "x".repeat(257);
+    let long_description_source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('{long_description}'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+    );
+    assert!(crate::parse::parse(long_description_source.as_bytes()).is_err());
+
+    let long_schema = "A".repeat(1025);
+    let long_schema_source = source(
+        "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
+        &format!("'{long_schema}'"),
+        "",
+    );
+    assert!(crate::parse::parse(long_schema_source.as_bytes()).is_err());
+
+    let malformed_data_schema = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('main',('AP242 { 1 invalid }'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    assert!(crate::parse::parse(malformed_data_schema.as_bytes()).is_err());
+}
+
+#[test]
 fn parser_retains_unset_file_name_tail_metadata() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'',$,$);FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("unset producer metadata");

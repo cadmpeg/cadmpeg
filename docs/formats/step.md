@@ -184,6 +184,15 @@ repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
 supplies one or more unique string identifiers. The first identifier governs
 the application protocol and edition; later identifiers do not override it.
+`FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
+effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
+uses the complete extended calendar-date and time-of-day form
+`YYYY-MM-DDTHH:MM:SS`, with an optional fractional second and an optional `Z`
+or signed `HH:MM` time-zone offset. Each `FILE_SCHEMA` identifier has an
+effective length of at most 1024 characters. Its schema name is a non-empty
+ASCII identifier containing uppercase letters, digits, and underscores after
+case normalization. Its optional object identifier is a non-empty sequence of
+unsigned decimal components enclosed in braces.
 Each parameterized DATA section names one schema from this list. The schema
 name compares with the identifier's schema-name portion when the identifier
 has an object identifier.
@@ -207,7 +216,9 @@ After `FILE_SCHEMA`, the header may contain at most one `SCHEMA_POPULATION`,
 zero or more `FILE_POPULATION` entities, and `SECTION_LANGUAGE` and
 `SECTION_CONTEXT` entities with unique section selectors. A
 `SCHEMA_POPULATION` contains one or more triples of address string, optional
-timestamp string, and optional Base64 digest string. A `FILE_POPULATION`
+timestamp string, and optional non-empty Base64 digest string. A timestamp in
+this triple uses the same complete timestamp form as `FILE_NAME`. A
+`FILE_POPULATION`
 contains a governing schema name, a determination-method string, and either
 `$` or a nonempty set of DATA section names. `SECTION_LANGUAGE` contains an
 optional DATA section name and a three-letter language code. `SECTION_CONTEXT`
