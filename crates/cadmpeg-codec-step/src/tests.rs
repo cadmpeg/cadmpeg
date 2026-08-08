@@ -1356,7 +1356,7 @@ fn free_surface_curve_keeps_its_three_d_basis_reachable() {
         .expect("fixture is UTF-8")
         .replace(
             "ENDSEC;\nEND-ISO-10303-21;",
-            "#80=CARTESIAN_POINT('',(20.,0.,0.));\n#81=DIRECTION('',(1.,0.,0.));\n#82=VECTOR('',#81,1.);\n#83=LINE('',#80,#82);\n#84=SURFACE_CURVE('',#83,(#56),.PCURVE_S1.);\n#85=GEOMETRIC_SET('free surface curve',(#84));\n#86=OUTER_BOUNDARY_CURVE('',(#84),.F.);\n#87=CURVE_BOUNDED_SURFACE('free bounded surface',#28,(#86),.F.);\nENDSEC;\nEND-ISO-10303-21;",
+            "#80=CARTESIAN_POINT('',(20.,0.,0.));\n#81=DIRECTION('',(1.,0.,0.));\n#82=VECTOR('',#81,1.);\n#83=LINE('',#80,#82);\n#84=SURFACE_CURVE('',#83,(#56),.PCURVE_S1.);\n#85=GEOMETRIC_SET('free surface curve',(#84));\n#86=OUTER_BOUNDARY_CURVE('',(#84),.F.);\n#87=CURVE_BOUNDED_SURFACE('free bounded surface',#28,(#86),.F.);\n#88=SURFACE_CURVE('',#83,(#28),.CURVE_3D.);\nENDSEC;\nEND-ISO-10303-21;",
         );
     let result = StepCodec::default()
         .decode(
@@ -1378,6 +1378,20 @@ fn free_surface_curve_keeps_its_three_d_basis_reachable() {
             .as_ref()
             .map(|source| source.object_id.as_str()),
         Some("#84")
+    );
+    let support = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "step:data:surface#28")
+        .expect("surface-curve support");
+    assert_eq!(
+        support
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#88")
     );
     let boundary = result
         .ir
@@ -1474,6 +1488,35 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .all(|edge| edge.curve.is_none()));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn styled_free_curve_is_a_reachable_source_carrier() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));\
+         #2=CARTESIAN_POINT('',(1.,0.,0.));\
+         #7=POLYLINE('',(#1,#2));\
+         #10=STYLED_ITEM('',(),#7);",
+    );
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#7")
+        .expect("styled polyline carrier");
+    assert_eq!(
+        curve
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#10")
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:curve#7")
+    }));
 }
 
 #[test]

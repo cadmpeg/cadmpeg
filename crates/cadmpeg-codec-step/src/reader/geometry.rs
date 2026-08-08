@@ -1996,6 +1996,24 @@ fn surface_curve_basis(record: &RawRecord) -> Option<u64> {
         .and_then(|partial| partial.parameters.iter().find_map(Value::reference))
 }
 
+fn surface_curve_associated_geometry(record: &RawRecord) -> Vec<u64> {
+    record
+        .partials
+        .iter()
+        .find(|partial| {
+            matches!(
+                partial.name.as_str(),
+                "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+            )
+        })
+        .and_then(|partial| partial.parameters.get(2))
+        .and_then(Value::list)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
+        .collect()
+}
+
 pub(super) struct OwnedCarriers {
     pub(super) curves: HashSet<usize>,
     pub(super) surfaces: HashSet<usize>,
@@ -2165,13 +2183,14 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
     }
 }
 
-/// Associate each surface-curve wrapper with its 3D basis carrier.
+/// Associate each surface-curve wrapper with its 3D basis and support carriers.
 ///
 /// A `SURFACE_CURVE`, `SEAM_CURVE`, or `INTERSECTION_CURVE` is a source
-/// relationship around a separate 3D curve. Topology normally reaches the
-/// basis through the edge, but a free representation can retain only the
-/// wrapper. The IR has no wrapper arena, so the native wrapper becomes the
-/// source owner of the basis carrier.
+/// relationship around a separate 3D curve and one or more associated
+/// surfaces or pcurves. Topology normally reaches the basis and supports
+/// through the edge, but a free representation can retain only the wrapper.
+/// The IR has no wrapper arena, so the native wrapper becomes the source owner
+/// of every decoded carrier that it names.
 pub(super) fn associate_surface_curve_bases(
     exchange: &Exchange,
     ir: &mut CadIr,
@@ -2186,18 +2205,113 @@ pub(super) fn associate_surface_curve_bases(
         let Some(parent_index) = index.curves.get(&parent_id).copied() else {
             continue;
         };
+        let association = || SourceObjectAssociation {
+            format: "step".into(),
+            object_id: format!("#{curve_id}"),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
         ir.model.curves[parent_index]
             .source_object
-            .get_or_insert_with(|| SourceObjectAssociation {
+            .get_or_insert_with(association);
+        for support_id in surface_curve_associated_geometry(record) {
+            let Some(surface_index) = index.surfaces.get(&support_id).copied() else {
+                continue;
+            };
+            ir.model.surfaces[surface_index]
+                .source_object
+                .get_or_insert_with(association);
+        }
+    }
+}
+
+/// Associate direct and nested `STYLED_ITEM` targets with their carrier.
+///
+/// A style is a source owner even when its style list has no usable colour.
+/// The presentation decoder may therefore have no appearance binding to add,
+/// but the target is still a retained source carrier and must remain reachable.
+pub(super) fn associate_styled_item_carriers(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+    owned: &OwnedCarriers,
+) {
+    for (&style_id, style) in exchange.records.iter().filter(|(_, record)| {
+        matches!(
+            record.simple_name(),
+            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
+        )
+    }) {
+        let Some(target) = style.parameter(2).and_then(Value::reference) else {
+            continue;
+        };
+        let mut targets = BTreeSet::new();
+        collect_styled_item_targets(target, exchange, &mut BTreeSet::new(), 0, &mut targets);
+        for target in targets {
+            let association = || SourceObjectAssociation {
                 format: "step".into(),
-                object_id: format!("#{curve_id}"),
+                object_id: format!("#{style_id}"),
                 name: None,
                 color: None,
                 visible: None,
                 layer: None,
                 instance_path: Vec::new(),
-            });
+            };
+            if let Some(carrier_index) = index.curves.get(&target).copied() {
+                if !owned.curves.contains(&carrier_index) {
+                    ir.model.curves[carrier_index]
+                        .source_object
+                        .get_or_insert_with(association);
+                }
+            }
+            if let Some(carrier_index) = index.surfaces.get(&target).copied() {
+                if !owned.surfaces.contains(&carrier_index) {
+                    ir.model.surfaces[carrier_index]
+                        .source_object
+                        .get_or_insert_with(association);
+                }
+            }
+            if let Some(carrier_index) = index.points.get(&target).copied() {
+                if !owned.points.contains(&carrier_index) {
+                    ir.model.points[carrier_index]
+                        .source_object
+                        .get_or_insert_with(association);
+                }
+            }
+        }
     }
+}
+
+fn collect_styled_item_targets(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+    targets: &mut BTreeSet<u64>,
+) {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH || !active.insert(id) {
+        return;
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        active.remove(&id);
+        return;
+    };
+    if matches!(
+        record.simple_name(),
+        Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+    ) {
+        if let Some(items) = record.parameter(1).and_then(Value::list) {
+            for item in items.iter().filter_map(Value::reference) {
+                collect_styled_item_targets(item, exchange, active, depth + 1, targets);
+            }
+        }
+    } else {
+        targets.insert(id);
+    }
+    active.remove(&id);
 }
 
 /// Associate boundaries retained by a curve-bounded surface.
