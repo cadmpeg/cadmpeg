@@ -803,6 +803,7 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
     let start = ds.saturating_sub(40);
     let window = &dirbuf[start..ds + 0x50.min(dirbuf.len() - ds)];
     let mut best = String::new();
+    let mut ambiguous = false;
     let mut i = 0;
     while i + 1 < window.len() {
         let mut chars = String::new();
@@ -814,13 +815,20 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
         if chars.len() >= 3 {
             if chars.len() > best.len() {
                 best = chars;
+                ambiguous = false;
+            } else if chars.len() == best.len() && chars != best {
+                ambiguous = true;
             }
             i = j;
         } else {
             i += 1;
         }
     }
-    best
+    if ambiguous {
+        String::new()
+    } else {
+        best
+    }
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
@@ -1478,6 +1486,22 @@ mod tests {
         assert_eq!(logical_length, 8);
         assert_eq!(extents[0].flags, 0xa501_0080);
         assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn descriptor_name_withholds_tied_utf16_candidates() {
+        let mut directory = vec![0u8; 0x80];
+        for (offset, name) in [(24, b"ABC".as_slice()), (32, b"XYZ".as_slice())] {
+            for (index, byte) in name.iter().enumerate() {
+                directory[offset + index * 2] = *byte;
+            }
+        }
+        assert!(super::descriptor_name(&directory, 0x40).is_empty());
+
+        for (index, byte) in b"LONGER".iter().enumerate() {
+            directory[48 + index * 2] = *byte;
+        }
+        assert_eq!(super::descriptor_name(&directory, 0x40), "LONGER");
     }
 
     #[test]
