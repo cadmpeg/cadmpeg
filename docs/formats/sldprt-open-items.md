@@ -475,24 +475,6 @@ The tests that follow are non-empty, an even byte count, and non-blank text. No 
 
 **Need.** We must know the position to read the correct string. See the Note on CM-07: this record and `moTransRefPlaneData_c` are the two records that the decoder does not read at token end +0.
 
-### CM-12. Site identity
-
-**Question.** What identifies a site?
-
-**Known.** `sldprt.md` §3.2 "An attribute id is **not** globally unique." states that a site is one validated outer block, identified by its marker offset, and that streams in different outer blocks are distinct sites.
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/decode.rs:2008` identifies a site by the section name with the `partition` or `deltas` suffix removed:
-
-```rust
-for suffix in ["partition", "deltas"] {
-    if let Some(at) = key.rfind(suffix) { key.truncate(at); break; }
-}
-```
-
-The block offset is available on `BodyStream` through `BodyOrigin::Block` and is not used. A `Config-0-Partition` stream in one block and a `Config-0-Deltas` stream in another block become one site, so the decoder binds attribute `7` of the first to attribute `7` of the second.
-
-**Need.** We must know which identity is correct. The existence of this function is evidence that a configuration's streams occur in separate blocks; the specification states that such streams are distinct sites.
-
 ### CM-13. Primary site selection
 
 **Question.** Which field identifies the primary B-rep site when a file has more than one decodable site?

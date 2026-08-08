@@ -1720,16 +1720,13 @@ fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
 
 fn sldprt_with_partition_and_deltas(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let mut f = outer_header();
-    f.extend_from_slice(&make_block(
-        0x20,
-        "Contents/Config-0-Partition",
-        &parasolid_with_body("partition body", "SCH_SW_33103_11000", partition),
+    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", partition);
+    payload.extend(parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        deltas,
     ));
-    f.extend_from_slice(&make_block(
-        0x21,
-        "Contents/Config-0-Deltas",
-        &parasolid_with_body("deltas body", "SCH_SW_33103_11000", deltas),
-    ));
+    f.extend_from_slice(&make_block(0x20, "Contents/Config-0-Partition", &payload));
     f
 }
 

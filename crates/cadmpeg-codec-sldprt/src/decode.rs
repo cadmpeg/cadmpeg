@@ -71,6 +71,13 @@ impl BodyOrigin<'_> {
             )),
         }
     }
+
+    fn site_key(self) -> String {
+        match self {
+            Self::Block(block) => format!("block@{}", block.offset),
+            Self::Compound(stream) => format!("compound@{}", stream.directory_id),
+        }
+    }
 }
 
 struct DecodedBrep {
@@ -1887,7 +1894,7 @@ fn try_decode_brep(
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
         sites
-            .entry(site_key(&stream.origin.name()))
+            .entry(stream.origin.site_key())
             .or_default()
             .push(index);
     }
@@ -2004,17 +2011,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
-}
-
-fn site_key(name: &str) -> String {
-    let mut key = name.to_ascii_lowercase();
-    for suffix in ["partition", "deltas"] {
-        if let Some(at) = key.rfind(suffix) {
-            key.truncate(at);
-            break;
-        }
-    }
-    key.trim_end_matches(['-', '/', '_']).to_string()
 }
 
 fn build_geometry_ir(
@@ -3839,6 +3835,7 @@ mod design_loss_tests {
         spatial_sketch_constraint_has_complete_neutral_semantics,
         unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
     };
+    use crate::container::{Block, CompoundStream};
     use crate::native::SldprtNative;
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -3864,6 +3861,45 @@ mod design_loss_tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::CadIr;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn site_keys_use_outer_container_identity() {
+        let first = Block {
+            offset: 100,
+            type_id: 0,
+            comp_sz: 0,
+            uncomp_sz: 0,
+            section: Some("Contents/Config-0-Partition".into()),
+            family: "parasolid",
+            payload: Vec::new(),
+            ps_stream: None,
+            ps_streams: Vec::new(),
+            ps_stream_offsets: Vec::new(),
+        };
+        let second = Block {
+            offset: 200,
+            section: first.section.clone(),
+            ..first.clone()
+        };
+        assert_ne!(
+            super::BodyOrigin::Block(&first).site_key(),
+            super::BodyOrigin::Block(&second).site_key()
+        );
+
+        let compound = CompoundStream {
+            path: "Contents/Config-0-Partition".into(),
+            directory_id: 300,
+            start_sector: 0,
+            payload: Vec::new(),
+            decoded_payload: None,
+            ps_streams: Vec::new(),
+            ps_stream_offsets: Vec::new(),
+        };
+        assert_eq!(
+            super::BodyOrigin::Compound(&compound).site_key(),
+            "compound@300"
+        );
+    }
 
     #[test]
     fn sketch_constraint_completeness_distinguishes_neutral_and_native_semantics() {

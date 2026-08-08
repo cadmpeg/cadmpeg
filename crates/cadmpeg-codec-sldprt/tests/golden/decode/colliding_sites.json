@@ -15,10 +15,10 @@
           ]
         },
         {
-          "id": "sldprt:brep:body#0@contents/config-1",
+          "id": "sldprt:brep:body#0@block@8",
           "kind": "solid",
           "regions": [
-            "sldprt:brep:region#0@contents/config-1"
+            "sldprt:brep:region#0@block@8"
           ]
         }
       ],
@@ -33,12 +33,12 @@
           "sense": "forward"
         },
         {
-          "edge": "sldprt:brep:edge#40@contents/config-1",
-          "id": "sldprt:brep:coedge#30@contents/config-1",
-          "next": "sldprt:brep:coedge#31@contents/config-1",
-          "owner_loop": "sldprt:brep:loop#20@contents/config-1",
-          "previous": "sldprt:brep:coedge#32@contents/config-1",
-          "radial_next": "sldprt:brep:coedge#30@contents/config-1",
+          "edge": "sldprt:brep:edge#40@block@8",
+          "id": "sldprt:brep:coedge#30@block@8",
+          "next": "sldprt:brep:coedge#31@block@8",
+          "owner_loop": "sldprt:brep:loop#20@block@8",
+          "previous": "sldprt:brep:coedge#32@block@8",
+          "radial_next": "sldprt:brep:coedge#30@block@8",
           "sense": "forward"
         },
         {
@@ -51,12 +51,12 @@
           "sense": "forward"
         },
         {
-          "edge": "sldprt:brep:edge#41@contents/config-1",
-          "id": "sldprt:brep:coedge#31@contents/config-1",
-          "next": "sldprt:brep:coedge#32@contents/config-1",
-          "owner_loop": "sldprt:brep:loop#20@contents/config-1",
-          "previous": "sldprt:brep:coedge#30@contents/config-1",
-          "radial_next": "sldprt:brep:coedge#31@contents/config-1",
+          "edge": "sldprt:brep:edge#41@block@8",
+          "id": "sldprt:brep:coedge#31@block@8",
+          "next": "sldprt:brep:coedge#32@block@8",
+          "owner_loop": "sldprt:brep:loop#20@block@8",
+          "previous": "sldprt:brep:coedge#30@block@8",
+          "radial_next": "sldprt:brep:coedge#31@block@8",
           "sense": "forward"
         },
         {
@@ -69,12 +69,12 @@
           "sense": "forward"
         },
         {
-          "edge": "sldprt:brep:edge#42@contents/config-1",
-          "id": "sldprt:brep:coedge#32@contents/config-1",
-          "next": "sldprt:brep:coedge#30@contents/config-1",
-          "owner_loop": "sldprt:brep:loop#20@contents/config-1",
-          "previous": "sldprt:brep:coedge#31@contents/config-1",
-          "radial_next": "sldprt:brep:coedge#32@contents/config-1",
+          "edge": "sldprt:brep:edge#42@block@8",
+          "id": "sldprt:brep:coedge#32@block@8",
+          "next": "sldprt:brep:coedge#30@block@8",
+          "owner_loop": "sldprt:brep:loop#20@block@8",
+          "previous": "sldprt:brep:coedge#31@block@8",
+          "radial_next": "sldprt:brep:coedge#32@block@8",
           "sense": "forward"
         }
       ],
@@ -82,7 +82,7 @@
         {
           "active": true,
           "bodies": [
-            "sldprt:brep:body#0"
+            "sldprt:brep:body#0@block@8"
           ],
           "id": "sldprt:model:configuration#partition:0",
           "name": "Config-0",
@@ -91,7 +91,7 @@
         },
         {
           "bodies": [
-            "sldprt:brep:body#0@contents/config-1"
+            "sldprt:brep:body#0"
           ],
           "id": "sldprt:model:configuration#partition:1",
           "name": "Config-1",
@@ -108,9 +108,9 @@
           "start": "sldprt:brep:vertex#50"
         },
         {
-          "end": "sldprt:brep:vertex#51@contents/config-1",
-          "id": "sldprt:brep:edge#40@contents/config-1",
-          "start": "sldprt:brep:vertex#50@contents/config-1"
+          "end": "sldprt:brep:vertex#51@block@8",
+          "id": "sldprt:brep:edge#40@block@8",
+          "start": "sldprt:brep:vertex#50@block@8"
         },
         {
           "end": "sldprt:brep:vertex#52",
@@ -118,9 +118,9 @@
           "start": "sldprt:brep:vertex#51"
         },
         {
-          "end": "sldprt:brep:vertex#52@contents/config-1",
-          "id": "sldprt:brep:edge#41@contents/config-1",
-          "start": "sldprt:brep:vertex#51@contents/config-1"
+          "end": "sldprt:brep:vertex#52@block@8",
+          "id": "sldprt:brep:edge#41@block@8",
+          "start": "sldprt:brep:vertex#51@block@8"
         },
         {
           "end": "sldprt:brep:vertex#50",
@@ -128,9 +128,9 @@
           "start": "sldprt:brep:vertex#52"
         },
         {
-          "end": "sldprt:brep:vertex#50@contents/config-1",
-          "id": "sldprt:brep:edge#42@contents/config-1",
-          "start": "sldprt:brep:vertex#52@contents/config-1"
+          "end": "sldprt:brep:vertex#50@block@8",
+          "id": "sldprt:brep:edge#42@block@8",
+          "start": "sldprt:brep:vertex#52@block@8"
         }
       ],
       "faces": [
@@ -144,13 +144,13 @@
           "surface": "sldprt:brep:surf#10"
         },
         {
-          "id": "sldprt:brep:face#10@contents/config-1",
+          "id": "sldprt:brep:face#10@block@8",
           "loops": [
-            "sldprt:brep:loop#20@contents/config-1"
+            "sldprt:brep:loop#20@block@8"
           ],
           "sense": "forward",
-          "shell": "sldprt:brep:shell#0@contents/config-1",
-          "surface": "sldprt:brep:surf#10@contents/config-1"
+          "shell": "sldprt:brep:shell#0@block@8",
+          "surface": "sldprt:brep:surf#10@block@8"
         }
       ],
       "features": [],
@@ -168,12 +168,12 @@
         {
           "boundary_role": "unspecified",
           "coedges": [
-            "sldprt:brep:coedge#30@contents/config-1",
-            "sldprt:brep:coedge#31@contents/config-1",
-            "sldprt:brep:coedge#32@contents/config-1"
+            "sldprt:brep:coedge#30@block@8",
+            "sldprt:brep:coedge#31@block@8",
+            "sldprt:brep:coedge#32@block@8"
           ],
-          "face": "sldprt:brep:face#10@contents/config-1",
-          "id": "sldprt:brep:loop#20@contents/config-1"
+          "face": "sldprt:brep:face#10@block@8",
+          "id": "sldprt:brep:loop#20@block@8"
         }
       ],
       "occurrences": [],
@@ -184,15 +184,15 @@
         {
           "id": "sldprt:brep:point#60",
           "position": {
-            "x": 0.0,
+            "x": 10000.0,
             "y": 0.0,
             "z": 0.0
           }
         },
         {
-          "id": "sldprt:brep:point#60@contents/config-1",
+          "id": "sldprt:brep:point#60@block@8",
           "position": {
-            "x": 10000.0,
+            "x": 0.0,
             "y": 0.0,
             "z": 0.0
           }
@@ -200,15 +200,15 @@
         {
           "id": "sldprt:brep:point#61",
           "position": {
-            "x": 1000.0,
+            "x": 11000.0,
             "y": 0.0,
             "z": 0.0
           }
         },
         {
-          "id": "sldprt:brep:point#61@contents/config-1",
+          "id": "sldprt:brep:point#61@block@8",
           "position": {
-            "x": 11000.0,
+            "x": 1000.0,
             "y": 0.0,
             "z": 0.0
           }
@@ -216,15 +216,15 @@
         {
           "id": "sldprt:brep:point#62",
           "position": {
-            "x": 0.0,
+            "x": 10000.0,
             "y": 1000.0,
             "z": 0.0
           }
         },
         {
-          "id": "sldprt:brep:point#62@contents/config-1",
+          "id": "sldprt:brep:point#62@block@8",
           "position": {
-            "x": 10000.0,
+            "x": 0.0,
             "y": 1000.0,
             "z": 0.0
           }
@@ -244,10 +244,10 @@
           ]
         },
         {
-          "body": "sldprt:brep:body#0@contents/config-1",
-          "id": "sldprt:brep:region#0@contents/config-1",
+          "body": "sldprt:brep:body#0@block@8",
+          "id": "sldprt:brep:region#0@block@8",
           "shells": [
-            "sldprt:brep:shell#0@contents/config-1"
+            "sldprt:brep:shell#0@block@8"
           ]
         }
       ],
@@ -262,10 +262,10 @@
         },
         {
           "faces": [
-            "sldprt:brep:face#10@contents/config-1"
+            "sldprt:brep:face#10@block@8"
           ],
-          "id": "sldprt:brep:shell#0@contents/config-1",
-          "region": "sldprt:brep:region#0@contents/config-1"
+          "id": "sldprt:brep:shell#0@block@8",
+          "region": "sldprt:brep:region#0@block@8"
         }
       ],
       "sketch_constraints": [],
@@ -285,7 +285,7 @@
               "z": 1.0
             },
             "origin": {
-              "x": 0.0,
+              "x": 10000.0,
               "y": 0.0,
               "z": 0.0
             },
@@ -306,7 +306,7 @@
               "z": 1.0
             },
             "origin": {
-              "x": 10000.0,
+              "x": 0.0,
               "y": 0.0,
               "z": 0.0
             },
@@ -316,7 +316,7 @@
               "z": 0.0
             }
           },
-          "id": "sldprt:brep:surf#10@contents/config-1"
+          "id": "sldprt:brep:surf#10@block@8"
         }
       ],
       "tessellations": [],
@@ -326,24 +326,24 @@
           "point": "sldprt:brep:point#60"
         },
         {
-          "id": "sldprt:brep:vertex#50@contents/config-1",
-          "point": "sldprt:brep:point#60@contents/config-1"
+          "id": "sldprt:brep:vertex#50@block@8",
+          "point": "sldprt:brep:point#60@block@8"
         },
         {
           "id": "sldprt:brep:vertex#51",
           "point": "sldprt:brep:point#61"
         },
         {
-          "id": "sldprt:brep:vertex#51@contents/config-1",
-          "point": "sldprt:brep:point#61@contents/config-1"
+          "id": "sldprt:brep:vertex#51@block@8",
+          "point": "sldprt:brep:point#61@block@8"
         },
         {
           "id": "sldprt:brep:vertex#52",
           "point": "sldprt:brep:point#62"
         },
         {
-          "id": "sldprt:brep:vertex#52@contents/config-1",
-          "point": "sldprt:brep:point#62@contents/config-1"
+          "id": "sldprt:brep:vertex#52@block@8",
+          "point": "sldprt:brep:point#62@block@8"
         }
       ],
       "view_presentations": []
@@ -442,19 +442,19 @@
         "sldprt:brep:body#0": {
           "entity": "derived"
         },
-        "sldprt:brep:body#0@contents/config-1": {
+        "sldprt:brep:body#0@block@8": {
           "entity": "derived"
         },
         "sldprt:brep:region#0": {
           "entity": "derived"
         },
-        "sldprt:brep:region#0@contents/config-1": {
+        "sldprt:brep:region#0@block@8": {
           "entity": "derived"
         },
         "sldprt:brep:shell#0": {
           "entity": "derived"
         },
-        "sldprt:brep:shell#0@contents/config-1": {
+        "sldprt:brep:shell#0@block@8": {
           "entity": "derived"
         },
         "sldprt:brep:surf#10": {
@@ -463,7 +463,7 @@
             "geometry.u_axis": "derived"
           }
         },
-        "sldprt:brep:surf#10@contents/config-1": {
+        "sldprt:brep:surf#10@block@8": {
           "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
@@ -476,7 +476,7 @@
           "stream": 0,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:body#0@contents/config-1": {
+        "sldprt:brep:body#0@block@8": {
           "offset": 0,
           "stream": 1,
           "tag": "synthetic_grouping"
@@ -486,7 +486,7 @@
           "stream": 0,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#30@contents/config-1": {
+        "sldprt:brep:coedge#30@block@8": {
           "offset": 146,
           "stream": 1,
           "tag": "00_11"
@@ -496,7 +496,7 @@
           "stream": 0,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#31@contents/config-1": {
+        "sldprt:brep:coedge#31@block@8": {
           "offset": 169,
           "stream": 1,
           "tag": "00_11"
@@ -506,7 +506,7 @@
           "stream": 0,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#32@contents/config-1": {
+        "sldprt:brep:coedge#32@block@8": {
           "offset": 192,
           "stream": 1,
           "tag": "00_11"
@@ -516,7 +516,7 @@
           "stream": 0,
           "tag": "00_10"
         },
-        "sldprt:brep:edge#40@contents/config-1": {
+        "sldprt:brep:edge#40@block@8": {
           "offset": 215,
           "stream": 1,
           "tag": "00_10"
@@ -526,7 +526,7 @@
           "stream": 0,
           "tag": "00_10"
         },
-        "sldprt:brep:edge#41@contents/config-1": {
+        "sldprt:brep:edge#41@block@8": {
           "offset": 245,
           "stream": 1,
           "tag": "00_10"
@@ -536,7 +536,7 @@
           "stream": 0,
           "tag": "00_10"
         },
-        "sldprt:brep:edge#42@contents/config-1": {
+        "sldprt:brep:edge#42@block@8": {
           "offset": 275,
           "stream": 1,
           "tag": "00_10"
@@ -546,7 +546,7 @@
           "stream": 0,
           "tag": "00_0e"
         },
-        "sldprt:brep:face#10@contents/config-1": {
+        "sldprt:brep:face#10@block@8": {
           "offset": 91,
           "stream": 1,
           "tag": "00_0e"
@@ -556,7 +556,7 @@
           "stream": 0,
           "tag": "00_0f"
         },
-        "sldprt:brep:loop#20@contents/config-1": {
+        "sldprt:brep:loop#20@block@8": {
           "offset": 130,
           "stream": 1,
           "tag": "00_0f"
@@ -566,7 +566,7 @@
           "stream": 0,
           "tag": "00_1d"
         },
-        "sldprt:brep:point#60@contents/config-1": {
+        "sldprt:brep:point#60@block@8": {
           "offset": 383,
           "stream": 1,
           "tag": "00_1d"
@@ -576,7 +576,7 @@
           "stream": 0,
           "tag": "00_1d"
         },
-        "sldprt:brep:point#61@contents/config-1": {
+        "sldprt:brep:point#61@block@8": {
           "offset": 423,
           "stream": 1,
           "tag": "00_1d"
@@ -586,7 +586,7 @@
           "stream": 0,
           "tag": "00_1d"
         },
-        "sldprt:brep:point#62@contents/config-1": {
+        "sldprt:brep:point#62@block@8": {
           "offset": 463,
           "stream": 1,
           "tag": "00_1d"
@@ -596,7 +596,7 @@
           "stream": 0,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:region#0@contents/config-1": {
+        "sldprt:brep:region#0@block@8": {
           "offset": 0,
           "stream": 1,
           "tag": "synthetic_grouping"
@@ -606,7 +606,7 @@
           "stream": 0,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:shell#0@contents/config-1": {
+        "sldprt:brep:shell#0@block@8": {
           "offset": 0,
           "stream": 1,
           "tag": "synthetic_grouping"
@@ -616,7 +616,7 @@
           "stream": 0,
           "tag": "compact_surface"
         },
-        "sldprt:brep:surf#10@contents/config-1": {
+        "sldprt:brep:surf#10@block@8": {
           "offset": 0,
           "stream": 1,
           "tag": "compact_surface"
@@ -626,7 +626,7 @@
           "stream": 0,
           "tag": "00_12"
         },
-        "sldprt:brep:vertex#50@contents/config-1": {
+        "sldprt:brep:vertex#50@block@8": {
           "offset": 305,
           "stream": 1,
           "tag": "00_12"
@@ -636,7 +636,7 @@
           "stream": 0,
           "tag": "00_12"
         },
-        "sldprt:brep:vertex#51@contents/config-1": {
+        "sldprt:brep:vertex#51@block@8": {
           "offset": 331,
           "stream": 1,
           "tag": "00_12"
@@ -646,19 +646,19 @@
           "stream": 0,
           "tag": "00_12"
         },
-        "sldprt:brep:vertex#52@contents/config-1": {
+        "sldprt:brep:vertex#52@block@8": {
           "offset": 357,
           "stream": 1,
           "tag": "00_12"
         },
         "sldprt:file:block#250": {
           "offset": 250,
-          "stream": 1,
+          "stream": 0,
           "tag": "parasolid"
         },
         "sldprt:file:block#8": {
           "offset": 8,
-          "stream": 0,
+          "stream": 1,
           "tag": "parasolid"
         },
         "sldprt:file:source-image#0": {
@@ -668,8 +668,8 @@
         }
       },
       "streams": [
-        "Contents/Config-0-Partition",
         "Contents/Config-1-Partition",
+        "Contents/Config-0-Partition",
         "source"
       ]
     },
