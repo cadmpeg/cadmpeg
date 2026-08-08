@@ -8725,6 +8725,46 @@ fn container_reads_rmfastload_active_ids() {
 }
 
 #[test]
+fn container_reads_rmfastload_table_from_product_boundary_without_range_floor() {
+    let mut payload = b"UGS::Solid::Topol".to_vec();
+    append_rmfastload_table(&mut payload, [0, u32::MAX, 7]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
+    let container = container::scan_bytes(file).unwrap();
+    let (_, table) = container
+        .rmfastload_object_id_table()
+        .expect("product-bounded RMFastLoad table");
+    assert_eq!(table.object_ids.len(), 3);
+    assert_eq!(
+        table
+            .object_ids
+            .iter()
+            .map(|object_id| object_id.value)
+            .collect::<Vec<_>>(),
+        [0, u32::MAX, 7]
+    );
+}
+
+#[test]
+fn container_bounds_rmfastload_table_at_its_first_product_record() {
+    let mut payload = b"UGS::Solid::Topol".to_vec();
+    append_rmfastload_table(&mut payload, [1, 2, 3]);
+    append_rmfastload_table(&mut payload, [4, 5]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)]);
+    let container = container::scan_bytes(file).unwrap();
+    let (_, table) = container
+        .rmfastload_object_id_table()
+        .expect("first product-bounded table");
+    assert_eq!(
+        table
+            .object_ids
+            .iter()
+            .map(|object_id| object_id.value)
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+}
+
+#[test]
 fn decode_retains_every_rmfastload_active_body() {
     let mut cur = Cursor::new(prt_with_two_active_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

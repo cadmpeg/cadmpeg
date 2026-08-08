@@ -5599,7 +5599,8 @@ fn section_record_area_pointer(
     matches.next().is_none().then_some(first)
 }
 
-fn is_product_record(bytes: &[u8]) -> bool {
+/// Validate one self-framed NX product record.
+pub(crate) fn is_product_record(bytes: &[u8]) -> bool {
     if !matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) {
         return false;
     }

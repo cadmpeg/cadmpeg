@@ -3172,12 +3172,25 @@ pub(crate) fn assembly_with_external_paths() -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/ExternalReferences", payload.to_vec())])
 }
 
+pub(crate) fn append_rmfastload_table<I>(payload: &mut Vec<u8>, object_ids: I)
+where
+    I: IntoIterator<Item = u32>,
+{
+    let object_ids: Vec<_> = object_ids.into_iter().collect();
+    payload.extend_from_slice(
+        &u32::try_from(object_ids.len())
+            .expect("synthetic RMFastLoad table fits")
+            .to_le_bytes(),
+    );
+    for object_id in object_ids {
+        payload.extend_from_slice(&object_id.to_le_bytes());
+    }
+    payload.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+}
+
 pub(crate) fn rmfastload_prt() -> Vec<u8> {
     let mut payload = b"UGS::Solid::Topol".to_vec();
-    payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1..=50u32 {
-        payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut payload, 1..=50);
     prt_with_named_payloads(&[("/Root/FastLoad/RMFastLoad", payload)])
 }
 
@@ -3282,10 +3295,7 @@ pub(crate) fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
     let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, 1_000..1_050);
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
@@ -3297,13 +3307,7 @@ pub(crate) fn prt_with_two_active_bodies_and_rmfastload() -> Vec<u8> {
     let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&100u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
-    for id in 2_000..2_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, (1_000..1_050).chain(2_000..2_050));
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
@@ -3321,10 +3325,7 @@ pub(crate) fn prt_with_missing_active_body_record() -> Vec<u8> {
     let mut part_payload = zlib_compress(&active_stream);
     part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
     let mut rm_payload = b"UGS::Solid::Topol".to_vec();
-    rm_payload.extend_from_slice(&50u32.to_le_bytes());
-    for id in 1_000..1_050u32 {
-        rm_payload.extend_from_slice(&id.to_le_bytes());
-    }
+    append_rmfastload_table(&mut rm_payload, 1_000..1_050);
 
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", part_payload),
