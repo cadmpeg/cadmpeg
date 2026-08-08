@@ -15,7 +15,8 @@ use crate::design::edge_resolve::{
     resolved_edge_treatment_group,
 };
 use crate::design::face_resolve::{
-    design_angle, resolved_body_recipe_shape, resolved_direct_face_selection, resolved_face_group,
+    design_angle, extrude_profile_group_roots, resolved_body_recipe_shape,
+    resolved_direct_face_selection, resolved_extrude_profile_face_group, resolved_face_group,
     resolved_historical_face_group, resolved_historical_split_face_target_group,
     resolved_loft_edge_profile_group, resolved_profile_face_group, valid_chamfer_spec,
 };
@@ -5855,18 +5856,7 @@ pub(crate) fn project_extrude(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let mut profile_groups = scope_groups
-        .iter()
-        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Profile))
-        .copied()
-        .collect::<Vec<_>>();
-    profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
-    if profile_groups
-        .windows(2)
-        .any(|groups| groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal)
-    {
-        return None;
-    }
+    let profile_groups = extrude_profile_group_roots(scope, construction_groups)?;
     let profile_ref = match scope.extrude_profile.as_ref() {
         Some(profile) => {
             let placement = placements.iter().find(|placement| {
@@ -5880,12 +5870,24 @@ pub(crate) fn project_extrude(
                 return None;
             };
             if rest.is_empty() {
-                resolved_profile_face_group(scope, first, face_operands)
-                    .unwrap_or_else(|| ProfileRef::Native(first.id.clone()))
+                resolved_extrude_profile_face_group(
+                    scope,
+                    first,
+                    construction_groups,
+                    face_operands,
+                )
+                .unwrap_or_else(|| ProfileRef::Native(first.id.clone()))
             } else {
                 let resolved = profile_groups
                     .iter()
-                    .map(|group| resolved_profile_face_group(scope, group, face_operands))
+                    .map(|group| {
+                        resolved_extrude_profile_face_group(
+                            scope,
+                            group,
+                            construction_groups,
+                            face_operands,
+                        )
+                    })
                     .collect::<Option<Vec<_>>>();
                 match resolved {
                     Some(selections) => {

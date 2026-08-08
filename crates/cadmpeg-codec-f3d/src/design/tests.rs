@@ -2750,6 +2750,99 @@ fn dimension_recipe_decodes_signed_decimal_reference_tokens() {
 }
 
 #[test]
+fn face_recipe_decodes_paired_packed_reference_runs() {
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    let mut reference_offsets = Vec::new();
+    for (ordinal, token) in b"23".iter().copied().enumerate() {
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        if ordinal == 0 {
+            prefix.push(token);
+        } else {
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.push(token);
+        }
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&2u32.to_le_bytes());
+        reference_offsets.push(prefix.len());
+        prefix.extend_from_slice(&305u32.to_le_bytes());
+        prefix.extend_from_slice(&312u32.to_le_bytes());
+        if ordinal == 1 {
+            prefix.extend_from_slice(&0u32.to_le_bytes());
+        }
+    }
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+    assert_eq!(references.len(), 4);
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| (reference.selector, reference.token.as_str()))
+            .collect::<Vec<_>>(),
+        [(1, "2"), (1, "2"), (1, "3"), (1, "3")]
+    );
+    assert_eq!(
+        references
+            .iter()
+            .map(|reference| reference.design_reference)
+            .collect::<Vec<_>>(),
+        [305, 312, 305, 312]
+    );
+    assert_eq!(
+        references[0].design_reference_offset,
+        1_000 + reference_offsets[0] as u64
+    );
+    assert_eq!(
+        references[2].design_reference_offset,
+        1_000 + reference_offsets[1] as u64
+    );
+
+    let second_operand_at = reference_offsets[0] + 8;
+    let mut packed_second = prefix.clone();
+    packed_second.drain(second_operand_at + 4..second_operand_at + 8);
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&packed_second, 1_000)
+            .is_empty()
+    );
+    let mut invalid_header = prefix.clone();
+    invalid_header[0] = 1;
+    assert!(
+        !crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&invalid_header)
+    );
+
+    let mut trailing = prefix.clone();
+    trailing.extend_from_slice(&0u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+            .is_empty()
+    );
+    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
+
+    let mut mismatched_selector = prefix.clone();
+    mismatched_selector[second_operand_at..second_operand_at + 4]
+        .copy_from_slice(&2u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(
+            &mismatched_selector,
+            1_000,
+        )
+        .is_empty()
+    );
+
+    let second_run_at = reference_offsets[1];
+    prefix[second_run_at..second_run_at + 4].copy_from_slice(&306u32.to_le_bytes());
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000)
+            .is_empty()
+    );
+    assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
+}
+
+#[test]
 fn dimension_recipe_rejects_non_decimal_reference_tokens() {
     for token in [b"-".as_slice(), b"+1", b"1-"] {
         let mut prefix = vec![0; 10];

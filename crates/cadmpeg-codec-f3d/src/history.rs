@@ -3348,88 +3348,92 @@ fn bind_profile_face_group_cardinality(
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
-    let mut groups = HashMap::<(String, u32, u32), Vec<usize>>::new();
-    for (index, operand) in operands.iter().enumerate() {
-        let (Some(stream), Some(group)) = (
-            crate::ids::native_stream(&operand.id),
-            operand.group_record_index,
-        ) else {
+    for scope in scopes {
+        let Some(profile_groups) =
+            crate::design::face_resolve::extrude_profile_group_roots(scope, operand_groups)
+        else {
             continue;
         };
-        groups
-            .entry((stream.to_owned(), operand.scope_record_index, group))
-            .or_default()
-            .push(index);
-    }
-    for ((stream, scope_record_index, group_record_index), mut indices) in groups {
-        let mut matching_groups = operand_groups.iter().filter(|group| {
-            group.record_index == group_record_index
-                && group.scope_record_index == scope_record_index
-                && crate::ids::native_stream(&group.id) == Some(stream.as_str())
-        });
-        let Some(group) = matching_groups.next() else {
-            continue;
-        };
-        if matching_groups.next().is_some()
-            || group.extrude_role != Some(crate::records::DesignExtrudeOperandRole::Profile)
-            || group.members.len() != indices.len()
-        {
-            continue;
-        }
-        if indices.iter().any(|index| {
-            let operand = &operands[*index];
-            !operand.resolved_face_slots.is_empty()
-                || !crate::design::face_resolve::face_operand_candidates(operand).is_empty()
-                || operand.recipe_references.iter().any(|reference| {
-                    !reference.candidate_faces.is_empty()
-                        || !reference.alternate_selector_faces.is_empty()
+        for group in profile_groups {
+            let Some(indices) = crate::design::face_resolve::extrude_profile_group_operand_indices(
+                group,
+                operand_groups,
+                operands,
+            ) else {
+                continue;
+            };
+            if group.members.len() != indices.len()
+                || indices.iter().any(|index| {
+                    let operand = &operands[*index];
+                    !operand.resolved_face_slots.is_empty()
+                        || !crate::design::face_resolve::face_operand_candidates(operand).is_empty()
+                        || operand.recipe_references.iter().any(|reference| {
+                            !reference.candidate_faces.is_empty()
+                                || !reference.alternate_selector_faces.is_empty()
+                        })
                 })
-        }) {
-            continue;
-        }
-        indices.sort_by_key(|index| operands[*index].group_member_ordinal);
-        if indices.iter().enumerate().any(|(ordinal, index)| {
-            operands[*index].group_member_ordinal != u32::try_from(ordinal).ok()
-                || group.members.get(ordinal) != Some(&operands[*index].record_index)
-        }) {
-            continue;
-        }
-        let mut matching_scopes = scopes.iter().filter(|scope| {
-            scope.record_index == scope_record_index
-                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-        });
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
-        else {
-            continue;
-        };
-        let (Some(Some(state)), Some(Some(previous))) =
-            (states.get(&state_id), states.get(&previous_state_id))
-        else {
-            continue;
-        };
-        let (Some(topology), Some(changed_faces)) = (
-            previous.topology.as_ref(),
-            face_changes_across_state_chain(state, previous_state_id, &states),
-        ) else {
-            continue;
-        };
-        let Some(faces) =
-            profile_face_group_cardinality_candidates(topology, &changed_faces, indices.len())
-        else {
-            continue;
-        };
-        for (index, face) in indices.into_iter().zip(faces) {
-            let face_id = cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face));
-            operands[index].preceding_candidate_faces = vec![face_id.clone()];
-            operands[index].changed_candidate_faces = vec![face_id];
-            operands[index].resolved_face_slots = vec![face];
+            {
+                continue;
+            }
+            let (Some(state_id), Some(previous_state_id)) =
+                (scope.history_state_id, scope.previous_history_state_id)
+            else {
+                continue;
+            };
+            let (Some(Some(state)), Some(Some(previous))) =
+                (states.get(&state_id), states.get(&previous_state_id))
+            else {
+                continue;
+            };
+            let (Some(topology), Some(changed_faces)) = (
+                previous.topology.as_ref(),
+                face_changes_across_state_chain(state, previous_state_id, &states),
+            ) else {
+                continue;
+            };
+            let faces = profile_face_group_cardinality_candidates(
+                topology,
+                &changed_faces,
+                group.members.len(),
+            )
+            .or_else(|| {
+                if !crate::design::face_resolve::is_paired_extrude_profile_aggregate(
+                    group,
+                    operand_groups,
+                    operands,
+                ) {
+                    return None;
+                }
+                let transition = state
+                    .transition
+                    .as_ref()
+                    .filter(|transition| transition.previous_state_id == Some(previous_state_id))?;
+                let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+                let mut deleted = transition.topology.faces.deleted.clone();
+                deleted.sort_unstable();
+                deleted.dedup();
+                (deleted.len() == group.members.len()
+                    && deleted.len() == transition.topology.faces.deleted.len()
+                    && deleted.iter().all(|face| {
+                        preceding_faces.contains(face)
+                            && topology
+                                .face_surfaces
+                                .iter()
+                                .filter(|binding| binding.entity == *face)
+                                .count()
+                                == 1
+                    }))
+                .then_some(deleted)
+            });
+            let Some(faces) = faces else {
+                continue;
+            };
+            for (index, face) in indices.into_iter().zip(faces) {
+                let face_id = cadmpeg_ir::ids::FaceId(crate::ids::brep_entity_id(face));
+                operands[index].preceding_candidate_faces = vec![face_id.clone()];
+                operands[index].changed_candidate_faces = vec![face_id];
+                operands[index].resolved_face_slots = vec![face];
+            }
         }
     }
 }
@@ -10099,6 +10103,224 @@ mod tests {
             profile_face_group_cardinality_candidates(&ambiguous, &changed, 3),
             None
         );
+    }
+
+    #[test]
+    fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
+        use crate::records::{
+            DesignConstructionOperandGroup, DesignFaceOperand, DesignParameterScope,
+        };
+        use cadmpeg_ir::features::ProfileRef;
+
+        let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
+            let member_offsets = vec![0; members.len()];
+            serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+                "id": format!(
+                    "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
+                ),
+                "scope_record_index": 42,
+                "scope_reference_ordinal": scope_reference_ordinal,
+                "record_index": record_index,
+                "byte_offset": 0,
+                "class_tag": "267",
+                "members": members,
+                "member_offsets": member_offsets,
+                "frame": {
+                    "member_count_offset": 0,
+                    "opaque_index": 1,
+                    "opaque_index_offset": 0,
+                    "opaque_scalar": 0.0,
+                    "opaque_scalar_offset": 0,
+                    "variant": false
+                },
+                "role": 279_172_874_240_u64,
+                "extrude_role": "profile",
+                "role_offset": 0,
+                "paired_class_tag": "260",
+                "paired_byte_offset": 0
+            }))
+            .expect("profile group")
+        };
+        let paired_prefix = || {
+            let mut prefix = vec![0; 10];
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&2u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.push(b'2');
+            prefix.extend_from_slice(&[0; 4]);
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&305u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.push(b'3');
+            prefix.extend_from_slice(&0u32.to_le_bytes());
+            prefix.extend_from_slice(&1u32.to_le_bytes());
+            prefix.extend_from_slice(&305u32.to_le_bytes());
+            prefix.extend_from_slice(&0u32.to_le_bytes());
+            prefix
+        };
+        let face_operand = |record_index, group_record_index, scope_reference_ordinal| {
+            let mut operand = serde_json::from_value::<DesignFaceOperand>(serde_json::json!({
+                "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
+                "scope_record_index": 42,
+                "scope_reference_ordinal": scope_reference_ordinal,
+                "group_record_index": group_record_index,
+                "group_member_ordinal": 0,
+                "record_index": record_index,
+                "byte_offset": 0,
+                "class_tag": "297",
+                "paired_byte_offset": 0,
+                "paired_class_tag": "259",
+                "recipe_record_index": record_index + 3,
+                "recipe_record_byte_offset": 0,
+                "recipe_id": format!("f3d:Design/BulkStream.dat:construction-recipe#{}", record_index + 3),
+                "recipe_prefix_offset": 0,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_kind": "bounded_face",
+                "recipe_program_offset": 0,
+                "recipe_program": [0],
+                "recipe_node_offsets": [],
+                "recipe_nodes": [],
+                "next_record_index": record_index + 4,
+                "next_byte_offset": 0
+            }))
+            .expect("profile face operand");
+            operand.recipe_prefix_bytes = paired_prefix();
+            operand.recipe_references =
+                crate::design::decode::dimension_frames::decode_recipe_references(
+                    &operand.recipe_prefix_bytes,
+                    0,
+                );
+            operand
+        };
+
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#42",
+            "Extrude",
+            42,
+        );
+        scope.history_state_id = Some(2);
+        scope.previous_history_state_id = Some(1);
+        scope.reference_members = vec![100, 110, 111, 120, 121];
+        scope.reference_member_offsets = vec![0; scope.reference_members.len()];
+        let groups = vec![
+            group(100, 0, vec![110, 120]),
+            group(110, 1, vec![111]),
+            group(120, 3, vec![121]),
+        ];
+        let mut operands = vec![face_operand(111, 110, 1), face_operand(121, 120, 3)];
+
+        let roots = crate::design::face_resolve::extrude_profile_group_roots(&scope, &groups)
+            .expect("valid profile hierarchy");
+        assert_eq!(
+            roots
+                .iter()
+                .map(|group| group.record_index)
+                .collect::<Vec<_>>(),
+            [100]
+        );
+        assert_eq!(
+            crate::design::face_resolve::extrude_profile_group_operand_indices(
+                roots[0], &groups, &operands,
+            )
+            .expect("one leaf operand per root member"),
+            [0, 1]
+        );
+        let mut repeated_child = groups.clone();
+        repeated_child[0].members.push(110);
+        assert!(
+            crate::design::face_resolve::extrude_profile_group_roots(&scope, &repeated_child)
+                .is_none()
+        );
+
+        let previous_topology = AsmHistoricalTopology {
+            faces: vec![10, 11, 20],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 1000,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 1001,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 2000,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let state = |state_id, topology, transition| AsmDeltaState {
+            id: format!("f3d:history:state#{state_id}"),
+            parent: "f3d:history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology,
+            transition,
+        };
+        let previous = state(1, Some(previous_topology), None);
+        let mut transition = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        transition.topology.faces.deleted = vec![11, 10];
+        let current = state(2, None, Some(transition));
+        let history = AsmHistory {
+            id: "f3d:history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![previous, current],
+        };
+
+        bind_profile_face_group_cardinality(
+            &mut operands,
+            std::slice::from_ref(&scope),
+            &groups,
+            std::slice::from_ref(&history),
+        );
+        assert_eq!(operands[0].resolved_face_slots, [10]);
+        assert_eq!(operands[1].resolved_face_slots, [11]);
+        let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(
+            &scope, roots[0], &groups, &operands,
+        )
+        .expect("resolved root profile");
+        let feature = crate::ids::neutral_feature_id(&scope);
+        let feature_key = feature
+            .0
+            .split_once('#')
+            .map_or(feature.0.as_str(), |(_, key)| key);
+        let prefix = crate::ids::history_input_prefix(feature_key, 1);
+        assert!(matches!(
+            profile,
+            ProfileRef::HistoricalFaces {
+                state,
+                faces,
+                native,
+            } if state == crate::design::edge_resolve::feature_input_topology_id(&feature, 1)
+                && faces == [
+                    crate::ids::history_input_face_id(&prefix, 10),
+                    crate::ids::history_input_face_id(&prefix, 11),
+                ]
+                && native == [groups[0].id.clone()]
+        ));
     }
 
     #[test]

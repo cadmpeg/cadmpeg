@@ -153,6 +153,264 @@ pub(crate) fn resolved_profile_face_group(
     })
 }
 
+/// Return the top-level profile groups of one Extrude operand hierarchy.
+///
+/// A profile group named by another profile group's member table is a child
+/// selection, not an additional profile consumed by the Extrude. The complete
+/// hierarchy must be acyclic, and each child can have exactly one parent.
+pub(crate) fn extrude_profile_group_roots<'a>(
+    scope: &DesignParameterScope,
+    groups: &'a [DesignConstructionOperandGroup],
+) -> Option<Vec<&'a DesignConstructionOperandGroup>> {
+    use crate::records::DesignExtrudeOperandRole;
+
+    let stream = native_stream(&scope.id)?;
+    let mut profile_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+        })
+        .collect::<Vec<_>>();
+    profile_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    if profile_groups.windows(2).any(|groups| {
+        groups[0].scope_reference_ordinal == groups[1].scope_reference_ordinal
+            || groups[0].record_index == groups[1].record_index
+    }) {
+        return None;
+    }
+
+    let groups_by_record = profile_groups
+        .iter()
+        .map(|group| (group.record_index, *group))
+        .collect::<HashMap<_, _>>();
+    if groups_by_record.len() != profile_groups.len() {
+        return None;
+    }
+    let mut parent_by_child = HashMap::new();
+    for parent in &profile_groups {
+        for member in &parent.members {
+            let Some(child) = groups_by_record.get(member) else {
+                continue;
+            };
+            if child.scope_reference_ordinal <= parent.scope_reference_ordinal
+                || parent_by_child
+                    .insert(child.record_index, parent.record_index)
+                    .is_some()
+            {
+                return None;
+            }
+        }
+    }
+    let roots = profile_groups
+        .iter()
+        .copied()
+        .filter(|group| !parent_by_child.contains_key(&group.record_index))
+        .collect::<Vec<_>>();
+    if !profile_groups.is_empty() && roots.is_empty() {
+        return None;
+    }
+
+    let mut visited = HashSet::new();
+    if roots
+        .iter()
+        .any(|root| !visit_extrude_profile_group(root, &groups_by_record, &mut visited))
+        || visited.len() != profile_groups.len()
+    {
+        return None;
+    }
+    Some(roots)
+}
+
+fn visit_extrude_profile_group(
+    group: &DesignConstructionOperandGroup,
+    groups_by_record: &HashMap<u32, &DesignConstructionOperandGroup>,
+    visited: &mut HashSet<u32>,
+) -> bool {
+    visited.insert(group.record_index)
+        && group.members.iter().all(|member| {
+            groups_by_record
+                .get(member)
+                .is_none_or(|child| visit_extrude_profile_group(child, groups_by_record, visited))
+        })
+}
+
+/// Resolve each member of an Extrude profile group to one exact leaf operand.
+///
+/// Direct members name face operands. A member can instead name a child
+/// profile group when that complete child hierarchy contains exactly one leaf
+/// operand. This preserves the parent member cardinality used by historical
+/// selection proofs.
+pub(crate) fn extrude_profile_group_operand_indices(
+    root: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignFaceOperand],
+) -> Option<Vec<usize>> {
+    use crate::records::DesignExtrudeOperandRole;
+
+    let stream = native_stream(&root.id)?;
+    let profile_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == root.scope_record_index
+                && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+        })
+        .collect::<Vec<_>>();
+    let groups_by_record = profile_groups
+        .iter()
+        .map(|group| (group.record_index, *group))
+        .collect::<HashMap<_, _>>();
+    if groups_by_record.len() != profile_groups.len()
+        || groups_by_record.get(&root.record_index).copied() != Some(root)
+    {
+        return None;
+    }
+
+    let mut visited_groups = HashSet::new();
+    collect_extrude_profile_group_operands(
+        root,
+        stream,
+        &groups_by_record,
+        operands,
+        &mut visited_groups,
+    )
+}
+
+fn collect_extrude_profile_group_operands(
+    group: &DesignConstructionOperandGroup,
+    stream: &str,
+    groups_by_record: &HashMap<u32, &DesignConstructionOperandGroup>,
+    operands: &[DesignFaceOperand],
+    visited_groups: &mut HashSet<u32>,
+) -> Option<Vec<usize>> {
+    if group.members.is_empty() || !visited_groups.insert(group.record_index) {
+        return None;
+    }
+    let mut indices = Vec::with_capacity(group.members.len());
+    for (ordinal, record_index) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let direct = operands
+            .iter()
+            .enumerate()
+            .filter(|(_, operand)| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == Some(group.record_index)
+                    && operand.group_member_ordinal == Some(ordinal)
+                    && operand.record_index == *record_index
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        let child = groups_by_record.get(record_index).copied();
+        let index = match (direct.as_slice(), child) {
+            ([index], None) => *index,
+            ([], Some(child)) if child.scope_reference_ordinal > group.scope_reference_ordinal => {
+                let child_indices = collect_extrude_profile_group_operands(
+                    child,
+                    stream,
+                    groups_by_record,
+                    operands,
+                    visited_groups,
+                )?;
+                let [index] = child_indices.as_slice() else {
+                    return None;
+                };
+                *index
+            }
+            _ => return None,
+        };
+        if indices.contains(&index) {
+            return None;
+        }
+        indices.push(index);
+    }
+    Some(indices)
+}
+
+/// Whether every root member is one exact paired-reference face subgroup.
+pub(crate) fn is_paired_extrude_profile_aggregate(
+    root: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignFaceOperand],
+) -> bool {
+    use crate::records::{ConstructionRecipeKind, DesignExtrudeOperandRole};
+
+    let Some(stream) = native_stream(&root.id) else {
+        return false;
+    };
+    !root.members.is_empty()
+        && root.members.iter().all(|record_index| {
+            let mut children = groups.iter().filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == root.scope_record_index
+                    && group.record_index == *record_index
+                    && group.scope_reference_ordinal > root.scope_reference_ordinal
+                    && group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+            });
+            let Some(child) = children.next() else {
+                return false;
+            };
+            if children.next().is_some() {
+                return false;
+            }
+            let [operand_record_index] = child.members.as_slice() else {
+                return false;
+            };
+            let mut leaves = operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == root.scope_record_index
+                    && operand.group_record_index == Some(child.record_index)
+                    && operand.group_member_ordinal == Some(0)
+                    && operand.record_index == *operand_record_index
+                    && operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                    && crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(
+                        &operand.recipe_prefix_bytes,
+                    )
+            });
+            matches!((leaves.next(), leaves.next()), (Some(_), None))
+        })
+}
+
+/// Resolve one top-level Extrude profile group through its exact leaf operands.
+pub(crate) fn resolved_extrude_profile_face_group(
+    scope: &DesignParameterScope,
+    root: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::ProfileRef;
+
+    let indices = extrude_profile_group_operand_indices(root, groups, operands)?;
+    let mut faces = Vec::new();
+    for index in indices {
+        let slots = &operands.get(index)?.resolved_face_slots;
+        if slots.is_empty() {
+            return None;
+        }
+        for slot in slots {
+            if !faces.contains(slot) {
+                faces.push(*slot);
+            }
+        }
+    }
+    let selection = historical_face_selection(scope, root, faces)?;
+    let cadmpeg_ir::features::FaceSelection::Historical {
+        state,
+        faces,
+        native,
+    } = selection
+    else {
+        return None;
+    };
+    Some(ProfileRef::HistoricalFaces {
+        state,
+        faces,
+        native: vec![native],
+    })
+}
+
 /// Resolve a Loft section whose members use the edge-recipe envelope.
 ///
 /// These members describe the selected face through a common persistent
