@@ -1,6 +1,6 @@
 //! Tests for the `reference_geometry` module.
 
-use super::super::curves::sketch_plane_frames;
+use super::super::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
 use super::super::CLASS_MARKER;
 use super::{
     angled_reference_plane_frame, classed_offset_plane_sources, compact_offset_plane_source,
@@ -9,9 +9,10 @@ use super::{
     legacy_offset_plane_face_alias, legacy_reference_axis_triads, matrix_reference_plane_frame,
     offset_plane_reference_frame_matches, offset_plane_reference_source,
     offset_reference_plane_frame_pair, plane_intersection_axis_frame,
-    plane_intersection_axis_sources, reconcile_reference_plane_frame, reference_plane_frame_key,
-    select_reference_plane_frame_source, sketch_block_identity_normalization_origin,
-    sketch_block_record_origin, structured_offset_plane_sources, FIXED_REFERENCE_PLANE_FRAME_LEN,
+    plane_intersection_axis_sources, reconcile_reference_plane_frame_with_source,
+    reference_plane_frame_key, select_reference_plane_frame_source,
+    sketch_block_identity_normalization_origin, sketch_block_record_origin,
+    structured_offset_plane_sources, FIXED_REFERENCE_PLANE_FRAME_LEN,
     MINIMAL_REFERENCE_PLANE_FRAME_LEN,
 };
 use crate::records::{
@@ -652,6 +653,86 @@ fn constraint_midplane_uses_its_normal_form_equation() {
 }
 
 #[test]
+fn reference_plane_enrichment_marks_a_constructed_midplane_axis() {
+    const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
+    let class_offset = 16;
+    let body = class_offset + CLASS_MARKER.len() + 2 + CLASS.len();
+    let mut payload = vec![0; body + 48 + 16];
+    payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + CLASS_MARKER.len()..class_offset + CLASS_MARKER.len() + 2]
+        .copy_from_slice(&(CLASS.len() as u16).to_le_bytes());
+    payload[class_offset + CLASS_MARKER.len() + 2..body].copy_from_slice(CLASS);
+    for (relative, value) in [
+        (8, 1.0e-16_f64),
+        (16, 0.145),
+        (24, 0.0),
+        (32, 0.0),
+        (40, 1.0),
+    ] {
+        payload[body + relative..body + relative + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "plane".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("2080".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "MidPlane".into(),
+            kind: String::new(),
+            input_class: Some("moRefPlane_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(2080),
+            value: "MidPlane".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    super::enrich_history_reference_planes(&mut histories, &[lane]);
+
+    let properties = &histories[0].features[0].properties;
+    assert_eq!(properties.get("Origin"), Some(&"0mm,0mm,145mm".to_string()));
+    assert_eq!(properties.get("Normal"), Some(&"0,0,1".to_string()));
+    assert_eq!(properties.get("UAxis"), Some(&"1,0,0".to_string()));
+    assert_eq!(
+        properties.get("UAxisSource"),
+        Some(&"constructed-mid-plane".to_string())
+    );
+}
+
+#[test]
 fn explicit_plane_basis_precedes_equivalent_constraint_orientation() {
     let explicit = (
         Point3::new(12.0, 0.0, 0.0),
@@ -664,7 +745,8 @@ fn explicit_plane_basis_precedes_equivalent_constraint_orientation() {
         Vector3::new(0.0, 1.0, 0.0),
     );
     assert_eq!(
-        reconcile_reference_plane_frame(Some(explicit), Some(equivalent_constraint)),
+        reconcile_reference_plane_frame_with_source(Some(explicit), Some(equivalent_constraint))
+            .map(|(frame, _)| frame),
         Some(explicit)
     );
 
@@ -674,8 +756,31 @@ fn explicit_plane_basis_precedes_equivalent_constraint_orientation() {
         equivalent_constraint.2,
     );
     assert_eq!(
-        reconcile_reference_plane_frame(Some(explicit), Some(conflicting_constraint)),
+        reconcile_reference_plane_frame_with_source(Some(explicit), Some(conflicting_constraint))
+            .map(|(frame, _)| frame),
         Some(conflicting_constraint)
+    );
+}
+
+#[test]
+fn midplane_constraint_marks_only_its_constructed_axis() {
+    let constraint = (
+        Point3::new(12.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+    );
+    let explicit = (
+        Point3::new(12.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    );
+    assert_eq!(
+        reconcile_reference_plane_frame_with_source(None, Some(constraint)),
+        Some((constraint, SketchPlaneUAxisSource::ConstructedMidPlane))
+    );
+    assert_eq!(
+        reconcile_reference_plane_frame_with_source(Some(explicit), Some(constraint)),
+        Some((explicit, SketchPlaneUAxisSource::Native))
     );
 }
 
@@ -1100,10 +1205,11 @@ fn offset_plane_frame_translates_its_reference_frame() {
 
     assert_eq!(
         sketch_plane_frames(&features, &[history]).get(&549),
-        Some(&(
-            Point3::new(0.0, 0.0, 3.0),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-        ))
+        Some(&super::super::curves::SketchPlaneFrame {
+            origin: Point3::new(0.0, 0.0, 3.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            u_axis_source: SketchPlaneUAxisSource::Native,
+        })
     );
 }

@@ -21,6 +21,63 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry};
 use std::collections::{HashMap, HashSet};
 
+pub(super) const REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY: &str = "UAxisSource";
+pub(super) const CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE: &str = "constructed-mid-plane";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SketchPlaneUAxisSource {
+    Native,
+    ConstructedMidPlane,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SketchPlaneFrame {
+    pub(super) origin: Point3,
+    pub(super) normal: Vector3,
+    pub(super) u_axis: Vector3,
+    pub(super) u_axis_source: SketchPlaneUAxisSource,
+}
+
+impl SketchPlaneFrame {
+    pub(super) fn native((origin, normal, u_axis): (Point3, Vector3, Vector3)) -> Self {
+        Self {
+            origin,
+            normal,
+            u_axis,
+            u_axis_source: SketchPlaneUAxisSource::Native,
+        }
+    }
+
+    pub(super) fn from_frame(
+        (origin, normal, u_axis): (Point3, Vector3, Vector3),
+        u_axis_source: SketchPlaneUAxisSource,
+    ) -> Self {
+        Self {
+            origin,
+            normal,
+            u_axis,
+            u_axis_source,
+        }
+    }
+
+    pub(super) fn as_tuple(self) -> (Point3, Vector3, Vector3) {
+        (self.origin, self.normal, self.u_axis)
+    }
+}
+
+fn feature_u_axis_source(feature: &cadmpeg_ir::features::Feature) -> SketchPlaneUAxisSource {
+    if feature
+        .source_properties
+        .get(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY)
+        .map(String::as_str)
+        == Some(CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE)
+    {
+        SketchPlaneUAxisSource::ConstructedMidPlane
+    } else {
+        SketchPlaneUAxisSource::Native
+    }
+}
+
 pub(super) fn current_linked_semicircle_record(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(2)
@@ -977,7 +1034,7 @@ pub(super) fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<
 pub(super) fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
-) -> HashMap<u32, (Point3, Vector3, Vector3)> {
+) -> HashMap<u32, SketchPlaneFrame> {
     let source_by_feature = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -997,13 +1054,16 @@ pub(super) fn sketch_plane_frames(
         .filter_map(|feature| {
             let frame = match feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    principal_sketch_frame(plane)
+                    SketchPlaneFrame::native(principal_sketch_frame(plane))
                 }
                 cadmpeg_ir::features::FeatureDefinition::DatumPlane {
                     origin,
                     normal,
                     u_axis,
-                } => (origin, normal, u_axis),
+                } => SketchPlaneFrame::from_frame(
+                    (origin, normal, u_axis),
+                    feature_u_axis_source(feature),
+                ),
                 _ => return None,
             };
             Some((feature.id.clone(), frame))
@@ -1021,18 +1081,17 @@ pub(super) fn sketch_plane_frames(
                 else {
                     return None;
                 };
-                let &(origin, normal, u_axis) = frames_by_feature.get(reference)?;
+                let frame = *frames_by_feature.get(reference)?;
                 Some((
                     feature.id.clone(),
-                    (
-                        Point3::new(
-                            origin.x + normal.x * distance.0,
-                            origin.y + normal.y * distance.0,
-                            origin.z + normal.z * distance.0,
+                    SketchPlaneFrame {
+                        origin: Point3::new(
+                            frame.origin.x + frame.normal.x * distance.0,
+                            frame.origin.y + frame.normal.y * distance.0,
+                            frame.origin.z + frame.normal.z * distance.0,
                         ),
-                        normal,
-                        u_axis,
-                    ),
+                        ..frame
+                    },
                 ))
             })
             .collect::<Vec<_>>();
@@ -1051,9 +1110,9 @@ pub(super) fn lane_sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
-) -> HashMap<u32, (Point3, Vector3, Vector3)> {
+) -> HashMap<u32, SketchPlaneFrame> {
     let mut frames = sketch_plane_frames(features, histories);
-    let mut lane_candidates = HashMap::<u32, Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut lane_candidates = HashMap::<u32, Vec<SketchPlaneFrame>>::new();
     for native in histories.iter().flat_map(|history| &history.features) {
         let Some(source) = feature_object_name(native, lane).and_then(|name| name.object_id) else {
             continue;
@@ -1065,19 +1124,29 @@ pub(super) fn lane_sketch_plane_frames(
             continue;
         };
         let frame = match feature.definition {
-            FeatureDefinition::DatumPrincipalPlane { plane } => principal_sketch_frame(plane),
+            FeatureDefinition::DatumPrincipalPlane { plane } => {
+                SketchPlaneFrame::native(principal_sketch_frame(plane))
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
                 u_axis,
-            } => (origin, normal, u_axis),
+            } => SketchPlaneFrame::from_frame(
+                (origin, normal, u_axis),
+                feature_u_axis_source(feature),
+            ),
             _ => continue,
         };
         lane_candidates.entry(source).or_default().push(frame);
     }
     for (source, mut candidates) in lane_candidates {
-        candidates.sort_by_key(reference_plane_frame_key);
-        candidates.dedup_by_key(|frame| reference_plane_frame_key(frame));
+        candidates.sort_by_key(|frame| {
+            (
+                reference_plane_frame_key(&frame.as_tuple()),
+                frame.u_axis_source,
+            )
+        });
+        candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
         if let [frame] = candidates.as_slice() {
             frames.entry(source).or_insert(*frame);
         }

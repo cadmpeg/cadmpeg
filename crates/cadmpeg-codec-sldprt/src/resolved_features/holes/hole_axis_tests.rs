@@ -14,19 +14,93 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
 
+use super::super::compact_reference_planes::CompactReferencePlaneIndex;
+use super::super::curves::{SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::{
     bore_carrier_placements, compact_position_loci, cylindrical_support_normal,
     direct_hole_position_feature, enrich_history_hole_constructions, enrich_history_parameters,
-    hole_position_feature, hole_position_sketch_source, hole_temporary_axis,
-    marker_pattern_bore_axes, plane_owned_bore_placements, profiled_hole_construction,
-    project_hole_axes, project_hole_position_sketches, project_profiled_hole_constructions,
-    project_spatial_hole_position_sketches, project_topological_hole_constructions, HoleTopology,
+    feature_input_sketch_frame, hole_position_feature, hole_position_sketch_source,
+    hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
+    profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
+    project_profiled_hole_constructions, project_spatial_hole_position_sketches,
+    project_topological_hole_constructions, HoleTopology,
 };
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
     FeatureInputLane, FeatureInputName, FeatureInputRelationFamily, FeatureInputScalar,
     FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
+
+fn profile_reference_plane_payload(with_component_frame: bool) -> Vec<u8> {
+    let mut payload = b"moCompRefPlane_c".to_vec();
+    payload.extend([0; 11]);
+    payload.extend(2u32.to_le_bytes());
+    payload.extend(19u32.to_le_bytes());
+    payload.extend([0, 0, 3, 0]);
+    payload.extend([0; 27]);
+    payload.extend(1.0f64.to_le_bytes());
+    payload.extend([
+        0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x65,
+    ]);
+    payload.extend([0; 4]);
+    if with_component_frame {
+        let mut component = [0u8; 138];
+        component[..4].copy_from_slice(&2u32.to_le_bytes());
+        component[14] = 1;
+        for (index, value) in [
+            0.0f64, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let offset = 15 + index * 8;
+            component[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        component[122..126].copy_from_slice(&4u32.to_le_bytes());
+        component[126..130].copy_from_slice(&[0xff; 4]);
+        payload.extend(component);
+    }
+    payload
+}
+
+#[test]
+fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
+    let plane_frame = SketchPlaneFrame::from_frame(
+        (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+        SketchPlaneUAxisSource::ConstructedMidPlane,
+    );
+    let frames = HashMap::from([(2, plane_frame)]);
+
+    let with_component = profile_reference_plane_payload(true);
+    let index = CompactReferencePlaneIndex::new(&with_component);
+    assert_eq!(
+        feature_input_sketch_frame(&with_component, &frames, &index, 0, 0, with_component.len(),),
+        Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    let without_component = profile_reference_plane_payload(false);
+    let index = CompactReferencePlaneIndex::new(&without_component);
+    assert_eq!(
+        feature_input_sketch_frame(
+            &without_component,
+            &frames,
+            &index,
+            0,
+            0,
+            without_component.len(),
+        ),
+        None
+    );
+}
 
 fn model_hole() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {

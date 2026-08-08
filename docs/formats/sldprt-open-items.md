@@ -919,18 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-50. Mid-plane in-plane axis
-
-**Question.** Which record carries the in-plane axis of a mid-plane datum?
-
-**Known.** `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" states for `moConstraintMidPlaneRefplaneData_c`: "The record does not store an independent in-plane axis."
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1560` constructs one from the world axis least aligned with the normal and writes it to the `UAxis` property at `reference_geometry.rs:465`, where a decoded axis also goes. The two are not distinguishable and no loss is recorded.
-
-`reference_geometry.rs:15` also prefers the constructed frame over a decoded explicit frame when the two disagree by more than `1.0e-9`. Every other frame path in that file withholds instead.
-
-**Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators

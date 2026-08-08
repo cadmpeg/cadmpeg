@@ -3,10 +3,7 @@
 use super::assembly::is_supplemental_config_lane;
 #[cfg(test)]
 use super::bindings::bind_detached_legacy_sketch_objects;
-use super::compact_reference_planes::{
-    compact_profile_component_plane_frame, compact_profile_reference_plane_source,
-    CompactReferencePlaneIndex,
-};
+use super::compact_reference_planes::CompactReferencePlaneIndex;
 use super::curves::{
     closed_marker_profiles, closed_marker_profiles_allowing_shared_endpoints,
     compact_bounded_curve_tangent, compact_legacy_rectangle_line_endpoints,
@@ -287,17 +284,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let source_frame =
-                compact_profile_reference_plane_source(&plane_index, context_start, start, end)
-                    .and_then(|source| plane_frames.get(&source).copied());
-            let Some((origin, normal, u_axis)) = source_frame.or_else(|| {
-                compact_profile_component_plane_frame(
-                    &lane.native_payload,
-                    context_start,
-                    start,
-                    end,
-                )
-            }) else {
+            let Some((origin, normal, u_axis)) = feature_input_sketch_frame(
+                &lane.native_payload,
+                &plane_frames,
+                &plane_index,
+                context_start,
+                start,
+                end,
+            ) else {
                 continue;
             };
             let lane_key = lane

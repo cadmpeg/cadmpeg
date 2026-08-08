@@ -1,7 +1,10 @@
 //! Reference plane and reference axis frames.
 
 use super::compact_reference_planes::principal_sketch_frame;
-use super::curves::sketch_plane_frames;
+use super::curves::{
+    sketch_plane_frames, SketchPlaneUAxisSource, CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE,
+    REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY,
+};
 use super::scalars::feature_object_name;
 use super::selections::component_face_reference_in_record;
 use super::{CLASS_MARKER, NAME_MARKER};
@@ -10,13 +13,16 @@ use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Prefer an explicit basis when it agrees with the class-anchored plane constraint.
-pub(super) fn reconcile_reference_plane_frame(
+pub(super) fn reconcile_reference_plane_frame_with_source(
     explicit: Option<(Point3, Vector3, Vector3)>,
     constraint: Option<(Point3, Vector3, Vector3)>,
-) -> Option<(Point3, Vector3, Vector3)> {
+) -> Option<((Point3, Vector3, Vector3), SketchPlaneUAxisSource)> {
     let (Some(explicit), Some(constraint)) = (explicit, constraint) else {
-        return explicit.or(constraint);
+        return explicit
+            .map(|frame| (frame, SketchPlaneUAxisSource::Native))
+            .or_else(|| {
+                constraint.map(|frame| (frame, SketchPlaneUAxisSource::ConstructedMidPlane))
+            });
     };
     let explicit_distance =
         explicit.1.x * explicit.0.x + explicit.1.y * explicit.0.y + explicit.1.z * explicit.0.z;
@@ -29,9 +35,9 @@ pub(super) fn reconcile_reference_plane_frame(
     if (alignment.abs() - 1.0).abs() <= 1.0e-9
         && (explicit_distance - alignment.signum() * constraint_distance).abs() <= 1.0e-9
     {
-        Some(explicit)
+        Some((explicit, SketchPlaneUAxisSource::Native))
     } else {
-        Some(constraint)
+        Some((constraint, SketchPlaneUAxisSource::ConstructedMidPlane))
     }
 }
 
@@ -41,6 +47,7 @@ pub(crate) fn enrich_history_reference_planes(
     lanes: &[FeatureInputLane],
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut candidate_sources = BTreeMap::<(usize, usize), Vec<SketchPlaneUAxisSource>>::new();
     let mut reference_candidates = BTreeMap::<(usize, usize), Vec<String>>::new();
     let mut reference_frame_candidates =
         BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
@@ -185,6 +192,10 @@ pub(crate) fn enrich_history_reference_planes(
                     .entry((history_index, feature_index))
                     .or_default()
                     .push(offset);
+                candidate_sources
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(SketchPlaneUAxisSource::Native);
             }
             let constraint = constraint_midplane_frame(bytes);
             let mut anchored_frames = lane
@@ -213,7 +224,9 @@ pub(crate) fn enrich_history_reference_planes(
                 };
                 Some(*frame)
             };
-            let Some(frame) = reconcile_reference_plane_frame(explicit, constraint) else {
+            let Some((frame, u_axis_source)) =
+                reconcile_reference_plane_frame_with_source(explicit, constraint)
+            else {
                 continue;
             };
             let (origin, normal, u_axis) = frame;
@@ -221,6 +234,10 @@ pub(crate) fn enrich_history_reference_planes(
                 .entry((history_index, feature_index))
                 .or_default()
                 .push((origin, normal, u_axis));
+            candidate_sources
+                .entry((history_index, feature_index))
+                .or_default()
+                .push(u_axis_source);
         }
     }
     let face_reference_indices = face_native_candidates
@@ -260,6 +277,17 @@ pub(crate) fn enrich_history_reference_planes(
                 return None;
             };
             Some((*index, *frame))
+        })
+        .collect::<HashMap<_, _>>();
+    let unique_u_axis_sources = candidate_sources
+        .iter()
+        .filter_map(|(index, sources)| {
+            let source = sources
+                .iter()
+                .find(|source| **source == SketchPlaneUAxisSource::Native)
+                .copied()
+                .or_else(|| sources.first().copied())?;
+            Some((*index, source))
         })
         .collect::<HashMap<_, _>>();
     let unique_reference_frames = reference_frame_candidates
@@ -445,6 +473,18 @@ pub(crate) fn enrich_history_reference_planes(
             "UAxis".into(),
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
+        if unique_u_axis_sources.get(&(history_index, feature_index))
+            == Some(&SketchPlaneUAxisSource::ConstructedMidPlane)
+        {
+            feature.properties.insert(
+                REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY.into(),
+                CONSTRUCTED_MID_PLANE_U_AXIS_SOURCE.into(),
+            );
+        } else {
+            feature
+                .properties
+                .remove(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY);
+        }
     }
 }
 
@@ -895,7 +935,9 @@ pub(crate) fn enrich_history_reference_axes(
         let Some(frame) = plane_frames
             .get(&first)
             .zip(plane_frames.get(&second))
-            .and_then(|(first, second)| plane_intersection_axis_frame(*first, *second))
+            .and_then(|(first, second)| {
+                plane_intersection_axis_frame(first.as_tuple(), second.as_tuple())
+            })
         else {
             continue;
         };

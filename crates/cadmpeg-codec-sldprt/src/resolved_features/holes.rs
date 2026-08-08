@@ -4,7 +4,7 @@ use super::compact_reference_planes::{
     compact_profile_component_plane_frame, compact_profile_reference_plane_source,
     CompactReferencePlaneIndex,
 };
-use super::curves::lane_sketch_plane_frames;
+use super::curves::{lane_sketch_plane_frames, SketchPlaneFrame, SketchPlaneUAxisSource};
 use super::helix::fit_helix_polyline;
 use super::reference_geometry::{explicit_reference_plane_frame, reference_plane_frame_key};
 use super::relation_loci::same_dimension_length;
@@ -2448,44 +2448,102 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
 
 pub(super) fn feature_input_sketch_frame(
     payload: &[u8],
-    plane_frames: &HashMap<u32, (Point3, Vector3, Vector3)>,
+    plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
 ) -> Option<(Point3, Vector3, Vector3)> {
-    compact_profile_reference_plane_source(plane_index, context_start, start, end)
-        .and_then(|source| plane_frames.get(&source).copied())
-        .or_else(|| compact_profile_component_plane_frame(payload, context_start, start, end))
-        .or_else(|| {
-            let (origin, normal, u_axis) = payload
-                .get(start..end)
-                .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
-            let finite_zero = |value: f64| {
-                if value.abs() <= 1.0e-12 {
-                    0.0
-                } else {
-                    value
-                }
-            };
-            Some((
-                Point3::new(
-                    finite_zero(origin.x),
-                    finite_zero(origin.y),
-                    finite_zero(origin.z),
-                ),
-                Vector3::new(
-                    finite_zero(normal.x),
-                    finite_zero(normal.y),
-                    finite_zero(normal.z),
-                ),
-                Vector3::new(
-                    finite_zero(u_axis.x),
-                    finite_zero(u_axis.y),
-                    finite_zero(u_axis.z),
-                ),
-            ))
-        })
+    let reference = compact_profile_reference_plane_source(plane_index, context_start, start, end)
+        .and_then(|source| plane_frames.get(&source).copied());
+    let component = compact_profile_component_plane_frame(payload, context_start, start, end);
+    let explicit = || {
+        let (origin, normal, u_axis) = payload
+            .get(start..end)
+            .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())?;
+        let finite_zero = |value: f64| {
+            if value.abs() <= 1.0e-12 {
+                0.0
+            } else {
+                value
+            }
+        };
+        Some((
+            Point3::new(
+                finite_zero(origin.x),
+                finite_zero(origin.y),
+                finite_zero(origin.z),
+            ),
+            Vector3::new(
+                finite_zero(normal.x),
+                finite_zero(normal.y),
+                finite_zero(normal.z),
+            ),
+            Vector3::new(
+                finite_zero(u_axis.x),
+                finite_zero(u_axis.y),
+                finite_zero(u_axis.z),
+            ),
+        ))
+    };
+    match reference {
+        Some(reference) => {
+            let component = component
+                .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
+            if reference.u_axis_source == SketchPlaneUAxisSource::ConstructedMidPlane {
+                component.or_else(|| {
+                    explicit().filter(|frame| coplanar_plane_frames(reference.as_tuple(), *frame))
+                })
+            } else {
+                component
+                    .or_else(|| Some(reference.as_tuple()))
+                    .or_else(explicit)
+            }
+        }
+        None => component.or_else(explicit),
+    }
+}
+
+fn coplanar_plane_frames(
+    reference: (Point3, Vector3, Vector3),
+    candidate: (Point3, Vector3, Vector3),
+) -> bool {
+    let reference_normal_length = reference.1.norm();
+    let candidate_normal_length = candidate.1.norm();
+    if !reference_normal_length.is_finite()
+        || !candidate_normal_length.is_finite()
+        || reference_normal_length <= f64::EPSILON
+        || candidate_normal_length <= f64::EPSILON
+    {
+        return false;
+    }
+    let normal_alignment = (reference.1.x * candidate.1.x
+        + reference.1.y * candidate.1.y
+        + reference.1.z * candidate.1.z)
+        / (reference_normal_length * candidate_normal_length);
+    if (normal_alignment.abs() - 1.0).abs() > 1.0e-8 {
+        return false;
+    }
+    let displacement = Vector3::new(
+        candidate.0.x - reference.0.x,
+        candidate.0.y - reference.0.y,
+        candidate.0.z - reference.0.z,
+    );
+    let normal_distance = (displacement.x * reference.1.x
+        + displacement.y * reference.1.y
+        + displacement.z * reference.1.z)
+        / reference_normal_length;
+    let scale = reference
+        .0
+        .x
+        .abs()
+        .max(reference.0.y.abs())
+        .max(reference.0.z.abs())
+        .max(candidate.0.x.abs())
+        .max(candidate.0.y.abs())
+        .max(candidate.0.z.abs())
+        .max(1.0);
+    normal_distance.abs() <= 1.0e-8 * scale
 }
 
 pub(super) fn sketch_feature_frames(
