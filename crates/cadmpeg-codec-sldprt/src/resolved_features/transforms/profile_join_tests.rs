@@ -1951,6 +1951,60 @@ fn axis_relation_expands_intermediate_relation_handle() {
             second: SketchLocus::Entity(SketchEntityId("second-point".into())),
         })
     );
+
+    let sketch = SketchId("axis-sketch".into());
+    let entities = vec![
+        SketchEntity {
+            id: SketchEntityId("first-entity".into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(first.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(0.0, 1.0),
+            },
+        },
+        SketchEntity {
+            id: SketchEntityId("second-entity".into()),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(second.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(2.0, 1.0),
+            },
+        },
+    ];
+    assert_eq!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-entity".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-entity".into())),
+        })
+    );
+    let mut ambiguous_entities = entities.clone();
+    ambiguous_entities.push(SketchEntity {
+        id: SketchEntityId("second-duplicate".into()),
+        ..ambiguous_entities[1].clone()
+    });
+    assert!(matches!(
+        typed_marker_relation_definition_in_sketch(
+            &horizontal,
+            &sketch,
+            &ambiguous_entities,
+            &markers,
+            &HashMap::new(),
+        ),
+        Some(SketchConstraintDefinition::Native { .. })
+    ));
 }
 
 #[test]
@@ -6487,6 +6541,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         Some(SketchConstraintDefinition::Native { entities, .. })
             if entities == vec![relation_point]
     ));
+
     let mut operandless_vertical = marker("operandless-vertical", None);
     operandless_vertical.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
     assert_eq!(

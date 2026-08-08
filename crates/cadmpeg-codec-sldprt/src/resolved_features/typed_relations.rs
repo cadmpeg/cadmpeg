@@ -180,9 +180,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     Some(match kind {
         Horizontal | Vertical | Fixed => {
             if matches!(kind, Horizontal | Vertical) {
-                if let Some([first, second]) =
-                    axis_relation_point_loci(marker, markers_by_id, loci_by_marker)
-                {
+                if let Some([first, second]) = axis_relation_point_loci(
+                    marker,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                ) {
                     return Some(if kind == Horizontal {
                         SketchConstraintDefinition::HorizontalPoints { first, second }
                     } else {
@@ -1106,6 +1110,8 @@ pub(super) fn unique_axis_aligned_linked_loci(
 
 fn axis_relation_point_loci(
     relation: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<[SketchLocus; 2]> {
@@ -1123,6 +1129,8 @@ fn axis_relation_point_loci(
     let mut loci = Vec::new();
     collect_axis_relation_point_loci(
         relation,
+        sketch,
+        sketch_entities,
         markers_by_id,
         loci_by_marker,
         &mut HashSet::new(),
@@ -1135,6 +1143,8 @@ fn axis_relation_point_loci(
 
 fn collect_axis_relation_point_loci(
     relation: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     visited: &mut HashSet<String>,
@@ -1153,10 +1163,19 @@ fn collect_axis_relation_point_loci(
         };
         match linked.kind {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
-                append_axis_relation_point_locus(&linked.id, markers_by_id, loci_by_marker, loci);
+                append_axis_relation_point_locus(
+                    &linked.id,
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    loci,
+                );
             }
             SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
                 linked,
+                sketch,
+                sketch_entities,
                 markers_by_id,
                 loci_by_marker,
                 visited,
@@ -1170,13 +1189,22 @@ fn collect_axis_relation_point_loci(
             owner.kind,
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint
         ) {
-            append_axis_relation_point_locus(&owner.id, markers_by_id, loci_by_marker, loci);
+            append_axis_relation_point_locus(
+                &owner.id,
+                sketch,
+                sketch_entities,
+                markers_by_id,
+                loci_by_marker,
+                loci,
+            );
         }
     }
 }
 
 fn append_axis_relation_point_locus(
     marker_id: &str,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     loci: &mut Vec<SketchLocus>,
@@ -1184,6 +1212,19 @@ fn append_axis_relation_point_locus(
     if let Some(locus) = marker_point_locus(marker_id, markers_by_id, loci_by_marker) {
         if !loci.contains(&locus) {
             loci.push(locus);
+        }
+        return;
+    }
+    let candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| entity.native_ref.as_deref() == Some(marker_id))
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+        .map(|entity| SketchLocus::Entity(entity.id.clone()))
+        .collect::<Vec<_>>();
+    if let [locus] = candidates.as_slice() {
+        if !loci.contains(locus) {
+            loci.push(locus.clone());
         }
     }
 }
