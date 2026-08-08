@@ -16157,6 +16157,100 @@ fn native_namespace_binds_two_definition_value_chains() {
 }
 
 #[test]
+fn typed_definition_chain_values_transfer_as_parameters() {
+    let bits = 12.5_f64.to_bits();
+    let mut suffix = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
+    suffix.extend_from_slice(&bits.to_le_bytes());
+    suffix.extend_from_slice(&[0x81, 0x49]);
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&suffix)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed definition-chain parameter");
+
+    let [parameter] = decoded.ir.model.parameters.as_slice() else {
+        panic!("expected one typed definition-chain parameter");
+    };
+    assert_eq!(parameter.name, "FeatureFEDGE");
+    assert_eq!(parameter.expression, "12.5");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(12.5))
+    );
+    assert_eq!(parameter.owner, None);
+    assert_eq!(parameter.properties["value_type"], "Real");
+    assert_eq!(parameter.properties["catia_binding"], "FeatureFEDGE");
+    assert_eq!(
+        parameter.properties["catia_definition_evaluation_opcode_offset"],
+        "8"
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
+                0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe7,
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset definition-chain parameter");
+    let [unset_parameter] = unset.ir.model.parameters.as_slice() else {
+        panic!("expected one unset definition-chain parameter");
+    };
+    assert!(unset_parameter.value.is_none());
+    assert!(unset_parameter.expression.is_empty());
+    assert_eq!(
+        unset
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let mut native =
+        crate::native::CatiaNative::decode(&standard_catpart_with_definition_chain_value(&[
+            0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]));
+    let parameter_entity = native.entity_records[0].clone();
+    native.entity_records[0].relation_program_instance =
+        Some(crate::native::CatiaRelationProgramInstance {
+            framing: crate::native::CatiaRelationProgramInstanceFraming::Lead12,
+            program_entity: crate::native::CatiaEntityReference::default(),
+            repeated_entity: crate::native::CatiaEntityReference::default(),
+            reference_incidences: Vec::new(),
+            relation_expression: None,
+            parameter_dependencies: Vec::new(),
+            inputs: Some(vec![crate::native::CatiaRelationProgramInput {
+                parameter: "#1_".to_string(),
+                value_type: "Real".to_string(),
+                entity: crate::native::CatiaEntityReference {
+                    entity_id: parameter_entity.entity_id,
+                    is_null: false,
+                    entity: Some(parameter_entity.id.clone()),
+                    class_name: Some("param".to_string()),
+                },
+            }]),
+            lead12_context_entity: None,
+            lead54_trailing_entity: None,
+        });
+    let mut relation_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let relation_transfer = crate::formula::transfer_parameters(
+        &mut relation_ir,
+        &native,
+        &mut Annotations::default(),
+        None,
+    );
+    assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
+    assert_eq!(relation_transfer.relation_program_parameter_count, 1);
+    assert_eq!(relation_ir.model.parameters.len(), 1);
+}
+
+#[test]
 fn design_objects_retain_definition_chain_values_in_field_order() {
     let native =
         crate::native::CatiaNative::decode(&standard_catpart_with_two_definition_chain_values());

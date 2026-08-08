@@ -28,6 +28,12 @@ pub(crate) fn transfer_parameters(
         .collect::<HashMap<_, _>>();
     let mut candidates = BTreeMap::<ParameterId, FormulaParameterCandidate>::new();
     let mut conflicting_inputs = BTreeSet::<ParameterId>::new();
+    collect_definition_chain_parameters(
+        native,
+        graph_scope,
+        &mut candidates,
+        &mut conflicting_inputs,
+    );
     let mut programs = Vec::<FormulaProgramCandidate>::new();
     let formula_definition_counts = native
         .entity_records
@@ -85,11 +91,8 @@ pub(crate) fn transfer_parameters(
             else {
                 continue;
             };
-            let Some(parameter) = &entity.parameter_value else {
-                continue;
-            };
             let Some(candidate) =
-                typed_entity_parameter_candidate(entity, parameter, input.value_type.as_str())
+                typed_entity_parameter_candidate_for_source(entity, input.value_type.as_str())
             else {
                 continue;
             };
@@ -170,13 +173,8 @@ pub(crate) fn transfer_parameters(
                 all_inputs_typed = false;
                 continue;
             };
-            let Some(parameter) = &entity.parameter_value else {
-                all_inputs_complete = false;
-                all_inputs_typed = false;
-                continue;
-            };
             let Some(candidate) =
-                typed_entity_parameter_candidate(entity, parameter, &input.input_type)
+                typed_entity_parameter_candidate_for_source(entity, &input.input_type)
             else {
                 all_inputs_complete = false;
                 all_inputs_typed = false;
@@ -468,6 +466,17 @@ pub(crate) fn transfer_parameters(
     else {
         return FormulaTransfer::default();
     };
+    let definition_chain_parameter_count = parameters
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .parameter
+                .native_ref
+                .as_ref()
+                .and_then(|native_ref| entities.get(native_ref.as_str()))
+                .is_some_and(|entity| entity.definition_chain_value.is_some())
+        })
+        .count();
     for candidate in &parameters {
         annotations
             .exactness
@@ -490,6 +499,7 @@ pub(crate) fn transfer_parameters(
         .extend(parameters.into_iter().map(|candidate| candidate.parameter));
     FormulaTransfer {
         typed_parameter_count: transferred.saturating_sub(legacy_transfer.parameters),
+        definition_chain_parameter_count,
         relation_program_parameter_count,
         legacy_parameter_count: legacy_transfer.parameters,
         legacy_selector_parameter_count: legacy_transfer.selector_parameters,
@@ -498,9 +508,115 @@ pub(crate) fn transfer_parameters(
     }
 }
 
+/// Add only typed scalar values from the exact two-definition chain grammar.
+///
+/// The first definition names the parameter field and the second definition
+/// names its source type. The suffix selector must already agree with the
+/// first definition; the native decoder enforces that invariant. Other suffix
+/// states remain native because they do not contain a neutral parameter value.
+fn collect_definition_chain_parameters(
+    native: &CatiaNative,
+    graph_scope: Option<&HashSet<String>>,
+    candidates: &mut BTreeMap<ParameterId, FormulaParameterCandidate>,
+    conflicting_inputs: &mut BTreeSet<ParameterId>,
+) {
+    for entity in native.entity_records.iter().filter(|entity| {
+        graph_scope.is_none_or(|scope| scope.contains(entity.object_graph.as_str()))
+    }) {
+        let Some(chain) = entity.definition_chain_value.as_ref() else {
+            continue;
+        };
+        let Some(candidate) = definition_chain_parameter_candidate(entity, chain) else {
+            continue;
+        };
+        let id = candidate.parameter.id.clone();
+        match candidates.get(&id) {
+            None => {
+                candidates.insert(id, candidate);
+            }
+            Some(existing) if !formula_parameter_candidates_agree(existing, &candidate) => {
+                conflicting_inputs.insert(id);
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+fn definition_chain_parameter_candidate(
+    entity: &crate::native::CatiaEntityRecord,
+    chain: &crate::native::CatiaDefinitionChainValue,
+) -> Option<FormulaParameterCandidate> {
+    let parameter_type = canonical_parameter_type(&chain.role.value)?;
+    let crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+        opcode_offset,
+        evaluation,
+    } = &chain.value
+    else {
+        return None;
+    };
+    let evaluation = typed_parameter_evaluation(&chain.role.value, evaluation)?;
+    let name = (!chain.selector.value.is_empty()).then(|| chain.selector.value.clone())?;
+    let (expression, value) = match evaluation {
+        TypedParameterEvaluation::Unset => (String::new(), None),
+        TypedParameterEvaluation::Value(value) => {
+            let expression = parameter_expression(&value);
+            (expression, Some(value))
+        }
+    };
+    let mut properties = parameter_properties(parameter_type, Some(name.as_str()));
+    properties.insert(
+        "catia_definition_selector_entry".to_string(),
+        chain.selector.entry.clone(),
+    );
+    properties.insert(
+        "catia_definition_selector_ordinal".to_string(),
+        chain.selector.ordinal.to_string(),
+    );
+    properties.insert(
+        "catia_definition_selector_offset".to_string(),
+        chain.selector.offset.to_string(),
+    );
+    properties.insert(
+        "catia_definition_role_entry".to_string(),
+        chain.role.entry.clone(),
+    );
+    properties.insert(
+        "catia_definition_role_ordinal".to_string(),
+        chain.role.ordinal.to_string(),
+    );
+    properties.insert(
+        "catia_definition_role_offset".to_string(),
+        chain.role.offset.to_string(),
+    );
+    properties.insert(
+        "catia_definition_evaluation_opcode_offset".to_string(),
+        opcode_offset.to_string(),
+    );
+    Some(FormulaParameterCandidate {
+        parameter: DesignParameter {
+            id: neutral_parameter_id(&entity.id),
+            owner: None,
+            ordinal: 0,
+            name,
+            expression,
+            display: None,
+            value,
+            dependencies: Vec::new(),
+            properties,
+            pmi: None,
+            native_ref: Some(entity.id.clone()),
+        },
+        parameter_type,
+        formula_output: false,
+        input_fallback: None,
+        source_order: entity.byte_offset,
+    })
+}
+
 #[derive(Default)]
 pub(crate) struct FormulaTransfer {
     pub(crate) typed_parameter_count: usize,
+    pub(crate) definition_chain_parameter_count: usize,
     pub(crate) relation_program_parameter_count: usize,
     pub(crate) legacy_parameter_count: usize,
     pub(crate) legacy_selector_parameter_count: usize,
@@ -919,6 +1035,18 @@ fn typed_entity_parameter_candidate(
         input_fallback: None,
         source_order: entity.byte_offset,
     })
+}
+
+fn typed_entity_parameter_candidate_for_source(
+    entity: &crate::native::CatiaEntityRecord,
+    source_type: &str,
+) -> Option<FormulaParameterCandidate> {
+    if let Some(parameter) = &entity.parameter_value {
+        return typed_entity_parameter_candidate(entity, parameter, source_type);
+    }
+    let chain = entity.definition_chain_value.as_ref()?;
+    let candidate = definition_chain_parameter_candidate(entity, chain)?;
+    (canonical_parameter_type(source_type) == Some(candidate.parameter_type)).then_some(candidate)
 }
 
 struct FormulaProgramCandidate {
@@ -2764,7 +2892,10 @@ fn canonical_parameter_type(source_type: &str) -> Option<&'static str> {
 }
 
 fn neutral_parameter_id(native_id: &str) -> ParameterId {
-    ParameterId(format!("{native_id}:parameter"))
+    ParameterId(crate::design_feature::neutral_history_id(
+        native_id,
+        "parameter",
+    ))
 }
 
 #[cfg(test)]

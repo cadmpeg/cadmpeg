@@ -105,7 +105,12 @@ current scores require those matrices and representative fixtures.
   ordinal, selected catalog entry, and value. Each design object retains its
   chain-value entity identities in field order. Finite and unset evaluations,
   atoms, controls, separators, and nested schema selectors are counted
-  independently.
+  independently. A chain with a non-empty first definition, a canonical
+  scalar or unset second role, and an evaluation value transfers one typed
+  parameter in source order. Its name comes from the first definition and its
+  type from the second; exact selector, role, and evaluation-opcode offsets
+  remain properties. Unsupported value states, roles, and conflicting
+  candidates remain native.
 - Relation-expression coverage partitions distinct expressions referenced by
   formulas, compound relation-program instances, either incidence, and neither
   incidence. An expression selected by both incidence forms is counted once in

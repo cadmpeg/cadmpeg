@@ -2934,6 +2934,10 @@ fn finish_decode(
             transferred_formula_design_records.len(),
         ),
         (
+            "transferred_definition_chain_parameter_count".to_string(),
+            formula_transfer.definition_chain_parameter_count,
+        ),
+        (
             "transferred_principal_plane_record_count".to_string(),
             transferred_principal_plane_records.len(),
         ),
