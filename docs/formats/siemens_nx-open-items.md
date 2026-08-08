@@ -216,6 +216,40 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles and cardinality rules to transfer the complete inline body state.
 
+### PS-26. Boundary pcurve completion without a chart
+
+**Question.** Which serialized witness establishes the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
+
+**Known.** `siemens_nx.md` §5.3 "An EDGE may carry null curve reference `1` with a finite tolerance. With a null" defines chart-certified transfer for a null carrier and states that transfer does not synthesize a model-space line between the vertices. `siemens_nx.md` §5.3 "A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN" defines the FIN-carrier case. Neither defines a boundary pcurve for a plane or quadric support that has no chart.
+
+**Need.** We must know the witness to construct the boundary pcurve from the file. Endpoint inversion alone fixes only the two ends, so the interior of the interval carries no evidence, and a straight parameter-space chart on a plane asserts a straight model-space edge.
+
+**Note.** The decoder completes this case in `exact_boundary_pcurve` (`crates/cadmpeg-codec-nx/src/decode.rs`). The plane and quadric branches invert the two EDGE vertices, accept them when they map back inside the EDGE tolerance, and interpolate between them. The 3D carrier reference that the function receives is used only for the analytic-isocurve attempt, so no branch compares the interior of the interval against the carrier. The NURBS branch selects a constant-parameter boundary with an uncited `1.0e-8` relative threshold. The completed chart pair also overwrites `cache_fit_tolerance` with the EDGE tolerance, discarding the decoded chordal error of the chart record.
+
+### PS-27. Unresolved EDGE end vertex
+
+**Question.** What is the correct reading of an EDGE whose end vertex does not resolve to a decoded POINT?
+
+**Known.** `siemens_nx.md` §5.3 "An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP" and `siemens_nx.md` §5.3 "POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.ver" define endpoint incidence through the FIN chain and the POINT-to-vertex condition. They do not define the case in which the resolved end vertex has no decoded POINT.
+
+**Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. The decoder substitutes the start vertex for an unresolved end vertex, which makes the two forms identical in the model and changes edge-use counting and body-kind classification.
+
+### PS-28. Compact tombstone boundary condition
+
+**Question.** Which condition ends a compact tombstone, and does a following byte pair constrain it?
+
+**Known.** `siemens_nx.md` §4.2 "**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies" defines the tombstone as a self-delimiting six-byte form with two identity encodings. `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary," defines the runs. Neither states a condition on the bytes after a tombstone.
+
+**Need.** We must know the boundary condition to admit every deletion. The deltas walk resynchronizes byte by byte, so it needs some end condition, and it currently requires the following two bytes to decode as a known node kind. A deletion whose successor bytes open a family that this condition does not name is discarded, the entity survives the merge, and no loss records the discard.
+
+### PS-29. Interleaved body revision sequences
+
+**Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
+
+**Known.** `siemens_nx.md` §7.2 "BODY (`00 0c`) records delimit body revisions. The record prefix is" defines the revision prefix, the monotonic `node_id` counter, and the rule that the final validated BODY envelope begins the current revision. `siemens_nx.md` §9.2 "A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapshot. Its `node_id` is a monotonic revision counter" states that a `node_id` reset begins another interleaved body sequence.
+
+**Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
@@ -458,6 +492,24 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the serialized hierarchy or operation-role field before collapsing, parenting, or suppressing either neutral feature family.
 
+**Conflict.** This item, the specification, and the decoder disagree, and the specification disagrees with itself. `siemens_nx.md` §7.1 "A `HOLE PACKAGE` operation related to one simple-hole construction group owns" states the ownership as fact and adds that the internal operations do not also project as neutral history features. `siemens_nx.md` §7.1 "One package lane relates to one simple-hole construction group when their four resolved block identities are equal in serialized order" asserts the same ownership in its fourth sentence and then states that the equality does not assign hole parameters, placement, output, suppression, or dependency direction. The decoder applies the ownership: `hole_package_projection` in `crates/cadmpeg-codec-nx/src/native/attach.rs` collects the group's `SIMPLE HOLE` labels as internal operations, and `attach_feature_operations` removes them from the emitted features and transfers their output, diameter, treatments, and axis placements to the package. This item says that field is not yet identified, so one of the three must change. Resolve the specification against the serialized evidence before the decoder keeps deleting history features.
+
+### OM-31. Feature-history construction-order evidence
+
+**Question.** Which serialized field establishes the construction order of feature-history operations, inside one record area and between record areas?
+
+**Known.** `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" and `siemens_nx.md` §7.1 "Neutral feature ordinals and dependency precedence reverse the operation order" define the reversed order inside one area and the serialized order between areas. Neutral feature ordinals, dependency precedence, body lineage, and terminal-body selection all derive their order from that reversal. An operation label carries a name, four object-index lanes, and a source offset. It carries no sequence number, no timestamp, and no predecessor reference.
+
+**Need.** We must know the field to order operations when one record area holds records of more than one construction generation, or when the serialized area order is not the construction order. Record order is the only current witness, so a file that stores areas or records in another order gives a reversed history with no diagnostic.
+
+### OM-32. All-terminal body-lineage mappings
+
+**Question.** Which serialized state separates a complete body mapping in which every emitted body is terminal from a mapping whose terminal status is unresolved?
+
+**Known.** `siemens_nx.md` §7.1 "Bodies named by validated segment binding tuples exist at the start of retained feature history." and `siemens_nx.md` §7.1 "A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection." define writer and consumption ordering and admit the all-terminal case as resolved. Both a file whose operations supersede no body and a file whose lineage evidence is absent produce the same all-terminal set.
+
+**Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -527,6 +579,16 @@ member as a neutral suppression or visibility state.
 **Known.** `siemens_nx.md` §9.1 "An `EXTREFSTREAM` record region begins with" and `siemens_nx.md` §9.1 "Slot zero names the child `.prt`, slot one is the reference code," define the indexed-record boundary, handle-set prefix, persistent-handle pairs, tagged references, string uses, and child binding. Other tail bytes remain opaque.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
+
+### AM-09. SDL/TYSA attribute values
+
+**Question.** How does each Parasolid SDL/TYSA attribute instance assign its referenced value records to the fields declared by its type-79 class definition?
+
+**Known.** `siemens_nx.md` §9.4 "A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved" and `siemens_nx.md` §9.4 "When a value resolves without a unique declared-field assignment, its neutral" define attribute-class declarations, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. The declaration includes ordered field type codes such as those for `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`. The specification assigns the two fields of `SDL/TYSA_DENSITY` by name. Every other class falls back to the zero-based declared field ordinal and declared field code.
+
+**Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
+
+**Note.** This item was closed by an assignment for one class. The question covers every class, and `SDL/TYSA_BLEND_ID` is named in the item itself and remains unassigned. A per-class table with one entry does not answer a per-class question, so the item is open again.
 
 ### AM-10. Face material bindings
 
