@@ -593,18 +593,11 @@ surface color, so the reader selects `.BOTH.` before `.POSITIVE.` before
 
 ### AP-07. Triangle strip winding
 
-**Question.** Which winding rule applies to the triangles of a
-`TRIANGLE_STRIP`?
-
-**Known.** `step.md` §8 "Triangle, strip, and fan indices address local
-points." gives the index meaning and no winding rule. The decoder alternates
-the first two indices on odd triangles
-(`crates/cadmpeg-codec-step/src/reader/tessellation.rs:419-427`).
-
-**Need.** The alternation matches the common strip convention, and the test
-that covers it asserts the decoder's own output rather than a rule. If the
-AP242 rule instead takes each consecutive triple in order, every odd triangle
-of every strip faces inward. We must confirm the rule from the standard.
+**Resolved.** A strip with indices `v[0]` through `v[n]` produces
+`[v[i], v[i+1], v[i+2]]` for an even `i` and
+`[v[i+1], v[i], v[i+2]]` for an odd `i`. Fans keep their first index and
+advance the other two. The reader applies this rule and the regression covers
+the first two triangles of one strip.
 
 ## 12. Envelope, lexis, and schema selection
 

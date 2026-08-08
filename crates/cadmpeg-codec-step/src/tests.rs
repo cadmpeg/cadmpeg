@@ -8193,6 +8193,20 @@ fn malformed_complex_strip_does_not_discard_valid_strips() {
 }
 
 #[test]
+fn complex_triangle_strip_alternates_winding() {
+    let result = decode_inline(
+        "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,((1,2,3,4)),());",
+    );
+
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(
+        result.ir.model.tessellations[0].triangles,
+        [[0, 1, 2], [2, 1, 3]]
+    );
+}
+
+#[test]
 fn ap203e1_does_not_emit_invisibility_entities() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);

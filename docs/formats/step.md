@@ -419,9 +419,11 @@ Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A missing or ambiguous owner detaches the
 tessellation, retains its source item association, and records a
 `ReferenceGraphNotClosed` loss. Tessellated indices are one-based. PNINDEX maps
-local points to shared coordinates. Triangle, strip, and fan indices address
-local points. A normal aggregate of length one applies to every local point;
-other normal aggregates align with the local point table.
+local points to shared coordinates. Triangle and fan indices address local
+points in listed order. A triangle strip alternates the first two indices for
+each odd triangle so adjacent triangles keep one surface orientation. A normal
+aggregate of length one applies to every local point; other normal aggregates
+align with the local point table.
 
 Styles resolve from a styled item through presentation assignments to color.
 For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and
