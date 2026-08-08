@@ -216,8 +216,8 @@ pub fn validate_with_source_fidelity(
 mod tests {
     use super::validate;
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, Feature,
-        FeatureDefinition, FeatureId,
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
+        FeatureDefinition, FeatureId, PrincipalPlane, SplitFaceTool,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
@@ -290,5 +290,86 @@ mod tests {
         let report = validate(&ir, Vec::new());
 
         assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn split_face_plane_sets_require_two_unique_plane_dependencies() {
+        let feature =
+            |id: FeatureId, ordinal, dependencies, definition: FeatureDefinition| Feature {
+                id,
+                ordinal,
+                name: None,
+                suppressed: Some(false),
+                parent: None,
+                dependencies,
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: None,
+            };
+        let first = FeatureId("test:model:feature#plane-a".into());
+        let second = FeatureId("test:model:feature#plane-b".into());
+        let split = FeatureId("test:model:feature#split".into());
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features = vec![
+            feature(
+                first.clone(),
+                0,
+                Vec::new(),
+                FeatureDefinition::DatumPrincipalPlane {
+                    plane: PrincipalPlane::Front,
+                },
+            ),
+            feature(
+                second.clone(),
+                1,
+                Vec::new(),
+                FeatureDefinition::DatumPrincipalPlane {
+                    plane: PrincipalPlane::Right,
+                },
+            ),
+            feature(
+                split,
+                2,
+                vec![first.clone(), second.clone()],
+                FeatureDefinition::SplitFace {
+                    targets: FaceSelection::Unresolved,
+                    tool: SplitFaceTool::Planes {
+                        planes: vec![first.clone(), second.clone()],
+                    },
+                },
+            ),
+        ];
+
+        let report = validate(&ir, Vec::new());
+        assert!(report.findings.is_empty(), "{:?}", report.findings);
+
+        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
+            *tool = SplitFaceTool::Planes {
+                planes: vec![first.clone()],
+            };
+        } else {
+            unreachable!();
+        }
+        let report = validate(&ir, Vec::new());
+        assert!(report.findings.iter().any(|finding| {
+            finding.message == "split-face plane set has fewer than two planes"
+        }));
+
+        if let FeatureDefinition::SplitFace { tool, .. } = &mut ir.model.features[2].definition {
+            *tool = SplitFaceTool::Planes {
+                planes: vec![first.clone(), first],
+            };
+        } else {
+            unreachable!();
+        }
+        let report = validate(&ir, Vec::new());
+        assert!(report
+            .findings
+            .iter()
+            .any(|finding| { finding.message == "split-face plane set contains repeated planes" }));
     }
 }

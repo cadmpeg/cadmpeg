@@ -1485,7 +1485,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 incomplete_face_selection(targets)
                     || match tool {
                         SplitFaceTool::Path(path) => incomplete_path(path),
-                        SplitFaceTool::Plane { .. } => false,
+                        SplitFaceTool::Plane { .. } | SplitFaceTool::Planes { .. } => false,
                     }
             }
             FeatureDefinition::SewBodies {

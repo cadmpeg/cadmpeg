@@ -90,8 +90,8 @@ use crate::design::face_resolve::{
     resolved_face_group, resolved_historical_split_face_target_group,
 };
 use crate::design::feature_project::{
-    project_combine, project_extrude, project_parameter_design, project_split,
-    untyped_parameter_unit_count,
+    project_combine, project_extrude, project_parameter_design,
+    project_parameter_design_with_edge_identities, project_split, untyped_parameter_unit_count,
 };
 use crate::design::geometry::{
     closed_sketch_profiles, point_on_sketch_entity, region_containing_points,
@@ -9576,11 +9576,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     target_group.members = vec![500];
     target_group.member_offsets = vec![1129];
     target_group.role = 0x0000_0010_0000_0000;
+    let split_groups = [tool_group, target_group];
     let (features, _) = project_parameter_design(
         &[],
         &[],
         std::slice::from_ref(&split_scope),
-        &[tool_group, target_group],
+        &split_groups,
         &[],
         &[],
         &[],
@@ -9594,6 +9595,125 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 cadmpeg_ir::features::PathRef::Native(tool),
             ),
         } if targets.ends_with("#400") && tool.ends_with("#100")
+    ));
+
+    let mut compact_split_scope = split_scope.clone();
+    compact_split_scope.class_tag = "418".into();
+    compact_split_scope.paired_class_tag = "266".into();
+    compact_split_scope.frame_length = 330;
+    let (compact_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&compact_split_scope),
+        &split_groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &compact_features[0].definition,
+        FeatureDefinition::SplitFace { .. }
+    ));
+
+    let mut first_plane =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#601", "WorkPlane", 601);
+    first_plane.feature_ordinal = 0;
+    first_plane.work_plane_transform = Some([
+        [1.0, 0.0, 0.0, -0.8],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    let mut second_plane =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#701", "WorkPlane", 701);
+    second_plane.feature_ordinal = 1;
+    second_plane.work_plane_transform = Some([
+        [1.0, 0.0, 0.0, -1.4],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]);
+    compact_split_scope.feature_ordinal = 2;
+    let plane_selection = |record_index, group_member_ordinal, primary_identity| {
+        crate::records::DesignEntitySelectionOperand {
+            id: format!("f3d:Design/BulkStream.dat:design-entity-selection-operand#{record_index}"),
+            scope_record_index: compact_split_scope.record_index,
+            group_record_index: split_groups[0].record_index,
+            group_member_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "372".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            identity_record_index: record_index + 3,
+            identity_record_offset: 0,
+            primary_identity,
+            primary_identity_offset: 0,
+            secondary_identity: None,
+            secondary_identity_offset: None,
+            curve_secondary_identity: None,
+            curve_secondary_identity_offset: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: record_index + 4,
+            next_byte_offset: 0,
+        }
+    };
+    let plane_selections = [plane_selection(200, 0, 600), plane_selection(201, 1, 700)];
+    let expected_planes = [
+        crate::ids::neutral_feature_id(&first_plane),
+        crate::ids::neutral_feature_id(&second_plane),
+    ];
+    let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
+    let (plane_features, _) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &plane_scopes,
+            construction_groups: &split_groups,
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &plane_selections,
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    );
+    let plane_split = plane_features
+        .iter()
+        .find(|feature| feature.source_tag.as_deref() == Some("SplitFace"))
+        .expect("projected SplitFace");
+    assert!(matches!(
+        &plane_split.definition,
+        FeatureDefinition::SplitFace {
+            tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+            ..
+        } if planes == &expected_planes
+    ));
+    assert_eq!(plane_split.dependencies, expected_planes);
+
+    compact_split_scope.class_tag = "375".into();
+    let (mismatched_features, _) = project_parameter_design(
+        &[],
+        &[],
+        std::slice::from_ref(&compact_split_scope),
+        &split_groups,
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &mismatched_features[0].definition,
+        FeatureDefinition::Native { .. }
     ));
 
     let mut split_body_scope = scope.clone();
@@ -12470,6 +12590,34 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     split_context.preceding_candidate_faces.clear();
     split_context.changed_candidate_faces.clear();
     split_context.resolved_face_slots.clear();
+    let nested_candidate = split_context
+        .recipe_references
+        .iter()
+        .flat_map(|reference| {
+            reference
+                .candidate_faces
+                .iter()
+                .chain(&reference.alternate_selector_faces)
+        })
+        .next()
+        .cloned()
+        .expect("nested bounded-face candidate");
+    let nested_slot = nested_candidate
+        .0
+        .rsplit_once('#')
+        .and_then(|(_, slot)| slot.parse::<i64>().ok())
+        .expect("nested bounded-face slot");
+    split_context.changed_candidate_faces = vec![FaceId("f3d:brep:entity#999".into())];
+    assert_eq!(
+        crate::design::face_resolve::resolve_face_operand_history_candidates(&split_context),
+        None
+    );
+    split_context.changed_candidate_faces = vec![nested_candidate];
+    assert_eq!(
+        crate::design::face_resolve::resolve_face_operand_history_candidates(&split_context),
+        Some(nested_slot)
+    );
+    split_context.changed_candidate_faces.clear();
     assert!(matches!(
         resolved_historical_split_face_target_group(
             &split_scope,

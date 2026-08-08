@@ -9,7 +9,7 @@ Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, and the
-sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
+class-418 `SplitFace` prefix and sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 
@@ -228,6 +228,21 @@ Offsets are relative to `T = A + 133`, after the third GUID. The LP-UTF16 kind p
 | 12 | 6 | `reference_zero_run` | `bytes[6]` | little | spec | the one-member reference table at `T + 3` |
 | 18 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity at `T + 18` |
 | 22 | 4 | `kind_code_unit_count` | `u32` | little | spec | the LP-UTF16 scope kind at `T + 22` |
+
+## `split_face_class_418_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 32 B
+
+Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | eleven zero bytes at offsets 11 through 21 |
+| 22 | 1 | `first_marker` | `u8` | little | spec | byte `01` at offset 22 |
+| 23 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 23 through 26 |
+| 27 | 2 | `marker_pair` | `bytes[2]` | little | spec | bytes `01 01` at offsets 27 and 28 |
+| 29 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 29 through 31 |
 
 ## `form_compact_one_cage_list`
 

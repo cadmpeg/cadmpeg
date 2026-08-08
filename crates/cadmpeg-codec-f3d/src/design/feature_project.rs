@@ -1029,7 +1029,7 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     for feature in &mut features {
-        let dependency = match &feature.definition {
+        let dependencies: &[cadmpeg_ir::features::FeatureId] = match &feature.definition {
             FeatureDefinition::Draft {
                 pull_plane: Some(plane),
                 ..
@@ -1037,10 +1037,14 @@ pub fn project_parameter_design_with_edge_identities(
             | FeatureDefinition::SplitFace {
                 tool: cadmpeg_ir::features::SplitFaceTool::Plane { plane },
                 ..
-            } => Some(plane),
-            _ => None,
+            } => std::slice::from_ref(plane),
+            FeatureDefinition::SplitFace {
+                tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+                ..
+            } => planes,
+            _ => &[],
         };
-        if let Some(dependency) = dependency {
+        for dependency in dependencies {
             if dependency != &feature.id && !feature.dependencies.contains(dependency) {
                 feature.dependencies.push(dependency.clone());
             }
@@ -2023,34 +2027,62 @@ fn selected_work_plane<'a>(
     entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
     scopes: &'a [DesignParameterScope],
 ) -> Option<&'a DesignParameterScope> {
+    let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
+    let [plane] = planes.as_slice() else {
+        return None;
+    };
+    Some(*plane)
+}
+
+fn selected_work_planes<'a>(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    entity_selection_operands: &[crate::records::DesignEntitySelectionOperand],
+    scopes: &'a [DesignParameterScope],
+) -> Option<Vec<&'a DesignParameterScope>> {
     let stream = native_stream(&scope.id)?;
-    let [member] = group.members.as_slice() else {
+    if group.members.is_empty() {
         return None;
-    };
-    let selections = entity_selection_operands
-        .iter()
-        .filter(|operand| {
-            native_stream(&operand.id) == Some(stream)
-                && operand.scope_record_index == scope.record_index
-                && operand.group_record_index == group.record_index
-                && operand.group_member_ordinal == 0
-                && operand.record_index == *member
-        })
-        .collect::<Vec<_>>();
-    let [selection] = selections.as_slice() else {
-        return None;
-    };
-    let target_record_index = u32::try_from(selection.primary_identity)
-        .ok()?
-        .checked_add(1)?;
-    let mut target_scopes = scopes.iter().filter(|candidate| {
-        native_stream(&candidate.id) == Some(stream)
-            && candidate.record_index == target_record_index
-            && candidate.kind == "WorkPlane"
-            && candidate.work_plane_transform.is_some()
-    });
-    let target = target_scopes.next()?;
-    target_scopes.next().is_none().then_some(target)
+    }
+    let mut planes = Vec::with_capacity(group.members.len());
+    let mut target_record_indices = HashSet::with_capacity(group.members.len());
+    for (ordinal, member) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let selections = entity_selection_operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index == *member
+            })
+            .collect::<Vec<_>>();
+        let [selection] = selections.as_slice() else {
+            return None;
+        };
+        if selection.secondary_identity.is_some() || selection.curve_secondary_identity.is_some() {
+            return None;
+        }
+        let target_record_index = u32::try_from(selection.primary_identity)
+            .ok()?
+            .checked_add(1)?;
+        if !target_record_indices.insert(target_record_index) {
+            return None;
+        }
+        let mut target_scopes = scopes.iter().filter(|candidate| {
+            native_stream(&candidate.id) == Some(stream)
+                && candidate.record_index == target_record_index
+                && candidate.kind == "WorkPlane"
+                && candidate.work_plane_transform.is_some()
+        });
+        let target = target_scopes.next()?;
+        if target_scopes.next().is_some() {
+            return None;
+        }
+        planes.push(target);
+    }
+    Some(planes)
 }
 
 /// Return the unique non-empty construction operand group in `scope` carrying
@@ -5539,25 +5571,14 @@ fn project_split_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SplitFaceTool};
 
     let reference_count = scope.reference_members.len();
-    if scope.kind != "SplitFace"
-        || reference_count < 4
-        || !matches!(
-            scope.frame_length,
-            frame_length
-                if frame_length
-                    == 290_u64.checked_add(
-                        11_u64.checked_mul(
-                            u64::try_from(reference_count.checked_sub(1)?).ok()?,
-                        )?,
-                    )?
-                        || frame_length
-                            == 291_u64.checked_add(
-                                11_u64.checked_mul(
-                                    u64::try_from(reference_count.checked_sub(1)?).ok()?,
-                                )?,
-                            )?
-        )
-    {
+    if scope.kind != "SplitFace" || reference_count < 4 {
+        return None;
+    }
+    let reference_tail_length =
+        11_u64.checked_mul(u64::try_from(reference_count.checked_sub(1)?).ok()?)?;
+    let frame_base = scope.frame_length.checked_sub(reference_tail_length)?;
+    let compact = scope.class_tag == "418" && scope.paired_class_tag == "266";
+    if !(matches!(frame_base, 290 | 291) || compact && frame_base == 286) {
         return None;
     }
     let stream = native_stream(&scope.id)?;
@@ -5587,10 +5608,19 @@ fn project_split_face(
         return None;
     }
     let target_selection = project_face_selection(scope, targets, face_operands, histories);
-    let tool = selected_work_plane(scope, tool, entity_selection_operands, scopes).map_or_else(
+    let tool = selected_work_planes(scope, tool, entity_selection_operands, scopes).map_or_else(
         || SplitFaceTool::Path(PathRef::Native(tool.id.clone())),
-        |plane| SplitFaceTool::Plane {
-            plane: neutral_feature_id(plane),
+        |planes| {
+            let planes = planes
+                .into_iter()
+                .map(neutral_feature_id)
+                .collect::<Vec<_>>();
+            match planes.as_slice() {
+                [plane] => SplitFaceTool::Plane {
+                    plane: plane.clone(),
+                },
+                _ => SplitFaceTool::Planes { planes },
+            }
         },
     );
     Some(FeatureDefinition::SplitFace {

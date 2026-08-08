@@ -3431,6 +3431,11 @@ pub enum SplitFaceTool {
         /// Earlier datum-plane feature supplying the splitting plane.
         plane: FeatureId,
     },
+    /// Two or more datum-plane features extended through the target faces.
+    Planes {
+        /// Unique earlier datum-plane features in operation order.
+        planes: Vec<FeatureId>,
+    },
 }
 
 /// Radius assignment along filleted edges.

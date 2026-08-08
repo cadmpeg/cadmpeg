@@ -351,7 +351,8 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
         FeatureDefinition::SplitFace { targets, tool } => {
             !face_selection_is_resolved(targets)
                 || match tool {
-                    cadmpeg_ir::features::SplitFaceTool::Plane { .. } => false,
+                    cadmpeg_ir::features::SplitFaceTool::Plane { .. }
+                    | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
                         path,
                         cadmpeg_ir::features::PathRef::Native(_)

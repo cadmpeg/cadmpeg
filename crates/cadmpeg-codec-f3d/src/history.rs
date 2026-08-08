@@ -2707,8 +2707,30 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        let history_candidates =
-            crate::design::face_resolve::historical_face_operand_candidates(operand);
+        let nested_split_face_candidates = (scope.kind == "SplitFace")
+            .then(|| {
+                let group_record_index = operand.group_record_index?;
+                let group_member_ordinal = operand.group_member_ordinal?;
+                let mut groups = operand_groups.iter().filter(|group| {
+                    crate::ids::native_stream(&group.id) == stream
+                        && group.scope_record_index == scope.record_index
+                        && group.record_index == group_record_index
+                        && group.role == 0x0000_0010_0000_0000
+                        && usize::try_from(group_member_ordinal)
+                            .ok()
+                            .and_then(|ordinal| group.members.get(ordinal))
+                            == Some(&operand.record_index)
+                });
+                groups.next()?;
+                if groups.next().is_some() {
+                    return None;
+                }
+                crate::design::face_resolve::nested_bounded_face_history_candidates(operand)
+            })
+            .flatten();
+        let history_candidates = nested_split_face_candidates.unwrap_or_else(|| {
+            crate::design::face_resolve::historical_face_operand_candidates(operand)
+        });
         operand.preceding_candidate_faces = faces_in_topology(&history_candidates, topology);
         operand.changed_candidate_faces = operand
             .preceding_candidate_faces

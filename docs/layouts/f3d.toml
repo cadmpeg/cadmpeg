@@ -8,7 +8,7 @@ endianness = "little"
 note = """
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, and the
-sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
+class-418 `SplitFace` prefix and sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 """
@@ -623,6 +623,56 @@ offset = 22
 type = "u32"
 source = "spec"
 anchor = "the LP-UTF16 scope kind at `T + 22`"
+
+[[record]]
+name = "split_face_class_418_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The class-418 form paired with class 266 is `286 + 11(r - 1)` bytes"
+size = 32
+note = "Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven zero bytes at offsets 11 through 21"
+
+[[record.field]]
+name = "first_marker"
+offset = 22
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 22"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 23 through 26"
+
+[[record.field]]
+name = "marker_pair"
+offset = 27
+type = "bytes[2]"
+source = "spec"
+anchor = "bytes `01 01` at offsets 27 and 28"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 29
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 29 through 31"
 
 [[record]]
 name = "form_compact_one_cage_list"

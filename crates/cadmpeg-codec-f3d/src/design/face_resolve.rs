@@ -409,11 +409,12 @@ fn historical_face_selection(
     })
 }
 
-/// Resolve `SplitFace` target groups whose bounded-face member run contains
-/// complete topology-context recipes without their own active persistent
-/// candidate. Such members describe the face-recipe topology graph; they do
-/// not add a target face. Every non-context member must still prove its
-/// preceding face slots, and at least one member must contribute a face.
+/// Resolve `SplitFace` target groups whose bounded-face member run can include
+/// complete nested support recipes without their own active candidate lanes.
+/// A nested support recipe contributes only when history proves its preceding
+/// face slots. An unresolved support recipe remains a context member. Every
+/// other member must prove its preceding face slots, and at least one member
+/// must contribute a face.
 pub(crate) fn resolved_historical_split_face_target_group(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
@@ -603,7 +604,10 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
             face
         }
     };
-    if !historical_face_operand_candidates(operand).contains(direct) {
+    if !historical_face_operand_candidates(operand).contains(direct)
+        && nested_bounded_face_history_candidates(operand)
+            .is_none_or(|candidates| !candidates.contains(direct))
+    {
         return None;
     }
     direct.0.rsplit_once('#')?.1.parse().ok()
@@ -870,6 +874,36 @@ pub(crate) fn historical_face_operand_candidates(
         }
     }
     face_operand_candidates(operand).to_vec()
+}
+
+/// Return nested persistent-reference faces for a complete bounded-face
+/// recipe whose own active candidate lanes are empty. The nested faces are
+/// topology supports, not selected faces; callers must map them through the
+/// historical support graph and prove a unique preceding target.
+pub(crate) fn nested_bounded_face_history_candidates(
+    operand: &DesignFaceOperand,
+) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
+    complete_counted_face_recipe(operand)?;
+    if !operand.candidate_faces.is_empty()
+        || !operand.unreferenced_candidate_faces.is_empty()
+        || !operand.alternate_selector_candidate_faces.is_empty()
+    {
+        return None;
+    }
+    let mut candidates = operand
+        .recipe_references
+        .iter()
+        .flat_map(|reference| {
+            reference
+                .candidate_faces
+                .iter()
+                .chain(&reference.alternate_selector_faces)
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.0.cmp(&right.0));
+    candidates.dedup();
+    (!candidates.is_empty()).then_some(candidates)
 }
 
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.

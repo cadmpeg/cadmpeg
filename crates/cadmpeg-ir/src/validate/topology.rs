@@ -3400,6 +3400,31 @@ fn check_feature_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec
                         &feature_records,
                         "split-face tool plane",
                     ),
+                    SplitFaceTool::Planes { planes } => {
+                        if planes.len() < 2 {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "split-face plane set has fewer than two planes",
+                            );
+                        }
+                        if planes.iter().collect::<HashSet<_>>().len() != planes.len() {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "split-face plane set contains repeated planes",
+                            );
+                        }
+                        for plane in planes {
+                            check_plane_feature_reference(
+                                findings,
+                                feature,
+                                plane,
+                                &feature_records,
+                                "split-face tool plane",
+                            );
+                        }
+                    }
                 }
             }
             FeatureDefinition::DeleteFace { faces, .. } => {
