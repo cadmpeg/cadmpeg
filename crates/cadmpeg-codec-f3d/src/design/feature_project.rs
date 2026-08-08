@@ -2885,16 +2885,24 @@ pub(crate) fn bind_form_cages(
                 form_cage_objects(bytes, &records, *record_index, scope.record_index)
             })
             .collect::<Vec<_>>();
-        let legacy_cage = scope.reference_members.iter().find_map(|record_index| {
-            legacy_form_cage_count(bytes, &records, *record_index, scope.record_index)
-        });
+        let cage_counts = scope
+            .reference_members
+            .iter()
+            .filter_map(|record_index| {
+                form_cage_objects(bytes, &records, *record_index, scope.record_index)
+                    .map(|objects| objects.len())
+                    .or_else(|| {
+                        legacy_form_cage_count(bytes, &records, *record_index, scope.record_index)
+                    })
+            })
+            .collect::<Vec<_>>();
         if scopes
             .iter()
             .filter(|candidate| candidate.kind == "Form")
             .count()
             == 1
             && cages.len() == 1
-            && legacy_cage == Some(1)
+            && cage_counts.as_slice() == [1]
         {
             let feature_id = neutral_feature_id(scope);
             if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
@@ -3000,7 +3008,7 @@ fn form_cage_objects(
 ) -> Option<Vec<u32>> {
     let frames = records
         .frames(record_index)
-        .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"264"))
+        .filter(|(_, paired)| matches!(bytes.get(paired + 4..paired + 7), Some(b"258" | b"264")))
         .collect::<Vec<_>>();
     let [(offset, paired)] = frames.as_slice() else {
         return None;
@@ -3093,7 +3101,7 @@ fn form_cage_serializers(
     let mut serializers = HashMap::new();
     for (_, offsets) in records.records() {
         for offset in offsets {
-            if bytes.get(offset + 4..offset + 7) != Some(b"446")
+            if !matches!(bytes.get(offset + 4..offset + 7), Some(b"315" | b"446"))
                 || next_indexed_record_offset(bytes, offset + 1) != Some(offset + 132)
                 || bytes.get(offset + 11..offset + 21) != Some(&[0; 10])
             {
@@ -3168,6 +3176,17 @@ mod form_tests {
             ),
             Some(vec![8300, 8303])
         );
+        let mut alternate_pair = bytes.clone();
+        alternate_pair[110 + 4..110 + 7].copy_from_slice(b"258");
+        assert_eq!(
+            super::form_cage_objects(
+                &alternate_pair,
+                &crate::design::decode::sketch::IndexedRecordOffsets::build(&alternate_pair),
+                2196,
+                2190,
+            ),
+            Some(vec![8300, 8303])
+        );
 
         let mut empty = Vec::new();
         empty.extend_from_slice(&3u32.to_le_bytes());
@@ -3233,24 +3252,26 @@ mod form_tests {
     #[test]
     fn serializer_joins_surface_to_exact_cage_entry_name() {
         let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
-        let mut serializer = indexed_frame(b"446", 8305, 132);
-        serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
-        for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
-            let at = 25 + ordinal * 2;
-            serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+        for class in [b"315", b"446"] {
+            let mut serializer = indexed_frame(class, 8305, 132);
+            serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
+            for (ordinal, code_unit) in entry_name.encode_utf16().enumerate() {
+                let at = 25 + ordinal * 2;
+                serializer[at..at + 2].copy_from_slice(&code_unit.to_le_bytes());
+            }
+            serializer[121] = 1;
+            serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
+            let following = indexed_frame(b"457", 8306, 15);
+            let bytes = [serializer, following].concat();
+            assert_eq!(
+                super::form_cage_serializers(
+                    &bytes,
+                    &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
+                )
+                .get(&8304),
+                Some(&Some(entry_name.into()))
+            );
         }
-        serializer[121] = 1;
-        serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
-        let following = indexed_frame(b"457", 8306, 15);
-        let bytes = [serializer, following].concat();
-        assert_eq!(
-            super::form_cage_serializers(
-                &bytes,
-                &crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes),
-            )
-            .get(&8304),
-            Some(&Some(entry_name.into()))
-        );
     }
 
     #[test]
