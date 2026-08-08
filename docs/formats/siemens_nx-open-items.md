@@ -508,14 +508,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the precedence, or the rule that makes the first three markers mutually exclusive. The decoder tests them in a fixed order and takes the first present marker without testing the others. The role selects which sections the feature-history extractors walk, so a registry that carries two markers can supply operation labels, body references, and lineage from a store that is not feature history.
 
-### OM-35. Tagged-reference admission in a bounded record
-
-**Question.** Which field separates a tagged-reference stream from per-class field data inside one bounded OM record?
-
-**Known.** `siemens_nx.md` §7.1 "**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cr" defines the persistent-handle and tagged-reference token forms and states that they occur as pairs inside one externally bounded record. It defines an unconditional retention rule for offset-store control blocks only. It states no admission rule for an OM entity record.
-
-**Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?

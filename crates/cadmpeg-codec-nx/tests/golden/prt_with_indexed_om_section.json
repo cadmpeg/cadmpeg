@@ -277,10 +277,21 @@
                 "value": 305419896
               },
               {
+                "id": "nx:om-references-0-1:reference#272",
+                "kind": "tagged28",
+                "object_id": 258,
+                "ordinal": 1,
+                "record": "nx:om-record-directory-0:entry#1",
+                "source_entry": "/Root/UG_PART/UG_PART",
+                "source_offset": 348,
+                "target_record": null,
+                "value": 180150000
+              },
+              {
                 "id": "nx:om-references-0-1:reference#278",
                 "kind": "record_ordinal16",
                 "object_id": 258,
-                "ordinal": 1,
+                "ordinal": 2,
                 "record": "nx:om-record-directory-0:entry#1",
                 "source_entry": "/Root/UG_PART/UG_PART",
                 "source_offset": 354,

@@ -4924,18 +4924,21 @@ mod tests {
             .expect("NX namespace")
             .arena_as::<super::ObjectReference>("object_references")
             .expect("required invariant");
-        assert_eq!(references.len(), 2);
+        assert_eq!(references.len(), 3);
         assert_eq!(references[0].record, object_records[1].id);
         assert_eq!(references[0].object_id, Some(0x102));
         assert_eq!(references[0].value, 0x1234_5678);
         assert_eq!(references[0].target_record, None);
+        assert_eq!(references[1].kind, super::ObjectReferenceKind::Tagged28);
+        assert_eq!(references[1].value, 0x0abc_def0);
+        assert_eq!(references[1].target_record, None);
         assert_eq!(
-            references[1].kind,
+            references[2].kind,
             super::ObjectReferenceKind::RecordOrdinal16
         );
-        assert_eq!(references[1].value, 0);
+        assert_eq!(references[2].value, 0);
         assert_eq!(
-            references[1].target_record.as_ref(),
+            references[2].target_record.as_ref(),
             Some(&object_records[0].id)
         );
         let handles = result

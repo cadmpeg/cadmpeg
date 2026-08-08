@@ -3469,20 +3469,31 @@ fn om_counted_record_references_require_a_complete_in_bounds_run() {
 }
 
 #[test]
-fn om_record_reference_stream_requires_dense_suffix() {
+fn om_record_references_require_adjacent_persistent_tagged_pairs() {
     let mut dense = b"ordinary-prefix".to_vec();
     for value in 1..=8u32 {
         dense.push(0xe0);
         dense.extend_from_slice(&value.to_be_bytes());
         dense.extend_from_slice(&(0xc000_0000 | value).to_be_bytes());
     }
-    let references = super::dense_reference_suffix(&dense, 100);
+    let references = super::record_references(&dense, 100);
     assert_eq!(references.len(), 16);
     assert_eq!(references[0].offset, 115);
 
-    let mut sparse = dense;
-    sparse.extend_from_slice(&[0x55; 9]);
-    assert!(super::dense_reference_suffix(&sparse, 0).is_empty());
+    let mut unpaired = dense;
+    unpaired.extend_from_slice(&[0xc0, 0, 0, 2]);
+    assert_eq!(
+        super::record_references(&unpaired, 0)
+            .into_iter()
+            .filter(|reference| reference.kind == super::ReferenceKind::Tagged28)
+            .count(),
+        8
+    );
+
+    let lone_tagged = [0xc0, 0, 0, 1];
+    assert!(super::record_references(&lone_tagged, 0)
+        .into_iter()
+        .all(|reference| reference.kind != super::ReferenceKind::Tagged28));
 }
 
 #[test]
