@@ -4854,6 +4854,44 @@ fn aliased_topology_root_reuses_the_committed_body_identity() {
 }
 
 #[test]
+fn topology_root_kind_preserves_distinct_body_kinds_for_shared_shells() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=CLOSED_SHELL('',(#29));")
+        .replace(
+            "#33=ORIENTED_OPEN_SHELL('',*,#30,.F.);",
+            "#33=ORIENTED_CLOSED_SHELL('',*,#30,.F.);",
+        )
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#30));",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=MANIFOLD_SOLID_BREP('',#30);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode shared shell roots");
+
+    assert_eq!(decoded.ir.model.bodies.len(), 2);
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Sheet));
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Solid));
+}
+
+#[test]
 fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -6447,6 +6485,37 @@ fn complex_dimension_inherits_kind_targets_and_nominal_value() {
 }
 
 #[test]
+fn dimensional_characteristic_selects_the_named_nominal_measure() {
+    use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiQuantity, PmiValue};
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#11=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(11.8),#1) REPRESENTATION_ITEM('lower limit'));
+#12=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(12.2),#1) REPRESENTATION_ITEM('upper limit'));
+#13=(LENGTH_MEASURE_WITH_UNIT() MEASURE_REPRESENTATION_ITEM() MEASURE_WITH_UNIT(POSITIVE_LENGTH_MEASURE(12.0),#1) REPRESENTATION_ITEM('nominal value'));
+#14=SHAPE_DIMENSION_REPRESENTATION('limits',(#11,#12,#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            dimension: DimensionKind::Size,
+            nominal: Some(PmiValue { value, quantity: PmiQuantity::Length }),
+            ..
+        } if (value - 12.0).abs() < 1.0e-12
+    )));
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("unnamed measure values; the nominal is ambiguous")
+    }));
+}
+
+#[test]
 fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
@@ -7835,6 +7904,31 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
             .message
             .contains("LINE #14 parameter scale did not resolve")
     }));
+}
+
+#[test]
+fn omitted_placement_reference_uses_the_first_projected_axis() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.6,0.8,0.));
+#3=AXIS2_PLACEMENT_3D('',#1,#2,$);
+#4=CIRCLE('',#3,2.);
+#5=GEOMETRIC_CURVE_SET('',(#4));
+#6=SHAPE_REPRESENTATION('',(#5),$);",
+    );
+    let circle = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#4")
+        .expect("circle");
+    let CurveGeometry::Circle { ref_direction, .. } = circle.geometry else {
+        panic!("decoded carrier is not a circle");
+    };
+    assert!((ref_direction.x - 0.8).abs() < 1.0e-12);
+    assert!((ref_direction.y + 0.6).abs() < 1.0e-12);
+    assert!(ref_direction.z.abs() < 1.0e-12);
 }
 
 #[test]

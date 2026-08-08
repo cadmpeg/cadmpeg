@@ -206,6 +206,11 @@ it is +Y; the default axis2 is +Y. The 2D operator derives a perpendicular
 second axis from axis1 and uses axis2 only to select its sense. Omitted scale is
 1.
 
+`AXIS2_PLACEMENT_3D` uses the same first-projected-axis rule when its optional
+reference direction is omitted or parallel to its axis: +X is projected onto
+the plane normal to the axis, except for an axis parallel to X, where +Y is
+projected.
+
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the
 basis curve's parameterization. Its local parameter domain is the directed
@@ -356,8 +361,10 @@ placement once. A mapped occurrence uses a
 child representation and its target placement. A mapped item target may be an
 `AXIS2_PLACEMENT_3D` or a `CARTESIAN_TRANSFORMATION_OPERATOR_3D`; the mapped
 transform is the target transform composed with the inverse mapping-origin
-transform. Reused source topology roots
-reuse their committed body identity. Repeated child uses without an
+transform. Reused source topology roots of the same root type and shell
+orientation reuse their committed body identity. Distinct topology roots
+retain their governing root type, even when they share shell carriers.
+Repeated child uses without an
 occurrence-specific shape representation remain ambiguous and report the
 unresolved placement. A mapping whose origin and target are both 2D placement
 or 2D transformation records is presentation geometry and does not change a
@@ -399,8 +406,11 @@ datum feature. A complex datum reads identification from its `DATUM` partial
 and name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
 A complex dimension uses its dimensional partial for its kind and all inherited
 partials for its name, targets, and characteristic value.
-Complex measure records referenced by a characteristic representation remain
-typed measure carriers.
+Its characteristic representation collects every measure representation item.
+A unique item named `nominal value` supplies the nominal. When that name is
+absent, exactly one measure item supplies the nominal; multiple unnamed items
+are ambiguous and do not supply one. Complex measure records referenced by a
+characteristic representation remain typed measure carriers.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials; derived-unit factors scale area and volume by

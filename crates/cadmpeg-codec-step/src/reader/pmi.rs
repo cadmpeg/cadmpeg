@@ -184,10 +184,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 _ => kind,
             };
         }
-        let nominal = characteristic_values
-            .get(&id)
-            .and_then(|values| values.first())
-            .copied();
+        let nominal = characteristic_values.get(&id).copied();
         let aspect_ids = record
             .partials
             .iter()
@@ -955,13 +952,9 @@ fn shape_aspect_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
 
 fn is_measure_record(record: &RawRecord) -> bool {
     record.partials.iter().any(|partial| {
-        matches!(
-            partial.name.as_str(),
-            "LENGTH_MEASURE_WITH_UNIT"
-                | "PLANE_ANGLE_MEASURE_WITH_UNIT"
-                | "MEASURE_WITH_UNIT"
-                | "MEASURE_REPRESENTATION_ITEM"
-        )
+        partial.name == "MEASURE_REPRESENTATION_ITEM"
+            || partial.name == "MEASURE_WITH_UNIT"
+            || partial.name.ends_with("_MEASURE_WITH_UNIT")
     })
 }
 
@@ -1044,8 +1037,8 @@ fn characteristic_values(
     exchange: &Exchange,
     geometry: &GeometryResult,
     losses: &mut Vec<LossNote>,
-) -> BTreeMap<u64, Vec<PmiValue>> {
-    let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
+) -> BTreeMap<u64, PmiValue> {
+    let mut result = BTreeMap::<u64, PmiValue>::new();
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let mut measurements = measure_context(geometry, id, losses);
         let parameters = record
@@ -1066,13 +1059,187 @@ fn characteristic_values(
         else {
             continue;
         };
-        result.entry(characteristic).or_default().extend(
-            parameters
-                .iter()
-                .filter_map(|value| measure(value, exchange, &mut measurements)),
-        );
+        let representation = parameters
+            .iter()
+            .flat_map(|value| references(value))
+            .find(|id| {
+                exchange.records.get(id).is_some_and(|record| {
+                    record
+                        .partials
+                        .iter()
+                        .any(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                })
+            });
+        let representation_items = representation
+            .and_then(|id| exchange.records.get(&id))
+            .and_then(|record| {
+                record
+                    .partials
+                    .iter()
+                    .find(|partial| partial.name == "SHAPE_DIMENSION_REPRESENTATION")
+                    .and_then(|partial| partial.parameters.get(1))
+                    .and_then(ValueExt::list)
+            });
+        let values = if let Some(items) = representation_items {
+            characteristic_measure_values(items.iter(), exchange, &mut measurements)
+        } else {
+            characteristic_measure_values(parameters.iter().copied(), exchange, &mut measurements)
+        };
+        let named_nominals = values
+            .iter()
+            .filter(|(name, _)| {
+                name.as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("nominal value"))
+            })
+            .map(|(_, value)| *value)
+            .collect::<Vec<_>>();
+        let selected = if named_nominals.len() == 1 {
+            named_nominals.first().copied()
+        } else if named_nominals.len() > 1 {
+            losses.push(LossNote {
+                code: LossKind::MetadataNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} nominal value measures; the nominal is ambiguous",
+                    named_nominals.len()
+                ),
+                provenance: None,
+            });
+            None
+        } else if values.len() == 1 {
+            values.first().map(|(_, value)| *value)
+        } else {
+            if values.len() > 1 {
+                losses.push(LossNote {
+                    code: LossKind::MetadataNotTransferred,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION #{id} has {} unnamed measure values; the nominal is ambiguous",
+                        values.len()
+                    ),
+                    provenance: None,
+                });
+            }
+            None
+        };
+        if let Some(selected) = selected {
+            result.insert(characteristic, selected);
+        }
     }
     result
+}
+
+fn characteristic_measure_values<'a>(
+    parameters: impl IntoIterator<Item = &'a Value>,
+    exchange: &Exchange,
+    measurements: &mut MeasureContext<'_>,
+) -> Vec<(Option<String>, PmiValue)> {
+    let parameters = parameters.into_iter().collect::<Vec<_>>();
+    let mut measure_ids = BTreeSet::new();
+    for parameter in &parameters {
+        collect_measure_ids(
+            parameter,
+            exchange,
+            &mut BTreeSet::new(),
+            0,
+            &mut measure_ids,
+        );
+    }
+    let mut values = measure_ids
+        .into_iter()
+        .filter_map(|id| {
+            let value = measure(&Value::Reference(id), exchange, measurements)?;
+            let name = exchange
+                .records
+                .get(&id)
+                .and_then(|record| measure_item_name(record, exchange, measurements.losses));
+            Some((name, value))
+        })
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        values.extend(
+            parameters.iter().filter_map(|value| {
+                measure(value, exchange, measurements).map(|value| (None, value))
+            }),
+        );
+    }
+    values
+}
+
+fn collect_measure_ids(
+    value: &Value,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+    measure_ids: &mut BTreeSet<u64>,
+) {
+    if depth >= super::MAX_RECORD_GRAPH_DEPTH {
+        return;
+    }
+    match value {
+        Value::Reference(id) => {
+            if !active.insert(*id) {
+                return;
+            }
+            if let Some(record) = exchange.records.get(id) {
+                if is_measure_record(record) {
+                    measure_ids.insert(*id);
+                } else {
+                    for partial in &record.partials {
+                        for parameter in &partial.parameters {
+                            collect_measure_ids(
+                                parameter,
+                                exchange,
+                                active,
+                                depth + 1,
+                                measure_ids,
+                            );
+                        }
+                    }
+                }
+            }
+            active.remove(id);
+        }
+        Value::List(values) => {
+            for value in values {
+                collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+            }
+        }
+        Value::Typed(_, value) => {
+            collect_measure_ids(value, exchange, active, depth + 1, measure_ids);
+        }
+        _ => {}
+    }
+}
+
+fn measure_item_name(
+    record: &RawRecord,
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+) -> Option<String> {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "REPRESENTATION_ITEM")
+        .and_then(|partial| partial.parameters.first())
+        .or_else(|| {
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "MEASURE_REPRESENTATION_ITEM")
+                .and_then(|partial| partial.parameters.first())
+        })
+        .and_then(|value| {
+            decode_text(
+                exchange,
+                value,
+                losses,
+                record.id,
+                "measure item name",
+                LossKind::MetadataNotTransferred,
+            )
+        })
+        .filter(|name| !name.is_empty())
 }
 
 fn measure_context<'a>(

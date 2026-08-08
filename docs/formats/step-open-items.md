@@ -426,32 +426,11 @@ wrong and the item needs a decision.
 
 ### PC-06. Default placement reference direction
 
-**Question.** Which reference direction applies to an `AXIS2_PLACEMENT_3D`
-whose `ref_direction` is omitted?
-
-**Known.** ISO 10303-42 `first_proj_axis` selects `(1,0,0)`, or `(0,1,0)` when
-the axis is parallel to X, and projects it onto the plane normal to the axis.
-`step.md` §8 "`CARTESIAN_TRANSFORMATION_OPERATOR_3D` stores a required local
-origin and optional axis1, axis2, axis3, and scale attributes." states that
-rule for the transformation operator, and `base_axis_3d` implements it
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:4301-4315`). The
-specification states no rule for the placement, and the placement uses a
-different function: `derive_reference_direction`
-(`crates/cadmpeg-ir/src/geometry.rs:332-355`, called at
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:213`, `:216`). That function
-projects the global basis vector **least** aligned with the axis, and its doc
-comment describes a stable direction rather than a format rule.
-
-**Need.** The two rules agree only for a coordinate-aligned axis. For an axis
-of `(0.6, 0.8, 0)` the standard gives `(0.8, -0.6, 0)` and the decoder gives
-`(0, 0, 1)`. The reference direction is the parameter origin of every circle,
-ellipse, and conic on the placement, so every `.PARAMETER.` trim on such a
-carrier resolves against a different chart, and every surface built on the
-placement gets a different u-origin. Every fixture that omits
-`ref_direction` uses an axis of `(0,0,1)`, where the two rules coincide, so no
-test separates them. We must confirm the placement default, and decide whether
-one shared helper may serve both a stability role and a format rule. The same
-helper supplies defaults in the catia, creo, iges, and asm codecs.
+**Resolved.** An omitted or parallel `AXIS2_PLACEMENT_3D.ref_direction` uses
+the projection of global +X onto the plane normal to the axis. When the axis
+is parallel to X, it uses global +Y before projection. The STEP reader applies
+this rule locally, so a neutral stability helper cannot change STEP chart
+semantics.
 
 ### PC-07. Ellipse semi-axis canonicalization
 
@@ -476,25 +455,13 @@ parameterization or a canonical one, and where the phase shift belongs.
 
 ### BR-01. Topology root identity
 
-**Question.** Do two topology root records of different kinds that resolve to
-the same shell set denote one body or two?
+**Resolved.** The topology-root cache key includes the governing root type,
+the resolved shell identities, and shell orientations. Multiple
+representations that reach one root of the same type reuse its committed body
+identity. Distinct root records retain distinct bodies when their root types
+differ, even when they share shell carriers. Body kind is therefore
+independent of instance-number order.
 
-**Known.** `RootKey` holds only the resolved base shells and their
-orientations (`crates/cadmpeg-codec-step/src/reader/topology.rs:1789-1791`).
-The root record's own entity type is not part of the key, and `BodyKind`
-derives from that type (`topology.rs:2023`). Root records are visited in
-ascending instance-name order, so the first root builds the body and every
-later root with the same shell set is aliased onto it
-(`topology.rs:377-401`). `step.md` §8 "Reused source topology roots reuse
-their committed body identity." addresses one root reached through several
-representations, not two distinct root records.
-
-**Need.** A `CLOSED_SHELL` may be referenced by both a `MANIFOLD_SOLID_BREP`
-and a `SHELL_BASED_SURFACE_MODEL`. The solid is then emitted as a sheet body,
-or the sheet as a solid, according to which record carries the lower instance
-name. Swapping the two instance names swaps the resulting body kind. No loss
-is recorded. We must know whether shell sharing between root kinds is valid,
-and which root governs the body kind if it is.
 
 ### BR-02. Outer and void shell roles
 
@@ -652,22 +619,11 @@ using the first complex partial. A synthesized complex datum with an empty
 
 ### AP-02. Dimension nominal value selection
 
-**Question.** Which measure of a dimensional characteristic is the nominal
-value?
-
-**Known.** `step.md` §8 "A complex dimension uses its dimensional partial for
-its kind and all inherited partials for its name, targets, and characteristic
-value." does not say which value when there are several. The decoder collects
-every reachable measure in traversal order and takes the first
-(`crates/cadmpeg-codec-step/src/reader/pmi.rs:196-199`, `:1053-1084`). It
-never reads the measure item's `name`, although the writer emits
-`nominal value` and the project's own fixture carries it.
-
-**Need.** A dimension expressed as limits carries `lower limit` and
-`upper limit` items and no nominal item. The lower limit becomes the nominal
-and the upper limit is dropped with no loss, so a 12.0/12.2 bore reports as
-nominal 12.0 with no deviations. We must know the naming or ordering rule
-that identifies the nominal value.
+**Resolved.** The characteristic representation collects all reachable
+measure representation items from its item aggregate. A unique item named
+`nominal value` supplies the nominal. Without that name, exactly one measure
+item supplies it. Multiple unnamed items remain ambiguous, produce a metadata
+warning, and do not select a source-order value.
 
 ### AP-03. Geometric tolerance kind selection
 

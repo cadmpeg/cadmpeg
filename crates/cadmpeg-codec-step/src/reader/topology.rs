@@ -1791,6 +1791,7 @@ fn staged_topology(
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RootKey {
+    root_kind: &'static str,
     shell_keys: Vec<(u64, Option<bool>)>,
 }
 
@@ -1836,6 +1837,16 @@ fn root_key(
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
 ) -> Option<RootKey> {
+    let root_kind = most_specific(
+        root,
+        &[
+            "BREP_WITH_VOIDS",
+            "FACETED_BREP",
+            "MANIFOLD_SOLID_BREP",
+            "FACE_BASED_SURFACE_MODEL",
+            "SHELL_BASED_SURFACE_MODEL",
+        ],
+    )?;
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
     for shell in root_shell_steps(root, exchange)? {
@@ -1856,7 +1867,10 @@ fn root_key(
         return None;
     }
     shell_keys.sort_unstable();
-    Some(RootKey { shell_keys })
+    Some(RootKey {
+        root_kind,
+        shell_keys,
+    })
 }
 
 #[allow(

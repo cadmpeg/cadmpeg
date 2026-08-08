@@ -8,10 +8,9 @@ use cadmpeg_ir::eval::{
     nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point, pcurve_uv, surface_point,
 };
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
+    NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -232,10 +231,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                                     ),
                                     provenance: None,
                                 });
-                                derive_reference_direction(axis)
+                                first_projected_axis(axis)
+                                    .unwrap_or(Vector3::new(1.0, 0.0, 0.0))
                             }
                         }
-                        None => derive_reference_direction(axis),
+                        None => first_projected_axis(axis).unwrap_or(Vector3::new(1.0, 0.0, 0.0)),
                     };
                     (origin, axis, reference)
                 });
@@ -3409,6 +3409,16 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
         reference.y - projection * axis.y,
         reference.z - projection * axis.z,
     ))
+}
+
+fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
+    let axis = normalize(axis)?;
+    let basis = if axis.x.abs() == 1.0 && axis.y == 0.0 && axis.z == 0.0 {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(1.0, 0.0, 0.0)
+    };
+    project_axis(basis, axis)
 }
 
 fn curve_parameter_at_point(
