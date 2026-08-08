@@ -5687,6 +5687,102 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_lane_does_not_inherit_shared_hole_semantics() {
+        use cadmpeg_ir::features::{
+            ConfigurationFeatureState, Feature as NeutralFeature, FeatureDefinition, FeatureId,
+            HoleKind, Length, Termination,
+        };
+
+        let id = FeatureId("test:model:feature#hole-lane".into());
+        let base_definition = FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            position: None,
+            direction: None,
+            placements: vec![cadmpeg_ir::features::HolePlacement::Axis {
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            }],
+            kind: HoleKind::Counterbore {
+                diameter: Length(8.0),
+                depth: Length(4.0),
+            },
+            exit_kind: None,
+            diameter: Some(Length(5.0)),
+            extent: Some(Termination::Blind {
+                length: Length(12.0),
+            }),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        };
+        let local_definition = FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            position: None,
+            direction: None,
+            placements: Vec::new(),
+            kind: HoleKind::Simple,
+            exit_kind: None,
+            diameter: None,
+            extent: None,
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(NeutralFeature {
+            id: id.clone(),
+            ordinal: 0,
+            name: Some("Hole".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: base_definition,
+            native_ref: None,
+        });
+        let mut configuration = design_configuration("configuration", 0, Some(0), None);
+        configuration.active = true;
+        configuration.feature_states.insert(
+            id.clone(),
+            ConfigurationFeatureState {
+                suppressed: false,
+                dependencies: Vec::new(),
+                outputs: Vec::new(),
+                definition: local_definition,
+            },
+        );
+        ir.model.configurations.push(configuration);
+
+        project_configuration_sketch_states(
+            &mut ir,
+            &[],
+            &[feature_input_lane("lane", Some("0"))],
+            &cadmpeg_ir::Annotations::default(),
+        );
+
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&id].definition,
+            FeatureDefinition::Hole {
+                placements,
+                kind: HoleKind::Simple,
+                diameter: None,
+                extent: None,
+                ..
+            } if placements.is_empty()
+        ));
+    }
+
+    #[test]
     fn configuration_offset_plane_inherits_shared_reference() {
         use cadmpeg_ir::features::{DatumPlaneReference, FaceSelection, FeatureDefinition, Length};
 
@@ -10668,13 +10764,23 @@ pub(crate) fn project_configuration_sketch_states(
             state.definition = feature.definition;
         }
     }
+    let scoped_configuration_indices =
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+            .into_iter()
+            .map(|(configuration_index, _)| configuration_index)
+            .collect::<HashSet<_>>();
     let base = ir
         .model
         .features
         .iter()
         .map(|feature| (feature.id.clone(), feature.definition.clone()))
         .collect::<HashMap<_, _>>();
-    for configuration in &mut ir.model.configurations {
+    for (configuration_index, configuration) in ir.model.configurations.iter_mut().enumerate() {
+        // DI-55: a valid configuration lane owns its unresolved slots. The
+        // document definition is a fallback only for an unscoped snapshot.
+        if scoped_configuration_indices.contains(&configuration_index) {
+            continue;
+        }
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(feature_id) {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition);

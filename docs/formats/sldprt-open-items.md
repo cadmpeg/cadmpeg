@@ -1179,28 +1179,6 @@ The site runs on the production path through `resolved_features/profiles.rs:1472
 
 **Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
 
-### DI-55. Configuration-local feature state gaps
-
-**Question.** What is the disposition of a feature slot that a configuration's own `Config-N-ResolvedFeatures` lane does not resolve?
-
-**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states that lane-scoped state does not define document-global semantics unless every applicable lane gives the same state. `sldprt.md` §2 permits the document projection to supply a configuration's state only "when exactly one configuration is active and no configuration-scoped lane supplies its state". `sldprt.md` §2 states one cross-configuration invariant: feature-tree node roles do not change between configurations.
-
-`crates/cadmpeg-codec-sldprt/src/history.rs:10682` `inherit_configuration_shared_semantics` copies the document-level value into a configuration that does have its own lane:
-
-```rust
-if face.is_none()        { face.clone_from(base_face); }
-if placements.is_empty() { placements.clone_from(base_placements); }
-if missing_construction  { kind.clone_from(base_kind); }
-if diameter.is_none()    { diameter.clone_from(base_diameter); }
-if extent.is_none()      { extent.clone_from(base_extent); }
-```
-
-`history.rs:10713` also treats `FaceSelection::Native` as incomplete and replaces it. That value is the codec's retained-but-unresolved state, so an honest withhold becomes another configuration's resolved face. The borrowed reference then enters `state.dependencies` at `history.rs:10674`.
-
-The completeness gate at `decode.rs:451` counts keys only, so an inherited value makes the snapshot report as complete.
-
-**Need.** We must know the disposition. A configuration with its own lane must not report another configuration's hole depth or datum parent.
-
 ### DI-56. Other hole-profile dimension multisets
 
 **Question.** What roles do the dimensions of a hole profile have when its dimension multiset is outside the defined enumeration?
