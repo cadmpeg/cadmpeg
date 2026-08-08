@@ -680,14 +680,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
-### ZE-06. `34c8` and `345e` knot run extents
-
-**Question.** Which field gives the length of the U knot run and of the V knot run in a `34c8` or `345e` carrier?
-
-**Known.** `catia.md` §8 "A `34c8`/`345e` carrier stores distinct U knots" gives the field sequence and two fixed pole-grid offsets. It gives no length field and no value range. `docs/layouts/catia.toml` holds no row for either carrier. `zero_entity::records::zero_entity_nurbs_layout` reads U knots while each value is from `0.0` to `1.0` and stops at the first value equal to `1.0`. It reads V knots while each value is from `0.0` to `50.0`. It steps over an unbounded run of `10`-prefixed tokens at the V marker and again at the pole marker, and it admits an over-consumed token because its guard tests only that the extra byte count is zero or at least ten.
-
-**Need.** The derived offsets give the pole grid and the record end, and the surface is published with `Exactness::ByteExact`. A wrong end changes the one-based global ordinal of every record after it, because a layout failure stops the record walk. A V knot vector in model units above 50 stops the run early. We must know the length fields to read the carrier without value windows.
-
 ### ZE-07. Face roster to support-run binding
 
 **Question.** Which field binds a zero-entity face to its surface-support run?

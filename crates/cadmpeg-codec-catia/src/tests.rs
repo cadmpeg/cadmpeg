@@ -955,8 +955,9 @@ fn zero_entity_nurbs_catpart() -> Vec<u8> {
     f[..8].copy_from_slice(OUTER_MAGIC);
     let record = f.len();
     f.extend_from_slice(&[0xa9, 0x03, 0x34, 0xc8]);
-    // The nominal record is 212 bytes, but the inline pole grid extends past it.
-    f.resize(record + 4 + 300, 0);
+    // The nominal record is 212 bytes, but the fixed 7×7 pole grid extends
+    // past it and starts at logical offset +167.
+    f.resize(record + 167 + 49 * 24, 0);
     let write_f64 = |f: &mut [u8], at: usize, value: f64| {
         f[record + at..record + at + 8].copy_from_slice(&le_f64(value));
     };
@@ -964,19 +965,23 @@ fn zero_entity_nurbs_catpart() -> Vec<u8> {
         f[record + at] = 0x10;
         f[record + at + 1..record + at + 5].copy_from_slice(&value.to_le_bytes());
     };
-    write_f64(&mut f, 23, 0.0);
-    write_f64(&mut f, 31, 1.0);
-    write_token(&mut f, 39, 3);
-    write_token(&mut f, 44, 3);
-    write_f64(&mut f, 50, 0.0);
-    write_f64(&mut f, 58, 1.0);
-    write_token(&mut f, 66, 3);
-    write_token(&mut f, 71, 3);
-    for i in 0..9 {
-        let at = 79 + i * 24;
+    for (index, value) in [0.0, 0.25, 0.5, 0.75, 1.0].into_iter().enumerate() {
+        write_f64(&mut f, 23 + index * 8, value);
+        write_f64(&mut f, 99 + index * 8, value);
+    }
+    for (index, value) in [4, 1, 1, 1, 4].into_iter().enumerate() {
+        write_token(&mut f, 63 + index * 5, value);
+        write_token(&mut f, 139 + index * 5, value);
+    }
+    write_token(&mut f, 88, 1);
+    write_token(&mut f, 93, 1);
+    f[record + 98] = 0x04;
+    f[record + 164..record + 167].copy_from_slice(&[0x08, 0x00, 0x00]);
+    for i in 0..49 {
+        let at = 167 + i * 24;
         write_f64(&mut f, at, i as f64);
-        write_f64(&mut f, at + 8, (i / 3) as f64);
-        write_f64(&mut f, at + 16, (i % 3) as f64);
+        write_f64(&mut f, at + 8, (i / 7) as f64);
+        write_f64(&mut f, at + 16, (i % 7) as f64);
     }
     f
 }
@@ -5605,11 +5610,14 @@ fn decode_zero_entity_transfers_inline_nurbs_surface() {
     assert_eq!(result.ir.model.surfaces.len(), 1);
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
-            assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
-            assert_eq!((surface.u_count, surface.v_count), (3, 3));
-            assert_eq!(surface.u_knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
-            assert_eq!(surface.control_points.len(), 9);
-            assert_eq!(surface.control_points[8].x, 8.0);
+            assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
+            assert_eq!((surface.u_count, surface.v_count), (7, 7));
+            assert_eq!(
+                surface.u_knots,
+                vec![0.0, 0.0, 0.0, 0.0, 0.25, 0.5, 0.75, 1.0, 1.0, 1.0, 1.0]
+            );
+            assert_eq!(surface.control_points.len(), 49);
+            assert_eq!(surface.control_points[48].x, 48.0);
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }

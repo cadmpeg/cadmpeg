@@ -861,6 +861,48 @@ path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
 contains = "[0x21, 0x71]"
 note = "The parser's family table carries the same knot, multiplicity, and pole offsets for this tag."
 
+[[record]]
+name = "zero_entity_34c8_pole_grid"
+kind = "byte"
+section = "8"
+anchor = "`34c8` 7×7 @+167"
+size = 1176
+note = "This sub-layout starts at the carrier-relative pole-grid offset +167. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary."
+
+[[record.field]]
+name = "poles"
+offset = 0
+type = "f64[147]"
+source = "derived"
+anchor = "the row-major f64 XYZ pole grid"
+note = "49 poles × 3 coordinates, with a 24-byte f64le XYZ stride; offset 0 here is carrier-relative +167."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
+contains = "[0x34, 0xc8] => Some((167, 7, 7))"
+note = "The parser selects the fixed carrier-relative grid offset and 7×7 control-point shape."
+
+[[record]]
+name = "zero_entity_345e_pole_grid"
+kind = "byte"
+section = "8"
+anchor = "`345e` 5×7 @+141"
+size = 840
+note = "This sub-layout starts at the carrier-relative pole-grid offset +141. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary."
+
+[[record.field]]
+name = "poles"
+offset = 0
+type = "f64[105]"
+source = "derived"
+anchor = "the row-major f64 XYZ pole grid"
+note = "35 poles × 3 coordinates, with a 24-byte f64le XYZ stride; offset 0 here is carrier-relative +141."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs"
+contains = "[0x34, 0x5e] => Some((141, 5, 7))"
+note = "The parser selects the fixed carrier-relative grid offset and 5×7 control-point shape."
+
 # --- §9 E5 framing -----------------------------------------------------------
 
 [[record]]

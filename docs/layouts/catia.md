@@ -347,6 +347,34 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser's family table carries the same knot, multiplicity, and pole offsets for this tag.
 
+## `zero_entity_34c8_pole_grid`
+
+Spec §8 · layout: byte offsets · size: 1176 B
+
+This sub-layout starts at the carrier-relative pole-grid offset +167. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1176 | `poles` | `f64[147]` | little | derived | 49 poles × 3 coordinates, with a 24-byte f64le XYZ stride; offset 0 here is carrier-relative +167. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser selects the fixed carrier-relative grid offset and 7×7 control-point shape.
+
+## `zero_entity_345e_pole_grid`
+
+Spec §8 · layout: byte offsets · size: 840 B
+
+This sub-layout starts at the carrier-relative pole-grid offset +141. The variable knot and dimension lanes before it are bounded by this fixed continuation boundary.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 840 | `poles` | `f64[105]` | little | derived | 35 poles × 3 coordinates, with a 24-byte f64le XYZ stride; offset 0 here is carrier-relative +141. |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-catia/src/families/zero_entity/records.rs` — The parser selects the fixed carrier-relative grid offset and 5×7 control-point shape.
+
 ## `e5_record_frame`
 
 Spec §9 · layout: byte offsets · size: 13 B

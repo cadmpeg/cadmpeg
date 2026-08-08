@@ -56,53 +56,263 @@
               },
               {
                 "x": 3.0,
-                "y": 1.0,
-                "z": 0.0
+                "y": 0.0,
+                "z": 3.0
               },
               {
                 "x": 4.0,
+                "y": 0.0,
+                "z": 4.0
+              },
+              {
+                "x": 5.0,
+                "y": 0.0,
+                "z": 5.0
+              },
+              {
+                "x": 6.0,
+                "y": 0.0,
+                "z": 6.0
+              },
+              {
+                "x": 7.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              {
+                "x": 8.0,
                 "y": 1.0,
                 "z": 1.0
               },
               {
-                "x": 5.0,
+                "x": 9.0,
                 "y": 1.0,
                 "z": 2.0
               },
               {
-                "x": 6.0,
+                "x": 10.0,
+                "y": 1.0,
+                "z": 3.0
+              },
+              {
+                "x": 11.0,
+                "y": 1.0,
+                "z": 4.0
+              },
+              {
+                "x": 12.0,
+                "y": 1.0,
+                "z": 5.0
+              },
+              {
+                "x": 13.0,
+                "y": 1.0,
+                "z": 6.0
+              },
+              {
+                "x": 14.0,
                 "y": 2.0,
                 "z": 0.0
               },
               {
-                "x": 7.0,
+                "x": 15.0,
                 "y": 2.0,
                 "z": 1.0
               },
               {
-                "x": 8.0,
+                "x": 16.0,
                 "y": 2.0,
                 "z": 2.0
+              },
+              {
+                "x": 17.0,
+                "y": 2.0,
+                "z": 3.0
+              },
+              {
+                "x": 18.0,
+                "y": 2.0,
+                "z": 4.0
+              },
+              {
+                "x": 19.0,
+                "y": 2.0,
+                "z": 5.0
+              },
+              {
+                "x": 20.0,
+                "y": 2.0,
+                "z": 6.0
+              },
+              {
+                "x": 21.0,
+                "y": 3.0,
+                "z": 0.0
+              },
+              {
+                "x": 22.0,
+                "y": 3.0,
+                "z": 1.0
+              },
+              {
+                "x": 23.0,
+                "y": 3.0,
+                "z": 2.0
+              },
+              {
+                "x": 24.0,
+                "y": 3.0,
+                "z": 3.0
+              },
+              {
+                "x": 25.0,
+                "y": 3.0,
+                "z": 4.0
+              },
+              {
+                "x": 26.0,
+                "y": 3.0,
+                "z": 5.0
+              },
+              {
+                "x": 27.0,
+                "y": 3.0,
+                "z": 6.0
+              },
+              {
+                "x": 28.0,
+                "y": 4.0,
+                "z": 0.0
+              },
+              {
+                "x": 29.0,
+                "y": 4.0,
+                "z": 1.0
+              },
+              {
+                "x": 30.0,
+                "y": 4.0,
+                "z": 2.0
+              },
+              {
+                "x": 31.0,
+                "y": 4.0,
+                "z": 3.0
+              },
+              {
+                "x": 32.0,
+                "y": 4.0,
+                "z": 4.0
+              },
+              {
+                "x": 33.0,
+                "y": 4.0,
+                "z": 5.0
+              },
+              {
+                "x": 34.0,
+                "y": 4.0,
+                "z": 6.0
+              },
+              {
+                "x": 35.0,
+                "y": 5.0,
+                "z": 0.0
+              },
+              {
+                "x": 36.0,
+                "y": 5.0,
+                "z": 1.0
+              },
+              {
+                "x": 37.0,
+                "y": 5.0,
+                "z": 2.0
+              },
+              {
+                "x": 38.0,
+                "y": 5.0,
+                "z": 3.0
+              },
+              {
+                "x": 39.0,
+                "y": 5.0,
+                "z": 4.0
+              },
+              {
+                "x": 40.0,
+                "y": 5.0,
+                "z": 5.0
+              },
+              {
+                "x": 41.0,
+                "y": 5.0,
+                "z": 6.0
+              },
+              {
+                "x": 42.0,
+                "y": 6.0,
+                "z": 0.0
+              },
+              {
+                "x": 43.0,
+                "y": 6.0,
+                "z": 1.0
+              },
+              {
+                "x": 44.0,
+                "y": 6.0,
+                "z": 2.0
+              },
+              {
+                "x": 45.0,
+                "y": 6.0,
+                "z": 3.0
+              },
+              {
+                "x": 46.0,
+                "y": 6.0,
+                "z": 4.0
+              },
+              {
+                "x": 47.0,
+                "y": 6.0,
+                "z": 5.0
+              },
+              {
+                "x": 48.0,
+                "y": 6.0,
+                "z": 6.0
               }
             ],
             "kind": "nurbs",
-            "u_count": 3,
-            "u_degree": 2,
+            "u_count": 7,
+            "u_degree": 3,
             "u_knots": [
               0.0,
               0.0,
               0.0,
+              0.0,
+              0.25,
+              0.5,
+              0.75,
+              1.0,
               1.0,
               1.0,
               1.0
             ],
             "u_periodic": false,
-            "v_count": 3,
-            "v_degree": 2,
+            "v_count": 7,
+            "v_degree": 3,
             "v_knots": [
               0.0,
               0.0,
               0.0,
+              0.0,
+              0.25,
+              0.5,
+              0.75,
+              1.0,
               1.0,
               1.0,
               1.0
@@ -169,7 +379,7 @@
             {
               "byte_offset": 16,
               "id": "catia:zero-entity:record#1",
-              "logical_end": 311,
+              "logical_end": 1359,
               "record_ordinal": 1,
               "tag": [
                 52,
@@ -186,7 +396,7 @@
     "source": {
       "attributes": {
         "external_reference_count": "0",
-        "file_size": "320",
+        "file_size": "1359",
         "finjpl_segment_count": "0",
         "outer_dir_offset": "0",
         "preview_count": "0",
@@ -533,7 +743,7 @@
       }
     ],
     "notes": [
-      "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 320); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
+      "outer V5_CFV2 container: directory offset 0 + length 0 = 0 (file size 1359); variant: zero-entity a9 03 (no nested container): analytic carriers decoded",
       "no nested V5_CFV2 sub-container (outer-preamble record families only)",
       "record-family census: 1 a9 03, 0 e5 0d 03",
       "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
@@ -568,11 +778,11 @@
     },
     "retained_records": [
       {
-        "byte_len": 320,
-        "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxADAAAAEAMAAAAAAAAAAAAAAAAAAAAAAADwPxADAAAAEAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAPA/AAAAAAAA8D8AAAAAAAAUQAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAYQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAcQAAAAAAAAABAAAAAAAAA8D8AAAAAAAAgQAAAAAAAAABAAAAAAAAAAEAAAAAAAAAAAAA=",
+        "byte_len": 1359,
+        "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQPwAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPxAEAAAAEAEAAAAQAQAAABABAAAAEAQAAAAQAQAAABABAAAABAAAAAAAAAAAAAAAAAAA0D8AAAAAAADgPwAAAAAAAOg/AAAAAAAA8D8QBAAAABABAAAAEAEAAAAQAQAAABAEAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAAAAAAAAAAABRAAAAAAAAAGEAAAAAAAAAAAAAAAAAAABhAAAAAAAAAHEAAAAAAAADwPwAAAAAAAAAAAAAAAAAAIEAAAAAAAADwPwAAAAAAAPA/AAAAAAAAIkAAAAAAAADwPwAAAAAAAABAAAAAAAAAJEAAAAAAAADwPwAAAAAAAAhAAAAAAAAAJkAAAAAAAADwPwAAAAAAABBAAAAAAAAAKEAAAAAAAADwPwAAAAAAABRAAAAAAAAAKkAAAAAAAADwPwAAAAAAABhAAAAAAAAALEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAALkAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAMEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAMUAAAAAAAAAAQAAAAAAAAAhAAAAAAAAAMkAAAAAAAAAAQAAAAAAAABBAAAAAAAAAM0AAAAAAAAAAQAAAAAAAABRAAAAAAAAANEAAAAAAAAAAQAAAAAAAABhAAAAAAAAANUAAAAAAAAAIQAAAAAAAAAAAAAAAAAAANkAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAN0AAAAAAAAAIQAAAAAAAAABAAAAAAAAAOEAAAAAAAAAIQAAAAAAAAAhAAAAAAAAAOUAAAAAAAAAIQAAAAAAAABBAAAAAAAAAOkAAAAAAAAAIQAAAAAAAABRAAAAAAAAAO0AAAAAAAAAIQAAAAAAAABhAAAAAAAAAPEAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAPUAAAAAAAAAQQAAAAAAAAPA/AAAAAAAAPkAAAAAAAAAQQAAAAAAAAABAAAAAAAAAP0AAAAAAAAAQQAAAAAAAAAhAAAAAAAAAQEAAAAAAAAAQQAAAAAAAABBAAAAAAACAQEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAQUAAAAAAAAAQQAAAAAAAABhAAAAAAACAQUAAAAAAAAAUQAAAAAAAAAAAAAAAAAAAQkAAAAAAAAAUQAAAAAAAAPA/AAAAAACAQkAAAAAAAAAUQAAAAAAAAABAAAAAAAAAQ0AAAAAAAAAUQAAAAAAAAAhAAAAAAACAQ0AAAAAAAAAUQAAAAAAAABBAAAAAAAAAREAAAAAAAAAUQAAAAAAAABRAAAAAAACAREAAAAAAAAAUQAAAAAAAABhAAAAAAAAARUAAAAAAAAAYQAAAAAAAAAAAAAAAAACARUAAAAAAAAAYQAAAAAAAAPA/AAAAAAAARkAAAAAAAAAYQAAAAAAAAABAAAAAAACARkAAAAAAAAAYQAAAAAAAAAhAAAAAAAAAR0AAAAAAAAAYQAAAAAAAABBAAAAAAACAR0AAAAAAAAAYQAAAAAAAABRAAAAAAAAASEAAAAAAAAAYQAAAAAAAABhA",
         "id": "catia:payload:unknown#zero-entity",
         "offset": 0,
-        "sha256": "b5e8dfd99ad8f0177c5a7811a8f82b86c54cb1a2c0d9cd582e335dd6c9942a19",
+        "sha256": "fb372ff67654b39bfa604bba00740e8f48013782abfe24d738acb962a9942f20",
         "stream": "catia:CATPart"
       }
     ],
