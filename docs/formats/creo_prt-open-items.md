@@ -616,7 +616,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `creo_prt.md` §6 states that a feature owns each mixed generated-entity table bounded by its `AllFeatur` row, and that the fixed prefix contains `f6 <class> e1`. It states that the row's leading identifier occupies a row-local numeric namespace that can collide with model-feature identifiers, and that numeric equality alone does not establish ownership. The specification does not give the row-start grammar.
 
-**Need.** We must know the grammar to bind every generated-entity table, affected-geometry array, and loop-history entry to its owning feature. `feature/rows.rs` accepts a start at a known feature identifier followed by one of the three constants `eb 04`, `90 01`, and `c8 10`, and ends the row at the next such start. The three constants appear in no specification or layout table. A row family with a fourth header value folds into the preceding row and gives that feature the other feature's affected geometry.
+**Need.** We must know the grammar to bind every generated-entity table, affected-geometry array, and loop-history entry to its owning feature. `feature/rows.rs` accepts a start at a known feature identifier followed by one of the three constants `eb 04`, `90 01`, and `c8 10`, and ends the row at the next such start. The three constants appear in no specification or layout table.
+
+**Note.** This grammar does not reach every feature. Many feature identifiers that carry a current operation state get no `AllFeatur` row, and a part can yield no row at all while its operation states name many features. One part uses one header constant for nearly every row, so the constant looks like a property of the writing generation rather than of the feature family. Both observations say the accepted set is a subset of the real row-start forms, so this item ranks above every other row-scoped item: each unreached row is a feature whose generated-entity tables and affected geometry are absent, not wrong.
 
 ### SP-28. Material feature precedence
 
@@ -660,7 +662,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry" states that `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records, and that each section holds one named datum row and can hold positional `<gid> 22 ...` rows.
 
-**Need.** We must know the acceptance rule to enumerate every datum plane. `datum.rs` `planes` scans the complete section, not the `srf_array` region, and accepts any offset whose identifier byte is nonzero and at most `0x40`, whose next byte is `22`, and whose bytes at `+3` and `+4` are in two local value sets. The `0x40` cap and both value sets come from no specification or layout table. A part with more than 64 datum planes drops every datum above the cap and records no loss.
+**Need.** We must know the acceptance rule to enumerate every datum plane. `datum.rs` `planes` scans the complete section, not the `srf_array` region, and accepts any offset whose identifier byte is nonzero and at most `0x40`, whose next byte is `22`, and whose bytes at `+3` and `+4` are in two local value sets. The `0x40` cap and both value sets come from no specification or layout table.
+
+**Note.** The `0x40` cap has large headroom against the datum identifiers that standard datum planes use, so the cap is not the part of this item to answer first. The unanchored scan is: the function accepts a row anywhere in the section, and reads the identifier and the owning feature identifier as raw bytes at fixed offsets from the match.
 
 ### SP-33. Datum outline held-axis selection
 
@@ -695,6 +699,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §6 states that these identifiers occupy the outer datum namespace used by `gsec3d.plane_id` and are distinct from `ActDatums.srf_array.geom_id` values. `creo_prt.md` §6 states that the row's `geom_id` remains the separate datum-geometry identifier. The specification admits both a placed plane carrier and an axis-aligned `ActDatums` plane as a sketch plane.
 
 **Need.** We must know the namespace to build the section frame. `placement.rs` `plane_equation` resolves the datum namespace first and returns on a unique datum match without consulting the model surfaces. Each namespace carries its own uniqueness gate; no gate spans the two. A sketch placed on a model face whose surface identifier equals a datum `geom_id` builds its complete frame on the datum, and every profile entity and swept carrier follows.
+
+**Note.** Standard datum planes take small identifiers and model surface identifiers begin above them, so the two ranges stay apart for a part that holds only standard datums. The item is the missing arbitration rule, not an observed wrong frame. Answer it before a construction that raises the datum identifier range makes the ranges meet.
 
 ## 4. Topology and appearance
 
@@ -916,13 +922,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the row semantics to transfer configuration parameters and values.
 
-### PP-10. `THMB_IMG_MAIN` payload offset
+### PP-10. Compressed `THMB_IMG_MAIN` payload
 
-**Question.** Which fields precede the JPEG payload in a `THMB_IMG_MAIN` section, and what length do they occupy?
+**Question.** How does a decoder retain the JPEG payload of a `THMB_IMG_MAIN` section that uses Unix-compress framing?
 
-**Known.** `creo_prt.md` §1.2 "| `THMB_IMG_MAIN`" states that the payload begins with `FF D8 FF` and holds no model geometry. The specification does not give the offset at which the payload begins.
+**Known.** `creo_prt.md` §1.2 "| `THMB_IMG_MAIN`" states that the payload begins with `FF D8 FF` and holds no model geometry. `creo_prt.md` §1 "A section payload beginning" defines the Unix-compress framing and the expanded-length check. A `THMB_IMG_MAIN` payload takes either form: the marker can begin the payload directly, or the section can begin `1f 9d <flags>` and hold the marker only after expansion.
 
-**Need.** We must know the length to preserve the complete section. `decode.rs` `preserve_passthrough_sections` locates the payload at the first `FF D8 FF` window in the section. It discards each byte before that window, and it discards the complete section when no window matches. It reports neither discard as a loss.
+**Need.** We must know the retention rule to preserve the thumbnail of a compressed section. `decode.rs` `preserve_passthrough_sections` searches the raw section bytes for `FF D8 FF`. A compressed section holds no such window before expansion, so the function discards the section and emits no passthrough record. The `expanded_sections` arena then retains the section lengths and digest but no bytes, and no loss is reported. `container.rs` `has_thumbnail` searches the same raw bytes, so it reports the thumbnail as absent.
 
 ### PP-11. Layout family identification
 
