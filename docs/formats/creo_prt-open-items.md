@@ -120,14 +120,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to solve the section variable.
 
-### SE-15. `18` standalone-zero and cache-index boundary
-
-**Question.** Which rule separates a standalone-zero `18` from an `18 <index>` cache reference?
-
-**Known.** `creo_prt.md` §2.3 "`0d` encodes negative one" states that `18` followed by any defined scalar opener encodes a standalone zero, and that `18 <index>` indexes the section-local `46` cache.
-
-**Need.** We must know the complete set of defined scalar openers to separate the two forms. `scalar.rs` `decode_in_lane` tests the following byte against the local `LANE_OPENERS` table. Each entry in that table removes one compact-integer head from the reachable index range, so every cache index whose head byte is in the table cannot be read. The table also holds bytes that `decode` does not define.
-
 ### SE-16. `MdlRefInfo` arc row scalar lane
 
 **Question.** Which scalar lane do the coordinates of an `ent_list(arc_z)` row use?

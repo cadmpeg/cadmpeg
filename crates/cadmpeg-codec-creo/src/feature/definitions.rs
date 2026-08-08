@@ -4386,7 +4386,7 @@ pub(crate) fn saved_section_scalar(
     if prefix == 0x18
         && payload
             .get(offset + 1)
-            .is_some_and(|next| matches!(next, 0x18 | 0xe0 | 0xe3 | 0xf0 | 0xf1))
+            .is_some_and(|next| matches!(next, 0x18 | 0x81 | 0xe0 | 0xe3 | 0xf0 | 0xf1))
     {
         return (Some(0.0), offset + 1);
     }
