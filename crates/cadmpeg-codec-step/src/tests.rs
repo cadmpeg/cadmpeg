@@ -146,6 +146,36 @@ fn parser_uses_the_decode_session_work_budget() {
 }
 
 #[test]
+fn anchor_materialization_uses_the_decode_session_budget() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
+    let mut materialization_limit = None;
+    for max_work_units in 1..=512 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::parse::parse_with_context(source, &ctx)
+            .expect_err("anchor materialization must consume shared work");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_anchor_materialization" {
+            assert!(limit.additional > 0);
+            assert!(limit.used <= limit.limit);
+            materialization_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = materialization_limit.expect("anchor materialization must have a budget gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+}
+
+#[test]
 fn semantic_decode_uses_the_decode_session_work_budget() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let mut semantic_operation = None;

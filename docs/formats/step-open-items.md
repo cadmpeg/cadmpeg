@@ -57,7 +57,9 @@ complete upper bound before topology decoding. This prevents a record-only
 allowance from hiding work proportional to aggregate depth, decoded output
 size, or polygon cardinality. Pcurve consistency omission indexes coedges once,
 so retaining or omitting many failed optional pcurves is linear in the decoded
-coedge population.
+coedge population. Edition-3 anchor expansion charges every cloned value node
+to the same collection-item and work-unit dimensions before materialization;
+its independent expansion and depth fuses remain active.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
@@ -100,6 +102,15 @@ validation finding, not be repaired by reclassification.
 does not prove semantic write-back for the complete admitted envelope or for
 edits to retained documents.
 
+**Current control.** The synthesized unit-cube contract writes and re-decodes
+AP203 editions 1 and 2, AP214, and AP242 editions 1 through 3. It checks
+deterministic bytes, schema detection, valid IR, a defined geometry/topology
+fingerprint, and a translated point edit. Strict mode is checked to refuse
+unsupported content before emitting bytes. The fingerprint excludes source
+IDs and derived edge parameter ranges, but includes carrier geometry, document
+units and tolerances, arena populations, topology cardinalities, orientations,
+and coedge parameter data.
+
 **Closure.** Write source-less and edited documents for each supported AP and
 version target. Re-decode and validate every result. Compare a defined semantic
 fingerprint, verify deterministic output, exercise explicit refusal for
@@ -111,6 +122,12 @@ application is available.
 **Defect.** Parser tests cover selected malformed structures, but the L9 proof
 does not yet cover every reader and writer path with a reproducible bounded fuzz
 campaign.
+
+**Current control.** The repository contains separate libFuzzer targets for
+lexer, parser, inspection, semantic decode, default writer, custom-header
+writer, and degenerate-geometry writer paths. The targets treat panics,
+aborts, sanitizer findings, and libFuzzer timeouts as failures; ordinary parse,
+validation, and export refusals are expected results.
 
 **Closure.** Add parser and writer fuzz targets for the admitted envelope. Run
 bounded campaigns with resource policies enabled. Retain minimized synthesized

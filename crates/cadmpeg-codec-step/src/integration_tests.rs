@@ -4,11 +4,105 @@
 use super::*;
 
 use cadmpeg_ir::codec::{EncodeInput, Encoder};
+use std::fmt::Debug;
 
 fn assert_valid(result: &cadmpeg_ir::codec::DecodeResult) {
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir.native.namespace("step").is_some());
+}
+
+fn sorted_debug(values: impl IntoIterator<Item = impl Debug>) -> Vec<String> {
+    let mut values = values
+        .into_iter()
+        .map(|value| format!("{value:?}"))
+        .collect::<Vec<_>>();
+    values.sort();
+    values
+}
+
+/// Fingerprint the semantic geometry and topology without source or arena IDs.
+/// The writer may assign different STEP instance numbers on re-decode, but it
+/// must preserve these canonical carrier values, tolerances, and topology
+/// cardinalities.
+fn semantic_fingerprint(ir: &cadmpeg_ir::CadIr) -> String {
+    let arena_counts = [
+        ("bodies", ir.model.bodies.len()),
+        ("regions", ir.model.regions.len()),
+        ("shells", ir.model.shells.len()),
+        ("faces", ir.model.faces.len()),
+        ("loops", ir.model.loops.len()),
+        ("coedges", ir.model.coedges.len()),
+        ("edges", ir.model.edges.len()),
+        ("vertices", ir.model.vertices.len()),
+        ("points", ir.model.points.len()),
+        ("surfaces", ir.model.surfaces.len()),
+        ("curves", ir.model.curves.len()),
+        ("pcurves", ir.model.pcurves.len()),
+        ("procedural_surfaces", ir.model.procedural_surfaces.len()),
+        ("procedural_curves", ir.model.procedural_curves.len()),
+        ("tessellations", ir.model.tessellations.len()),
+        ("appearances", ir.model.appearances.len()),
+        ("appearance_bindings", ir.model.appearance_bindings.len()),
+        ("pmi", ir.model.pmi.len()),
+    ];
+    let points = sorted_debug(ir.model.points.iter().map(|point| point.position));
+    let curves = sorted_debug(ir.model.curves.iter().map(|curve| &curve.geometry));
+    let surfaces = sorted_debug(ir.model.surfaces.iter().map(|surface| &surface.geometry));
+    let pcurves = sorted_debug(ir.model.pcurves.iter().map(|pcurve| &pcurve.geometry));
+    let bodies = sorted_debug(
+        ir.model
+            .bodies
+            .iter()
+            .map(|body| (&body.kind, body.regions.len())),
+    );
+    let regions = sorted_debug(ir.model.regions.iter().map(|region| region.shells.len()));
+    let shells = sorted_debug(ir.model.shells.iter().map(|shell| {
+        (
+            shell.faces.len(),
+            shell.wire_edges.len(),
+            shell.free_vertices.len(),
+        )
+    }));
+    let faces = sorted_debug(
+        ir.model
+            .faces
+            .iter()
+            .map(|face| (face.sense, face.loops.len(), face.tolerance)),
+    );
+    let loops = sorted_debug(ir.model.loops.iter().map(|loop_| {
+        (
+            loop_.boundary_role,
+            loop_.coedges.len(),
+            loop_.vertex_uses.len(),
+        )
+    }));
+    let coedges = sorted_debug(ir.model.coedges.iter().map(|coedge| {
+        (
+            coedge.sense,
+            coedge.pcurves.len(),
+            coedge.use_curve.is_some(),
+            coedge.use_curve_parameter_range,
+        )
+    }));
+    let edges = sorted_debug(
+        ir.model
+            .edges
+            .iter()
+            .map(|edge| (edge.curve.is_some(), edge.tolerance)),
+    );
+    let vertices = sorted_debug(ir.model.vertices.iter().map(|vertex| vertex.tolerance));
+    let semantic_entity_count = ir
+        .model
+        .entity_count()
+        .saturating_sub(ir.model.product_definitions.len())
+        .saturating_sub(ir.model.occurrences.len());
+    format!(
+        "ir_entities={};units={:?};tolerances={:?};arena_counts={arena_counts:?};points={points:?};curves={curves:?};surfaces={surfaces:?};pcurves={pcurves:?};bodies={bodies:?};regions={regions:?};shells={shells:?};faces={faces:?};loops={loops:?};coedges={coedges:?};edges={edges:?};vertices={vertices:?}",
+        semantic_entity_count,
+        ir.units,
+        ir.tolerances,
+    )
 }
 
 #[test]
@@ -106,6 +200,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
         assert_eq!(result.ir.model.bodies.len(), 1);
         assert_eq!(result.ir.model.faces.len(), 6);
         assert_valid(&result);
+        assert_eq!(
+            semantic_fingerprint(&result.ir),
+            semantic_fingerprint(&ir),
+            "semantic fingerprint changed after {schema:?} re-decode"
+        );
 
         let mut edited = result.ir.clone();
         edited
@@ -115,6 +214,7 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .expect("unit cube has a point")
             .position
             .x += 1.0;
+        let edited_fingerprint = semantic_fingerprint(&edited);
         let expected_model = edited.model.clone();
         let codec = StepCodec {
             options: options.clone(),
@@ -139,6 +239,11 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
             .decode(&mut Cursor::new(edited_bytes), &DecodeOptions::default())
             .expect("edited STEP document decode");
         assert_valid(&edited_result);
+        assert_eq!(
+            semantic_fingerprint(&edited_result.ir),
+            edited_fingerprint,
+            "edited semantic fingerprint changed after {schema:?} re-decode"
+        );
         assert_eq!(
             edited_result.ir.model.bodies.len(),
             expected_model.bodies.len()

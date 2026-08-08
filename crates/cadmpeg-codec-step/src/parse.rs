@@ -437,29 +437,27 @@ impl Parser<'_, '_, '_> {
             return self.err("tokens after exchange terminator");
         }
         if !anchors.is_empty() {
-            let anchor_bindings = anchors
-                .iter()
-                .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
-                .collect::<BTreeMap<_, _>>();
-            if anchor_bindings.len() != anchors.len() {
-                return self.err("duplicate anchor name");
+            let mut anchor_bindings = BTreeMap::new();
+            for anchor in &anchors {
+                if anchor_bindings
+                    .insert(anchor.name.clone(), anchor.value.clone())
+                    .is_some()
+                {
+                    return self.err("duplicate anchor name");
+                }
             }
-            let mut resolver = AnchorResolver::new(&anchor_bindings);
+            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget);
             for anchor in &mut anchors {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
-                    .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+                    .map_err(|error| error.into_parse_error(0))?;
             }
             for record in records.values_mut() {
                 for partial in &mut record.partials {
                     for value in &mut partial.parameters {
-                        *value =
-                            resolver
-                                .resolve_root(value)
-                                .map_err(|message| ParseError::Syntax {
-                                    offset: record.span.start,
-                                    message,
-                                })?;
+                        *value = resolver
+                            .resolve_root(value)
+                            .map_err(|error| error.into_parse_error(record.span.start))?;
                     }
                 }
             }
@@ -709,32 +707,69 @@ impl Parser<'_, '_, '_> {
     }
 }
 
-struct AnchorResolver<'a> {
+struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<String, (Value, usize)>,
     remaining_nodes: usize,
+    budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
-impl<'a> AnchorResolver<'a> {
+#[derive(Debug)]
+enum AnchorResolveError {
+    Syntax(String),
+    Resource(CodecError),
+}
+
+impl AnchorResolveError {
+    fn into_parse_error(self, offset: usize) -> ParseError {
+        match self {
+            Self::Syntax(message) => ParseError::Syntax { offset, message },
+            Self::Resource(error) => ParseError::Resource(error),
+        }
+    }
+}
+
+impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
-    fn new(anchors: &'a BTreeMap<String, Value>) -> Self {
+    fn new(
+        anchors: &'a BTreeMap<String, Value>,
+        budget: Option<&'ctx DecodeContext<'arena>>,
+    ) -> Self {
         Self {
             anchors,
             memo: BTreeMap::new(),
             remaining_nodes: Self::MAX_EXPANDED_NODES,
+            budget,
         }
     }
 
-    fn resolve_root(&mut self, value: &Value) -> Result<Value, String> {
+    fn resolve_root(&mut self, value: &Value) -> Result<Value, AnchorResolveError> {
         let (value, _, expanded_nodes) =
             self.resolve(value, &mut Vec::new(), self.remaining_nodes, 0)?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
-            .ok_or_else(|| "aggregate expanded anchor graph exceeds 1000000 nodes".to_string())?;
+            .ok_or_else(|| {
+                AnchorResolveError::Syntax(
+                    "aggregate expanded anchor graph exceeds 1000000 nodes".into(),
+                )
+            })?;
         Ok(value)
+    }
+
+    fn charge_nodes(&self, count: usize) -> Result<(), AnchorResolveError> {
+        let count = u64::try_from(count).unwrap_or(u64::MAX);
+        if let Some(budget) = self.budget {
+            budget
+                .charge_collection_items(count, "step_anchor_materialization")
+                .map_err(AnchorResolveError::Resource)?;
+            budget
+                .charge_work(count, "step_anchor_materialization")
+                .map_err(AnchorResolveError::Resource)?;
+        }
+        Ok(())
     }
 
     fn resolve(
@@ -743,53 +778,75 @@ impl<'a> AnchorResolver<'a> {
         stack: &mut Vec<String>,
         budget: usize,
         depth: usize,
-    ) -> Result<(Value, usize, usize), String> {
+    ) -> Result<(Value, usize, usize), AnchorResolveError> {
         if depth >= Self::MAX_REFERENCE_DEPTH {
-            return Err("expanded anchor graph exceeds its node or depth limit".into());
+            return Err(AnchorResolveError::Syntax(
+                "expanded anchor graph exceeds its node or depth limit".into(),
+            ));
         }
         match value {
             Value::Resource(name) if self.anchors.contains_key(name) => {
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {
-                        return Err("expanded anchor value exceeds 1000000 nodes".into());
+                        return Err(AnchorResolveError::Syntax(
+                            "expanded anchor value exceeds 1000000 nodes".into(),
+                        ));
                     }
+                    self.charge_nodes(*nodes)?;
                     return Ok((value.clone(), *nodes, *nodes));
                 }
                 if stack.contains(name) {
-                    return Err(format!("cyclic anchor binding <{name}>"));
+                    return Err(AnchorResolveError::Syntax(format!(
+                        "cyclic anchor binding <{name}>"
+                    )));
                 }
                 stack.push(name.clone());
+                let source_nodes = value_node_count(&self.anchors[name]);
+                self.charge_nodes(source_nodes)?;
                 let source = self.anchors[name].clone();
                 let resolved = self.resolve(&source, stack, budget, depth + 1);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
-                    return Err("expanded anchor value exceeds 1000000 nodes".into());
+                    return Err(AnchorResolveError::Syntax(
+                        "expanded anchor value exceeds 1000000 nodes".into(),
+                    ));
                 }
+                self.charge_nodes(nodes)?;
                 self.memo.insert(name.clone(), (value.clone(), nodes));
                 Ok((value, nodes, nodes))
             }
             Value::List(values) => {
+                self.charge_nodes(1)?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
                 let mut resolved = Vec::with_capacity(values.len());
                 for value in values {
-                    let remaining = budget
-                        .checked_sub(expanded_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                    let remaining = budget.checked_sub(expanded_nodes).ok_or_else(|| {
+                        AnchorResolveError::Syntax(
+                            "expanded anchor value exceeds 1000000 nodes".into(),
+                        )
+                    })?;
                     let (value, child_nodes, child_expanded_nodes) =
                         self.resolve(value, stack, remaining, depth + 1)?;
-                    nodes = nodes
-                        .checked_add(child_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                    nodes = nodes.checked_add(child_nodes).ok_or_else(|| {
+                        AnchorResolveError::Syntax(
+                            "expanded anchor value exceeds 1000000 nodes".into(),
+                        )
+                    })?;
                     expanded_nodes = expanded_nodes
                         .checked_add(child_expanded_nodes)
-                        .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
+                        .ok_or_else(|| {
+                            AnchorResolveError::Syntax(
+                                "expanded anchor value exceeds 1000000 nodes".into(),
+                            )
+                        })?;
                     resolved.push(value);
                 }
                 Ok((Value::List(resolved), nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
+                self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
                 Ok((
@@ -798,7 +855,10 @@ impl<'a> AnchorResolver<'a> {
                     expanded_nodes,
                 ))
             }
-            value => Ok((value.clone(), 1, 0)),
+            value => {
+                self.charge_nodes(1)?;
+                Ok((value.clone(), 1, 0))
+            }
         }
     }
 }
@@ -812,6 +872,16 @@ fn references(value: &Value, out: &mut Vec<u64>) {
             Value::Typed(_, value) => pending.push(value),
             _ => {}
         }
+    }
+}
+
+fn value_node_count(value: &Value) -> usize {
+    match value {
+        Value::List(values) => values.iter().fold(1usize, |count, value| {
+            count.saturating_add(value_node_count(value))
+        }),
+        Value::Typed(_, value) => 1usize.saturating_add(value_node_count(value)),
+        _ => 1,
     }
 }
 
@@ -849,11 +919,11 @@ mod tests {
     #[test]
     fn anchor_budget_charges_only_resource_expansion() {
         let anchors = BTreeMap::new();
-        let mut resolver = AnchorResolver::new(&anchors);
+        let mut resolver = AnchorResolver::new(&anchors, None);
         resolver.remaining_nodes = 0;
 
         let ordinary = Value::List((0..1024).map(Value::Integer).collect());
-        assert_eq!(resolver.resolve_root(&ordinary), Ok(ordinary));
+        assert_eq!(resolver.resolve_root(&ordinary).ok(), Some(ordinary));
         assert_eq!(resolver.remaining_nodes, 0);
     }
 
@@ -863,7 +933,7 @@ mod tests {
             "a".to_string(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors);
+        let mut resolver = AnchorResolver::new(&anchors, None);
         resolver.remaining_nodes = 2;
 
         assert!(resolver
