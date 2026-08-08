@@ -7040,8 +7040,8 @@ mod tests {
         let projection = super::hole_package_projection(
             &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
             &templates,
-            &[group],
-            &[use_],
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
             &outputs,
             &diameters,
             &chamfers,
@@ -7053,6 +7053,20 @@ mod tests {
         assert_eq!(projection.outputs["package"], [body]);
         assert_eq!(projection.diameters["package"], Length(5.1));
         assert_eq!(projection.chamfers["package"], chamfer);
+
+        let mut mismatched_outputs = outputs;
+        mismatched_outputs.insert("simple-b".into(), vec![BodyId("other-body".into())]);
+        let projection = super::hole_package_projection(
+            &cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default()),
+            &templates,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&use_),
+            &mismatched_outputs,
+            &diameters,
+            &chamfers,
+        );
+        assert!(projection.internal_operations.is_empty());
+        assert!(projection.outputs.is_empty());
     }
 
     #[test]
