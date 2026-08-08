@@ -85,6 +85,7 @@ impl DesignFeatureTransfer {
             &self.feature_ids,
         );
         assign_native_operation_parameter_values(ir, &exact_feature_owners);
+        normalize_parameter_names(ir);
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -222,6 +223,58 @@ fn assign_native_operation_parameter_values(
         if parameters.is_empty() {
             *parameters = values;
         }
+    }
+}
+
+/// Give every neutral parameter a unique name within its ownership scope.
+///
+/// CATIA permits several source parameters with the same name under one
+/// feature. The IR uses names as scope-local keys, so retaining those names
+/// verbatim would produce an invalid model. Keep the first source name and
+/// append a deterministic suffix to later collisions. Reserve every source
+/// name before choosing a suffix so a generated name cannot hide a later
+/// source parameter with that name. The original spelling remains available
+/// in `properties["source_name"]` whenever the neutral name changes.
+fn normalize_parameter_names(ir: &mut CadIr) {
+    let mut reserved_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
+    for parameter in &ir.model.parameters {
+        if !parameter.name.is_empty() {
+            reserved_by_scope
+                .entry(parameter.owner.clone())
+                .or_default()
+                .insert(parameter.name.clone());
+        }
+    }
+
+    let mut used_by_scope = HashMap::<Option<FeatureId>, HashSet<String>>::new();
+    for parameter in &mut ir.model.parameters {
+        let scope = parameter.owner.clone();
+        let reserved = reserved_by_scope
+            .get(&scope)
+            .expect("every parameter scope has a reserved-name set");
+        let used = used_by_scope.entry(scope).or_default();
+        let source_name = parameter.name.clone();
+        if !source_name.is_empty() && used.insert(source_name.clone()) {
+            continue;
+        }
+
+        let base = if source_name.is_empty() {
+            "Parameter"
+        } else {
+            source_name.as_str()
+        };
+        let mut suffix = 1u32;
+        let neutral_name = loop {
+            let candidate = format!("{base}#{suffix}");
+            suffix = suffix.saturating_add(1);
+            if !reserved.contains(&candidate) && used.insert(candidate.clone()) {
+                break candidate;
+            }
+        };
+        parameter.name = neutral_name;
+        parameter
+            .properties
+            .insert("source_name".to_string(), source_name);
     }
 }
 
@@ -1070,6 +1123,42 @@ mod tests {
             panic!("expected an opaque native operation");
         };
         assert!(parameters.is_empty());
+    }
+
+    #[test]
+    fn disambiguates_parameter_names_without_hiding_a_later_source_name() {
+        let owner = FeatureId::from("feature");
+        let mut ir = CadIr::empty(Units::default());
+        let mut first = parameter("first", "first-native");
+        first.owner = Some(owner.clone());
+        first.name = "Angle".to_string();
+        let mut second = parameter("second", "second-native");
+        second.owner = Some(owner.clone());
+        second.name = "Angle".to_string();
+        let mut later_source_name = parameter("later", "later-native");
+        later_source_name.owner = Some(owner);
+        later_source_name.name = "Angle#1".to_string();
+        ir.model
+            .parameters
+            .extend([first, second, later_source_name]);
+
+        normalize_parameter_names(&mut ir);
+
+        assert_eq!(
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| parameter.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Angle", "Angle#2", "Angle#1"]
+        );
+        assert_eq!(
+            ir.model.parameters[1].properties.get("source_name"),
+            Some(&"Angle".to_string())
+        );
+        assert!(!ir.model.parameters[2]
+            .properties
+            .contains_key("source_name"));
     }
 
     #[test]
