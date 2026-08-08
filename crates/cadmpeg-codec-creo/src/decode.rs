@@ -12978,6 +12978,42 @@ fn solver_only_section_entity_family(
     {
         evidence.insert(SectionEntityIncidenceFamily::Point);
     }
+    if !evidence.contains(&SectionEntityIncidenceFamily::Point) {
+        let solver_only_point_from_midpoint = complete_section_skamps(definition).any(|skamp| {
+            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+                return false;
+            };
+            [(first, second), (second, first)]
+                .into_iter()
+                .filter(|(point, target)| {
+                    point.sense == 0
+                        && point.entity_id == entity_id
+                        && target.sense == 0
+                        && (unique_decoded_section_segment(definition, target.entity_id)
+                            .is_some_and(|segment| {
+                                matches!(
+                                    segment.kind,
+                                    crate::feature::FeatureSegmentKind::Line
+                                        | crate::feature::FeatureSegmentKind::Arc
+                                )
+                            })
+                            || section_saved_entity(definition, target.entity_id).is_some_and(
+                                |saved| {
+                                    matches!(
+                                        saved,
+                                        crate::feature::FeatureSavedEntity::Line(_)
+                                            | crate::feature::FeatureSavedEntity::Arc(_)
+                                    )
+                                },
+                            ))
+                })
+                .count()
+                == 1
+        });
+        if solver_only_point_from_midpoint {
+            evidence.insert(SectionEntityIncidenceFamily::Point);
+        }
+    }
     for skamp in definition
         .relations
         .iter()

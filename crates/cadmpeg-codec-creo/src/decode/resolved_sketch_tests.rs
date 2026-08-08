@@ -11253,6 +11253,81 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         ),
         Some(SketchLocus::Start(entity)) if entity.0.ends_with(":100")
     ));
+    let mut solver_only_point_midpoint = opaque_line.clone();
+    let midpoint_relations = solver_only_point_midpoint
+        .relations
+        .as_mut()
+        .expect("relations");
+    midpoint_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 102,
+        kind: 35,
+        flags: 0,
+        status: 0,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 101,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            },
+        ],
+        offset: 604,
+    }];
+    midpoint_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 1;
+    assert_eq!(
+        solver_only_section_entity_family(&solver_only_point_midpoint, 101),
+        Some(SectionEntityIncidenceFamily::Point)
+    );
+    assert_eq!(
+        section_skamp_constraints(
+            &solver_only_point_midpoint,
+            &SketchId("creo:model:sketch#917".into())
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Midpoint {
+            point: SketchLocus::Entity(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:101".to_string()
+            )),
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+    let mut conflicting_midpoint = solver_only_point_midpoint.clone();
+    let conflicting_relations = conflicting_midpoint.relations.as_mut().expect("relations");
+    conflicting_relations
+        .skamps
+        .push(crate::feature::FeatureSkamp {
+            id: 103,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 101,
+                    sense: 4,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 2,
+                },
+            ],
+            offset: 605,
+        });
+    conflicting_relations
+        .skamp_header
+        .as_mut()
+        .expect("skamp header")
+        .declared_count = 2;
+    assert_eq!(
+        solver_only_section_entity_family(&conflicting_midpoint, 101),
+        None
+    );
     let centered_midpoint = crate::feature::FeatureSkamp {
         id: 35,
         kind: 35,
