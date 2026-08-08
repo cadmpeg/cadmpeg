@@ -23,10 +23,26 @@ use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 use std::fmt::Write as _;
 use std::io::Cursor;
+use zip::write::SimpleFileOptions;
+use zip::{CompressionMethod, ZipWriter};
 
 use crate::{
     write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
 };
+
+fn step_zip(entries: &[(&str, &[u8], CompressionMethod)]) -> Vec<u8> {
+    let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+    for &(name, bytes, method) in entries {
+        writer
+            .start_file(
+                name,
+                SimpleFileOptions::default().compression_method(method),
+            )
+            .unwrap();
+        std::io::Write::write_all(&mut writer, bytes).unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
 
 #[test]
 fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
@@ -1008,7 +1024,6 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
 fn codec_refuses_out_of_envelope_encodings_by_name() {
     let codec = StepCodec::default();
     let cases: &[(&[u8], &str)] = &[
-        (b"PK\x03\x04archive", "STEP Part 21 ZIP container"),
         (
             b"\x89HDF\r\n\x1a\ncontent",
             "STEP Part 26 binary/HDF5 encoding",
@@ -1034,6 +1049,106 @@ fn codec_refuses_out_of_envelope_encodings_by_name() {
         codec.detect(b"<?xml version='1.0'?><iso_10303_28/>"),
         Confidence::Medium
     );
+}
+
+#[test]
+fn codec_decodes_step_zip_root_and_reports_archive_members() {
+    let root = include_bytes!("../tests/fixtures/ap242_minimal.p21");
+    let bytes = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Deflated),
+        ("parts/child.p21", b"subsidiary", CompressionMethod::Stored),
+        ("preview.bin", b"ancillary", CompressionMethod::Stored),
+    ]);
+    let codec = StepCodec::default();
+
+    assert_eq!(codec.detect(&bytes), Confidence::Medium);
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect STEP ZIP");
+    assert_eq!(summary.container_kind, "iso-10303-21-zip");
+    assert_eq!(
+        summary
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>(),
+        ["ISO-10303.p21", "parts/child.p21", "preview.bin"]
+    );
+    assert_eq!(summary.entries[0].role, "root-exchange");
+    assert_eq!(summary.entries[0].compression, "deflate");
+    assert_eq!(summary.entries[1].role, "subsidiary-exchange");
+    assert!(summary.entries[0].attributes["logical_sections"].contains("HEADER"));
+
+    let result = codec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("decode STEP ZIP root");
+    let source = result.ir.source.expect("STEP source metadata");
+    assert_eq!(source.format, "step");
+    assert_eq!(source.attributes["container_kind"], "iso-10303-21-zip");
+    assert_eq!(source.attributes["archive_root"], "ISO-10303.p21");
+    assert_eq!(source.attributes["archive_entries"], "3");
+    assert!(result
+        .report
+        .notes
+        .iter()
+        .any(|note| note == "container root ISO-10303.p21; archive entries=3"));
+}
+
+#[test]
+fn codec_resolves_root_references_relative_to_the_archive_directory() {
+    let root = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<parts/child.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let bytes = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        ("parts/child.p21", b"child", CompressionMethod::Stored),
+    ]);
+    let codec = StepCodec::default();
+    let summary = codec
+        .inspect(&mut Cursor::new(&bytes), &InspectOptions::default())
+        .expect("inspect relative ZIP reference");
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "internal resource #10 -> parts/child.p21#target"));
+
+    let missing = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let escaping = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('zip references'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;#10=<../outside.p21#target>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let escaping = step_zip(&[("ISO-10303.p21", escaping, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(escaping), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+}
+
+#[test]
+fn codec_rejects_step_zip_without_root_or_with_unsupported_layout() {
+    let root = include_bytes!("../tests/fixtures/ap242_minimal.p21");
+    let codec = StepCodec::default();
+
+    let missing_root = step_zip(&[("part.p21", root, CompressionMethod::Stored)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(missing_root), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::WrongFormat(_))
+    ));
+
+    let unsafe_path = step_zip(&[
+        ("ISO-10303.p21", root, CompressionMethod::Stored),
+        ("../outside.bin", b"unsafe", CompressionMethod::Stored),
+    ]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(unsafe_path), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+
+    let zstd = step_zip(&[("ISO-10303.p21", root, CompressionMethod::Zstd)]);
+    assert!(matches!(
+        codec.inspect(&mut Cursor::new(zstd), &InspectOptions::default()),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
 }
 
 #[test]

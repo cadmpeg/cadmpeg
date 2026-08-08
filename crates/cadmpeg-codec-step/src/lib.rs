@@ -48,6 +48,7 @@
 //! header and DATA section after acceptance, an I/O failure can leave partial
 //! output.
 
+mod archive;
 mod geometry;
 pub mod lex;
 pub mod parse;
@@ -4341,7 +4342,7 @@ impl Codec for StepCodec {
     fn detect(&self, prefix: &[u8]) -> Confidence {
         if starts_with_step_magic(prefix) {
             Confidence::High
-        } else if is_part28_xml(prefix) {
+        } else if archive::has_root_marker(prefix) || is_part28_xml(prefix) {
             Confidence::Medium
         } else {
             Confidence::No
@@ -4350,10 +4351,13 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
+        if archive::has_zip_magic(bytes) {
+            return inspect_zip(ctx, root);
+        }
         refuse_alternate_encoding(bytes)?;
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
@@ -4497,6 +4501,9 @@ impl Codec for StepCodec {
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<DecodeResult, CodecError> {
         let bytes = root.window();
+        if archive::has_zip_magic(bytes) {
+            return decode_zip(ctx, root);
+        }
         refuse_alternate_encoding(bytes)?;
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
@@ -4534,12 +4541,89 @@ fn starts_with_step_magic(bytes: &[u8]) -> bool {
         .is_some_and(|candidate| candidate.eq_ignore_ascii_case(magic))
 }
 
-fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
-    if bytes.starts_with(b"PK\x03\x04") {
-        return Err(CodecError::NotImplemented(
-            "STEP Part 21 ZIP container".into(),
-        ));
+fn inspect_zip(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let root_summary = StepCodec::default().inspect_impl(ctx, root_view)?;
+    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let entry_count = archive.entries().len();
+    let root_entry = archive
+        .entry(archive::ROOT_NAME)
+        .expect("validated STEP ZIP root");
+    let root_data_offset = root_entry.data_start;
+    let logical_entries = root_summary
+        .entries
+        .iter()
+        .map(|entry| entry.name.as_str())
+        .collect::<Vec<_>>()
+        .join(",");
+    let mut entries = archive.container_entries(archive::classify_entry);
+    if let Some(root_entry) = entries
+        .iter_mut()
+        .find(|entry| entry.name == archive::ROOT_NAME)
+    {
+        root_entry
+            .attributes
+            .insert("logical_sections".into(), logical_entries);
     }
+    let mut notes = vec![
+        format!("root {}", archive::ROOT_NAME),
+        format!("archive entries={entry_count}; root data offset={root_data_offset}"),
+    ];
+    notes.extend(root_summary.notes);
+    notes.extend(resource_notes);
+    Ok(ContainerSummary {
+        format: "step".into(),
+        container_kind: "iso-10303-21-zip".into(),
+        entries,
+        notes,
+    })
+}
+
+fn decode_zip(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    root: cadmpeg_core::decode::View<'_>,
+) -> Result<DecodeResult, CodecError> {
+    let (archive, root_view) = archive::open_root(ctx, root)?;
+    let resource_notes = archive::root_reference_notes(&archive, root_view.window())?;
+    let entry_count = archive.entries().len();
+    let root_entry = archive
+        .entry(archive::ROOT_NAME)
+        .expect("validated STEP ZIP root");
+    let root_data_offset = root_entry.data_start;
+    let mut result = reader::decode(
+        root_view.window(),
+        DecodeOptions {
+            container_only: ctx.container_only(),
+            policy: *ctx.policy(),
+        },
+    )?;
+    if let Some(source) = &mut result.ir.source {
+        source
+            .attributes
+            .insert("container_kind".into(), "iso-10303-21-zip".into());
+        source
+            .attributes
+            .insert("archive_root".into(), archive::ROOT_NAME.into());
+        source
+            .attributes
+            .insert("archive_entries".into(), entry_count.to_string());
+        source.attributes.insert(
+            "archive_root_data_offset".into(),
+            root_data_offset.to_string(),
+        );
+    }
+    result.report.notes.push(format!(
+        "container root {}; archive entries={entry_count}",
+        archive::ROOT_NAME
+    ));
+    result.report.notes.extend(resource_notes);
+    Ok(result)
+}
+
+fn refuse_alternate_encoding(bytes: &[u8]) -> Result<(), CodecError> {
     if bytes.starts_with(b"\x89HDF\r\n\x1a\n") {
         return Err(CodecError::NotImplemented(
             "STEP Part 26 binary/HDF5 encoding".into(),

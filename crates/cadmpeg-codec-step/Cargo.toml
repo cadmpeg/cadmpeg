@@ -15,6 +15,7 @@ categories = ["encoding", "graphics"]
 
 [dependencies]
 base64.workspace = true
+cadmpeg-container.workspace = true
 cadmpeg-core.workspace = true
 cadmpeg-ir = { workspace = true }
 thiserror = { workspace = true }
@@ -24,6 +25,7 @@ encoding_rs = { workspace = true }
 # Tests and the doctest build `cadmpeg_ir::examples`; the feature keeps those
 # fixtures out of the normal library build.
 cadmpeg-ir = { workspace = true }
+zip.workspace = true
 
 [lints]
 workspace = true

@@ -70,6 +70,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### CE-01. ZIP container layout
 
+**Resolved.** A conforming Part 21 ZIP container uses PKZIP 2.04g stored or
+Deflate entries and contains one exact root member named `ISO-10303.p21` at
+the archive root. All other members are subsidiaries. The reader enumerates
+each member's name, compression, CRC, sizes, and physical offsets, rejects a
+missing root, unsupported compression, unsafe member path, duplicate name, or
+encrypted entry, and decodes the root as the Part 21 exchange structure.
+
 **Question.** Which ZIP entries, names, metadata, and relationships form an edition-3 exchange container?
 
 **Known.** `step.md` §1 "Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use" through `step.md` §1 "Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use" identify a ZIP container as distinct from a clear-text Part 21 exchange structure. `step.md` §2 "A clear-text exchange structure uses this outer grammar:" defines the clear-text outer grammar.
@@ -77,6 +84,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the layout to locate and identify each exchange resource in the container.
 
 ### CE-02. ZIP resource composition
+
+**Known.** A relative URI is resolved against the directory of the referencing
+member. Dot segments are removed, traversal above the archive root is invalid,
+and only the root member is addressable from outside the archive. The root
+reader applies this rule to its REFERENCE entries and checks each resolved
+internal member. The rule does not define how a subsidiary exchange graph is
+merged into the root graph.
 
 **Question.** How do references between exchange resources in an edition-3 ZIP container resolve?
 

@@ -13,6 +13,11 @@ identity and placement.
 
 Part 28 XML, Part 26 binary, AP242 BO-Model XML, and ZIP containers use
 separate encodings.
+A Part 21 ZIP container uses PKZIP 2.04g stored or Deflate entries. Its root
+member is named exactly `ISO-10303.p21` and is at the archive root. Every
+other member is a subsidiary, including directories, nested archives, and
+ancillary data. Archive member paths are relative, use `/`, and cannot contain
+`.` or `..` components that escape the archive.
 
 ## 2. Byte repertoire and exchange framing
 
