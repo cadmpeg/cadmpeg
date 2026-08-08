@@ -720,12 +720,12 @@ pub(crate) fn chart_source_record_at(
             continue;
         }
         let base = tag + 2 + escape;
-        let Some(count) = be::u32_at(stream, base).map(|value| value as usize) else {
+        let Some(count) = be::u32_at(stream, base)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count >= 2)
+        else {
             continue;
         };
-        if !(2..=1024).contains(&count) {
-            continue;
-        }
         let Some((xmt, xmt_len)) = read_xmt(stream, base + 4) else {
             continue;
         };
@@ -806,6 +806,12 @@ fn chart_points(
     count: usize,
     point_layout: ChartPointLayout,
 ) -> Option<ChartPoints> {
+    let point_width = match point_layout {
+        ChartPointLayout::Xyz3 => 24,
+        ChartPointLayout::Ext11 => 88,
+    };
+    let end = block.checked_add(count.checked_mul(point_width)?)?;
+    stream.get(block..end)?;
     if point_layout == ChartPointLayout::Xyz3 {
         let points = (0..count)
             .map(|index| point_m(stream, block + index * 24))
@@ -814,7 +820,7 @@ fn chart_points(
             points,
             native_parameters: None,
             ext_support_uv: [None, None],
-            end: block.checked_add(count.checked_mul(24)?)?,
+            end,
         });
     }
 
@@ -865,7 +871,7 @@ fn chart_points(
                 points,
                 native_parameters: Some(native_parameters),
                 ext_support_uv,
-                end: block.checked_add(count.checked_mul(88)?)?,
+                end,
             });
         }
     }

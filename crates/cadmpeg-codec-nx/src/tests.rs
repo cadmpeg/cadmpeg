@@ -2537,6 +2537,38 @@ fn intersection_chart_accepts_one_matching_parameter_complement() {
 }
 
 #[test]
+fn intersection_chart_accepts_encoded_count_without_arbitrary_ceiling() {
+    let count = 1025usize;
+    let mut chart = record(40, 60 + count * 24);
+    chart[2..6].copy_from_slice(&(count as u32).to_be_bytes());
+    put_ref(&mut chart, 6, 20);
+    put_f64(&mut chart, 8, 0.0);
+    put_f64(&mut chart, 16, 1.0);
+    chart[24..28].copy_from_slice(&(count as u32).to_be_bytes());
+    put_f64(&mut chart, 28, 0.00001);
+    put_f64(&mut chart, 36, 0.001);
+    put_f64(&mut chart, 44, -31_415_800_000_000.0);
+    put_f64(&mut chart, 52, -31_415_800_000_000.0);
+    for index in 0..count {
+        put_vec3(
+            &mut chart,
+            60 + index * 24,
+            [index as f64 * 0.001, 0.0, 0.0],
+        );
+    }
+
+    let [chart] = crate::intersection::chart_source_records(
+        &chart,
+        crate::intersection::ChartPointLayout::Xyz3,
+    )
+    .try_into()
+    .expect("one wide chart");
+    assert_eq!(chart.count, count as u32);
+    assert_eq!(chart.chart_count, count as u32);
+    assert_eq!(chart.points.len(), count);
+}
+
+#[test]
 fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let mut stream = pcurve_topology_partition_stream();
     let edge = stream
