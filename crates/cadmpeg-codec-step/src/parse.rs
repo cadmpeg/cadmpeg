@@ -449,6 +449,9 @@ impl Parser<'_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
+        if let Err(message) = validate_header(&header) {
+            return self.err(message);
+        }
         let mut anchors = Vec::new();
         if self.peek_name("ANCHOR") {
             self.next_kind()?;
@@ -520,6 +523,9 @@ impl Parser<'_> {
                 parameters,
                 records: ids,
             });
+        }
+        if data.is_empty() {
+            return self.err("exchange has no DATA section");
         }
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
@@ -815,6 +821,71 @@ impl Parser<'_> {
     }
 }
 
+fn validate_header(header: &[HeaderRecord]) -> Result<(), &'static str> {
+    const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
+    if header.len() < REQUIRED.len()
+        || header
+            .iter()
+            .zip(REQUIRED)
+            .any(|(record, expected)| record.name != expected)
+    {
+        return Err("HEADER must begin with FILE_DESCRIPTION, FILE_NAME, and FILE_SCHEMA");
+    }
+    if REQUIRED
+        .iter()
+        .any(|name| header.iter().filter(|record| record.name == *name).count() != 1)
+    {
+        return Err("HEADER contains a duplicate required entity");
+    }
+
+    let description = &header[0].parameters;
+    if description.len() != 2
+        || !is_string_list(description.first())
+        || !matches!(description.get(1), Some(Value::String(_)))
+    {
+        return Err("FILE_DESCRIPTION has invalid parameters");
+    }
+
+    let file_name = &header[1].parameters;
+    if file_name.len() != 7
+        || !matches!(file_name.first(), Some(Value::String(_)))
+        || !matches!(file_name.get(1), Some(Value::String(_)))
+        || !is_string_list(file_name.get(2))
+        || !is_string_list(file_name.get(3))
+        || !matches!(file_name.get(4), Some(Value::String(_)))
+        || !matches!(file_name.get(5), Some(Value::String(_)))
+        || !matches!(file_name.get(6), Some(Value::String(_)))
+    {
+        return Err("FILE_NAME has invalid parameters");
+    }
+
+    let schema = &header[2].parameters;
+    let Some(Value::List(identifiers)) = schema.first() else {
+        return Err("FILE_SCHEMA must contain one schema identifier list");
+    };
+    if schema.len() != 1
+        || identifiers.is_empty()
+        || !identifiers
+            .iter()
+            .all(|value| matches!(value, Value::String(_)))
+        || identifiers
+            .iter()
+            .enumerate()
+            .any(|(index, value)| identifiers[..index].contains(value))
+    {
+        return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
+    }
+    Ok(())
+}
+
+fn is_string_list(value: Option<&Value>) -> bool {
+    matches!(
+        value,
+        Some(Value::List(values))
+            if !values.is_empty() && values.iter().all(|value| matches!(value, Value::String(_)))
+    )
+}
+
 struct AnchorResolver<'a> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<String, (Value, usize)>,
@@ -927,7 +998,7 @@ mod tests {
 
     #[test]
     fn entity_index_is_not_part_of_exchange_equality() {
-        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
         let (indexed, _) = parse(source).expect("required invariant");
         let (untouched, _) = parse(source).expect("required invariant");
         assert_eq!(indexed.entities("POINT").count(), 1);
@@ -936,7 +1007,7 @@ mod tests {
 
     #[test]
     fn entity_unions_are_ordered_unique_and_name_order_independent() {
-        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#2=(A()B());#1=B();ENDSEC;END-ISO-10303-21;";
         let (exchange, _) = parse(source).expect("required invariant");
 
         let forward = exchange

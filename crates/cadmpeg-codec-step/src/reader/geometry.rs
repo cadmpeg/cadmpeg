@@ -5114,7 +5114,7 @@ mod tests {
     #[test]
     fn prefixed_plane_angle_units_scale_to_radians() {
         let (exchange, _) = crate::parse::parse(
-            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
+            b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=(NAMED_UNIT(*) SI_UNIT(.MILLI.,.RADIAN.));\
 #2=(NAMED_UNIT(*) SI_UNIT($,.RADIAN.));\
 ENDSEC;END-ISO-10303-21;",
@@ -5130,7 +5130,7 @@ ENDSEC;END-ISO-10303-21;",
     #[test]
     fn recursive_unit_and_pcurve_failures_release_active_ids() {
         let (exchange, _) = crate::parse::parse(
-            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
+            b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=CONVERSION_BASED_UNIT('',#2);\
 #2=UNKNOWN_FACTOR();\
 #3=LINE('',#4,#5);\
