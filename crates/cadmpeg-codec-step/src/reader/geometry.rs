@@ -4,7 +4,10 @@
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
+use cadmpeg_ir::eval::{
+    analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point,
+    nurbs_pcurve_parameter_domain, nurbs_pcurve_parameter_near_point, pcurve_uv,
+};
 use cadmpeg_ir::geometry::{
     derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
     CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -32,6 +35,326 @@ pub(super) struct GeometryResult {
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
     pub length_scale: f64,
     pub plane_angle_scale: f64,
+}
+
+/// Populate edge parameter ranges from the STEP edge endpoint witnesses when
+/// the native `EDGE_CURVE` does not carry an explicit range.
+///
+/// Part 21 edges commonly trim an unbounded or periodic carrier by their two
+/// `VERTEX_POINT` references. The neutral edge range is needed by pcurve
+/// consistency checks; using the carrier's complete domain would compare a
+/// trimmed edge with unrelated points on the same circle or spline.
+pub(super) fn infer_edge_parameter_ranges(ir: &mut CadIr) {
+    let points = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.0.as_str(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            points
+                .get(vertex.point.0.as_str())
+                .copied()
+                .map(|point| (vertex.id.0.as_str(), point))
+        })
+        .collect::<HashMap<_, _>>();
+    let candidates = ir
+        .model
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.param_range.is_none())
+        .filter_map(|(index, edge)| {
+            let curve = edge.curve.clone()?;
+            let start = vertices.get(edge.start.0.as_str()).copied()?;
+            let end = vertices.get(edge.end.0.as_str()).copied()?;
+            Some((index, curve, start, end))
+        })
+        .collect::<Vec<_>>();
+
+    for (index, curve, start, end) in candidates {
+        let Some(start_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point(ir, &curve, start, 0.0)
+        else {
+            continue;
+        };
+        let Some(end_parameter) =
+            cadmpeg_ir::eval::model_curve_parameter_near_point(ir, &curve, end, start_parameter)
+        else {
+            continue;
+        };
+        let Some(curve_geometry) = ir
+            .model
+            .curves
+            .iter()
+            .find(|candidate| candidate.id == curve)
+            .map(|candidate| &candidate.geometry)
+        else {
+            continue;
+        };
+        let Some([start_parameter, end_parameter]) =
+            edge_parameter_range(curve_geometry, start_parameter, end_parameter)
+        else {
+            continue;
+        };
+        if let Some(edge) = ir.model.edges.get_mut(index) {
+            edge.param_range = Some([start_parameter, end_parameter]);
+        }
+    }
+}
+
+fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+    let periodic_domain = match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        CurveGeometry::Nurbs(nurbs) if nurbs.periodic => nurbs_curve_parameter_domain(nurbs),
+        _ => None,
+    };
+    let Some([lower, upper]) = periodic_domain else {
+        return (end > start).then_some([start, end]);
+    };
+    let period = upper - lower;
+    if !period.is_finite() || period <= 0.0 {
+        return None;
+    }
+    let mut sweep = end - start;
+    while sweep < 0.0 {
+        sweep += period;
+    }
+    let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+    if sweep <= 0.0 || sweep > period + tolerance {
+        return None;
+    }
+    let normalized_start = lower + (start - lower).rem_euclid(period);
+    Some([normalized_start, normalized_start + sweep.min(period)])
+}
+
+/// Recover pcurve-use intervals when a STEP file supplies only the two
+/// topological endpoint witnesses. A pcurve and its model-space edge are
+/// allowed to use different neutral parameters, so the edge interval is only
+/// a search seed; the stored range belongs to the pcurve itself.
+pub(super) fn infer_pcurve_parameter_ranges(ir: &mut CadIr) {
+    let points = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.0.as_str(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            points
+                .get(vertex.point.0.as_str())
+                .copied()
+                .map(|point| (vertex.id.0.as_str(), point))
+        })
+        .collect::<HashMap<_, _>>();
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (surface.id.0.as_str(), &surface.geometry))
+        .collect::<HashMap<_, _>>();
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.0.as_str(), loop_))
+        .collect::<HashMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.0.as_str(), edge))
+        .collect::<HashMap<_, _>>();
+    let pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
+        .collect::<HashMap<_, _>>();
+    let candidates = ir
+        .model
+        .coedges
+        .iter()
+        .enumerate()
+        .filter(|(_, coedge)| {
+            coedge.pcurves.len() == 1 && coedge.pcurves[0].parameter_range.is_none()
+        })
+        .filter_map(|(coedge_index, coedge)| {
+            let pcurve = pcurves.get(coedge.pcurves[0].pcurve.0.as_str())?;
+            let face = loops
+                .get(coedge.owner_loop.0.as_str())
+                .and_then(|loop_| faces.get(loop_.face.0.as_str()))?;
+            let surface = surfaces.get(face.surface.0.as_str())?;
+            let edge = edges.get(coedge.edge.0.as_str())?;
+            let start = vertices.get(edge.start.0.as_str()).copied()?;
+            let end = vertices.get(edge.end.0.as_str()).copied()?;
+            let seed_range = edge.param_range.or_else(|| pcurve_parameter_domain(pcurve));
+            Some((
+                coedge_index,
+                start,
+                end,
+                (*surface).clone(),
+                (*pcurve).clone(),
+                seed_range.unwrap_or([0.0, 1.0]),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let tolerance = ir.tolerances.linear.max(1.0e-9);
+
+    for (coedge_index, start, end, surface, pcurve, seed_range) in candidates {
+        let Some(start_uv) = analytic_surface_parameters(&surface, start) else {
+            continue;
+        };
+        let Some(end_uv) = analytic_surface_parameters(&surface, end) else {
+            continue;
+        };
+        let Some(start_parameter) =
+            pcurve_parameter_near_uv(&pcurve, start_uv, seed_range[0], tolerance)
+        else {
+            continue;
+        };
+        let Some(end_parameter) =
+            pcurve_parameter_near_uv(&pcurve, end_uv, seed_range[1], tolerance)
+        else {
+            continue;
+        };
+        if !start_parameter.is_finite()
+            || !end_parameter.is_finite()
+            || start_parameter == end_parameter
+        {
+            continue;
+        }
+        if let Some(use_) = ir
+            .model
+            .coedges
+            .get_mut(coedge_index)
+            .and_then(|coedge| coedge.pcurves.first_mut())
+        {
+            use_.parameter_range = Some([start_parameter, end_parameter]);
+        }
+    }
+}
+
+fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len()),
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        _ => None,
+    }
+}
+
+fn pcurve_parameter_near_uv(
+    geometry: &PcurveGeometry,
+    target: Point2,
+    seed: f64,
+    tolerance: f64,
+) -> Option<f64> {
+    let parameter = match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            let delta = Point2::new(target.u - origin.u, target.v - origin.v);
+            let denominator = direction.u * direction.u + direction.v * direction.v;
+            (denominator.is_finite() && denominator > 0.0)
+                .then(|| (delta.u * direction.u + delta.v * direction.v) / denominator)?
+        }
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let delta = Point2::new(target.u - center.u, target.v - center.v);
+            let x = delta.u * x_axis.u + delta.v * x_axis.v;
+            let y = delta.u * y_axis.u + delta.v * y_axis.v;
+            let canonical = (y / radius).atan2(x / radius);
+            nearest_periodic_parameter(canonical, seed)
+        }
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => {
+            if *major_radius == 0.0 || *minor_radius == 0.0 {
+                return None;
+            }
+            let delta = Point2::new(target.u - center.u, target.v - center.v);
+            let x = delta.u * x_axis.u + delta.v * x_axis.v;
+            let y = delta.u * y_axis.u + delta.v * y_axis.v;
+            let canonical = (y / minor_radius).atan2(x / major_radius);
+            nearest_periodic_parameter(canonical, seed)
+        }
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            ..
+        } => nurbs_pcurve_parameter_near_point(
+            *degree,
+            knots,
+            control_points,
+            weights.as_deref(),
+            target,
+            tolerance,
+            seed,
+        )?,
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            let parameter = pcurve_parameter_near_uv(basis, target, seed, tolerance)?;
+            parameter_range.contains(&parameter).then_some(parameter)?
+        }
+        PcurveGeometry::Offset { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. } => return None,
+    };
+    let evaluated = pcurve_uv(geometry, parameter)?;
+    ((evaluated.u - target.u).hypot(evaluated.v - target.v) <= tolerance).then_some(parameter)
+}
+
+fn nearest_periodic_parameter(canonical: f64, seed: f64) -> f64 {
+    canonical + ((seed - canonical) / std::f64::consts::TAU).round() * std::f64::consts::TAU
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
@@ -440,7 +763,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     // disappear merely because their source record has a larger instance id.
     let mut carrier_index = CarrierIndex::from_ir(ir);
     let deferred_ids = exchange
-        .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .entities_any(&[
+            "TRIMMED_CURVE",
+            "COMPOSITE_CURVE",
+            "BOUNDARY_CURVE",
+            "OUTER_BOUNDARY_CURVE",
+            "OFFSET_CURVE_3D",
+        ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
         .map(|(id, _)| id)
         .collect::<Vec<_>>();
@@ -518,7 +847,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
             continue;
         }
-        if record.partial("COMPOSITE_CURVE").is_some() {
+        if composite_curve_partial(record).is_some() {
             let missing = composite_curve_dependencies(record, exchange)
                 .into_iter()
                 .filter(|dependency| !carrier_index.curves.contains_key(dependency))
@@ -693,6 +1022,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             ));
         }
     }
+    for (id, record) in exchange.entities_any(&["BOUNDARY_CURVE", "OUTER_BOUNDARY_CURVE"]) {
+        if !carrier_index.curves.contains_key(&id) {
+            warnings.push(format!(
+                "{} #{id} has invalid, cyclic, or unresolved segments",
+                record.simple_name().unwrap_or("BOUNDARY_CURVE")
+            ));
+        }
+    }
     for (id, _) in exchange.entities("OFFSET_CURVE_3D") {
         if !carrier_index.curves.contains_key(&id) {
             warnings.push(format!(
@@ -701,7 +1038,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     for (id, _) in exchange
-        .entities_any(&["TRIMMED_CURVE", "COMPOSITE_CURVE", "OFFSET_CURVE_3D"])
+        .entities_any(&[
+            "TRIMMED_CURVE",
+            "COMPOSITE_CURVE",
+            "BOUNDARY_CURVE",
+            "OUTER_BOUNDARY_CURVE",
+            "OFFSET_CURVE_3D",
+        ])
         .filter(|(id, _)| !pcurve_geometry_records.contains(id))
     {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
@@ -940,12 +1283,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             let support_step = parameters.get(1).and_then(Value::reference);
             let support =
                 support_step.map(|support| SurfaceId(format!("step:data:surface#{support}")));
-            let boundaries = parameters.get(2).and_then(references).map(|boundaries| {
+            let boundary_steps = parameters.get(2).and_then(references);
+            let boundaries = boundary_steps.as_ref().map(|boundaries| {
                 boundaries
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .map(|boundary| CurveId(format!("step:data:curve#{boundary}")))
                     .collect::<Vec<_>>()
             });
+            let boundary_pcurves = boundary_steps
+                .iter()
+                .flatten()
+                .flat_map(|boundary| {
+                    support_step
+                        .into_iter()
+                        .flat_map(|support| boundary_pcurve_steps(*boundary, support, exchange))
+                })
+                .map(|pcurve| PcurveId(format!("step:data:pcurve#{pcurve}")))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
             let implicit_outer = parameters.get(3).and_then(Value::logical);
             let Some((support, boundaries, implicit_outer, geometry)) = support_step
                 .and_then(|support| carrier_index.surfaces.get(&support))
@@ -979,6 +1336,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 definition: ProceduralSurfaceDefinition::CurveBounded {
                     support,
                     boundaries,
+                    boundary_pcurves,
                     implicit_outer,
                 },
                 cache_fit_tolerance: None,
@@ -1245,6 +1603,27 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         typed.insert(curve_step);
         typed.extend(geometry_records.iter().copied());
+    }
+
+    // Curve-bounded surfaces are decoded before PCURVE records because their
+    // boundary carriers can be resolved without parameter-space geometry.
+    // Resolve the deferred pcurve references after the PCURVE pass so an
+    // unresolved parameter-space carrier cannot become an IR reference.
+    let decoded_pcurve_steps = ir
+        .model
+        .pcurves
+        .iter()
+        .filter_map(|pcurve| step_instance_id(&pcurve.id.0))
+        .collect::<BTreeSet<_>>();
+    for surface in &mut ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = &mut surface.definition
+        {
+            boundary_pcurves.retain(|pcurve| {
+                step_instance_id(&pcurve.0).is_some_and(|id| decoded_pcurve_steps.contains(&id))
+            });
+        }
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
@@ -2179,19 +2558,48 @@ fn wake_deferred_dependents(
     }
 }
 
-fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
-    let complex = record.partials.len() > 1;
-    let offset = usize::from(!complex);
+fn composite_curve_partial(record: &RawRecord) -> Option<&crate::parse::PartialRecord> {
     record
         .partial("COMPOSITE_CURVE")
-        .and_then(|composite| composite.parameters.get(offset))
-        .and_then(Value::list)
+        .or_else(|| record.partial("BOUNDARY_CURVE"))
+        .or_else(|| record.partial("OUTER_BOUNDARY_CURVE"))
+}
+
+fn composite_curve_segment_ids(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {
+    let complex = record.partials.len() > 1;
+    let offset = usize::from(!complex);
+    let segments = composite_curve_partial(record)?
+        .parameters
+        .get(offset)?
+        .list()?
+        .iter()
+        .map(Value::reference)
+        .collect::<Option<Vec<_>>>()?;
+    (!segments.is_empty()
+        && segments.iter().all(|segment| {
+            exchange
+                .records
+                .get(segment)
+                .and_then(composite_curve_segment_parameters)
+                .is_some()
+        }))
+    .then_some(segments)
+}
+
+fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
+    record
+        .partial("COMPOSITE_CURVE_SEGMENT")
+        .map(|partial| partial.parameters.as_slice())
+}
+
+fn composite_curve_dependencies(record: &RawRecord, exchange: &Exchange) -> Vec<u64> {
+    composite_curve_segment_ids(record, exchange)
         .into_iter()
         .flatten()
-        .filter_map(Value::reference)
         .filter_map(|segment| exchange.records.get(&segment))
-        .filter(|segment| segment.simple_name() == Some("COMPOSITE_CURVE_SEGMENT"))
-        .filter_map(|segment| segment.parameter(2).and_then(Value::reference))
+        .filter_map(composite_curve_segment_parameters)
+        .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
+        .filter_map(|curve| curve_carrier_record(curve, exchange))
         .collect()
 }
 
@@ -2201,7 +2609,7 @@ fn composite_curve(
     decoded: &CarrierIndex,
 ) -> Option<CompositeCurveData> {
     let complex = record.partials.len() > 1;
-    let composite = record.partial("COMPOSITE_CURVE")?;
+    let composite = composite_curve_partial(record)?;
     let offset = usize::from(!complex);
     let segments = composite
         .parameters
@@ -2211,10 +2619,8 @@ fn composite_curve(
         .map(|value| {
             let id = value.reference()?;
             let record = exchange.records.get(&id)?;
-            if record.simple_name() != Some("COMPOSITE_CURVE_SEGMENT") {
-                return None;
-            }
-            let transition = match record.parameter(0)?.enumeration()? {
+            let parameters = composite_curve_segment_parameters(record)?;
+            let transition = match parameters.first()?.enumeration()? {
                 "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
                 "CONTINUOUS" => CompositeCurveTransition::Continuous,
                 "CONTSAMEGRADIENT" => CompositeCurveTransition::ContSameGradient,
@@ -2223,12 +2629,13 @@ fn composite_curve(
                 }
                 _ => return None,
             };
-            let curve_step = record.parameter(2)?.reference()?;
-            decoded.curves.contains_key(&curve_step).then_some((
+            let curve_step = parameters.get(2)?.reference()?;
+            let carrier_step = curve_carrier_record(curve_step, exchange)?;
+            decoded.curves.contains_key(&carrier_step).then_some((
                 id,
                 CompositeCurveSegment {
-                    curve: CurveId(format!("step:data:curve#{curve_step}")),
-                    same_sense: record.parameter(1)?.logical()?,
+                    curve: CurveId(format!("step:data:curve#{carrier_step}")),
+                    same_sense: parameters.get(1)?.logical()?,
                     transition,
                 },
             ))
@@ -2242,6 +2649,39 @@ fn composite_curve(
             .and_then(logical_value)?
             .into_option(),
     ))
+}
+
+fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Vec<u64> {
+    let Some(record) = exchange.records.get(&boundary) else {
+        return Vec::new();
+    };
+    let Some(segments) = composite_curve_segment_ids(record, exchange) else {
+        return Vec::new();
+    };
+    segments
+        .into_iter()
+        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(composite_curve_segment_parameters)
+        .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
+        .filter_map(|curve| exchange.records.get(&curve))
+        .filter(|curve| {
+            curve.partials.iter().any(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                )
+            })
+        })
+        .flat_map(|curve| surface_curve_pcurves(curve).unwrap_or_default())
+        .filter(|pcurve| {
+            exchange
+                .records
+                .get(pcurve)
+                .and_then(|record| named_parameter(record, "PCURVE", 1))
+                .and_then(Value::reference)
+                == Some(support)
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -2918,6 +3358,17 @@ fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     } else {
         Some(id)
     }
+}
+
+fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
+    if record.partials.len() == 1 {
+        return record.parameter(2).and_then(references);
+    }
+    record
+        .partial("SURFACE_CURVE")
+        .or_else(|| record.partial("SEAM_CURVE"))
+        .or_else(|| record.partial("INTERSECTION_CURVE"))
+        .and_then(|partial| partial.parameters.get(1).and_then(references))
 }
 
 fn numbers(value: &Value) -> Option<Vec<f64>> {

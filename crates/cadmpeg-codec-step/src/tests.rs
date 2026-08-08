@@ -1217,7 +1217,8 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
                 support,
                 boundaries,
-                implicit_outer: false
+                implicit_outer: false,
+                ..
             } if support.as_str() == "step:data:surface#28"
                 && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
         )));
@@ -1236,6 +1237,43 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
         .curves
         .iter()
         .any(|curve| matches!(curve.geometry, CurveGeometry::Composite { .. })));
+}
+
+#[test]
+fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap203_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#36=COMPOSITE_CURVE('nested edge',(#33),.F.);",
+            "#36=(BOUNDED_CURVE() CURVE() GEOMETRIC_REPRESENTATION_ITEM() REPRESENTATION_ITEM('nested edge') SURFACE_CURVE(#16,(#44),.PCURVE_S1.));",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#38=(GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D'));\n#39=CARTESIAN_POINT('',(0.,0.));\n#40=DIRECTION('',(1.,0.));\n#41=VECTOR('',#40,1.);\n#42=LINE('',#39,#41);\n#43=DEFINITIONAL_REPRESENTATION('',(#42),#38);\n#44=PCURVE('',#28,#43);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex surface curve boundary");
+
+    let bounded = result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find_map(|surface| match &surface.definition {
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+                boundary_pcurves,
+                ..
+            } => Some(boundary_pcurves),
+            _ => None,
+        })
+        .expect("curve-bounded surface");
+    assert_eq!(
+        bounded,
+        &[cadmpeg_ir::ids::PcurveId("step:data:pcurve#44".into())]
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -1948,6 +1986,15 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
         cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
             if (direction.u - 10.0).abs() < 1.0e-12
     ));
+    let pcurve_use = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .find(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+        .expect("planar pcurve use");
+    assert_eq!(pcurve_use.parameter_range, Some([0.0, 10.0]));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

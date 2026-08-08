@@ -662,6 +662,13 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Boundary curves on the support.
         boundaries: Vec<CurveId>,
+        /// Parameter-space carriers used by surface-curve boundary segments.
+        ///
+        /// These are separate from `boundaries`: a STEP surface curve can
+        /// carry both a model-space curve and one or more pcurves on the
+        /// supporting surface.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        boundary_pcurves: Vec<PcurveId>,
         /// Whether the support's natural outer boundary is implicit.
         implicit_outer: bool,
     },

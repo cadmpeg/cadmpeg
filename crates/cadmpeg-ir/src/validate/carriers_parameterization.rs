@@ -43,7 +43,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             .filter(|curve| curve.source_object.is_some())
             .map(|curve| curve.id.0.as_str()),
     );
-    let pcurves = ir
+    let mut pcurves = ir
         .model
         .coedges
         .iter()
@@ -55,6 +55,14 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
         }))
         .collect::<HashSet<_>>();
+    for surface in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = &surface.definition
+        {
+            pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.0.as_str()));
+        }
+    }
     let mut points = ir
         .model
         .vertices
@@ -847,9 +855,8 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let mut valid =
                 start.is_finite() && end.is_finite() && start <= end && geometry.is_some();
             if let Some(CurveGeometry::Nurbs(nurbs)) = geometry {
-                if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
-                    valid &= start >= *first && end <= *last;
-                }
+                valid &= crate::eval::nurbs_curve_parameter_domain(nurbs)
+                    .is_some_and(|[lower, upper]| start >= lower && end <= upper);
             }
             if !valid {
                 findings.push(Finding {
@@ -867,11 +874,44 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let geometry = pcurves.get(use_.pcurve.0.as_str());
             let mut valid =
                 start.is_finite() && end.is_finite() && start != end && geometry.is_some();
-            if let Some(PcurveGeometry::Nurbs { knots, .. }) = geometry {
-                if let (Some(first), Some(last)) = (knots.first(), knots.last()) {
-                    valid &= [start, end]
-                        .into_iter()
-                        .all(|value| value >= *first && value <= *last);
+            if let Some(geometry) = geometry {
+                let domain = match geometry {
+                    PcurveGeometry::Nurbs {
+                        degree,
+                        knots,
+                        control_points,
+                        ..
+                    } => crate::eval::nurbs_pcurve_parameter_domain(
+                        *degree,
+                        knots,
+                        control_points.len(),
+                    ),
+                    PcurveGeometry::PolarNurbs {
+                        degree,
+                        knots,
+                        radial_control_points,
+                        ..
+                    } => crate::eval::nurbs_pcurve_parameter_domain(
+                        *degree,
+                        knots,
+                        radial_control_points.len(),
+                    ),
+                    _ => None,
+                };
+                match domain {
+                    Some([lower, upper]) => {
+                        valid &= [start, end]
+                            .into_iter()
+                            .all(|value| value >= lower && value <= upper);
+                    }
+                    None if matches!(
+                        geometry,
+                        PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. }
+                    ) =>
+                    {
+                        valid = false;
+                    }
+                    None => {}
                 }
             }
             if !valid {

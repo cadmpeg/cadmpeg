@@ -1339,7 +1339,7 @@ fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
         .partial("SURFACE_CURVE")
         .or_else(|| record.partial("SEAM_CURVE"))
         .or_else(|| record.partial("INTERSECTION_CURVE"))
-        .and_then(|partial| partial.parameters.iter().find_map(refs))
+        .and_then(|partial| partial.parameters.get(1).and_then(refs))
 }
 
 fn edge_vertices(record: &RawRecord) -> Option<(u64, u64)> {

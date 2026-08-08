@@ -472,7 +472,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         // range. Multiple images are checked from the first image's start
         // extreme to the last image's end extreme.
         let intervals = if coedge.pcurves.len() == 1 {
-            pcurve_parameter_ranges(first, first_use.parameter_range, edge.param_range)
+            pcurve_parameter_ranges(first, first_use.parameter_range)
         } else {
             match (
                 first_use
@@ -535,20 +535,16 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
 /// same edge with the opposite sign, and a stored use interval can wrap a
 /// periodic pcurve's seam, so no single interval is authoritative. The stored
-/// range, the edge interval (in either sign), and the pcurve's intrinsic
-/// parameter extremes are all candidates; the check takes the closest image.
-/// An unbounded line without a stored range or edge interval is skipped.
+/// use range and the pcurve's intrinsic parameter extremes are candidates; the
+/// 3D edge interval is excluded because the two STEP carriers may use
+/// different neutral parameter scales.
 fn pcurve_parameter_ranges(
     pcurve: &crate::geometry::Pcurve,
     pcurve_range: Option<[f64; 2]>,
-    edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
-    let mut ranges = Vec::with_capacity(4);
+    let mut ranges = Vec::with_capacity(3);
     if let Some(range) = pcurve_range.or(pcurve.parameter_range) {
         ranges.push(range);
-    }
-    if let Some([start, end]) = edge_range {
-        ranges.extend([[start, end], [-start, -end]]);
     }
     if let Some(extremes) = pcurve_parameter_extremes(pcurve) {
         ranges.push(extremes);
@@ -563,9 +559,14 @@ fn pcurve_parameter_ranges(
 /// finite extent here.
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
     match &pcurve.geometry {
-        PcurveGeometry::PolarNurbs { knots, .. } => pcurve
-            .parameter_range
-            .or_else(|| Some([*knots.first()?, *knots.last()?])),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => pcurve.parameter_range.or_else(|| {
+            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
+        }),
         PcurveGeometry::SphericalGreatCircle { .. } => pcurve.parameter_range,
         geometry => pcurve_geometry_parameter_extremes(geometry),
     }
@@ -573,8 +574,19 @@ fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2
 
 fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
-        PcurveGeometry::Nurbs { knots, .. } | PcurveGeometry::PolarNurbs { knots, .. } => {
-            Some([*knots.first()?, *knots.last()?])
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => {
+            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
         }
         PcurveGeometry::Trimmed {
             parameter_range, ..

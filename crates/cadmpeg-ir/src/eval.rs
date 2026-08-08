@@ -367,13 +367,27 @@ pub fn nurbs_curve_point(
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
 pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if count <= degree || curve.knots.len() < count.checked_add(degree)?.checked_add(1)? {
+    nurbs_pcurve_parameter_domain(curve.degree, &curve.knots, curve.control_points.len())
+}
+
+/// Effective knot domain shared by model-space and parameter-space NURBS
+/// carriers. The full knot vector contains multiplicity and extrapolation
+/// knots; only the interval between the degree-th knot and the control-pole
+/// count-th knot is evaluable.
+pub fn nurbs_pcurve_parameter_domain(
+    degree: u32,
+    knots: &[f64],
+    control_point_count: usize,
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    if degree == 0
+        || control_point_count <= degree
+        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
+    {
         return None;
     }
-    let lower = *curve.knots.get(degree)?;
-    let upper = *curve.knots.get(count)?;
+    let lower = *knots.get(degree)?;
+    let upper = *knots.get(control_point_count)?;
     (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
 }
 
@@ -655,6 +669,151 @@ fn nurbs_pcurve_differential(
     })
 }
 
+fn validated_nurbs_pcurve_weights(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> Option<Vec<f64>> {
+    nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
+    let count = control_points.len();
+    let owned;
+    let weights = match weights {
+        Some(weights) if weights.len() == count => weights,
+        Some(_) => return None,
+        None => {
+            owned = vec![1.0; count];
+            &owned
+        }
+    };
+    if control_points.iter().zip(weights).any(|(control, weight)| {
+        !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
+    }) || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+    Some(weights.to_vec())
+}
+
+fn nurbs_pcurve_speed_bound_about(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: &[f64],
+    target: Point2,
+) -> Option<f64> {
+    let degree = usize::try_from(degree).ok()?;
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let maximum_weighted_radius = control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| weight * (control.u - target.u).hypot(control.v - target.v))
+        .fold(0.0_f64, f64::max);
+    let mut maximum_numerator_speed = 0.0_f64;
+    let mut maximum_weight_speed = 0.0_f64;
+    for index in 0..control_points.len() - 1 {
+        let denominator = knots[index + degree + 1] - knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(degree as u32) / denominator;
+        let first = control_points[index];
+        let second = control_points[index + 1];
+        let first_u = weights[index] * (first.u - target.u);
+        let first_v = weights[index] * (first.v - target.v);
+        let second_u = weights[index + 1] * (second.u - target.u);
+        let second_v = weights[index + 1] * (second.v - target.v);
+        maximum_numerator_speed =
+            maximum_numerator_speed.max(factor * (second_u - first_u).hypot(second_v - first_v));
+        maximum_weight_speed =
+            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let speed_bound = maximum_numerator_speed / minimum_weight
+        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
+    speed_bound.is_finite().then_some(speed_bound)
+}
+
+/// Find a parameter witness whose NURBS pcurve point lies within `tolerance`
+/// of `point`, starting the bounded search near `seed`.
+pub fn nurbs_pcurve_parameter_near_point(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    point: Point2,
+    tolerance: f64,
+    seed: f64,
+) -> Option<f64> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    if !tolerance.is_finite()
+        || tolerance < 0.0
+        || !seed.is_finite()
+        || !point.u.is_finite()
+        || !point.v.is_finite()
+    {
+        return None;
+    }
+    let weights = validated_nurbs_pcurve_weights(degree, knots, control_points, weights)?;
+    let [lower, upper] = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
+    let speed_bound =
+        nurbs_pcurve_speed_bound_about(degree, knots, control_points, &weights, point)?;
+    let distance = |parameter| {
+        let value = nurbs_pcurve_uv(degree, knots, control_points, Some(&weights), parameter)?;
+        Some((value.u - point.u).hypot(value.v - point.v))
+    };
+    let seed = seed.clamp(lower, upper);
+    let mut boundaries = knots[usize::try_from(degree).ok()?..=control_points.len()].to_vec();
+    boundaries.sort_by(f64::total_cmp);
+    boundaries.dedup();
+    let mut boundary_witnesses = boundaries.clone();
+    boundary_witnesses
+        .sort_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()));
+    for parameter in boundary_witnesses {
+        if distance(parameter)? <= tolerance {
+            return Some(parameter);
+        }
+    }
+    let mut intervals = boundaries
+        .windows(2)
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    intervals.sort_by(|first, second| {
+        interval_distance_to_parameter(*second, seed)
+            .total_cmp(&interval_distance_to_parameter(*first, seed))
+    });
+    if intervals.is_empty() {
+        intervals.push([lower, upper]);
+    }
+    let mut examined = 0usize;
+    while let Some([start, end]) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return None;
+        }
+        let middle = start + (end - start) * 0.5;
+        let middle_distance = distance(middle)?;
+        if middle_distance <= tolerance {
+            return Some(middle);
+        }
+        if middle_distance - speed_bound * (end - start) * 0.5 > tolerance
+            || middle == start
+            || middle == end
+        {
+            continue;
+        }
+        let halves = [[start, middle], [middle, end]];
+        let nearer = usize::from(
+            interval_distance_to_parameter(halves[1], seed)
+                < interval_distance_to_parameter(halves[0], seed),
+        );
+        intervals.push(halves[1 - nearer]);
+        intervals.push(halves[nearer]);
+    }
+    None
+}
+
 /// Return whether a point lies within `tolerance` of a nonperiodic NURBS
 /// pcurve, using evaluated witnesses and Lipschitz-bounded interval rejection.
 ///
@@ -674,68 +833,12 @@ pub fn nurbs_pcurve_contains_point(
 ) -> Option<bool> {
     const MAX_INTERVALS: usize = 100_000;
 
+    let weights = validated_nurbs_pcurve_weights(degree, knots, control_points, weights)?;
+    let domain = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
     let degree_usize = usize::try_from(degree).ok()?;
     let count = control_points.len();
-    if degree_usize == 0
-        || count <= degree_usize
-        || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
-        || !tolerance.is_finite()
-        || tolerance < 0.0
-        || !point.u.is_finite()
-        || !point.v.is_finite()
-    {
-        return None;
-    }
-    let owned_weights;
-    let weights = match weights {
-        Some(weights) if weights.len() == count => weights,
-        Some(_) => return None,
-        None => {
-            owned_weights = vec![1.0; count];
-            &owned_weights
-        }
-    };
-    if control_points.iter().zip(weights).any(|(control, weight)| {
-        !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
-    }) || knots.iter().any(|knot| !knot.is_finite())
-        || knots.windows(2).any(|pair| pair[0] > pair[1])
-    {
-        return None;
-    }
-
-    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
-    let maximum_weighted_radius = control_points
-        .iter()
-        .zip(weights)
-        .map(|(control, weight)| weight * (control.u - point.u).hypot(control.v - point.v))
-        .fold(0.0_f64, f64::max);
-    let mut maximum_numerator_speed = 0.0_f64;
-    let mut maximum_weight_speed = 0.0_f64;
-    for index in 0..count - 1 {
-        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
-        if denominator == 0.0 {
-            continue;
-        }
-        let factor = f64::from(degree) / denominator;
-        let first_u = weights[index] * (control_points[index].u - point.u);
-        let first_v = weights[index] * (control_points[index].v - point.v);
-        let second_u = weights[index + 1] * (control_points[index + 1].u - point.u);
-        let second_v = weights[index + 1] * (control_points[index + 1].v - point.v);
-        maximum_numerator_speed =
-            maximum_numerator_speed.max(factor * (second_u - first_u).hypot(second_v - first_v));
-        maximum_weight_speed =
-            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
-    }
-    let speed_bound = maximum_numerator_speed / minimum_weight
-        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
-    if !speed_bound.is_finite() {
-        return None;
-    }
-
-    let domain = [knots[degree_usize], knots[count]];
-    if domain[0] > domain[1] {
-        return None;
-    }
+    let speed_bound =
+        nurbs_pcurve_speed_bound_about(degree, knots, control_points, &weights, point)?;
     let mut intervals = knots[degree_usize..=count]
         .windows(2)
         .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
@@ -750,7 +853,7 @@ pub fn nurbs_pcurve_contains_point(
             return None;
         }
         let middle = start + (end - start) * 0.5;
-        let curve_point = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
+        let curve_point = nurbs_pcurve_uv(degree, knots, control_points, Some(&weights), middle)?;
         let distance = (curve_point.u - point.u).hypot(curve_point.v - point.v);
         if distance <= tolerance {
             return Some(true);
@@ -2918,9 +3021,10 @@ mod tests {
     use super::{
         curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
         model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_point,
-        nurbs_curve_speed_bound, nurbs_surface_isocurve, nurbs_surface_isoline,
-        nurbs_surface_partials, nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent,
-        pcurve_uv, surface_partials, surface_second_partials, IsolineDirection,
+        nurbs_curve_speed_bound, nurbs_pcurve_parameter_domain, nurbs_pcurve_parameter_near_point,
+        nurbs_pcurve_uv, nurbs_surface_isocurve, nurbs_surface_isoline, nurbs_surface_partials,
+        nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent, pcurve_uv,
+        surface_partials, surface_second_partials, IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -3548,6 +3652,30 @@ mod tests {
             None
         );
         assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound >= 2.0));
+    }
+
+    #[test]
+    fn nurbs_pcurve_inverse_uses_the_effective_knot_domain() {
+        let degree = 1;
+        let knots = vec![-1.0, 0.0, 1.0, 2.0];
+        let control_points = vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)];
+        assert_eq!(
+            nurbs_pcurve_parameter_domain(degree, &knots, control_points.len()),
+            Some([0.0, 1.0])
+        );
+        let point =
+            nurbs_pcurve_uv(degree, &knots, &control_points, None, 0.25).expect("pcurve point");
+        let parameter = nurbs_pcurve_parameter_near_point(
+            degree,
+            &knots,
+            &control_points,
+            None,
+            point,
+            1.0e-12,
+            0.5,
+        )
+        .expect("pcurve inverse");
+        assert!((parameter - 0.25).abs() < 1.0e-12);
     }
 
     #[test]

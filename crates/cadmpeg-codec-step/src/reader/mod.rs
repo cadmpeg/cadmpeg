@@ -113,6 +113,8 @@ fn decode_exchange_mode(
     let dependencies = dependencies::decode(exchange);
     let carrier_index = index::CarrierIndex::from_ir(&ir);
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
+    geometry::infer_edge_parameter_ranges(&mut ir);
+    geometry::infer_pcurve_parameter_ranges(&mut ir);
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
     geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
