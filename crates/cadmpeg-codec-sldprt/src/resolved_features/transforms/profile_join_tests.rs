@@ -7486,6 +7486,121 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
 }
 
 #[test]
+fn relation_point_coexists_with_nonpoint_native_carrier() {
+    let sketch = SketchId("sketch".into());
+    let feature = Feature {
+        id: FeatureId("feature".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        },
+        native_ref: Some("feature-native".into()),
+    };
+    let mut entities = [(0.0, 0.0), (1.0, 2.0), (4.0, 7.0)]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (u, v))| SketchEntity {
+            id: SketchEntityId(format!("anchor-{index}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        })
+        .collect::<Vec<_>>();
+    let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
+        .into_iter()
+        .enumerate()
+        .map(|(index, coordinates)| {
+            let mut value = marker(&format!("anchor-{index}"), Some(coordinates));
+            value.offset = (index * 27) as u64;
+            value
+        })
+        .collect::<Vec<_>>();
+    let mut point_marker = marker("dimension-point", Some([0.005, 0.006]));
+    point_marker.offset = 81;
+    markers.push(point_marker.clone());
+    entities.push(SketchEntity {
+        id: SketchEntityId("dimension-carrier".into()),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: Some(point_marker.id.clone()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Circle {
+            center: Point2::new(5.0, 6.0),
+            radius: Length(10.0),
+        },
+    });
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: vec![FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 90,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: None,
+            display_scalar_ref: None,
+            operands: vec![FeatureInputOperand {
+                offset: 91,
+                reference_ref: "reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                entity_ref: Some(point_marker.id.clone()),
+            }],
+        }],
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: markers,
+    };
+
+    project_relation_point_geometry(
+        &mut entities,
+        &[],
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&lane),
+    );
+
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+            && matches!(entity.geometry, SketchGeometry::Circle { .. })
+    }));
+    assert!(entities.iter().any(|entity| {
+        entity.native_ref.as_deref() == Some(point_marker.id.as_str())
+            && matches!(
+                entity.geometry,
+                SketchGeometry::Point { position } if position == Point2::new(6.0, 5.0)
+            )
+    }));
+}
+
+#[test]
 fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous() {
     let sketch = SketchId("sketch".into());
     let feature = Feature {

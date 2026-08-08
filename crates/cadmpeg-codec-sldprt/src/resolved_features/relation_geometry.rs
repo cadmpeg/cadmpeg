@@ -139,6 +139,10 @@ pub(crate) fn project_relation_point_geometry(
             .map_or(lane.id.as_str(), |(_, key)| key);
         for marker in &lane.sketch_entities {
             let qualified_point = point_operands.contains(marker.id.as_str());
+            let has_existing_point = entities.iter().any(|entity| {
+                entity.native_ref.as_deref() == Some(marker.id.as_str())
+                    && matches!(entity.geometry, SketchGeometry::Point { .. })
+            });
             if !referenced.contains(marker.id.as_str())
                 || !(qualified_point
                     && matches!(
@@ -152,12 +156,12 @@ pub(crate) fn project_relation_point_geometry(
                         marker.kind,
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
+                || has_existing_point
                 || entities.iter().any(|entity| {
-                    entity.native_ref.as_deref() == Some(marker.id.as_str())
-                        || entity
-                            .endpoint_refs
-                            .iter()
-                            .any(|reference| reference == &marker.id)
+                    entity
+                        .endpoint_refs
+                        .iter()
+                        .any(|reference| reference == &marker.id)
                 })
             {
                 continue;
