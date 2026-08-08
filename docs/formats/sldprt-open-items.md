@@ -919,18 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-45. Termination reference vector position
-
-**Question.** What fixes the position of the component vector in an extrusion end specification?
-
-**Known.** `sldprt.md` §2 "A named feature-input object bound to a classless history `Sketch` record with a nonzero source" gives the `01 01 00` anchor, the body opener, and the declared long single-face position at body +209. For the other forms it states only that the vector follows later in the same feature interval.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs:1205`, `:1240`, and `:1290` search bounded windows of 240, 200, and 160 bytes and accept the first position that frames. `terminations.rs:1309` adds a fourth attempt over 240 bytes with a weaker test that checks the frame only and does not decode a component path. The four attempts are unordered in the specification and strictly ordered here. None of them collects the alternatives.
-
-`terminations.rs:719` shows the correct shape for the same question: collect every marker in range and require exactly one.
-
-**Need.** We must know the position. A window bound also drops a valid vector that lies past it.
-
 ### DI-50. Mid-plane in-plane axis
 
 **Question.** Which record carries the in-plane axis of a mid-plane datum?

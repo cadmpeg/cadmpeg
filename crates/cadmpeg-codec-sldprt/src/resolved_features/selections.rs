@@ -417,9 +417,9 @@ pub(super) fn compact_surface_selections(
             }),
             NativeClassKind::Extrusion => (start..end.saturating_sub(103))
                 .filter_map(|offset| {
-                    compact_extrusion_to_face_at(&lane.native_payload, offset)
+                    compact_extrusion_to_face_at(&lane.native_payload, offset, end)
                         .or_else(|| {
-                            compact_extrusion_to_vertex_at(&lane.native_payload, offset)
+                            compact_extrusion_to_vertex_at(&lane.native_payload, offset, end)
                                 .map(|(marker, _)| marker)
                         })
                         .or_else(|| {
