@@ -16751,6 +16751,31 @@ fn geometry_generator_features(scan: &ContainerScan) -> Vec<GeometryGeneratorFea
     generators
 }
 
+/// Return the feature identities that the model-transfer pass will emit.
+///
+/// Feature definitions are built while the transfer pass is still walking
+/// source order. A generated face or edge can therefore name a valid
+/// row-backed producer that has not been inserted into `ir.model.features`
+/// yet. Derive the complete emitted identity set from the scan instead of
+/// using the construction-time prefix of the IR.
+fn model_feature_ids(scan: &ContainerScan) -> BTreeSet<IrFeatureId> {
+    let mut ids = scan
+        .features
+        .operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .chain(scan.features.rows.iter().map(|row| row.feature_id))
+        .chain(scan.planes.datums.iter().map(|datum| datum.feature_id))
+        .map(|feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")))
+        .collect::<BTreeSet<_>>();
+    ids.extend(
+        geometry_generator_features(scan)
+            .into_iter()
+            .map(|generator| IrFeatureId(format!("creo:model:feature#{}", generator.feature_id))),
+    );
+    ids
+}
+
 fn feature_edge_selection(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -16810,11 +16835,7 @@ fn feature_edge_selection(
     } else if let Some(edges) = generated_curve_edge_refs(
         ids,
         &scan.curves.topology_rows,
-        &ir.model
-            .features
-            .iter()
-            .map(|feature| feature.id.clone())
-            .collect(),
+        &model_feature_ids(scan),
         &result_edge_ids,
     ) {
         Some(EdgeSelection::Generated { edges, native })
@@ -17669,11 +17690,7 @@ fn knit_operand_surface_ids(
     (surface_ids.iter().collect::<BTreeSet<_>>().len() == surface_ids.len()).then_some(surface_ids)
 }
 
-fn knit_surface_feature_definition(
-    scan: &ContainerScan,
-    ir: &CadIr,
-    feature_id: u32,
-) -> IrFeatureDefinition {
+fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrFeatureDefinition {
     let faces = knit_operand_entity_ids(scan, feature_id).map_or(
         FaceSelection::Unresolved,
         |(quilt_ids, namespace)| {
@@ -17685,12 +17702,7 @@ fn knit_surface_feature_definition(
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            let available_features = ir
-                .model
-                .features
-                .iter()
-                .map(|feature| feature.id.clone())
-                .collect::<BTreeSet<_>>();
+            let available_features = model_feature_ids(scan);
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
@@ -17999,12 +18011,7 @@ fn thicken_feature_definition(
                 .iter()
                 .map(|(source_id, _)| *source_id)
                 .collect::<Vec<_>>();
-            let available_features = ir
-                .model
-                .features
-                .iter()
-                .map(|feature| feature.id.clone())
-                .collect::<BTreeSet<_>>();
+            let available_features = model_feature_ids(scan);
             let result_surface_ids = feature_result_surface_ids_by_feature(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
@@ -18061,7 +18068,7 @@ fn schema_feature_definition(
         return thicken_feature_definition(scan, ir, feature_id);
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return knit_surface_feature_definition(scan, ir, feature_id);
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return definition;
@@ -18116,12 +18123,7 @@ fn schema_feature_definition(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
         );
-        let available_features = ir
-            .model
-            .features
-            .iter()
-            .map(|feature| feature.id.clone())
-            .collect::<BTreeSet<_>>();
+        let available_features = model_feature_ids(scan);
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
@@ -18514,7 +18516,7 @@ fn schema_feature_definition(
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
     if schema_class == 946 {
-        return knit_surface_feature_definition(scan, ir, feature_id);
+        return knit_surface_feature_definition(scan, feature_id);
     }
     if schema_class == 979 && kind == "PRT_CSYS_DEF" {
         let definitions = scan
@@ -18791,7 +18793,7 @@ fn named_feature_definition(
         return Some(thicken_feature_definition(scan, ir, feature_id));
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(knit_surface_feature_definition(scan, ir, feature_id));
+        return Some(knit_surface_feature_definition(scan, feature_id));
     }
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);

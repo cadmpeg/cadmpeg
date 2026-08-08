@@ -951,6 +951,89 @@ fn geometry_generator_features_join_surface_and_curve_evidence() {
 }
 
 #[test]
+fn model_feature_ids_include_row_backed_generated_producers() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.rows.push(crate::feature::FeatureRow {
+        feature_id: 50,
+        header: [0xeb, 0x04],
+        root_schema_class: Some(913),
+        stream_offset: 0,
+        body: Vec::new(),
+        body_offset: 1,
+        offset: 0,
+    });
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 61,
+        type_byte: crate::surface::SurfaceKind::Plane.canonical_type_byte(),
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 50,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 200,
+    });
+    scan.curves
+        .topology_rows
+        .push(crate::curve::CurveTopologyRow {
+            id: 59,
+            type_byte: 8,
+            feature_id: 50,
+            directions: [1, 0xf6],
+            faces: [61, 62],
+            next_edges: [59, 59],
+            offset: 100,
+        });
+
+    let available_features = model_feature_ids(&scan);
+    assert_eq!(
+        available_features,
+        BTreeSet::from([IrFeatureId("creo:model:feature#50".to_string())])
+    );
+    assert_eq!(
+        generated_surface_face_refs(
+            &[61],
+            &scan.surfaces.rows,
+            &BTreeMap::from([(50, vec![61])]),
+            &available_features,
+        ),
+        Some(vec![GeneratedFaceRef {
+            feature: IrFeatureId("creo:model:feature#50".to_string()),
+            local_id: "surface#61".to_string(),
+        }])
+    );
+    assert_eq!(
+        generated_curve_edge_refs(
+            &[59],
+            &scan.curves.topology_rows,
+            &available_features,
+            &BTreeMap::from([(50, vec![59])]),
+        ),
+        Some(vec![GeneratedEdgeRef {
+            feature: IrFeatureId("creo:model:feature#50".to_string()),
+            local_id: "curve#59".to_string(),
+        }])
+    );
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: vec![59],
+            offset: 0,
+        });
+    assert_eq!(
+        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
+        Some(EdgeSelection::Generated {
+            edges: vec![GeneratedEdgeRef {
+                feature: IrFeatureId("creo:model:feature#50".to_string()),
+                local_id: "curve#59".to_string(),
+            }],
+            native: "creo:allfeatur:edgs_affected#10:59".to_string(),
+        })
+    );
+}
+
+#[test]
 fn closed_fallback_profile_selects_revolution_segments() {
     let segment = |external_id| crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
