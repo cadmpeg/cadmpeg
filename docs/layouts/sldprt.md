@@ -480,6 +480,43 @@ Unstated regions:
 - `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
 - `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
 
+## `extended_geometry_terminal_circle_dimension_tail`
+
+Spec §2 · layout: byte offsets · size: 160 B
+
+The equal-index circle uses the preceding entry in the complete coordinate-bearing geometry roster as its center.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | An equal-index geometry-locus circle uses a terminal dimension tail |
+| 17 | 4 | `native_kind` | `u32` | little | spec | extended-prefix kind `0` geometry-locus record |
+| 23 | 4 | `geometry_locus` | `bytes[4]` | little | spec | 104-byte compact indexed layout |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values are `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values are `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | selector bytes at marker +31 are `00 00 80 bf 00 00 04 00` |
+| 48 | 8 | `state_value` | `f64` | little | spec | f64 `1` at marker +48 |
+| 56 | 2 | `endpoint_first` | `u16` | little | spec | Marker +56 and marker +58 contain the same nonzero one-based index in the complete coordinate-bearing geometry roster |
+| 58 | 2 | `endpoint_second` | `u16` | little | spec | Marker +56 and marker +58 contain the same nonzero one-based index in the complete coordinate-bearing geometry roster |
+| 60 | 4 | `endpoint_selector` | `u32` | little | spec | marker +60 stores u32 `1` |
+| 64 | 8 | `signed_radius_selector` | `f64` | little | spec | marker +64 stores f64 `-1` |
+| 72 | 4 | `arc_selector` | `i32` | little | spec | marker +72 stores signed selector `1` or `-1` |
+| 76 | 2 | `auxiliary_index` | `u16` | little | spec | Marker +76 stores u16 auxiliary index |
+| 78 | 16 | `reference_sentinels` | `bytes[16]` | little | spec | marker +78 contains four i32 `-2` cells |
+| 94 | 34 | `terminal_padding` | `bytes[34]` | little | spec | marker +94 through +127 are zero |
+| 128 | 2 | `dimension_kind` | `u16` | little | spec | marker +128 stores u16 `4` |
+| 130 | 4 | `reference` | `u32` | little | spec | marker +130 stores a nonzero, non-null u32 reference |
+| 134 | 2 | `dimension_state` | `u16` | little | spec | marker +134 stores zero u16 |
+| 136 | 4 | `dimension_value` | `u32` | little | spec | marker +136 stores a nonzero, non-null u32 value |
+| 140 | 8 | `dimension_suffix` | `bytes[8]` | little | spec | marker +140 through +147 stores `ff fe ff 02 44 00 31 00` |
+| 148 | 8 | `trailing_value` | `f64` | little | spec | marker +148 stores f64 `2` |
+| 156 | 4 | `terminal_sentinel` | `bytes[4]` | little | spec | marker +156 through +159 are `ff` |
+
+Unstated regions:
+
+- `5..17` (12 B): The marker header does not define bytes +5 through +16 for this geometry-locus layout.
+- `21..23` (2 B): The geometry locus begins at +23; bytes +21 through +22 are reserved.
+- `39..48` (9 B): The state value begins at +48; bytes +39 through +47 are reserved.
+
 ## `extended_terminal_164_wide_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 164 B

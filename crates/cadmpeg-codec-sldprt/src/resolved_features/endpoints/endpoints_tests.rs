@@ -5982,6 +5982,59 @@ fn extended_geometry_116_arc_uses_relation_tail_and_center_index() {
 }
 
 #[test]
+fn extended_geometry_terminal_circle_uses_dimension_tail() {
+    let mut payload = vec![0; 160];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&2u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+    for relative in (78..94).step_by(4) {
+        payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+    }
+    payload[94..128].fill(0);
+    payload[128..130].copy_from_slice(&4u16.to_le_bytes());
+    payload[130..134].copy_from_slice(&7u32.to_le_bytes());
+    payload[134..136].fill(0);
+    payload[136..140].copy_from_slice(&9u32.to_le_bytes());
+    payload[140..148].copy_from_slice(&[0xff, 0xfe, 0xff, 0x02, 0x44, 0x00, 0x31, 0x00]);
+    payload[148..156].copy_from_slice(&2.0f64.to_le_bytes());
+    payload[156..160].fill(0xff);
+
+    let entity = |id: &str, offset, coordinates_m, kind| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let circle = entity("circle", 0, None, SketchInputKind::Arc);
+    let witness = entity("witness", 5, Some([9.0, 9.0]), SketchInputKind::Arc);
+    let center = entity("center", 10, Some([0.0, 0.0]), SketchInputKind::Point);
+    let radial = entity("radial", 20, Some([1.0, 0.0]), SketchInputKind::Point);
+    let markers = [&circle, &witness, &center, &radial];
+
+    assert_eq!(
+        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        Some(([0.0, 0.0], 1.0))
+    );
+}
+
+#[test]
 fn legacy_compact_geometry_locus_code_two_is_a_profile_line() {
     let mut payload = vec![0; 84 + LEGACY_SKETCH_MARKER.len()];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);

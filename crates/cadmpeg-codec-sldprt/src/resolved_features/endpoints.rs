@@ -2403,6 +2403,23 @@ fn extended_dimensioned_roster_full_circle_tail(payload: &[u8], offset: usize) -
         && payload.get(offset + 114..offset + 116) == Some(&[0xff, 0x06])
 }
 
+fn extended_geometry_terminal_full_circle_tail(payload: &[u8], offset: usize) -> bool {
+    extended_geometry_indexed_arc_header(payload, offset)
+        && payload.get(offset + 94..offset + 128) == Some(&[0; 34])
+        && payload.get(offset + 128..offset + 130) == Some(&4u16.to_le_bytes())
+        && payload
+            .get(offset + 130..offset + 134)
+            .is_some_and(|identity| identity != [0; 4] && identity != [0xff; 4])
+        && payload.get(offset + 134..offset + 136) == Some(&[0; 2])
+        && payload
+            .get(offset + 136..offset + 140)
+            .is_some_and(|value| value != [0; 4] && value != [0xff; 4])
+        && payload.get(offset + 140..offset + 148)
+            == Some(&[0xff, 0xfe, 0xff, 0x02, 0x44, 0x00, 0x31, 0x00])
+        && payload.get(offset + 148..offset + 156) == Some(&2.0f64.to_le_bytes())
+        && payload.get(offset + 156..offset + 160) == Some(&[0xff; 4])
+}
+
 pub(super) fn equal_index_coordinate_roster_full_circle(
     payload: &[u8],
     circle: &SketchInputEntity,
@@ -2429,7 +2446,8 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
             == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
     let dimensioned_terminal = extended_layout
         && (class_declaration_at(payload, offset + 72)
-            || extended_dimensioned_roster_full_circle_tail(payload, offset));
+            || extended_dimensioned_roster_full_circle_tail(payload, offset)
+            || extended_geometry_terminal_full_circle_tail(payload, offset));
     let standard_indexed_terminal = matches!(
         payload
             .get(offset + 72..offset + 76)
@@ -2468,6 +2486,39 @@ pub(super) fn equal_index_coordinate_roster_full_circle(
         || payload.get(offset + 58..offset + 60) != Some(&center_index.to_le_bytes())
     {
         return None;
+    }
+    if extended_geometry_terminal_full_circle_tail(payload, offset) {
+        let radial_index = usize::from(center_index);
+        let mut coordinates = markers
+            .iter()
+            .copied()
+            .filter(|marker| {
+                marker.feature_ref == circle.feature_ref
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+            })
+            .collect::<Vec<_>>();
+        coordinates.sort_unstable_by_key(|marker| marker.offset);
+        if let (Some(center), Some(radial)) = (
+            radial_index
+                .checked_sub(1)
+                .and_then(|index| coordinates.get(index))
+                .and_then(|marker| marker.coordinates_m),
+            coordinates
+                .get(radial_index)
+                .and_then(|marker| marker.coordinates_m),
+        ) {
+            let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+            if radius.is_finite() && radius > 0.0 {
+                return Some((center, radius));
+            }
+        }
     }
     let mut points = markers
         .iter()
