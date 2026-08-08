@@ -30210,25 +30210,51 @@ fn preserve_passthrough_sections(
     {
         let end = (section.offset + section.length).min(scan.framing.data.len());
         let section_bytes = &scan.framing.data[section.offset..end];
-        let payload_start = if section.role == role::THUMBNAIL {
-            let Some(offset) = section_bytes
-                .windows(3)
-                .position(|window| window == [0xff, 0xd8, 0xff])
-            else {
-                continue;
-            };
-            offset
+        let payload_start = section.raw_name.len().saturating_add(2);
+        let raw_is_compressed = section_bytes
+            .get(payload_start..)
+            .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
+        let (bytes, offset, tag, exactness) = if section.role == role::THUMBNAIL {
+            if raw_is_compressed {
+                let Some(expanded) = container::expanded_section_for(scan, section) else {
+                    continue;
+                };
+                let Some(marker_offset) = expanded
+                    .data
+                    .windows(3)
+                    .position(|window| window == container::JPEG_MAGIC)
+                else {
+                    continue;
+                };
+                (
+                    &expanded.data[marker_offset..],
+                    expanded.source_offset,
+                    "jpeg_thumbnail",
+                    Exactness::Derived,
+                )
+            } else {
+                let Some(marker_offset) = section_bytes
+                    .windows(3)
+                    .position(|window| window == container::JPEG_MAGIC)
+                else {
+                    continue;
+                };
+                (
+                    &section_bytes[marker_offset..],
+                    section.offset.saturating_add(marker_offset),
+                    "jpeg_thumbnail",
+                    Exactness::ByteExact,
+                )
+            }
         } else {
-            0
+            (
+                section_bytes,
+                section.offset,
+                "psb_geometry_section",
+                Exactness::Unknown,
+            )
         };
-        let bytes = &section_bytes[payload_start..];
-        let offset = section.offset + payload_start;
         let id = UnknownId(format!("creo:{}:section#{}", section.name, offset));
-        let (tag, exactness) = if section.role == role::THUMBNAIL {
-            ("jpeg_thumbnail", Exactness::ByteExact)
-        } else {
-            ("psb_geometry_section", Exactness::Unknown)
-        };
         annotate(
             annotations,
             &id,

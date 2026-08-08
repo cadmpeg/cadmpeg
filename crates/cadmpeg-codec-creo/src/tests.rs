@@ -166,6 +166,39 @@ fn jpeg_payload() -> Vec<u8> {
     vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]
 }
 
+fn unix_compress_literals(payload: &[u8]) -> Vec<u8> {
+    let mut stream = vec![0x1f, 0x9d, 0x10];
+    let mut packed = vec![0; payload.len().saturating_mul(9).div_ceil(8)];
+    for (index, value) in payload.iter().copied().enumerate() {
+        for bit in 0..9 {
+            let offset = index * 9 + bit;
+            packed[offset / 8] |= (((u16::from(value) >> bit) & 1) as u8) << (offset % 8);
+        }
+    }
+    stream.extend_from_slice(&packed);
+    stream
+}
+
+fn build_toc_section_prt(name: &str, payload: &[u8], expanded_length: usize) -> Vec<u8> {
+    let mut data = b"#UGC:2 P test\n#-END_OF_UGC_HEADER\n".to_vec();
+    let header_base = data.len();
+    data.extend_from_slice(format!("{:<80}\n", "#UGC_TOC 2 1 81 17").as_bytes());
+    let section_offset = 2 * 81;
+    let section_header = format!("#{name}\n");
+    let section_length = section_header.len() + payload.len();
+    data.extend_from_slice(
+        format!(
+            "{:<80}\n",
+            format!("{name} {section_offset:x} {section_length:x} {expanded_length:x}")
+        )
+        .as_bytes(),
+    );
+    assert_eq!(data.len(), header_base + section_offset);
+    data.extend_from_slice(section_header.as_bytes());
+    data.extend_from_slice(payload);
+    data
+}
+
 fn assert_annotation(
     annotations: &cadmpeg_ir::Annotations,
     id: &str,
@@ -433,6 +466,51 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     assert!(source.attributes["section.0.length"]
         .parse::<usize>()
         .is_ok());
+}
+
+#[test]
+fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
+    let jpeg = jpeg_payload();
+    let compressed = unix_compress_literals(&jpeg);
+    let data = build_toc_section_prt("THMB_IMG_MAIN", &compressed, jpeg.len());
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(scan.framing.expanded_sections.len(), 1);
+    assert_eq!(scan.framing.expanded_sections[0].data, jpeg);
+    assert!(container::has_thumbnail(&scan));
+    assert!(container::summarize(&scan)
+        .notes
+        .iter()
+        .any(|note| note.contains("THMB_IMG_MAIN carries a JPEG preview")));
+
+    let source_offset = scan.framing.expanded_sections[0].source_offset;
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(data),
+            &DecodeOptions {
+                container_only: true,
+                ..DecodeOptions::default()
+            },
+        )
+        .expect("decode compressed thumbnail");
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = result
+        .source_fidelity
+        .retained_records
+        .iter()
+        .find(|record| record.id == unknowns[0].id.as_str())
+        .expect("retained expanded thumbnail");
+    assert_eq!(retained.data.as_deref(), Some(jpeg.as_slice()));
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        unknowns[0].id.as_str(),
+        "creo:THMB_IMG_MAIN",
+        source_offset as u64,
+        "jpeg_thumbnail",
+        Exactness::Derived,
+    );
+    assert!(result.source_fidelity.validate().is_ok());
 }
 
 #[test]

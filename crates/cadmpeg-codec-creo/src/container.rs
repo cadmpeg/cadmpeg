@@ -52,7 +52,9 @@ const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
 const TOC_END: &[u8] = b"#END_OF_TOC_HEADER";
 /// JPEG SOI magic, marking the `THMB_IMG_MAIN` preview payload (never geometry).
-const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
+pub(crate) const JPEG_MAGIC: &[u8] = &[0xff, 0xd8, 0xff];
+/// Unix `compress` payload prefix.
+pub(crate) const UNIX_COMPRESS_MAGIC: &[u8] = &[0x1f, 0x9d];
 
 /// ASCII names that appear in the header/TOC framing and look like section
 /// headers but are structural markers, not binary sections ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)).
@@ -632,7 +634,7 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
             let source_offset = section.offset.checked_add(header_length)?;
             let end = section.offset.checked_add(section.length)?;
             let payload = data.get(source_offset..end)?;
-            if !payload.starts_with(&[0x1f, 0x9d]) {
+            if !payload.starts_with(UNIX_COMPRESS_MAGIC) {
                 return None;
             }
             let expanded = crate::compress::decode(payload, expected_length)?;
@@ -644,6 +646,18 @@ fn expanded_sections(data: &[u8], sections: &[Section]) -> Vec<ExpandedSection> 
             })
         })
         .collect()
+}
+
+/// Find the expanded payload owned by one section.
+pub(crate) fn expanded_section_for<'a>(
+    scan: &'a ContainerScan<'_>,
+    section: &Section,
+) -> Option<&'a ExpandedSection> {
+    scan.framing.expanded_sections.iter().find(|expanded| {
+        expanded.name == section.name
+            && expanded.source_offset > section.offset
+            && expanded.source_offset < section.offset.saturating_add(section.length)
+    })
 }
 
 fn toc_lists_section(toc: &[u8], name: &[u8]) -> bool {
@@ -2156,10 +2170,26 @@ pub fn has_thumbnail(scan: &ContainerScan) -> bool {
         .sections
         .iter()
         .filter(|s| s.role == role::THUMBNAIL)
-        .any(|s| {
-            let region =
-                &scan.framing.data[s.offset..(s.offset + s.length).min(scan.framing.data.len())];
-            find(region, JPEG_MAGIC, 0).is_some()
+        .any(|section| {
+            let end = section
+                .offset
+                .saturating_add(section.length)
+                .min(scan.framing.data.len());
+            let raw = scan.framing.data.get(section.offset..end);
+            let raw_is_compressed = raw.is_some_and(|region| {
+                let payload_start = section.raw_name.len().saturating_add(2);
+                region
+                    .get(payload_start..)
+                    .is_some_and(|payload| payload.starts_with(UNIX_COMPRESS_MAGIC))
+            });
+            if raw_is_compressed {
+                expanded_section_for(scan, section)
+                    .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
+            } else {
+                raw.is_some_and(|region| find(region, JPEG_MAGIC, 0).is_some())
+                    || expanded_section_for(scan, section)
+                        .is_some_and(|expanded| find(&expanded.data, JPEG_MAGIC, 0).is_some())
+            }
         })
 }
 
@@ -2175,11 +2205,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             if s.raw_name != s.name {
                 attributes.insert("raw_name".to_string(), s.raw_name.clone());
             }
-            let expanded = scan.framing.expanded_sections.iter().find(|expanded| {
-                expanded.name == s.name
-                    && expanded.source_offset > s.offset
-                    && expanded.source_offset < s.offset.saturating_add(s.length)
-            });
+            let expanded = expanded_section_for(scan, s);
             if let Some(expanded) = expanded {
                 attributes.insert(
                     "expanded_payload_size".to_string(),

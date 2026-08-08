@@ -57,8 +57,10 @@ block mode (for example `1f 9d 10`), code 256 is a literal dictionary entry.
 Codes are packed least significant bit first in code-width-sized byte blocks.
 Block alignment resets when the code width increases or, in block mode, a clear
 code resets it to nine. Expansion is valid only when the output length equals
-the TOC expanded-length field. The expanded payload begins directly with its
-PSB named record.
+the TOC expanded-length field. For model-data sections, the expanded payload
+begins directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary
+exception: its expanded payload contains the JPEG payload and is identified by
+the `FF D8 FF` marker.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
@@ -90,7 +92,7 @@ cardinality is descriptive and does not select a layout.
 | `FamilyInf`                      | Family-table driver pointer for configurations.                                                                      |
 | `MdlRefInfo`                     | Model-space reference entities, including finite line endpoints.                                                     |
 | `NeuPrtSld` and display sections | Material, appearance, display, and tessellation data.                                                                |
-| `THMB_IMG_MAIN`                  | JPEG thumbnail. The payload begins with `FF D8 FF` and does not contain model geometry.                              |
+| `THMB_IMG_MAIN`                  | JPEG thumbnail. Its raw payload begins with `FF D8 FF` or uses Unix-compress framing; after expansion, bytes from the `FF D8 FF` marker through the payload end are the JPEG payload. It does not contain model geometry. |
 
 ### 1.3 Units
 

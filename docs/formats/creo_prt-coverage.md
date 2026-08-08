@@ -91,6 +91,8 @@ fixtures, claims above L1 remain unproven.
 - Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
   do not override the persistence-layout discriminator, and missing
   discriminators remain unknown.
+- Compressed `THMB_IMG_MAIN` payloads expand to the JPEG marker before preview
+  detection and retain the JPEG bytes as a derived native record.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.
