@@ -32,6 +32,32 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
 
+### CR-03. E5 record-stream location
+
+**Question.** Which field selects the byte range that holds the E5 record stream?
+
+**Known.** `catia.md` §3.3 "`FINJPL  ` (two trailing spaces) marks named stream blocks" gives a coherence rule: ten records that walk by their declared strides make a candidate, a coherent preamble wins, and storage type `0x0000008e` breaks equal-count ties. That rule is a decoder procedure. It names no field. `container::count_e5_records` searches forward for the next `e5 0d 03` marker and accepts a gap of any length before it, so the count is not a stride walk. The one validity test for each counted record is that a `u16le` size read at a fixed offset keeps the record in bounds.
+
+**Need.** A coherent candidate makes `container::identify_variant` select `Variant::E5Stream`. That variant is applicable to one route, so the standard FBB route is not offered. We must know the field to select the stream without a count.
+
+**Note.** `container::e5_record_stream_in_segments` takes the segment with the largest count through `max_by_key`, which keeps the last maximum. Two segments with equal counts and no `0x0000008e` type resolve by segment order. The specification sentence is a transcription of the function's doc comment.
+
+### CR-04. Repeated BREP stream names
+
+**Question.** Which field selects the `MainDataStream` and the `SurfacicReps` stream that make the BREP buffer when the directory holds more than one descriptor with that name?
+
+**Known.** `catia.md` §3.4 "The descriptor names include" gives the descriptor names and the content of each stream. It gives no selection rule for a repeated name. `container::brep_stream` keeps the descriptor with the largest logical length in each class, and it accepts a second-class name that contains `Surf` instead of the complete name.
+
+**Need.** The BREP buffer is the input to the variant census and to every standard-path decoder. We must know the selection to read the correct body.
+
+### CR-05. Descriptor name position
+
+**Question.** Which offset and length hold the stream name in a directory descriptor?
+
+**Known.** `catia.md` §3.4 "A candidate is a descriptor when every extent validates" gives "The stream name is a UTF-16LE ASCII run in the descriptor header." `docs/layouts/catia.toml` holds no row for the name. `container::descriptor_name` takes the longest run of printable ASCII characters with `00` high bytes in the window from `ds-40` to `ds+0x50`, and it needs three characters as a minimum.
+
+**Need.** The name selects the BREP streams (CR-04) and names the stream in the container report. An empty or wrong name makes `container::identify_variant` report `Variant::InnerNoDirectory` for a file that has a directory. We must know the offset to read a name that is not the longest run in that window.
+
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics
@@ -218,6 +244,42 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
+### DI-24. Unresolved role selector framing
+
+**Question.** Which condition selects the `80 <identity:u32le>` selector form of an unresolved role, and which selects the `<page:d1..e4> <low:u8>` form?
+
+**Known.** `catia.md` §7.1 "Within an identity interval, `<inclusive-length:u8> <name:utf8> <selector>`" admits both forms. It gives no precedence. The two productions can match the same bytes: the first needs a nonzero byte at `field-6`, `80` at `field-5`, and a nonzero `u32le` at `field-4`; the second needs a nonzero byte at `field-3` and a byte from `d1` to `e4` at `field-2`. `legacy_entity::parse_role_selectors` tests the first form first and keeps it when it parses.
+
+**Need.** The selected form gives the role offset and the target selector. The two forms give different offsets and different selectors for the same bytes. We must know the condition to bind the relation context and the relation result (DI-08, DI-09).
+
+### DI-25. Text-field terminator before a role page
+
+**Question.** Which condition closes a legacy text field with `FE`, and which condition continues it with a compound role, when the byte after the terminator is `E3`?
+
+**Known.** `catia.md` §7.1 "A legacy string-value packet is" gives `FE` as the close of the nonempty single-value form, and gives `<role> E3 <selector-low:u8>` as the continuation of the compound form. It gives no rule for a terminated field that an `E3` byte follows.
+
+**Need.** A role at a terminator offset moves the boundary of the field before it and stops the unresolved-role recovery of the opener after it. We must know the condition to keep one reading.
+
+**Note.** The decoder holds both readings at the same time. `legacy_entity::parse_text_field` closes the field as `U8InclusiveLength`. `legacy_entity::parse_role_selectors` makes a role at the terminator offset, with the terminator byte `FE` as the role name. The two functions decide the same bytes differently.
+
+### DI-26. `7C0A` payload `0x3c` form
+
+**Question.** What does a `0x3c` byte introduce in a `7C0A` payload, and which field gives its extent?
+
+**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" enumerates the assigned payload forms and gives "bytes outside those assigned forms remain literals; they do not create references." `0x3c` is not an assigned form. `object_graph::decode_payload` reads `3c <atom> <u32le>` as a bulk-table header when the `u32le` is not more than the payload byte length, and reads the `0x3c` byte as a literal atom when it is more.
+
+**Need.** The two branches consume different byte counts, so the token boundary of every field after the `0x3c` byte changes. A different boundary makes or removes an object reference. We must know the extent field to walk the payload.
+
+### DI-27. Feature-local parameter order
+
+**Question.** Which field gives the position of a parameter in the parameter list of its feature?
+
+**Known.** `catia.md` §7.3 "An object graph is preceded by" gives the byte offset of a design object's first field and the zero-based position of that object in the graph. It gives no order for the parameters of one feature. `design_feature` sorts the exact feature-owned parameters by object-record byte offset, then by entity byte offset, then by the identifier that the codec makes, and it publishes that rank as `DesignParameter.ordinal`.
+
+**Need.** `DesignParameter.ordinal` states the position of the parameter in its ownership scope. One feature can own parameters from more than one design object, so the sort interleaves records of different objects by file position alone. We must know the field to order the list of one feature.
+
+**Note.** The parameters that no feature owns keep a document-wide rank from a separate enumeration that counts the feature-owned parameters, so their sequence has gaps. One field holds two different orders.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-01. `a5 03 32` header type codes
@@ -235,6 +297,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §6.2 "Frames an explicit rolling-ball surface jet." defines the knots and the value, first-derivative, and second-derivative blocks. The continuation has more than one length class.
 
 **Need.** We must know its lanes and terminal fields to read and write the complete record.
+
+**Note.** `a5a8::records` accepts a continuation of up to 4096 bytes and rejects a longer one. The bound is not in `catia.md`. A record in a longer length class is dropped, so its exact rolling-ball surface and both limit curves are not transferred. The `a8` parser instead requires the 59-byte tail that the specification states.
 
 ### SN-03. Width-coded class-`0x5e` header token
 
@@ -299,6 +363,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
 
 **Need.** We must know the allocation relation for byte-faithful writing.
+
+**Conflict.** `catia.md` §5.4.1 states an answer for one body class: "Regular-motif bodies serialize vertex allocation as a walk over the ordered trim packets", with four fixed column permutations. This item states that the relation is unknown. One of the two documents is wrong. The specification gives no byte-level derivation for the four permutations, and the two validity tests it states — the first-occurrence population equals the vertex-table count, and every circle row with exactly two on-circle vertex rows maps to that pair — are the two output tests that `missing_edge::motif_port_points` and `standard::fbb::parse_standard_motif` apply. A permuted emission order satisfies both tests. On a body with no circle rows the second test is vacuous, because `circle_anchors` is `None` for a `Line` or `Bspline` row and the caller accepts `None`.
 
 ### SN-11. Standard 3D spline cache
 
@@ -436,6 +502,124 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
 
+### SN-28. Edge-row handle width
+
+**Question.** Which field gives the handle width of an FBB-path edge-row table?
+
+**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" gives "one uniquely selected width across the table sequence". `catia.md` §10 "A nested-`V5_CFV2` file with a valid FBB face group" gives "The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table." `fbb::parse_edge_tables_scoped_at` applies both conditions to widths 1, 2, and 3 and keeps a width only when one width satisfies them. `fbb::parse_fbb_edge_tables` tests widths 3, 2, then 1 and keeps the first width that lands on both delimiters. It does not apply the vertex-table condition.
+
+**Need.** Widths 1 and 3 share a delimiter, so they are competing grammars over the same bytes. A wrong width reads every handle from the wrong bytes and gives a complete but wrong topology, with no loss. We must know the field to select the width without a trial.
+
+**Note.** `fbb::parse_edge_tables` calls the unique-width function first. That function keeps no width when two widths satisfy both conditions. The caller reads that refusal as "the scoped grammar does not apply" and then calls `parse_fbb_edge_tables`, which takes width 3. The refusal has no effect. `standard::topology::parse_fbb` calls `parse_fbb_edge_tables` directly and applies the vertex-table condition after the width is fixed, so a width that satisfies both delimiters but no vertex table stops the parse instead of yielding to the next width.
+
+### SN-29. Class-`0x60` table anchor
+
+**Question.** Which field gives the start of the class-`0x60` curve-support table when the face-local surface roster does not resolve?
+
+**Known.** `catia.md` §5.5 `edge_support_row` gives "The table begins immediately after the complete face-local surface roster and has one row per spine edge." `records::standard_curve_supports` uses that anchor when the roster resolves. If it does not, the function takes the first offset in the complete BREP stream where a `60` byte precedes the line or circle header. It applies no test that no other offset matches, and no test of the row count against the spine edge count.
+
+**Need.** The table gives the edge tags, the plane normals from adjacent circle carriers, and the support diagnostics. The consumers of the tags and the normals apply no count gate. We must know the anchor to read the table when the roster is not unique.
+
+### SN-30. Trim-record acceptance bounds
+
+**Question.** What bounds the handle count of a trim record, and what tolerance applies to the norm of its `3×f32le` frame vector?
+
+**Known.** `catia.md` §5.3 "Invariant `N == 3*A + sum(K)`" gives `ff <N:u32le>` with the invariant `N == 3*A + sum(K)`, and gives the frame vector as a unit vector. It gives no upper bound for `N` and no tolerance. `fbb::parse_trim_record_layout` rejects a record when `N` is more than 500000, or when `|norm² − 1|` is not less than `2e-4`. The `2e-4` value is about three orders of magnitude larger than the round-trip error of a `f32` unit vector.
+
+**Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
+
+### SN-31. Plane bounds record binding
+
+**Question.** Which relation binds a `00 02 00 33 32` plane-bounds record to its face-roster carrier tag when more than one record carries that tag?
+
+**Known.** `catia.md` §5.3 "For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`" gives "Its face-roster carrier tag selects the `00 02 00 33 32` bounds record with the same tag." `records::plane_params` scans the complete BREP stream for the marker and accepts a record when the bounding-sphere containment test holds with a relative slack of `1e-5`. `records::face_bounds_at` reads the same bytes through the uniqueness-gated roster chain and applies the same test with no slack. `standard::decode` collects the results into a map keyed by the tag, so a second accepted record with one tag replaces the first.
+
+**Need.** The record gives the plane origin. We must know the relation to bind one record, and to remove one of the two tolerances.
+
+### SN-32. Same-incidence row endpoint assignment
+
+**Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
+
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" gives "lexicographic ordering does not bind a row because it is not a serialized endpoint identity", and gives allocation rank as "a final gauge reduction only after the mesh constraints leave an equivalent complete relation". `decode::bind_ordered_standard_curve_branches` orders each vertex-row partition and binds the row of rank `k` to the vertex row of rank `k` in each partition. It tests that the relation is complete bipartite. It does not test that the remaining matchings are equivalent.
+
+**Need.** A complete bipartite relation over `n` rows admits `n!` matchings, and the vertex rows are distinct points, so the matchings are not equivalent. A wrong matching gives a wrong line origin, a wrong direction, wrong edge endpoints, and a wrong parameter range. We must know the relation to bind the row.
+
+**Note.** The function runs before the topology solvers and writes a singleton domain, so the correct matching is no longer reachable. `catia.md` §5.6 states three "only when" conditions for the rank stages. The decoder evaluates none of them. `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" and `catia.md` §5.6 "Same-incidence spline or line rows" disagree about the same construct.
+
+### SN-33. Derived plane normal sense
+
+**Question.** Which field gives the sense of a plane normal that no trim-packet frame vector gives?
+
+**Known.** `catia.md` §5.7 "**Plane normal** from three non-collinear incident circle centers" gives the normal direction from three circle centers, from two line directions, or from the axis of a cylinder that a cap closes. It gives no sense. `decode::standard_plane_normal_from_circle_centers` and `decode::standard_plane_normal_from_adjacent_circle_carriers` make the first component with magnitude more than `1e-5` positive.
+
+**Need.** The neutral face orientation is the product of the stored face sense and this normal, so the sense is not a gauge. Two coaxial caps of one boss take the same normal from the same cylinder axis, so one of the two is reversed. A plane target that one exact face and one derived face share can also lose its exact normal, because the merge sees two different values and keeps none. We must know the sense field, or we must withhold the normal as the no-witness path already does.
+
+### SN-34. Duplicate face slot under a refused search
+
+**Question.** Which field gives the second face of an edge whose `0x60` row names one face twice?
+
+**Known.** `catia.md` §5.6 "When more than two vertex rows lie on the same analytic intersection" gives the validity predicate for a face assignment. It gives no search bound. `missing_edge::face_endpoint_candidates_close` bounds its search at 65536 branch states and returns `Option<bool>`, where `None` is a refusal and `Some(false)` is a proof that no closing selection exists. The caller collapses the two with `unwrap_or(false)`.
+
+**Need.** A refusal then removes a candidate face from the domain. Two candidate faces become one, and `missing_edge::unique_duplicate_face_assignment` accepts the survivor as the unique answer. A refusal must withhold, as the sibling budget in the same file does. We must know the field to bind the second face without a search.
+
+### SN-35. Boundary quotient state cap
+
+**Question.** What bounds the number of ordered-boundary quotient states of one face?
+
+**Known.** `catia.md` §5.4 "Each physical port initially admits every coordinate row" gives the validity rule for a quotient. It gives no state cap. `incidence::advance_compact_boundary_domains` stops at 4096 states and leaves the loop, so the input states after the stop contribute no successors. The result is a prefix-selected subset. The caller tests only `budget.exhausted()`, which the cap does not set, so a truncated result is used as a complete one.
+
+**Need.** A pruned branch can hold the true assignment. The solver then reports a second assignment as unique instead of reporting ambiguity. Every other bound in this file returns the unpruned domains or sets the exhausted flag. We must know the bound, or the cap must set the flag.
+
+### SN-36. Coordinate-root closure under a refused budget
+
+**Question.** How does the coordinate-root closure prove that the bijective coordinate assignment is unique when its work budget is refused?
+
+**Known.** `catia.md` §5.4 "Each physical port initially admits every coordinate row" gives "one bijective coordinate assignment modulo rows storing the same exact coordinate". `mesh_quotient::point_assignments_with_budget` stops enumerating on a refused charge and returns the assignments it found. `mesh_quotient::close_coordinate_roots` reports `Solved` when that list holds one assignment. The per-component walk also drops a complete assignment on a refused charge without setting its exhausted flag. Only the `None` result consults `budget.exhausted()`, so a truncation on the last leaf or the last component reports `Solved`.
+
+**Need.** `Solved` and `Exhausted` are different outcomes. `Exhausted` becomes `StandardTopologyFailure::TopologySearchExhausted`; `Solved` is emitted as the topology. We must report the refusal to keep the uniqueness rule.
+
+### SN-37. Same-class edge row interchange
+
+**Question.** Which rows may exchange their endpoint pairs without changing the transferred body?
+
+**Known.** `catia.md` §5.4 "A singleton endpoint-pair domain for every physical edge" and §6.7 "**Object-stream topology:**" enumerate the admitted topology gauges: logical-vertex labels, intrinsic edge direction, boundary-cycle start, boundary rotation, boundary reversal, and permutation of separate boundaries. Permutation of same-class edge rows is not among them. `mesh_quotient::edge_class_assignment_is_canonical` rejects every assignment in which a row of lower index takes a larger sorted endpoint pair than a same-class row of higher index. It applies that filter to every partial and complete assignment. Two rows are in one class when their sorted face pair matches and both carriers are lines, or both are circles with the same stored center and radius.
+
+**Need.** The filter is sound only when every rejected assignment has an equivalent retained assignment. The class test proves the two rows have the same class and the same candidate set. It does not prove an automorphism of the boundary-cycle system. When the true binding is the rejected one, the search enumerates only the exchanged binding and reports it as unique instead of reporting distinct solutions. We must know the interchange rule, or the filter must prove it.
+
+### SN-38. Free-side chart when the plane isometry does not solve
+
+**Question.** What chart relation carries a consolidated free side's stored jet into the chart of its standard partner face when the partner carrier is not a plane?
+
+**Known.** `catia.md` §6.3 "A resolved edge block binds" gives a table: a plane free-side standard carrier has a plane isometry, solved from the block's shared 3D loci; any other kind has "none defined" and "none". `freeform::append_resolved_consolidated_surface_curves` uses the identity chart when the solve returns nothing, which asserts that the free side's chart is the partner face's chart.
+
+**Need.** The specification states that the relation is not defined for a non-plane carrier, so the pcurve must be withheld. We must know the relation to convert the jet.
+
+**Conflict.** The decoder publishes a pcurve where the specification assigns no chart. The endpoint witness does not catch it: `freeform::pcurve_lift_reaches_endpoints` returns `true` without a test when the partner carrier is a bare `SurfaceGeometry::Unknown`, which is the state that an unresolved procedural support produces. The pcurve reaches the document with `Exactness::Derived` and no loss.
+
+### SN-39. Plane isometry from collinear sites
+
+**Question.** Which relation selects the plane isometry when the stored definition sites are collinear?
+
+**Known.** `catia.md` §6.3 "A resolved edge block binds" gives "It exists when every shared locus lies on the target plane and the stored sites are not collinear." `freeform::solve_planar_chart_rechart` requires two sites and does not test collinearity. It ranks the rotation and the reflection by residual and keeps the smaller. Two sites are always collinear, and both candidates reproduce two sites exactly, so the residuals are equal and the first candidate wins.
+
+**Need.** A single-span jet gives two sites, which is the common consolidated form. The wrong handedness mirrors the first and second derivative channels, so the converted curve bulges to the other side of its chord. Both endpoints still match, so the endpoint witness passes. We must know the relation, or the solver must withhold on a collinear site set as the specification requires.
+
+### SN-40. Support-carrier family precedence
+
+**Question.** Which relation selects the support carrier of a consolidated side when carriers of more than one analytic family satisfy their own witness?
+
+**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" gives a uniqueness rule inside each family, for example "Multiple matching torus charts leave the support unresolved". It gives no rule across families. `consolidated::records` tests cylinders, then circles, then cones, then spheres, then tori, and enters each tier only when every earlier tier found nothing. The final uniqueness gate therefore compares candidates inside one family only.
+
+**Need.** Each witness is that both lifted pcurve endpoints land within `2e-3` mm of a `05 08 01` row, with the UV pair inside the candidate's stored parameter box. A cylinder and a torus can both satisfy that. The bound carrier gives the block's shared 3D loci, so every endpoint match and pcurve after it comes from that carrier. We must know the cross-family relation.
+
+### SN-41. Type-3 class-`0x60` group extent
+
+**Question.** What bounds the extent of a type-3 `b2 03 60` cylinder group?
+
+**Known.** `catia.md` §6.5 `b2 03 60` gives "Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener." `b2::records` stops the group at the next opener or 2500 bytes after the opener, whichever comes first. Each embedded frame is about 100 bytes, so the bound truncates a group after about 24 cylinders.
+
+**Need.** A truncated group leaves its remaining cylinders undecoded. They are not framed `b2 03 28` records, so no other path recovers them, and the edge sides that need them stay unbound. We must know the extent rule, or the bound must come from the opener.
+
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
@@ -461,6 +645,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** Closed endpoint chains fix coedge traversal. They do not fix this face-level sign.
 
 **Need.** We must know the sign to orient the neutral face.
+
+**Note.** `b5::transfer::faces` writes `Sense::Forward` for every object-stream face and marks the `sense` field `derived`. That exactness state means a value computed from byte-exact inputs. There are no inputs. The entity-level state is `Inferred`, and the field-level state overrides it, so a consumer that reads the exactness table to find conventions does not see this one. The transfer loss note does name the gauge.
 
 ### OS-04. Object-stream body kind
 
@@ -550,6 +736,66 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the construction to transfer the result without using an incorrect cone offset.
 
+### OS-15. Class-`0x34` elided pole program
+
+**Question.** What does the fixed 141-byte program of an `a8 03 34` freeform surface encode?
+
+**Known.** `catia.md` §6.1 "Payload: `degU` and `K_U`" and §6.7 "The elided-pole form places the fixed 141-byte" define the header lanes, the byte layout of the program, and the external pole allocation. The layout table gives a literal value or a shape test for each lane. It assigns a role to one lane only: the `f64le` at tail offset `+28` equals `last(V) - first(V)`. The specification names the program a "range/affine/extrapolation tail" and does not say which lanes hold the range, which hold the affine part, and which hold the extrapolation.
+
+**Need.** We must know the lane roles to validate the program against the surface it belongs to, and to write it.
+
+**Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it. That binding is the subject of OS-21.
+
+### OS-16. Vertex coordinate from parameter incidences
+
+**Question.** Which class-`06` parameter incidence gives the coordinate of a logical vertex, and which domain bounds its parameter?
+
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "References to typed pcurves evaluate at their paired parameter and lift through the pcurve support to the vertex locus", and gives every class-`05` roster entry as an incidence at the same vertex. `graph::incidence_vertex_coordinates` keeps the first pair that gives a finite lift and does not evaluate the others. It applies no parameter domain bound, and `bspline_span` extrapolates outside the knot domain instead of refusing.
+
+**Need.** The result replaces the coordinate that the `05 08 01` rows give, and it bypasses the magnitude test of the row path. The sibling `graph::edge_pcurve_parameter_values` requires every incidence to agree, and `graph::pcurve_endpoints` bounds the parameter to the pcurve domain. We must know the incidence and the domain rule to keep the correct coordinate.
+
+### OS-17. Lifted endpoint order against the `5d` vertices
+
+**Question.** Which field gives the order of an edge's two lifted endpoints against its two `5d` vertices?
+
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "Both interval endpoints evaluate to the edge's ordered `5d` vertex loci". `graph::bind_native_vertices` keeps that order when neither vertex has a coordinate. When one vertex has a coordinate it replaces the order with the shorter of the two endpoint distances. `graph::propagate_vertex_points` and `graph::propagate_vertex_component` make the same replacement. No site refuses a tie, and no site bounds the accepted distance.
+
+**Need.** The two vertices of an edge take swapped coordinates when the order is wrong. We must know the field to bind the coordinate without a distance test.
+
+**Note.** `b5::transfer::pcurves` makes the same decision and refuses both an exact tie and a minimum above the point tolerance. The `score` function of `graph::propagate_vertex_points` gives the same value for both orientations of a one-constraint component, so its tie-break always keeps the serialized order there, which is the case the distance test was added for.
+
+### OS-18. Endpoint-to-row match radius
+
+**Question.** What radius binds a lifted endpoint to an `05 08 01` coordinate row?
+
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "Coincident `05 08 01` rows share an endpoint locus", and gives the lowest serialized matching row for a subset whose allocation identity is otherwise unresolved. `graph::canonical_point` accepts every row inside a ball of `1.5e-3` mm and keeps the lowest row index. `b5::transfer` uses the same `1.5e-3` value as an acceptance gate for oriented line, circle, and NURBS plans, and as the floor of every logical vertex tolerance. `catia.md` §12 gives `1e-3` mm as the on-carrier incidence tolerance, and §5.4 and §6.3 give `2e-3` mm. No section gives `1.5e-3`, and §12 gives full `f64` storage for this family.
+
+**Need.** Two distinct vertices closer than the radius collapse into one. The lowest-row rule that the specification gives is scoped to coincident rows, not to a ball. We must know the radius, or the identity relation that removes the radius.
+
+### OS-19. Lifted endpoint magnitude limit
+
+**Question.** What bounds the magnitude of a lifted endpoint coordinate?
+
+**Known.** `graph` skips an edge when any lifted coordinate has magnitude `1e7` or more. `catia.md` gives no such bound. The edge then takes no vertex binding and leaves the graph.
+
+**Need.** We must know the bound, or the condition that makes the lift wrong, to keep a large but correct model.
+
+### OS-20. Offset surface parameter-direction sense
+
+**Question.** Which field of a `b5 03 30`, `b5 03 31`, or `b2 03 31` offset record gives the U and V parameter-direction sense?
+
+**Known.** `catia.md` §6.7 "`b5 03 30`" gives the payload as the result carrier reference, the source surface reference, the distance, the carrier kind, and the four interval scalars. It lists no sense field. `b5::transfer::surfaces` publishes `u_sense: Some(0)` and `v_sense: Some(0)`, `standard::decode` publishes `Some(0)`, and `freeform` publishes `Some(1)` for the consolidated form. The neutral field states a native sense that the source carried, and `None` states that the source carried none.
+
+**Need.** Three sites publish two different literals for a field that no record holds. A consumer that writes the value back writes a sense CATIA never stored. We must know the field, or the value must be `None`.
+
+### OS-21. External pole grid binding
+
+**Question.** Which field binds an external pole grid allocation to its elided-pole `a8 03 34` carrier?
+
+**Known.** `catia.md` §6.6 "The elided-pole form places the fixed 141-byte" gives "Its external pole allocation is an unframed `nu×nv` XYZ grid ... occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame", and gives "A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation." `a5a8::records::a8_surface_from_external_grid` tests every `b5 <flag> 21` frame in the complete stream, keeps every gap whose byte length equals the carrier's expected grid size and whose coordinates are finite, and requires exactly one such gap.
+
+**Need.** The rule is a size match over the complete stream. It states no relation between the carrier and the pcurve that precedes the grid. Two carriers with equal pole counts make the same candidate set, so both withhold. We must know the binding field to resolve a carrier when the size is not unique.
+
 ## 5. Zero-entity `a9 03`
 
 ### ZE-01. Class-`0x5fxx` face terminal control
@@ -584,6 +830,32 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
+### ZE-05. Radial-twin selection without the midpoint
+
+**Question.** Which condition lets a radial-twin candidate omit the midpoint witness?
+
+**Known.** `catia.md` §8 "Packed loop sense orients each lifted endpoint pair" gives "Two occurrences are radial-twin candidates when their unordered endpoint pairs and midpoint points are uniquely equal within the same tolerance." Each pcurve support retains the surface point at the midpoint of its bounded parameter interval, and the decoder stores it.
+
+**Need.** Face-incidence components partition a coincident bounded-witness group, and a component of exactly two occurrences becomes one physical edge. A wrong component merges two occurrences into one edge with one curve. We must know the condition to keep or to remove the witness.
+
+**Conflict.** `zero_entity::topology::selected_radial_matches` returns the match without the midpoint test when the endpoint match is a mutual singleton. Two occurrences that share both endpoints on different curves, such as the two complementary arcs of a circle each used by one face, then form one physical edge. The stored midpoints would separate them. One of the two documents is wrong: the specification sentence, or the decoder.
+
+### ZE-06. `34c8` and `345e` knot run extents
+
+**Question.** Which field gives the length of the U knot run and of the V knot run in a `34c8` or `345e` carrier?
+
+**Known.** `catia.md` §8 "A `34c8`/`345e` carrier stores distinct U knots" gives the field sequence and two fixed pole-grid offsets. It gives no length field and no value range. `docs/layouts/catia.toml` holds no row for either carrier. `zero_entity::records::zero_entity_nurbs_layout` reads U knots while each value is from `0.0` to `1.0` and stops at the first value equal to `1.0`. It reads V knots while each value is from `0.0` to `50.0`. It steps over an unbounded run of `10`-prefixed tokens at the V marker and again at the pole marker, and it admits an over-consumed token because its guard tests only that the extra byte count is zero or at least ten.
+
+**Need.** The derived offsets give the pole grid and the record end, and the surface is published with `Exactness::ByteExact`. A wrong end changes the one-based global ordinal of every record after it, because a layout failure stops the record walk. A V knot vector in model units above 50 stops the run early. We must know the length fields to read the carrier without value windows.
+
+### ZE-07. Face roster to support-run binding
+
+**Question.** Which field binds a zero-entity face to its surface-support run?
+
+**Known.** `catia.md` §8 "Record families:" gives "The complete face roster aligns positionally with the complete surface-support-run roster." `zero_entity::records` builds the two rosters with independent filters. A face leaves the roster when its terminal control is not `03` or `05`, which is the byte of ZE-01. A run leaves the roster when one `21xx` support in it does not parse. The code binds the two rosters when their lengths are equal.
+
+**Need.** One drop in each roster at different positions keeps the lengths equal and moves every face between the two positions to the wrong run. We must know the field to bind a face when a roster is incomplete.
+
 ## 6. E5 `0D 03`
 
 ### E5-01. `0xa0` circle branch
@@ -609,6 +881,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §9 "**E5 orientation** is" defines the E5 incidence graph and the non-degenerate orientation equations.
 
 **Need.** We must know the fields to orient the cap when its boundary is a digon.
+
+### E5-04. Rank-deficient plane frame
+
+**Question.** Which field selects the in-plane frame of a rank-deficient E5 plane when the endpoint set determines only one axis line?
+
+**Known.** `catia.md` §9 "The complete plane frame follows from its occurrence-pcurve endpoint UV values" gives the least-squares solve for a full-rank endpoint set, and gives the known plane normal as the source of the perpendicular axis for a rank-one diameter set. It then gives "Simultaneous reversal of both in-plane axes is fixed by requiring the first nonzero component of `u_axis` to be positive." That sentence is a canonicalization, not a field.
+
+**Need.** The in-plane frame is the chart of every pcurve on the face. Simultaneous reversal keeps the normal and reflects every UV point through the origin. We must know the field to select the frame that the file used.
+
+**Note.** This item was removed by a tree that changed no code and added the canonicalization sentence to `catia-coverage.md`. The sentence is not what the decoder does: `e5::decode::solve_e5_plane_frame` returns a lone surviving candidate whatever its sign, and applies the positivity filter only to break a tie between two surviving frames. The tie is exactly the state in which the endpoint data does not determine the frame, so the convention answers the question rather than decoding it. `catia.md` §9 states the rule without that condition, so the specification and the decoder also disagree.
 
 ### E5-05. Root orientation signs
 
@@ -649,6 +931,32 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** The five references and the containing record boundary are defined.
 
 **Need.** We must know the trailing fields to interpret and write the edge use.
+
+### E5-10. Component orientation gauge
+
+**Question.** Which field gives the global sign of a connected parity component?
+
+**Known.** `catia.md` §9 "**E5 orientation** is" gives "its global sign follows majority `face_trailer_sign` alignment, with the first serialized loop as the stable gauge when the alignment count ties." That rule is a decoder procedure and names no field. Two decoded sign populations are unread: the loop trailer holds `3*edge_count+4` signed ternary words and only `ref_aligned_signs[1]` is used, and the root `0x08` tape holds one sign for each face and no code reads it.
+
+**Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
+
+### E5-11. Occurrence direction with a degenerate bound span
+
+**Question.** Which field gives the parameter direction of a loop occurrence when its two bound parameters are equal?
+
+**Known.** `catia.md` §9 "**Topology:**" gives "Their span sign relative to the pcurve's native range fixes occurrence parameter direction". A zero span has no sign. `e5::decode` then keeps the smaller of the forward and reverse endpoint errors when the two differ by more than `1e-9`. `catia.md` §12 gives about `1e-5` mm for E5 endpoint storage, so the separation test is four orders below the precision of the compared values and almost never withholds.
+
+**Need.** The direction reverses the edge curve geometry and the coedge parameter range. We must know the field to fix the direction of a degenerate span.
+
+### E5-12. Support-side sweep agreement
+
+**Question.** Which relation makes the two `0xc1` support sides of an edge one oriented curve?
+
+**Known.** `catia.md` §9 "**Topology:**" gives "When both `0xc1` support-side pcurves lift to the same analytic 3D locus and equal endpoint-ordered sweep, the edge retains that exact cache."
+
+**Need.** The retained cache is the edge's exact curve. We must know the relation to keep the correct side.
+
+**Note.** The decoder does not apply the sentence. `e5::decode::equivalent_e5_curve_carriers` compares circle axes and line directions through `.abs()`, which accepts an antiparallel pair, and `e5::decode::parameter_range_agreement_tolerance` compares the two span lengths and not the interval endpoints. The decoder then keeps the first side. The sibling `e5::decode::e5_occurrence_intersection_context` compares the interval endpoints one by one.
 
 ## 7. FBB-only and float-packed variants
 
@@ -716,6 +1024,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the delimiter grammar to separate adjacent surface records without a false marker match.
 
+### FV-09. Isolated face on a pole-elided freeform carrier
+
+**Question.** Does a face whose `a8 03 34` carrier stores no inline pole grid join the transferred B-rep?
+
+**Known.** `catia.md` §6.7 "**Object-stream topology:**" fixes loop membership. `catia.md` §6.6 "The elided-pole form places the fixed 141-byte" gives the external pole allocation, and `a5a8::records::a8_surface_from_external_grid` binds it when its byte length is unique in the stream. A carrier that keeps no grid stays an identity-bearing surface node, so a class-`21` pcurve on it lifts to no 3D endpoint, no `5e` edge on it takes a vertex locus, its `62` loop fails the endpoint conjunct, and the owning `5f` face leaves the connected graph.
+
+**Need.** We must know whether the external allocation transfers the face, and we must hold the exclusion when it does not. Transferring the face without a grid needs invented vertex coordinates.
+
+**Note.** This item was removed by the tree that made the elided-tail test stricter. A stricter test admits fewer carriers, so it cannot have transferred a face that was excluded before. No test and no decode-report count shows the face reaching the neutral model, and the tree's commit message states no rationale. The item is restored until one of the two exists. OS-21 holds the binding rule that the transfer depends on.
+
 ### FV-10. Float-packed fixture validity
 
 **Question.** What object-stream and analytic-carrier records must a synthesized float-packed inner-no-FBB input contain to be a valid specimen of the variant?
@@ -735,3 +1053,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` defines both color packets. The `EB` value applies to the complete face population. The `EC` value supplies the override color asset. The positional FBB rows independently store the effective face colors, so neutral face appearance binding does not depend on this UUID incidence. The application object graph contains `FeatureForColor` and `SelectingFeatureForColorUuid`, but the UUID-to-standard-face incidence is not assigned.
 
 **Need.** We must know the incidence to preserve or write the native selection relation independently of the effective FBB presentation population.
+
+### AP-02. Positional colour population scope
+
+**Question.** Which condition proves that the face population of the document is the FBB face-row population?
+
+**Known.** `catia.md` §7.4 "An inline `EB 01 R G B` value is an opaque display color" gives the positional rule and scopes it: "The FBB sequence then binds the effective colors to the standard face population." `appearance::transfer` runs after every route, and it binds the FBB colour sequence to the faces of the document by position. Its gates are the equal count of colours and faces, and the equal sequence or multiset of colours against the packet population. No gate tests which route made the faces.
+
+**Need.** `container::identify_variant` tests `coherent_e5` before it tests the FBB run count, so a file with both a coherent E5 stream and an FBB colour run decodes its faces in E5 order and keeps the FBB rows. The colour then binds to the face at the FBB row index. We must know the condition to hold the rule inside its stated scope.
