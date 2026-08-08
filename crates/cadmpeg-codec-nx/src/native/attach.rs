@@ -1820,17 +1820,45 @@ fn attach_feature_operations(
             .get(label.id.as_str())
             .expect("every operation label owns one neutral feature identity")
             .clone();
+        let boolean_definition = booleans.get(label.id.as_str()).map(|operation| {
+            let offset_store_body_blocks = label
+                .id
+                .rsplit_once('-')
+                .and_then(|(section_key, _)| offset_store_body_blocks_by_section.get(section_key));
+            boolean_feature_definition(
+                operation,
+                &body_alias_roots,
+                offset_store_body_blocks,
+                &bodies_by_object_index,
+            )
+        });
         let mut dependencies = Vec::new();
-        if let Some(operation) = booleans.get(label.id.as_str()) {
-            if let Some(writer) =
-                body_writer_history.native_writer(canonical_body(operation.target_object_index))
-            {
+        if let (Some(operation), Some(FeatureDefinition::Combine { target, tools, .. })) =
+            (booleans.get(label.id.as_str()), boolean_definition.as_ref())
+        {
+            if let Some(writer) = boolean_participant_writer(
+                target,
+                operation.target_object_index,
+                label.id.rsplit_once('-').and_then(|(section_key, _)| {
+                    offset_store_body_blocks_by_section.get(section_key)
+                }),
+                &body_alias_roots,
+                &body_writer_history,
+            ) {
                 if !dependencies.contains(writer) {
                     dependencies.push(writer.clone());
                 }
             }
             for body in &operation.tool_object_indices {
-                if let Some(writer) = body_writer_history.native_writer(canonical_body(*body)) {
+                if let Some(writer) = boolean_participant_writer(
+                    tools,
+                    *body,
+                    label.id.rsplit_once('-').and_then(|(section_key, _)| {
+                        offset_store_body_blocks_by_section.get(section_key)
+                    }),
+                    &body_alias_roots,
+                    &body_writer_history,
+                ) {
                     if !dependencies.contains(writer) {
                         dependencies.push(writer.clone());
                     }
@@ -3125,74 +3153,60 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
-        let definition = booleans.get(label.id.as_str()).map_or_else(
-            || {
-                trim_body_projection
-                    .or(delete_projection)
-                    .or(sew_projection)
-                    .or(extrude_projection)
-                    .or(extract_projection)
-                    .or_else(|| blend_projection.map(|(definition, _)| definition))
-                    .or_else(|| thicken_projection.map(|(definition, _)| definition))
-                    .or_else(|| offset_projection.map(|(definition, _)| definition))
-                    .unwrap_or_else(|| {
-                        if let Some(sketch) = sketch {
-                            return FeatureDefinition::Sketch {
-                                space: SketchSpace::Planar,
-                                sketch: Some(sketch),
-                            };
-                        }
-                        let mut definition = non_boolean_feature_definition_with_parameters(
-                            &label.value,
-                            &operation_payload_strings,
-                            block_dimension_values,
-                            block_placement,
-                            HoleProjection {
-                                placements: simple_hole_placements
-                                    .get(label.id.as_str())
-                                    .cloned()
-                                    .into_iter()
-                                    .chain(
-                                        hole_packages
-                                            .placements
-                                            .get(label.id.as_str())
-                                            .cloned()
-                                            .unwrap_or_default(),
-                                    )
-                                    .collect(),
-                                diameter: simple_hole_diameters
-                                    .get(label.id.as_str())
-                                    .or_else(|| hole_packages.diameters.get(label.id.as_str()))
-                                    .copied(),
-                                chamfer: simple_hole_chamfers
-                                    .get(label.id.as_str())
-                                    .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
-                                    .copied(),
-                                grouped_simple_through: hole_packages
-                                    .outputs
-                                    .contains_key(label.id.as_str()),
-                            },
-                            native_parameters,
-                        );
-                        if let FeatureDefinition::Block { op, .. } = &mut definition {
-                            *op = block_op;
-                        }
-                        definition
-                    })
-            },
-            |operation| {
-                let offset_store_body_blocks =
-                    label.id.rsplit_once('-').and_then(|(section_key, _)| {
-                        offset_store_body_blocks_by_section.get(section_key)
-                    });
-                boolean_feature_definition(
-                    operation,
-                    &body_alias_roots,
-                    offset_store_body_blocks,
-                    &bodies_by_object_index,
-                )
-            },
-        );
+        let definition = boolean_definition.unwrap_or_else(|| {
+            trim_body_projection
+                .or(delete_projection)
+                .or(sew_projection)
+                .or(extrude_projection)
+                .or(extract_projection)
+                .or_else(|| blend_projection.map(|(definition, _)| definition))
+                .or_else(|| thicken_projection.map(|(definition, _)| definition))
+                .or_else(|| offset_projection.map(|(definition, _)| definition))
+                .unwrap_or_else(|| {
+                    if let Some(sketch) = sketch {
+                        return FeatureDefinition::Sketch {
+                            space: SketchSpace::Planar,
+                            sketch: Some(sketch),
+                        };
+                    }
+                    let mut definition = non_boolean_feature_definition_with_parameters(
+                        &label.value,
+                        &operation_payload_strings,
+                        block_dimension_values,
+                        block_placement,
+                        HoleProjection {
+                            placements: simple_hole_placements
+                                .get(label.id.as_str())
+                                .cloned()
+                                .into_iter()
+                                .chain(
+                                    hole_packages
+                                        .placements
+                                        .get(label.id.as_str())
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                )
+                                .collect(),
+                            diameter: simple_hole_diameters
+                                .get(label.id.as_str())
+                                .or_else(|| hole_packages.diameters.get(label.id.as_str()))
+                                .copied(),
+                            chamfer: simple_hole_chamfers
+                                .get(label.id.as_str())
+                                .or_else(|| hole_packages.chamfers.get(label.id.as_str()))
+                                .copied(),
+                            grouped_simple_through: hole_packages
+                                .outputs
+                                .contains_key(label.id.as_str()),
+                        },
+                        native_parameters,
+                    );
+                    if let FeatureDefinition::Block { op, .. } = &mut definition {
+                        *op = block_op;
+                    }
+                    definition
+                })
+        });
         annotations
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
@@ -3229,12 +3243,9 @@ fn attach_feature_operations(
         {
             // A Boolean target writes its selected body image even when the
             // operation has no separate primary-body field.
-            body_writer_history.record_writer(
-                Some(canonical_body(operation.target_object_index)),
-                None,
-                &[],
-                &id,
-            );
+            let (native_target, offset_store_target) =
+                boolean_target_writer(&definition, canonical_body(operation.target_object_index));
+            body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
         }
         ir.model.features.push(Feature {
             id: id.clone(),
@@ -6095,6 +6106,58 @@ fn atomic_disjoint_body_selections(
     (native(left), native(right))
 }
 
+/// Resolve one Boolean participant through the namespace selected by the
+/// complete Boolean definition. Native integer identity is used only when the
+/// definition did not establish one exact offset-store selection.
+fn boolean_participant_writer<'a>(
+    selection: &BodySelection,
+    object_index: u32,
+    offset_store_body_blocks: Option<&BTreeMap<u32, String>>,
+    body_alias_roots: &BTreeMap<u32, u32>,
+    history: &'a BodyWriterHistory,
+) -> Option<&'a FeatureId> {
+    let offset_store_selection = matches!(
+        selection,
+        BodySelection::Local { bodies, .. }
+            if !bodies.is_empty()
+                && bodies
+                    .iter()
+                    .all(|body| offset_store_identity(body).is_some())
+    );
+    if offset_store_selection {
+        return offset_store_body_blocks
+            .and_then(|blocks| blocks.get(&object_index))
+            .and_then(|data_block| history.offset_store_writer(data_block));
+    }
+    history.native_writer(
+        body_alias_roots
+            .get(&object_index)
+            .copied()
+            .unwrap_or(object_index),
+    )
+}
+
+/// Register a Boolean's target in the namespace established by its complete
+/// target selection. An offset-store target must not create a native writer
+/// for the same integer object index.
+fn boolean_target_writer(
+    definition: &FeatureDefinition,
+    native_body: u32,
+) -> (Option<u32>, Option<&str>) {
+    if let FeatureDefinition::Combine {
+        target: BodySelection::Local { bodies, .. },
+        ..
+    } = definition
+    {
+        if let [body] = bodies.as_slice() {
+            if offset_store_identity(body).is_some() {
+                return (None, Some(body.as_str()));
+            }
+        }
+    }
+    (Some(native_body), None)
+}
+
 pub(crate) fn boolean_feature_definition(
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
@@ -8209,6 +8272,81 @@ mod tests {
                 op: BooleanOp::Join,
                 keep_tools: false,
             }
+        );
+    }
+
+    #[test]
+    fn nx_boolean_writers_follow_selected_identity_namespace() {
+        use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition, FeatureId};
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#writer-namespace".to_string(),
+            operation_label: "nx:feature-history:operation-label#section-7".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402],
+            raw_tool_object_indices: vec![Vec::new()],
+            tool_source_offsets: vec![1],
+            source_offset: 0,
+        };
+        let blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-3:block#402".to_string()),
+        ]);
+        let definition = super::boolean_feature_definition(
+            &operation,
+            &BTreeMap::new(),
+            Some(&blocks),
+            &BTreeMap::new(),
+        );
+        let FeatureDefinition::Combine { target, tools, .. } = &definition else {
+            panic!("Boolean definition");
+        };
+
+        let native_prior = FeatureId("native-prior".to_string());
+        let offset_prior = FeatureId("offset-prior".to_string());
+        let mut history = super::BodyWriterHistory::default();
+        history.record_writer(Some(401), None, &[], &native_prior);
+        history.record_writer(None, Some(&blocks[&401]), &[], &offset_prior);
+        history.record_writer(None, Some(&blocks[&402]), &[], &offset_prior);
+
+        assert_eq!(
+            super::boolean_participant_writer(
+                target,
+                401,
+                Some(&blocks),
+                &BTreeMap::new(),
+                &history,
+            ),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            super::boolean_participant_writer(
+                tools,
+                402,
+                Some(&blocks),
+                &BTreeMap::new(),
+                &history,
+            ),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            super::boolean_target_writer(&definition, 401),
+            (None, Some("nx:om-data-blocks-3:block#401"))
+        );
+
+        let native_definition = FeatureDefinition::Combine {
+            target: BodySelection::Native("nx:om-object-index#401".to_string()),
+            tools: BodySelection::Native("nx:om-object-indices#402".to_string()),
+            op: BooleanOp::Join,
+            keep_tools: false,
+        };
+        assert_eq!(
+            super::boolean_target_writer(&native_definition, 401),
+            (Some(401), None)
         );
     }
 

@@ -231,11 +231,12 @@ operation in its primary-body lineage. A Boolean additionally depends on the
 preceding operation in each tool-body lineage, preserving tool order and
 omitting duplicate dependencies. A wrapped body operand that resolves to an
 offset-store block participates in that block's tool lineage. A Boolean with no
-primary-body field uses its target identity for the primary-body lineage. When
-the object-namespace primary body has a segment body-image binding, every
-surviving neutral body from that image is an output of the operation. An
-offset-store primary body or unbound object-namespace primary body retains its
-native relation but has no neutral output.
+primary-body field uses its target identity for the primary-body lineage in the
+target's selected namespace. When the object-namespace primary body has a
+segment body-image binding, every surviving neutral body from that image is an
+output of the operation. An offset-store primary body or unbound
+object-namespace primary body retains its native relation but has no neutral
+output.
 
 Every non-`DELETE` operation with an unambiguous primary-body writer declares
 one intermediate result body. The result body's feature-local identity is the
