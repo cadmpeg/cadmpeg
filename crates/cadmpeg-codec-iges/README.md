@@ -3,8 +3,9 @@
 `cadmpeg-codec-iges` inspects, decodes, and writes IGES 5.1, 5.2, and 5.3
 Fixed ASCII files through `CadIr`.
 
-Support level: [L9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
-for the Fixed ASCII mechanical/document envelope.
+Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#iges)
+for the Fixed ASCII mechanical/document envelope. Bounded semantic writing
+is an extra; the L9 gate remains open.
 
 ## Install
 
@@ -42,7 +43,7 @@ and inspected by name and refused for semantic decode.
 
 `IgesCodec` replays an unchanged decoded source image byte for byte when its
 retained source record and document baseline are intact. `IgesEncoder` accepts
-an explicit target version. The L9 semantic writer supports standalone points,
+an explicit target version. The bounded semantic writer supports standalone points,
 finite lines, analytic conic arcs, NURBS curves, planar and NURBS support
 surfaces, one-face trimmed sheet bodies with NURBS parameter curves, and
 bounded Type 186/502/504/508/510/514 manifold B-rep solids and multi-face

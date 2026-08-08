@@ -1,3 +1,91 @@
 # IGES open items
 
-No open byte meanings, structural rules, or integration-oracle gaps remain.
+IGES L9 is not achieved. The current score is L8 tested. The bounded semantic
+writer and its independent-application checks are extras above L8; they do not
+close the L9 gate while decode can time out, return invalid `CadIr`, or omit
+semantic records from transfer.
+
+## P0 — Make decode terminating and resource-bounded
+
+Fixed ASCII decode has exceeded the 30-second per-file guard on multiple
+inputs. This is pathological and unacceptable for a production codec. The
+decoder must not spend unbounded time in parameter assembly, reference graph
+construction, topology projection, or geometric carrier recovery.
+
+Required closure:
+
+- instrument each decode stage and record the dominant cost for a reduced
+  reproducer;
+- bound every file-declared count, recursive traversal, graph walk, and
+  geometry-recovery search with the service resource policy;
+- return a deterministic structured resource error when a bound is exceeded;
+- add synthesized regression fixtures for each pathological stage; and
+- run the bounded full-file gate in CI so a timeout cannot be reported as a
+  successful decode.
+
+The item is closed only when every file in the declared envelope reaches a
+terminal success or a bounded, classified error within the agreed limit.
+
+## P0 — Decode success must imply valid `CadIr`
+
+The decoder can return success for documents that `cadmpeg validate` rejects.
+Observed failures include edge parameter ranges outside their canonical curve
+domains and edge curve endpoints that do not meet their vertex positions.
+
+Required closure:
+
+- canonicalize or reject carrier domains before committing edges;
+- validate edge endpoints, pcurves, topology ownership, and transforms before
+  returning decode success;
+- commit no partial topology after a failed validation; and
+- add synthesized fixtures for each failure class and run decode followed by
+  `cadmpeg validate` in the regression gate.
+
+The item is closed only when a successful semantic decode is a valid `CadIr`,
+not merely a parseable command result.
+
+## P0 — Account for every omitted semantic record
+
+Successful decodes still produce `record_not_typed` and
+`material_not_transferred` losses for trimming, display, and other entity
+branches. The read profile must not call these branches complete while the
+decoder either drops their semantics or cannot prove their preservation.
+
+Required closure:
+
+- assign every unsupported or omitted semantic construct a stable loss code,
+  severity, source identity, and retained native record;
+- distinguish deliberate native preservation from geometric projection loss;
+- make `--strict` reject all losses that can change model, topology, product,
+  or document meaning; and
+- update the read profile only after loss coverage and validation pass.
+
+## P0 — Re-establish the L9 gate
+
+L9 remains open until bounded decode, valid-IR output, complete loss accounting,
+semantic writing, target-version selection, and independent application
+acceptance pass together. The bounded writer tests are not evidence that the
+full declared read/write envelope passes this gate.
+
+Required closure:
+
+- run decode, validate, convert, and generated-file re-decode as one evaluated
+  gate;
+- require independent native-application acceptance for every writable
+  profile, including edited and source-less documents; and
+- keep the support table and codec README at L8 until this gate passes.
+
+## P1 — Exercise the writer under fuzzing and continuous stress
+
+The current IGES fuzz target exercises container detection, inspection, and
+decode. It does not exercise semantic planning, target-version emission, or
+writer rejection paths.
+
+Required closure:
+
+- add writer fuzz coverage for valid and malformed `CadIr` values;
+- cover replay, source-less synthesis, target versions, topology, loss
+  rejection, and unsupported native arenas;
+- record a reproducible fuzz campaign and retain minimized regressions; and
+- run the timeout and validation gates continuously rather than as an
+  environment-only check.
