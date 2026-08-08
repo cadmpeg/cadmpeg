@@ -1857,6 +1857,39 @@ impl<'a> Builder<'a> {
                 let kind = self.bodies.get(body.as_str())?.kind;
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
+            if let Some(body) = &mesh.body {
+                if linked_body.is_none() {
+                    self.omit(
+                        LossKind::TopologyNotTransferred,
+                        Severity::Warning,
+                        format!(
+                            "tessellation '{}' body '{}' has no writable AP242 tessellation link",
+                            mesh.id, body
+                        ),
+                    );
+                }
+            }
+            let mut reduced_fields = Vec::new();
+            if !mesh.faces.is_empty() {
+                reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
+            }
+            if mesh.chordal_deflection.is_some() {
+                reduced_fields.push("chordal deflection".to_string());
+            }
+            if !mesh.channels.is_empty() {
+                reduced_fields.push(format!("{} data channel(s)", mesh.channels.len()));
+            }
+            if !reduced_fields.is_empty() {
+                self.omit(
+                    LossKind::AttributesNotTransferred,
+                    Severity::Info,
+                    format!(
+                        "tessellation '{}' reduced unsupported metadata: {}",
+                        mesh.id,
+                        reduced_fields.join(", ")
+                    ),
+                );
+            }
             let item = if let Some((kind, link)) = linked_body {
                 let triangles = mesh
                     .triangles

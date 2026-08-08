@@ -8655,6 +8655,59 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 }
 
 #[test]
+fn writer_reports_reduced_tessellation_metadata_and_body_links() {
+    let mut ir = unit_cube();
+    ir.model
+        .tessellations
+        .push(cadmpeg_ir::tessellation::Tessellation {
+            id: "test:step:tessellation#metadata".into(),
+            body: Some(cadmpeg_ir::ids::BodyId("test:missing-body".into())),
+            faces: vec![ir.model.faces[0].id.clone()],
+            chordal_deflection: Some(0.01),
+            source_object: None,
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+            strip_lengths: Vec::new(),
+            normals: Vec::new(),
+            channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
+                domain: cadmpeg_ir::tessellation::TessellationChannelDomain::Vertex,
+                item_size: 2,
+                kind: 1,
+                flags: 0,
+                count: 3,
+                data: vec![0; 6],
+                indices: Vec::new(),
+            }],
+        });
+
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("report mode writes reduced tessellation");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss
+                .message
+                .contains("has no writable AP242 tessellation link")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AttributesNotTransferred
+            && loss.message.contains("face ownership link(s)")
+            && loss.message.contains("chordal deflection")
+            && loss.message.contains("data channel(s)")
+    }));
+}
+
+#[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
     // Turn the cube's first face onto an unknown (opaque) surface. That face
     // cannot become an ADVANCED_FACE, so the writer must skip it and record one
