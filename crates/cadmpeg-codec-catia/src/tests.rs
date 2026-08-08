@@ -7948,7 +7948,7 @@ fn decode_standard_transfers_exact_offset_construction() {
         .iter()
         .any(|surface| surface.id == *support));
     assert_eq!(*distance, 2.5);
-    assert_eq!([*u_sense, *v_sense], [Some(1), Some(1)]);
+    assert_eq!([*u_sense, *v_sense], [None, None]);
     assert!(extension_flags.is_empty());
     let Some(bounds) = procedural.record_bounds else {
         panic!("offset parameter bounds");

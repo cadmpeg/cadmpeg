@@ -848,8 +848,8 @@ pub(crate) fn append_freeform_surface_pools(
             definition: ProceduralSurfaceDefinition::Offset {
                 support: carrier_ids[carrier].clone(),
                 distance: offset.distance,
-                u_sense: Some(1),
-                v_sense: Some(1),
+                u_sense: None,
+                v_sense: None,
                 extension_flags: Vec::new(),
                 revision_form: None,
             },
@@ -1343,8 +1343,8 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             definition: ProceduralSurfaceDefinition::Offset {
                                 support,
                                 distance: *offset,
-                                u_sense: Some(1),
-                                v_sense: Some(1),
+                                u_sense: None,
+                                v_sense: None,
                                 extension_flags: Vec::new(),
                                 revision_form: None,
                             },

@@ -1511,16 +1511,14 @@ pub(crate) fn try_decode_standard(
                         support_id
                     }
                 };
-                annotations.derived(&procedural_id, "definition.u_sense");
-                annotations.derived(&procedural_id, "definition.v_sense");
                 (
                     "object_stream_b5_03_30",
                     carrier_object_id,
                     ProceduralSurfaceDefinition::Offset {
                         support: support_id,
                         distance,
-                        u_sense: Some(0),
-                        v_sense: Some(0),
+                        u_sense: None,
+                        v_sense: None,
                         extension_flags: Vec::new(),
                         revision_form: None,
                     },
