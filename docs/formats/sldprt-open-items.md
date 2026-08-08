@@ -667,6 +667,17 @@ Equal cardinality is the only link between the group and the class. `sldprt.md` 
 
 **Need.** We must select one transform to bind each remaining marker to profile geometry.
 
+**Note.** A second narrowing stage resolves the case this item records as unresolved. `crates/cadmpeg-codec-sldprt/src/resolved_features/transforms.rs:254` keeps only the candidates whose axis swap and axis signs equal those of the placement frame:
+
+```rust
+let oriented = candidates.iter().copied().filter(|candidate| {
+    candidate.swap == frame.swap && candidate.u_sign == frame.u_sign && candidate.v_sign == frame.v_sign
+}).collect::<Vec<_>>();
+if oriented.is_empty() { candidates.to_vec() } else { oriented }
+```
+
+`sldprt.md` §2 states that placement supplies the transform only when the anchors do not determine one, and that a transform-dependent marker stays unresolved. Frame orientation is not a listed precedence rule. This stage runs after the cascade this item names, and also on the surface-derived path at `resolved_features/dimensions.rs:379`.
+
 ### DI-11. Ambiguous linked reference markers
 
 **Question.** Which profile entity does a reference marker select when its linked loci do not identify one entity?
@@ -682,6 +693,14 @@ Equal cardinality is the only link between the group and the class. `sldprt.md` 
 **Known.** `sldprt.md` §2 "A compact-legacy kind `2` bounded curve with locus `05 00 01 00` and the compact indexed" through `sldprt.md` §2 "An extended-prefix kind-`1` profile circle uses the same equal-index 104-byte or terminal" define ordinary and construction full-circle layouts. `sldprt.md` §2 "An `sgSlot_c` declaration may immediately precede a current-, legacy-, or extended-prefix slot record with" distinguishes aggregate slot descriptors from independent curve geometry.
 
 **Need.** We must know the discriminator to prevent omitted construction circles from becoming profile geometry.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs:941` makes a circle from the distance of every later roster point to the centre, and stamps `construction: false` on each:
+
+```rust
+let mut radii = roster[center_index + 1..].iter().filter_map(|radial| { ... }).collect::<Vec<_>>();
+```
+
+The gate above it tests that each radial dimension has one matching witness. It does not test the converse, that each witness has a dimension. `sldprt.md` §2 "Feature-tree" requires the witness count to equal the diameter count and a one-to-one distance match, and states that missing, repeated, or ambiguous matches leave the circles unresolved. An undimensioned display or reference point therefore becomes a solid circle with its own profile. The identity bind at `dimensions.rs:991` also uses `find` on an equal length rather than a unique match.
 
 ### DI-13. Marker-only profile placement
 
@@ -910,6 +929,12 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 **Need.** We must know the field that selects the base and the roster. A first interpretation that resolves two markers that are not the endpoints gives a line between two unrelated points, and the later tiers never run.
 
+**Note.** Two more sites repeat the retry against a roster the specification does not name.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:1266` tries the one-based and then the zero-based base, and indexes the **complete** roster under both. `sldprt.md` §2 gives the zero-based tier a different roster: "zero-based ordinals in the feature-owned coordinate-bearing point roster". The two rosters differ by every non-coordinate marker before the point run, so the zero-based tier addresses shifted positions.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
+
 ### DI-35. PMI and Keywords dimension precedence
 
 **Question.** Which value holds when a `PMISemanticDataDB` record and a Keywords dimension give different values for one parameter?
@@ -1009,6 +1034,17 @@ if between.next().is_some() { return None; }
 That gate covers the window between the endpoints only. `unique_arc_center_marker` at `endpoints.rs:4379` applies the specification rule and withholds on ambiguity, but it runs only on the entities the earlier pass leaves native. Two mirror centres on opposite sides of the chord are equidistant. When one is inside the window and one is outside, the earlier pass accepts and the specification rule never runs.
 
 **Need.** We must know whether record order selects the centre. If it does not, the uniqueness rule must run first.
+
+**Note.** The second tier does not apply the uniqueness rule either. `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:4406` removes every candidate whose sweep is more than π **before** it counts the survivors:
+
+```rust
+(sweep <= std::f64::consts::PI + tolerance)
+    .then_some((quantize(center, tolerance), center))
+...
+let [(_, center)] = centers.as_slice() else { return None; };
+```
+
+Two markers equidistant from one chord always sit on opposite sides, so one gives a sweep of at most π and the other more than π. The filter therefore turns every mirror-pair ambiguity into a single survivor. `sldprt.md` §2 states the rule as uniqueness over equidistant markers with no minor-side qualifier, so this gate reports a unique centre where the specification records an ambiguity. See DI-33.
 
 ### DI-41. Diameter-dimension circle witnesses
 
@@ -1214,6 +1250,25 @@ for component in [&mut axis.x, &mut axis.y, &mut axis.z] {
 `5.0e-4` decides whether the feature becomes a placed helix. `20.0` makes the snap bound depend on the mesh residual, so a finer mesh gives a different decoded axis for the same part.
 
 **Need.** We must know the bound, or state it as a decoder policy with a fixed value. A decoded axis must not change with tessellation quality.
+
+### DI-57. Bridge-arc construction from neighbour tangency
+
+**Question.** Which record makes an unresolved bounded curve a fillet arc tangent to its neighbours?
+
+**Known.** `sldprt.md` §2 gives two tangent sources: the role-2 detail record with its unit start tangent, and the tangent relation families. For a bounded curve with no unique equidistant centre and no detail record, `sldprt.md` §2 gives the endpoint chord or leaves the curve unresolved.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:861` `resolve_tangent_bridge_marker_arcs` constructs an arc from the two neighbouring entities instead. When both neighbours are arcs it takes their centres and intersects the two radial lines:
+
+```rust
+tangent_bridge_arc_geometry(start, end, start_center, end_center, tolerance)
+    .map(|geometry| (index, geometry))
+```
+
+No native field states that the curve is tangent to its neighbours. The construction accepts any intersection that gives an equidistant centre. The line-line branch at `curves.rs:915` at least requires two independent constructions to agree; the arc-arc branch has one construction and no cross-check.
+
+The site runs on the production path through `resolved_features/profiles.rs:1472`.
+
+**Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
 
 ### DI-55. Configuration-local feature state gaps
 
