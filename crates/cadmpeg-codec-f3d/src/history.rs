@@ -5096,6 +5096,8 @@ pub(crate) fn bind_circular_pattern_axes(
         let [history] = matching_histories.as_slice() else {
             continue;
         };
+        let input_state_id =
+            effective_scope_previous_history_state_id(scope, std::slice::from_ref(*history));
         let Some(construction) = &mut scope.circular_pattern_construction else {
             continue;
         };
@@ -5116,7 +5118,9 @@ pub(crate) fn bind_circular_pattern_axes(
         );
         let axes = persistent_identities
             .iter()
-            .map(|identity| historical_pattern_identity_axes(*identity, &identities, history))
+            .map(|identity| {
+                historical_pattern_identity_axes(*identity, &identities, history, input_state_id)
+            })
             .collect::<Vec<_>>();
         if axes.iter().any(Vec::is_empty) {
             continue;
@@ -5137,21 +5141,38 @@ fn historical_pattern_identity_axes(
     identity: u64,
     identities: &HistoricalIdentityIndex,
     history: &AsmHistory,
+    input_state_id: Option<i64>,
 ) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let selected = identities
-        .selection_identity_kind(identity)
-        .map(|(kind, entity_ref, _)| (kind, entity_ref));
-    if selected.is_none() {
-        let Some(revision) = snapshot_edge_identity_revision(identity, history) else {
-            return Vec::new();
+    if let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(identity) {
+        let state_ids = if let Some(input_state_id) = input_state_id {
+            if !state_ids.contains(&input_state_id) {
+                return Vec::new();
+            }
+            vec![input_state_id]
+        } else {
+            state_ids
         };
-        let archived = HistoricalIdentityIndex::build(std::slice::from_ref(history), [revision]);
-        let selected = archived
-            .selection_identity_kind(revision)
-            .map(|(kind, entity_ref, _)| (kind, entity_ref));
-        return historical_pattern_identity_axes_for_selection(selected, history);
+        return historical_pattern_identity_axes_for_selection(
+            Some((kind, entity_ref, &state_ids)),
+            history,
+        );
     }
-    historical_pattern_identity_axes_for_selection(selected, history)
+    let Some(revision) = snapshot_edge_identity_revision(identity, history) else {
+        return Vec::new();
+    };
+    let archived = HistoricalIdentityIndex::build(std::slice::from_ref(history), [revision]);
+    let Some((kind, entity_ref, state_ids)) = archived.selection_identity_kind(revision) else {
+        return Vec::new();
+    };
+    let state_ids = if let Some(input_state_id) = input_state_id {
+        if !state_ids.contains(&input_state_id) {
+            return Vec::new();
+        }
+        vec![input_state_id]
+    } else {
+        state_ids
+    };
+    historical_pattern_identity_axes_for_selection(Some((kind, entity_ref, &state_ids)), history)
 }
 
 fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Option<u64> {
@@ -5171,32 +5192,108 @@ fn snapshot_edge_identity_revision(identity: u64, history: &AsmHistory) -> Optio
 }
 
 fn historical_pattern_identity_axes_for_selection(
-    selected: Option<(AsmHistoricalEntityKind, i64)>,
+    selected: Option<(AsmHistoricalEntityKind, i64, &[i64])>,
     history: &AsmHistory,
 ) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let Some((kind, entity_ref, state_ids)) = selected else {
+        return Vec::new();
+    };
+    if state_ids.is_empty() {
+        return Vec::new();
+    }
     let mut axes = Vec::new();
-    for topology in history
+    let mut matched_state_ids = HashSet::new();
+    for state in history
         .states
         .iter()
-        .filter_map(|state| state.topology.as_ref())
+        .filter(|state| state_ids.contains(&state.state_id))
     {
-        let mut edges = HashSet::new();
-        if let Some((kind, entity_ref)) = selected {
-            edges.extend(historical_identity_edges(kind, entity_ref, topology));
+        matched_state_ids.insert(state.state_id);
+        let Some(topology) = state.topology.as_ref() else {
+            return Vec::new();
+        };
+        let state_axes =
+            historical_pattern_identity_axis_candidates(Some((kind, entity_ref)), topology)
+                .into_iter()
+                .filter_map(|(origin, direction)| {
+                    let direction = direction.unit()?;
+                    (origin.x.is_finite()
+                        && origin.y.is_finite()
+                        && origin.z.is_finite()
+                        && direction.x.is_finite()
+                        && direction.y.is_finite()
+                        && direction.z.is_finite())
+                    .then_some((origin, direction))
+                })
+                .collect::<Vec<_>>();
+        if state_axes.is_empty() {
+            return Vec::new();
         }
-        axes.extend(edges.into_iter().filter_map(|edge| {
-            let (origin, direction) = historical_edge_axis(edge, topology)?;
-            let direction = direction.unit()?;
-            (origin.x.is_finite()
-                && origin.y.is_finite()
-                && origin.z.is_finite()
-                && direction.x.is_finite()
-                && direction.y.is_finite()
-                && direction.z.is_finite())
-            .then_some((origin, direction))
-        }));
+        axes.extend(state_axes);
+    }
+    if matched_state_ids.len() != state_ids.len() || axes.is_empty() {
+        return Vec::new();
     }
     axes
+}
+
+fn historical_pattern_identity_axis_candidates(
+    selected: Option<(AsmHistoricalEntityKind, i64)>,
+    topology: &AsmHistoricalTopology,
+) -> Vec<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let Some((kind, entity_ref)) = selected else {
+        return Vec::new();
+    };
+    match kind {
+        AsmHistoricalEntityKind::Face => historical_face_surface_axis(entity_ref, topology)
+            .into_iter()
+            .collect(),
+        AsmHistoricalEntityKind::Surface => historical_surface_axis(entity_ref, topology)
+            .into_iter()
+            .collect(),
+        _ => historical_identity_edges(kind, entity_ref, topology)
+            .into_iter()
+            .filter_map(|edge| historical_edge_axis(edge, topology))
+            .collect(),
+    }
+}
+
+fn historical_face_surface_axis(
+    face: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|binding| binding.entity == face);
+    let binding = bindings.next()?;
+    bindings
+        .next()
+        .is_none()
+        .then(|| historical_surface_axis(binding.carrier, topology))?
+}
+
+fn historical_surface_axis(
+    surface: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let candidates = topology
+        .surface_axes
+        .iter()
+        .filter(|axis| axis.surface == surface)
+        .map(|axis| (axis.origin, axis.direction))
+        .chain(
+            topology
+                .surface_planes
+                .iter()
+                .filter(|plane| plane.surface == surface)
+                .map(|plane| (plane.origin, plane.normal)),
+        )
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn same_axis_line(
@@ -7751,6 +7848,120 @@ mod tests {
             carrier: 42,
         });
         assert_eq!(historical_edge_axis(7, &topology), None);
+    }
+
+    #[test]
+    fn historical_pattern_face_axis_uses_one_analytic_surface_carrier() {
+        let origin = cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0);
+        let topology = AsmHistoricalTopology {
+            faces: vec![11],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 11,
+                carrier: 41,
+            }],
+            surface_axes: vec![crate::history_records::AsmHistoricalSurfaceAxis {
+                surface: 41,
+                origin,
+                direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![AsmDeltaState {
+                id: "state".into(),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                record_table_complete: true,
+                topology: Some(topology.clone()),
+                transition: None,
+            }],
+        };
+        assert_eq!(
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &history,
+            ),
+            vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
+        );
+
+        let mut planar_history = history.clone();
+        let planar_topology = planar_history.states[0]
+            .topology
+            .as_mut()
+            .expect("planar test topology");
+        planar_topology.surface_axes.clear();
+        planar_topology.surface_planes = vec![crate::history_records::AsmHistoricalPlane {
+            surface: 41,
+            origin,
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 2.0),
+        }];
+        assert_eq!(
+            historical_pattern_identity_axes_for_selection(
+                Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+                &planar_history,
+            ),
+            vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
+        );
+
+        let mut ambiguous = topology;
+        ambiguous.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 11,
+            carrier: 42,
+        });
+        let ambiguous_history = AsmHistory {
+            states: vec![AsmDeltaState {
+                topology: Some(ambiguous),
+                ..history.states[0].clone()
+            }],
+            ..history.clone()
+        };
+        assert!(historical_pattern_identity_axes_for_selection(
+            Some((AsmHistoricalEntityKind::Face, 11, &[1])),
+            &ambiguous_history,
+        )
+        .is_empty());
+
+        let mut missing_carrier = history.clone();
+        missing_carrier.states.push(AsmDeltaState {
+            state_id: 2,
+            node_index: 1,
+            topology: Some(AsmHistoricalTopology {
+                faces: vec![11],
+                ..AsmHistoricalTopology::default()
+            }),
+            ..history.states[0].clone()
+        });
+        assert!(historical_pattern_identity_axes_for_selection(
+            Some((AsmHistoricalEntityKind::Face, 11, &[1, 2])),
+            &missing_carrier,
+        )
+        .is_empty());
+        let identities =
+            HistoricalIdentityIndex::build(std::slice::from_ref(&missing_carrier), [11]);
+        assert_eq!(
+            historical_pattern_identity_axes(11, &identities, &missing_carrier, Some(1)),
+            vec![(origin, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0))]
+        );
+        assert!(
+            historical_pattern_identity_axes(11, &identities, &missing_carrier, None).is_empty()
+        );
     }
 
     #[test]
