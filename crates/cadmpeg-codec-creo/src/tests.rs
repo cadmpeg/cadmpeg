@@ -8693,6 +8693,31 @@ fn decode_places_named_prototype_before_its_surface_row() {
 }
 
 #[test]
+fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.push(0xe3);
+    payload.extend_from_slice(b"srf_array\0\xf8\x01");
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = CreoCodec
+        .decode(
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+
+    assert_unknown_visible_surface(&result.ir.model.surfaces, 7);
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT),
+        0
+    );
+}
+
+#[test]
 fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
     let mut payload = b"srf_array\0\xf8\x02".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

@@ -26107,10 +26107,31 @@ fn unique_surface_prototype_associations<'a>(
         }) else {
             continue;
         };
-        let adjacent_rows = scan.surfaces.rows.iter().filter(|row| {
-            row.offset >= section.offset
-                && row.offset < section.offset.saturating_add(section.length)
-        });
+        let section_limit = section.offset.saturating_add(section.length);
+        let frame_bounds = if section.offset < scan.framing.data.len() {
+            let section_end = section_limit.min(scan.framing.data.len());
+            crate::surface::complete_surface_array_bounds(
+                &scan.framing.data[section.offset..section_end],
+            )
+        } else {
+            Vec::new()
+        };
+        let (adjacent_start, adjacent_end) = if frame_bounds.is_empty() {
+            (section.offset, section_limit)
+        } else {
+            let relative_record_offset = record.offset.saturating_sub(section.offset);
+            let Some((start, end)) = frame_bounds.into_iter().find(|(start, end)| {
+                relative_record_offset >= *start && relative_record_offset < *end
+            }) else {
+                continue;
+            };
+            (section.offset + start, section.offset + end)
+        };
+        let adjacent_rows = scan
+            .surfaces
+            .rows
+            .iter()
+            .filter(|row| row.offset >= adjacent_start && row.offset < adjacent_end);
         let previous = adjacent_rows
             .clone()
             .filter(|row| row.offset < record.offset)

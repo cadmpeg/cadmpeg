@@ -1873,6 +1873,31 @@ pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
     result
 }
 
+/// Return the byte bounds of complete counted `srf_array` frames.
+///
+/// A named prototype and its positional rows share one frame. Incomplete
+/// frames are excluded so a prototype cannot join to a row in a neighboring
+/// frame through section-wide adjacency.
+pub(crate) fn complete_surface_array_bounds(payload: &[u8]) -> Vec<(usize, usize)> {
+    let frames = surface_array_frames(payload);
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let rows = rows(payload);
+    frames
+        .into_iter()
+        .filter(|frame| {
+            frame.count != 0
+                && rows
+                    .iter()
+                    .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+                    .count()
+                    == frame.count
+        })
+        .map(|frame| (frame.start, frame.end))
+        .collect()
+}
+
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 #[must_use]
