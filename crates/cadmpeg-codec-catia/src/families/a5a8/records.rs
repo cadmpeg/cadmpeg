@@ -1409,8 +1409,8 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     at += 1;
     if !(1..=9).contains(&u_degree)
         || !(1..=9).contains(&v_degree)
-        || !(2..=8192).contains(&u_distinct_count)
-        || !(2..=8192).contains(&v_distinct_count)
+        || u_distinct_count < 2
+        || v_distinct_count < 2
         || !matches!(mode, 0x01 | 0x05)
         || !strictly_increasing_finite(&u_distinct)
         || !strictly_increasing_finite(&v_distinct)
@@ -1419,7 +1419,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
     }
     let u_count = pole_count(&u_mults, u_degree)?;
     let v_count = pole_count(&v_mults, v_degree)?;
-    if u_count == 0 || v_count == 0 || u_count > 20_000 || v_count > 20_000 {
+    if u_count == 0 || v_count == 0 {
         return None;
     }
     let tail_end = at.checked_add(141)?;

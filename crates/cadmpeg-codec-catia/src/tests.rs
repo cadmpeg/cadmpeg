@@ -1082,6 +1082,38 @@ pub(crate) fn a8_surface_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn a8_surface_stream_with_u_count(u_count: u32) -> Vec<u8> {
+    assert!(u_count >= 2);
+    let mut payload = vec![0, 9, 0, 0];
+    payload.extend_from_slice(&compact_uint_bytes(u_count));
+    payload.push(1);
+    for knot in 0..u_count {
+        payload.extend_from_slice(&le_f64(f64::from(knot)));
+    }
+    for knot in 0..u_count {
+        let multiplicity = if knot == 0 || knot + 1 == u_count {
+            3
+        } else {
+            1
+        };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
+    payload.extend_from_slice(&[9, 0, 0, 9, 1]);
+    payload.extend_from_slice(&[le_f64(0.0), le_f64(1.0)].concat());
+    payload.extend_from_slice(&[13, 13, 1]);
+    let u_poles = u_count + 1;
+    for pole in 0..u_poles * 3 {
+        payload.extend_from_slice(&le_f64(f64::from(pole)));
+        payload.extend_from_slice(&le_f64(0.0));
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    let mut record = vec![0xa8, 0x03, 0x34];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0xdeca_fbad_u32.to_le_bytes());
+    record.extend_from_slice(&payload);
+    record
+}
+
 pub(crate) fn a8_surface_tail() -> Vec<u8> {
     let mut tail = vec![0; 141];
     tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);

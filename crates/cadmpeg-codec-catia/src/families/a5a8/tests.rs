@@ -11,7 +11,7 @@ use crate::tests::{
     a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_elided_surface_stream,
     a8_freeform_curve_stream, a8_freeform_curve_stream_with_count, a8_inline_tail_surface_stream,
     a8_pcurve_stream, a8_pcurve_stream_with_count, a8_rational_surface_stream, a8_surface_stream,
-    a8_surface_tail, le_f64,
+    a8_surface_stream_with_u_count, a8_surface_tail, le_f64,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -29,6 +29,18 @@ fn a8_surface_parser_reads_common_form_nurbs() {
         }
         other => panic!("expected NURBS surface, got {other:?}"),
     }
+}
+
+#[test]
+fn a8_surface_parser_accepts_frame_bounded_knot_and_pole_counts() {
+    let surfaces =
+        crate::families::a5a8::records::a8_surfaces(&a8_surface_stream_with_u_count(20_001));
+    assert_eq!(surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!((surface.u_count, surface.v_count), (20_002, 3));
+    assert_eq!(surface.control_points.len(), 60_006);
 }
 
 #[test]
