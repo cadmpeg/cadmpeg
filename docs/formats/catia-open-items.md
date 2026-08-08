@@ -498,7 +498,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What bounds the handle count of a trim record, and what tolerance applies to the norm of its `3×f32le` frame vector?
 
-**Known.** `catia.md` §5.3 "Invariant `N == 3*A + sum(K)`" gives `ff <N:u32le>` with the invariant `N == 3*A + sum(K)`, and gives the frame vector as a unit vector. It gives no upper bound for `N` and no tolerance. `fbb::parse_trim_record_layout` rejects a record when `N` is more than 500000, or when `|norm² − 1|` is not less than `2e-4`. The `2e-4` value is about three orders of magnitude larger than the round-trip error of a `f32` unit vector.
+**Known.** `catia.md` §5.3 "Invariant `N == 3*A + sum(K)`" gives `ff <N:u32le>` with the invariant `N == 3*A + sum(K)`, and gives the frame vector as a unit vector. It gives no upper bound for `N` and no tolerance. `fbb::parse_trim_record_layout` requires a positive `N`, requires the complete width-selected handle span to remain in the input, and rejects a frame when `|norm² − 1|` is not less than `2e-4`. The `2e-4` value is about three orders of magnitude larger than the round-trip error of a `f32` unit vector.
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 

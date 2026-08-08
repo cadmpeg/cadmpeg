@@ -750,7 +750,7 @@ pub(crate) fn parse_trim_record_layout(
     ))
     .ok()?;
     position += 4;
-    if !(1..=500_000).contains(&handle_count) {
+    if handle_count == 0 {
         return None;
     }
     let frame_vector = if mask & 8 != 0 {
@@ -802,6 +802,10 @@ pub(crate) fn parse_trim_record_layout(
         stored_count.checked_mul(width)?
     };
     let end = handle_offset.checked_add(byte_count)?;
+    // The complete handle span is the format-defined resource bound. The
+    // caller already owns the input slice, so a second fixed count ceiling
+    // would reject a valid packet without limiting the bytes that can be
+    // inspected.
     bytes.get(handle_offset..end)?;
     Some(TrimRecordLayout {
         kind,

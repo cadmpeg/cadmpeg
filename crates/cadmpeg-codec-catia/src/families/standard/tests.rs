@@ -125,6 +125,21 @@ fn trim_record_layout_indexes_extent_without_materializing_triangles() {
 }
 
 #[test]
+fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
+    let handle_count = 500_001u32;
+    let strip_length = handle_count - 3;
+    let mut bytes = vec![0x01, 0x43, 0x01, 0x01, 0xff];
+    bytes.extend_from_slice(&handle_count.to_le_bytes());
+    bytes.push(0xff);
+    bytes.extend_from_slice(&strip_length.to_le_bytes());
+    bytes.extend(std::iter::repeat_n(0, handle_count as usize));
+
+    let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete handle span");
+    assert_eq!(layout.stored_count, handle_count as usize);
+    assert_eq!(layout.end, bytes.len());
+}
+
+#[test]
 fn trim_record_rejects_invalid_present_frame_vector() {
     let mut bytes = vec![0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
     for value in [2.0f32, 0.0, 0.0] {
