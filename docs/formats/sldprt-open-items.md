@@ -1179,20 +1179,6 @@ The site runs on the production path through `resolved_features/profiles.rs:1472
 
 **Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
 
-### DI-56. Other hole-profile dimension multisets
-
-**Question.** What roles do the dimensions of a hole profile have when its dimension multiset is outside the defined enumeration?
-
-**Known.** `sldprt.md` §2 "Feature-tree" enumerates the Hole Wizard profile schemas and gives each one a magnitude-ordered role assignment. The enumeration is finite.
-
-`crates/cadmpeg-codec-sldprt/src/history.rs:8631` sorts the diameters, lengths, and angles by magnitude and matches the multiset. Three arms have no counterpart in that enumeration: `history.rs:8659` maps two diameters, one length, and one angle to a countersink; `history.rs:8747` maps two diameters and two lengths to a counterbore; and `history.rs:8635` accepts one diameter with any number of lengths, including none.
-
-The guards `diameter.0 < entry_diameter.0` on the first two arms cannot be evidence, because the vector was sorted ascending immediately above. They reject a tie only.
-
-A withhold branch exists at `history.rs:8820`. These three arms run before it. `is_hole_profile_construction` at `history.rs:8824` returns true for whatever they accept, so a sketch with one diameter dimension reads as a generated hole profile.
-
-**Need.** We must know the other multisets and their roles. A sketch that is not a hole profile must not satisfy the test.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators

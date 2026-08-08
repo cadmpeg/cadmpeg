@@ -3348,12 +3348,23 @@ mod history_reference_tests {
             ("d", "4"),
             ("e", "6"),
         ]);
-        assert_eq!(
-            hole_sketch_construction(&placement_dimensions)
-                .expect("diameter remains exact")
-                .depth,
-            None
-        );
+        assert!(hole_sketch_construction(&placement_dimensions).is_none());
+
+        let unsupported_countersink = profile(&[
+            ("diameter", "<MOD-DIAM>5"),
+            ("entry", "<MOD-DIAM>9"),
+            ("depth", "6"),
+            ("angle", "82°"),
+        ]);
+        assert!(hole_sketch_construction(&unsupported_countersink).is_none());
+
+        let unsupported_counterbore = profile(&[
+            ("diameter", "<MOD-DIAM>5"),
+            ("entry", "<MOD-DIAM>9"),
+            ("entry depth", "3"),
+            ("depth", "6"),
+        ]);
+        assert!(hole_sketch_construction(&unsupported_counterbore).is_none());
 
         let mut native_profile = profile(&[("diameter", "<MOD-DIAM>6.6"), ("depth", "9.4")]);
         native_profile.id = "native-profile".into();
@@ -4054,12 +4065,12 @@ mod history_reference_tests {
         else {
             panic!("expected a hole definition");
         };
-        assert_eq!(*diameter, Some(Length(4.5)));
+        assert_eq!(*diameter, None);
         assert_eq!(*extent, None);
     }
 
     #[test]
-    fn hole_wizard_uses_the_unique_countersink_child_schema() {
+    fn hole_wizard_rejects_unsupported_countersink_child_schema() {
         let mut hole = feature("hole", Some("214"), 0);
         hole.xml_tag = "HoleWizard".into();
         hole.properties
@@ -4096,16 +4107,11 @@ mod history_reference_tests {
         assert!(matches!(
             projected[0].definition,
             FeatureDefinition::Hole {
-                kind: HoleKind::Countersink {
-                    diameter: Length(6.6),
-                    angle: Angle(angle),
-                },
-                diameter: Some(Length(3.4)),
-                extent: Some(Termination::Blind {
-                    length: Length(3.0),
-                }),
+                kind: HoleKind::Simple,
+                diameter: None,
+                extent: None,
                 ..
-            } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+            }
         ));
     }
 
@@ -8733,15 +8739,12 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
     lengths.sort_by(|left, right| left.0.total_cmp(&right.0));
     angles.sort_by(|left, right| left.0.total_cmp(&right.0));
     match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
-        ([diameter], depths, []) => Some(HoleProfileConstruction {
+        ([diameter], [depth], []) => Some(HoleProfileConstruction {
             diameter: *diameter,
-            depth: match depths {
-                [depth] => Some(*depth),
-                _ => None,
-            },
+            depth: Some(*depth),
             kind: HoleKind::Simple,
             exit_kind: None,
-            bottom: matches!(depths, [_]).then_some(HoleBottom::Flat),
+            bottom: Some(HoleBottom::Flat),
             taper_angle: None,
         }),
         ([diameter], [depth], [drill_point_angle]) => Some(HoleProfileConstruction {
@@ -8757,19 +8760,6 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
             }),
             taper_angle: None,
         }),
-        ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
-            Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*depth),
-                kind: HoleKind::Countersink {
-                    diameter: *entry_diameter,
-                    angle: *angle,
-                },
-                exit_kind: None,
-                bottom: None,
-                taper_angle: None,
-            })
-        }
         ([diameter, major_diameter], [thread_depth, drill_depth], [drill_point_angle])
             if roles
                 == [
@@ -8842,21 +8832,6 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                     included_angle: *drill_point_angle,
                     depth_to_tip: false,
                 }),
-                taper_angle: None,
-            })
-        }
-        ([diameter, entry_diameter], [entry_depth, depth], [])
-            if diameter.0 < entry_diameter.0 && entry_depth.0 < depth.0 =>
-        {
-            Some(HoleProfileConstruction {
-                diameter: *diameter,
-                depth: Some(*depth),
-                kind: HoleKind::Counterbore {
-                    diameter: *entry_diameter,
-                    depth: *entry_depth,
-                },
-                exit_kind: None,
-                bottom: None,
                 taper_angle: None,
             })
         }
