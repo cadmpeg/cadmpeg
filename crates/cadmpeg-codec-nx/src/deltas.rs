@@ -637,7 +637,10 @@ pub fn walk(stream: &[u8]) -> Census {
         .transmit_header
         .as_ref()
         .map_or(0, |header| header.end);
+    let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
+        intersection_schema_anchor_seen |=
+            crate::topology::intersection_data_schema_prefix_at(stream, offset);
         if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
@@ -658,7 +661,12 @@ pub fn walk(stream: &[u8]) -> Census {
             census.reference_type_maps.push(map);
             continue;
         }
-        if let Some(record) = consume_shared_record(stream, offset, &census.records) {
+        if let Some(record) = consume_shared_record(
+            stream,
+            offset,
+            &census.records,
+            intersection_schema_anchor_seen,
+        ) {
             census.bytes_decoded += record.end - offset;
             let name =
                 family_name(record.kind).expect("shared records have admitted deltas families");
@@ -739,7 +747,9 @@ pub fn walk(stream: &[u8]) -> Census {
             census.records.push(record);
             continue;
         }
-        if let Some(record) = consume_intersection_data(stream, offset) {
+        if let Some(record) =
+            consume_intersection_data(stream, offset, intersection_schema_anchor_seen)
+        {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry("INTERSECTION_DATA").or_default() += 1;
             offset = record.end;
@@ -1379,12 +1389,6 @@ const TYPE_100_SCHEMA_HEADER: &[u8] = &[
     0x65, 0x63, 0x69, 0x73, 0x69, 0x6f, 0x6e, 0x00, 0xe5, 0x00, 0x01, 0x5a,
 ];
 
-const TYPE_38_SCHEMA_HEADER: &[u8] = &[
-    0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
-    0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
-    0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
-];
-
 const TYPE_41_SCHEMA_HEADER: &[u8] = &[
     0x00, 0x29, 0x03, 0x43, 0x49, 0x08, 0x74, 0x65, 0x72, 0x6d, 0x5f, 0x75, 0x73, 0x65, 0x00, 0x00,
     0x00, 0x01, 0x01, 0x63, 0x43, 0x5a,
@@ -1517,10 +1521,10 @@ fn inline_schema_declaration(
             end: at,
         });
     }
-    if stream.get(offset..offset.checked_add(TYPE_38_SCHEMA_HEADER.len())?)
-        == Some(TYPE_38_SCHEMA_HEADER)
+    if stream.get(offset..offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?)
+        == Some(crate::topology::TYPE_38_SCHEMA_HEADER)
     {
-        let mut at = offset.checked_add(TYPE_38_SCHEMA_HEADER.len())?;
+        let mut at = offset.checked_add(crate::topology::TYPE_38_SCHEMA_HEADER.len())?;
         let (xmt, consumed) = read_xmt(stream, at)?;
         (xmt > 1).then_some(())?;
         at = at.checked_add(consumed)?;
@@ -1815,7 +1819,7 @@ fn inline_body_state(stream: &[u8], offset: usize, gap_end: usize) -> Option<Inl
             REGION_SCHEMA_HEADER,
             ATTDEF_LIST_SCHEMA_HEADER,
             TYPE_70_SCHEMA_HEADER,
-            TYPE_38_SCHEMA_HEADER,
+            crate::topology::TYPE_38_SCHEMA_HEADER,
             TYPE_41_SCHEMA_HEADER,
             TYPE_100_SCHEMA_HEADER,
             TYPE_101_SCHEMA_HEADER,
@@ -2087,7 +2091,12 @@ fn is_reference_type_kind(kind: u16) -> bool {
     is_tagged_reference_kind(kind) || matches!(kind, 11 | 35 | 55 | 61 | 67 | 100)
 }
 
-fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Option<Record> {
+fn consume_shared_record(
+    stream: &[u8],
+    offset: usize,
+    records: &[Record],
+    intersection_schema_anchor_seen: bool,
+) -> Option<Record> {
     let previous = records.last()?;
     (previous.end == offset && has_shareable_terminal(stream, previous)).then_some(())?;
     let record_offset = offset.checked_sub(1)?;
@@ -2098,7 +2107,9 @@ fn consume_shared_record(stream: &[u8], offset: usize, records: &[Record]) -> Op
         .or_else(|| consume_type_70(stream, record_offset))
         .or_else(|| consume_attdef_list(stream, record_offset))
         .or_else(|| consume_type_101(stream, record_offset))
-        .or_else(|| consume_intersection_data(stream, record_offset))
+        .or_else(|| {
+            consume_intersection_data(stream, record_offset, intersection_schema_anchor_seen)
+        })
     {
         return Some(record);
     }
@@ -2377,7 +2388,17 @@ pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
                 )
                 || record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a)
         })
-        .map(|record| record.canonical_bytes.clone())
+        .map(|record| {
+            if record.kind == 90 && record.canonical_bytes.first() == Some(&0x5a) {
+                let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
+                let mut anchored = Vec::new();
+                anchored.extend_from_slice(&crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]);
+                anchored.extend_from_slice(&record.canonical_bytes);
+                anchored
+            } else {
+                record.canonical_bytes.clone()
+            }
+        })
         .collect::<Vec<_>>();
     for record in census.records {
         residual[record.offset..record.end].fill(0xff);
@@ -2999,8 +3020,16 @@ fn unique_layout<T>(direct: Option<T>, escaped: Option<T>) -> Option<T> {
     }
 }
 
-fn consume_intersection_data(stream: &[u8], offset: usize) -> Option<Record> {
-    let (curve, end) = crate::topology::intersection_data_curve_at(stream, offset)?;
+fn consume_intersection_data(
+    stream: &[u8],
+    offset: usize,
+    intersection_schema_anchor_seen: bool,
+) -> Option<Record> {
+    let (curve, end) = crate::topology::intersection_data_curve_at(
+        stream,
+        offset,
+        intersection_schema_anchor_seen,
+    )?;
     let mut references = curve.header_references.to_vec();
     references.extend(curve.references);
     Some(Record {
@@ -3558,7 +3587,7 @@ mod inline_schema_tests {
     }
 
     fn type_38_declaration() -> Vec<u8> {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 40_000);
         bytes.extend_from_slice(&17u32.to_be_bytes());
         for reference in [1, 7, 8, 9, 1] {
@@ -3631,7 +3660,7 @@ mod inline_schema_tests {
             (112, [1, 7, 8, 9, 1], [118, 119], [120, 121, 122]),
             (10, [1, 13, 47, 1, 1], [45, 9], [48, 49, 50]),
         ] {
-            let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+            let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
             push_xmt(&mut bytes, xmt);
             bytes.extend_from_slice(&17u32.to_be_bytes());
             for reference in leading_references {
@@ -3670,7 +3699,7 @@ mod inline_schema_tests {
 
     #[test]
     fn type_38_schema_declaration_accepts_marker_2b_state() {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 53);
         bytes.extend_from_slice(&2_711u32.to_be_bytes());
         for reference in [1, 778, 763, 372, 1] {
@@ -3706,7 +3735,7 @@ mod inline_schema_tests {
 
     #[test]
     fn type_38_schema_declaration_retains_status_zero_anchor() {
-        let mut bytes = TYPE_38_SCHEMA_HEADER.to_vec();
+        let mut bytes = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
         push_xmt(&mut bytes, 1_118);
         bytes.extend_from_slice(&3_178u32.to_be_bytes());
         let mut fifth_status_offset = 0;

@@ -1021,6 +1021,14 @@ NX stores freeform edges and blend rails as construction relations with branch w
 
 The neutral curve carrier references a complete typed source record. The source record retains the five common-header references, orientation sense, six construction references, record form, and inflated-stream offset. The record form distinguishes type 38 from the single-byte `0x5a` delta twin.
 
+The `intersection_data` schema is established by the exact type-38 header
+`00260c43434343434343434343434111696e74657273656374696f6e5f6461746100cc0001`.
+The terminal `5a` of that header is the schema tag. A standalone `0x5a`
+record is admitted only after this exact prefix has occurred in the stream;
+the header reference values and nearby text do not substitute for the schema
+anchor. The record ends after its six construction references and needs no
+following recognized tag.
+
 `cache_fit_tolerance` belongs to a separately solved 3D curve cache. An intersection represented directly by its procedural construction has no cache-fit tolerance; its incident edge tolerance bounds support-chart completion and transfers to each derived pcurve fit contract.
 
 CHART_s, term-use, support-UV, and blend-bound XMT identities are unique within one physical stream. A duplicate identity rejects that auxiliary relation. A second chart record may supply native parameters and support-UV lanes only when its point count and model-space points agree with the geometric chart within the larger chordal tolerance. When deltas history is merged into its paired partition, a later complete CHART_s record replaces an earlier record with the same XMT before intersection validation.

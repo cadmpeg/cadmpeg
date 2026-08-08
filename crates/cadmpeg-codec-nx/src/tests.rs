@@ -3287,6 +3287,80 @@ fn deltas_intersection_normalizes_before_partition_style_decode() {
 
 #[test]
 fn deltas_walks_complete_single_byte_intersection_data_records() {
+    let mut stream = crate::topology::TYPE_38_SCHEMA_HEADER.to_vec();
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'-');
+    for reference in [6u16, 7] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    for reference in [15u16, 14, 13] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(0);
+    }
+    stream.extend_from_slice(&[0, 1, 1]);
+    let schema_end = stream.len();
+    stream.extend_from_slice(&[0xa5; 100]);
+
+    let record_offset = stream.len();
+    stream.extend_from_slice(&[0x5a]);
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 2, 3, 4, 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(b'+');
+    for reference in [6u16, 6, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    let record_end = stream.len();
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.records.len(), 1);
+    assert_eq!(census.records[0].kind, 90);
+    assert_eq!(census.records[0].xmt, 12);
+    assert_eq!(census.records[0].offset, record_offset);
+    assert_eq!(
+        census.records[0].references,
+        [1, 2, 3, 4, 5, 6, 6, 1, 1, 1, 1]
+    );
+    assert_eq!(
+        census.records[0].canonical_bytes,
+        stream[record_offset..record_end]
+    );
+    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
+    assert_eq!(
+        census.bytes_decoded,
+        schema_end + (record_end - record_offset)
+    );
+    let curves = crate::topology::intersection_data_curves(&stream);
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].references, [6, 6, 1, 1, 1, 1]);
+
+    let residual = crate::deltas::semantic_residual(&stream);
+    assert!(residual[record_offset..record_end]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    let prefix_len = crate::topology::TYPE_38_SCHEMA_HEADER.len() - 1;
+    let appended_start = residual.len() - prefix_len - (record_end - record_offset);
+    assert_eq!(
+        &residual[appended_start..appended_start + prefix_len],
+        &crate::topology::TYPE_38_SCHEMA_HEADER[..prefix_len]
+    );
+    assert_eq!(
+        &residual[appended_start + prefix_len..],
+        &stream[record_offset..record_end]
+    );
+}
+
+#[test]
+fn deltas_rejects_single_byte_intersection_data_before_its_schema_anchor() {
     let mut stream = vec![0x5a];
     stream.extend_from_slice(&12u16.to_be_bytes());
     stream.extend_from_slice(&7u32.to_be_bytes());
@@ -3297,28 +3371,11 @@ fn deltas_walks_complete_single_byte_intersection_data_records() {
     for reference in [6u16, 6, 1, 1, 1, 1] {
         stream.extend_from_slice(&reference.to_be_bytes());
     }
-    let record_len = stream.len();
-    stream.extend_from_slice(&[0xfe, 0xdc]);
 
     let census = crate::deltas::walk(&stream);
-    assert_eq!(census.records.len(), 1);
-    assert_eq!(census.records[0].kind, 90);
-    assert_eq!(census.records[0].xmt, 12);
-    assert_eq!(
-        census.records[0].references,
-        [1, 1, 1, 1, 1, 6, 6, 1, 1, 1, 1]
-    );
-    assert_eq!(census.records[0].canonical_bytes, stream[..record_len]);
-    assert_eq!(census.full_counts["INTERSECTION_DATA"], 1);
-    assert_eq!(census.bytes_decoded, record_len);
-    assert_eq!(
-        crate::topology::intersection_data_curves(&stream)[0].references,
-        [6, 6, 1, 1, 1, 1]
-    );
-
-    let residual = crate::deltas::semantic_residual(&stream);
-    assert!(residual[..record_len].iter().all(|byte| *byte == 0xff));
-    assert!(residual.ends_with(&stream[..record_len]));
+    assert!(census.records.iter().all(|record| record.kind != 90));
+    assert!(!census.full_counts.contains_key("INTERSECTION_DATA"));
+    assert!(crate::topology::intersection_data_curves(&stream).is_empty());
 }
 
 #[test]

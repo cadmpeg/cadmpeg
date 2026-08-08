@@ -266,14 +266,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss. The family-framing filter that the specification names as the disambiguator tests only SHELL, FACE, LOOP, EDGE, FIN, VERTEX, and POINT records, and admits every other kind unconditionally. For BODY and REGION the stated rule therefore selects nothing, and the reading comes from candidate order.
 
-### PS-36. Standalone `0x5a` record anchor
-
-**Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
-
-**Known.** `siemens_nx.md` §4.2 "The type-38 form has the header" gives the exact schema prefix, in which the name `intersection_data` precedes the `0x5a` tag at a fixed distance. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" states that these records occur standalone and need no following recognized tag.
-
-**Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

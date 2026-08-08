@@ -12,6 +12,17 @@ use cadmpeg_core::be;
 use cadmpeg_ir::math::Point3;
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Exact inline schema header for the `intersection_data` one-byte record
+/// family. The terminal `5a` is the record tag; callers use the prefix before
+/// that byte as the stream-level schema anchor.
+pub(crate) const TYPE_38_SCHEMA_HEADER: &[u8] = &[
+    0x00, 0x26, 0x0c, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x43, 0x41, 0x11,
+    0x69, 0x6e, 0x74, 0x65, 0x72, 0x73, 0x65, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x5f, 0x64, 0x61, 0x74,
+    0x61, 0x00, 0xcc, 0x00, 0x01, 0x5a,
+];
+
+const TYPE_38_SCHEMA_PREFIX_LEN: usize = TYPE_38_SCHEMA_HEADER.len() - 1;
+
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
 pub struct Node {
@@ -438,12 +449,13 @@ impl Graph {
 pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     let mut out = Vec::new();
     let mut seen = BTreeSet::new();
-    for pos in stream
-        .iter()
-        .enumerate()
-        .filter_map(|(pos, byte)| (*byte == 0x5a).then_some(pos))
-    {
-        let Some((curve, _)) = intersection_data_curve_at(stream, pos) else {
+    let mut schema_anchor_seen = false;
+    for (pos, byte) in stream.iter().enumerate() {
+        schema_anchor_seen |= intersection_data_schema_prefix_at(stream, pos);
+        if *byte != 0x5a || !schema_anchor_seen {
+            continue;
+        }
+        let Some((curve, _)) = intersection_data_curve_at(stream, pos, schema_anchor_seen) else {
             continue;
         };
         if !seen.insert(curve.xmt) {
@@ -454,11 +466,19 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
     out
 }
 
+/// Return whether the exact type-38 schema prefix starts at `offset`.
+pub(crate) fn intersection_data_schema_prefix_at(stream: &[u8], offset: usize) -> bool {
+    stream.get(offset..offset.saturating_add(TYPE_38_SCHEMA_PREFIX_LEN))
+        == Some(&TYPE_38_SCHEMA_HEADER[..TYPE_38_SCHEMA_PREFIX_LEN])
+}
+
 pub(crate) fn intersection_data_curve_at(
     stream: &[u8],
     pos: usize,
+    schema_anchor_seen: bool,
 ) -> Option<(CompositeCurve, usize)> {
     (stream.get(pos) == Some(&0x5a)).then_some(())?;
+    schema_anchor_seen.then_some(())?;
     let (xmt, xmt_extra) = read_xmt(stream, pos.checked_add(1)?)?;
     (xmt > 1).then_some(())?;
     let mut at = pos.checked_add(7 + xmt_extra)?;
@@ -469,13 +489,6 @@ pub(crate) fn intersection_data_curve_at(
         at += 2 + extra;
     }
     (header_references[0] == 1).then_some(())?;
-    (header_references[4] == 1
-        || stream[..pos]
-            .windows(b"intersection_data".len())
-            .rev()
-            .take(64)
-            .any(|window| window == b"intersection_data"))
-    .then_some(())?;
     let sense = match stream.get(at) {
         Some(b'+') => true,
         Some(b'-') => false,
