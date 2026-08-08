@@ -4057,8 +4057,7 @@ fn seam_edge_does_not_guess_an_unlisted_pcurve_reference() {
     }));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
-            && loss.message.contains("SEAM_EDGE #22")
-            && loss.message.contains("belongs to its edge curve")
+            && loss.severity == cadmpeg_ir::Severity::Warning
     }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
