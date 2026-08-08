@@ -153,6 +153,16 @@ fn parser_enforces_the_part21_header_contract() {
 }
 
 #[test]
+fn parser_retains_unset_file_name_tail_metadata() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'',$,$);FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("unset producer metadata");
+    assert!(matches!(
+        exchange.header[1].parameters[6],
+        crate::parse::Value::Omitted
+    ));
+}
+
+#[test]
 fn parser_allows_an_empty_data_population_in_edition_three() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;";
     crate::parse::parse(source).expect("edition three permits no DATA section");

@@ -894,14 +894,15 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     };
 
     let file_name = &header[1].parameters;
+    // Producer metadata after the author and organization lists may be unset.
     if file_name.len() != 7
         || !matches!(file_name.first(), Some(Value::String(_)))
         || !matches!(file_name.get(1), Some(Value::String(_)))
         || !is_string_list(file_name.get(2))
         || !is_string_list(file_name.get(3))
-        || !matches!(file_name.get(4), Some(Value::String(_)))
-        || !matches!(file_name.get(5), Some(Value::String(_)))
-        || !matches!(file_name.get(6), Some(Value::String(_)))
+        || !is_string_or_omitted(file_name.get(4))
+        || !is_string_or_omitted(file_name.get(5))
+        || !is_string_or_omitted(file_name.get(6))
     {
         return Err("FILE_NAME has invalid parameters");
     }
@@ -971,6 +972,10 @@ fn is_string_list(value: Option<&Value>) -> bool {
         Some(Value::List(values))
             if !values.is_empty() && values.iter().all(|value| matches!(value, Value::String(_)))
     )
+}
+
+fn is_string_or_omitted(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::String(_) | Value::Omitted))
 }
 
 struct AnchorResolver<'a> {
