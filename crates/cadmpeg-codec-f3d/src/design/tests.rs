@@ -22708,6 +22708,50 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
     assert!(exact_base_feature_construction(&nonzero_prefix, &scope).is_none());
 }
 
+fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8> {
+    let mut bytes = vec![0_u8; 648];
+    bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"273");
+    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[20] = 1;
+    bytes[25] = 1;
+    for (reference_at, transform_at, reference, translation) in [
+        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
+        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
+    ] {
+        bytes[reference_at] = 1;
+        bytes[reference_at + 1..reference_at + 5].copy_from_slice(&reference.to_le_bytes());
+        for (ordinal, value) in [
+            1.0,
+            0.0,
+            0.0,
+            translation[0],
+            0.0,
+            1.0,
+            0.0,
+            translation[1],
+            0.0,
+            0.0,
+            1.0,
+            translation[2],
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
+    bytes[641..644].copy_from_slice(b"259");
+    bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes
+}
+
 #[allow(
     clippy::large_stack_arrays,
     reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."
@@ -23219,52 +23263,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(alignment.value_offsets, [605, 606]);
     scope.reference_members = vec![50, 51, 52, 53];
 
-    let mut assembly_bytes = vec![0_u8; 648];
-    assembly_bytes[0..4].copy_from_slice(&3_u32.to_le_bytes());
-    assembly_bytes[4..7].copy_from_slice(b"273");
-    assembly_bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
-    assembly_bytes[20] = 1;
-    assembly_bytes[25] = 1;
-    for (reference_at, transform_at, reference, translation) in [
-        (28, 40, 70_u32, [1.0_f64, 2.0, 3.0]),
-        (168, 180, 80_u32, [4.0, 5.0, 6.0]),
-    ] {
-        assembly_bytes[reference_at] = 1;
-        assembly_bytes[reference_at + 1..reference_at + 5]
-            .copy_from_slice(&reference.to_le_bytes());
-        for (ordinal, value) in [
-            1.0,
-            0.0,
-            0.0,
-            translation[0],
-            0.0,
-            1.0,
-            0.0,
-            translation[1],
-            0.0,
-            0.0,
-            1.0,
-            translation[2],
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            assembly_bytes[transform_at + ordinal * 8..transform_at + ordinal * 8 + 8]
-                .copy_from_slice(&value.to_le_bytes());
-        }
-    }
-    assembly_bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
-    assembly_bytes[641..644].copy_from_slice(b"259");
-    assembly_bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
-    assembly_bytes[362..366].copy_from_slice(&2_u32.to_le_bytes());
-    for (at, target) in [(366, 64_u32), (377, 67_u32)] {
-        assembly_bytes[at] = 1;
-        assembly_bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
-    }
+    let assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
     scope.paired_class_tag = "259".into();
@@ -23512,6 +23511,49 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &rectangular_owners,
     )
     .is_some_and(|alignment| alignment.operand_frames.is_some()));
+}
+
+#[test]
+fn assembly_operand_paths_follow_ordered_locator_envelopes() {
+    let scope_record_index = 10_u32;
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#0",
+        "Assemble",
+        scope_record_index,
+    );
+    scope.class_tag = "273".into();
+    scope.frame_length = 637;
+    scope.reference_members = vec![50, 51, 52, 53];
+    scope.paired_class_tag = "259".into();
+    scope.paired_byte_offset = 637;
+    let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
+        DesignParameterOwner {
+            id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+            byte_offset: 0,
+            class_tag: "457".into(),
+            record_index,
+            scope_record_index,
+            local_ordinal,
+            evaluated_value,
+            evaluated_value_offset,
+            parameter_record_index: record_index + 1,
+            owned_ordinal: local_ordinal,
+            variant: None,
+            companion_record_index: record_index + 2,
+        }
+    };
+    let rectangular_owners = [
+        owner(50, 0, 3.0, 501),
+        owner(51, 1, 1.0, 502),
+        owner(52, 2, 10.0, 503),
+        owner(53, 3, 0.0, 504),
+    ];
+    let mut assembly_bytes = assembly_operand_frame_fixture(scope_record_index);
+    assembly_bytes[362..366].copy_from_slice(&2_u32.to_le_bytes());
+    for (at, target) in [(366, 64_u32), (377, 67_u32)] {
+        assembly_bytes[at] = 1;
+        assembly_bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+    }
 
     let write_path_reference = |bytes: &mut [u8], at: usize, target: u32| {
         bytes[at] = 1;
