@@ -4639,7 +4639,7 @@
           "plain_streams": "0",
           "rmfastload_active_body_count": "2",
           "rmfastload_active_object_count": "100",
-          "rmfastload_hits": "50"
+          "rmfastload_hits": "100"
         },
         "format": "nx"
       },

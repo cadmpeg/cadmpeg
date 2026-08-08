@@ -510,16 +510,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
 
-### OM-33. Decisive active-body membership
-
-**Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
-
-**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
-
-**Need.** We must know the condition to select the active bodies. The decoder supplies its own: it keeps each image whose matched fraction is above `0.10`, and it discards every other image when the best image has at least five times the matched count of the next image. Both numbers are absent from the format model. The selection deletes the other bodies and their complete topology and geometry from the model, so a wrong threshold removes a current body permanently. The exact feature-history rule runs only when this condition declines, so the thresholds take precedence over it.
-
-**Note.** The regression test for the weak-membership case builds a body that matches five of its fifty identities. That fraction is bit-identical to the matched-fraction cut, so both the accept test and the decline test resolve on the boundary, and the same counts also satisfy the dominance factor exactly. The test therefore pins both invented numbers instead of the behavior around them. One more matched identity reverses the decode.
-
 ### OM-34. OM registry schema-role precedence
 
 **Question.** Which schema role does a linked OM registry take when it declares more than one role marker?

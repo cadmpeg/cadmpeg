@@ -7,8 +7,10 @@ part payload, and decodes supported geometry and topology.
 
 Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#siemens-nx-prt)
 for selected or terminal-lineage-resolved body images; L2 for unresolved
-multi-partition history. `RMFastLoad` body selection is a conservative
-membership heuristic, not a direct membership-to-image map.
+multi-partition history. `RMFastLoad` retains every body whose complete
+nonempty topology node-ID set is covered by the active object-ID set; when no
+body has complete membership, selection declines and terminal lineage can
+resolve the images.
 
 ## Install
 
@@ -63,10 +65,10 @@ be attached remains available through derived free topology. Partition and
 adjacent equal-schema deltas streams are scanned together. Exactly keyed full
 records and tombstones use the last event for each key. Unmatched tombstones
 remain unresolved. `RMFastLoad` intersects membership IDs with topology node
-IDs and requires a sufficient hit ratio or dominance before pruning inactive
-images; otherwise selection declines and complete primary-writer lineage falls
-back to terminal partition images. Assembly files can contain only external
-child-part references and produce no inline geometry.
+IDs and retains every image whose complete nonempty set is covered; otherwise
+selection declines and complete primary-writer lineage falls back to terminal
+partition images. Assembly files can contain only external child-part
+references and produce no inline geometry.
 
 Embedded JT shape-LOD segments transfer as display tessellation. Validated
 embedded JPEG previews and TIFF material textures transfer as exact document

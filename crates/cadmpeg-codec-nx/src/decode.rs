@@ -1906,38 +1906,23 @@ fn select_active_body(
         return false;
     }
     let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
-    let mut scored: Vec<_> = ir
+    let selected: BTreeSet<_> = ir
         .model
         .bodies
         .iter()
-        .map(|body| {
-            let ids = body_node_ids.get(&body.id);
-            let count = ids.map_or(0, BTreeSet::len);
-            let hits = ids.map_or(0, |ids| ids.intersection(&active).count());
-            (hits, count, body.id.clone())
+        .filter_map(|body| {
+            let ids = body_node_ids.get(&body.id)?;
+            (!ids.is_empty() && ids.is_subset(&active)).then(|| body.id.clone())
         })
         .collect();
-    scored.sort_by(|first, second| second.0.cmp(&first.0).then(second.1.cmp(&first.1)));
-    let Some(&(top_hits, top_count, ref top_body)) = scored.first() else {
+    if selected.is_empty() {
         return false;
-    };
-    let next_hits = scored.get(1).map_or(0, |score| score.0);
-    let mut selected: BTreeSet<_> = scored
+    }
+    let selected_hits = selected
         .iter()
-        .filter(|(hits, count, _)| *hits > 0 && *count > 0 && (*hits as f64 / *count as f64) > 0.10)
-        .map(|(_, _, body)| body.clone())
-        .collect();
-    let dominant = top_hits >= 5 * next_hits.max(1);
-    if dominant {
-        selected.retain(|body| body == top_body);
-    }
-    if top_count == 0
-        || (top_hits as f64 / top_count as f64) <= 0.10
-        || selected.is_empty()
-        || (selected.len() == 1 && !dominant)
-    {
-        return false;
-    }
+        .filter_map(|body| body_node_ids.get(body))
+        .map(BTreeSet::len)
+        .sum::<usize>();
     prune_inactive_topology(ir, &selected);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -1946,7 +1931,7 @@ fn select_active_body(
         );
         source
             .attributes
-            .insert("rmfastload_hits".to_string(), top_hits.to_string());
+            .insert("rmfastload_hits".to_string(), selected_hits.to_string());
         source.attributes.insert(
             "rmfastload_active_body_count".to_string(),
             selected.len().to_string(),
@@ -12368,12 +12353,58 @@ mod tests {
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
         ProceduralSurfaceId, ShellId, SurfaceId, VertexId,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Sense, Vertex,
+    };
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn active_body_selection_accepts_a_complete_singleton_membership() {
+        let first = BodyId("nx:test:body#first".into());
+        let second = BodyId("nx:test:body#second".into());
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.bodies.extend([
+            Body {
+                id: first.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+            Body {
+                id: second.clone(),
+                kind: BodyKind::Solid,
+                regions: Vec::new(),
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            },
+        ]);
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::default());
+        let body_node_ids = BTreeMap::from([
+            (first.clone(), BTreeSet::from([7])),
+            (second, BTreeSet::from([8])),
+        ]);
+
+        assert!(super::select_active_body(&mut ir, &body_node_ids, &[7]));
+        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.model.bodies[0].id, first);
+        assert_eq!(
+            ir.source
+                .as_ref()
+                .and_then(|source| source.attributes.get("rmfastload_hits"))
+                .map(String::as_str),
+            Some("1")
+        );
+    }
 
     #[test]
     fn analytic_closed_isocurves_retain_the_native_full_turn() {
