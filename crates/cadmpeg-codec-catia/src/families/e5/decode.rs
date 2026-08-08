@@ -2106,25 +2106,26 @@ pub(crate) fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGe
             },
         ) => {
             (*left_origin).distance(*right_origin) <= 2e-3
-                && (*left_direction).dot(*right_direction).abs() >= 1.0 - 1e-9
+                && (*left_direction).dot(*right_direction) >= 1.0 - 1e-9
         }
         (
             CurveGeometry::Circle {
                 center: left_center,
                 axis: left_axis,
+                ref_direction: left_ref_direction,
                 radius: left_radius,
-                ..
             },
             CurveGeometry::Circle {
                 center: right_center,
                 axis: right_axis,
+                ref_direction: right_ref_direction,
                 radius: right_radius,
-                ..
             },
         ) => {
             (*left_center).distance(*right_center) <= 2e-3
                 && (left_radius - right_radius).abs() <= 2e-3
-                && (*left_axis).dot(*right_axis).abs() >= 1.0 - 1e-9
+                && (*left_axis).dot(*right_axis) >= 1.0 - 1e-9
+                && (*left_ref_direction).dot(*right_ref_direction) >= 1.0 - 1e-9
         }
         (CurveGeometry::Nurbs(left), CurveGeometry::Nurbs(right)) => left == right,
         _ => false,
@@ -3030,18 +3031,47 @@ mod route_tests {
         };
         let right = CurveGeometry::Circle {
             center: Point3::new(1.0, 2.0, 3.0),
-            axis: Vector3::new(0.0, 0.0, -1.0),
-            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 4.0,
         };
         assert!(equivalent_e5_curve_carriers(&left, &right));
-        let displaced = CurveGeometry::Circle {
-            center: Point3::new(1.0, 2.0, 3.01),
+        let reversed_axis = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
             axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        assert!(!equivalent_e5_curve_carriers(&left, &reversed_axis));
+        let shifted_reference = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
             ref_direction: Vector3::new(0.0, 1.0, 0.0),
             radius: 4.0,
         };
+        assert!(!equivalent_e5_curve_carriers(&left, &shifted_reference));
+        let displaced = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.01),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
         assert!(!equivalent_e5_curve_carriers(&left, &displaced));
+
+        let line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let parallel_line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(equivalent_e5_curve_carriers(&line, &parallel_line));
+        let reversed_line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(-1.0, 0.0, 0.0),
+        };
+        assert!(!equivalent_e5_curve_carriers(&line, &reversed_line));
     }
 
     #[test]

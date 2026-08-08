@@ -892,16 +892,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The direction reverses the edge curve geometry and the coedge parameter range. We must know the field to fix the direction of a degenerate span.
 
-### E5-12. Support-side sweep agreement
-
-**Question.** Which relation makes the two `0xc1` support sides of an edge one oriented curve?
-
-**Known.** `catia.md` §9 "**Topology:**" gives "When both `0xc1` support-side pcurves lift to the same analytic 3D locus and equal endpoint-ordered sweep, the edge retains that exact cache."
-
-**Need.** The retained cache is the edge's exact curve. We must know the relation to keep the correct side.
-
-**Note.** The decoder does not apply the sentence. `e5::decode::equivalent_e5_curve_carriers` compares circle axes and line directions through `.abs()`, which accepts an antiparallel pair, and `e5::decode::parameter_range_agreement_tolerance` compares the two span lengths and not the interval endpoints. The decoder then keeps the first side. The sibling `e5::decode::e5_occurrence_intersection_context` compares the interval endpoints one by one.
-
 ## 7. FBB-only and float-packed variants
 
 ### FV-01. `u24be` endpoint quotient binding
