@@ -950,6 +950,35 @@ fn a5_nurbs_curve_stream() -> Vec<u8> {
     record
 }
 
+fn a5_nurbs_curve_stream_with_knot_count(knot_count: usize) -> Vec<u8> {
+    assert_eq!(knot_count, 8193);
+    let mut payload = vec![0x15, 0x08, 0x01, 0x20, 0x0c];
+    for knot in 0..knot_count {
+        payload.extend_from_slice(&f64::from(u32::try_from(knot).unwrap()).to_le_bytes());
+    }
+    payload.push(0x01);
+    for _ in 0..(3 * knot_count) {
+        for _ in 0..3 {
+            payload.extend_from_slice(&0.0f64.to_le_bytes());
+        }
+    }
+    payload.extend_from_slice(&[0x05, 0x09]);
+    for value in [
+        0.0,
+        f64::from(u32::try_from(knot_count - 1).unwrap()),
+        1.0,
+        0.0,
+    ] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0x00, 0x07]);
+    let mut record = vec![0xa5, 0x13, 0x16];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x0d);
+    record.extend(payload);
+    record
+}
+
 #[test]
 fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
     let curves = crate::families::a5a8::records::a5_nurbs_curves(&a5_nurbs_curve_stream());
@@ -963,6 +992,16 @@ fn a5_nurbs_curve_parser_expands_the_degree_five_knot_multiplicities() {
     assert_eq!(curve.geometry.knots[6..9], [0.0; 3]);
     assert_eq!(curve.geometry.knots[9..], [2.220_264_955_47; 6]);
     assert!(curve.geometry.weights.is_none());
+}
+
+#[test]
+fn a5_nurbs_curve_parser_accepts_frame_bounded_knot_count() {
+    let curves = crate::families::a5a8::records::a5_nurbs_curves(
+        &a5_nurbs_curve_stream_with_knot_count(8193),
+    );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].geometry.control_points.len(), 24_579);
+    assert_eq!(curves[0].geometry.knots.len(), 24_585);
 }
 
 #[test]

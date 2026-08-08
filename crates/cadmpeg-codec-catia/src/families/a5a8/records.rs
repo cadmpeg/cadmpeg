@@ -611,10 +611,18 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
     let mut at = frame.payload;
     let degree = compact_int(data, &mut at)?;
     let knot_count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    if degree != 5 || !(2..=8192).contains(&knot_count) || data.get(at) != Some(&0x0c) {
+    if degree != 5 || knot_count < 2 || data.get(at) != Some(&0x0c) {
         return None;
     }
     at += 1;
+    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
+    let known_bytes = knot_count
+        .checked_mul(8)?
+        .checked_add(control_count.checked_mul(24)?)?
+        .checked_add(36)?;
+    if at.checked_add(known_bytes)? > frame.end {
+        return None;
+    }
     let mut distinct_knots = Vec::with_capacity(knot_count);
     for _ in 0..knot_count {
         distinct_knots.push(f64_le(data, at)?);
@@ -627,7 +635,6 @@ fn parse_a5_nurbs_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Nurbs
         return None;
     }
     at += 1;
-    let control_count = 6usize.checked_add(knot_count.checked_sub(2)?.checked_mul(3)?)?;
     let control_points = (0..control_count)
         .map(|_| {
             let x = f64_le(data, at)?;
