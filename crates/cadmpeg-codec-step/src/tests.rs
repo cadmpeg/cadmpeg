@@ -1293,6 +1293,42 @@ fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
 }
 
 #[test]
+fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#28=PLANE('',#27);",
+            "#69=VECTOR('',#9,1.);\n#70=CARTESIAN_POINT('',(0.,0.));\n#71=CARTESIAN_POINT('',(1.,0.));\n#28=SURFACE_OF_LINEAR_EXTRUSION('',#16,#69);",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=B_SPLINE_CURVE_WITH_KNOTS('',1,(#70,#71),.UNSPECIFIED.,.F.,.F.,(2,2),(0.,1.),.PIECEWISE_BEZIER_KNOTS.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode normalized linear-extrusion pcurve");
+
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !coedge.pcurves.is_empty())
+            .count(),
+        1
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("curve #57")
+            && loss.message.contains("no pcurve")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
