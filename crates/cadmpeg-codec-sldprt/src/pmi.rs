@@ -53,7 +53,10 @@ fn neutral_parameter_is_count(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_ir::features::PmiDimensionSubtype;
+    use cadmpeg_ir::features::{
+        DesignParameter, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
+        ParameterValue, PmiDimensionSubtype,
+    };
 
     use super::*;
 
@@ -127,6 +130,56 @@ mod tests {
         assert!(neutral_parameter_is_count(&feature, "D1", None));
         assert!(neutral_parameter_is_count(&feature, "D2", None));
         assert!(!neutral_parameter_is_count(&feature, "D3", None));
+    }
+
+    #[test]
+    fn explicit_keywords_dimension_precedes_pmi_value() {
+        let owner = FeatureId("feature".into());
+        let feature = Feature {
+            id: owner.clone(),
+            ordinal: 0,
+            name: Some("Pattern1".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::StoredGeometry,
+            native_ref: None,
+        };
+        let mut parameters = vec![DesignParameter {
+            id: ParameterId("keywords-parameter".into()),
+            owner: Some(owner),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "12mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(12.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("keywords-dimension".into()),
+        }];
+        let record = dimension("Linear", 0.034);
+
+        apply_to_parameters(&mut parameters, &[feature], &[record]);
+
+        let parameter = &parameters[0];
+        assert_eq!(parameter.expression, "12mm");
+        assert_eq!(parameter.display, None);
+        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+        assert_eq!(parameter.native_ref.as_deref(), Some("keywords-dimension"));
+        assert_eq!(
+            parameter.pmi.as_ref().map(|pmi| &pmi.subtype),
+            Some(&PmiDimensionSubtype::Linear)
+        );
+        assert_eq!(
+            parameter.pmi.as_ref().map(|pmi| pmi.native_ref.as_str()),
+            Some("dimension")
+        );
     }
 }
 
@@ -471,9 +524,9 @@ pub(crate) fn apply_to_parameters(
             native_ref: record.id.clone(),
         };
         if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
-            parameter.expression = expression;
-            parameter.display = display;
-            parameter.value = value;
+            // Keywords is the authoritative design value when it already
+            // supplied this parameter. PMI still contributes its semantic
+            // annotation and source identity.
             parameter.pmi = Some(semantic);
             continue;
         }

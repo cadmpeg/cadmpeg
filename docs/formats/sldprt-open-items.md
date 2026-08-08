@@ -919,27 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-35. PMI and Keywords dimension precedence
-
-**Question.** Which value holds when a `PMISemanticDataDB` record and a Keywords dimension give different values for one parameter?
-
-**Known.** `sldprt.md` §8 states the rule: PMI values "supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence."
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/pmi.rs:473` overwrites the parameter with the PMI value and has no test for an existing value:
-
-```rust
-if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
-    parameter.expression = expression;
-    parameter.display = display;
-    parameter.value = value;
-```
-
-`decode.rs:2074` and `decode.rs:2910` call it after `project_design_history` has set the Keywords value, so the PMI value wins. The sibling function `enrich_history_parameters_with_features` at `pmi.rs:242` honours the rule with `.entry(name).or_insert_with(...)`.
-
-A `PmiDimensionSubtype::Native` record formats its value as a bare decimal in metres at `pmi.rs:462`, where the typed arms format millimetres with a unit suffix. Such a record replaces a Keywords `12mm` with `0.012`.
-
-**Need.** We must apply the stated precedence. The decoder must not replace an explicit Keywords dimension.
-
 ### DI-36. Repeated PMI dimension records
 
 **Question.** Which record holds when two `PMISemanticDataDB` records give the same owner and dimension name but different values?
