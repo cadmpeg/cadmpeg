@@ -772,7 +772,7 @@ pub fn walk(stream: &[u8]) -> Census {
             continue;
         }
         if let Some(xmt) = compact_tombstone(stream, offset) {
-            if xmt > 1 && plausible_next(stream, offset + 6) {
+            if xmt > 1 {
                 *census.tombstone_counts.entry(name).or_default() += 1;
                 census.tombstones.push(Tombstone { kind, xmt, offset });
                 census.bytes_decoded += 6;

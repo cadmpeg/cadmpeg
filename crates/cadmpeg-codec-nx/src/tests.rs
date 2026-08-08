@@ -4102,6 +4102,24 @@ fn deltas_tombstone_decodes_compact_and_extended_xmt_identities() {
 }
 
 #[test]
+fn deltas_tombstone_is_self_delimiting_before_opaque_bytes() {
+    let mut stream = vec![0, 29, 0, 11, 0, 1];
+    stream.extend_from_slice(&[0xfe, 0xdc]);
+
+    let census = crate::deltas::walk(&stream);
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.tombstones[0].xmt, 11);
+    assert_eq!(census.bytes_decoded, 6);
+    assert_eq!(
+        crate::deltas::semantic_residual(&stream),
+        vec![0xff; 6]
+            .into_iter()
+            .chain([0xfe, 0xdc])
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn deltas_body_revision_retains_prefix_identities_and_bounded_state_tail() {
     let mut bytes = vec![0, 12, 3, 0x10];
     bytes.extend_from_slice(&223u32.to_be_bytes());

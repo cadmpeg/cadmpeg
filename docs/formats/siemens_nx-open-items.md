@@ -234,14 +234,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. The decoder substitutes the start vertex for an unresolved end vertex, which makes the two forms identical in the model and changes edge-use counting and body-kind classification.
 
-### PS-28. Compact tombstone boundary condition
-
-**Question.** Which condition ends a compact tombstone, and does a following byte pair constrain it?
-
-**Known.** `siemens_nx.md` §4.2 "**Tombstone:** a compact 6-byte deletion begins with `type:u16 BE`. A short XMT identity occupies" defines the tombstone as a self-delimiting six-byte form with two identity encodings. `siemens_nx.md` §4.2 "Tombstones form descending contiguous xmt runs that can span topology, geometry, attribute, intersection-auxiliary," defines the runs. Neither states a condition on the bytes after a tombstone.
-
-**Need.** We must know the boundary condition to admit every deletion. The deltas walk resynchronizes byte by byte, so it needs some end condition, and it currently requires the following two bytes to decode as a known node kind. A deletion whose successor bytes open a family that this condition does not name is discarded, the entity survives the merge, and no loss records the discard.
-
 ### PS-29. Interleaved body revision sequences
 
 **Question.** How does a deltas stream that holds more than one body sequence select the current revision of each body?
