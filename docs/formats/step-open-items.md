@@ -27,8 +27,10 @@ could consume more than three minutes without producing output. This is
 unacceptable decode behaviour.
 
 **Current control.** The inference pass reuses one model index. NURBS Newton
-search and certified interval search have fixed bounds. The decode session
-charges the worst-case range-inference allowance before the pass.
+search and certified interval search have fixed bounds. Curve and surface
+replicas resolve through dependency worklists instead of rescanning the full
+replica population for every chain level. The decode session charges the
+worst-case range-inference allowance before the pass.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic

@@ -968,56 +968,62 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
         wake_deferred_dependents(id, &mut waiting_on, &mut deferred_queue);
     }
-    let curve_replica_count = exchange.entities("CURVE_REPLICA").count();
-    for _ in 0..=curve_replica_count {
-        let mut progress = false;
-        for (id, record) in exchange.entities("CURVE_REPLICA") {
-            if carrier_index.curves.contains_key(&id) {
-                continue;
-            }
-            let Some(parent_step) =
-                named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(operator_step) =
-                named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
-                continue;
-            };
-            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
-                continue;
-            };
-            let Some(basis) = ir
-                .model
-                .curves
-                .get(parent_index)
-                .map(|curve| curve.geometry.clone())
-            else {
-                continue;
-            };
-            let curve_index = ir.model.curves.len();
-            ir.model.curves.push(Curve {
-                id: CurveId(format!("step:data:curve#{id}")),
-                geometry: CurveGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
-                },
-                source_object: None,
-            });
-            carrier_index.curves.insert(id, curve_index);
-            typed.insert(id);
-            typed.insert(operator_step);
-            progress = true;
+    let curve_replica_ids = exchange
+        .entities("CURVE_REPLICA")
+        .map(|(id, _)| id)
+        .collect::<Vec<_>>();
+    let mut curve_replica_queue = VecDeque::from(curve_replica_ids.clone());
+    let mut curve_replica_waiting_on = HashMap::<u64, Vec<u64>>::new();
+    while let Some(id) = curve_replica_queue.pop_front() {
+        if carrier_index.curves.contains_key(&id) {
+            continue;
         }
-        if !progress {
-            break;
-        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let Some(parent_step) =
+            named_parameter(record, "CURVE_REPLICA", 1).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(operator_step) =
+            named_parameter(record, "CURVE_REPLICA", 2).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(parent_index) = carrier_index.curves.get(&parent_step).copied() else {
+            curve_replica_waiting_on
+                .entry(parent_step)
+                .or_default()
+                .push(id);
+            continue;
+        };
+        let Some(transform) = transformation_operators.get(&operator_step).copied() else {
+            continue;
+        };
+        let Some(basis) = ir
+            .model
+            .curves
+            .get(parent_index)
+            .map(|curve| curve.geometry.clone())
+        else {
+            continue;
+        };
+        let curve_index = ir.model.curves.len();
+        ir.model.curves.push(Curve {
+            id: CurveId(format!("step:data:curve#{id}")),
+            geometry: CurveGeometry::Transformed {
+                basis: Box::new(basis),
+                transform,
+            },
+            source_object: None,
+        });
+        carrier_index.curves.insert(id, curve_index);
+        typed.insert(id);
+        typed.insert(operator_step);
+        wake_deferred_dependents(id, &mut curve_replica_waiting_on, &mut curve_replica_queue);
     }
-    for (id, _) in exchange.entities("CURVE_REPLICA") {
+    for id in curve_replica_ids {
         if let Entry::Vacant(entry) = carrier_index.curves.entry(id) {
             warnings.push(format!(
                 "CURVE_REPLICA #{id} has invalid or unresolved parent/operator"
@@ -1424,56 +1430,66 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             break;
         }
     }
-    let surface_replica_count = exchange.entities("SURFACE_REPLICA").count();
-    for _ in 0..=surface_replica_count {
-        let mut progress = false;
-        for (id, record) in exchange.entities("SURFACE_REPLICA") {
-            if carrier_index.surfaces.contains_key(&id) {
-                continue;
-            }
-            let Some(parent_step) =
-                named_parameter(record, "SURFACE_REPLICA", 1).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(operator_step) =
-                named_parameter(record, "SURFACE_REPLICA", 2).and_then(Value::reference)
-            else {
-                continue;
-            };
-            let Some(parent_index) = carrier_index.surfaces.get(&parent_step).copied() else {
-                continue;
-            };
-            let Some(transform) = transformation_operators.get(&operator_step).copied() else {
-                continue;
-            };
-            let Some(basis) = ir
-                .model
-                .surfaces
-                .get(parent_index)
-                .map(|surface| surface.geometry.clone())
-            else {
-                continue;
-            };
-            let surface_index = ir.model.surfaces.len();
-            ir.model.surfaces.push(Surface {
-                id: SurfaceId(format!("step:data:surface#{id}")),
-                geometry: SurfaceGeometry::Transformed {
-                    basis: Box::new(basis),
-                    transform,
-                },
-                source_object: None,
-            });
-            carrier_index.surfaces.insert(id, surface_index);
-            typed.insert(id);
-            typed.insert(operator_step);
-            progress = true;
+    let surface_replica_ids = exchange
+        .entities("SURFACE_REPLICA")
+        .map(|(id, _)| id)
+        .collect::<Vec<_>>();
+    let mut surface_replica_queue = VecDeque::from(surface_replica_ids.clone());
+    let mut surface_replica_waiting_on = HashMap::<u64, Vec<u64>>::new();
+    while let Some(id) = surface_replica_queue.pop_front() {
+        if carrier_index.surfaces.contains_key(&id) {
+            continue;
         }
-        if !progress {
-            break;
-        }
+        let Some(record) = exchange.records.get(&id) else {
+            continue;
+        };
+        let Some(parent_step) =
+            named_parameter(record, "SURFACE_REPLICA", 1).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(operator_step) =
+            named_parameter(record, "SURFACE_REPLICA", 2).and_then(Value::reference)
+        else {
+            continue;
+        };
+        let Some(parent_index) = carrier_index.surfaces.get(&parent_step).copied() else {
+            surface_replica_waiting_on
+                .entry(parent_step)
+                .or_default()
+                .push(id);
+            continue;
+        };
+        let Some(transform) = transformation_operators.get(&operator_step).copied() else {
+            continue;
+        };
+        let Some(basis) = ir
+            .model
+            .surfaces
+            .get(parent_index)
+            .map(|surface| surface.geometry.clone())
+        else {
+            continue;
+        };
+        let surface_index = ir.model.surfaces.len();
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("step:data:surface#{id}")),
+            geometry: SurfaceGeometry::Transformed {
+                basis: Box::new(basis),
+                transform,
+            },
+            source_object: None,
+        });
+        carrier_index.surfaces.insert(id, surface_index);
+        typed.insert(id);
+        typed.insert(operator_step);
+        wake_deferred_dependents(
+            id,
+            &mut surface_replica_waiting_on,
+            &mut surface_replica_queue,
+        );
     }
-    for (id, _) in exchange.entities("SURFACE_REPLICA") {
+    for id in surface_replica_ids {
         if let Entry::Vacant(entry) = carrier_index.surfaces.entry(id) {
             warnings.push(format!(
                 "SURFACE_REPLICA #{id} has invalid or unresolved parent/operator"

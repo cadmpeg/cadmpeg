@@ -5720,6 +5720,38 @@ fn forward_replica_dependencies_resolve_to_nested_transforms() {
 }
 
 #[test]
+fn long_forward_curve_replica_chain_resolves_without_fixpoint_rescans() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(1.,0.,0.));
+#3=DIRECTION('',(0.,1.,0.));
+#4=DIRECTION('',(0.,0.,1.));
+#5=VECTOR('',#2,1.);
+#6=LINE('',#1,#5);
+#7=CARTESIAN_POINT('',(10.,20.,30.));
+#8=CARTESIAN_TRANSFORMATION_OPERATOR_3D('',#2,#3,#7,2.,#4);
+",
+    );
+    for id in 9..=264 {
+        writeln!(records, "#{id}=CURVE_REPLICA('',#{},#8);", id + 1).expect("append record");
+    }
+    records.push_str("#265=CURVE_REPLICA('',#6,#8);");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.id.as_str() == "step:data:curve#9"
+            && matches!(curve.geometry, CurveGeometry::Transformed { .. })));
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("CURVE_REPLICA #9 has invalid or unresolved parent/operator")
+    }));
+}
+
+#[test]
 fn nurbs_curve_non_rational_uses_with_knots() {
     let n = NurbsCurve {
         degree: 2,
