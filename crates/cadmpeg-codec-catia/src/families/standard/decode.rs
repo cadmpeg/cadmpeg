@@ -4550,13 +4550,32 @@ where
 
 /// Bind curve branches when their surviving endpoint relation and serialized
 /// cardinality establish corresponding allocation ranks.
-pub(crate) fn bind_ordered_standard_curve_branches(
+#[cfg(test)]
+fn bind_ordered_standard_curve_branches(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
+) {
+    bind_ordered_standard_curve_branches_with_focus(supports, candidates, None);
+}
+
+fn bind_ordered_standard_curve_branches_for_group(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    group: &[usize],
+) {
+    let focused_edges = group.iter().copied().collect::<HashSet<_>>();
+    bind_ordered_standard_curve_branches_with_focus(supports, candidates, Some(&focused_edges));
+}
+
+fn bind_ordered_standard_curve_branches_with_focus(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    focused_edges: Option<&HashSet<usize>>,
 ) {
     if supports.len() != candidates.len() {
         return;
     }
+    let is_focused = |edge: usize| focused_edges.is_none_or(|edges| edges.contains(&edge));
     let normalize = |candidates: &[Vec<[usize; 2]>]| {
         candidates
             .iter()
@@ -4592,6 +4611,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let mut grouped = vec![false; supports.len()];
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !matches!(
                 supports[first].geometry,
                 crate::families::standard::records::StandardCurveGeometry::Circle { .. }
@@ -4619,7 +4639,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                     ) => candidate_center == center && candidate_radius == radius,
                     _ => false,
                 };
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_circle
                     && candidate_faces == faces
                     && normalized[*edge] == normalized[first]
@@ -4636,6 +4657,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !matches!(
                 supports[first].geometry,
                 crate::families::standard::records::StandardCurveGeometry::Circle { .. }
@@ -4659,7 +4681,10 @@ pub(crate) fn bind_ordered_standard_curve_branches(
                     ) => candidate_center == center && candidate_radius == radius,
                     _ => false,
                 };
-                !grouped[*edge] && same_circle && normalized[*edge] == normalized[first]
+                is_focused(*edge)
+                    && !grouped[*edge]
+                    && same_circle
+                    && normalized[*edge] == normalized[first]
             })
             .collect::<Vec<_>>();
         if edges.len() != normalized[first].len() {
@@ -4707,6 +4732,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 4
         {
@@ -4718,7 +4744,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .filter(|edge| {
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge] == normalized[first]
@@ -4805,6 +4832,7 @@ pub(crate) fn bind_ordered_standard_curve_branches(
     let normalized = normalize(candidates);
     for first in 0..supports.len() {
         if grouped[first]
+            || !is_focused(first)
             || !is_ranked_family(&supports[first].geometry)
             || normalized[first].len() < 2
         {
@@ -4816,7 +4844,8 @@ pub(crate) fn bind_ordered_standard_curve_branches(
             .filter(|edge| {
                 let mut candidate_faces = supports[*edge].faces;
                 candidate_faces.sort_unstable();
-                !grouped[*edge]
+                is_focused(*edge)
+                    && !grouped[*edge]
                     && same_ranked_family(&supports[*edge].geometry, &supports[first].geometry)
                     && candidate_faces == faces
                     && normalized[*edge].len() >= 2
@@ -5084,7 +5113,7 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         for &edge in group {
             group_constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
         }
-        bind_ordered_standard_curve_branches(supports, &mut group_constrained);
+        bind_ordered_standard_curve_branches_for_group(supports, &mut group_constrained, group);
         if group.iter().copied().any(|edge| {
             assignment[edge].is_some_and(|assigned| {
                 !group_constrained[edge]
@@ -6808,7 +6837,8 @@ mod route_tests {
         rational_pcurve_arc,
     };
     use crate::families::standard::decode::{
-        analytic_surface_uv, bind_ordered_standard_curve_branches, build_standard_edge_curve,
+        analytic_surface_uv, bind_ordered_standard_curve_branches,
+        bind_ordered_standard_curve_branches_for_group, build_standard_edge_curve,
         circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
         combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
         emit_standard_topology, include_native_endpoint_pairs, intersection_line_direction,
@@ -8107,6 +8137,31 @@ mod route_tests {
         bind_ordered_standard_curve_branches(&supports, &mut candidates);
 
         assert_eq!(candidates, [vec![[2, 8]], vec![[3, 9]]]);
+    }
+
+    #[test]
+    fn standard_spline_group_binding_does_not_rank_unfocused_groups() {
+        let supports = [10, 11, 20, 21].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: if tag < 20 { [1, 2] } else { [3, 4] },
+            geometry: StandardCurveGeometry::Bspline,
+        });
+        let unfocused_domain = vec![[0, 1], [0, 2], [3, 1], [3, 2]];
+        let focused_domain = vec![[4, 5], [4, 6], [7, 5], [7, 6]];
+        let mut candidates = [
+            unfocused_domain.clone(),
+            unfocused_domain.clone(),
+            focused_domain.clone(),
+            focused_domain,
+        ];
+
+        bind_ordered_standard_curve_branches_for_group(&supports, &mut candidates, &[2, 3]);
+
+        assert_eq!(candidates[0], unfocused_domain);
+        assert_eq!(candidates[1], unfocused_domain);
+        assert_eq!(candidates[2], vec![[4, 5]]);
+        assert_eq!(candidates[3], vec![[7, 6]]);
     }
 
     #[test]
