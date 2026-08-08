@@ -7201,38 +7201,20 @@ mod record_decoders {
 
     #[test]
     fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
-        fn bounds_record(
-            tag: u32,
-            center: [f32; 3],
-            half: [f32; 3],
-            sphere: [f32; 3],
-            radius: f32,
-        ) -> Vec<u8> {
-            let mut bytes = vec![0xff];
-            bytes.extend_from_slice(&tag.to_le_bytes()[..3]);
-            bytes.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
-            for value in [
-                center[0], center[1], center[2], half[0], half[1], half[2], sphere[0], sphere[1],
-                sphere[2], radius,
-            ] {
-                bytes.extend_from_slice(&le_f32(value));
-            }
-            bytes
-        }
-
-        let mut bytes = bounds_record(0x0001_0203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
-        bytes.extend(bounds_record(
+        let mut bytes =
+            plane_bounds_record(0x0001_0203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
+        bytes.extend(plane_bounds_record(
             0x0004_0506,
             [4.0, 5.0, 6.0],
             [1.0; 3],
             [4.0, 5.0, 6.0],
             4.0,
         ));
-        bytes.extend(bounds_record(
+        bytes.extend(plane_bounds_record(
             0x0007_0809,
             [0.0, 0.0, 50.0],
             [2.5, 2.5, 0.0],
-            [5.2e-7, 1.6e-7, 50.0],
+            [0.0, 0.0, 50.0],
             2.5,
         ));
         let normals = HashMap::from([
@@ -7248,10 +7230,72 @@ mod record_decoders {
         assert_eq!(planes[1].target, 0x0004_0506);
         assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
         assert_eq!(planes[2].target, 0x0007_0809);
-        assert_eq!(
-            planes[2].origin,
-            Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
+        assert_eq!(planes[2].origin, Point3::new(0.0, 0.0, 50.0));
+    }
+
+    fn plane_bounds_record(
+        tag: u32,
+        center: [f32; 3],
+        half: [f32; 3],
+        sphere: [f32; 3],
+        radius: f32,
+    ) -> Vec<u8> {
+        let mut bytes = vec![0xff];
+        bytes.extend_from_slice(&tag.to_le_bytes()[..3]);
+        bytes.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
+        for value in [
+            center[0], center[1], center[2], half[0], half[1], half[2], sphere[0], sphere[1],
+            sphere[2], radius,
+        ] {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+        bytes
+    }
+
+    #[test]
+    fn plane_bounds_withhold_duplicate_tags_and_slack_only_containment() {
+        let duplicate_tag = 0x0001_0203;
+        let invalid_tag = 0x0004_0506;
+        let valid_tag = 0x0007_0809;
+        let mut bytes = plane_bounds_record(
+            duplicate_tag,
+            [1.0, 2.0, 3.0],
+            [1.0; 3],
+            [1.0, 2.0, 3.0],
+            4.0,
         );
+        bytes.extend(plane_bounds_record(
+            duplicate_tag,
+            [9.0, 9.0, 9.0],
+            [1.0; 3],
+            [9.0, 9.0, 9.0],
+            4.0,
+        ));
+        bytes.extend(plane_bounds_record(
+            invalid_tag,
+            [0.0, 0.0, 0.0],
+            [1.0; 3],
+            [5.2e-7, 0.0, 0.0],
+            1.0,
+        ));
+        bytes.extend(plane_bounds_record(
+            valid_tag,
+            [0.0, 0.0, 5.0],
+            [1.0; 3],
+            [0.0, 0.0, 5.0],
+            2.0,
+        ));
+        let normals = HashMap::from([
+            (duplicate_tag, [1.0, 0.0, 0.0]),
+            (invalid_tag, [0.0, 1.0, 0.0]),
+            (valid_tag, [0.0, 0.0, 1.0]),
+        ]);
+
+        let planes = crate::families::standard::records::plane_params(&bytes, &normals);
+
+        assert_eq!(planes.len(), 1);
+        assert_eq!(planes[0].target, valid_tag);
+        assert_eq!(planes[0].origin, Point3::new(0.0, 0.0, 5.0));
     }
 
     #[test]

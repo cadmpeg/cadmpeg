@@ -8,7 +8,7 @@ use cadmpeg_core::be::f32_at as f32_be;
 use cadmpeg_core::le::u32_at as u32_le;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// The standard-nested plane bounds record. Its three-byte tag is the bridge to
 /// the matching `SurfacicReps` plane marker.
@@ -312,15 +312,17 @@ pub fn surface_prefixes(brep: &[u8]) -> Vec<SurfacePrefix> {
 }
 
 /// Locate plane bounds records and bind each persistent carrier tag to the
-/// frame vector of its face-local trim packet.
+/// frame vector of its face-local trim packet. A tag is emitted only when one
+/// valid bounds record carries it.
 pub fn plane_params<S: std::hash::BuildHasher>(
     brep: &[u8],
     normals: &HashMap<u32, [f64; 3], S>,
 ) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
-    const TOLERANCE: f32 = 1e-5;
 
     let mut out = Vec::new();
+    let mut duplicate_targets = HashSet::new();
+    let mut seen_targets = HashSet::new();
     let mut p = 0usize;
     while p + MARKER.len() + 40 <= brep.len() {
         let Some(relative) = brep[p..].windows(MARKER.len()).position(|w| w == MARKER) else {
@@ -331,38 +333,29 @@ pub fn plane_params<S: std::hash::BuildHasher>(
         if pos < 4 || pos + MARKER.len() + 40 > brep.len() {
             continue;
         }
-        let values: Vec<f32> = (0..10)
-            .map(|i| f32_le(brep, pos + MARKER.len() + 4 * i))
-            .collect();
-        if !all_finite(&values) {
+        let Some(bounds) =
+            face_bounds_at(brep, pos + MARKER.len()).filter(|bounds| bounds.sphere_radius > 0.0)
+        else {
             continue;
-        }
-        let half = [values[3].abs(), values[4].abs(), values[5].abs()];
-        let sphere = [values[6], values[7], values[8]];
-        let radius = values[9];
-        if radius <= 0.0
-            || (0..3).any(|axis| {
-                let center_delta = (values[axis] - sphere[axis]).abs();
-                center_delta + half[axis]
-                    > radius + TOLERANCE * (1.0 + center_delta.max(half[axis]).max(radius.abs()))
-            })
-        {
-            continue;
-        }
+        };
         let target = u24_le(brep, pos - 3);
+        if !seen_targets.insert(target) {
+            duplicate_targets.insert(target);
+        }
         let Some(normal) = normals.get(&target).copied() else {
             continue;
         };
         out.push(PlaneParams {
             target,
             origin: Point3::new(
-                f64::from(sphere[0]),
-                f64::from(sphere[1]),
-                f64::from(sphere[2]),
+                bounds.sphere_center[0],
+                bounds.sphere_center[1],
+                bounds.sphere_center[2],
             ),
             normal: Vector3::new(normal[0], normal[1], normal[2]),
         });
     }
+    out.retain(|plane| !duplicate_targets.contains(&plane.target));
     out
 }
 

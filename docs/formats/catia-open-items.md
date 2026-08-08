@@ -528,14 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-31. Plane bounds record binding
-
-**Question.** Which relation binds a `00 02 00 33 32` plane-bounds record to its face-roster carrier tag when more than one record carries that tag?
-
-**Known.** `catia.md` §5.3 "For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`" gives "Its face-roster carrier tag selects the `00 02 00 33 32` bounds record with the same tag." `records::plane_params` scans the complete BREP stream for the marker and accepts a record when the bounding-sphere containment test holds with a relative slack of `1e-5`. `records::face_bounds_at` reads the same bytes through the uniqueness-gated roster chain and applies the same test with no slack. `standard::decode` collects the results into a map keyed by the tag, so a second accepted record with one tag replaces the first.
-
-**Need.** The record gives the plane origin. We must know the relation to bind one record, and to remove one of the two tolerances.
-
 ### SN-32. Same-incidence row endpoint assignment
 
 **Question.** Which serialized relation assigns an endpoint pair to each row when two or more same-incidence rows share one complete bipartite endpoint relation?
