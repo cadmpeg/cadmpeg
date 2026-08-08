@@ -297,16 +297,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-39. Alignment lane roles of an `Assemble` scope
-
-**Question.** Which stored field assigns the roles of an `Assemble` scope's alignment owner lanes?
-
-**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" ties the four-owner alignment of angle, X, Y, and Z to the 627-, 633-, 637-, and 692-byte forms, the eight-owner layout to the 732-byte form, and the axial `alignAngle` and `alignOffset` pair to the 705- and 772-byte forms. `exact_assembly_alignment` in `design/decode/scopes.rs` selects the lane slice and the role assignment from the lane count alone: four lanes take the whole run, six and eight lanes drop the first four, and ten lanes drop the first eight. It does not read `scope.frame_length`, which the same function has.
-
-The check `scope.reference_members.ends_with(&owner_record_indices)` holds the chosen lanes to the end of the ordered reference table, which `f3d.md` states for the alignment owners.
-
-**Need.** A non-axial frame that carries six contiguous owners takes the axial arm, drops four lanes as placement lanes, and forces the X and Y offsets to zero. The frame length is a settled discriminator for the frame offsets in the same function chain and must select the lane roles as well.
-
 ### DR-40. Location and operand assignment of the occurrence-path records
 
 **Question.** Which stored reference locates the two occurrence-path records of an `Assemble` scope, and what assigns each path to one operand frame?
