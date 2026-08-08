@@ -1030,25 +1030,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
 
-### DI-57. Bridge-arc construction from neighbour tangency
-
-**Question.** Which record makes an unresolved bounded curve a fillet arc tangent to its neighbours?
-
-**Known.** `sldprt.md` §2 gives two tangent sources: the role-2 detail record with its unit start tangent, and the tangent relation families. For a bounded curve with no unique equidistant centre and no detail record, `sldprt.md` §2 gives the endpoint chord or leaves the curve unresolved.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:861` `resolve_tangent_bridge_marker_arcs` constructs an arc from the two neighbouring entities instead. When both neighbours are arcs it takes their centres and intersects the two radial lines:
-
-```rust
-tangent_bridge_arc_geometry(start, end, start_center, end_center, tolerance)
-    .map(|geometry| (index, geometry))
-```
-
-No native field states that the curve is tangent to its neighbours. The construction accepts any intersection that gives an equidistant centre. The line-line branch at `curves.rs:915` at least requires two independent constructions to agree; the arc-arc branch has one construction and no cross-check.
-
-The site runs on the production path through `resolved_features/profiles.rs:1472`.
-
-**Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators
