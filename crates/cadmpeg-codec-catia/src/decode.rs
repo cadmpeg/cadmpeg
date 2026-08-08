@@ -2935,6 +2935,19 @@ fn finish_decode(
             design_feature_transfer.native_operation_records.len(),
         ),
         (
+            "transferred_native_operation_parameter_count".to_string(),
+            ir.model
+                .features
+                .iter()
+                .filter_map(|feature| match &feature.definition {
+                    cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } => {
+                        Some(parameters.len())
+                    }
+                    _ => None,
+                })
+                .sum(),
+        ),
+        (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
         ),
