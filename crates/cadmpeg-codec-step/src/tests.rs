@@ -1255,6 +1255,81 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn linear_extrusion_surface_selects_endpoint_continuous_pcurve() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#28=PLANE('',#27);",
+            "#69=VECTOR('',#9,1.);\n#28=SURFACE_OF_LINEAR_EXTRUSION('',#16,#69);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode linear-extrusion sheet");
+
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !coedge.pcurves.is_empty())
+            .count(),
+        1
+    );
+    let surface_id = SurfaceId("step:data:surface#28".into());
+    let index = ModelIndex::new(&decoded.ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 10.0, 0.0),
+        Some(Point3::new(10.0, 0.0, 0.0))
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("curve #57")
+            && loss.message.contains("no pcurve")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn linear_extrusion_surface_evaluates_a_nurbs_directrix() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#28=PLANE('',#27);",
+            "#69=VECTOR('',#9,1.);\n#70=CARTESIAN_POINT('',(0.,0.,0.));\n#71=CARTESIAN_POINT('',(10.,0.,0.));\n#72=B_SPLINE_CURVE_WITH_KNOTS('',1,(#70,#71),.UNSPECIFIED.,.F.,.F.,(2,2),(0.,10.),.PIECEWISE_BEZIER_KNOTS.);\n#28=SURFACE_OF_LINEAR_EXTRUSION('',#72,#69);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode NURBS linear-extrusion sheet");
+
+    let surface_id = SurfaceId("step:data:surface#28".into());
+    let index = ModelIndex::new(&decoded.ir);
+    assert_eq!(
+        model_surface_point_by_id(&index, &surface_id, 5.0, 0.0),
+        Some(Point3::new(5.0, 0.0, 0.0))
+    );
+    let partials = model_surface_partials_by_id(&index, &surface_id, 5.0, 0.0)
+        .expect("NURBS linear sweep partials");
+    assert!((partials.du.x - 1.0).abs() < 1.0e-12);
+    assert!(partials.du.y.abs() < 1.0e-12);
+    assert!(partials.du.z.abs() < 1.0e-12);
+    assert_eq!(partials.dv, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(decoded.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !coedge.pcurves.is_empty())
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
