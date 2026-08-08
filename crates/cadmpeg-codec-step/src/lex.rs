@@ -54,6 +54,14 @@ pub enum TokenKind {
     Omitted,
     /// Derived-value marker `*`.
     Derived,
+    /// Anchor-tag name, preserving source case.
+    TagName(String),
+    /// Opening anchor-tag delimiter.
+    LBrace,
+    /// Closing anchor-tag delimiter.
+    RBrace,
+    /// Anchor-tag name/value separator.
+    Colon,
 }
 
 /// Binary literal payload packed most-significant nibble first.
@@ -89,6 +97,7 @@ pub(crate) struct Lexer<'a> {
     input: &'a [u8],
     at: usize,
     previous_was_signature: bool,
+    tag_name_expected: bool,
 }
 
 impl<'a> Lexer<'a> {
@@ -97,6 +106,7 @@ impl<'a> Lexer<'a> {
             input,
             at: 0,
             previous_was_signature: false,
+            tag_name_expected: false,
         }
     }
 
@@ -229,6 +239,14 @@ impl<'a> Lexer<'a> {
 
     fn token(&mut self) -> Result<Token, LexError> {
         let start = self.at;
+        if self.tag_name_expected {
+            self.tag_name_expected = false;
+            let kind = self.tag_name()?;
+            return Ok(Token {
+                kind,
+                span: start..self.at,
+            });
+        }
         let byte = self.input[self.at];
         let kind = match byte {
             b'(' => self.one(TokenKind::LParen),
@@ -236,6 +254,9 @@ impl<'a> Lexer<'a> {
             b',' => self.one(TokenKind::Comma),
             b';' => self.one(TokenKind::Semicolon),
             b'=' => self.one(TokenKind::Equals),
+            b'{' => self.one(TokenKind::LBrace),
+            b'}' => self.one(TokenKind::RBrace),
+            b':' => self.one(TokenKind::Colon),
             b'$' => self.one(TokenKind::Omitted),
             b'*' => self.one(TokenKind::Derived),
             b'#' => self.occurrence(b'#')?,
@@ -263,6 +284,9 @@ impl<'a> Lexer<'a> {
 
     fn one(&mut self, kind: TokenKind) -> TokenKind {
         self.at += 1;
+        if matches!(kind, TokenKind::LBrace) {
+            self.tag_name_expected = true;
+        }
         kind
     }
 
@@ -277,6 +301,28 @@ impl<'a> Lexer<'a> {
             self.at += 1;
         }
         TokenKind::Name(String::from_utf8_lossy(&self.input[start..self.at]).to_ascii_uppercase())
+    }
+
+    fn tag_name(&mut self) -> Result<TokenKind, LexError> {
+        let start = self.at;
+        if !self
+            .input
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        {
+            return Err(Self::error(start, "tag name has no identifier"));
+        }
+        self.at += 1;
+        while self
+            .input
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            self.at += 1;
+        }
+        Ok(TokenKind::TagName(
+            String::from_utf8_lossy(&self.input[start..self.at]).into_owned(),
+        ))
     }
 
     fn user_name(&mut self) -> Result<TokenKind, LexError> {

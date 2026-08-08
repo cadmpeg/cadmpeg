@@ -371,6 +371,26 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
 }
 
 #[test]
+fn parser_retains_anchor_tags_and_resolves_their_references() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("anchor tags");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.anchors[0].name, "shape");
+    assert_eq!(exchange.anchors[0].tags.len(), 2);
+    assert_eq!(exchange.anchors[0].tags[0].name, "source");
+    assert_eq!(
+        exchange.anchors[0].tags[0].value,
+        crate::parse::Value::Resource("part.step#shape".into())
+    );
+    assert_eq!(exchange.anchors[0].tags[1].name, "width");
+    assert_eq!(
+        exchange.anchors[0].tags[1].value,
+        crate::parse::Value::ValueReference(100)
+    );
+}
+
+#[test]
 fn parser_rejects_unresolved_or_colliding_value_instances() {
     let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(unresolved).expect_err("unresolved value instance");

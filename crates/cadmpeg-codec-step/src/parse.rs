@@ -86,10 +86,23 @@ pub struct DataSection {
 
 /// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct AnchorEntry {
     /// Local resource name.
     pub name: String,
     /// Value bound to the resource name.
+    pub value: Value,
+    /// Ordered metadata tags attached to the binding.
+    pub tags: Vec<AnchorTag>,
+}
+
+/// One edition-3 metadata tag attached to an ANCHOR binding.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct AnchorTag {
+    /// Tag name, preserving source case.
+    pub name: String,
+    /// Tag value.
     pub value: Value,
 }
 
@@ -485,8 +498,19 @@ impl Parser<'_> {
                 };
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
+                let mut tags = Vec::new();
+                while self.peek(&TokenKind::LBrace) {
+                    self.next_kind()?;
+                    let TokenKind::TagName(name) = self.next_kind()? else {
+                        return self.err("expected anchor tag name");
+                    };
+                    self.punct(&TokenKind::Colon)?;
+                    let value = self.value()?;
+                    self.punct(&TokenKind::RBrace)?;
+                    tags.push(AnchorTag { name, value });
+                }
                 self.punct(&TokenKind::Semicolon)?;
-                anchors.push(AnchorEntry { name, value });
+                anchors.push(AnchorEntry { name, value, tags });
             }
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
@@ -630,6 +654,11 @@ impl Parser<'_> {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
                     .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+                for tag in &mut anchor.tags {
+                    tag.value = resolver
+                        .resolve_root(&tag.value)
+                        .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+                }
             }
             for record in records.values_mut() {
                 for partial in &mut record.partials {
@@ -673,6 +702,23 @@ impl Parser<'_> {
             {
                 return self.err("unresolved value instance reference in anchor binding");
             }
+            for tag in &anchor.tags {
+                refs.clear();
+                value_refs.clear();
+                references(&tag.value, &mut refs, &mut value_refs);
+                if refs
+                    .iter()
+                    .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
+                {
+                    return self.err("unresolved instance reference in anchor tag");
+                }
+                if value_refs
+                    .iter()
+                    .any(|id| !external_value_reference_ids.contains(id))
+                {
+                    return self.err("unresolved value instance reference in anchor tag");
+                }
+            }
         }
         for record in records.values() {
             refs.clear();
@@ -700,9 +746,13 @@ impl Parser<'_> {
                 && (header
                     .iter()
                     .any(|record| record.parameters.iter().any(contains_edition3_occurrence))
-                    || anchors
-                        .iter()
-                        .any(|anchor| contains_edition3_occurrence(&anchor.value))
+                    || anchors.iter().any(|anchor| {
+                        contains_edition3_occurrence(&anchor.value)
+                            || anchor
+                                .tags
+                                .iter()
+                                .any(|tag| contains_edition3_occurrence(&tag.value))
+                    })
                     || records.values().any(|record| {
                         record.partials.iter().any(|partial| {
                             partial.parameters.iter().any(contains_edition3_occurrence)
