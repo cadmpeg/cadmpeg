@@ -120,6 +120,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### UD-01. User-defined entity semantics
 
+**Resolved.** Part 21 does not assign semantics to a user-defined entity
+name. The number, data types, and meanings of its attributes are an agreement
+between the exchange partners. The reader therefore retains the complete
+record as a named opaque record with its links and does not infer a native or
+neutral entity.
+
 **Question.** What entity semantics does each user-defined `!` entity name select?
 
 **Known.** `step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." require an unknown entity to retain its name, complete spans, and links to other named opaque records.
@@ -127,6 +133,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the semantics to transfer a user-defined entity to typed native or neutral records.
 
 ### UD-02. User-defined type semantics
+
+**Resolved.** Part 21 does not assign semantics to a user-defined type name.
+The wrapped parameter remains a typed opaque value until the partners' schema
+is supplied. The reader preserves the type name, wrapped value, record span,
+and links and does not select a neutral value type by name alone.
 
 **Question.** What value semantics does each user-defined `!` type name select?
 
@@ -138,6 +149,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SG-01. Signature method selection
 
+**Resolved.** Part 21 defines one signature method: a detached CMS
+`SignedData` object. The digest and signature algorithm identifiers are inside
+the decoded CMS object, not in a Part 21 field. The parser records the decoded
+CMS payload and does not guess an algorithm from its bytes.
+
 **Question.** Which SIGNATURE field identifies the signature method and its parameters?
 
 **Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the complete byte boundary of a SIGNATURE section. The specification gives no field grammar for its content.
@@ -146,6 +162,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SG-02. Signed byte sequence
 
+**Resolved.** A signature covers the Part 21 alphabet bytes from the first
+`ISO-10303-21;` token through the byte before its `SIGNATURE;` token. The
+alphabet filter removes transport controls and retains the permitted Part 21
+characters. Each later signature covers the earlier signature sections too.
+The parser records this source range for every signature.
+
 **Question.** Which exact bytes does each signature method authenticate?
 
 **Known.** `step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place each SIGNATURE section after the exchange terminator. `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the byte boundary of the SIGNATURE section.
@@ -153,6 +175,12 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Need.** We must know the byte sequence to calculate the verification input.
 
 ### SG-03. Signature value encoding
+
+**Resolved.** The SIGNATURE section contains RFC 4648 Base64 text. Decoding
+produces the CMS `SignedData` object described by RFC 5652, including its
+signer information and any certificates or algorithm parameters carried by
+that object. The parser validates the Base64 framing and retains the raw
+section, payload range, and decoded CMS bytes.
 
 **Question.** How does each signature method encode its signature value and verification material in the SIGNATURE section?
 

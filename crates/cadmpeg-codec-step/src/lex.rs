@@ -123,6 +123,10 @@ impl<'a> Lexer<'a> {
         self.allow_print_controls = allow;
     }
 
+    pub(crate) fn input(&self) -> &[u8] {
+        self.input
+    }
+
     pub(crate) fn next_token(&mut self) -> Result<Option<Token>, LexError> {
         if !self.skip_trivia()? {
             return Ok(None);

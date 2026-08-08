@@ -10,6 +10,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
+
 use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 
 /// One parsed Part 21 parameter value.
@@ -115,6 +117,40 @@ pub struct ReferenceEntry {
     pub uri: String,
 }
 
+/// One Part 21 edition-3 detached CMS signature section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureSection {
+    /// Complete `SIGNATURE;...ENDSEC;` byte range.
+    pub span: Range<usize>,
+    /// Base64 payload byte range between the section delimiters.
+    pub payload: Range<usize>,
+    /// Exchange byte range authenticated by this signature before alphabet
+    /// filtering. The range starts at `ISO-10303-21;` and ends at the `S` in
+    /// this section's `SIGNATURE;` token.
+    pub signed: Range<usize>,
+    /// Decoded CMS `SignedData` payload.
+    pub cms: Vec<u8>,
+}
+
+impl SignatureSection {
+    /// Returns the Part 21 alphabet bytes covered by this signature.
+    ///
+    /// The source range is retained separately because the signature input is
+    /// defined by the alphabet projection, not by transport controls such as
+    /// line endings. `None` means that the supplied source does not contain
+    /// the recorded range.
+    pub fn signed_alphabet_bytes(&self, input: &[u8]) -> Option<Vec<u8>> {
+        Some(
+            input
+                .get(self.signed.clone())?
+                .iter()
+                .copied()
+                .filter(|byte| !byte.is_ascii_control())
+                .collect(),
+        )
+    }
+}
+
 /// Parsed exchange structure and global DATA record graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
@@ -128,6 +164,9 @@ pub struct Exchange {
     pub data: Vec<DataSection>,
     /// Complete SIGNATURE section byte ranges in source order.
     pub signatures: Vec<Range<usize>>,
+    /// Parsed signature payload ranges and detached signed-content ranges in
+    /// source order.
+    pub signature_sections: Vec<SignatureSection>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
     entity_ids: EntityIndex,
@@ -482,6 +521,7 @@ fn omitted_entity_name(partial: &PartialRecord) -> bool {
 
 impl Parser<'_> {
     fn exchange(mut self) -> Result<(Exchange, Vec<ParseDiagnostic>), ParseError> {
+        let exchange_start = self.current_offset();
         self.name("ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         self.name("HEADER")?;
@@ -667,6 +707,7 @@ impl Parser<'_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
+        let mut signature_sections = Vec::new();
         if !implementation_level.allows_edition3_sections() && self.peek_name("SIGNATURE") {
             return self.err(match implementation_level {
                 ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
@@ -681,6 +722,8 @@ impl Parser<'_> {
             let start = self.current_offset();
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
+            let payload_start = self.last_end;
+            let payload_end = self.current_offset();
             while !self.peek_name("ENDSEC") {
                 if self.current.is_none() {
                     return self.err("unterminated SIGNATURE section");
@@ -689,7 +732,16 @@ impl Parser<'_> {
             }
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
-            signatures.push(start..self.previous_end());
+            let span = start..self.previous_end();
+            let payload = payload_start..payload_end;
+            let cms = decode_signature_payload(self.lexer.input(), &payload)?;
+            signature_sections.push(SignatureSection {
+                span: span.clone(),
+                payload,
+                signed: exchange_start..start,
+                cms,
+            });
+            signatures.push(span);
         }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
@@ -860,6 +912,7 @@ impl Parser<'_> {
                 references: reference_entries,
                 data,
                 signatures,
+                signature_sections,
                 records,
                 entity_ids: EntityIndex::default(),
             },
@@ -1586,6 +1639,25 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
         }
     }
     quantum_len == 0
+}
+
+fn decode_signature_payload(input: &[u8], payload: &Range<usize>) -> Result<Vec<u8>, ParseError> {
+    let compact = input[payload.clone()]
+        .iter()
+        .copied()
+        .filter(|byte| !byte.is_ascii_control() && *byte != b' ')
+        .collect::<Vec<_>>();
+    let cms = STANDARD
+        .decode(compact)
+        .map_err(|error| ParseError::Syntax {
+            offset: payload.start,
+            message: format!("invalid SIGNATURE Base64 payload: {error}"),
+        })?;
+    crate::signature::validate_detached_cms(&cms).map_err(|message| ParseError::Syntax {
+        offset: payload.start,
+        message: format!("invalid detached CMS SIGNATURE payload: {message}"),
+    })?;
+    Ok(cms)
 }
 
 fn valid_schema_identifier(identifier: &str) -> bool {

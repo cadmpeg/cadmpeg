@@ -250,9 +250,14 @@ Entity and value occurrence integers are unique across both prefixes, and
 neither may collide with a local DATA entity instance. A URI target outside the
 exchange structure is an external dependency. External names do not enter the
 local DATA instance graph.
-Each SIGNATURE section follows the exchange terminator. Its base64 content
-begins after `SIGNATURE;`, ends at its next `ENDSEC;`, and retains its complete
-byte range. Multiple signature sections remain in source order.
+Each SIGNATURE section follows the exchange terminator. Its content is a CMS
+signature with external content, encoded as RFC 4648 Base64. The Base64
+content begins after `SIGNATURE;` and ends at its next `ENDSEC;`. The signature
+authenticates the Part 21 alphabet bytes from `ISO-10303-21;` through the byte
+before that section's `SIGNATURE;` token. A later section therefore also
+authenticates every earlier signature section. The reader retains both the
+complete source span and the decoded CMS payload. Signature verification still
+requires a CMS verifier and caller-supplied trust policy.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
 FILE_SCHEMA identifier. If a DATA section has parameters, they contain a

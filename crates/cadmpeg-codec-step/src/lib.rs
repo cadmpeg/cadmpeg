@@ -52,6 +52,7 @@ mod geometry;
 pub mod lex;
 pub mod parse;
 mod reader;
+mod signature;
 pub mod strings;
 mod writer;
 
