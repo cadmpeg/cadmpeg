@@ -2946,6 +2946,10 @@ fn finish_decode(
             design_feature_transfer.native_operation_records.len(),
         ),
         (
+            "transferred_native_operation_definition_value_count".to_string(),
+            design_feature_transfer.native_operation_definition_value_count,
+        ),
+        (
             "transferred_native_operation_parameter_count".to_string(),
             ir.model
                 .features

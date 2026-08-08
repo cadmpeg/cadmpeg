@@ -9,13 +9,14 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
-use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
+use crate::native::{CatiaDesignObject, CatiaEntityRecord, CatiaNative, CatiaObjectRecord};
 use crate::object_graph::{PayloadField, PayloadSubtype};
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct DesignFeatureTransfer {
     pub(crate) feature_ids: HashMap<String, FeatureId>,
     pub(crate) native_operation_records: HashSet<String>,
+    pub(crate) native_operation_definition_value_count: usize,
     pub(crate) principal_plane_records: HashSet<String>,
     pub(crate) sketch_owner_records: HashSet<String>,
 }
@@ -367,6 +368,11 @@ pub(crate) fn transfer_design_features(
         .flat_map(|graph| &graph.records)
         .map(|record| (record.id.as_str(), record))
         .collect::<HashMap<_, _>>();
+    let entities = native
+        .entity_records
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<HashMap<_, _>>();
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -385,7 +391,7 @@ pub(crate) fn transfer_design_features(
                 transfer_sketch(ir, &mut transfer, object, owner_record);
             }
             (None, None, Some(candidate)) => {
-                transfer_native_operation(ir, &mut transfer, &candidate);
+                transfer_native_operation(ir, &mut transfer, &candidate, &entities);
             }
             (Some(_), Some(_), _) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
                 // One object cannot safely occupy two neutral feature identities.
@@ -513,9 +519,12 @@ fn transfer_native_operation(
     ir: &mut CadIr,
     transfer: &mut DesignFeatureTransfer,
     candidate: &NativeOperationCandidate<'_>,
+    entities: &HashMap<&str, &CatiaEntityRecord>,
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
+    let (properties, definition_value_count) =
+        native_operation_definition_properties(object, entities);
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -532,7 +541,7 @@ fn transfer_native_operation(
         definition: FeatureDefinition::Native {
             kind,
             parameters: BTreeMap::new(),
-            properties: BTreeMap::new(),
+            properties,
         },
         native_ref: Some(object.id.clone()),
     });
@@ -540,6 +549,226 @@ fn transfer_native_operation(
     transfer
         .native_operation_records
         .insert(candidate.owner_record.id.clone());
+    transfer.native_operation_definition_value_count += definition_value_count;
+}
+
+/// Retain complete definition-bound values on the exact native operation
+/// object that owns them. A one-definition value carries a source definition
+/// and a typed suffix payload, but it does not establish a neutral parameter
+/// type or operation role. Store its exact selectors and payload state as
+/// native properties until that role grammar is settled.
+fn native_operation_definition_properties(
+    object: &CatiaDesignObject,
+    entities: &HashMap<&str, &CatiaEntityRecord>,
+) -> (BTreeMap<String, String>, usize) {
+    let mut properties = BTreeMap::new();
+    let mut value_count = 0;
+
+    for (ordinal, entity_id) in object.definition_values.iter().enumerate() {
+        let Some(entity) = entities.get(entity_id.as_str()) else {
+            continue;
+        };
+        let Some(value) = entity.definition_value.as_ref() else {
+            continue;
+        };
+        value_count += 1;
+        let prefix = format!("catia_definition_value_{ordinal}");
+        properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        insert_schema_value_properties(
+            &mut properties,
+            &format!("{prefix}_definition"),
+            &value.definition,
+        );
+        insert_suffix_payload_properties(
+            &mut properties,
+            &format!("{prefix}_payload"),
+            &value.payload,
+        );
+        if let Some(selection) = value.schema_selection.as_ref() {
+            insert_schema_selection_properties(
+                &mut properties,
+                &format!("{prefix}_schema_selection"),
+                selection,
+            );
+        }
+    }
+
+    (properties, value_count)
+}
+
+fn insert_schema_value_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    value: &crate::native::CatiaEntitySchemaValue,
+) {
+    properties.insert(format!("{prefix}_entry"), value.entry.clone());
+    properties.insert(format!("{prefix}_ordinal"), value.ordinal.to_string());
+    properties.insert(format!("{prefix}_offset"), value.offset.to_string());
+    properties.insert(format!("{prefix}_value"), value.value.clone());
+}
+
+fn insert_suffix_payload_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    payload: &crate::native::CatiaEntitySuffixPayload,
+) {
+    match payload {
+        crate::native::CatiaEntitySuffixPayload::Evaluation {
+            opcode_offset,
+            evaluation,
+            encoding,
+        } => {
+            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
+            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            properties.insert(
+                format!("{prefix}_encoding"),
+                evaluation_encoding_name(*encoding).to_string(),
+            );
+            insert_evaluation_properties(properties, prefix, evaluation);
+        }
+        crate::native::CatiaEntitySuffixPayload::Atom { value } => {
+            properties.insert(format!("{prefix}_kind"), "atom".to_string());
+            properties.insert(format!("{prefix}_value"), value.to_string());
+        }
+        crate::native::CatiaEntitySuffixPayload::SchemaSelected {
+            selector_offset,
+            selector,
+            value,
+        } => {
+            properties.insert(format!("{prefix}_kind"), "schema_selected".to_string());
+            properties.insert(
+                format!("{prefix}_selector_offset"),
+                selector_offset.to_string(),
+            );
+            properties.insert(format!("{prefix}_selector"), selector.to_string());
+            insert_selected_value_properties(properties, &format!("{prefix}_selected"), value);
+        }
+        crate::native::CatiaEntitySuffixPayload::ControlE8 => {
+            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+        }
+        crate::native::CatiaEntitySuffixPayload::ControlE9 => {
+            properties.insert(format!("{prefix}_kind"), "control_e9".to_string());
+        }
+        crate::native::CatiaEntitySuffixPayload::Separator37 => {
+            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+        }
+    }
+}
+
+fn insert_selected_value_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    value: &crate::native::CatiaEntitySuffixSelectedValue,
+) {
+    match value {
+        crate::native::CatiaEntitySuffixSelectedValue::Atom { value } => {
+            properties.insert(format!("{prefix}_kind"), "atom".to_string());
+            properties.insert(format!("{prefix}_value"), value.to_string());
+        }
+        crate::native::CatiaEntitySuffixSelectedValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => {
+            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
+            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            insert_evaluation_properties(properties, prefix, evaluation);
+        }
+        crate::native::CatiaEntitySuffixSelectedValue::ControlE8 => {
+            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+        }
+        crate::native::CatiaEntitySuffixSelectedValue::Separator37 => {
+            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+        }
+        crate::native::CatiaEntitySuffixSelectedValue::SchemaSelector { offset, ordinal } => {
+            properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
+            properties.insert(format!("{prefix}_offset"), offset.to_string());
+            properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
+        }
+    }
+}
+
+fn insert_schema_selection_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    selection: &crate::native::CatiaEntitySuffixSchemaSelection,
+) {
+    properties.insert(format!("{prefix}_offset"), selection.offset.to_string());
+    properties.insert(format!("{prefix}_ordinal"), selection.ordinal.to_string());
+    properties.insert(format!("{prefix}_entry"), selection.entry.clone());
+    properties.insert(format!("{prefix}_name"), selection.name.clone());
+    insert_schema_selected_value_properties(
+        properties,
+        &format!("{prefix}_value"),
+        &selection.value,
+    );
+}
+
+fn insert_schema_selected_value_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    value: &crate::native::CatiaEntitySuffixSchemaValue,
+) {
+    match value {
+        crate::native::CatiaEntitySuffixSchemaValue::Atom { value } => {
+            properties.insert(format!("{prefix}_kind"), "atom".to_string());
+            properties.insert(format!("{prefix}_atom"), value.to_string());
+        }
+        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => {
+            properties.insert(format!("{prefix}_kind"), "evaluation".to_string());
+            properties.insert(format!("{prefix}_opcode_offset"), opcode_offset.to_string());
+            insert_evaluation_properties(properties, prefix, evaluation);
+        }
+        crate::native::CatiaEntitySuffixSchemaValue::ControlE8 => {
+            properties.insert(format!("{prefix}_kind"), "control_e8".to_string());
+        }
+        crate::native::CatiaEntitySuffixSchemaValue::Separator37 => {
+            properties.insert(format!("{prefix}_kind"), "separator_37".to_string());
+        }
+        crate::native::CatiaEntitySuffixSchemaValue::SchemaSelector {
+            offset,
+            ordinal,
+            entry,
+            name,
+        } => {
+            properties.insert(format!("{prefix}_kind"), "schema_selector".to_string());
+            properties.insert(format!("{prefix}_offset"), offset.to_string());
+            properties.insert(format!("{prefix}_ordinal"), ordinal.to_string());
+            if let Some(entry) = entry {
+                properties.insert(format!("{prefix}_entry"), entry.clone());
+            }
+            if let Some(name) = name {
+                properties.insert(format!("{prefix}_name"), name.clone());
+            }
+        }
+    }
+}
+
+fn insert_evaluation_properties(
+    properties: &mut BTreeMap<String, String>,
+    prefix: &str,
+    evaluation: &crate::native::CatiaEntityEvaluation,
+) {
+    match evaluation {
+        crate::native::CatiaEntityEvaluation::Unset => {
+            properties.insert(format!("{prefix}_evaluation"), "unset".to_string());
+        }
+        crate::native::CatiaEntityEvaluation::Scalar { bits } => {
+            properties.insert(format!("{prefix}_evaluation"), "scalar".to_string());
+            properties.insert(format!("{prefix}_evaluation_bits"), format!("{bits:016x}"));
+        }
+    }
+}
+
+fn evaluation_encoding_name(
+    encoding: crate::native::CatiaEntityEvaluationEncoding,
+) -> &'static str {
+    match encoding {
+        crate::native::CatiaEntityEvaluationEncoding::Direct => "direct",
+        crate::native::CatiaEntityEvaluationEncoding::ZeroPaddedScalar => "zero_padded_scalar",
+    }
 }
 
 struct PrincipalPlaneCandidate<'a> {
@@ -628,7 +857,11 @@ mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;
 
-    use crate::native::{CatiaDesignClass, CatiaEntityRecord, CatiaObjectGraph, CatiaObjectOwner};
+    use crate::native::{
+        CatiaDefinitionValue, CatiaDesignClass, CatiaEntityEvaluation,
+        CatiaEntityEvaluationEncoding, CatiaEntityRecord, CatiaEntitySchemaValue,
+        CatiaEntitySuffixPayload, CatiaObjectGraph, CatiaObjectOwner,
+    };
     use crate::object_graph::ObjectPayload;
 
     fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
@@ -966,6 +1199,119 @@ mod tests {
             transfer.consumed_records(),
             transfer.native_operation_records
         );
+    }
+
+    #[test]
+    fn transfers_exact_definition_values_as_opaque_native_properties() {
+        let mut operation = native_operation_object(
+            "operation-object",
+            None,
+            1,
+            "operation-record",
+            "Prism_ThickThin1",
+            "operation-entry",
+        );
+        operation
+            .definition_values
+            .push("definition-entity".to_string());
+        let mut definition_entity = entity_record("definition-entity", "operation-record", 20, 1);
+        definition_entity.definition_value = Some(CatiaDefinitionValue {
+            definition: CatiaEntitySchemaValue {
+                offset: 4,
+                ordinal: 2,
+                entry: "definition-entry".to_string(),
+                value: "Mirror".to_string(),
+            },
+            payload: CatiaEntitySuffixPayload::Evaluation {
+                opcode_offset: 8,
+                evaluation: CatiaEntityEvaluation::Scalar {
+                    bits: 12.5_f64.to_bits(),
+                },
+                encoding: CatiaEntityEvaluationEncoding::Direct,
+            },
+            schema_selection: None,
+        });
+        let native = CatiaNative {
+            design_objects: vec![operation],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![object_record(
+                    "operation-record",
+                    None,
+                    Some(1),
+                    None,
+                    Some("Prism_ThickThin1"),
+                    Some("operation-entry"),
+                )],
+            }],
+            entity_records: vec![definition_entity],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+
+        let FeatureDefinition::Native {
+            parameters,
+            properties,
+            ..
+        } = &ir.model.features[0].definition
+        else {
+            panic!("expected an opaque native operation");
+        };
+        assert!(parameters.is_empty());
+        assert_eq!(
+            properties,
+            &BTreeMap::from([
+                (
+                    "catia_definition_value_0_definition_entry".to_string(),
+                    "definition-entry".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_definition_offset".to_string(),
+                    "4".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_definition_ordinal".to_string(),
+                    "2".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_definition_value".to_string(),
+                    "Mirror".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_entity".to_string(),
+                    "definition-entity".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_payload_encoding".to_string(),
+                    "direct".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_payload_evaluation".to_string(),
+                    "scalar".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_payload_evaluation_bits".to_string(),
+                    format!("{:016x}", 12.5_f64.to_bits()),
+                ),
+                (
+                    "catia_definition_value_0_payload_kind".to_string(),
+                    "evaluation".to_string(),
+                ),
+                (
+                    "catia_definition_value_0_payload_opcode_offset".to_string(),
+                    "8".to_string(),
+                ),
+            ])
+        );
+        assert_eq!(transfer.native_operation_definition_value_count, 1);
     }
 
     #[test]
