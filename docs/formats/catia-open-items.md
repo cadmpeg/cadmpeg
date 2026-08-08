@@ -782,14 +782,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Two distinct vertices closer than the radius collapse into one. The lowest-row rule that the specification gives is scoped to coincident rows, not to a ball. We must know the radius, or the identity relation that removes the radius.
 
-### OS-19. Lifted endpoint magnitude limit
-
-**Question.** What bounds the magnitude of a lifted endpoint coordinate?
-
-**Known.** `graph` skips an edge when any lifted coordinate has magnitude `1e7` or more. `catia.md` gives no such bound. The edge then takes no vertex binding and leaves the graph.
-
-**Need.** We must know the bound, or the condition that makes the lift wrong, to keep a large but correct model.
-
 ### OS-20. Offset surface parameter-direction sense
 
 **Question.** Which field of a `b5 03 30`, `b5 03 31`, or `b2 03 31` offset record gives the U and V parameter-direction sense?

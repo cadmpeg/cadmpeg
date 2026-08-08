@@ -2096,13 +2096,6 @@ fn bind_native_vertices(
             ) else {
                 continue;
             };
-            if lifted
-                .iter()
-                .flatten()
-                .any(|coordinate| coordinate.abs() >= 1e7)
-            {
-                continue;
-            }
             match (
                 logical_coordinates.get(&vertices[0]).copied(),
                 logical_coordinates.get(&vertices[1]).copied(),
@@ -5887,6 +5880,60 @@ mod tests {
             ),
             BTreeMap::from([(3, [0, 1])])
         );
+    }
+
+    #[test]
+    fn finite_large_lifted_endpoints_bind_native_vertices() {
+        let endpoints = [[1.0e8, 2.0e8, 3.0e8], [1.0e8 + 5.0, 2.0e8, 3.0e8]];
+        let pcurves = BTreeMap::from([(
+            2,
+            B5Pcurve {
+                object_id: 2,
+                surface: 4,
+                degree: 1,
+                distinct_knots: vec![0.0, 1.0],
+                multiplicities: vec![2, 2],
+                control_points: vec![[0.0, 0.0], [1.0, 0.0]],
+                weights: None,
+                parameter_range: None,
+                class_21_suffix_scalar: None,
+                lifted_endpoints: Some(endpoints),
+            },
+        )]);
+        let opaque_pcurves = BTreeMap::new();
+        let surfaces = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let edge_parameter_incidences = BTreeMap::new();
+        let parameter_incidences = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+            edge_parameter_incidences: &edge_parameter_incidences,
+            parameter_incidences: &parameter_incidences,
+        };
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            metadata: test_loop_metadata(1),
+            surface: 4,
+        };
+
+        let bound = bind_native_vertices(
+            &BTreeMap::from([(1, loop_)]),
+            &geometry,
+            &BTreeMap::from([(3, [10, 11])]),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &[],
+        );
+
+        assert_eq!(bound.edges, BTreeMap::from([(3, [0, 1])]));
+        assert_eq!(bound.refs, vec![10, 11]);
+        assert_eq!(bound.points, endpoints);
+        assert!(bound.tolerances.is_empty());
     }
 
     #[test]
