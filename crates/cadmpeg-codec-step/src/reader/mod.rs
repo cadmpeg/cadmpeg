@@ -11,6 +11,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
@@ -246,7 +247,7 @@ fn decode_exchange_mode(
     report.losses.extend(drawing.losses);
     typed_records.extend(drawing.typed_records);
     let mut post_decode_warnings = Vec::new();
-    retain_unowned_pcurves(
+    retain_unowned_carriers(
         exchange,
         &mut ir,
         &mut typed_records,
@@ -390,7 +391,7 @@ fn decode_exchange_mode(
     )
 }
 
-fn retain_unowned_pcurves(
+fn retain_unowned_carriers(
     exchange: &Exchange,
     ir: &mut CadIr,
     typed_records: &mut BTreeSet<u64>,
@@ -408,7 +409,7 @@ fn retain_unowned_pcurves(
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
         }))
         .collect::<BTreeSet<_>>();
-    let unowned = exchange
+    let unowned_pcurves = exchange
         .records
         .iter()
         .filter(|(_, record)| {
@@ -420,7 +421,32 @@ fn retain_unowned_pcurves(
         .map(|(&id, _)| id)
         .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
         .collect::<BTreeSet<_>>();
-    if unowned.is_empty() {
+    let referenced = referenced_record_ids(exchange);
+    let unowned_direct_carriers = ir
+        .model
+        .points
+        .iter()
+        .filter(|point| point.source_object.is_none())
+        .map(|point| point.id.0.as_str())
+        .chain(
+            ir.model
+                .curves
+                .iter()
+                .filter(|curve| curve.source_object.is_none())
+                .map(|curve| curve.id.0.as_str()),
+        )
+        .chain(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| surface.source_object.is_none())
+                .map(|surface| surface.id.0.as_str()),
+        )
+        .filter_map(step_id_from_ir)
+        .filter(|id| exchange.records.contains_key(id) && !referenced.contains(id))
+        .collect::<BTreeSet<_>>();
+    associate_unowned_direct_carriers(ir, &unowned_direct_carriers);
+    if unowned_pcurves.is_empty() {
         return;
     }
     let mut roots = BTreeSet::new();
@@ -488,10 +514,10 @@ fn retain_unowned_pcurves(
     }
     let protected_roots = roots
         .into_iter()
-        .filter(|id| !unowned.contains(id))
+        .filter(|id| !unowned_pcurves.contains(id))
         .collect::<BTreeSet<_>>();
     let protected = record_closure(&protected_roots, exchange);
-    let removed_closure = record_closure(&unowned, exchange);
+    let removed_closure = record_closure(&unowned_pcurves, exchange);
     let deleted_pcurves = ir
         .model
         .pcurves
@@ -547,13 +573,61 @@ fn retain_unowned_pcurves(
         .procedural_surfaces
         .retain(|surface| retains_carrier(&surface.id.0, &removed_closure, &protected));
     typed_records.retain(|id| {
-        !unowned.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
+        !unowned_pcurves.contains(id) && (!removed_closure.contains(id) || protected.contains(id))
     });
-    let protected_pcurves = unowned.iter().filter(|id| protected.contains(id)).count();
-    let opaque_pcurves = unowned.len() - protected_pcurves;
+    let protected_pcurves = unowned_pcurves
+        .iter()
+        .filter(|id| protected.contains(id))
+        .count();
+    let opaque_pcurves = unowned_pcurves.len() - protected_pcurves;
     warnings.push(format!(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     ));
+}
+
+fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
+    for point in &mut ir.model.points {
+        let Some(id) = step_id_from_ir(&point.id.0) else {
+            continue;
+        };
+        if ids.contains(&id) {
+            point
+                .source_object
+                .get_or_insert_with(|| direct_carrier_association(id));
+        }
+    }
+    for curve in &mut ir.model.curves {
+        let Some(id) = step_id_from_ir(&curve.id.0) else {
+            continue;
+        };
+        if ids.contains(&id) {
+            curve
+                .source_object
+                .get_or_insert_with(|| direct_carrier_association(id));
+        }
+    }
+    for surface in &mut ir.model.surfaces {
+        let Some(id) = step_id_from_ir(&surface.id.0) else {
+            continue;
+        };
+        if ids.contains(&id) {
+            surface
+                .source_object
+                .get_or_insert_with(|| direct_carrier_association(id));
+        }
+    }
+}
+
+fn direct_carrier_association(id: u64) -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: "step".into(),
+        object_id: format!("#{id}"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    }
 }
 
 fn retains_carrier(
@@ -588,6 +662,20 @@ fn record_closure(roots: &BTreeSet<u64>, exchange: &Exchange) -> BTreeSet<u64> {
         pending.extend(references);
     }
     closure
+}
+
+fn referenced_record_ids(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut references = BTreeSet::new();
+    for record in exchange.records.values() {
+        for parameter in record
+            .partials
+            .iter()
+            .flat_map(|partial| partial.parameters.iter())
+        {
+            collect_references(parameter, &mut references);
+        }
+    }
+    references
 }
 
 fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
