@@ -502,16 +502,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
 
-### SN-28. Edge-row handle width
-
-**Question.** Which field gives the handle width of an FBB-path edge-row table?
-
-**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" gives "one uniquely selected width across the table sequence". `catia.md` §10 "A nested-`V5_CFV2` file with a valid FBB face group" gives "The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table." `fbb::parse_edge_tables_scoped_at` applies both conditions to widths 1, 2, and 3 and keeps a width only when one width satisfies them. `fbb::parse_fbb_edge_tables` tests widths 3, 2, then 1 and keeps the first width that lands on both delimiters. It does not apply the vertex-table condition.
-
-**Need.** Widths 1 and 3 share a delimiter, so they are competing grammars over the same bytes. A wrong width reads every handle from the wrong bytes and gives a complete but wrong topology, with no loss. We must know the field to select the width without a trial.
-
-**Note.** `fbb::parse_edge_tables` calls the unique-width function first. That function keeps no width when two widths satisfy both conditions. The caller reads that refusal as "the scoped grammar does not apply" and then calls `parse_fbb_edge_tables`, which takes width 3. The refusal has no effect. `standard::topology::parse_fbb` calls `parse_fbb_edge_tables` directly and applies the vertex-table condition after the width is fixed, so a width that satisfies both delimiters but no vertex table stops the parse instead of yielding to the next width.
-
 ### SN-29. Class-`0x60` table anchor
 
 **Question.** Which field gives the start of the class-`0x60` curve-support table when the face-local surface roster does not resolve?

@@ -9,9 +9,9 @@ use std::{
 use cadmpeg_ir::topology::BodyKind;
 
 use crate::families::standard::fbb::{
-    parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-    parse_trim_chain, parse_trim_record, parse_trim_record_layout, parse_vertex_table,
-    prune_edge_candidates_by_port_domains, standard_face_count, EDGE_DELIMITER,
+    parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables,
+    parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
+    parse_vertex_table, prune_edge_candidates_by_port_domains, standard_face_count, EDGE_DELIMITER,
 };
 use crate::families::standard::topology::{
     complete_duplicate_face_slots, reconstruct_incidence, solve_boundary_orientation_constraints,
@@ -6259,6 +6259,43 @@ fn counted_edge_arities_are_bounded_by_remaining_bytes() {
 }
 
 #[test]
+fn fbb_edge_width_requires_a_complete_counted_vertex_table() {
+    let mut bytes = Vec::new();
+    for kind in [1, 2] {
+        bytes.extend_from_slice(&[0x01, kind, 0x01, 0x02, 0x02]);
+        bytes.extend_from_slice(&[0x01, 0x02, 0x03, 0x04, 0x05, 0x06]);
+        bytes.extend_from_slice(&EDGE_DELIMITER);
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x01]);
+
+    assert!(parse_fbb_edge_tables_width(&bytes, 0, 3).is_some());
+    assert!(parse_fbb_edge_tables(&bytes, 0).is_none());
+}
+
+#[test]
+fn standard_edge_tables_use_the_fixed_u16_width_when_rows_are_empty() {
+    let mut bytes = vec![
+        0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2, 0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2,
+        0xd2,
+    ];
+    for kind in [1, 2] {
+        bytes.extend_from_slice(&[0x01, kind, 0x00]);
+        bytes.extend_from_slice(&EDGE_DELIMITER);
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 0x03]);
+    for xyz in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let points = crate::families::standard::fbb::standard_vertex_points(&bytes)
+        .expect("standard vertex table");
+    assert_eq!(points.len(), 3);
+}
+
+#[test]
 fn trim_primitive_counts_are_bounded_by_remaining_bytes() {
     let oversized_primitives = [
         0x01, 0x46, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00, 0x00,
@@ -6814,12 +6851,6 @@ mod record_decoders {
             crate::solve::missing_edge::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
         assert_eq!(runs.len(), 8);
         assert!(runs.iter().all(|run| run.segment_count == 1));
-        assert_eq!(
-            crate::families::standard::fbb::standard_vertex_points(&bytes)
-                .expect("required invariant")
-                .len(),
-            4
-        );
     }
 
     #[test]

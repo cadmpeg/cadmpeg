@@ -61,12 +61,12 @@ pub fn standard_face_frame_vectors(bytes: &[u8]) -> Vec<Option<[f64; 3]>> {
         .collect()
 }
 
-/// Return the counted standard-spine vertex table. The edge-table width family
-/// is resolved structurally before accepting the following `01 06` table.
+/// Return the counted vertex table of a standard nested spine using its fixed
+/// `u16be` edge-row grammar.
 #[must_use]
-pub fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+pub(crate) fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (_, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     parse_vertex_table(bytes, vertex_header)
 }
 
@@ -76,7 +76,7 @@ pub fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
 #[must_use]
 pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let mut solutions = Vec::new();
     for width in [1, 2, 3] {
@@ -103,7 +103,7 @@ pub fn parse_standard_motif(
     circle_anchors: &[Option<[usize; 2]>],
 ) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
         return None;
@@ -166,7 +166,7 @@ pub fn parse_standard_endpoints_with_edge_classes(
     edge_classes: Option<&[usize]>,
 ) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_points.len()
@@ -269,7 +269,7 @@ pub fn parse_standard_endpoint_candidates(
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
@@ -303,7 +303,7 @@ pub fn parse_standard_port_endpoint_candidates(
     edge_ports: &[[u32; 2]],
 ) -> Option<StandardTopology> {
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let (edge_rows, vertex_header) = parse_standard_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
@@ -331,9 +331,20 @@ pub(crate) fn parse_fbb_edge_tables(
     bytes: &[u8],
     position: usize,
 ) -> Option<(Vec<EdgeRow>, Vec<usize>, usize, usize)> {
-    [3, 2, 1]
+    // FBB-only tables select one width by the complete table-and-vertex walk;
+    // accepting the first delimiter match would assign a wrong handle grammar.
+    let solutions = [1, 2, 3]
         .into_iter()
-        .find_map(|handle_width| parse_fbb_edge_tables_width(bytes, position, handle_width))
+        .filter_map(|handle_width| {
+            let parsed = parse_fbb_edge_tables_width(bytes, position, handle_width)?;
+            parse_vertex_table(bytes, parsed.2)
+                .is_some()
+                .then_some(parsed)
+        })
+        .collect::<Vec<_>>();
+    <[_; 1]>::try_from(solutions)
+        .ok()
+        .map(|[solution]| solution)
 }
 
 pub(crate) fn parse_fbb_edge_tables_width(
@@ -473,9 +484,19 @@ pub(crate) fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<Ed
     if let Some(result) = parse_edge_tables_at(bytes, position) {
         return Some(result);
     }
-    parse_fbb_edge_tables(bytes, position)
-        .filter(|(_, _, vertex_header, _)| parse_vertex_table(bytes, *vertex_header).is_some())
-        .map(|(rows, _, vertex_header, _)| (rows, vertex_header))
+    parse_fbb_edge_tables(bytes, position).map(|(rows, _, vertex_header, _)| (rows, vertex_header))
+}
+
+pub(crate) fn parse_standard_edge_tables(
+    bytes: &[u8],
+    position: usize,
+) -> Option<(Vec<EdgeRow>, usize)> {
+    // Standard edge rows are fixed-width u16be. Do not fall through to a
+    // variable-width family when the fixed standard walk is incomplete.
+    let (rows, _, vertex_header) = parse_edge_tables_scoped_width(bytes, position, 2)?;
+    parse_vertex_table(bytes, vertex_header)
+        .is_some()
+        .then_some((rows, vertex_header))
 }
 
 pub(crate) fn parse_edge_tables_at(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {

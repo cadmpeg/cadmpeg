@@ -5,7 +5,7 @@
 #[cfg(test)]
 use crate::families::standard::fbb::parse_fbb_edge_tables;
 use crate::families::standard::fbb::{
-    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_edge_tables_scoped_at,
+    boundary_cycles, largest_fbb_run, parse_edge_tables, parse_standard_edge_tables,
     parse_trim_chain, parse_vertex_table,
 };
 use crate::families::standard::topology::{incidence_cycles, EdgeRow, TrimRecord};
@@ -30,7 +30,7 @@ pub fn standard_edge_rows(bytes: &[u8]) -> Option<Vec<EdgeRow>> {
 
 pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (_, _, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _, _) = parse_edge_tables_scoped_at(bytes, after_faces)?;
+    let (edge_rows, _) = parse_standard_edge_tables(bytes, after_faces)?;
     edge_rows
         .iter()
         .enumerate()
