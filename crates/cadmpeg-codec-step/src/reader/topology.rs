@@ -31,6 +31,7 @@ pub(super) struct TopologyResult {
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
+    shape_representation_relationships: BTreeMap<u64, Vec<u64>>,
     pub body_by_shell: BTreeMap<u64, BTreeSet<BodyId>>,
     pub faces_by_source: BTreeMap<u64, Vec<FaceId>>,
     pub edges_by_source: BTreeMap<u64, Vec<EdgeId>>,
@@ -74,40 +75,86 @@ pub(super) fn representation_bodies(
     if !active.insert(representation) {
         return Vec::new();
     }
-    let bodies = exchange
+    let mut body_ids = BTreeSet::new();
+    if let Some(items) = exchange
         .records
         .get(&representation)
         .and_then(representation_items)
-        .into_iter()
-        .flatten()
-        .flat_map(|item| {
+    {
+        for item in items {
             let Some(record) = exchange.records.get(&item) else {
-                return Vec::new();
+                continue;
             };
             if let Some(bodies) = topology.body_by_root.get(&item) {
-                return bodies.clone();
+                body_ids.extend(bodies.iter().cloned());
+                continue;
             }
             if !has_type(record, "MAPPED_ITEM") {
-                return Vec::new();
+                continue;
             }
             let Some(mapped_representation) = mapped_representation(record, exchange) else {
-                return Vec::new();
+                continue;
             };
-            representation_bodies(
+            body_ids.extend(representation_bodies(
                 mapped_representation,
                 exchange,
                 topology,
                 cache,
                 active,
                 depth + 1,
-            )
-        })
-        .collect::<BTreeSet<_>>()
+            ));
+        }
+    }
+    for related in topology
+        .shape_representation_relationships
+        .get(&representation)
         .into_iter()
-        .collect::<Vec<_>>();
+        .flatten()
+        .copied()
+    {
+        body_ids.extend(representation_bodies(
+            related,
+            exchange,
+            topology,
+            cache,
+            active,
+            depth + 1,
+        ));
+    }
+    let bodies = body_ids.into_iter().collect::<Vec<_>>();
     active.remove(&representation);
     cache.insert(representation, bodies.clone());
     bodies
+}
+
+/// A product shape can use a placement-only `SHAPE_REPRESENTATION` and link
+/// it to the body-producing representation with `SHAPE_REPRESENTATION_RELATIONSHIP`.
+/// The relationship is undirected for body reachability; retain both endpoints
+/// in one indexed graph so resolution does not rescan the exchange per call.
+fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<u64>> {
+    let mut related = BTreeMap::<u64, Vec<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+            continue;
+        };
+        let mut references = relationship
+            .parameters
+            .iter()
+            .filter_map(ValueExt::reference);
+        let Some(first) = references.next() else {
+            continue;
+        };
+        let Some(second) = references.next() else {
+            continue;
+        };
+        related.entry(first).or_default().push(second);
+        related.entry(second).or_default().push(first);
+    }
+    for representations in related.values_mut() {
+        representations.sort_unstable();
+        representations.dedup();
+    }
+    related
 }
 
 fn representation_items(record: &RawRecord) -> Option<Vec<u64>> {
@@ -137,6 +184,7 @@ pub(super) fn decode(
         warnings: Vec::new(),
         losses: Vec::new(),
         body_by_root: BTreeMap::new(),
+        shape_representation_relationships: shape_representation_relationships(exchange),
         body_by_shell: BTreeMap::new(),
         faces_by_source: BTreeMap::new(),
         edges_by_source: BTreeMap::new(),

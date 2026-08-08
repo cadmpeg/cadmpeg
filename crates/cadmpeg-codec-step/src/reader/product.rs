@@ -368,6 +368,7 @@ pub(super) fn decode(
         "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
         "REPRESENTATION_MAP",
         "MAPPED_ITEM",
+        "SHAPE_REPRESENTATION_RELATIONSHIP",
         "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
     ]) {
         if [
@@ -380,6 +381,7 @@ pub(super) fn decode(
             "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",
             "REPRESENTATION_MAP",
             "MAPPED_ITEM",
+            "SHAPE_REPRESENTATION_RELATIONSHIP",
         ]
         .iter()
         .any(|name| record.partial(name).is_some())

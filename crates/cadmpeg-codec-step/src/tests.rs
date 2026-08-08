@@ -4002,6 +4002,34 @@ fn geometric_bounded_surface_representation_reaches_its_product() {
 }
 
 #[test]
+fn shape_representation_relationship_reaches_its_product_body() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#14=PRODUCT('P','related shape part','',());\n#15=PRODUCT_DEFINITION_FORMATION('','',#14);\n#16=APPLICATION_CONTEXT('mechanical design');\n#17=PRODUCT_DEFINITION_CONTEXT('part definition',#16,'design');\n#18=PRODUCT_DEFINITION('part','',#15,#17);\n#19=PRODUCT_DEFINITION_SHAPE('','',#18);\n#20=SHAPE_DEFINITION_REPRESENTATION(#19,#21);\n#21=SHAPE_REPRESENTATION('',(),#2);\n#22=SHAPE_REPRESENTATION_RELATIONSHIP('','',#21,#13);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode related shape representation");
+
+    assert_eq!(decoded.ir.model.product_definitions.len(), 1);
+    assert_eq!(decoded.ir.model.product_definitions[0].bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.product_definitions[0].bodies[0].as_str(),
+        "step:data:body#13"
+    );
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("has a shape representation with no committed topology body")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn product_descriptions_transfer_from_product_and_definition() {
     let decoded = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
