@@ -2088,6 +2088,8 @@ fn parameter_range_agreement_tolerance(left: [f64; 2], right: [f64; 2]) -> Optio
     if !parameter_scale.is_finite()
         || parameter_scale == 0.0
         || (left_span - right_span).abs() > 1e-9 * parameter_scale
+        || (left[0] - right[0]).abs() > 1e-9 * parameter_scale
+        || (left[1] - right[1]).abs() > 1e-9 * parameter_scale
     {
         return None;
     }
@@ -2331,7 +2333,8 @@ mod route_tests {
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_context,
         e5_ownership_plan, e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
-        fit_rank_one_e5_plane_axes, parameter_ranges_reversed, solve_e5_plane_frame,
+        fit_rank_one_e5_plane_axes, parameter_range_agreement_tolerance, parameter_ranges_reversed,
+        solve_e5_plane_frame,
     };
 
     use crate::families::e5::graph::{
@@ -3264,6 +3267,12 @@ mod route_tests {
         assert!(e5_occurrence_intersection_context(&tiny_sides).is_some());
         tiny_sides[1].2 = [0.0, 2.0 * tiny];
         assert!(e5_occurrence_intersection_context(&tiny_sides).is_none());
+    }
+
+    #[test]
+    fn support_range_agreement_requires_matching_endpoints() {
+        assert!(parameter_range_agreement_tolerance([0.0, 5.0], [0.0, 5.0]).is_some());
+        assert!(parameter_range_agreement_tolerance([0.0, 5.0], [1.0, 6.0]).is_none());
     }
 
     #[test]
