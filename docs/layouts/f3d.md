@@ -9,10 +9,10 @@ Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
-compact `Loft` prefix, the class-418 `SplitFace` prefix, and the sheet-metal
-`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
-`docs/layouts/asm.toml`. Container and manifest layers are text grammars and
-are listed under "Not tabulated".
+compact `Loft` prefix and nested profile-region frames, the class-418
+`SplitFace` prefix, and the sheet-metal `EdgeFlange` fixed operation section
+(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`. Container
+and manifest layers are text grammars and are listed under "Not tabulated".
 
 ## `indexed_design_record_header`
 
@@ -75,6 +75,36 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 29 | 1 | `zero_flag` | `u8` | little | spec | Byte 29 is zero |
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
+
+## `sketch_profile_region_selection_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Offsets are relative to the N+3 selection header. The ordered variable-length region run starts at offset 40.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | starts with its eleven-byte indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes |
+| 21 | 1 | `profile_reference_marker` | `u8` | little | spec | a marked reference to `N` |
+| 22 | 4 | `profile_record_index` | `u32` | little | spec | a marked reference to `N` |
+| 26 | 6 | `zero_run_6` | `bytes[6]` | little | spec | six zero bytes |
+| 32 | 4 | `format_version` | `u32` | little | spec | u32 `1` |
+| 36 | 4 | `region_count` | `u32` | little | spec | a nonzero u32 region count |
+
+## `sketch_profile_region_member`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+The member repeats within each selected region. Region and member counts and the later-region marker are outside this fixed member frame.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | u32 kind `3` |
+| 4 | 4 | `curve_primary_id` | `u32` | little | spec | one nonzero u32 primary persistent Sketch-curve identity |
+| 8 | 12 | `zero_words_3` | `u32[3]` | little | spec | three zero u32 values |
+| 20 | 12 | `incidence_words` | `u32[3]` | little | spec | three incidence values |
+| 32 | 8 | `zero_words_2` | `u32[2]` | little | spec | two zero u32 values |
 
 ## `base_feature_result_body_prefix`
 
