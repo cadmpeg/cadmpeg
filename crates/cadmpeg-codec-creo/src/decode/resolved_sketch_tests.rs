@@ -12837,6 +12837,10 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
     );
+    assert_eq!(
+        resolved_section_radii(&legacy_radius_definition),
+        BTreeMap::from([(0, 3.0)])
+    );
     legacy_radius_definition
         .dimensions
         .as_mut()
@@ -12854,6 +12858,10 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
             parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
         }
+    );
+    assert_eq!(
+        resolved_section_radii(&legacy_radius_definition),
+        BTreeMap::from([(0, 1.5)])
     );
     legacy_radius_definition
         .dimensions

@@ -39,8 +39,9 @@ fixtures, claims above L1 remain unproven.
   perpendicular/parallel incidence component to establish the same unbounded
   fixed-coordinate construction when both referenced endpoint ordinates agree.
 - Active solver incidences drive coordinate, orientation, equality, radius,
-  and supported dimensional equations; disabled incidences remain retained but
-  do not affect solved geometry.
+  and supported dimensional equations; type-five arc-radius relations seed the
+  joined radius component in radius and diameter form. Disabled incidences
+  remain retained but do not affect solved geometry.
 - Linear extrusions and rotations transfer when profile, placement, direction,
   and termination have independent byte-backed proofs. Additive linear
   extrusions also accept a closed one-entity circle section, a closed single
