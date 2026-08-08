@@ -729,8 +729,9 @@ impl<'a> Builder<'a> {
         // color is its own override when present, otherwise the color of the
         // body that owns it. Whole-solid styling is intentionally not emitted:
         // common OCCT/VTK-based viewers (f3d, CAD Assistant) read STEP surface
-        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP, so a
-        // body color left at the solid level renders as the viewer default.
+        // colors only from ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP. A
+        // body with no emitted face instead uses its emitted shape carrier so
+        // wire and reduced bodies retain a writable whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
         let mut faces: Vec<(String, Ref)> = self
@@ -824,9 +825,40 @@ impl<'a> Builder<'a> {
                     .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
             );
         }
+        for (body_id, spec) in &body_colors {
+            if styled_bodies.contains(body_id) {
+                continue;
+            }
+            let Some(target) = self.body_shape_refs.get(*body_id).copied() else {
+                continue;
+            };
+            if let Some(binding_id) = spec.binding_id {
+                self.written_appearance_bindings
+                    .insert(binding_id.to_string());
+            }
+            let name = spec
+                .appearance
+                .and_then(|appearance| appearance.name.as_deref())
+                .unwrap_or("");
+            let style = if self
+                .bodies
+                .get(*body_id)
+                .is_some_and(|body| body.kind == BodyKind::Wire)
+            {
+                self.curve_style(spec.color, name, &mut style_refs)
+            } else {
+                self.surface_style(spec.color, name, &mut style_refs)
+            };
+            styled.push(
+                self.emitter
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
+            );
+            styled_bodies.insert(body_id);
+        }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces without an explicit STEP surface).
+        // skipped (hidden bodies or faces without an explicit STEP surface),
+        // and no whole-body carrier was emitted.
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()

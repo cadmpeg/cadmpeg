@@ -4538,10 +4538,19 @@ fn writer_round_trips_edge_based_wire_bodies() {
     ir.model.regions[0].shells = vec![ir.model.shells[0].id.clone()];
     ir.model.bodies.truncate(1);
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
+        r: 0.2,
+        g: 0.4,
+        b: 0.8,
+        a: 1.0,
+    });
     ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
 
     let mut output = Vec::new();
     write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write wire body");
+    let text = String::from_utf8(output.clone()).expect("wire STEP is UTF-8");
+    assert!(text.contains("CURVE_STYLE"));
+    assert_eq!(text.matches("STYLED_ITEM").count(), 1);
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode wire body");
@@ -4552,6 +4561,15 @@ fn writer_round_trips_edge_based_wire_bodies() {
     );
     assert_eq!(decoded.ir.model.edges.len(), 1);
     assert_eq!(decoded.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(
+        decoded.ir.model.bodies[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.2,
+            g: 0.4,
+            b: 0.8,
+            a: 1.0,
+        })
+    );
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses);
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
