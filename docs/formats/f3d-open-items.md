@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-42. Clause ordinal of a rectangular sketch-relation
-
-**Question.** Which member gives the auxiliary-run position where a rectangular sketch-relation's first direction clause opens?
-
-**Known.** `f3d.md` §3.1 "The two reference runs hold the same members." gives each clause as the evaluated count, the count-parameter reference, a three-component unit direction, a source distance scalar, and the distance-parameter reference. It gives no rule that locates the first clause when the class walk is incomplete.
-
-`decode_pattern_definition` in `design/decode/sketch.rs` takes the ordinal from `rectangular_clause_ordinal`. That field is absent both when the class was not named and when one clause reference is absent. The fallback then uses `auxiliary_references.len() == 5` as the ordinal. The field's own comment names the behaviour: the ordinals "are guessed from the length of the auxiliary run".
-
-**Need.** The two absent cases are different. A relation with one absent clause reference and a run of length five reads the clause pair one position late, and the two directions then carry the wrong parameter references. Only the unit-direction test and the count range reject the shift.
-
 ### DR-43. Envelope of a whole-body construction operand
 
 **Question.** What bounds the byte span in which one whole-body construction operand's body recipe stands?
