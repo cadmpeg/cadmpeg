@@ -120,6 +120,32 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to solve the section variable.
 
+### SE-14. Paired cache tail collisions
+
+**Question.** Which `46 <byte1> <tail6>` token supplies the leading byte for a `9e` or `a3` token when more than one cache token has the same six-byte tail and a different `<byte1>`?
+
+**Known.** `creo_prt.md` §2.3 "Lane-specific seven-byte forms include" defines the paired reconstruction and names one source token for each tail. The section cache holds each distinct eight-byte `46` image, so two tokens can share a tail and differ in `<byte1>`. A round value has an all-zero tail, thus a collision is common.
+
+**Conflict.** The specification names one source token. `scalar.rs` `ScalarCache::from_section` keeps the first token scanned for each tail through `or_insert` and discards the other tokens. It applies no uniqueness gate.
+
+**Need.** We must know the selection rule to reconstruct the correct magnitude. A wrong selection gives a finite coordinate or radius with the exponent of a different value, and no gate rejects it.
+
+### SE-15. `18` standalone-zero and cache-index boundary
+
+**Question.** Which rule separates a standalone-zero `18` from an `18 <index>` cache reference?
+
+**Known.** `creo_prt.md` §2.3 "`0d` encodes negative one" states that `18` followed by any defined scalar opener encodes a standalone zero, and that `18 <index>` indexes the section-local `46` cache.
+
+**Need.** We must know the complete set of defined scalar openers to separate the two forms. `scalar.rs` `decode_in_lane` tests the following byte against the local `LANE_OPENERS` table. Each entry in that table removes one compact-integer head from the reachable index range, so every cache index whose head byte is in the table cannot be read. The table also holds bytes that `decode` does not define.
+
+### SE-16. `MdlRefInfo` arc row scalar lane
+
+**Question.** Which scalar lane do the coordinates of an `ent_list(arc_z)` row use?
+
+**Known.** `creo_prt.md` §2.3 "Lane-specific seven-byte forms include" defines the lane-specific prefix tables. `creo_prt.md` §2.3 "`<prefix> <tail6>` uses the prefix" gives the lane-specific priority rule. The tabulated-cylinder first-coordinate lane and the model-reference lane assign opposite signs to prefixes `46` and `2d`, and different magnitudes to prefixes `af`, `b0`, and `b1`.
+
+**Need.** We must know the lane to give the arc its correct sign. `reference.rs` `arc_z_coordinate` tries the tabulated-cylinder first-coordinate lane before the model-reference lane, where the sibling function `coordinate` uses the model-reference lane alone for line and conic rows of the same section. A sign inversion shared by every point of one arc keeps the circle invariants true, so no gate rejects it.
+
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
@@ -305,6 +331,82 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define the generated-surface arrays and the rowless-cylinder special case.
 
 **Need.** We must know the binding to add the generated faces to the body topology.
+
+### GS-24. Prototype first-instance row selection
+
+**Question.** Which condition makes the preceding adjacent surface row, and not the following adjacent row, the first instance of a named prototype?
+
+**Known.** `creo_prt.md` §3.2 "Named prototype fields describe the first surface instance" states that the preceding adjacent row is the first instance when the prototype separates that row from replay rows, and that the following adjacent row is the first instance in other conditions.
+
+**Conflict.** The specification makes the selection conditional. `decode.rs` `unique_surface_prototype_associations` selects the nearest preceding same-family row in all conditions and uses the following row only when the nearest preceding row has a different family. The decoder does not evaluate the separation condition.
+
+**Need.** We must know the condition to apply prototype `local_sys`, radius, and spline fields to the correct surface row. A wrong selection gives one surface the geometry of a different surface of the same family. The per-row uniqueness filter rejects two prototypes that select one row; it does not reject two prototypes that each select a different wrong row.
+
+### GS-25. Eight-slot type-24 terminal frame precedence
+
+**Question.** Which rule separates the single-diameter round frame from the square-radial round frame when a type-24 terminal scalar frame has exactly eight slots?
+
+**Known.** `creo_prt.md` §3.2 defines both forms. It gives a precedence rule against the repeated-diameter form only. At eight slots both grammars read the same six corner slots, so both are admissible.
+
+**Need.** We must know the rule to build the correct cylinder axis and radius. `surface.rs` `type24_round_frame` accepts the single-diameter form first and does not test the square-radial form. A square-radial body whose auxiliary slot equals one span decodes as a cylinder with a diagonal axis and the wrong radius, and the face is placed on that carrier.
+
+### GS-26. Positional cylinder terminal radius boundary
+
+**Question.** Which token boundary separates the twelve-slot `local_sys` from the terminal radius in a positional cylinder body?
+
+**Known.** `creo_prt.md` §3.2 states that the body holds exactly one complete twelve-slot positional `local_sys` and ends with one positive scalar radius. It gives no marker for the radius token start.
+
+**Need.** We must know the boundary to read the radius and the local system. `surface.rs` `decode_local_system_cylinder_frame` and `decode_zero_support_cylinder_origin_radius` accept the lowest offset whose scalar decodes positive and ends at the body end. The sibling function `decode_positional_cylinder_origin_radius` collects every such offset and requires exactly one.
+
+### GS-27. Named `srf_array` row discriminator defaults
+
+**Question.** What surface-row state does a `boundary_type` byte outside `00`, `01`, `06`, and `f6`, or an `orient` byte outside `01` and `f6`, encode?
+
+**Known.** `creo_prt.md` §3.1 defines the named-record row fields and the defined discriminator values.
+
+**Need.** We must know the states to classify the row. `surface.rs` `rows_with_boundaries` gives a named row `boundary_type` zero when the byte is absent or undefined, and `reversed` false when `orient` is absent or undefined. It publishes both as byte-backed fields. The positional branch of the same function rejects the row in these conditions.
+
+### GS-28. Curve parameter-record suffix boundary
+
+**Question.** Which rule selects the body and suffix boundary of a curve parameter record when more than one four-reference suffix start is byte-valid?
+
+**Known.** `creo_prt.md` §4.1 defines the suffix as four references before the record close.
+
+**Need.** We must know the rule to bound the scalar lane. `curve.rs` `parameter_records` accepts the first candidate, which its `4..=11` scan makes the shortest suffix and the longest body. The record is marked ambiguous and its geometry consumers drop it, so the wrong split reaches the native arena only. The sibling function `topology_suffix` rejects the same condition.
+
+### GS-29. `MdlRefInfo` positional row body extent
+
+**Question.** What bounds the body of an `ent_list(line3d)` or `ent_list(arc_z)` row?
+
+**Known.** `creo_prt.md` §8.5 states that exactly one seven-scalar run may satisfy the `line3d` endpoint and stored-length invariant, and that exactly one run may satisfy the `arc_z` circle invariant. The next row header or the block end bounds the row.
+
+**Need.** We must know the extent to apply the uniqueness rule to the complete row. `reference.rs` `line3d_lines` and `arc_z_circles` compute the true bound and then reduce it to 384 and 256 bytes. Neither constant comes from the format. A competing run outside the window makes the decoder report one candidate where the specification requires a withhold.
+
+### GS-30. `entity(line)` six-scalar suffix start
+
+**Question.** Which byte offset begins the six-scalar endpoint suffix of an `entity(line)` row?
+
+**Known.** `creo_prt.md` §8.5 states that a positional row defines a line only when exactly six finite scalars consume the complete suffix. It states no uniqueness rule for the start offset, where it states one for `line3d` and `arc_z`.
+
+**Need.** We must know the start to read the endpoints. `reference.rs` `scalar_suffix` accepts the lowest qualifying offset. A qualifying run that begins inside the row header gives three header-derived coordinates, and the record carries no entity identifier for a cross-check.
+
+### GS-31. Positional conic local-system boundary
+
+**Question.** Which end offset bounds the twelve-slot local system of a positional conic row?
+
+**Known.** `creo_prt.md` §8.5 states that a complete row consumes all twelve local-system slots before its trailing compound record. For the named conic row it requires the unique image that follows a complete twelve-slot frame.
+
+**Need.** We must know the boundary to build the conic frame. `reference.rs` `positional_conic_body` accepts the shortest end offset that yields twelve slots. The sibling function `named_conic_local_system` tracks a competing frame and rejects the row when two boundaries both give a complete frame.
+
+### GS-32. `tab_cyl` chart intercept magnitude
+
+**Question.** Which field gives the first-axis intercept of a tabulated-cylinder directrix chart?
+
+**Known.** `creo_prt.md` §3.2 states that layouts whose second and fifth scalar prefixes are `46` require a first-axis intercept magnitude of 30, and that every remaining complete replay-bound frame selects its chart from a zero-offset form or a form with a first-axis intercept magnitude of 30 and a reflected sweep-axis sign.
+
+**Note.** The magnitude 30 is a length in model units. A length is not a container constant. The specification states the value as settled, so this item disputes the specification and the decoder together. `decode.rs` `placed_tabulated_cylinder_directrix` admits only the magnitudes 0 and 30. A directrix chart with any other intercept leaves the surface without a NURBS carrier.
+
+**Need.** We must know the field to place every tabulated-cylinder directrix, and to know whether the two admitted magnitudes are a rule or a property of the parts that gave them.
 
 ## 3. Section solving and feature placement
 
@@ -507,6 +609,110 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §6 "In a class-916 or class-917 positional feature row, feature form `2` selects a" defines `ea 44 00 00` as a complete 360-degree revolution. Linear sweep extents include one-sided, symmetric, and two-sided spans.
 
 **Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
+
+### SP-26. `AllFeatur` row start grammar
+
+**Question.** Which bytes begin an `AllFeatur` feature row, and what bounds the row?
+
+**Known.** `creo_prt.md` §6 states that a feature owns each mixed generated-entity table bounded by its `AllFeatur` row, and that the fixed prefix contains `f6 <class> e1`. It states that the row's leading identifier occupies a row-local numeric namespace that can collide with model-feature identifiers, and that numeric equality alone does not establish ownership. The specification does not give the row-start grammar.
+
+**Need.** We must know the grammar to bind every generated-entity table, affected-geometry array, and loop-history entry to its owning feature. `feature/rows.rs` accepts a start at a known feature identifier followed by one of the three constants `eb 04`, `90 01`, and `c8 10`, and ends the row at the next such start. The three constants appear in no specification or layout table. A row family with a fourth header value folds into the preceding row and gives that feature the other feature's affected geometry.
+
+### SP-27. Class-911 hole entry-plane order
+
+**Question.** Which order gives the entry plane and the termination plane of a class-911 hole?
+
+**Known.** `creo_prt.md` §6 "When a class-911 hole owns exactly two complete outline-backed plane rows, their" states that the stored order of the two plane rows is the entry and termination order, and that the first plane row is the hole's native placement-face selection.
+
+**Conflict.** The specification gives stored row order. `decode.rs` `feature_outline_planes` collects the row identifiers into a `BTreeSet`, which replaces stored order with ascending surface identifier. `hole_placement` then takes the first element as the entry plane. The two orders agree only when the surface identifiers increase in row order.
+
+**Need.** We must know the order to give the hole its placement face and its direction. `hole_extent_and_direction` orients the hole from the first plane toward the second, so a reversed order reverses the hole and names the blind bottom as the placement face. The depth magnitude stays correct, so no gate rejects it.
+
+### SP-28. Material feature precedence
+
+**Question.** Which field orders two material features for the base-body selection?
+
+**Known.** `creo_prt.md` §6 "For a linear section sweep, generated plane carriers" states that the first resolved section sweep in feature-definition order forms the base body. `creo_prt.md` §6 states that state ordinals are local to one feature identifier and increase in byte order from zero. The specification gives no byte order across features.
+
+**Conflict.** The specification gives feature-definition order. `decode.rs` `feature_is_first_material_operation` compares the `state_offset` of current operation records. `container.rs` `feature_operations` collects those records from the `MdlStatus` and `DEPDB_DATA` sections and adds each section's base offset, so two features can carry offsets from two different sections. The comparison then measures the order of the sections, not the order of the features.
+
+**Need.** We must know the field to select the base body. The comparison is the only gate between emitting a complete closed solid body and emitting none, in the revolution, extrusion, and circular-extrusion transfer paths.
+
+### SP-29. Section reference-plane orientation rows
+
+**Question.** Which reference-plane row supplies the `ref_type`, `seg_id`, and `flip_flag` that orient a section?
+
+**Known.** `creo_prt.md` §8.2 states that each reference-plane row replays its own `plane_id`, `ref_type`, `ext_ref_id`, `seg_id`, `sub_index`, and `flip_flag`.
+
+**Need.** We must know the row to apply the correct orientation sense. `feature/definitions.rs` `positional_section_3d` retains every `plane_id` but keeps the orientation fields of row zero alone. `placement.rs` then selects the orienting reference geometrically, as the unique referenced plane not parallel to the sketch plane, and applies row zero's `flip_flag` to it. When the selected row is not row zero, a missing negation mirrors the sketch and every surface swept from it.
+
+### SP-30. gsec3d named-field record binding
+
+**Question.** Which bytes bound one `gsec3d_ptr` record, so that a named field inside those bounds belongs to that record?
+
+**Known.** `creo_prt.md` §8.2 defines the gsec3d field order and names `p_saved_result` as the placement close.
+
+**Need.** We must know the bounds to bind `plane_id`, `plane_flip`, and the nested reference fields. `feature/definitions.rs` `section_3d` searches forward from the record header through windows of 260, 400, and 48 bytes. None of the three constants comes from the format. A definition holding two `gsec3d_ptr` records, where the first omits a null field, takes the second record's value for the first record, and a record longer than its window loses the field.
+
+### SP-31. Unanchored replay pair boundary
+
+**Question.** Which bytes bound the `geoms_affected` and `edgs_affected` pair of an unanchored class-913 or class-914 replay row?
+
+**Known.** `creo_prt.md` §6 states that the unanchored pair begins immediately after a compound close and that its two stateful extents must consume the bytes up to the row suffix.
+
+**Conflict.** The specification requires the pair to consume the bytes to the suffix. `feature/rows.rs` `explicit_replay_pair_before_suffix` accepts the last two arrays before the suffix that parse as counted identifier arrays. It tests neither the compound-close start nor the consume-to-suffix extent, and its caller returns that pair before the rule-conforming scan runs.
+
+**Need.** We must know the boundary to apply the round or chamfer to the correct edge set. A row that carries a third counted array before the pair reads the pair shifted by one, and the wrong arrays propagate to the next row through the stateful extent inheritance.
+
+### SP-32. `ActDatums` positional row acceptance
+
+**Question.** Which bytes identify a positional `<gid> 22` datum row, and what bounds a datum geometry identifier?
+
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry" states that `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records, and that each section holds one named datum row and can hold positional `<gid> 22 ...` rows.
+
+**Need.** We must know the acceptance rule to enumerate every datum plane. `datum.rs` `planes` scans the complete section, not the `srf_array` region, and accepts any offset whose identifier byte is nonzero and at most `0x40`, whose next byte is `22`, and whose bytes at `+3` and `+4` are in two local value sets. The `0x40` cap and both value sets come from no specification or layout table. A part with more than 64 datum planes drops every datum above the cap and records no loss.
+
+### SP-33. Datum outline held-axis selection
+
+**Question.** Which axis holds the plane equation when two corner-coordinate pairs of a datum outline compare equal?
+
+**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry" states that `outline` stores two diagonal corners, and that for `k = argmin_i |p0[i] - p1[i]|` the plane equation is `x_k = p0[k]`.
+
+**Conflict.** The specification gives the smallest coordinate difference. `datum.rs` `planes` compares each pair with a relative tolerance and takes the lowest axis index that falls inside the band. The sibling function `named_plane` in the same file rejects the row when two axes fall inside the band.
+
+**Need.** We must know the selection to give the datum its normal and offset. An outline whose second extent is float noise selects the noise axis, and the datum plane surface reaches the IR with the wrong normal and an offset near zero.
+
+### SP-34. Section line without an `order_table` row
+
+**Question.** Which bytes give the geometry of a `segtab` line that has no `order_table` internal identifier?
+
+**Known.** `creo_prt.md` §8.2 defines two recoveries for an omitted `order_table` row: the intervening internal identifier between adjacent stored rows, and the unique remaining pair of one unmatched saved entity and one unmatched solved entity of the same family. Neither recovery applies when the row is absent from the table.
+
+**Need.** We must know the bytes to give the line its endpoints. `decode.rs` `saved_section_missing_line_geometry` takes the two unmated endpoints of the other evaluated entities, which assumes the profile is closed and that the missing line closes it. No byte of the missing line is read. An open profile with a dangling line gives a chord between the two free ends, and that geometry seeds trim-vertex coordinates and generated side surfaces.
+
+### SP-35. Type-0 distance axis without a spanning segment
+
+**Question.** Which field selects the measurement axis of a signed type-0 linear-distance relation when no spanning segment and no equal-coordinate pair selects it?
+
+**Known.** `creo_prt.md` §5 defines two selectors: a spanning segment's unique orientation component, and equal `u` for a vertical distance or equal `v` for a horizontal distance.
+
+**Need.** We must know the selector to solve the section variable. `decode.rs` `section_linear_distance_coordinate` falls back to the orientation of the lines incident to each operand point, and accepts the axis when both points give one agreeing orientation. It does not require the two points to lie on one line, so a width dimension between two parallel walls is solved as a distance along the walls.
+
+### SP-36. Generated cap reversal polarity
+
+**Question.** Which field gives the reversal state of the start cap of a generated rectilinear sweep?
+
+**Known.** `creo_prt.md` §6 states that a source row's reversal flag orients its plane normal. It does not relate the flag to the feature's Boolean operation.
+
+**Need.** We must know the field to select the sweep axis and direction. `decode.rs` `generated_rectilinear_plane_extent` sets the expected start reversal from the Boolean operation: set for `Join` and `NewBody`, clear for `Cut`. A sketch plane whose stored normal points into the material makes the true sweep family fail the test, and another axis family that holds opposite flags becomes the unique candidate. The feature then takes the length and direction of that other family.
+
+### SP-37. Sketch-plane identifier namespace
+
+**Question.** Which namespace does `gsec3d_ptr.plane_id` name when the value resolves in both the `ActDatums` datum-geometry namespace and the model surface namespace?
+
+**Known.** `creo_prt.md` §6 states that these identifiers occupy the outer datum namespace used by `gsec3d.plane_id` and are distinct from `ActDatums.srf_array.geom_id` values. `creo_prt.md` §6 states that the row's `geom_id` remains the separate datum-geometry identifier. The specification admits both a placed plane carrier and an axis-aligned `ActDatums` plane as a sketch plane.
+
+**Need.** We must know the namespace to build the section frame. `placement.rs` `plane_equation` resolves the datum namespace first and returns on a unique datum match without consulting the model surfaces. Each namespace carries its own uniqueness gate; no gate spans the two. A sketch placed on a model face whose surface identifier equals a datum `geom_id` builds its complete frame on the datum, and every profile entity and swept carrier follows.
 
 ## 4. Topology and appearance
 
@@ -727,3 +933,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** A non-null pointer preserves the canonical driver-table entity identifier.
 
 **Need.** We must know the row semantics to transfer configuration parameters and values.
+
+### PP-10. `THMB_IMG_MAIN` payload offset
+
+**Question.** Which fields precede the JPEG payload in a `THMB_IMG_MAIN` section, and what length do they occupy?
+
+**Known.** `creo_prt.md` §1.2 "| `THMB_IMG_MAIN`" states that the payload begins with `FF D8 FF` and holds no model geometry. The specification does not give the offset at which the payload begins.
+
+**Need.** We must know the length to preserve the complete section. `decode.rs` `preserve_passthrough_sections` locates the payload at the first `FF D8 FF` window in the section. It discards each byte before that window, and it discards the complete section when no window matches. It reports neither discard as a loss.
+
+### PP-11. Layout family identification
+
+**Question.** Which field gives the layout family of a part that carries no `ND:` section decoration?
+
+**Known.** `creo_prt.md` §1.1 gives the section cardinality of each family as approximate: about 40 or more for ND, about 12 for DEPDB. The `ND:` section decoration identifies an ND part. No field states the family.
+
+**Need.** We must know the field to select the layout-gated transfer paths. `container.rs` `identify_layout` uses the section counts 24 and 32 as cut-points. Neither constant comes from the specification. A DEPDB part with 32 or more enumerated sections is declared ND, which admits it to the first-instance prototype and paired-envelope-sphere transfers. An undecorated ND part with 25 through 31 sections is declared unknown, which withholds those transfers and reports no loss.
