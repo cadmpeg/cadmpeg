@@ -2857,6 +2857,11 @@ fn saved_section_missing_line_geometry(
     let [missing] = missing.as_slice() else {
         return None;
     };
+    let fixed_coordinate = match missing.vertical_horizontal {
+        Some(0) => 0,
+        Some(1) => 1,
+        _ => return None,
+    };
 
     let geometries = semantic_saved_section_entities(definition)
         .filter_map(saved_section_entity_geometry)
@@ -2906,6 +2911,12 @@ fn saved_section_missing_line_geometry(
     let [start, end] = open.as_slice() else {
         return None;
     };
+    let scale = start
+        .iter()
+        .chain(end)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    ((start[fixed_coordinate] - end[fixed_coordinate]).abs() <= 1e-9 * scale).then_some(())?;
     Some((
         missing.offset,
         SketchGeometry::Line {

@@ -38,6 +38,9 @@ fixtures, claims above L1 remain unproven.
 - Section-reference lines use their stored selector or a consistent
   perpendicular/parallel incidence component to establish the same unbounded
   fixed-coordinate construction when both referenced endpoint ordinates agree.
+- Omitted `order_table` line geometry is recovered only from one unique missing
+  trimmed line, two unmatched saved endpoints, and a stored `verhor` selector
+  those endpoints satisfy; absent or conflicting selectors remain unresolved.
 - Active solver incidences drive coordinate, orientation, equality, radius,
   and supported dimensional equations; type-five arc-radius relations seed the
   joined radius component in radius and diameter form. Disabled incidences

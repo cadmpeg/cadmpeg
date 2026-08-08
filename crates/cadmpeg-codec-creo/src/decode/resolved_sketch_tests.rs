@@ -7574,6 +7574,93 @@ fn saved_line_joins_through_order_table() {
     );
     let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
     assert_eq!(trim_segment_id(&completed, &trim), Some(42));
+
+    let mut missing_line = completed.clone();
+    missing_line
+        .order_table
+        .as_mut()
+        .expect("order table")
+        .declared_count = 1;
+    missing_line
+        .order_table
+        .as_mut()
+        .expect("order table")
+        .rows
+        .push(crate::feature::FeatureOrderRow {
+            external_id: 42,
+            internal_id: 3,
+            bitmask: 0,
+            offset: 10,
+        });
+    let mut omitted_segment = segment.clone();
+    omitted_segment.external_id = 43;
+    omitted_segment.point_ids = [11, 12];
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .declared_count = 2;
+    missing_line
+        .segments
+        .as_mut()
+        .expect("segment table")
+        .rows
+        .push(omitted_segment.clone());
+    missing_line
+        .trim_entities
+        .as_mut()
+        .expect("trim table")
+        .rows
+        .push(crate::feature::FeatureTrimEntity {
+            external_id: 43,
+            mode: Some(0),
+            vertices: [3, 4],
+            center_vertex: None,
+            kind: crate::feature::TrimEntityKind::Line,
+            offset: 7,
+        });
+    missing_line
+        .trim_entities
+        .as_mut()
+        .expect("trim table")
+        .solved_external_ids
+        .push(43);
+    assert!(saved_section_missing_line_geometry(&missing_line).is_none());
+    assert!(
+        resolved_section_segment_geometry(&missing_line, &BTreeMap::new(), &omitted_segment,)
+            .is_none()
+    );
+
+    omitted_segment.vertical_horizontal = Some(1);
+    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment.clone();
+    assert_eq!(
+        saved_section_missing_line_geometry(&missing_line),
+        Some((
+            omitted_segment.offset,
+            SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            },
+        ))
+    );
+    assert_eq!(
+        resolved_section_segment_geometry(&missing_line, &BTreeMap::new(), &omitted_segment),
+        Some(SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+            end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+        })
+    );
+
+    omitted_segment.vertical_horizontal = Some(0);
+    missing_line.segments.as_mut().expect("segment table").rows[1] = omitted_segment;
+    assert!(saved_section_missing_line_geometry(&missing_line).is_none());
+    assert!(resolved_section_segment_geometry(
+        &missing_line,
+        &BTreeMap::new(),
+        &missing_line.segments.as_ref().expect("segment table").rows[1],
+    )
+    .is_none());
+
     let mut duplicate_segment = completed.clone();
     duplicate_segment
         .segments

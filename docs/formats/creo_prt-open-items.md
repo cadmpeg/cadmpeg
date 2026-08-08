@@ -640,14 +640,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know whether to retain or withhold a named plane when more than one standalone-zero pair is present, and if it is valid, which axis supplies its normal. This affects the model-space normal and every sketch placement that references the datum.
 
-### SP-34. Section line without an `order_table` row
-
-**Question.** Which bytes give the geometry of a `segtab` line that has no `order_table` internal identifier?
-
-**Known.** `creo_prt.md` §8.2 defines two recoveries for an omitted `order_table` row: the intervening internal identifier between adjacent stored rows, and the unique remaining pair of one unmatched saved entity and one unmatched solved entity of the same family. Neither recovery applies when the row is absent from the table.
-
-**Need.** We must know the bytes to give the line its endpoints. `decode.rs` `saved_section_missing_line_geometry` takes the two unmated endpoints of the other evaluated entities, which assumes the profile is closed and that the missing line closes it. No byte of the missing line is read. An open profile with a dangling line gives a chord between the two free ends, and that geometry seeds trim-vertex coordinates and generated side surfaces.
-
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding
