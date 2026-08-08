@@ -151,9 +151,11 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 /// - `0f`/`e6`: a one-byte zero marker.
 /// - `41`: a seven-byte tail forming the IEEE double `3f XX..`.
 /// - `46`/`2d`: a world-coordinate scalar.
-/// - `40..=bf`/`d3`/`d7`/`df`: a seven-byte in-lane scalar whose value is kept
-///   only when the scalar decode consumes exactly seven bytes, otherwise a
-///   valueless seven-byte token.
+/// - Named-outline DICT prefixes use the model-coordinate lane in
+///   `scalar::decode_named_datum_outline_coordinate`.
+/// - Other `40..=bf`/`d3`/`d7`/`df` prefixes retain a seven-byte token whose
+///   value is kept only when the generic scalar decode consumes exactly seven
+///   bytes; otherwise the token remains valueless.
 fn decode_outline_slot(
     data: &[u8],
     offset: usize,
@@ -173,18 +175,16 @@ fn decode_outline_slot(
             Some((Some(value), next))
         }
         0x0f | 0xe6 => Some((Some(0.0), offset + 1)),
-        0x41 => {
-            let tail = data.get(offset + 1..offset + 8)?;
-            let mut raw = [0; 8];
-            raw[0] = 0x3f;
-            raw[1..].copy_from_slice(tail);
-            Some((Some(f64::from_be_bytes(raw)), offset + 8))
-        }
-        0x46 | 0x2d => {
-            let (value, next) = scalar::decode(data, offset)?;
-            Some((Some(value), next))
-        }
-        0x40..=0xbf | 0xd3 | 0xd7 | 0xdf => {
+        _ => {
+            if let Some((value, next)) =
+                scalar::decode_named_datum_outline_coordinate(data, offset, cache)
+            {
+                return Some((Some(value), next));
+            }
+            let head = *data.get(offset)?;
+            if !matches!(head, 0x40..=0xbf | 0xd3 | 0xd7 | 0xdf) {
+                return None;
+            }
             let next = offset + 7;
             data.get(offset..next)?;
             let value = scalar::decode(data, offset)
@@ -192,7 +192,6 @@ fn decode_outline_slot(
                 .map(|(value, _)| value);
             Some((value, next))
         }
-        _ => None,
     }
 }
 
@@ -486,5 +485,35 @@ mod tests {
         assert_eq!(plane.offset, 2.5);
         assert_eq!(plane.corners[0], [Some(2.5), Some(-3.0), Some(-4.0)]);
         assert_eq!(plane.corners[1], [Some(2.5), Some(3.0), Some(4.0)]);
+    }
+
+    #[test]
+    fn named_outline_decodes_dictionary_coordinate_forms() {
+        let mut data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03".to_vec();
+        data.extend([0x18]);
+        data.extend([0x5c, 0, 0, 0, 0, 0, 0]);
+        data.extend([0xa5, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x18]);
+        data.extend([0x45, 0, 0, 0, 0, 0, 0]);
+        data.extend([0x9f, 0, 0, 0, 0, 0, 0]);
+
+        let plane = named_plane(&data).expect("named plane");
+        assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+        assert_eq!(plane.offset, 0.0);
+        assert_eq!(
+            plane.corners,
+            [
+                [
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0x3f, 0xd1, 0, 0, 0, 0, 0, 0])),
+                    Some(f64::from_be_bytes([0xbf, 0xd0, 0, 0, 0, 0, 0, 0]))
+                ],
+                [
+                    Some(0.0),
+                    Some(f64::from_be_bytes([0xbf, 0, 0, 0, 0, 0, 0, 0])),
+                    Some(f64::from_be_bytes([0x40, 0x14, 0, 0, 0, 0, 0, 0]))
+                ]
+            ]
+        );
     }
 }

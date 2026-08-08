@@ -544,14 +544,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the alternate datum to complete the sketch frame.
 
-### SP-24. Named `ActDatums` outline tokens
-
-**Question.** What scalar value does each `a5`, `9f`, `5c`, and `45` token encode in a named `ActDatums` outline?
-
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section" defines the two-corner outline and its held-coordinate plane rule.
-
-**Need.** We must know the values to construct nonzero datum offsets and extents.
-
 ### SP-25. Other revolution termination selectors
 
 **Question.** How does each rotational-sweep selector other than the full-turn `angle_choice` form define its angular interval?
