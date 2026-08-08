@@ -40,7 +40,7 @@ pub(super) fn relation_instances(
         else {
             continue;
         };
-        let Some((_, family, class_ref)) = declarations
+        let Some((class_offset, family, class_ref)) = declarations
             .iter()
             .filter(|(offset, family, _)| {
                 *offset < scalar.offset && relation_signature(*family, &scalar.operands)
@@ -49,11 +49,24 @@ pub(super) fn relation_instances(
         else {
             continue;
         };
+        // A display scalar can precede the declaration selected by its adjacent
+        // driving scalar. The driving scalar's declaration is authoritative for
+        // that pair; display-only scalars still stop at a class declaration.
+        let promote_class = groups
+            .last()
+            .is_some_and(|(_, _, group_class, _, scalars, _)| {
+                group_class != class_ref
+                    && scalars.len() == 1
+                    && scalars[0].role == FeatureInputScalarRole::Display
+                    && scalar.role == FeatureInputScalarRole::Driving
+                    && *class_offset > scalars[0].offset
+                    && *class_offset < scalar.offset
+            });
         let append = groups.last().is_some_and(
             |(owner, candidate, group_class, operands, scalars, last_index)| {
                 owner == feature_ref
-                    && candidate == family
-                    && group_class == class_ref
+                    && (candidate == family || promote_class)
+                    && (group_class == class_ref || promote_class)
                     && *last_index + 1 == scalar_index
                     && scalars.len() == 1
                     && operands
@@ -66,9 +79,13 @@ pub(super) fn relation_instances(
             },
         );
         if append {
-            let (_, _, _, _, scalars, last_index) = groups
+            let (_, candidate, group_class, _, scalars, last_index) = groups
                 .last_mut()
                 .expect("append requires an existing relation group");
+            if promote_class {
+                *candidate = *family;
+                *group_class = (*class_ref).to_string();
+            }
             scalars.push(scalar);
             *last_index = scalar_index;
         } else {
@@ -122,6 +139,153 @@ pub(super) fn relation_instances(
     bind_detached_relation_drivers(&mut instances, lane);
     bind_circle_dimension_centers(&mut instances, lane);
     instances
+}
+
+// Keep the focused relation-group tests beside the grouping algorithm.
+#[allow(clippy::items_after_test_module)]
+#[cfg(test)]
+mod relation_records_tests {
+    use super::*;
+    use crate::records::{
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+    };
+    use std::collections::BTreeMap;
+
+    fn class(offset: u64, name: &str) -> FeatureInputClass {
+        FeatureInputClass {
+            id: format!("class-{offset}"),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset,
+            name: name.into(),
+            role: FeatureInputClassRole::SketchConstraint,
+        }
+    }
+
+    fn scalar(offset: u64, role: FeatureInputScalarRole) -> FeatureInputScalar {
+        let operands = [0_u16, 1]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, entity_index)| FeatureInputOperand {
+                offset: offset + ordinal as u64,
+                reference_ref: format!("reference-{offset}-{ordinal}"),
+                kind: FeatureInputOperandKind::Native(0x8152),
+                entity_index,
+                entity_ref: None,
+            })
+            .collect();
+        FeatureInputScalar {
+            id: format!("scalar-{offset}"),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset,
+            object_id: 1,
+            name: "dimension".into(),
+            value: 1.0,
+            role,
+            entity_indices: vec![0, 1],
+            operands,
+        }
+    }
+
+    fn lane(classes: Vec<FeatureInputClass>, scalars: Vec<FeatureInputScalar>) -> FeatureInputLane {
+        FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes,
+            names: Vec::new(),
+            scalars,
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        }
+    }
+
+    fn sketch_history() -> Vec<FeatureHistory> {
+        vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![Feature {
+                id: "sketch".into(),
+                parent: "history".into(),
+                xml_tag: "Sketch".into(),
+                tree_parent: None,
+                source_id: None,
+                parent_source_id: None,
+                ordinal: 0,
+                name: "Sketch".into(),
+                kind: "Sketch".into(),
+                input_class: None,
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }]
+    }
+
+    #[test]
+    fn display_scalar_joins_driving_scalar_after_class_declaration() {
+        let vertical = class(10, "sgPntPntVertDist");
+        let horizontal = class(30, "sgPntPntHorDist");
+        let display = scalar(20, FeatureInputScalarRole::Display);
+        let driving = scalar(40, FeatureInputScalarRole::Driving);
+        let lane = lane(
+            vec![vertical, horizontal.clone()],
+            vec![display.clone(), driving.clone()],
+        );
+
+        let history = sketch_history();
+        let instances = relation_instances(&history, &lane);
+        let [relation] = instances.as_slice() else {
+            panic!("one relation instance");
+        };
+        assert_eq!(
+            relation.family,
+            FeatureInputRelationFamily::PointPointHorizontalDistance
+        );
+        assert_eq!(relation.class_ref, horizontal.id);
+        assert_eq!(
+            relation.scalar_refs,
+            vec![display.id.clone(), driving.id.clone()]
+        );
+        assert_eq!(relation.display_scalar_ref, Some(display.id));
+        assert_eq!(relation.parameter_scalar_ref, Some(driving.id));
+    }
+
+    #[test]
+    fn display_scalars_do_not_cross_a_class_declaration() {
+        let vertical = class(10, "sgPntPntVertDist");
+        let horizontal = class(30, "sgPntPntHorDist");
+        let first = scalar(20, FeatureInputScalarRole::Display);
+        let second = scalar(40, FeatureInputScalarRole::Display);
+        let lane = lane(vec![vertical, horizontal], vec![first, second]);
+
+        let relations = relation_instances(&sketch_history(), &lane);
+        assert_eq!(relations.len(), 2);
+        assert_eq!(
+            relations
+                .iter()
+                .map(|relation| relation.family)
+                .collect::<Vec<_>>(),
+            vec![
+                FeatureInputRelationFamily::PointPointVerticalDistance,
+                FeatureInputRelationFamily::PointPointHorizontalDistance,
+            ]
+        );
+    }
 }
 
 pub(super) fn bind_circle_dimension_centers(
