@@ -198,6 +198,10 @@ fixtures, claims above L1 remain unproven.
   dimension ordinal. A uniquely identified type-10 circle whose primary field
   resolves to a type-three or type-four dimension uses the neutral radius or
   diameter form; all other bindings remain native.
+- Type-five arc-radius and type-fourteen circular-size relations accept every
+  linear dimension type. Type four propagates a diameter as half its stored
+  value; the other linear types propagate a radius. Angular and schema-defined
+  dimensions remain native.
 - A complete endpoint-selection or type-35 incidence whose non-target operand
   resolves to a point locus establishes its sense-zero operand's line role
   independently of solver activity. A unique unary type-one or type-two

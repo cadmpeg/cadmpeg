@@ -4226,9 +4226,8 @@ pub(crate) fn resolved_section_radii(
                 continue;
             };
             let radius = match dimension.dimension_type {
-                3 => value,
                 4 => value / 2.0,
-                _ => continue,
+                _ => value,
             };
             candidates
                 .entry(relation.dimension_id)
@@ -4409,7 +4408,9 @@ fn section_relation_length_dimension<'a>(
         .filter(|table| feature_dimension_table_complete(table))?
         .rows
         .get(usize::try_from(relation.dimension_id).ok()?)?;
-    (dimension.value_unit == crate::feature::DimensionUnit::Millimeters).then_some(dimension)
+    (dimension.value_unit == crate::feature::DimensionUnit::Millimeters
+        && matches!(dimension.dimension_type, 1..=5))
+    .then_some(dimension)
 }
 
 fn section_type5_radius_arc<'a>(
@@ -4417,8 +4418,7 @@ fn section_type5_radius_arc<'a>(
     relation: &crate::feature::FeatureRelation,
 ) -> Option<&'a crate::feature::FeatureSegment> {
     (relation.relation_type == 5 && relation.sign == 1).then_some(())?;
-    let dimension = section_relation_length_dimension(definition, relation)?;
-    matches!(dimension.dimension_type, 3 | 4).then_some(())?;
+    section_relation_length_dimension(definition, relation)?;
     let vectors = relation.operand_vectors?;
     let [Some(first_point), Some(0), Some(second_point), Some(0)] = vectors[0] else {
         return None;
@@ -10780,10 +10780,7 @@ fn section_dimension_constraints(
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
-                if relation.relation_type == 5
-                    && relation.sign == 1
-                    && matches!(dimension.dimension_type, 3 | 4)
-                {
+                if relation.relation_type == 5 && relation.sign == 1 {
                     let segment = section_type5_radius_arc(definition, relation)?;
                     return Some(circular_dimension_constraint(
                         sketch_entity_id(sketch, segment.external_id),
@@ -10793,7 +10790,7 @@ fn section_dimension_constraints(
                 }
                 if relation.relation_type == 14
                     && relation.sign == 1
-                    && matches!(dimension.dimension_type, 3 | 4)
+                    && matches!(dimension.dimension_type, 1..=5)
                     && relation.operand_vectors?[1] == [Some(0); 4]
                     && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
                 {

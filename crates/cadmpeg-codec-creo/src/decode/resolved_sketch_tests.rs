@@ -12863,24 +12863,30 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         resolved_section_radii(&legacy_radius_definition),
         BTreeMap::from([(0, 1.5)])
     );
-    legacy_radius_definition
-        .dimensions
-        .as_mut()
-        .expect("dimensions")
-        .rows[0]
-        .dimension_type = 2;
-    assert!(matches!(
-        section_dimension_constraints(
-            &legacy_radius_definition,
-            &SketchId("creo:model:sketch#917".into())
-        )[0]
-        .0
-        .definition,
-        SketchConstraintDefinition::Native {
-            ref native_kind,
-            ..
-        } if native_kind == "creo:relation:5"
-    ));
+    for dimension_type in [1, 2, 5] {
+        legacy_radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = dimension_type;
+        assert_eq!(
+            section_dimension_constraints(
+                &legacy_radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        assert_eq!(
+            resolved_section_radii(&legacy_radius_definition),
+            BTreeMap::from([(0, 3.0)])
+        );
+    }
     legacy_radius_definition
         .relations
         .as_mut()
@@ -12938,24 +12944,30 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         }
     );
     let mut noncircular_dimension = radius_definition.clone();
-    noncircular_dimension
-        .dimensions
-        .as_mut()
-        .expect("dimensions")
-        .rows[0]
-        .dimension_type = 2;
-    assert!(matches!(
-        section_dimension_constraints(
-            &noncircular_dimension,
-            &SketchId("creo:model:sketch#917".into())
-        )[0]
-        .0
-        .definition,
-        SketchConstraintDefinition::Native {
-            ref native_kind,
-            ..
-        } if native_kind == "creo:relation:14"
-    ));
+    for dimension_type in [1, 2, 5] {
+        noncircular_dimension
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = dimension_type;
+        assert_eq!(
+            section_dimension_constraints(
+                &noncircular_dimension,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        assert_eq!(
+            resolved_section_radii(&noncircular_dimension),
+            BTreeMap::from([(101, 3.0)])
+        );
+    }
     let mut opaque_circle_definition = radius_definition.clone();
     let segments = opaque_circle_definition
         .segments
