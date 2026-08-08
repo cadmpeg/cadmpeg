@@ -1894,6 +1894,66 @@ fn point_relation_ignores_auxiliary_relation_links() {
 }
 
 #[test]
+fn axis_relation_expands_intermediate_relation_handle() {
+    let mut first = marker("first-point", Some([0.0, 1.0]));
+    first.offset = 1;
+    let mut second = marker("second-point", Some([2.0, 1.0]));
+    second.offset = 2;
+    let mut distance = marker("distance-handle", None);
+    distance.kind = SketchInputKind::Relation(SketchRelationKind::Distance);
+    distance.local_id = Some(5);
+    distance.object_index = Some(4);
+    distance.links = vec![
+        SketchInputLink {
+            local_id: 5,
+            entity_ref: distance.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 7,
+            entity_ref: second.id.clone(),
+        },
+    ];
+    let mut horizontal = marker("horizontal", None);
+    horizontal.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+    horizontal.local_id = Some(13);
+    horizontal.object_index = Some(12);
+    horizontal.links = vec![
+        SketchInputLink {
+            local_id: 8,
+            entity_ref: first.id.clone(),
+        },
+        SketchInputLink {
+            local_id: 5,
+            entity_ref: distance.id.clone(),
+        },
+    ];
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (distance.id.as_str(), &distance),
+        (horizontal.id.as_str(), &horizontal),
+    ]);
+    let loci = HashMap::from([
+        (
+            first.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("first-point".into()))],
+        ),
+        (
+            second.id.clone(),
+            vec![SketchLocus::Entity(SketchEntityId("second-point".into()))],
+        ),
+    ]);
+
+    assert_eq!(
+        typed_marker_relation_definition(&horizontal, &markers, &loci),
+        Some(SketchConstraintDefinition::HorizontalPoints {
+            first: SketchLocus::Entity(SketchEntityId("first-point".into())),
+            second: SketchLocus::Entity(SketchEntityId("second-point".into())),
+        })
+    );
+}
+
+#[test]
 fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let mut relation = marker("relation", None);
     relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);

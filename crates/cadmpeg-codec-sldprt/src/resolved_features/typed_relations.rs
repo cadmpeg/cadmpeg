@@ -31,7 +31,7 @@ use cadmpeg_ir::sketches::{
     SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     SketchLocus, SketchNativeOperand,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 pub(super) fn typed_marker_relation_definition(
@@ -179,6 +179,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     }
     Some(match kind {
         Horizontal | Vertical | Fixed => {
+            if matches!(kind, Horizontal | Vertical) {
+                if let Some([first, second]) =
+                    axis_relation_point_loci(marker, markers_by_id, loci_by_marker)
+                {
+                    return Some(if kind == Horizontal {
+                        SketchConstraintDefinition::HorizontalPoints { first, second }
+                    } else {
+                        SketchConstraintDefinition::VerticalPoints { first, second }
+                    });
+                }
+            }
             if matches!(kind, Horizontal | Vertical) {
                 let point_links = marker
                     .links
@@ -1091,6 +1102,90 @@ pub(super) fn unique_axis_aligned_linked_loci(
     } else {
         vec![candidate.clone(), known]
     })
+}
+
+fn axis_relation_point_loci(
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<[SketchLocus; 2]> {
+    if !relation.links.iter().any(|link| {
+        !relation_link_identifies_owner(relation, link)
+            && matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|marker| marker.kind),
+                Some(SketchInputKind::Relation(_))
+            )
+    }) {
+        return None;
+    }
+    let mut loci = Vec::new();
+    collect_axis_relation_point_loci(
+        relation,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+        &mut loci,
+    );
+    loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    loci.try_into().ok()
+}
+
+fn collect_axis_relation_point_loci(
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    visited: &mut HashSet<String>,
+    loci: &mut Vec<SketchLocus>,
+) {
+    if !visited.insert(relation.id.clone()) {
+        return;
+    }
+    for link in relation
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(relation, link))
+    {
+        let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+            continue;
+        };
+        match linked.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                append_axis_relation_point_locus(&linked.id, markers_by_id, loci_by_marker, loci);
+            }
+            SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
+                linked,
+                markers_by_id,
+                loci_by_marker,
+                visited,
+                loci,
+            ),
+            _ => {}
+        }
+    }
+    for owner in relation_owner_markers(relation, markers_by_id) {
+        if matches!(
+            owner.kind,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+        ) {
+            append_axis_relation_point_locus(&owner.id, markers_by_id, loci_by_marker, loci);
+        }
+    }
+}
+
+fn append_axis_relation_point_locus(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    loci: &mut Vec<SketchLocus>,
+) {
+    if let Some(locus) = marker_point_locus(marker_id, markers_by_id, loci_by_marker) {
+        if !loci.contains(&locus) {
+            loci.push(locus);
+        }
+    }
 }
 
 pub(super) fn relation_owner_markers<'a>(
