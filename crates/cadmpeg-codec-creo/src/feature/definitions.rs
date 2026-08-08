@@ -731,6 +731,32 @@ pub enum DimensionUnit {
     SchemaDefined,
 }
 
+/// One row from a dimension's nested `dim_ref` table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDimensionReference {
+    /// Nullable item identifier stored by the reference row.
+    pub item_id: Option<u32>,
+    /// Nullable sense selector stored by the reference row.
+    pub sense: Option<u32>,
+    /// Nullable two-slot point selector stored by the reference row.
+    pub point: [Option<u32>; 2],
+    /// Byte offset of the row in the original stream.
+    pub offset: usize,
+}
+
+/// Nested `dim_ref` table carried by a named `dimtab_ptr` prototype.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureDimensionReferenceTable {
+    /// Count declared by the nested table's `f8` opener.
+    pub declared_count: u32,
+    /// Entity-table class reference following the nested opener.
+    pub entity_ref: Option<u32>,
+    /// Named prototype and positional replay rows in stored order.
+    pub rows: Vec<FeatureDimensionReference>,
+    /// Byte offset of the `dim_ref` label in the original stream.
+    pub offset: usize,
+}
+
 /// One dimension record from a gsec2d `dimtab_ptr` table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDimension {
@@ -752,6 +778,8 @@ pub struct FeatureDimension {
     pub auxiliary_body: Vec<u8>,
     /// External dimension identifier.
     pub external_id: u32,
+    /// Nested named-prototype dimension references, when present.
+    pub references: Option<FeatureDimensionReferenceTable>,
     /// Byte offset of the row in the original stream.
     pub offset: usize,
 }
@@ -3234,6 +3262,155 @@ fn unresolved_dimension_value_token(bytes: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+fn named_dimension_reference(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<(FeatureDimensionReference, usize)> {
+    let item_label = find_bytes(payload, b"item_id\0", start, end)?;
+    let mut cursor = item_label + b"item_id\0".len();
+    let item_id = next_nullable_segment_int(payload, &mut cursor).ok()?;
+    let sense_label = find_bytes(payload, b"sense\0", cursor, end)?;
+    cursor = sense_label + b"sense\0".len();
+    let sense = next_nullable_segment_int(payload, &mut cursor).ok()?;
+    let point_label = find_bytes(payload, b"point\0", cursor, end)?;
+    cursor = point_label + b"point\0".len();
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    (declared_count == 2).then_some(())?;
+    cursor = after_count;
+    let point = segment_slots(payload, &mut cursor, 2)?;
+    let [first, second] = point.try_into().ok()?;
+    Some((
+        FeatureDimensionReference {
+            item_id,
+            sense,
+            point: [first, second],
+            offset: item_label,
+        },
+        cursor,
+    ))
+}
+
+fn dimension_reference_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureDimensionReferenceTable> {
+    let table = find_bytes(payload, b"dim_ref\0", start, end)?;
+    let mut cursor = table + b"dim_ref\0".len();
+    while payload
+        .get(cursor)
+        .is_some_and(|byte| matches!(byte, 0xf1..=0xf3))
+    {
+        cursor += 1;
+    }
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    cursor = after_count;
+    let mut reference_bytes = None;
+    let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        let reference_start = cursor + 1;
+        let (value, next) = psb::reference_id(payload, reference_start).ok()?;
+        reference_bytes = payload.get(reference_start..next).map(<[u8]>::to_vec);
+        cursor = next;
+        Some(value)
+    } else {
+        None
+    };
+    if payload.get(cursor..cursor + 2) == Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
+        cursor += 2;
+    } else {
+        return Some(FeatureDimensionReferenceTable {
+            declared_count,
+            entity_ref,
+            rows: Vec::new(),
+            offset: table,
+        });
+    }
+    if declared_count == 0 {
+        return Some(FeatureDimensionReferenceTable {
+            declared_count,
+            entity_ref,
+            rows: Vec::new(),
+            offset: table,
+        });
+    }
+
+    let mut rows = Vec::new();
+    let Some((prototype, prototype_end)) = named_dimension_reference(payload, cursor, end) else {
+        return Some(FeatureDimensionReferenceTable {
+            declared_count,
+            entity_ref,
+            rows,
+            offset: table,
+        });
+    };
+    rows.push(prototype);
+    let Some(reference_bytes) = reference_bytes else {
+        return Some(FeatureDimensionReferenceTable {
+            declared_count,
+            entity_ref,
+            rows,
+            offset: table,
+        });
+    };
+    let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
+    prototype_separator.extend_from_slice(&reference_bytes);
+    prototype_separator.push(0xe2);
+    if payload.get(prototype_end..prototype_end + prototype_separator.len())
+        != Some(prototype_separator.as_slice())
+    {
+        return Some(FeatureDimensionReferenceTable {
+            declared_count,
+            entity_ref,
+            rows,
+            offset: table,
+        });
+    }
+    cursor = prototype_end + prototype_separator.len();
+
+    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    while rows.len() < row_limit && cursor < end {
+        let row_offset = cursor;
+        let Ok(item_id) = next_nullable_segment_int(payload, &mut cursor) else {
+            break;
+        };
+        let Ok(sense) = next_nullable_segment_int(payload, &mut cursor) else {
+            break;
+        };
+        let Some(point) = segment_slots(payload, &mut cursor, 2) else {
+            break;
+        };
+        if point.len() != 2 {
+            break;
+        }
+        let [first, second] = [point[0], point[1]];
+        rows.push(FeatureDimensionReference {
+            item_id,
+            sense,
+            point: [first, second],
+            offset: row_offset,
+        });
+        if rows.len() == row_limit {
+            break;
+        }
+        let mut row_separator = vec![0xf3, psb::token::ENTITY_REF];
+        row_separator.extend_from_slice(&reference_bytes);
+        row_separator.push(0xe2);
+        if payload.get(cursor..cursor + row_separator.len()) != Some(row_separator.as_slice()) {
+            break;
+        }
+        cursor += row_separator.len();
+    }
+    Some(FeatureDimensionReferenceTable {
+        declared_count,
+        entity_ref,
+        rows,
+        offset: table,
+    })
+}
+
 fn labeled_dimension(
     payload: &[u8],
     start: usize,
@@ -3259,7 +3436,8 @@ fn labeled_dimension(
         decode_variable_scalar(payload, auxiliary_start, end, cache);
     let auxiliary_body = payload.get(auxiliary_start..after_auxiliary)?.to_vec();
     let external_label = find_bytes(payload, b"ext_id\0", after_auxiliary, end)?;
-    let (external_id, _) = segment_int(payload, external_label + b"ext_id\0".len());
+    let (external_id, after_external) = segment_int(payload, external_label + b"ext_id\0".len());
+    let references = dimension_reference_table(payload, after_external, end);
     Some(FeatureDimension {
         dimension_type,
         value,
@@ -3270,6 +3448,7 @@ fn labeled_dimension(
         auxiliary_value,
         auxiliary_body,
         external_id: external_id?,
+        references,
         offset: type_label,
     })
 }
@@ -3315,6 +3494,7 @@ pub(crate) fn positional_dimension(
         auxiliary_value,
         auxiliary_body,
         external_id: external_id?,
+        references: None,
         offset: start,
     })
 }

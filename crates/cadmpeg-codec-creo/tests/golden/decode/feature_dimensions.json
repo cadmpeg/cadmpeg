@@ -411,6 +411,7 @@
                   "direction_byte": 1,
                   "external_id": 42,
                   "offset": 144,
+                  "references": null,
                   "unit": "radians",
                   "value": 1.0,
                   "value_body": [
@@ -426,6 +427,7 @@
                   "direction_byte": 1,
                   "external_id": 42,
                   "offset": 197,
+                  "references": null,
                   "unit": "radians",
                   "value": 1.0,
                   "value_body": [

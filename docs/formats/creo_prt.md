@@ -1866,6 +1866,15 @@ dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
 within the owning feature definition. A neutral parameter and any constraint
 that selects it require exactly one `dimtab_ptr` row with that `ext_id`.
+The named dimension prototype may carry a nested `dim_ref` table. Its header is
+`f8 <count> f7 <entity-ref> fb e2`; the count includes the named prototype.
+The named row stores `item_id`, `sense`, and a two-slot `point` array. A
+positional replay row stores those fields in the same order. `item_id` and
+`sense` are nullable compact integers. Each point slot is nullable; `e4`
+encodes one and `e5` and `e6` expand to two and three zero slots respectively.
+The first replay row follows `f1 f7 <entity-ref> e2`; later replay rows use
+`f3 f7 <entity-ref> e2` separators. The nested table returns to its enclosing
+dimension row at `f3 f7 <dimtab-entity-ref> e2`.
 `value` and `aux_value` are independently bounded scalar bodies. The encoding
 and decoded numeric value of either field do not constrain the other field.
 Every row is a neutral parameter. An undecoded value leaves its expression and

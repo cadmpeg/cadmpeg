@@ -2262,6 +2262,23 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     direction_byte: dimension.direction_byte,
                     auxiliary_value: dimension.auxiliary_value,
                     auxiliary_body: dimension.auxiliary_body.clone(),
+                    references: dimension.references.as_ref().map(|table| {
+                        CreoSketchDimensionReferenceTable {
+                            declared_count: table.declared_count,
+                            entity_ref: table.entity_ref,
+                            rows: table
+                                .rows
+                                .iter()
+                                .map(|reference| CreoSketchDimensionReference {
+                                    item_id: reference.item_id,
+                                    sense: reference.sense,
+                                    point: reference.point,
+                                    offset: reference.offset,
+                                })
+                                .collect(),
+                            offset: table.offset,
+                        }
+                    }),
                     offset: dimension.offset,
                 })
                 .collect(),

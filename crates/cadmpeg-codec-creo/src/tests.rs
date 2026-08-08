@@ -5424,6 +5424,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     auxiliary_value: Some(0.0),
                     auxiliary_body: Vec::new(),
                     external_id: 1,
+                    references: None,
                     offset: 0,
                 },
                 crate::feature::FeatureDimension {
@@ -5436,6 +5437,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                     auxiliary_value: Some(0.0),
                     auxiliary_body: Vec::new(),
                     external_id: 2,
+                    references: None,
                     offset: 0,
                 },
             ],
@@ -5603,6 +5605,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
         auxiliary_value: Some(0.0),
         auxiliary_body: Vec::new(),
         external_id: 3,
+        references: None,
         offset: 0,
     });
     let relations = saved_endpoint_definition

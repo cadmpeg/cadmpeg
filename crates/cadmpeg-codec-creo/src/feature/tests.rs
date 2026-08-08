@@ -1554,6 +1554,44 @@ fn positional_dimension_table_uses_the_inherited_table_class() {
 }
 
 #[test]
+fn named_dimension_retains_nested_dimension_references() {
+    let payload = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
+            \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
+            \xe0\x02aux_value\0\x18\xe0\x01ext_id\0\x02\
+            dim_ref\0\xf1\xf8\x02\xf7\x60\xfb\xe2\
+            \xe0\x01item_id\0\x0d\xe0\x01sense\0\x00\
+            \xe0\x01point\0\xf8\x02\x03\xe4\
+            \xf1\xf7\x60\xe2\x02\x02\x14\xe4\xf3\xf7\x58\xe2";
+    let cache = scalar::ScalarCache::from_section(payload);
+
+    let dimensions =
+        dimension_table(payload, 0, payload.len(), &cache).expect("named dimension table");
+    let references = dimensions.rows[0]
+        .references
+        .as_ref()
+        .expect("nested dimension references");
+
+    assert_eq!(references.declared_count, 2);
+    assert_eq!(references.entity_ref, Some(0x60));
+    assert_eq!(references.rows.len(), 2);
+    assert_eq!(
+        references.rows[0],
+        FeatureDimensionReference {
+            item_id: Some(13),
+            sense: Some(0),
+            point: [Some(3), Some(1)],
+            offset: payload
+                .windows(b"item_id\0".len())
+                .position(|window| window == b"item_id\0")
+                .expect("item_id offset"),
+        }
+    );
+    assert_eq!(references.rows[1].item_id, Some(2));
+    assert_eq!(references.rows[1].sense, Some(2));
+    assert_eq!(references.rows[1].point, [Some(20), Some(1)]);
+}
+
+#[test]
 fn positional_dimension_table_is_self_describing_when_multiple_rows_close() {
     let mut payload = b"prefix\xf8\x04\xf7\x58\xfb\xe2\xf7\x59".to_vec();
     for (index, row) in [

@@ -432,6 +432,23 @@ struct CreoSketchDimension {
     direction_byte: u8,
     auxiliary_value: Option<f64>,
     auxiliary_body: Vec<u8>,
+    references: Option<CreoSketchDimensionReferenceTable>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchDimensionReferenceTable {
+    declared_count: u32,
+    entity_ref: Option<u32>,
+    rows: Vec<CreoSketchDimensionReference>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchDimensionReference {
+    item_id: Option<u32>,
+    sense: Option<u32>,
+    point: [Option<u32>; 2],
     offset: usize,
 }
 

@@ -1517,6 +1517,12 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         dimensions.offset += section_offset;
         for row in &mut dimensions.rows {
             row.offset += section_offset;
+            if let Some(references) = &mut row.references {
+                references.offset += section_offset;
+                for reference in &mut references.rows {
+                    reference.offset += section_offset;
+                }
+            }
         }
     }
     if let Some(relations) = &mut definition.relations {

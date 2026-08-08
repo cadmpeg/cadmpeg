@@ -2091,6 +2091,7 @@ fn counterbore_dimensions_require_complete_agreeing_radius_anchored_tables() {
                 auxiliary_value: Some(0.0),
                 auxiliary_body: Vec::new(),
                 external_id,
+                references: None,
                 offset: 0,
             },
         )
@@ -7067,6 +7068,7 @@ fn saved_line_joins_through_order_table() {
             auxiliary_value: None,
             auxiliary_body: Vec::new(),
             external_id: 4,
+            references: None,
             offset: 27,
         }],
         offset: 26,
@@ -8903,6 +8905,7 @@ fn dimension_identity_includes_its_feature_definition() {
         auxiliary_value: None,
         auxiliary_body: Vec::new(),
         external_id: 3,
+        references: None,
         offset: 10,
     };
     let mut table = crate::feature::FeatureDimensionTable {
@@ -9641,6 +9644,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
                 auxiliary_value: None,
                 auxiliary_body: Vec::new(),
                 external_id: 42,
+                references: None,
                 offset: 75,
             }],
             offset: 74,
