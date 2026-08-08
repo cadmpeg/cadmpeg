@@ -503,8 +503,14 @@ impl Parser<'_> {
                 let TokenKind::Resource(name) = self.next_kind()? else {
                     return self.err("expected anchor name");
                 };
+                if !valid_anchor_name(&name) {
+                    return self.err("anchor name must contain a non-digit character");
+                }
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
+                if !is_anchor_item(&value) {
+                    return self.err("invalid anchor item");
+                }
                 let mut tags = Vec::new();
                 while self.peek(&TokenKind::LBrace) {
                     self.next_kind()?;
@@ -513,6 +519,9 @@ impl Parser<'_> {
                     };
                     self.punct(&TokenKind::Colon)?;
                     let value = self.value()?;
+                    if !is_anchor_item(&value) {
+                        return self.err("invalid anchor tag item");
+                    }
                     self.punct(&TokenKind::RBrace)?;
                     tags.push(AnchorTag { name, value });
                 }
@@ -1452,6 +1461,28 @@ fn is_string_list(value: Option<&Value>) -> bool {
 
 fn is_string_or_omitted(value: Option<&Value>) -> bool {
     matches!(value, Some(Value::String(_) | Value::Omitted))
+}
+
+fn valid_anchor_name(name: &str) -> bool {
+    !name.is_empty() && name.bytes().any(|byte| !byte.is_ascii_digit())
+}
+
+fn is_anchor_item(value: &Value) -> bool {
+    match value {
+        Value::Reference(_)
+        | Value::ValueReference(_)
+        | Value::ConstantEntity(_)
+        | Value::ConstantValue(_)
+        | Value::Integer(_)
+        | Value::Real(_)
+        | Value::Enumeration(_)
+        | Value::String(_)
+        | Value::Binary(_)
+        | Value::Resource(_)
+        | Value::Omitted => true,
+        Value::List(values) => values.iter().all(is_anchor_item),
+        Value::Derived | Value::Typed(_, _) => false,
+    }
 }
 
 struct AnchorResolver<'a> {

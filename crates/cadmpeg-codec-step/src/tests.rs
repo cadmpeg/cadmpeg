@@ -455,6 +455,30 @@ fn parser_retains_anchor_tags_and_resolves_their_references() {
 }
 
 #[test]
+fn parser_enforces_anchor_name_and_item_grammar() {
+    let cases = [
+        ("<123>=1;", "anchor name must contain a non-digit character"),
+        ("<>=1;", "anchor name must contain a non-digit character"),
+        ("<a>=*;", "invalid anchor item"),
+        ("<a>=TYPE(1);", "invalid anchor item"),
+        ("<a>=1 {tag:TYPE(1)};", "invalid anchor tag item"),
+    ];
+    for (entry, message) in cases {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{entry}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid anchor entry");
+        assert!(
+            error.to_string().contains(message),
+            "expected {message:?}, got {error}"
+        );
+    }
+
+    let valid = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,(2));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(valid).expect("nested anchor item");
+}
+
+#[test]
 fn parser_rejects_unresolved_or_colliding_value_instances() {
     let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(unresolved).expect_err("unresolved value instance");
