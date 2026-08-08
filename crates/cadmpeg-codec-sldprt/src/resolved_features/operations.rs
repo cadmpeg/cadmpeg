@@ -5,6 +5,30 @@ use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FormCodePadding {
+    Four,
+    Eight,
+}
+
+impl FormCodePadding {
+    fn bytes(self) -> usize {
+        match self {
+            Self::Four => 4,
+            Self::Eight => 8,
+        }
+    }
+}
+
+pub(crate) fn form_code_padding(sw_version: Option<&str>) -> Option<FormCodePadding> {
+    let version = sw_version?.parse::<u32>().ok()?;
+    (version > 0).then_some(if version >= 12_000 {
+        FormCodePadding::Eight
+    } else {
+        FormCodePadding::Four
+    })
+}
+
 pub(super) fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     let start = name_offset.checked_sub(2)?;
     Some(u16::from_le_bytes(
@@ -16,6 +40,7 @@ pub(super) fn feature_operation_code(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
     class: Option<&str>,
+    form_padding: Option<FormCodePadding>,
 ) -> Option<u32> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let direct_class = lane
@@ -31,14 +56,41 @@ pub(super) fn feature_operation_code(
         {
             return Some(u32::MAX);
         }
-        [8usize, 4].into_iter().find_map(|padding| {
-            let code_offset = class_offset.checked_sub(4 + padding)?;
-            lane.native_payload
-                .get(code_offset + 4..class_offset)?
-                .iter()
-                .all(|byte| *byte == 0)
-                .then_some(code_offset)
-        })?
+        let candidates = [8usize, 4]
+            .into_iter()
+            .filter(|padding| form_padding.is_none_or(|expected| expected.bytes() == *padding))
+            .filter_map(|padding| {
+                let code_offset = class_offset.checked_sub(4 + padding)?;
+                if !lane
+                    .native_payload
+                    .get(code_offset + 4..class_offset)?
+                    .iter()
+                    .all(|byte| *byte == 0)
+                {
+                    return None;
+                }
+                let code = u32::from_le_bytes(
+                    lane.native_payload
+                        .get(code_offset..code_offset + 4)?
+                        .try_into()
+                        .ok()?,
+                );
+                Some((code_offset, code))
+            })
+            .collect::<Vec<_>>();
+        if form_padding.is_none() {
+            // A zero form code makes four- and eight-byte padding both match. A
+            // different candidate code is not a byte-level discriminator.
+            match candidates.as_slice() {
+                [(code_offset, _)] => *code_offset,
+                [(first_offset, first_code), (_, second_code)] if first_code == second_code => {
+                    *first_offset
+                }
+                _ => return None,
+            }
+        } else {
+            candidates.first().map(|(code_offset, _)| *code_offset)?
+        }
     } else {
         let repeated_token = repeated_class_token(&lane.native_payload, name_offset)?;
         if repeated_token & 0x8000 == 0 || repeated_token == u16::MAX {
@@ -55,6 +107,10 @@ pub(super) fn feature_operation_code(
                 &[8, 4]
             };
             paddings.iter().copied().find_map(|padding| {
+                if padding != 0 && form_padding.is_some_and(|expected| expected.bytes() != padding)
+                {
+                    return None;
+                }
                 let code_offset = name_offset.checked_sub(6 + padding)?;
                 lane.native_payload
                     .get(code_offset + 4..name_offset - 2)?
@@ -98,6 +154,7 @@ pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -122,7 +179,7 @@ pub(crate) fn bind_revolution_operations(
             let name = feature_object_name(history, lane)?;
             revolution_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             )
         });
         let Some(first) = operations.next() else {
@@ -139,6 +196,7 @@ pub(crate) fn bind_sweep_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -167,7 +225,7 @@ pub(crate) fn bind_sweep_operations(
             let name = feature_object_name(history, lane)?;
             match (
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             ) {
                 (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
                 _ => None,
@@ -240,6 +298,7 @@ pub(super) fn class_scoped_extrusion_operation(
     features: &[&crate::records::Feature],
     lane: &FeatureInputLane,
     name: &FeatureInputName,
+    form_padding: Option<FormCodePadding>,
 ) -> Option<BooleanOp> {
     if feature.input_class.as_deref() != Some("moICE_c")
         || feature_inline_operation_fields(lane, name) != Some((0xca, 0))
@@ -263,7 +322,12 @@ pub(super) fn class_scoped_extrusion_operation(
         let sibling_name = feature_object_name(sibling, lane)?;
         extrusion_operation(
             sibling.input_class.as_deref(),
-            feature_operation_code(lane, sibling_name, sibling.input_class.as_deref())?,
+            feature_operation_code(
+                lane,
+                sibling_name,
+                sibling.input_class.as_deref(),
+                form_padding,
+            )?,
         )
     });
     let operation = operations.next()??;
@@ -277,6 +341,7 @@ pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    form_padding: Option<FormCodePadding>,
 ) {
     let history_features = histories
         .iter()
@@ -305,14 +370,18 @@ pub(crate) fn bind_extrusion_operations(
             if let Some(operation) = feature_inline_operation(lane, name) {
                 return Some(operation);
             }
-            if let Some(operation) =
-                class_scoped_extrusion_operation(history, &history_features, lane, name)
-            {
+            if let Some(operation) = class_scoped_extrusion_operation(
+                history,
+                &history_features,
+                lane,
+                name,
+                form_padding,
+            ) {
                 return Some(operation);
             }
             extrusion_operation(
                 history.input_class.as_deref(),
-                feature_operation_code(lane, name, history.input_class.as_deref())?,
+                feature_operation_code(lane, name, history.input_class.as_deref(), form_padding)?,
             )
         });
         let Some(first) = operations.next() else {

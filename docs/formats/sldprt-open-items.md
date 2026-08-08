@@ -992,25 +992,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
 
-### DI-43. Extrusion form-code padding width
-
-**Question.** Which field gives the padding width before an extrusion class declaration?
-
-**Known.** `sldprt.md` §2 "An extrusion feature-input object stores a little-endian u32 form code before its object-name record." states that a declaration is preceded by the form code and four or eight zero bytes.
-
-**Conflict.** The same sentence states: "The padding width is selected by the record schema and is self-delimiting because every padding byte is zero." That statement is not correct when the form code is zero. `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:34` tries width `8` before width `4`:
-
-```rust
-[8usize, 4].into_iter().find_map(|padding| {
-    let code_offset = class_offset.checked_sub(4 + padding)?;
-    ... .all(|byte| *byte == 0).then_some(code_offset)
-})?
-```
-
-With true padding `4` and form code `0`, all eight preceding bytes are zero, the width-8 probe matches first, and the decoder reads the code four bytes earlier. `sldprt.md` §2 lists `moICE_c` code `0` as a subtracting code, so the value is live.
-
-**Need.** We must know the field that gives the width, or a test that separates the two widths when the code is zero. Correct the "self-delimiting" statement.
-
 ### DI-44. Component-path entry grammar
 
 **Question.** Which field selects between the wide and narrow component-path entry layouts, and which separator width applies in a mixed path?

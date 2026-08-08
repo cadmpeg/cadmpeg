@@ -2040,6 +2040,11 @@ fn build_geometry_ir(
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(scan, &mut annotations);
+    let form_padding = ir.source.as_ref().and_then(|source| {
+        crate::resolved_features::operations::form_code_padding(
+            source.attributes.get("sw_version").map(String::as_str),
+        )
+    });
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bindings::bind_scalar_operands(&histories, &mut lanes);
     crate::resolved_features::bindings::bind_scalar_operands(
@@ -2060,16 +2065,19 @@ fn build_geometry_ir(
         &mut ir.model.features,
         &histories,
         &lanes,
+        form_padding,
     );
     crate::resolved_features::operations::bind_revolution_operations(
         &mut ir.model.features,
         &histories,
         &lanes,
+        form_padding,
     );
     crate::resolved_features::operations::bind_sweep_operations(
         &mut ir.model.features,
         &histories,
         &lanes,
+        form_padding,
     );
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,

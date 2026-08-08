@@ -10296,6 +10296,11 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
+    let form_padding = ir.source.as_ref().and_then(|source| {
+        crate::resolved_features::operations::form_code_padding(
+            source.attributes.get("sw_version").map(String::as_str),
+        )
+    });
     for configuration in &mut ir.model.configurations {
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
@@ -10348,16 +10353,19 @@ pub(crate) fn project_configuration_design_states(
             &mut features,
             histories,
             scoped_lanes,
+            form_padding,
         );
         crate::resolved_features::operations::bind_revolution_operations(
             &mut features,
             histories,
             scoped_lanes,
+            form_padding,
         );
         crate::resolved_features::operations::bind_sweep_operations(
             &mut features,
             histories,
             scoped_lanes,
+            form_padding,
         );
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             &mut features,
@@ -11297,12 +11305,14 @@ fn project_features_with_native_inputs(
         &mut features,
         &histories,
         &native.feature_input_lanes,
+        None,
     );
     project_compact_and_generated(&mut features, &histories, &native.feature_input_lanes);
     crate::resolved_features::operations::bind_revolution_operations(
         &mut features,
         &histories,
         &native.feature_input_lanes,
+        None,
     );
     let _ = crate::resolved_features::markers::spatial_sketches(
         &mut features,

@@ -1135,6 +1135,14 @@ fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
     f
 }
 
+fn add_solidworks_version(source: &mut Vec<u8>, version: u32) {
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        format!(r#"<?xml version="1.0"?><swSolidWorks swVersion="{version}"/>"#).as_bytes(),
+    ));
+}
+
 fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
     let mut f = sldprt_with_body(body);
     f.extend(make_block(0x40, "SWObjects", &material_payload(name, rgb)));
@@ -16435,6 +16443,7 @@ fn decode_projects_compact_solid_sweep_join_operation() {
     use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, SweepMode};
 
     let mut source = sldprt_with_body(&triangle_body());
+    add_solidworks_version(&mut source, 17_000);
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
@@ -17987,6 +17996,7 @@ fn decode_projects_feature_input_extrusion_operations() {
     ] {
         for &(direct_class, padding) in layouts {
             let mut source = sldprt_with_body(&triangle_body());
+            add_solidworks_version(&mut source, if padding == 8 { 17_000 } else { 11_000 });
             source.extend(make_block(
                 0x42,
                 "Contents/Keywords",

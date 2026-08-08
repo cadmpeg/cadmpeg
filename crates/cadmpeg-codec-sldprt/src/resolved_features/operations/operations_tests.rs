@@ -2,7 +2,8 @@
 
 use super::{
     class_scoped_extrusion_operation, extrusion_operation, feature_inline_operation,
-    feature_inline_operation_fields, feature_operation_code, revolution_operation,
+    feature_inline_operation_fields, feature_operation_code, form_code_padding,
+    revolution_operation, FormCodePadding,
 };
 use crate::records::{
     Feature, FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
@@ -51,12 +52,16 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[name_offset - 6..name_offset - 2].copy_from_slice(&1u32.to_le_bytes());
     lane.native_payload[name_offset - 2..name_offset].copy_from_slice(&0x8d9au16.to_le_bytes());
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moICE_c")),
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
         Some(1)
     );
     assert_eq!(
-        feature_operation_code(&lane, &name, Some("moExtrusion_c")),
+        feature_operation_code(&lane, &name, Some("moExtrusion_c"), None),
         None
+    );
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight),),
+        Some(1)
     );
     assert_eq!(
         feature_inline_operation(&lane, &name),
@@ -186,12 +191,12 @@ fn declared_ice_object_uses_a_unanimous_repeated_class_form() {
     let feature_refs = features.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0],),
+        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0], None,),
         Some(BooleanOp::Cut)
     );
     lane.native_payload[136..140].copy_from_slice(&6u32.to_le_bytes());
     assert_eq!(
-        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0],),
+        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0], None,),
         None
     );
 }
@@ -222,6 +227,108 @@ fn extrusion_form_codes_are_scoped_to_their_native_classes() {
         );
     }
     assert_eq!(extrusion_operation(Some("moExtrusion_c"), u32::MAX), None);
+}
+
+#[test]
+fn ambiguous_direct_form_code_padding_does_not_shift_the_code() {
+    let direct_lane = |code: u32, preceding: u32, padding: usize| {
+        let class_offset = 32usize;
+        let class_name = "moICE_c";
+        let name_offset = class_offset + 6 + class_name.len();
+        let code_offset = class_offset - 4 - padding;
+        let mut payload = vec![0; 128];
+        payload[code_offset..code_offset + 4].copy_from_slice(&code.to_le_bytes());
+        payload[class_offset..class_offset + 4].copy_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+        payload[class_offset + 4..class_offset + 6]
+            .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+        payload[class_offset + 6..name_offset].copy_from_slice(class_name.as_bytes());
+        if padding == 4 {
+            payload[class_offset - 12..class_offset - 8].copy_from_slice(&preceding.to_le_bytes());
+        } else {
+            payload[class_offset - 16..class_offset - 12].copy_from_slice(&preceding.to_le_bytes());
+        }
+        (
+            FeatureInputLane {
+                id: "lane".into(),
+                configuration: None,
+                native_payload: payload,
+                classes: vec![FeatureInputClass {
+                    id: "class".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: class_offset as u64,
+                    name: class_name.into(),
+                    role: FeatureInputClassRole::Feature,
+                }],
+                names: Vec::new(),
+                scalars: Vec::new(),
+                relation_bindings: Vec::new(),
+                relation_instances: Vec::new(),
+                body_selections: Vec::new(),
+                edge_selections: Vec::new(),
+                surface_selections: Vec::new(),
+                generated_surface_identities: Vec::new(),
+                references: Vec::new(),
+                sketch_entities: Vec::new(),
+            },
+            FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: name_offset as u64,
+                value: "Feature".into(),
+                object_id: Some(1),
+            },
+        )
+    };
+
+    let (lane, name) = direct_lane(3, 11, 4);
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        Some(3)
+    );
+
+    let (lane, name) = direct_lane(0, 11, 4);
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        None
+    );
+
+    let (lane, name) = direct_lane(11, 0, 8);
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), None),
+        None
+    );
+
+    let (lane, name) = direct_lane(0, 11, 4);
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Four)),
+        Some(0)
+    );
+
+    let (lane, name) = direct_lane(11, 0, 8);
+    assert_eq!(
+        feature_operation_code(&lane, &name, Some("moICE_c"), Some(FormCodePadding::Eight)),
+        Some(11)
+    );
+}
+
+#[test]
+fn form_code_padding_follows_the_solidworks_schema_version() {
+    assert_eq!(form_code_padding(None), None);
+    assert_eq!(form_code_padding(Some("")), None);
+    assert_eq!(
+        form_code_padding(Some("11000")),
+        Some(FormCodePadding::Four)
+    );
+    assert_eq!(
+        form_code_padding(Some("12000")),
+        Some(FormCodePadding::Eight)
+    );
+    assert_eq!(
+        form_code_padding(Some("34000")),
+        Some(FormCodePadding::Eight)
+    );
 }
 
 #[test]
