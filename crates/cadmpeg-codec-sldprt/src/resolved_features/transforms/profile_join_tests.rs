@@ -483,7 +483,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         point
     };
     let triangle_points = [
-        triangle_point("triangle-point-0", 7, 7, [0.010, 0.010]),
+        triangle_point("triangle-point-0", 7, 7, [0.010, 0.011]),
         triangle_point("triangle-point-1", 8, 8, [0.020, 0.010]),
         triangle_point("triangle-point-2", 9, 9, [0.015, 0.020]),
     ];

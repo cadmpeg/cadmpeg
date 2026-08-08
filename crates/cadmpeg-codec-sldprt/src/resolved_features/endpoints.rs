@@ -4403,8 +4403,7 @@ pub(super) fn unique_arc_center_marker(
             if sweep <= tolerance || (std::f64::consts::TAU - sweep) <= tolerance {
                 return None;
             }
-            (sweep <= std::f64::consts::PI + tolerance)
-                .then_some((quantize(center, tolerance), center))
+            Some((quantize(center, tolerance), center))
         })
         .collect::<Vec<_>>();
     centers.sort_unstable_by_key(|(center, _)| *center);

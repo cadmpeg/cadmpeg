@@ -1124,6 +1124,45 @@ fn connected_marker_arc_uses_unique_equidistant_point_witness() {
 }
 
 #[test]
+fn connected_marker_arc_with_mirror_centers_remains_native() {
+    let sketch = SketchId("sketch".into());
+    let point = |id: &str, native_ref: &str, position| SketchEntity {
+        id: SketchEntityId(id.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: Some(native_ref.into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
+    let mut entities = vec![
+        point("start", "point:100", Point2::new(1.0, 0.0)),
+        point("between-center", "point:200", Point2::new(0.0, 0.0)),
+        point("end", "point:300", Point2::new(0.0, 1.0)),
+        point("outside-center", "point:400", Point2::new(1.0, 1.0)),
+        SketchEntity {
+            id: SketchEntityId("arc".into()),
+            sketch,
+            construction: false,
+            native_ref: Some("curve:500".into()),
+            geometry_ref: None,
+            endpoint_refs: vec!["point:100".into(), "point:300".into()],
+            geometry: SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+        },
+    ];
+
+    super::resolve_connected_marker_arcs(&mut entities, 1.0e-9);
+
+    assert!(matches!(
+        entities[4].geometry,
+        SketchGeometry::Native { ref native_kind }
+            if native_kind == "sldprt:marker-geometry:2"
+    ));
+}
+
+#[test]
 fn packed_slot_descriptor_run_is_not_independent_geometry() {
     let slot_offset = 22;
     let mut payload = vec![0; slot_offset + 252];

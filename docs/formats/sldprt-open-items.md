@@ -1008,34 +1008,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
 
-### DI-40. Marker-arc centre selection by record order
-
-**Question.** Which coordinate-bearing marker is the centre of a connected marker arc?
-
-**Known.** `sldprt.md` §2 defines centre recovery by uniqueness: "a unique equidistant center marker", "exactly one coordinate-bearing geometry marker … must be equidistant", and "An absent or ambiguous center leaves the curve unresolved."
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:707` runs an earlier pass that selects the sole point record whose offset lies between the two endpoint records:
-
-```rust
-let (_, _, _, center) = between.next()?;
-if between.next().is_some() { return None; }
-```
-
-That gate covers the window between the endpoints only. `unique_arc_center_marker` at `endpoints.rs:4379` applies the specification rule and withholds on ambiguity, but it runs only on the entities the earlier pass leaves native. Two mirror centres on opposite sides of the chord are equidistant. When one is inside the window and one is outside, the earlier pass accepts and the specification rule never runs.
-
-**Need.** We must know whether record order selects the centre. If it does not, the uniqueness rule must run first.
-
-**Note.** The second tier does not apply the uniqueness rule either. `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:4406` removes every candidate whose sweep is more than π **before** it counts the survivors:
-
-```rust
-(sweep <= std::f64::consts::PI + tolerance)
-    .then_some((quantize(center, tolerance), center))
-...
-let [(_, center)] = centers.as_slice() else { return None; };
-```
-
-Two markers equidistant from one chord always sit on opposite sides, so one gives a sweep of at most π and the other more than π. The filter therefore turns every mirror-pair ambiguity into a single survivor. `sldprt.md` §2 states the rule as uniqueness over equidistant markers with no minor-side qualifier, so this gate reports a unique centre where the specification records an ambiguity. See DI-33.
-
 ### DI-41. Diameter-dimension circle witnesses
 
 **Question.** How does a diameter dimension select its centre and radial markers when no link relation identifies them?

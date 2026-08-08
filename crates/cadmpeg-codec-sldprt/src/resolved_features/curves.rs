@@ -666,22 +666,13 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
     let point_records = entities
         .iter()
         .filter_map(|entity| match entity.geometry {
-            SketchGeometry::Point { position } => Some((
-                entity.sketch.clone(),
-                entity.native_ref.clone()?,
-                entity
-                    .native_ref
-                    .as_deref()?
-                    .rsplit_once(':')?
-                    .1
-                    .parse::<u64>()
-                    .ok()?,
-                position,
-            )),
+            SketchGeometry::Point { position } => {
+                Some((entity.sketch.clone(), entity.native_ref.clone()?, position))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
-    let roster_replacements = entities
+    let center_replacements = entities
         .iter()
         .enumerate()
         .filter_map(|(index, entity)| {
@@ -697,59 +688,18 @@ pub(super) fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], toler
             };
             let start = points.get(start_ref).copied()?;
             let end = points.get(end_ref).copied()?;
-            let start_offset = start_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
-            let end_offset = end_ref.rsplit_once(':')?.1.parse::<u64>().ok()?;
-            let (lower, upper) = if start_offset < end_offset {
-                (start_offset, end_offset)
-            } else {
-                (end_offset, start_offset)
-            };
-            let mut between = point_records.iter().filter(|(sketch, _, offset, _)| {
-                sketch == &entity.sketch && *offset > lower && *offset < upper
-            });
-            let (_, _, _, center) = between.next()?;
-            if between.next().is_some() {
-                return None;
-            }
-            minor_arc_geometry(start, end, *center, tolerance).map(|geometry| (index, geometry))
-        })
-        .collect::<Vec<_>>();
-    for (index, geometry) in roster_replacements {
-        entities[index].geometry = geometry;
-    }
-    // A unique center witness remains unambiguous when record order does not place it
-    // between the endpoint witnesses.
-    let unique_center_replacements = entities
-        .iter()
-        .enumerate()
-        .filter_map(|(index, entity)| {
-            if !matches!(
-                entity.geometry,
-                SketchGeometry::Native { ref native_kind }
-                    if native_kind == "sldprt:marker-geometry:2"
-            ) {
-                return None;
-            }
-            let [start_ref, end_ref] = entity.endpoint_refs.as_slice() else {
-                return None;
-            };
-            let (Some(start), Some(end)) =
-                (points.get(start_ref.as_str()), points.get(end_ref.as_str()))
-            else {
-                return None;
-            };
             let candidates = point_records
                 .iter()
-                .filter(|(sketch, reference, ..)| {
+                .filter(|(sketch, reference, _)| {
                     sketch == &entity.sketch && reference != start_ref && reference != end_ref
                 })
-                .map(|(_, _, _, center)| *center)
+                .map(|(_, _, center)| *center)
                 .collect::<Vec<_>>();
-            let center = unique_arc_center_marker(*start, *end, &candidates, tolerance)?;
-            minor_arc_geometry(*start, *end, center, tolerance).map(|geometry| (index, geometry))
+            let center = unique_arc_center_marker(start, end, &candidates, tolerance)?;
+            minor_arc_geometry(start, end, center, tolerance).map(|geometry| (index, geometry))
         })
         .collect::<Vec<_>>();
-    for (index, geometry) in unique_center_replacements {
+    for (index, geometry) in center_replacements {
         entities[index].geometry = geometry;
     }
     let arcs = entities
