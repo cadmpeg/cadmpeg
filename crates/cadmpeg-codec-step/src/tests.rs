@@ -631,6 +631,35 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 }
 
 #[test]
+fn parser_resolves_local_entity_reference_anchors_before_schema_decoding() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#2;ENDSEC;REFERENCE;#10=<#shape>;ENDSEC;DATA;#1=ITEM(#10);#2=TARGET();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("local entity reference");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![crate::parse::Value::Reference(2)]
+    );
+}
+
+#[test]
+fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<length>=3.;<shape>=#2;ENDSEC;REFERENCE;@10=<#length>;@11=<#shape>;#12=<missing>;#13=<external.step>;ENDSEC;DATA;#1=ITEM(@10,@11,#12,#13);#2=TARGET();ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("local value references");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::Real(3.0),
+            crate::parse::Value::Omitted,
+            crate::parse::Value::Omitted,
+            crate::parse::Value::Omitted,
+        ]
+    );
+}
+
+#[test]
 fn parser_requires_numeric_reference_left_hand_sides() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;<external>=<part.step#root>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("resource reference name");

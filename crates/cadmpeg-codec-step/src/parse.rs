@@ -788,6 +788,8 @@ impl Parser<'_> {
                 }
             }
         }
+        resolve_local_references(&mut anchors, &mut records, &reference_entries)
+            .map_err(|message| ParseError::Syntax { offset: 0, message })?;
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 record.partials[0]
@@ -1968,6 +1970,212 @@ impl<'a> AnchorResolver<'a> {
             value => Ok((value.clone(), 1, 0)),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum ReferenceKind {
+    Entity,
+    Value,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ReferenceKey {
+    kind: ReferenceKind,
+    id: u64,
+}
+
+struct ReferenceResolver<'a> {
+    bindings: BTreeMap<ReferenceKey, &'a str>,
+    anchors: &'a BTreeMap<String, Value>,
+    stack: Vec<ReferenceKey>,
+    remaining_nodes: usize,
+}
+
+impl<'a> ReferenceResolver<'a> {
+    const MAX_MATERIALIZED_NODES: usize = 1_000_000;
+    const MAX_REFERENCE_DEPTH: usize = 256;
+
+    fn new(
+        references: &'a [ReferenceEntry],
+        anchors: &'a BTreeMap<String, Value>,
+    ) -> Result<Self, String> {
+        let mut bindings = BTreeMap::new();
+        for reference in references {
+            let (kind, id) = match reference.name.as_bytes().first() {
+                Some(b'#') => (ReferenceKind::Entity, &reference.name[1..]),
+                Some(b'@') => (ReferenceKind::Value, &reference.name[1..]),
+                _ => return Err("invalid REFERENCE occurrence name".into()),
+            };
+            let id = id
+                .parse::<u64>()
+                .map_err(|_| "invalid REFERENCE occurrence name")?;
+            if bindings
+                .insert(ReferenceKey { kind, id }, reference.uri.as_str())
+                .is_some()
+            {
+                return Err("duplicate REFERENCE occurrence name".into());
+            }
+        }
+        Ok(Self {
+            bindings,
+            anchors,
+            stack: Vec::new(),
+            remaining_nodes: Self::MAX_MATERIALIZED_NODES,
+        })
+    }
+
+    fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, String> {
+        if depth >= Self::MAX_REFERENCE_DEPTH {
+            return Err("REFERENCE expansion exceeds its depth limit".into());
+        }
+        match value {
+            Value::Reference(id) => self.resolve_occurrence(
+                ReferenceKey {
+                    kind: ReferenceKind::Entity,
+                    id: *id,
+                },
+                value,
+                depth,
+            ),
+            Value::ValueReference(id) => self.resolve_occurrence(
+                ReferenceKey {
+                    kind: ReferenceKind::Value,
+                    id: *id,
+                },
+                value,
+                depth,
+            ),
+            Value::List(values) => values
+                .iter()
+                .map(|value| self.resolve_value(value, depth + 1))
+                .collect::<Result<Vec<_>, _>>()
+                .map(Value::List),
+            Value::Typed(name, value) => Ok(Value::Typed(
+                name.clone(),
+                Box::new(self.resolve_value(value, depth + 1)?),
+            )),
+            _ => Ok(value.clone()),
+        }
+    }
+
+    fn resolve_occurrence(
+        &mut self,
+        key: ReferenceKey,
+        original: &Value,
+        depth: usize,
+    ) -> Result<Value, String> {
+        let Some(uri) = self.bindings.get(&key).copied() else {
+            return Ok(original.clone());
+        };
+        let Some((path, fragment)) = uri.split_once('#') else {
+            return Ok(Value::Omitted);
+        };
+        if !path.is_empty() {
+            return Ok(original.clone());
+        }
+        if self.stack.contains(&key) {
+            return Ok(Value::Omitted);
+        }
+        let Some(anchor) = self.anchors.get(fragment) else {
+            return if is_uuid_fragment(fragment) {
+                Ok(original.clone())
+            } else {
+                Ok(Value::Omitted)
+            };
+        };
+        self.stack.push(key);
+        let resolved = self.resolve_value(anchor, depth + 1);
+        self.stack.pop();
+        let resolved = resolved?;
+        if let Value::Resource(uri) = &resolved {
+            return if uri.contains('#') {
+                Ok(original.clone())
+            } else {
+                Ok(Value::Omitted)
+            };
+        }
+        if !reference_target_matches(key.kind, &resolved) {
+            return Ok(Value::Omitted);
+        }
+        self.charge_materialized_nodes(&resolved)?;
+        Ok(resolved)
+    }
+
+    fn charge_materialized_nodes(&mut self, value: &Value) -> Result<(), String> {
+        let nodes = value_node_count(value, self.remaining_nodes)?;
+        self.remaining_nodes = self
+            .remaining_nodes
+            .checked_sub(nodes)
+            .ok_or_else(|| "REFERENCE expansion exceeds 1000000 nodes".to_string())?;
+        Ok(())
+    }
+}
+
+fn resolve_local_references(
+    anchors: &mut [AnchorEntry],
+    records: &mut BTreeMap<u64, RawRecord>,
+    references: &[ReferenceEntry],
+) -> Result<(), String> {
+    if references.is_empty() {
+        return Ok(());
+    }
+    let anchor_bindings = anchors
+        .iter()
+        .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let mut resolver = ReferenceResolver::new(references, &anchor_bindings)?;
+    for anchor in anchors {
+        anchor.value = resolver.resolve_value(&anchor.value, 0)?;
+        for tag in &mut anchor.tags {
+            tag.value = resolver.resolve_value(&tag.value, 0)?;
+        }
+    }
+    for record in records.values_mut() {
+        for partial in &mut record.partials {
+            for value in &mut partial.parameters {
+                *value = resolver.resolve_value(value, 0)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn reference_target_matches(kind: ReferenceKind, value: &Value) -> bool {
+    match kind {
+        ReferenceKind::Entity => matches!(value, Value::Reference(_) | Value::ConstantEntity(_)),
+        ReferenceKind::Value => !matches!(
+            value,
+            Value::Reference(_) | Value::ConstantEntity(_) | Value::Resource(_)
+        ),
+    }
+}
+
+fn is_uuid_fragment(fragment: &str) -> bool {
+    fragment.len() == 36
+        && fragment.as_bytes().iter().enumerate().all(|(index, byte)| {
+            matches!(index, 8 | 13 | 18 | 23)
+                .then_some(*byte == b'-')
+                .unwrap_or_else(|| byte.is_ascii_hexdigit())
+        })
+}
+
+fn value_node_count(value: &Value, limit: usize) -> Result<usize, String> {
+    let mut pending = vec![value];
+    let mut count = 0usize;
+    while let Some(value) = pending.pop() {
+        count = count
+            .checked_add(1)
+            .ok_or_else(|| "REFERENCE expansion exceeds 1000000 nodes".to_string())?;
+        if count > limit {
+            return Err("REFERENCE expansion exceeds 1000000 nodes".into());
+        }
+        match value {
+            Value::List(values) => pending.extend(values.iter()),
+            Value::Typed(_, value) => pending.push(value),
+            _ => {}
+        }
+    }
+    Ok(count)
 }
 
 fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>) {
