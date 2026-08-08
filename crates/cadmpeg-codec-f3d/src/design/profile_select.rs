@@ -4,7 +4,6 @@
 use crate::container::{role, ContainerScan};
 use crate::design::decode::operands::{entity_selection_matches_curve, parse_sketch_profile};
 use crate::design::edge_resolve::feature_input_topology_id;
-use crate::design::feature_project::spatial_sketch_entity_endpoints;
 use crate::design::geometry::{
     arrangement_region_containing_points, historical_member_points_in_state, point_in_polygon,
     point_on_sketch_entity, point_segment_distance, profile_loops_are_independent,
@@ -902,40 +901,38 @@ fn resolved_spatial_extrude_profile_selection(
     history_state_id: Option<i64>,
     previous_history_state_id: Option<i64>,
 ) -> Option<u32> {
-    transition_spatial_profile_selection(
-        sketch,
-        entities,
-        resolution.histories,
-        history_state_id?,
-        previous_history_state_id?,
-        resolution.linear_tolerance,
-    )
-    .or_else(|| {
-        let mut group_members = members
+    enum ExactSelection {
+        Resolved(u32),
+        Unavailable,
+        Contradictory,
+    }
+
+    let mut group_members = members
+        .iter()
+        .filter(|member| {
+            native_stream(&member.id) == native_stream(&group.id)
+                && member.group_record_index == group.record_index
+        })
+        .collect::<Vec<_>>();
+    group_members.sort_by_key(|member| member.group_member_ordinal);
+    let exact_member_run = group_members.len() == group.members.len()
+        && group_members
             .iter()
-            .filter(|member| {
-                native_stream(&member.id) == native_stream(&group.id)
-                    && member.group_record_index == group.record_index
-            })
-            .collect::<Vec<_>>();
-        group_members.sort_by_key(|member| member.group_member_ordinal);
-        if group_members.len() != group.members.len()
-            || group_members
-                .iter()
-                .zip(&group.members)
-                .any(|(member, record_index)| member.record_index != *record_index)
-        {
-            return None;
+            .zip(&group.members)
+            .all(|(member, record_index)| member.record_index == *record_index);
+    let exact_selection = (|| {
+        if !exact_member_run {
+            return ExactSelection::Unavailable;
         }
         let mut selected = None;
         for member in group_members {
-            let SketchRelationOperand::Curve {
+            let Some(SketchRelationOperand::Curve {
                 primary_id,
                 secondary_id,
                 ..
-            } = member.resolved_geometry.as_ref()?
+            }) = member.resolved_geometry.as_ref()
             else {
-                return None;
+                return ExactSelection::Unavailable;
             };
             let entity =
                 crate::ids::neutral_spatial_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
@@ -945,19 +942,39 @@ fn resolved_spatial_extrude_profile_selection(
                 .enumerate()
                 .filter(|(_, profile)| profile.boundary.iter().any(|use_| use_.entity == entity))
                 .map(|(index, _)| u32::try_from(index).ok())
-                .collect::<Option<Vec<_>>>()?;
+                .collect::<Option<Vec<_>>>();
+            let Some(matches) = matches else {
+                return ExactSelection::Unavailable;
+            };
             let [profile] = matches.as_slice() else {
-                return None;
+                return ExactSelection::Unavailable;
             };
             if selected
                 .replace(*profile)
                 .is_some_and(|selected| selected != *profile)
             {
-                return None;
+                return ExactSelection::Contradictory;
             }
         }
-        selected
-    })
+        selected.map_or(ExactSelection::Unavailable, ExactSelection::Resolved)
+    })();
+    match exact_selection {
+        ExactSelection::Resolved(selection) => Some(selection),
+        ExactSelection::Contradictory => None,
+        ExactSelection::Unavailable => history_state_id
+            .zip(previous_history_state_id)
+            .and_then(|(state_id, previous_state_id)| {
+                transition_spatial_profile_selection(
+                    sketch,
+                    entities,
+                    resolution.histories,
+                    state_id,
+                    previous_state_id,
+                    resolution.linear_tolerance,
+                )
+            })
+            .or_else(|| (sketch.profiles.len() == 1).then_some(0)),
+    }
 }
 
 fn transition_spatial_profile_selection(
@@ -988,13 +1005,8 @@ fn transition_spatial_profile_selection(
         let mut indices = faces
             .iter()
             .filter_map(|face| {
-                if let Some(profile) =
-                    spatial_polyline_profile_for_face(*face, topology, sketch, entities, tolerance)
-                {
-                    return Some(profile);
-                }
                 let points = historical_face_points(*face, topology)?;
-                spatial_profile_containing_points(sketch, entities, &points, tolerance)
+                spatial_polyline_profile_containing_points(sketch, entities, &points, tolerance)
             })
             .collect::<Vec<_>>();
         indices.sort_unstable();
@@ -1021,163 +1033,79 @@ fn transition_spatial_profile_selection(
     )
 }
 
-fn spatial_polyline_profile_for_face(
-    face: i64,
-    topology: &crate::history_records::AsmHistoricalTopology,
-    sketch: &cadmpeg_ir::sketches::SpatialSketch,
-    entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
-    tolerance: f64,
-) -> Option<u32> {
-    let face_loops = topology
-        .face_loops
-        .iter()
-        .find(|relation| relation.owner_ref == face)?;
-    let mut loop_signatures = Vec::new();
-    for loop_ref in &face_loops.member_refs {
-        let coedges = topology
-            .loop_coedges
-            .iter()
-            .find(|relation| relation.owner_ref == *loop_ref)?;
-        let mut lengths = coedges
-            .member_refs
-            .iter()
-            .map(|coedge_ref| {
-                let coedge = topology
-                    .coedge_topology
-                    .iter()
-                    .find(|coedge| coedge.coedge == *coedge_ref)?;
-                let edge = topology
-                    .edge_vertices
-                    .iter()
-                    .find(|edge| edge.edge == coedge.edge)?;
-                let position = |vertex| {
-                    let point = topology
-                        .vertex_points
-                        .iter()
-                        .find(|binding| binding.entity == vertex)?
-                        .carrier;
-                    topology
-                        .point_positions
-                        .iter()
-                        .find(|candidate| candidate.point == point)
-                        .map(|point| point.position)
-                };
-                let start = position(edge.start_vertex)?;
-                let end = position(edge.end_vertex)?;
-                Some(
-                    (end.x - start.x)
-                        .hypot(end.y - start.y)
-                        .hypot(end.z - start.z),
-                )
-            })
-            .collect::<Option<Vec<_>>>()?;
-        lengths.sort_by(f64::total_cmp);
-        loop_signatures.push(lengths);
-    }
-    let mut matches = sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter_map(|(index, profile)| {
-            let mut lengths = profile
-                .boundary
-                .iter()
-                .map(|use_| {
-                    let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
-                    let cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } =
-                        entity.geometry
-                    else {
-                        return None;
-                    };
-                    Some(
-                        (end.x - start.x)
-                            .hypot(end.y - start.y)
-                            .hypot(end.z - start.z),
-                    )
-                })
-                .collect::<Option<Vec<_>>>()?;
-            lengths.sort_by(f64::total_cmp);
-            loop_signatures
-                .iter()
-                .any(|signature| {
-                    signature.len() == lengths.len()
-                        && signature.iter().zip(&lengths).all(|(historical, profile)| {
-                            (historical - profile).abs()
-                                <= tolerance * (1.0 + historical.abs().max(profile.abs()))
-                        })
-                })
-                .then(|| u32::try_from(index).ok())?
-        });
-    let selected = matches.next()?;
-    matches.next().is_none().then_some(selected)
-}
-
-fn spatial_profile_containing_points(
+fn spatial_polyline_profile_containing_points(
     sketch: &cadmpeg_ir::sketches::SpatialSketch,
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
     points: &[Point3],
     tolerance: f64,
 ) -> Option<u32> {
-    let mut matches = sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter_map(|(index, profile)| {
-            let offsets = points
+    let mut matches = Vec::new();
+    for (index, profile) in sketch.profiles.iter().enumerate() {
+        let offsets = points
+            .iter()
+            .map(|point| {
+                (point.x - profile.origin.x) * profile.normal.x
+                    + (point.y - profile.origin.y) * profile.normal.y
+                    + (point.z - profile.origin.z) * profile.normal.z
+            })
+            .collect::<Vec<_>>();
+        if !offsets.first().is_some_and(|first| {
+            offsets
                 .iter()
-                .map(|point| {
-                    (point.x - profile.origin.x) * profile.normal.x
-                        + (point.y - profile.origin.y) * profile.normal.y
-                        + (point.z - profile.origin.z) * profile.normal.z
-                })
-                .collect::<Vec<_>>();
-            if !offsets.first().is_some_and(|first| {
-                offsets
-                    .iter()
-                    .all(|offset| (offset - first).abs() <= tolerance)
-            }) {
-                return None;
-            }
-            let v_axis = Vector3::new(
-                profile.normal.y * profile.u_axis.z - profile.normal.z * profile.u_axis.y,
-                profile.normal.z * profile.u_axis.x - profile.normal.x * profile.u_axis.z,
-                profile.normal.x * profile.u_axis.y - profile.normal.y * profile.u_axis.x,
+                .all(|offset| (offset - first).abs() <= tolerance)
+        }) {
+            continue;
+        }
+        let v_axis = Vector3::new(
+            profile.normal.y * profile.u_axis.z - profile.normal.z * profile.u_axis.y,
+            profile.normal.z * profile.u_axis.x - profile.normal.x * profile.u_axis.z,
+            profile.normal.x * profile.u_axis.y - profile.normal.y * profile.u_axis.x,
+        );
+        let project = |point: Point3| {
+            let offset = Vector3::new(
+                point.x - profile.origin.x,
+                point.y - profile.origin.y,
+                point.z - profile.origin.z,
             );
-            let project = |point: Point3| {
-                let offset = Vector3::new(
-                    point.x - profile.origin.x,
-                    point.y - profile.origin.y,
-                    point.z - profile.origin.z,
-                );
-                Point2::new(
-                    offset.x * profile.u_axis.x
-                        + offset.y * profile.u_axis.y
-                        + offset.z * profile.u_axis.z,
-                    offset.x * v_axis.x + offset.y * v_axis.y + offset.z * v_axis.z,
-                )
-            };
-            let polygon = profile
-                .boundary
-                .iter()
-                .map(|use_| {
-                    let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
-                    let endpoints = spatial_sketch_entity_endpoints(entity)?;
-                    Some(project(endpoints[usize::from(use_.reversed)]))
-                })
-                .collect::<Option<Vec<_>>>()?;
-            (polygon.len() >= 3
-                && points.iter().all(|point| {
-                    let point = project(*point);
-                    point_in_polygon(point, &polygon)
-                        || polygon.iter().enumerate().any(|(index, start)| {
-                            let end = polygon[(index + 1) % polygon.len()];
-                            point_segment_distance(point, (*start, end)) <= tolerance
-                        })
-                }))
-            .then(|| u32::try_from(index).ok())?
-        });
-    let selected = matches.next()?;
-    matches.next().is_none().then_some(selected)
+            Point2::new(
+                offset.x * profile.u_axis.x
+                    + offset.y * profile.u_axis.y
+                    + offset.z * profile.u_axis.z,
+                offset.x * v_axis.x + offset.y * v_axis.y + offset.z * v_axis.z,
+            )
+        };
+        let polygon = profile
+            .boundary
+            .iter()
+            .map(|use_| {
+                let entity = entities
+                    .iter()
+                    .find(|entity| entity.sketch == sketch.id && entity.id == use_.entity)?;
+                let cadmpeg_ir::sketches::SpatialSketchGeometry::Line { start, end } =
+                    &entity.geometry
+                else {
+                    return None;
+                };
+                Some(project(if use_.reversed { *end } else { *start }))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if polygon.len() >= 3
+            && points.iter().all(|point| {
+                let point = project(*point);
+                point_in_polygon(point, &polygon)
+                    || polygon.iter().enumerate().any(|(index, start)| {
+                        let end = polygon[(index + 1) % polygon.len()];
+                        point_segment_distance(point, (*start, end)) <= tolerance
+                    })
+            })
+        {
+            matches.push(u32::try_from(index).ok()?);
+        }
+    }
+    let [selected] = matches.as_slice() else {
+        return None;
+    };
+    Some(*selected)
 }
 
 pub(crate) fn unique_multi_face_deleted_carrier_family(
@@ -2168,8 +2096,14 @@ pub(crate) fn bind_loft_sketch_selections(
 mod tests {
     use super::{
         resolve_entity_selection_path, resolved_loft_entity_selection_path,
-        resolved_spatial_sketch_profile_regions, EntitySelectionPathResolution,
-        LoftSketchResolution,
+        resolved_spatial_extrude_profile_selection, resolved_spatial_sketch_profile_regions,
+        spatial_polyline_profile_containing_points, transition_spatial_profile_selection,
+        EntitySelectionPathResolution, ExtrudeProfileResolution, LoftSketchResolution,
+    };
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge,
+        AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
+        AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
     };
     use crate::ids::{
         neutral_sketch_curve_id, neutral_sketch_id, neutral_spatial_sketch_curve_id,
@@ -2177,11 +2111,12 @@ mod tests {
     };
     use crate::records::{
         DesignConstructionOperandGroup, DesignConstructionOperandGroupFrame,
-        DesignEntitySelectionOperand, DesignSketchPlacement, DesignSketchProfileOperand,
-        DesignSketchProfileRegion, DesignSketchProfileRegionMember,
-        DesignSketchProfileRegionSelection, SketchCurveIdentity,
+        DesignEntitySelectionOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+        DesignSketchPlacement, DesignSketchProfileOperand, DesignSketchProfileRegion,
+        DesignSketchProfileRegionMember, DesignSketchProfileRegionSelection, SketchCurveIdentity,
+        SketchRelationOperand,
     };
-    use cadmpeg_ir::features::{Length, PathRef};
+    use cadmpeg_ir::features::{Angle, Length, PathRef};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchEntity, SketchGeometry, SketchPlacement, SpatialSketch, SpatialSketchEntity,
@@ -2325,6 +2260,410 @@ mod tests {
             incidence_words: [0, 0, 0, 0, 1, 1, 0, 0],
             incidence_words_offset: 0,
         }
+    }
+
+    fn spatial_line(
+        sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+        primary_id: u64,
+        start: Point3,
+        end: Point3,
+    ) -> SpatialSketchEntity {
+        SpatialSketchEntity {
+            id: neutral_spatial_sketch_curve_id(sketch, primary_id, 0),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::Line { start, end },
+        }
+    }
+
+    fn spatial_profile(
+        sketch: &cadmpeg_ir::sketches::SpatialSketchId,
+        primary_ids: &[u64],
+    ) -> SpatialSketchProfile {
+        SpatialSketchProfile {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: primary_ids
+                .iter()
+                .map(|primary_id| SpatialSketchEntityUse {
+                    entity: neutral_spatial_sketch_curve_id(sketch, *primary_id, 0),
+                    reversed: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
+        let sketch_id =
+            cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#selection".into());
+        let sketch = SpatialSketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            profiles: vec![
+                spatial_profile(&sketch_id, &[100, 101, 102]),
+                spatial_profile(&sketch_id, &[200, 201, 202]),
+            ],
+            native_ref: None,
+        };
+        let group = DesignExtrudeSelectionGroup {
+            id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+            scope_record_index: 7,
+            scope_reference_ordinal: 0,
+            record_index: 9,
+            byte_offset: 0,
+            class_tag: "277".into(),
+            member_count_offset: 0,
+            members: vec![10],
+            member_offsets: vec![0],
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+            paired_class_tag: "277".into(),
+            paired_byte_offset: 0,
+        };
+        let mut member = DesignExtrudeSelectionMember {
+            id: "f3d:Design/BulkStream.dat:selection-member#10".into(),
+            group_record_index: group.record_index,
+            group_member_ordinal: 0,
+            record_index: 10,
+            byte_offset: 0,
+            class_tag: "278".into(),
+            local_id: 200,
+            local_id_offset: 0,
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            tail_slot_present: false,
+            tail_slot_offset: 0,
+            resolved_geometry: Some(SketchRelationOperand::Curve {
+                record_index: 20,
+                primary_id: 200,
+                secondary_id: 0,
+            }),
+            operand_identity_ids: Vec::new(),
+            historical_entity_kind: None,
+            historical_entity_ref: None,
+            historical_state_ids: Vec::new(),
+            next_record_index: 11,
+            next_byte_offset: 0,
+        };
+        let resolution = ExtrudeProfileResolution {
+            entities: &[],
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: &[],
+            linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-9,
+        };
+
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+                &[],
+                resolution,
+                None,
+                None,
+            ),
+            Some(1)
+        );
+
+        let mut conflicting_group = group.clone();
+        conflicting_group.members.push(11);
+        conflicting_group.member_offsets.push(0);
+        let mut conflicting_member = member.clone();
+        conflicting_member.id = "f3d:Design/BulkStream.dat:selection-member#11".into();
+        conflicting_member.group_member_ordinal = 1;
+        conflicting_member.record_index = 11;
+        conflicting_member.local_id = 100;
+        conflicting_member.resolved_geometry = Some(SketchRelationOperand::Curve {
+            record_index: 21,
+            primary_id: 100,
+            secondary_id: 0,
+        });
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &conflicting_group,
+                &[member.clone(), conflicting_member],
+                &sketch,
+                &[],
+                resolution,
+                None,
+                None,
+            ),
+            None
+        );
+
+        member.resolved_geometry = None;
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+                &[],
+                resolution,
+                None,
+                None,
+            ),
+            None
+        );
+        let single_profile = SpatialSketch {
+            profiles: vec![sketch.profiles[0].clone()],
+            ..sketch
+        };
+        assert_eq!(
+            resolved_spatial_extrude_profile_selection(
+                &group,
+                &[member],
+                &single_profile,
+                &[],
+                resolution,
+                None,
+                None,
+            ),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
+        let sketch_id =
+            cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#transition".into());
+        let entities = [
+            spatial_line(
+                &sketch_id,
+                100,
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                101,
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                102,
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                200,
+                Point3::new(10.0, 0.0, 0.0),
+                Point3::new(12.0, 0.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                201,
+                Point3::new(12.0, 0.0, 0.0),
+                Point3::new(10.0, 2.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                202,
+                Point3::new(10.0, 2.0, 0.0),
+                Point3::new(10.0, 0.0, 0.0),
+            ),
+        ];
+        let sketch = SpatialSketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            profiles: vec![
+                spatial_profile(&sketch_id, &[100, 101, 102]),
+                spatial_profile(&sketch_id, &[200, 201, 202]),
+            ],
+            native_ref: None,
+        };
+        let topology = AsmHistoricalTopology {
+            faces: vec![1],
+            loops: vec![10],
+            coedges: vec![20, 21, 22],
+            edges: vec![30, 31, 32],
+            vertices: vec![40, 41, 42],
+            points: vec![50, 51, 52],
+            face_loops: vec![AsmHistoricalRelation {
+                owner_ref: 1,
+                member_refs: vec![10],
+            }],
+            loop_coedges: vec![AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![20, 21, 22],
+            }],
+            coedge_topology: [(20, 30, 21, 22), (21, 31, 22, 20), (22, 32, 20, 21)]
+                .into_iter()
+                .map(|(coedge, edge, next, previous)| AsmHistoricalCoedge {
+                    coedge,
+                    owner_loop: 10,
+                    edge,
+                    next,
+                    previous,
+                    radial_next: coedge,
+                })
+                .collect(),
+            edge_vertices: [(30, 40, 41), (31, 41, 42), (32, 42, 40)]
+                .into_iter()
+                .map(|(edge, start_vertex, end_vertex)| AsmHistoricalEdge {
+                    edge,
+                    start_vertex,
+                    end_vertex,
+                })
+                .collect(),
+            vertex_points: [(40, 50), (41, 51), (42, 52)]
+                .into_iter()
+                .map(|(entity, carrier)| AsmHistoricalCarrierBinding { entity, carrier })
+                .collect(),
+            point_positions: [
+                (50, Point3::new(100.0, 0.0, 0.0)),
+                (51, Point3::new(101.0, 0.0, 0.0)),
+                (52, Point3::new(100.0, 1.0, 0.0)),
+            ]
+            .into_iter()
+            .map(|(point, position)| AsmHistoricalPoint { point, position })
+            .collect(),
+            ..Default::default()
+        };
+        let state = |state_id, topology, transition| AsmDeltaState {
+            id: format!("history:state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 0,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition,
+        };
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![
+                state(1, AsmHistoricalTopology::default(), None),
+                state(
+                    2,
+                    topology,
+                    Some(AsmHistoricalTransition {
+                        previous_state_id: Some(1),
+                        records: crate::history_records::AsmHistoricalEntityDelta::default(),
+                        topology: AsmHistoricalTopologyDelta {
+                            faces: crate::history_records::AsmHistoricalEntityDelta {
+                                inserted: vec![1],
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        },
+                    }),
+                ),
+            ],
+        };
+
+        assert_eq!(
+            transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6,),
+            None
+        );
+    }
+
+    #[test]
+    fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
+        let sketch_id =
+            cadmpeg_ir::sketches::SpatialSketchId("f3d:model:spatial-sketch#nonlinear".into());
+        let mut entities = vec![
+            spatial_line(
+                &sketch_id,
+                100,
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                101,
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(0.0, 2.0, 0.0),
+            ),
+            spatial_line(
+                &sketch_id,
+                102,
+                Point3::new(0.0, 2.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ),
+        ];
+        let arc_id = neutral_spatial_sketch_curve_id(&sketch_id, 200, 0);
+        entities.push(SpatialSketchEntity {
+            id: arc_id.clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::Arc {
+                center: Point3::new(10.0, 10.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                reference_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: Length(1.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::PI),
+            },
+        });
+        let sketch = SpatialSketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            profiles: vec![
+                spatial_profile(&sketch_id, &[100, 101, 102]),
+                SpatialSketchProfile {
+                    origin: Point3::new(10.0, 10.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                    boundary: vec![SpatialSketchEntityUse {
+                        entity: arc_id,
+                        reversed: false,
+                    }],
+                },
+            ],
+            native_ref: None,
+        };
+        let points = [
+            Point3::new(0.25, 0.25, 0.0),
+            Point3::new(0.5, 0.25, 0.0),
+            Point3::new(0.25, 0.5, 0.0),
+        ];
+
+        assert_eq!(
+            spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6),
+            None
+        );
+        let polyline_only = SpatialSketch {
+            profiles: vec![sketch.profiles[0].clone()],
+            ..sketch
+        };
+        assert_eq!(
+            spatial_polyline_profile_containing_points(&polyline_only, &entities, &points, 1.0e-6,),
+            Some(0)
+        );
     }
 
     #[test]
