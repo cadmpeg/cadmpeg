@@ -227,6 +227,91 @@ The decoder does not test that one parameter only is inside the limit. `derive_c
 
 **Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
 
+### GC-13. B-spline surface shape
+
+**Question.** Where does the `00 7e` surface descriptor store the pole counts, the degrees, and the rational dimension?
+
+**Known.** `sldprt.md` §7.1 "Stream-scope" states that the `00 7e` surface descriptor holds "control/knot counts at fixed u16 BE offsets". The curve path reads its equivalents at fixed offsets from `00 88`: `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:97` takes the degree, control count, and dimension directly.
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:422` does not read those offsets. It searches for the first shape whose arithmetic fits:
+
+```rust
+for dimension in [4usize, 3] {
+    ...
+    for u_degree in 1..=8usize {
+        ...
+        for v_degree in 1..=8usize {
+            ...
+            if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
+```
+
+The equation `u_count * v_count == poles` with `u_count = u_sum - u_degree - 1` has many solutions. The checks that follow in `scan_surface_carriers` at `spline.rs:518` and `:529` compare the pole and knot counts against values this function derived from the same inputs, so they always hold.
+
+The write path already treats the inference as unsafe. `crates/cadmpeg-codec-sldprt/src/writer.rs:2525` computes the intended shape, runs `infer_surface_shape`, and refuses when the two differ:
+
+```rust
+if inferred_shape != Some(intended_shape) {
+    return Err(CodecError::NotImplemented(format!(
+        "SLDPRT NURBS surface {entity} shape {intended_shape:?} would decode as {inferred_shape:?}"
+    )));
+}
+```
+
+The writer therefore cannot emit any surface the decoder would misread, while the decoder accepts the first fit with no loss.
+
+**Need.** We must read the counts and degrees from their stored offsets. The search selects a wrong shape whenever more than one solution exists, and the surface is then built with the wrong grid and the wrong rational dimension.
+
+### GC-14. `00 7e` descriptor reference position
+
+**Question.** At which offset does a `00 7e` surface descriptor store its five array references?
+
+**Known.** `sldprt.md` §7.1 "Stream-scope" states that the final five references are `[control_grid, u_mult, v_mult, u_knot, v_knot]`, so the position is fixed relative to the record end.
+
+`crates/cadmpeg-codec-sldprt/src/brep/spline.rs:400` does not use a fixed position. It slides a five-reference window across 22 two-byte positions and stops at the first window where all five references resolve to arrays of the correct type:
+
+```rust
+for at in (p + 2..(p + 96).min(bytes.len().saturating_sub(9))).step_by(2) {
+    ...
+    if arrays.f64s.contains_key(&refs[0]) && arrays.u16s.contains_key(&refs[1]) ... { out.insert(attr, [...]); break; }
+}
+```
+
+Attribute identifiers are small dense stream-local u16 values, so an earlier field can hold values that resolve. The scan takes the first window and does not compare it with a later one. `patch_nurbs_surface` at `spline.rs:295` reuses the same table on the write path.
+
+**Need.** We must know the fixed position. A descriptor whose leading fields resolve must not supply the arrays.
+
+### GC-15. Prefixed-triple record framing
+
+**Question.** Which field states that a coedge or edge-use record uses the prefixed deltas triple form?
+
+**Known.** `sldprt.md` §4.2 "Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]`" defines the tripled form. It gives no discriminator between the adjacent form and the tripled form.
+
+`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:208` selects the adjacent form when the byte at `p + 20` is `0x2b` or `0x2d`, and the tripled form otherwise. In a tripled record that byte is the high byte of the sixth reference, so an edge-use attribute in `0x2b00..=0x2dff` selects the wrong form. The nine references then become interleaved byte pairs and the marker byte reads as a valid sense.
+
+`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:169` selects the edge-use triple order by testing whether the first payload byte is `0x01`. In a `[hi][lo][01]` record a first reference in `256..=511` has that byte set, so the parser takes the `[01][hi][lo]` branch and reads `refs[3]`, the support-curve carrier, from the wrong position.
+
+Neither site collects both readings and compares them. The loop-candidate gate at `topology.rs:416` tests the first coedge of a ring only.
+
+**Need.** We must know the discriminator. Attribute values in those ranges are ordinary in a part with many entities.
+
+### GC-16. Chart entry stride
+
+**Question.** Which field gives the entry stride of a `00 28` chart?
+
+**Known.** `sldprt.md` §7.3 "**`00 28` chart** — the solved point cache:" defines the chart. `docs/layouts/sldprt.toml` records both the 88-byte and the 24-byte entry widths as alternatives and gives no discriminator.
+
+`crates/cadmpeg-codec-sldprt/src/brep/intersection.rs:140` selects 88 when every candidate tangent at `+56` has unit norm inside `1e-9`, and 24 otherwise:
+
+```rust
+let extended = block + 88 * count <= bytes.len()
+    && (0..count).all(|index| unit_tangent(bytes, block + index * 88 + 56));
+let stride = if extended { 88 } else { 24 };
+```
+
+The 24-byte reading is never tested for self-consistency, so this is a one-sided probe. The only later filter refuses a chart whose points are all identical. A single stored tangent whose norm falls outside `1e-9` moves the stride to 24, and the points are then read from inside the previous entry.
+
+**Need.** We must know the field that gives the stride. A tangent normalized to a different precision must not change the entry width.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
@@ -501,6 +586,15 @@ The disc-`0x0014` path reads its color at a computed offset and does not use thi
 
 **Need.** We must distinguish the remaining binders, comments, body folders, materials, notes, sensors, favorites, history, selection sets, and markups.
 
+**Note.** The decoder resolves the light part of this question without a role code. `crates/cadmpeg-codec-sldprt/src/history.rs:301` groups the payload-free classless nodes by kind token and gives a group a scene light class when the group size equals the count of anonymous instances of that class:
+
+```rust
+let candidates = groups.values().filter(|indices| indices.len() == *count).collect::<Vec<_>>();
+let [indices] = candidates.as_slice() else { return None; };
+```
+
+Equal cardinality is the only link between the group and the class. `sldprt.md` §2 "An `moLPattern_c` interval without a line-reference record carries each displayed translation" binds classless light nodes by reserved source identifier and by kind token, not by count. A group that takes a light class loses its `reserved_feature_tree_node_role` path, because that path needs `input_class.is_none()`.
+
 ### DI-02. Equation angular-unit mode
 
 **Question.** Which native field stores the equation manager's angular-unit mode?
@@ -668,6 +762,18 @@ The disc-`0x0014` path reads its color at a computed offset and does not use thi
 **Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Most form-`11` objects subtract, but a minority join.
 
 **Need.** We must know the discriminator and the other form codes to parse the object and construct its Boolean operation.
+
+**Conflict.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," states the answer as fact: "Form code `3` joins and form code `11` subtracts for either class." This item states that most form-`11` objects subtract and a minority join. One of the two documents is wrong.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:89` follows the specification sentence and always gives `Cut`:
+
+```rust
+(Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993 | u32::MAX) | (_, 11) => {
+    Some(BooleanOp::Cut)
+}
+```
+
+There is no unresolved branch for code `11` and no loss. A joining form-`11` object subtracts in the neutral model. Decide which document is correct before the code changes.
 
 ### DI-23. Combine-body reconciliation
 
@@ -854,6 +960,297 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know what the other elements denote. A dual-unit annotation must not lose its second value while the record reports as fully bound.
 
+### DI-38. Relation class declaration binding
+
+**Question.** Which class declaration owns a relation scalar?
+
+**Known.** `sldprt.md` §2 "Sketch relations use named scalar records with reference cells at fixed scalar-record slots." names the relation declaration as the discriminator. It does not define how a scalar selects its declaration.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs:43` selects the nearest preceding declaration:
+
+```rust
+.filter(|(offset, family, _)| {
+    *offset < scalar.offset && relation_signature(*family, &scalar.operands)
+})
+.max_by_key(|(offset, _, _)| offset)
+```
+
+`relation_signature` at `relation_records.rs:318` does not separate the colliding families. Two `Native(0x8152)` operands satisfy `PointPointDistance`, `PointPointHorizontalDistance`, and `PointPointVerticalDistance`. Two `Native(0x8dcb)` operands satisfy the horizontal and the vertical family. There is no uniqueness gate and no withhold branch. The declarations are not scoped to the feature, so a declaration in one feature can claim a scalar in another.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/names.rs:101` recognizes the full ASCII declaration form only, so the repeated lane-scoped class tokens are not in `lane.classes` and a per-instance declaration is not visible to this rule.
+
+**Need.** We must know the binding to give each scalar its family. A horizontal dimension must not become an inactive vertical one.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
+
+### DI-39. Compact-sketch `D6` operand roster
+
+**Question.** Which roster does a `D6` operand index in a compact sketch, and which marker kinds does it contain?
+
+**Known.** `sldprt.md` §2 lists `d6 80` as a point-reference tag. It defines no index roster for it. `sldprt.md` §2 defines the solver-line and solver-point rosters as "coordinate-bearing point and constrained-point markers", and `relation_geometry.rs:463` uses that kind filter.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_loci.rs:1496` builds its roster from every coordinate-bearing marker of the feature, sorted by offset, with no kind filter, and indexes it by `operand.entity_index`. A coordinate-bearing line or arc handle therefore takes a roster slot.
+
+**Need.** We must know the roster membership to select the correct marker.
+
+### DI-40. Marker-arc centre selection by record order
+
+**Question.** Which coordinate-bearing marker is the centre of a connected marker arc?
+
+**Known.** `sldprt.md` §2 defines centre recovery by uniqueness: "a unique equidistant center marker", "exactly one coordinate-bearing geometry marker … must be equidistant", and "An absent or ambiguous center leaves the curve unresolved."
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:707` runs an earlier pass that selects the sole point record whose offset lies between the two endpoint records:
+
+```rust
+let (_, _, _, center) = between.next()?;
+if between.next().is_some() { return None; }
+```
+
+That gate covers the window between the endpoints only. `unique_arc_center_marker` at `endpoints.rs:4379` applies the specification rule and withholds on ambiguity, but it runs only on the entities the earlier pass leaves native. Two mirror centres on opposite sides of the chord are equidistant. When one is inside the window and one is outside, the earlier pass accepts and the specification rule never runs.
+
+**Need.** We must know whether record order selects the centre. If it does not, the uniqueness rule must run first.
+
+### DI-41. Diameter-dimension circle witnesses
+
+**Question.** How does a diameter dimension select its centre and radial markers when no link relation identifies them?
+
+**Known.** `sldprt.md` §2 "An `sgCircleDim` operand that selects an arc marker carries a bounded arc when inline center, start, and end coordinates" defines the witness rules and states that "A missing, repeated, or inconsistent radial witness leaves the relation native."
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_geometry.rs:796` adds a third tier with no uniqueness gate. It sorts the markers by offset, requires an even count, takes the pair at `operand.entity_index` from `chunks_exact(2)`, and accepts the pair when the distance equals the driving radius. The two tiers above it require exactly one candidate.
+
+**Need.** We must know the witness rule. Consecutive pairing is not a defined roster form.
+
+### DI-42. Scalar header disambiguation
+
+**Question.** Which field selects the scalar header width?
+
+**Known.** `sldprt.md` §2 gives the 22-byte, 18-byte, and 14-byte scalar headers. It gives no discriminator between them.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs:79` tries four headers in order and takes the first that matches. The four constants in `mod.rs:14` are nested prefixes: the 14-byte header is a prefix of the 18-byte header, which is a prefix of the 22-byte padded header. Only the primary header has a discriminating byte. For the three zero-tailed forms the match is decided by which of the value's own leading bytes are zero, and the order takes the longest.
+
+The padded 22-byte header does not appear in `sldprt.md`.
+
+**Need.** We must know the discriminator. An f64 with a zero low half satisfies the next longer header, so the decoder reads the value four bytes late and emits a subnormal.
+
+### DI-43. Extrusion form-code padding width
+
+**Question.** Which field gives the padding width before an extrusion class declaration?
+
+**Known.** `sldprt.md` §2 "An extrusion feature-input object stores a little-endian u32 form code before its object-name record." states that a declaration is preceded by the form code and four or eight zero bytes.
+
+**Conflict.** The same sentence states: "The padding width is selected by the record schema and is self-delimiting because every padding byte is zero." That statement is not correct when the form code is zero. `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:34` tries width `8` before width `4`:
+
+```rust
+[8usize, 4].into_iter().find_map(|padding| {
+    let code_offset = class_offset.checked_sub(4 + padding)?;
+    ... .all(|byte| *byte == 0).then_some(code_offset)
+})?
+```
+
+With true padding `4` and form code `0`, all eight preceding bytes are zero, the width-8 probe matches first, and the decoder reads the code four bytes earlier. `sldprt.md` §2 lists `moICE_c` code `0` as a subtracting code, so the value is live.
+
+**Need.** We must know the field that gives the width, or a test that separates the two widths when the code is zero. Correct the "self-delimiting" statement.
+
+### DI-44. Component-path entry grammar
+
+**Question.** Which field selects between the wide and narrow component-path entry layouts, and which separator width applies in a mixed path?
+
+**Known.** `sldprt.md` §2 "A `moCompEdge_c` child carries an ordered compact edge-selection vector." states both entry forms and says wide vectors use one width for every entry. It gives no discriminator. `sldprt.md` §2 gives the mixed-path fill as "zero or `ff` word fill of 4, 8, or 12 bytes".
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:1424` tries wide, then heterogeneous, then sparse, and takes the first that parses. The wide layout is separated from the narrow one only by four zero bytes at `+16`, which is the narrow layout's `local_id` field, so the two grammars are not disjoint. A narrow vector whose entries all carry `local_id == 0` parses as wide, and each `local_id` is then read from the following entry.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:981` sorts five candidate parses by length and takes the longest. It compares only the candidates of equal length, so a shorter parse that disagrees is discarded with no test.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:1918` and `terminations.rs:1531` apply the uniqueness rule to the same question: collect every parse and refuse more than one. That is the correct shape and it is used in some sites and not in others.
+
+**Need.** We must know the discriminator. Until we know it, every path parser must collect the alternatives and withhold when more than one completes.
+
+### DI-45. Termination reference vector position
+
+**Question.** What fixes the position of the component vector in an extrusion end specification?
+
+**Known.** `sldprt.md` §2 "A named feature-input object bound to a classless history `Sketch` record with a nonzero source" gives the `01 01 00` anchor, the body opener, and the declared long single-face position at body +209. For the other forms it states only that the vector follows later in the same feature interval.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/terminations.rs:1205`, `:1240`, and `:1290` search bounded windows of 240, 200, and 160 bytes and accept the first position that frames. `terminations.rs:1309` adds a fourth attempt over 240 bytes with a weaker test that checks the frame only and does not decode a component path. The four attempts are unordered in the specification and strictly ordered here. None of them collects the alternatives.
+
+`terminations.rs:719` shows the correct shape for the same question: collect every marker in range and require exactly one.
+
+**Need.** We must know the position. A window bound also drops a valid vector that lies past it.
+
+### DI-46. Compact surface selection entry count
+
+**Question.** How many entries can a compact surface-selection vector hold?
+
+**Known.** `sldprt.md` §2 "A `moCompSurfaceBody_c` child of `moThicken_c` carries the selected surface components." states that the word at marker −12 is a schema word and that the vector ends when the shared entry signature ends.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/selections.rs:867` tests that schema word against `6`, which is correct, and then reuses `6` as an entry limit at `selections.rs:876`:
+
+```rust
+while components.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice())
+```
+
+A vector with more entries yields a short list. The decoder records no loss, so the truncated selection reads as complete.
+
+**Need.** We must know the entry count. The schema word is not an entry limit.
+
+### DI-47. Offset-plane frame source
+
+**Question.** Which datum is the source plane when more than one decoded datum frame is parallel to an offset plane at the absolute `D1` distance?
+
+**Known.** `sldprt.md` §2 "When exactly one line-distance operand identifies a profile line, the other operand identifies" states the rule: "Exactly one known non-self source across the compact and typed forms identifies the reference", and "Coincident or multiply matching frames do not identify a source."
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:472` returns a source in that case. It prefers a sole principal plane, then takes the candidate with the greatest feature index:
+
+```rust
+let latest_index = candidates.iter().map(|(_, index, _)| index).max()?;
+```
+
+The specification has no ordinal rule and no principal-plane preference. The downstream gate at `reference_geometry.rs:428` requires exactly one source, and this function has already reduced the set to one, so that gate cannot fire.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1284` applies the same shape to repeated typed reference records and keeps the record at the greatest offset.
+
+**Need.** We must honour the stated rule and withhold. A datum that matches two parents must not be parented to either.
+
+### DI-48. Offset-plane support face position
+
+**Question.** Where is the support plane of an offset datum plane?
+
+**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states one translation with one sign: "the support origin equals the constructed origin plus `D1` times the constructed normal", and states the same translation again for the omitted-frame case.
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/resolved_features/../history.rs:6515` tries the stated position, and then tries the mirrored position when the first finds no face:
+
+```rust
+let alternate_origin = Point3::new(
+    origin.x - normal.x * signed_distance * 2.0, ...);
+resolve_planar_face_selection(selection, alternate_origin, normal, faces, surfaces);
+if !matches!(selection, FaceSelection::Native(_)) {
+    *origin = alternate_origin;
+}
+```
+
+The second probe accepts any non-empty match. When it succeeds it also overwrites the decoded support origin. The producer of the native face path at `resolved_features/reference_geometry.rs:236` is uniqueness-gated, so an exact face path exists and the geometric probe overrides it.
+
+**Need.** We must use the stated translation. A decoded support origin must not be replaced by a probe result.
+
+### DI-49. Reference-axis frame layout
+
+**Question.** What layout does a reference-axis record use, and what fixes the position of its frame?
+
+**Known.** `sldprt.md` §2 gives no reference-axis frame layout. `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:962` scans every 88-byte window of the feature record and accepts a window whose nine f64 values give two endpoints, two extents, and a unit direction parallel to the endpoint delta. `reference_geometry.rs:1003` then ranks the windows: rank `0` when both extents are positive and equal, rank `1` otherwise, and keeps the best rank before the uniqueness gate runs. A rank-0 window therefore defeats every rank-1 window instead of making the frame ambiguous.
+
+The caller at `reference_geometry.rs:862` anchors the scan to `moPlaneInterAxisData_c` and `moSurfaceAxisData_c` bodies when those classes exist, and scans the whole feature interval when they do not.
+
+**Need.** We must know the layout to read the frame at a fixed position. Extent symmetry is not a stored discriminator.
+
+### DI-50. Mid-plane in-plane axis
+
+**Question.** Which record carries the in-plane axis of a mid-plane datum?
+
+**Known.** `sldprt.md` §2 "A primary line-or-circle geometry handle on a transformed line segment identifies that line" states for `moConstraintMidPlaneRefplaneData_c`: "The record does not store an independent in-plane axis."
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1560` constructs one from the world axis least aligned with the normal and writes it to the `UAxis` property at `reference_geometry.rs:465`, where a decoded axis also goes. The two are not distinguishable and no loss is recorded.
+
+`reference_geometry.rs:15` also prefers the constructed frame over a decoded explicit frame when the two disagree by more than `1.0e-9`. Every other frame path in that file withholds instead.
+
+**Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
+
+### DI-51. Hole bore ownership
+
+**Question.** Which cylindrical faces does a hole feature own?
+
+**Known.** `sldprt.md` §5 "Face records use these families:" defines the persistent producer binding through `ATOM_ID_2001`. `sldprt.md` §2 gates the plane-owned and carrier bore forms on a unique diameter: "Another active hole with the same diameter … leaves this ownership form unresolved."
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/holes.rs:1639` adds a branch with no uniqueness gate and no producer test. It claims every cylinder whose radius and axial span match the hole diameter and blind depth:
+
+```rust
+let bore_axes = cylindrical_face_axes_at_depth(radius, depth, topology);
+if !bore_axes.is_empty() {
+```
+
+It also discards the `Sense::Reversed` flag, so an outward boss cylinder qualifies. The specification form requires a reversed cylindrical face.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/holes.rs:1582` adds a second branch that accepts every same-radius cylinder in the model when their count equals the lane's generated-surface-identity count. `generated_surface_identities` carries `feature_source_id`, so the producer link exists and is not used as a filter.
+
+**Need.** We must use the producer binding. Two identical holes must not each claim both bores.
+
+### DI-52. Identity of an ID-less principal-plane triplet
+
+**Question.** What identifies the Front, Top, and Right planes in a legacy history whose records carry no source identifier?
+
+**Known.** `sldprt.md` §2 "Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the" defines principal-plane identity by source IDs `2`, `3`, and `4`. It defines no rule for records without a source identifier.
+
+`crates/cadmpeg-codec-sldprt/src/../history.rs:7294` takes the first four-record window whose ordinals are consecutive and whose fourth record has a different kind, and gives positions 0, 1, and 2 the Front, Top, and Right identities. The window is bounded on the successor side and not on the predecessor side, so a run of four same-kind records shifts the identities by one. The triplet-member test checks `properties.is_empty()` in the classless branch only, so a member with a decoded frame passes.
+
+**Need.** We must know the identity rule. A shifted triplet gives every principal plane the wrong fixed frame.
+
+### DI-53. Reference-plane frame encoding precedence
+
+**Question.** Which field selects the frame encoding of a constructed reference plane?
+
+**Known.** `sldprt.md` §2 names five encodings: matrix, fixed, angular, minimal, and compact. It gives the 97-byte fixed layout. It defines no precedence and no discriminator.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1353` tries them in a fixed order and states the reason in its own comment: shorter layouts "can occur as incidental aligned scalar runs later in the same feature record, so they only participate when no matrix is present." Each tier is uniqueness-gated inside itself. The precedence between tiers is the choice.
+
+`reference_geometry.rs:1841` resolves the omitted `v_z` sign inside the compact form by trying `[omitted, -omitted]` and keeping whichever reproduces the stored partial normal.
+
+**Need.** We must know the discriminator so that a record's own encoding, and not the tier order, selects the frame.
+
+### DI-54. Helix fit thresholds
+
+**Question.** What residual bound promotes a helix mesh fit to a placed helix, and does any record support axis snapping?
+
+**Known.** `sldprt.md` §2 "An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object" authorizes the fit: the ordered points sample the helix, and their circular projection determines the axis placement and radius.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/helix.rs:84` adds two constants that the specification does not give:
+
+```rust
+if max_error > radius_estimate * 5.0e-4 { return None; }
+let snap = (max_error / radius_estimate * 20.0).max(1.0e-10);
+for component in [&mut axis.x, &mut axis.y, &mut axis.z] {
+    if component.abs() < snap { *component = 0.0; }
+}
+```
+
+`5.0e-4` decides whether the feature becomes a placed helix. `20.0` makes the snap bound depend on the mesh residual, so a finer mesh gives a different decoded axis for the same part.
+
+**Need.** We must know the bound, or state it as a decoder policy with a fixed value. A decoded axis must not change with tessellation quality.
+
+### DI-55. Configuration-local feature state gaps
+
+**Question.** What is the disposition of a feature slot that a configuration's own `Config-N-ResolvedFeatures` lane does not resolve?
+
+**Known.** `sldprt.md` §2 "A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot" states that lane-scoped state does not define document-global semantics unless every applicable lane gives the same state. `sldprt.md` §2 permits the document projection to supply a configuration's state only "when exactly one configuration is active and no configuration-scoped lane supplies its state". `sldprt.md` §2 states one cross-configuration invariant: feature-tree node roles do not change between configurations.
+
+`crates/cadmpeg-codec-sldprt/src/history.rs:10682` `inherit_configuration_shared_semantics` copies the document-level value into a configuration that does have its own lane:
+
+```rust
+if face.is_none()        { face.clone_from(base_face); }
+if placements.is_empty() { placements.clone_from(base_placements); }
+if missing_construction  { kind.clone_from(base_kind); }
+if diameter.is_none()    { diameter.clone_from(base_diameter); }
+if extent.is_none()      { extent.clone_from(base_extent); }
+```
+
+`history.rs:10713` also treats `FaceSelection::Native` as incomplete and replaces it. That value is the codec's retained-but-unresolved state, so an honest withhold becomes another configuration's resolved face. The borrowed reference then enters `state.dependencies` at `history.rs:10674`.
+
+The completeness gate at `decode.rs:451` counts keys only, so an inherited value makes the snapshot report as complete.
+
+**Need.** We must know the disposition. A configuration with its own lane must not report another configuration's hole depth or datum parent.
+
+### DI-56. Other hole-profile dimension multisets
+
+**Question.** What roles do the dimensions of a hole profile have when its dimension multiset is outside the defined enumeration?
+
+**Known.** `sldprt.md` §2 "Feature-tree" enumerates the Hole Wizard profile schemas and gives each one a magnitude-ordered role assignment. The enumeration is finite.
+
+`crates/cadmpeg-codec-sldprt/src/history.rs:8631` sorts the diameters, lengths, and angles by magnitude and matches the multiset. Three arms have no counterpart in that enumeration: `history.rs:8659` maps two diameters, one length, and one angle to a countersink; `history.rs:8747` maps two diameters and two lengths to a counterbore; and `history.rs:8635` accepts one diameter with any number of lengths, including none.
+
+The guards `diameter.0 < entry_diameter.0` on the first two arms cannot be evidence, because the vector was sorted ascending immediately above. They reject a tie only.
+
+A withhold branch exists at `history.rs:8820`. These three arms run before it. `is_hole_profile_construction` at `history.rs:8824` returns true for whatever they accept, so a sketch with one diameter dimension reads as a generated hole profile.
+
+**Need.** We must know the other multisets and their roles. A sketch that is not a hole profile must not satisfy the test.
+
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators
@@ -865,3 +1262,60 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 Each of the five opens with a guard that returns `Ok` when the document carries no native graph, so a neutral-only document passes all five without a check.
 
 **Need.** We need one negative test for each of the four unpinned validators. The test must build the edit shape that the validator refuses and must assert the error through the encode path, so that removing the validator fails the suite.
+
+**Note.** `crates/cadmpeg-codec-sldprt/src/history.rs:16494` `dependency_residual` is a sixth guard with the same defect. For a `Pattern` feature it returns `Vec::new()` for both the expected and the projected side, so the consistency gate at `history.rs:16407` is always true. For extrude, revolve, sweep, loft, and rib it removes every sketch-typed dependency from both sides, so a changed profile dependency also passes. Give this guard a negative test with the other five.
+
+### EV-02. `patch_point` coordinate offset
+
+**Question.** Which offset holds the coordinates of a `00 1d` point record on the write path?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:280` parses the adjacent form with the references at `p + 6` and the coordinates at `p + 14`.
+
+`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:337` `patch_point` does not use the parsed position. It runs a second probe and writes at the result:
+
+```rust
+let mut xyz_at = p + 14;
+let mut cursor = p + 6;
+while buf.get(cursor + 2) == Some(&1) && cursor < p + 54 { cursor += 3; }
+if cursor != p + 6 { xyz_at = cursor; }
+```
+
+The function holds `record`, which carries the coordinates the decoder read, and never compares the bytes at `xyz_at` with them. `crates/cadmpeg-codec-sldprt/src/writer_patch.rs:397` performs exactly that comparison before it writes and refuses on a mismatch.
+
+An adjacent-form record whose second reference lies in `256..=511` has the byte `1` at `p + 8`, so the probe moves `xyz_at` to `p + 9` and the write covers three references and part of the coordinate block. `patch_point` then returns `true`.
+
+Callers: `resolved_features/sketch_write.rs:716`, `:790`, and `:968`. None of them verifies the previous bytes.
+
+**Need.** We need the write to use the offset the parse used, and to verify the previous bytes before it writes. We need a negative test that a patch at a mismatched offset fails.
+
+### EV-03. Regenerated `SWObjects` record content
+
+**Question.** What do the undecoded bytes of a regenerated `SWObjects` metadata record hold?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/writer.rs:806` drops every source section whose name contains `swobjects`, and `writer.rs:126` writes a regenerated payload in its place. There is no replay path.
+
+The decoder reads three fields of the configuration-manager record (`metadata.rs:268`: `+66`, `+107`, `+117`), two fields of `moPart_c` (`metadata.rs:238`), and the colour and name of `moVisualProperties_c` (`appearance.rs:27`). The writer emits a 125-byte record with every other byte zero (`writer.rs:1234`), a 13-byte `moPart_c` record (`writer.rs:1212`), and the constant `0x00c0_c0c0` inside each material record (`writer.rs:1801`). That constant is not in `sldprt.md`. The two record lengths are not fixed by any field or specification sentence.
+
+The metadata attributes carry `Exactness::ByteExact` (`metadata.rs:311`), which the round trip does not hold to.
+
+**Need.** We must know what the undecoded bytes hold before the writer regenerates the record. A decode and re-encode with no edit must not replace them.
+
+### EV-04. Tail-directory entry trailer
+
+**Question.** Which value does a tail-directory entry's 14-byte descriptor and 6-byte trailer hold?
+
+**Known.** `sldprt.md` §1.3 "The file tail carries an **OPC package section directory**" states that the 6-byte trailer "has one value for all entries in a file, for example `e5 4b 57 5b 00 00`", and that its first four bytes are the directory separator.
+
+`crates/cadmpeg-codec-sldprt/src/container.rs:542` never reads the descriptor or the trailer, so `DirectoryEntry` cannot carry them. `crates/cadmpeg-codec-sldprt/src/writer.rs:2827` emits 14 zero bytes and the specification's example trailer for every regenerated entry. `writer.rs:342` replays a source entry verbatim when the name, `type_id`, and size all match, so a file whose separator differs and one of whose sections changed size gets two different separators in one directory.
+
+**Need.** We must read and retain both fields. A file must keep one separator for all entries.
+
+### EV-05. Writer output determinism
+
+**Question.** Which order do the generated `00 51` and `00 53` records use?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/writer.rs:297` `sort_arenas` sorts every other arena before it writes. `writer.rs:2065` and `writer.rs:2171` iterate a `HashMap` instead, so the record order of the generated colour and attribute records changes between runs of the same binary on the same input.
+
+`golden_tests.rs:333` compares decoded text and the semantic round trip compares documents, so no test compares the written bytes.
+
+**Need.** We need a fixed order and a test that compares the written bytes of two runs.
