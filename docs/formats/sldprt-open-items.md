@@ -398,8 +398,6 @@ Observed gap:
 
 **Need.** We must know the gap to write the record back. A writer that omits it moves every later record in the SW Objects payload, which moves the byte offset each `sldprt:metadata:` identifier carries, so a rewrite that changes nothing still renames those attributes.
 
-**Note.** The Known statement "Every other record in that table starts its fields at token end +0" is not correct for the decoder. See CM-11: the decoder reads `moLengthUserUnits_c` with a 200-byte forward search, not at token end +0. Either that record also starts after a gap, and this statement is wrong, or the search is unnecessary latitude. Settle CM-11 and this statement together.
-
 ### CM-08. Active configuration partition binding
 
 **Question.** Which field binds a Keywords configuration to its `Config-N-Partition` section?
@@ -455,25 +453,6 @@ The values `64`, `50_000`, `100_000`, and `1_000_000` are not in `sldprt.md` or 
 `crates/cadmpeg-codec-sldprt/src/parasolid.rs:32` ends each stream at the next `PS\0\0` signature in the payload. `parasolid.rs:95` repeats the rule. `stream_header` reads the front of each candidate only, so a stream that a signature inside its own payload cuts short keeps a valid header and is accepted. The decoder records no loss.
 
 **Need.** We must know the boundary to read a complete stream. A `PS\0\0` byte sequence in coordinate or string data must not end a stream.
-
-### CM-11. `moLengthUserUnits_c` name position
-
-**Question.** What fixes the position of the unit-name string in a `moLengthUserUnits_c` record?
-
-**Known.** `sldprt.md` §8 "**Materials / metadata**" gives the record fields at token end +0: `bytes[3]` = `ff fe ff`, then a `u8` code-unit count, then the UTF-16LE name.
-
-`crates/cadmpeg-codec-sldprt/src/metadata.rs:99` does not use that position. It accepts the first `ff fe ff` in the next 200 bytes:
-
-```rust
-let limit = search.saturating_add(200).min(payload.len());
-let Some(relative) = payload[search..limit]
-    .windows(STRING_MARKER.len())
-    .position(|bytes| bytes == STRING_MARKER)
-```
-
-The tests that follow are non-empty, an even byte count, and non-blank text. No test holds the marker at +0 and no test rejects a marker at another offset. The SW Objects payload holds many other `ff fe ff` strings, so a record with an absent or empty name can take a neighbouring string.
-
-**Need.** We must know the position to read the correct string. See the Note on CM-07: this record and `moTransRefPlaneData_c` are the two records that the decoder does not read at token end +0.
 
 ### CM-13. Primary site selection
 

@@ -21236,6 +21236,25 @@ fn decode_extracts_document_envelope() {
 }
 
 #[test]
+fn decode_does_not_scan_past_unit_name_record_start() {
+    let mut source = sldprt_with_body(&triangle_body());
+    let mut payload = b"moLengthUserUnits_c".to_vec();
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 4, b'I', 0, b'N', 0]);
+    source.extend(make_block(0x43, "SWObjects", &payload));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded
+        .ir
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "source_linear_unit_name"));
+}
+
+#[test]
 fn semantic_writer_preserves_document_metadata() {
     let mut decoded = SldprtCodec
         .decode(

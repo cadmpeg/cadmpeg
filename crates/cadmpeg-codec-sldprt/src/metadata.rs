@@ -97,14 +97,13 @@ fn scan_length_user_units(
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let search = offset + TOKEN.len();
-        let limit = search.saturating_add(200).min(payload.len());
-        let Some(relative) = payload[search..limit]
-            .windows(STRING_MARKER.len())
-            .position(|bytes| bytes == STRING_MARKER)
-        else {
+        let Some(marker_end) = search.checked_add(STRING_MARKER.len()) else {
             continue;
         };
-        let marker = search + relative;
+        if payload.get(search..marker_end) != Some(STRING_MARKER) {
+            continue;
+        }
+        let marker = search;
         let Some(length) = payload.get(marker + 3).copied().map(usize::from) else {
             continue;
         };
