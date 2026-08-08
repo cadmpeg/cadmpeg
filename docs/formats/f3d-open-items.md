@@ -289,7 +289,7 @@ The arc grammar and the line grammar read the same twelve f64 at the same offset
 
 The owner is one logical indexed record delimited by two headers that carry the same record index, as `f3d.md` §3.1 "A parameter scope is one logical indexed record" states for a scope. The paired header therefore gives the frame end. `decode_parameter_owners` holds the complete header map and does not use it. `exact_fixed_scalar` in `design/decode/scopes.rs` measures the length from the record boundaries in the same way this function must.
 
-**Need.** A frame whose length is not in the list produces no owner, no companion, no dimension frame, and no feature parameter, and no loss is recorded. A frame whose bytes satisfy a longer arm before the correct arm shifts every field offset and gives the parameter and companion joins a wrong record index. The validator compares the owner value against the parameter value and catches the second case only. `f3d.md` §3.1 "`Loft` stores its result operation" names a 105-byte scalar frame that the list does not hold.
+**Need.** A frame whose length is not in the list produces no owner, no companion, no dimension frame, and no feature parameter, and no loss is recorded. A frame whose bytes satisfy a longer arm before the correct arm shifts every field offset and gives the parameter and companion joins a wrong record index. The validator compares the owner value against the parameter value and catches the second case only. `f3d.md` §3.1 "The standard `Loft` scope stores its result operation" names a 105-byte scalar frame that the list does not hold.
 
 ### DR-37. Extent carrier of the current Extrude prologue
 
