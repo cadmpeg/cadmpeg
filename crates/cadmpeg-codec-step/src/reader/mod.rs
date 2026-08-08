@@ -700,9 +700,13 @@ fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [Byte
         } else if input[at].is_ascii_control() || input[at] == b' ' {
             classes[at] = ByteClass::Structural;
             at += 1;
-        } else if input[at..end].starts_with(b"\\N\\") || input[at..end].starts_with(b"\\F\\") {
-            claim_range(classes, &(at..at + 3), ByteClass::Structural);
-            at += 3;
+        } else if let Some(after_print_control) = crate::lex::print_control_end(input, at) {
+            claim_range(
+                classes,
+                &(at..after_print_control.min(end)),
+                ByteClass::Structural,
+            );
+            at = after_print_control;
         } else if input[at..end].starts_with(b"/*") {
             let Some(relative_end) = input[at + 2..end]
                 .windows(2)
@@ -846,5 +850,17 @@ mod tests {
                 && loss.severity == Severity::Error
                 && loss.message.contains("1 byte(s) unclassified")
         }));
+    }
+
+    #[test]
+    fn byte_accounting_claims_controls_inside_print_directives() {
+        let input = b"1\\\x01N\x02\\2";
+        let mut classes = vec![ByteClass::Unclassified; input.len()];
+
+        claim_trivia(input, 1..input.len(), &mut classes);
+
+        assert!(classes[1..6]
+            .iter()
+            .all(|class| *class == ByteClass::Structural));
     }
 }

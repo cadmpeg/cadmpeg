@@ -103,6 +103,11 @@ pub(crate) struct Lexer<'a> {
 
 const MAX_STORED_STRING_OCTETS: usize = 32_769;
 
+pub(crate) fn print_control_end(input: &[u8], at: usize) -> Option<usize> {
+    match_exact_ignoring_controls(input, at, b"\\N\\")
+        .or_else(|| match_exact_ignoring_controls(input, at, b"\\F\\"))
+}
+
 impl<'a> Lexer<'a> {
     pub(crate) fn new(input: &'a [u8]) -> Self {
         Self {
@@ -656,21 +661,11 @@ impl<'a> Lexer<'a> {
     }
 
     fn print_control_end(&self, at: usize) -> Option<usize> {
-        self.match_exact_ignoring_controls(at, b"\\N\\")
-            .or_else(|| self.match_exact_ignoring_controls(at, b"\\F\\"))
+        print_control_end(self.input, at)
     }
 
-    fn match_exact_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
-        for &byte in expected {
-            while self.input.get(at).is_some_and(u8::is_ascii_control) {
-                at += 1;
-            }
-            if self.input.get(at) != Some(&byte) {
-                return None;
-            }
-            at += 1;
-        }
-        Some(at)
+    fn match_exact_ignoring_controls(&self, at: usize, expected: &[u8]) -> Option<usize> {
+        match_exact_ignoring_controls(self.input, at, expected)
     }
 
     fn match_ignoring_controls(&self, mut at: usize, expected: &[u8]) -> Option<usize> {
@@ -696,4 +691,17 @@ impl<'a> Lexer<'a> {
             message: message.into(),
         }
     }
+}
+
+fn match_exact_ignoring_controls(input: &[u8], mut at: usize, expected: &[u8]) -> Option<usize> {
+    for &byte in expected {
+        while input.get(at).is_some_and(u8::is_ascii_control) {
+            at += 1;
+        }
+        if input.get(at) != Some(&byte) {
+            return None;
+        }
+        at += 1;
+    }
+    Some(at)
 }
