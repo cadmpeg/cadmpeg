@@ -14,7 +14,10 @@ use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
 use super::transforms::quantize;
 use super::typed_relations::{legacy_marker104_arc_endpoints, marker_curve_endpoint_markers};
-use super::{CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER};
+use super::{
+    CLASS_MARKER, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE,
+    SKETCH_MARKER,
+};
 use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind,
@@ -4400,7 +4403,9 @@ pub(super) fn unique_arc_center_marker(
             let start_angle = (start.v - center.v).atan2(start.u - center.u);
             let end_angle = (end.v - center.v).atan2(end.u - center.u);
             let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-            if sweep <= tolerance || (std::f64::consts::TAU - sweep) <= tolerance {
+            if sweep <= SKETCH_ANGLE_TOLERANCE
+                || (std::f64::consts::TAU - sweep) <= SKETCH_ANGLE_TOLERANCE
+            {
                 return None;
             }
             Some((quantize(center, tolerance), center))
@@ -4412,6 +4417,15 @@ pub(super) fn unique_arc_center_marker(
         return None;
     };
     Some(*center)
+}
+
+pub(super) fn minor_arc_angles(start_angle: f64, end_angle: f64) -> (f64, f64, bool) {
+    let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+    if sweep <= std::f64::consts::PI + SKETCH_ANGLE_TOLERANCE {
+        (start_angle, end_angle, false)
+    } else {
+        (end_angle, start_angle, true)
+    }
 }
 
 pub(super) fn minor_arc_geometry(
@@ -4429,12 +4443,11 @@ pub(super) fn minor_arc_geometry(
     }
     let start_angle = (start.v - center.v).atan2(start.u - center.u);
     let end_angle = (end.v - center.v).atan2(end.u - center.u);
+    let (start_angle, end_angle, _) = minor_arc_angles(start_angle, end_angle);
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-    let (start_angle, end_angle) = if sweep <= std::f64::consts::PI + tolerance {
-        (start_angle, end_angle)
-    } else {
-        (end_angle, start_angle)
-    };
+    if sweep <= SKETCH_ANGLE_TOLERANCE {
+        return None;
+    }
     Some(SketchGeometry::Arc {
         center,
         radius: Length(radius),

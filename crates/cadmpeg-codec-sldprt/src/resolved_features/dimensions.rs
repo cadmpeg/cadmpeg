@@ -1,6 +1,8 @@
 //! Dimensioned sketch geometry and radial circle records.
 
-use super::endpoints::{compact_indexed_curve_record_end, marker_profile_curve_role};
+use super::endpoints::{
+    compact_indexed_curve_record_end, marker_profile_curve_role, minor_arc_angles,
+};
 use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_prefix_at};
 use super::relation_geometry::{implicit_circle_marker, owned_relation_parameters};
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
@@ -9,7 +11,7 @@ use super::transforms::{
     select_marker_transforms_by_frame,
 };
 use super::typed_relations::marker_curve_endpoint_markers;
-use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER};
+use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
 use crate::records::{
     FeatureInputLane, FeatureInputOperand, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
@@ -246,21 +248,19 @@ fn transformed_dimensioned_arc(
     let mut endpoint_refs = arc.endpoint_refs.clone();
     let start_angle = (start.v - center.v).atan2(start.u - center.u);
     let end_angle = (end.v - center.v).atan2(end.u - center.u);
-    let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-    if sweep > std::f64::consts::PI + quantum {
+    let (start_angle, end_angle, reversed) = minor_arc_angles(start_angle, end_angle);
+    if reversed {
         std::mem::swap(&mut start, &mut end);
         if endpoint_refs.len() == 2 {
             endpoint_refs.swap(0, 1);
         }
     }
-    let start_angle = (start.v - center.v).atan2(start.u - center.u);
-    let end_angle = (end.v - center.v).atan2(end.u - center.u);
     let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
     (radius.is_finite()
         && radius > quantum
         && same_dimension_length(radius, end_radius)
-        && sweep > quantum
-        && sweep <= std::f64::consts::PI + quantum)
+        && sweep > SKETCH_ANGLE_TOLERANCE
+        && sweep <= std::f64::consts::PI + SKETCH_ANGLE_TOLERANCE)
         .then_some((
             SketchGeometry::Arc {
                 center,

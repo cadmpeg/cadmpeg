@@ -15,9 +15,50 @@ use cadmpeg_ir::features::{
     DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
     ParameterValue, SketchSpace,
 };
-use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId, SketchPlacement,
+};
 use std::collections::BTreeMap;
+
+#[test]
+fn transformed_dimensioned_arc_swaps_endpoint_identity_with_minor_geometry() {
+    let sketch = Sketch {
+        id: SketchId("sketch".into()),
+        name: None,
+        configuration: None,
+        placement: SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    };
+    let transform = super::super::transforms::sketch_frame_marker_transform(&sketch, 1.0e-8)
+        .expect("axis-aligned sketch has a marker transform");
+    let arc = super::DimensionedArcNative {
+        center: [0.0, 0.0],
+        start: [0.001, 0.0],
+        end: [0.0, -0.001],
+        endpoint_refs: vec!["start".into(), "end".into()],
+    };
+
+    let (geometry, endpoint_refs) =
+        super::transformed_dimensioned_arc(transform, &arc, 1000.0, 1.0e-8)
+            .expect("valid dimensioned arc");
+    assert_eq!(endpoint_refs, vec!["end", "start"]);
+    let SketchGeometry::Arc {
+        start_angle,
+        end_angle,
+        ..
+    } = geometry
+    else {
+        panic!("dimensioned carrier should remain an arc");
+    };
+    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    assert!(sweep <= std::f64::consts::PI + 1.0e-9);
+}
 
 #[test]
 fn duplicated_compact_curve_address_identifies_a_radial_circle_witness() {

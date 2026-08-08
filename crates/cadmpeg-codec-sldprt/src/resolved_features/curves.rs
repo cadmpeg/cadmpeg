@@ -3,7 +3,7 @@
 use super::compact_reference_planes::principal_sketch_frame;
 use super::endpoints::{
     compact_legacy_code_one_line_endpoint_indices, compact_legacy_curve_endpoint_indices,
-    marker_profile_curve_role, minor_arc_geometry, one_based_u16_endpoint_pair,
+    marker_profile_curve_role, minor_arc_angles, minor_arc_geometry, one_based_u16_endpoint_pair,
     unique_arc_center_marker, wide_indexed_curve_endpoint_indices,
 };
 use super::markers::{
@@ -405,12 +405,7 @@ pub(super) fn tangent_bounded_curve(
     }
     let first = (start.v - center.v).atan2(start.u - center.u);
     let second = (end.v - center.v).atan2(end.u - center.u);
-    let forward = (second - first).rem_euclid(std::f64::consts::TAU);
-    let (start_angle, end_angle) = if forward <= std::f64::consts::PI + tolerance {
-        (first, second)
-    } else {
-        (second, first)
-    };
+    let (start_angle, end_angle, _) = minor_arc_angles(first, second);
     Some(SketchGeometry::Arc {
         center,
         radius: Length(radius),

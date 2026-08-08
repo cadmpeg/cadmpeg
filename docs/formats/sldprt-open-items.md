@@ -858,41 +858,6 @@ There is no unresolved branch for code `11` and no loss. A joining form-`11` obj
 
 **Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.
 
-### DI-33. Bounded arc sweep direction
-
-**Question.** Which field gives the sweep direction of a bounded arc?
-
-**Known.** A centre and two distinct endpoints define two arcs. Their sweeps add to 2π.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:4418` selects the arc with the sweep that is not more than π. It exchanges the two endpoints when the stored order gives the other arc:
-
-```rust
-let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-let (start_angle, end_angle) = if sweep <= std::f64::consts::PI + tolerance {
-    (start_angle, end_angle)
-} else {
-    (end_angle, start_angle)
-};
-```
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:352` repeats the same selection in `tangent_bounded_curve`.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs:249` repeats it a third time in `transformed_dimensioned_arc`. That site also exchanges the two entries of `endpoint_refs`, so the entity's endpoint identities change with the geometry. The test at `dimensions.rs:263` then asserts `sweep <= PI + quantum`, which the exchange above it has already made true. That test cannot fail.
-
-Every sldprt sketch-arc constructor uses one of those two functions, except `curves.rs:203`. The codec therefore does not emit a sketch arc with a sweep of more than π. `cadmpeg-ir` sets no such limit: `crates/cadmpeg-ir/src/validate/sketches.rs` tests only that the angles are finite and different, and `crates/cadmpeg-codec-freecad/src/design.rs:1797` passes stored start and end angles through with no change.
-
-**Conflict.** `sldprt.md` §2 "A detailed curve record is immediately followed by a curve-detail marker of the same generation:" gives the detail record a unit 2D start tangent at detail +64 and +72, states that the tangent and the endpoints determine one circle, and then states: "The bounded arc is the minor sweep between those endpoints."
-
-A start point and a start tangent give the direction of travel, so they give the sweep. `tangent_bounded_curve` uses the tangent to place the centre at `start + normal * scale` and then discards it for the ≤π test. The specification and the decoder both read the witness and then do not use it.
-
-`sldprt.md` §2 states the same limit in three more places: "The angle order represents the minor arc between the endpoints.", "distinct endpoint indices define the minor arc.", and "every ordered endpoint pair has a positive counterclockwise sweep no greater than π".
-
-**Need.** We must know the field to construct an arc with a sweep of more than π. A 270° arc must not become its 90° complement.
-
-**Note.** `curves.rs:203` `set_arc` is the one constructor that does not apply the limit. It serves the slot end cap, which sweeps π exactly. It orders its endpoints by the sign of their projection on the perpendicular of the centre-to-centre axis, which is a second geometric rule and not a stored witness. That special case exists because the general rule does not hold.
-
-The comparison `sweep <= PI + tolerance` tests an angle in radians against the length tolerance that the sketch resolvers thread through. Give the angular test its own limit.
-
 ### DI-34. Endpoint index base and roster
 
 **Question.** Which field selects the index base and the roster for the endpoint fields of a compact indexed curve record?

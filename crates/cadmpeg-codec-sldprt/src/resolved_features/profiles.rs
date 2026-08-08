@@ -1020,31 +1020,14 @@ pub(crate) fn project_marker_backed_sketches(
                                 else {
                                     return None;
                                 };
-                                let start_radius = (start.u - point.u).hypot(start.v - point.v);
-                                let end_radius = (end.u - point.u).hypot(end.v - point.v);
-                                let start_angle = (start.v - point.v).atan2(start.u - point.u);
-                                let end_angle = (end.v - point.v).atan2(end.u - point.u);
-                                let sweep =
-                                    (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-                                if start_radius > QUANTUM
-                                    && same_dimension_length(start_radius, end_radius)
-                                    && sweep > QUANTUM
-                                    && sweep <= std::f64::consts::PI + QUANTUM
-                                {
-                                    SketchGeometry::Arc {
-                                        center: point,
-                                        radius: Length(start_radius),
-                                        start_angle: Angle(start_angle),
-                                        end_angle: Angle(end_angle),
-                                    }
-                                } else {
-                                    SketchGeometry::Native {
+                                minor_arc_geometry(start, end, point, QUANTUM).unwrap_or_else(
+                                    || SketchGeometry::Native {
                                         native_kind: format!(
                                             "sldprt:marker-geometry:{}",
                                             marker.kind.native_code()
                                         ),
-                                    }
-                                }
+                                    },
+                                )
                             } else {
                                 (|| {
                                     let [start, end] = endpoints.as_slice() else {

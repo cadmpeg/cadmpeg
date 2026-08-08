@@ -1,6 +1,6 @@
 //! Tests for the `curves` module.
 
-use super::super::endpoints::compact_legacy_code_one_line_endpoint_indices;
+use super::super::endpoints::{compact_legacy_code_one_line_endpoint_indices, minor_arc_geometry};
 use super::super::markers::sketch_input_entities;
 use super::super::typed_relations::compact_legacy_object_line_endpoints;
 use super::super::{
@@ -965,6 +965,27 @@ fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
             end: Point2::new(0.0, 0.0),
         })
     );
+}
+
+#[test]
+fn bounded_arc_normalization_uses_angular_tolerance() {
+    let Some(SketchGeometry::Arc {
+        start_angle,
+        end_angle,
+        ..
+    }) = minor_arc_geometry(
+        Point2::new(10.0, 0.0),
+        Point2::new(0.0, -10.0),
+        Point2::new(0.0, 0.0),
+        4.0,
+    )
+    else {
+        panic!("valid bounded arc should resolve");
+    };
+    let sweep = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+    assert!(sweep <= std::f64::consts::PI + 1.0e-9);
+    assert!((start_angle.0 + std::f64::consts::FRAC_PI_2).abs() < 1.0e-12);
+    assert!(end_angle.0.abs() < 1.0e-12);
 }
 
 #[test]
