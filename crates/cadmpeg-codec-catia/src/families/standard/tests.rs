@@ -6732,6 +6732,10 @@ mod record_decoders {
         let topology =
             crate::families::standard::fbb::parse_standard(&bytes).expect("two edge tables");
         assert_eq!(
+            crate::families::standard::fbb::standard_edge_count(&bytes),
+            Some(4)
+        );
+        assert_eq!(
             topology
                 .edge_rows()
                 .iter()
@@ -7101,7 +7105,8 @@ mod record_decoders {
         bytes.extend_from_slice(&260u32.to_le_bytes());
         bytes.push(2);
 
-        let rows = crate::families::standard::records::standard_curve_supports(&bytes, 300);
+        let rows =
+            crate::families::standard::records::standard_curve_supports(&bytes, 300, Some(2));
         assert_eq!(rows.len(), 2);
         assert!(matches!(
             rows[0].geometry,
@@ -7113,6 +7118,40 @@ mod record_decoders {
         ));
         assert_eq!(rows[0].faces, [260, 1]);
         assert_eq!(rows[1].faces, [260, 2]);
+    }
+
+    #[test]
+    fn standard_curve_support_fallback_requires_one_complete_edge_run() {
+        let line_row = |tag: u32, faces: [u8; 2]| {
+            let tag = tag.to_le_bytes();
+            vec![
+                0x60, tag[0], tag[1], tag[2], 0x00, 0x02, 0x00, 0x33, 0x36, faces[0], faces[1],
+            ]
+        };
+
+        let mut longer_run = line_row(1, [0, 1]);
+        longer_run.extend(line_row(2, [0, 1]));
+        assert!(crate::families::standard::records::standard_curve_supports(
+            &longer_run,
+            2,
+            Some(1)
+        )
+        .is_empty());
+
+        let mut separate_runs = line_row(3, [0, 1]);
+        separate_runs.push(0xa5);
+        separate_runs.extend(line_row(4, [0, 1]));
+        assert!(crate::families::standard::records::standard_curve_supports(
+            &separate_runs,
+            2,
+            Some(1),
+        )
+        .is_empty());
+
+        let unique_run = line_row(5, [0, 1]);
+        let rows =
+            crate::families::standard::records::standard_curve_supports(&unique_run, 2, None);
+        assert_eq!(rows.len(), 1);
     }
 
     #[test]
@@ -7131,7 +7170,9 @@ mod record_decoders {
     fn standard_circle_parser_rejects_non_support_marker() {
         let mut bytes = vec![0x61, 0, 0, 0, 0, 0x12, 0, 0x33, 0x37];
         bytes.extend_from_slice(&[0; 18]);
-        assert!(crate::families::standard::records::standard_circles(&bytes, 1).is_empty());
+        assert!(
+            crate::families::standard::records::standard_circles(&bytes, 1, Some(1)).is_empty()
+        );
     }
 
     #[test]
@@ -7142,7 +7183,7 @@ mod record_decoders {
         }
         bytes.extend_from_slice(&[0, 1]);
         assert_eq!(
-            crate::families::standard::records::standard_circles(&bytes, 2)[0].radius,
+            crate::families::standard::records::standard_circles(&bytes, 2, Some(1))[0].radius,
             2_000_000.0
         );
     }
@@ -7347,8 +7388,9 @@ mod record_decoders {
     #[test]
     fn standard_curve_supports_begin_after_the_surface_roster() {
         let mut bytes = vec![
-            0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // earlier valid-looking row
+            0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // earlier valid-looking rows
         ];
+        bytes.extend_from_slice(&[0x60, 3, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0]);
         bytes.extend_from_slice(&[0x34, 0x12, 0, 0, 0, 0]);
         for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
             bytes.extend_from_slice(&le_f32(value));
@@ -7358,9 +7400,13 @@ mod record_decoders {
             0x60, 2, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // roster-adjacent row
         ]);
 
-        let rows = crate::families::standard::records::standard_curve_supports(&bytes, 1);
+        let rows = crate::families::standard::records::standard_curve_supports(&bytes, 1, Some(1));
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].tag, 2);
+        assert!(
+            crate::families::standard::records::standard_curve_supports(&bytes, 1, Some(2))
+                .is_empty()
+        );
     }
 
     #[test]
@@ -7575,7 +7621,7 @@ mod record_decoders {
     #[test]
     fn standard_line_parser_reads_face_incidence() {
         let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
-        let lines = crate::families::standard::records::standard_lines(&bytes, 2);
+        let lines = crate::families::standard::records::standard_lines(&bytes, 2, Some(1));
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].tag, 0x03_0201);
         assert_eq!(lines[0].faces, [0, 1]);

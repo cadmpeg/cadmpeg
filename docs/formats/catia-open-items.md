@@ -502,14 +502,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
 
-### SN-29. Class-`0x60` table anchor
-
-**Question.** Which field gives the start of the class-`0x60` curve-support table when the face-local surface roster does not resolve?
-
-**Known.** `catia.md` §5.5 `edge_support_row` gives "The table begins immediately after the complete face-local surface roster and has one row per spine edge." `records::standard_curve_supports` uses that anchor when the roster resolves. If it does not, the function takes the first offset in the complete BREP stream where a `60` byte precedes the line or circle header. It applies no test that no other offset matches, and no test of the row count against the spine edge count.
-
-**Need.** The table gives the edge tags, the plane normals from adjacent circle carriers, and the support diagnostics. The consumers of the tags and the normals apply no count gate. We must know the anchor to read the table when the roster is not unique.
-
 ### SN-30. Trim-record acceptance bounds
 
 **Question.** What bounds the handle count of a trim record, and what tolerance applies to the norm of its `3×f32le` frame vector?

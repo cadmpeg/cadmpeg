@@ -27,6 +27,16 @@ pub fn standard_face_count(bytes: &[u8]) -> Option<usize> {
     largest_fbb_run(bytes).map(|(_, count, _)| count)
 }
 
+/// Number of physical edge rows in the fixed-width standard edge table.
+///
+/// The count is available without solving trim incidence or mesh topology,
+/// so it can gate the independent `0x60` support-table walk.
+#[must_use]
+pub(crate) fn standard_edge_count(bytes: &[u8]) -> Option<usize> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    parse_standard_edge_tables(bytes, after_faces).map(|(rows, _)| rows.len())
+}
+
 /// RGBA display color for each positional standard face row.
 #[must_use]
 pub fn standard_face_colors(bytes: &[u8]) -> Option<Vec<[u8; 4]>> {

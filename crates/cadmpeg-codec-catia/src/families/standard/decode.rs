@@ -1176,8 +1176,13 @@ pub(crate) fn try_decode_standard(
             crate::families::standard::records::StandardSurfaceRecord::Analytic(_) => None,
         })
         .collect::<HashSet<_>>();
-    let curve_supports =
-        crate::families::standard::records::standard_curve_supports(brep, face_count);
+    let standard_edge_count =
+        crate::families::standard::fbb::standard_edge_count(brep).filter(|count| *count > 0);
+    let curve_supports = crate::families::standard::records::standard_curve_supports(
+        brep,
+        face_count,
+        standard_edge_count,
+    );
     let edge_tags = curve_supports
         .iter()
         .map(|support| support.tag)
@@ -1623,8 +1628,20 @@ pub(crate) fn try_decode_standard(
         ir = topology_ir;
         annotations = topology_annotations;
     } else {
-        attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
-        attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
+        attach_standard_circles(
+            &mut ir,
+            &mut annotations,
+            &face_bindings,
+            brep,
+            standard_edge_count,
+        );
+        attach_standard_lines(
+            &mut ir,
+            &mut annotations,
+            &face_bindings,
+            brep,
+            standard_edge_count,
+        );
         if !ir.model.vertices.is_empty() {
             attach_free_vertices(
                 &mut ir,
@@ -3055,8 +3072,16 @@ fn attach_standard_topology(
     bound_limit_curve_count: &mut usize,
 ) -> Result<(), StandardTopologyFailure> {
     let face_count = ir.model.faces.len();
-    let mut supports =
-        crate::families::standard::records::standard_curve_supports(brep, face_count);
+    let Some(edge_count) =
+        crate::families::standard::fbb::standard_edge_count(brep).filter(|count| *count > 0)
+    else {
+        return Err(StandardTopologyFailure::NoCurveSupports);
+    };
+    let mut supports = crate::families::standard::records::standard_curve_supports(
+        brep,
+        face_count,
+        Some(edge_count),
+    );
     if supports.is_empty() {
         return Err(StandardTopologyFailure::NoCurveSupports);
     }
@@ -6464,8 +6489,11 @@ pub(crate) fn attach_standard_circles(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
+    edge_count: Option<usize>,
 ) {
-    for circle in crate::families::standard::records::standard_circles(brep, bindings.len()) {
+    for circle in
+        crate::families::standard::records::standard_circles(brep, bindings.len(), edge_count)
+    {
         let axes: Vec<Vector3> = circle
             .faces
             .iter()
@@ -6652,8 +6680,10 @@ pub(crate) fn attach_standard_lines(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
+    edge_count: Option<usize>,
 ) {
-    for line in crate::families::standard::records::standard_lines(brep, bindings.len()) {
+    for line in crate::families::standard::records::standard_lines(brep, bindings.len(), edge_count)
+    {
         let Some((origin_a, normal_a)) = plane_for_face(ir, bindings, line.faces[0]) else {
             continue;
         };

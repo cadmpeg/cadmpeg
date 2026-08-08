@@ -427,144 +427,136 @@ pub struct StandardCurveSupport {
     pub geometry: StandardCurveGeometry,
 }
 
-/// Parse the contiguous standard `0x60` table in physical-edge order.
-/// Leading generic spline rows are recovered backwards from the first analytic
-/// row only when a unique valid row length lands exactly on the current start.
+/// Parse the unique complete standard `0x60` table in physical-edge order.
+///
+/// The face-local surface roster supplies the primary anchor. If that roster
+/// is unavailable, every complete row run is considered. When the fixed
+/// physical-edge cardinality is available, it must match; carrier-only
+/// decoding without that count still requires exactly one run. A suffix of a
+/// longer run is not a table candidate because a valid predecessor row
+/// disqualifies it.
+///
+/// `edge_count` is present for topology transfer only after the fixed standard
+/// edge table is complete. A missing count permits carrier-only transfer from
+/// one unique complete run but never permits topology attachment.
 #[must_use]
-pub fn standard_curve_supports(brep: &[u8], face_count: usize) -> Vec<StandardCurveSupport> {
-    const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
-    const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
+pub fn standard_curve_supports(
+    brep: &[u8],
+    face_count: usize,
+    edge_count: Option<usize>,
+) -> Vec<StandardCurveSupport> {
     if let Some(first) = standard_surface_records(brep, face_count)
         .and_then(|records| records.last().map(StandardSurfaceRecord::end))
     {
-        let rows = standard_curve_supports_at(brep, face_count, first);
-        if !rows.is_empty() {
-            return rows;
-        }
-    }
-
-    let Some(mut first) = (0..brep.len()).find(|&position| {
-        brep.get(position) == Some(&0x60)
-            && brep
-                .get(position + 4..position + 9)
-                .is_some_and(|header| header == LINE || header == CIRCLE)
-    }) else {
-        return Vec::new();
-    };
-
-    loop {
-        let mut candidate = None;
-        let mut ambiguous = false;
-        for row_length in [9usize, 13, 17] {
-            let Some(start) = first.checked_sub(row_length) else {
-                continue;
-            };
-            if brep.get(start) != Some(&0x60) || brep.get(start + 4..start + 7) != Some(&[0, 0, 0])
-            {
-                continue;
-            }
-            let mut position = start + 7;
-            let Some((face0, next)) = face_ref(brep, position) else {
-                continue;
-            };
-            position = next;
-            let Some((face1, end)) = face_ref(brep, position) else {
-                continue;
-            };
-            if end != first || face0 >= face_count || face1 >= face_count {
-                continue;
-            }
-            if candidate.replace(start).is_some() {
-                ambiguous = true;
-                break;
-            }
-        }
-        if ambiguous {
-            break;
-        }
-        let Some(previous) = candidate else {
-            break;
+        let Some(rows) = standard_curve_supports_at(brep, face_count, first) else {
+            return Vec::new();
         };
-        first = previous;
+        return if edge_count.is_none_or(|count| rows.len() == count) {
+            rows
+        } else {
+            Vec::new()
+        };
     }
 
-    standard_curve_supports_at(brep, face_count, first)
+    let candidates = (0..brep.len())
+        .filter(|&start| {
+            brep.get(start) == Some(&0x60)
+                && !standard_curve_support_has_predecessor(brep, face_count, start)
+        })
+        .filter_map(|start| {
+            let rows = standard_curve_supports_at(brep, face_count, start)?;
+            edge_count
+                .is_none_or(|count| rows.len() == count)
+                .then_some(rows)
+        })
+        .collect::<Vec<_>>();
+    <[Vec<StandardCurveSupport>; 1]>::try_from(candidates)
+        .ok()
+        .map(|[rows]| rows)
+        .unwrap_or_default()
 }
 
 fn standard_curve_supports_at(
     brep: &[u8],
     face_count: usize,
     mut position: usize,
-) -> Vec<StandardCurveSupport> {
+) -> Option<Vec<StandardCurveSupport>> {
+    let mut rows = Vec::new();
+    while brep.get(position) == Some(&0x60) {
+        let (row, end) = standard_curve_support_row_at(brep, face_count, position)?;
+        rows.push(row);
+        position = end;
+    }
+    (!rows.is_empty()).then_some(rows)
+}
+
+fn standard_curve_support_row_at(
+    brep: &[u8],
+    face_count: usize,
+    position: usize,
+) -> Option<(StandardCurveSupport, usize)> {
     const LINE: [u8; 5] = [0x00, 0x02, 0x00, 0x33, 0x36];
     const CIRCLE: [u8; 5] = [0x00, 0x12, 0x00, 0x33, 0x37];
 
-    let mut rows = Vec::new();
-    while brep.get(position) == Some(&0x60) {
-        let Some(tag_bytes) = brep.get(position + 1..position + 4) else {
-            break;
-        };
-        let tag = u32::from_le_bytes([tag_bytes[0], tag_bytes[1], tag_bytes[2], 0]);
-        let header = brep.get(position + 4..position + 9);
-        let (geometry, refs) = if header == Some(&LINE) {
-            (StandardCurveGeometry::Line, position + 9)
-        } else if header == Some(&CIRCLE) {
-            let Some(cx) = f32_be(brep, position + 9) else {
-                break;
-            };
-            let Some(cy) = f32_be(brep, position + 13) else {
-                break;
-            };
-            let Some(cz) = f32_be(brep, position + 17) else {
-                break;
-            };
-            let Some(radius) = f32_be(brep, position + 21) else {
-                break;
-            };
-            if !cx.is_finite()
-                || !cy.is_finite()
-                || !cz.is_finite()
-                || !radius.is_finite()
-                || radius <= 0.0
-            {
-                break;
-            }
-            (
-                StandardCurveGeometry::Circle {
-                    center: Point3::new(f64::from(cx), f64::from(cy), f64::from(cz)),
-                    radius: f64::from(radius),
-                },
-                position + 25,
-            )
-        } else if brep.get(position + 4..position + 7) == Some(&[0, 0, 0]) {
-            (StandardCurveGeometry::Bspline, position + 7)
-        } else {
-            break;
-        };
-        let Some((face0, next)) = face_ref(brep, refs) else {
-            break;
-        };
-        let Some((face1, end)) = face_ref(brep, next) else {
-            break;
-        };
-        if face0 >= face_count || face1 >= face_count {
-            break;
+    let tag_bytes = brep.get(position + 1..position + 4)?;
+    let tag = u32::from_le_bytes([tag_bytes[0], tag_bytes[1], tag_bytes[2], 0]);
+    let header = brep.get(position + 4..position + 9);
+    let (geometry, refs) = if header == Some(&LINE) {
+        (StandardCurveGeometry::Line, position + 9)
+    } else if header == Some(&CIRCLE) {
+        let cx = f32_be(brep, position + 9)?;
+        let cy = f32_be(brep, position + 13)?;
+        let cz = f32_be(brep, position + 17)?;
+        let radius = f32_be(brep, position + 21)?;
+        if !cx.is_finite()
+            || !cy.is_finite()
+            || !cz.is_finite()
+            || !radius.is_finite()
+            || radius <= 0.0
+        {
+            return None;
         }
-        rows.push(StandardCurveSupport {
+        (
+            StandardCurveGeometry::Circle {
+                center: Point3::new(f64::from(cx), f64::from(cy), f64::from(cz)),
+                radius: f64::from(radius),
+            },
+            position + 25,
+        )
+    } else if brep.get(position + 4..position + 7) == Some(&[0, 0, 0]) {
+        (StandardCurveGeometry::Bspline, position + 7)
+    } else {
+        return None;
+    };
+    let (face0, next) = face_ref(brep, refs)?;
+    let (face1, end) = face_ref(brep, next)?;
+    (face0 < face_count && face1 < face_count).then_some((
+        StandardCurveSupport {
             pos: position,
             tag,
             faces: [face0, face1],
             geometry,
-        });
-        position = end;
-    }
-    rows
+        },
+        end,
+    ))
+}
+
+fn standard_curve_support_has_predecessor(brep: &[u8], face_count: usize, start: usize) -> bool {
+    const MAX_ROW_BYTES: usize = 35;
+    (start.saturating_sub(MAX_ROW_BYTES)..start).any(|candidate| {
+        standard_curve_support_row_at(brep, face_count, candidate)
+            .is_some_and(|(_, end)| end == start)
+    })
 }
 
 /// Parse complete circle rows from a standard `0x60` support table.  The table
 /// is accepted only as a contiguous run whose face references stay in range.
-pub fn standard_circles(brep: &[u8], face_count: usize) -> Vec<StandardCircle> {
-    standard_curve_supports(brep, face_count)
+pub fn standard_circles(
+    brep: &[u8],
+    face_count: usize,
+    edge_count: Option<usize>,
+) -> Vec<StandardCircle> {
+    standard_curve_supports(brep, face_count, edge_count)
         .into_iter()
         .filter_map(|row| match row.geometry {
             StandardCurveGeometry::Circle { center, radius } => Some(StandardCircle {
@@ -581,8 +573,12 @@ pub fn standard_circles(brep: &[u8], face_count: usize) -> Vec<StandardCircle> {
 
 /// Parse standard line support rows.  The line equation is supplied by the two
 /// incident plane carriers, not inline in the row.
-pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
-    standard_curve_supports(brep, face_count)
+pub fn standard_lines(
+    brep: &[u8],
+    face_count: usize,
+    edge_count: Option<usize>,
+) -> Vec<StandardLine> {
+    standard_curve_supports(brep, face_count, edge_count)
         .into_iter()
         .filter_map(|row| match row.geometry {
             StandardCurveGeometry::Line => Some(StandardLine {
