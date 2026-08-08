@@ -274,11 +274,18 @@ candidate. Serialized occurrence order is not a sufficient rule.
 **Question.** Which pcurve parameter axes are length-valued for cylinders,
 spheres, cones, tori, and other non-planar support surfaces?
 
-**Known.** Plane pcurve axes are length-valued and are scaled by the document
-length unit. Angular and mixed parameter axes require surface-specific rules.
+**Known.** A plane uses two length-valued axes. A cylinder or cone uses an
+angular `u` axis and a length-valued `v` axis. A sphere or torus uses two
+angular axes. A NURBS surface uses its native knot-domain parameters. A
+transformed surface keeps the parameterization of its basis. The decoder
+converts these axes to canonical IR units before it binds a pcurve.
 
-**Need.** We need the surface-axis table before scaling non-planar pcurve
-coordinates.
+**Need.** Add an affine parameter-space carrier so analytic conics and
+`OFFSET_CURVE_2D` pcurves remain exact when the two axis scales differ. Define
+the parameter-unit rules for procedural surfaces whose directrix parameter is
+not a standard analytic length or angle parameter. Until then, those pcurves
+remain opaque and report `PcurveOmitted`; the decoder must not apply one scalar
+to both axes.
 
 ### TP-04. Partial solid and tolerant point carriers
 

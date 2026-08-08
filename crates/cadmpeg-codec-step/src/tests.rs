@@ -2043,6 +2043,86 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
 }
 
 #[test]
+fn cylindrical_pcurve_coordinates_use_angular_and_linear_axis_units() {
+    use cadmpeg_ir::eval::{pcurve_uv, surface_point};
+
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "GLOBAL_UNIT_ASSIGNED_CONTEXT((#1))",
+            "GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#71))",
+        )
+        .replace("#3=CARTESIAN_POINT('',(0.,0.,0.));", "#3=CARTESIAN_POINT('',(0.,5.,0.));")
+        .replace("#4=CARTESIAN_POINT('',(10.,0.,0.));", "#4=CARTESIAN_POINT('',(10.,5.,0.));")
+        .replace("#5=CARTESIAN_POINT('',(0.,10.,0.));", "#5=CARTESIAN_POINT('',(0.,15.,0.));")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#27=AXIS2_PLACEMENT_3D('',#72,#73,#74);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,5.);")
+        .replace("#51=CARTESIAN_POINT('',(0.,0.));", "#51=CARTESIAN_POINT('',(180.,0.));")
+        .replace("#52=DIRECTION('',(1.,0.));", "#52=DIRECTION('',(0.,1.));")
+        .replace("#53=VECTOR('',#52,1.);", "#53=VECTOR('',#52,10.);")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#70=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.017453292519943295),#69);\n#71=(CONVERSION_BASED_UNIT('degree',#70) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\n#72=CARTESIAN_POINT('',(0.,0.,0.));\n#73=DIRECTION('',(1.,0.,0.));\n#74=DIRECTION('',(0.,-1.,0.));\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode cylindrical pcurve");
+
+    let pcurve = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("cylindrical pcurve");
+    let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = &pcurve.geometry else {
+        panic!("expected a line pcurve");
+    };
+    assert!((origin.u - std::f64::consts::PI).abs() < 1.0e-12);
+    assert!(origin.v.abs() < 1.0e-12);
+    assert!(direction.u.abs() < 1.0e-12);
+    assert!((direction.v - 10.0).abs() < 1.0e-12);
+
+    let pcurve_use = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .find(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+        .expect("cylindrical pcurve use");
+    assert_eq!(pcurve_use.parameter_range, Some([0.0, 1.0]));
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#28")
+        .expect("cylindrical surface");
+    let start = pcurve_uv(&pcurve.geometry, 0.0)
+        .and_then(|uv| surface_point(&surface.geometry, uv.u, uv.v))
+        .expect("cylindrical pcurve start");
+    let end = pcurve_uv(&pcurve.geometry, 1.0)
+        .and_then(|uv| surface_point(&surface.geometry, uv.u, uv.v))
+        .expect("cylindrical pcurve end");
+    assert!(start.distance(Point3::new(0.0, 5.0, 0.0)) < 1.0e-9);
+    assert!(end.distance(Point3::new(10.0, 5.0, 0.0)) < 1.0e-9);
+
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(
+        validation
+            .findings
+            .iter()
+            .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
+        "{:#?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

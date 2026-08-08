@@ -246,8 +246,17 @@ relation rejects the complete solid root. Records owned only by that root stay
 opaque, and product bindings omit the body. Sheet and wire members use the
 independent-member salvage rule. A `SURFACE_CURVE` with a star or non-reference
 basis keeps its edge occurrence without a CADIR curve and produces a loss; the
-decoder does not fabricate a curve carrier. A pcurve on a plane scales both
-parameter axes and all length-valued 2D geometry by the document length unit.
+decoder does not fabricate a curve carrier.
+
+Pcurve coordinates use the parameterization of their support surface. A plane
+uses `(u=length, v=length)`. A cylindrical or conical surface uses
+`(u=angle, v=length)`. A spherical or toroidal surface uses
+`(u=angle, v=angle)`. A NURBS surface uses its native knot-domain values.
+The decoder converts length and plane-angle values to the IR units before it
+binds a pcurve to a coedge. A non-uniform unit conversion is exact for line,
+NURBS, trimmed, harmonic, and hyperbolic pcurve carriers. Analytic conics and
+2D offsets that require an affine parameter-space carrier remain opaque and
+produce a loss.
 
 The writer records each omitted shell, face, loop, and edge relation as a
 topology-transfer loss. Omitted outer shells, void shells, and outer bounds

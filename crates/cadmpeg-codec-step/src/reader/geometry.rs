@@ -1568,13 +1568,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             entry.insert(surface_index);
         }
     }
-    let planar_surface_ids = ir
-        .model
-        .surfaces
-        .iter()
-        .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Plane { .. }))
-        .filter_map(|surface| step_instance_id(&surface.id.0))
-        .collect::<BTreeSet<_>>();
     for (id, record) in exchange.entities("PCURVE") {
         if record.partial("PCURVE").is_none() {
             continue;
@@ -1612,8 +1605,23 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         };
         let mut geometry = geometry.clone();
-        if surface_step.is_some_and(|surface| planar_surface_ids.contains(&surface)) {
-            scale_planar_pcurve_geometry(&mut geometry, scale);
+        if let Some((u_scale, v_scale)) = surface_step
+            .and_then(|surface| carrier_index.surfaces.get(&surface))
+            .and_then(|index| ir.model.surfaces.get(*index))
+            .and_then(|surface| pcurve_parameter_scales(&surface.geometry, scale, angle_scale))
+        {
+            if !scale_pcurve_geometry_axes(&mut geometry, u_scale, v_scale) {
+                losses.push(
+                    LossNote::new(
+                        LossKind::PcurveOmitted,
+                        format!(
+                            "PCURVE #{id} on surface #{surface_step:?} uses a parameter-space curve family that cannot be transformed exactly from the source axis units"
+                        ),
+                    )
+                    .with_severity(Severity::Error),
+                );
+                continue;
+            }
         }
         ir.model.pcurves.push(Pcurve {
             id: PcurveId(format!("step:data:pcurve#{id}")),
@@ -3121,6 +3129,103 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
         _ => None,
     }
     .filter(|value| value.is_finite())
+}
+
+/// Return the canonical scale for each axis of a surface parameter chart.
+///
+/// STEP defines trigonometric surface parameters in the active plane-angle
+/// unit. The axial parameter of a cylinder or cone and both parameters of a
+/// plane use the document length unit. Spherical and toroidal surfaces use
+/// angular parameters in both directions. NURBS parameters are their native
+/// knot-domain values and are therefore dimensionless. A transformed surface
+/// keeps the parameterization of its basis.
+fn pcurve_parameter_scales(
+    surface: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+) -> Option<(f64, f64)> {
+    match surface {
+        SurfaceGeometry::Plane { .. } => Some((length_scale, length_scale)),
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            Some((angle_scale, length_scale))
+        }
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
+            Some((angle_scale, angle_scale))
+        }
+        SurfaceGeometry::Nurbs(_) => Some((1.0, 1.0)),
+        SurfaceGeometry::Transformed { basis, .. } => {
+            pcurve_parameter_scales(basis, length_scale, angle_scale)
+        }
+        SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn scales_equal(u_scale: f64, v_scale: f64) -> bool {
+    (u_scale - v_scale).abs() <= 1.0e-12 * u_scale.abs().max(v_scale.abs()).max(1.0)
+}
+
+/// Apply an axis-aligned parameter-unit conversion when the carrier family
+/// preserves its exact parameterization under that conversion.
+///
+/// A non-uniform conversion cannot be represented by the current analytic
+/// conic or `OFFSET_CURVE_2D` neutral forms without adding an affine pcurve
+/// carrier. Those forms return `false` so the caller can retain the source
+/// record and report a loss instead of emitting a geometrically false pcurve.
+fn scale_pcurve_geometry_axes(geometry: &mut PcurveGeometry, u_scale: f64, v_scale: f64) -> bool {
+    fn point(point: &mut Point2, u_scale: f64, v_scale: f64) {
+        point.u *= u_scale;
+        point.v *= v_scale;
+    }
+
+    if !u_scale.is_finite() || !v_scale.is_finite() || u_scale <= 0.0 || v_scale <= 0.0 {
+        return false;
+    }
+    if scales_equal(u_scale, v_scale) {
+        scale_planar_pcurve_geometry(geometry, u_scale);
+        return true;
+    }
+
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            point(origin, u_scale, v_scale);
+            point(direction, u_scale, v_scale);
+            true
+        }
+        PcurveGeometry::Harmonic {
+            center,
+            cosine,
+            sine,
+        }
+        | PcurveGeometry::Hyperbolic {
+            center,
+            cosine,
+            sine,
+        } => {
+            point(center, u_scale, v_scale);
+            point(cosine, u_scale, v_scale);
+            point(sine, u_scale, v_scale);
+            true
+        }
+        PcurveGeometry::Nurbs { control_points, .. } => {
+            for control_point in control_points {
+                point(control_point, u_scale, v_scale);
+            }
+            true
+        }
+        PcurveGeometry::Trimmed { basis, .. } => {
+            scale_pcurve_geometry_axes(basis, u_scale, v_scale)
+        }
+        PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Offset { .. }
+        | PcurveGeometry::PolarHarmonic { .. }
+        | PcurveGeometry::PolarNurbs { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. } => false,
+    }
 }
 
 fn scale_planar_pcurve_geometry(geometry: &mut PcurveGeometry, scale: f64) {
