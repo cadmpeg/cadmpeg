@@ -1649,17 +1649,17 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                             // chart, which is not the standard partner face's
                             // chart. Recover the isometry between them from the
                             // block's shared 3D loci.
-                            let chart = resolved
-                                .shared_loci
-                                .as_deref()
-                                .and_then(|loci| {
-                                    solve_planar_chart_rechart(
-                                        &resolved.block.pcurves[partner].points,
-                                        loci,
-                                        standard_partner_geometry,
-                                    )
-                                })
-                                .unwrap_or(ConsolidatedCarrierChart::Identity);
+                            let Some(chart) = resolved.shared_loci.as_deref().and_then(|loci| {
+                                solve_planar_chart_rechart(
+                                    &resolved.block.pcurves[partner].points,
+                                    loci,
+                                    standard_partner_geometry,
+                                )
+                            }) else {
+                                // The free side has no defined chart relation
+                                // to a non-planar or unresolved partner.
+                                return Some((identity, None));
+                            };
                             let mut pcurve =
                                 consolidated_jet_pcurve(&resolved.block.pcurves[partner], &chart)?;
                             if reversed {
@@ -1974,7 +1974,7 @@ fn solve_planar_chart_rechart(
         reflected_cross += su * iv + sv * iu;
     }
     let candidates = [(dot, cross, 1.0), (reflected_dot, reflected_cross, -1.0)];
-    let mut best: Option<(f64, ConsolidatedCarrierChart<'static>)> = None;
+    let mut admissible = Vec::new();
     for (dot, cross, determinant) in candidates {
         let norm = dot.hypot(cross);
         if !norm.is_finite() || norm <= f64::EPSILON {
@@ -2000,12 +2000,15 @@ fn solve_planar_chart_rechart(
         if !residual.is_finite() {
             continue;
         }
-        if best.as_ref().is_none_or(|(current, _)| residual < *current) {
-            best = Some((residual, chart));
+        if residual <= CONSOLIDATED_SITE_TOLERANCE {
+            admissible.push(chart);
         }
     }
-    let (residual, chart) = best?;
-    (residual <= CONSOLIDATED_SITE_TOLERANCE).then_some(chart)
+    if admissible.len() == 1 {
+        admissible.pop()
+    } else {
+        None
+    }
 }
 
 /// Does `pcurve`, mapped through `surface`, reach `endpoints` over `range`?
@@ -2016,8 +2019,7 @@ fn solve_planar_chart_rechart(
 /// positions within `allowance`. Either endpoint assignment satisfies it,
 /// because pcurve parameter direction is independent of edge sense.
 ///
-/// A carrier with no geometry has no chart, so it admits no witness and no
-/// disagreement. The binding then records the pairing alone and is retained.
+/// A carrier with no geometry has no chart and therefore admits no witness.
 fn pcurve_lift_reaches_endpoints(
     pcurve: &PcurveGeometry,
     surface: &SurfaceGeometry,
@@ -2026,7 +2028,7 @@ fn pcurve_lift_reaches_endpoints(
     allowance: f64,
 ) -> bool {
     if matches!(surface, SurfaceGeometry::Unknown { .. }) {
-        return true;
+        return false;
     }
     let lift = |parameter| {
         let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
@@ -2622,13 +2624,10 @@ mod tests {
             &[],
         );
         assert_eq!(attached.standard_edges, 1);
-        assert_eq!(attached.partner_face_pcurve_pairs, 1);
-        assert_eq!(ir.model.pcurves.len(), 2);
-        assert!(ir
-            .model
-            .coedges
-            .iter()
-            .all(|coedge| coedge.pcurves.len() == 1));
+        assert_eq!(attached.partner_face_pcurve_pairs, 0);
+        assert_eq!(ir.model.pcurves.len(), 0);
+        assert_eq!(ir.model.coedges[0].pcurves.len(), 0);
+        assert_eq!(ir.model.coedges[1].pcurves.len(), 0);
         assert_eq!(ir.model.curves.len(), 1);
         assert_eq!(ir.model.edges[0].curve.as_ref(), Some(&curve_id));
         let ProceduralCurveDefinition::SurfaceCurve { context, .. } =
@@ -2752,6 +2751,15 @@ mod tests {
             &SurfaceGeometry::Unknown { record: None }
         )
         .is_none());
+        // Two sites leave both orientation choices valid. Three collinear
+        // sites have the same ambiguity, so neither admits a unique chart.
+        assert!(solve_planar_chart_rechart(&stored[..2], &loci[..2], &target).is_none());
+        let collinear_sites = [[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]];
+        let collinear_loci = collinear_sites
+            .iter()
+            .map(|[u, v]| cadmpeg_ir::eval::surface_point(&target, *u, *v).expect("plane"))
+            .collect::<Vec<_>>();
+        assert!(solve_planar_chart_rechart(&collinear_sites, &collinear_loci, &target).is_none());
     }
 
     #[test]
@@ -2802,8 +2810,8 @@ mod tests {
             [endpoints[1], endpoints[0]],
             cadmpeg_ir::units::COINCIDENCE_TOLERANCE
         ));
-        // A carrier with no geometry admits no witness and no disagreement.
-        assert!(pcurve_lift_reaches_endpoints(
+        // A carrier with no geometry has no chart and admits no witness.
+        assert!(!pcurve_lift_reaches_endpoints(
             &naive,
             &SurfaceGeometry::Unknown { record: None },
             range,

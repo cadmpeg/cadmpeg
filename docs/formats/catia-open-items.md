@@ -562,24 +562,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The filter is sound only when every rejected assignment has an equivalent retained assignment. The class test proves the two rows have the same class and the same candidate set. It does not prove an automorphism of the boundary-cycle system. When the true binding is the rejected one, the search enumerates only the exchanged binding and reports it as unique instead of reporting distinct solutions. We must know the interchange rule, or the filter must prove it.
 
-### SN-38. Free-side chart when the plane isometry does not solve
-
-**Question.** What chart relation carries a consolidated free side's stored jet into the chart of its standard partner face when the partner carrier is not a plane?
-
-**Known.** `catia.md` §6.3 "A resolved edge block binds" gives a table: a plane free-side standard carrier has a plane isometry, solved from the block's shared 3D loci; any other kind has "none defined" and "none". `freeform::append_resolved_consolidated_surface_curves` uses the identity chart when the solve returns nothing, which asserts that the free side's chart is the partner face's chart.
-
-**Need.** The specification states that the relation is not defined for a non-plane carrier, so the pcurve must be withheld. We must know the relation to convert the jet.
-
-**Conflict.** The decoder publishes a pcurve where the specification assigns no chart. The endpoint witness does not catch it: `freeform::pcurve_lift_reaches_endpoints` returns `true` without a test when the partner carrier is a bare `SurfaceGeometry::Unknown`, which is the state that an unresolved procedural support produces. The pcurve reaches the document with `Exactness::Derived` and no loss.
-
-### SN-39. Plane isometry from collinear sites
-
-**Question.** Which relation selects the plane isometry when the stored definition sites are collinear?
-
-**Known.** `catia.md` §6.3 "A resolved edge block binds" gives "It exists when every shared locus lies on the target plane and the stored sites are not collinear." `freeform::solve_planar_chart_rechart` requires two sites and does not test collinearity. It ranks the rotation and the reflection by residual and keeps the smaller. Two sites are always collinear, and both candidates reproduce two sites exactly, so the residuals are equal and the first candidate wins.
-
-**Need.** A single-span jet gives two sites, which is the common consolidated form. The wrong handedness mirrors the first and second derivative channels, so the converted curve bulges to the other side of its chord. Both endpoints still match, so the endpoint witness passes. We must know the relation, or the solver must withhold on a collinear site set as the specification requires.
-
 ### SN-40. Support-carrier family precedence
 
 **Question.** Which relation selects the support carrier of a consolidated side when carriers of more than one analytic family satisfy their own witness?
