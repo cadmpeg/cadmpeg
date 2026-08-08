@@ -758,14 +758,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Two distinct vertices closer than the radius collapse into one. The lowest-row rule that the specification gives is scoped to coincident rows, not to a ball. We must know the radius, or the identity relation that removes the radius.
 
-### OS-20. Offset surface parameter-direction sense
-
-**Question.** Which field of a `b5 03 30`, `b5 03 31`, or `b2 03 31` offset record gives the U and V parameter-direction sense?
-
-**Known.** `catia.md` §6.7 "`b5 03 30`" gives the payload as the result carrier reference, the source surface reference, the distance, the carrier kind, and the four interval scalars. It lists no sense field. `b5::transfer::surfaces` publishes `u_sense: Some(0)` and `v_sense: Some(0)`, `standard::decode` publishes `Some(0)`, and `freeform` publishes `Some(1)` for the consolidated form. The neutral field states a native sense that the source carried, and `None` states that the source carried none.
-
-**Need.** Three sites publish two different literals for a field that no record holds. A consumer that writes the value back writes a sense CATIA never stored. We must know the field, or the value must be `None`.
-
 ### OS-21. External pole grid binding
 
 **Question.** Which field binds an external pole grid allocation to its elided-pole `a8 03 34` carrier?
