@@ -2123,6 +2123,43 @@ fn cylindrical_pcurve_coordinates_use_angular_and_linear_axis_units() {
 }
 
 #[test]
+fn annotation_plane_keeps_its_neutral_plane_reachable() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=AXIS2_PLACEMENT_3D('',#3,#9,#10);\n#70=PLANE('',#69);\n#71=ANNOTATION_PLANE('',(),#70,());\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode annotation plane");
+
+    let plane = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#70")
+        .expect("annotation plane surface");
+    assert_eq!(
+        plane
+            .source_object
+            .as_ref()
+            .map(|association| association.object_id.as_str()),
+        Some("#71")
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(
+        validation.findings.iter().all(|finding| {
+            !(finding.check == cadmpeg_ir::Check::CarrierReachability
+                && finding.entity.as_deref() == Some("step:data:surface#70"))
+        }),
+        "{:#?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

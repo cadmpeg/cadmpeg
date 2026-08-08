@@ -2181,6 +2181,35 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
     }
 }
 
+/// Associate the neutral plane referenced by each `ANNOTATION_PLANE` with
+/// that presentation carrier. The plane is not a face surface, but it is a
+/// source-owned geometry carrier and must not be reported as orphaned.
+pub(super) fn associate_annotation_plane_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) {
+    for (annotation_id, record) in exchange.entities("ANNOTATION_PLANE") {
+        let Some(surface_id) = record.parameter(2).and_then(Value::reference) else {
+            continue;
+        };
+        let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
+            continue;
+        };
+        ir.model.surfaces[surface_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{annotation_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
+}
+
 fn length_scale(exchange: &Exchange) -> Option<f64> {
     let context_units = exchange.records.values().find_map(|record| {
         record
