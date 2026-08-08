@@ -9859,7 +9859,8 @@
             "parameter_range": [
               0.0,
               20.0
-            ]
+            ],
+            "same_sense": true
           },
           "id": "fcstd:model:pcurve#Swept:Shape:Swept.Shape.brp:3%3A2%3A1",
           "parameter_range": [

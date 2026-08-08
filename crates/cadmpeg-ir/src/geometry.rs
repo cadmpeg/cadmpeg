@@ -14,6 +14,10 @@ use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+const fn default_same_sense() -> bool {
+    true
+}
+
 /// A tensor-product NURBS surface.
 ///
 /// Control points use u-major order. `weights == None` denotes a non-rational
@@ -3224,6 +3228,11 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Native parameter interval retained from the parent.
         parameter_range: [f64; 2],
+        /// Whether the retained interval follows increasing parent parameters.
+        ///
+        /// Older CADIR documents omitted this field and mean `true`.
+        #[serde(default = "default_same_sense")]
+        same_sense: bool,
     },
     /// Spine or center curve of a blend surface.
     BlendSpine {
@@ -3422,6 +3431,11 @@ pub enum PcurveGeometry {
     Trimmed {
         /// Native parameter interval retained from the basis.
         parameter_range: [f64; 2],
+        /// Whether the trimmed traversal follows increasing basis parameters.
+        ///
+        /// Older CADIR documents omitted this field and mean `true`.
+        #[serde(default = "default_same_sense")]
+        same_sense: bool,
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },

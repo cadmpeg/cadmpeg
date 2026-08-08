@@ -276,7 +276,8 @@
             "parameter_range": [
               -1.5,
               3.5
-            ]
+            ],
+            "same_sense": true
           },
           "cache_fit_tolerance": 0.005999999999999999
         }

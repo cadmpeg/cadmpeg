@@ -408,6 +408,7 @@ fn pcurve_parameter_near_uv(
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => {
             let parameter = pcurve_parameter_near_uv(basis, target, seed, tolerance)?;
             parameter_range.contains(&parameter).then_some(parameter)?
@@ -453,6 +454,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
+    let mut ellipse_parameter_phases = BTreeMap::<u64, f64>::new();
     if let Some(uncertainty) = linear_uncertainty(exchange) {
         ir.tolerances.linear = uncertainty;
     }
@@ -741,25 +743,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         radius: radius * scale,
                     },
                 ),
-            "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
-                .and_then(Value::reference)
-                .and_then(|placement| placements.get(&placement).copied())
-                .zip(named_parameter(record, "ELLIPSE", 2).and_then(Value::number))
-                .zip(named_parameter(record, "ELLIPSE", 3).and_then(Value::number))
-                .filter(|((_, major), minor)| {
-                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
-                })
-                .map(
-                    |(((center, axis, major_direction), major_radius), minor_radius)| {
-                        CurveGeometry::Ellipse {
-                            center,
-                            axis,
-                            major_direction,
-                            major_radius: major_radius * scale,
-                            minor_radius: minor_radius * scale,
-                        }
-                    },
-                ),
+            "ELLIPSE" => ellipse_geometry(record, &placements, scale).map(|(geometry, phase)| {
+                if phase != 0.0 {
+                    ellipse_parameter_phases.insert(id, phase);
+                }
+                geometry
+            }),
             "PARABOLA" => named_parameter(record, "PARABOLA", 1)
                 .and_then(Value::reference)
                 .and_then(|placement| placements.get(&placement).copied())
@@ -885,6 +874,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     tolerance: ir.tolerances.linear,
                     master_representation,
                     record_id: id,
+                    parameter_phase: ellipse_parameter_phases
+                        .get(&basis_step)
+                        .copied()
+                        .unwrap_or(0.0),
                     warnings: &mut warnings,
                 };
                 (
@@ -899,6 +892,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             let Some((start, end)) = start.zip(end) else {
                 continue;
             };
+            let Some((parameter_range, same_sense)) = ordered_trim_range(start, end, sense) else {
+                continue;
+            };
             let curve_index = ir.model.curves.len();
             ir.model.curves.push(Curve {
                 id: curve.clone(),
@@ -910,7 +906,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 curve: curve.clone(),
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis,
-                    parameter_range: if sense { [start, end] } else { [end, start] },
+                    parameter_range,
+                    same_sense,
                 },
                 cache_fit_tolerance: Some(0.0),
             });
@@ -1995,6 +1992,7 @@ struct TrimParameterContext<'a> {
     tolerance: f64,
     master_representation: TrimMasterRepresentation,
     record_id: u64,
+    parameter_phase: f64,
     warnings: &'a mut Vec<String>,
 }
 
@@ -2673,26 +2671,21 @@ fn is_parameter_trim_value(value: &Value) -> bool {
 }
 
 fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
-    match value {
-        Value::Integer(value) => Some(
-            parameter_scale(
-                context.geometry,
-                context.angle_scale,
-                context.linear_parameter_scale,
-            ) * *value as f64,
-        ),
-        Value::Real(value) => Some(
-            parameter_scale(
-                context.geometry,
-                context.angle_scale,
-                context.linear_parameter_scale,
-            ) * *value,
-        ),
+    let raw = match value {
+        Value::Integer(value) => Some(*value as f64),
+        Value::Real(value) => Some(*value),
         Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
-            trim_parameter_value(value, context)
+            return trim_parameter_value(value, context);
         }
-        _ => None,
-    }
+        _ => return None,
+    }?;
+    let parameter = parameter_scale(
+        context.geometry,
+        context.angle_scale,
+        context.linear_parameter_scale,
+    ) * raw
+        + context.parameter_phase;
+    parameter.is_finite().then_some(parameter)
 }
 
 fn trim_cartesian_parameter(value: &Value, context: &TrimParameterContext<'_>) -> Option<f64> {
@@ -2758,6 +2751,51 @@ fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_
     } else {
         1.0
     }
+}
+
+fn ellipse_geometry(
+    record: &RawRecord,
+    placements: &BTreeMap<u64, (Point3, Vector3, Vector3)>,
+    scale: f64,
+) -> Option<(CurveGeometry, f64)> {
+    let placement = named_parameter(record, "ELLIPSE", 1)
+        .and_then(Value::reference)
+        .and_then(|placement| placements.get(&placement).copied())?;
+    let first_radius = named_parameter(record, "ELLIPSE", 2).and_then(Value::number)?;
+    let second_radius = named_parameter(record, "ELLIPSE", 3).and_then(Value::number)?;
+    if !scale.is_finite()
+        || scale <= 0.0
+        || !first_radius.is_finite()
+        || !second_radius.is_finite()
+        || first_radius <= 0.0
+        || second_radius <= 0.0
+    {
+        return None;
+    }
+    let (center, axis, first_direction) = placement;
+    if first_radius >= second_radius {
+        return Some((
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction: first_direction,
+                major_radius: first_radius * scale,
+                minor_radius: second_radius * scale,
+            },
+            0.0,
+        ));
+    }
+    let second_direction = normalize(cross(axis, first_direction))?;
+    Some((
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction: second_direction,
+            major_radius: second_radius * scale,
+            minor_radius: first_radius * scale,
+        },
+        -std::f64::consts::FRAC_PI_2,
+    ))
 }
 
 fn line_parameter_scale(
@@ -3334,8 +3372,10 @@ fn decode_pcurve_geometry(
                 let end =
                     pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)? * scale;
                 records.extend(basis_records);
+                let (parameter_range, same_sense) = ordered_trim_range(start, end, sense)?;
                 PcurveGeometry::Trimmed {
-                    parameter_range: if sense { [start, end] } else { [end, start] },
+                    parameter_range,
+                    same_sense,
                     basis: Box::new(basis),
                 }
             }
@@ -3404,6 +3444,28 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
         _ => None,
     }
     .filter(|value| value.is_finite())
+}
+
+/// Normalize a directed trim to the IR's ordered interval invariant.
+///
+/// STEP's `sense_agreement` selects which trim selector is the beginning of
+/// the directed curve. CADIR stores the interval in ascending basis-parameter
+/// order and carries that direction separately, so periodic and non-periodic
+/// consumers do not have to interpret descending bounds as a special case.
+fn ordered_trim_range(first: f64, second: f64, sense: bool) -> Option<([f64; 2], bool)> {
+    if !first.is_finite() || !second.is_finite() {
+        return None;
+    }
+    let (from, to) = if sense {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    if from <= to {
+        Some(([from, to], true))
+    } else {
+        Some(([to, from], false))
+    }
 }
 
 /// Return the canonical scale for each axis of a surface parameter chart.

@@ -5233,6 +5233,7 @@ pub(crate) fn native_procedural_curve(
     if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
         source,
         parameter_range,
+        ..
     } = &procedural.definition
     {
         let source = target
@@ -6200,6 +6201,7 @@ fn native_pcurve_geometry(
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => native_pcurve_geometry(basis, *parameter_range),
         PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }

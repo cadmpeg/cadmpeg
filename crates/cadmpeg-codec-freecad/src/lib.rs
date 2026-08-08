@@ -1639,6 +1639,7 @@ fn append_text_curve(
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis_id,
                     parameter_range: *parameter_range,
+                    same_sense: true,
                 },
                 cache_fit_tolerance: None,
             });

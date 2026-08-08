@@ -2487,12 +2487,14 @@ impl<'a> Builder<'a> {
             ProceduralCurveDefinition::Subset {
                 source,
                 parameter_range: [start, end],
+                same_sense,
             } => {
                 let source = self.emit_curve(source.as_str())?;
+                let sense = if *same_sense { ".T." } else { ".F." };
                 Some(self.emitter.emit(
                     "TRIMMED_CURVE",
                     &format!(
-                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
+                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),{sense},.PARAMETER.",
                         real(*start),
                         real(*end)
                     ),

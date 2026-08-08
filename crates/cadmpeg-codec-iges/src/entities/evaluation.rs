@@ -157,6 +157,7 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => {
             let parameter = parameter.clamp(
                 parameter_range[0].min(parameter_range[1]),

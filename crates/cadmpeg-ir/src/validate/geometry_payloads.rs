@@ -1969,6 +1969,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             crate::geometry::PcurveGeometry::Trimmed {
                 basis,
                 parameter_range,
+                ..
             } => {
                 parameter_range.iter().all(|value| value.is_finite())
                     && parameter_range[0] <= parameter_range[1]
@@ -2648,6 +2649,7 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         PcurveGeometry::Trimmed {
             basis,
             parameter_range,
+            ..
         } => {
             finite(parameter_range)
                 && parameter_range[0] <= parameter_range[1]
