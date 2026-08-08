@@ -15464,10 +15464,10 @@ fn transfer_feature_dimensions(
 }
 
 fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
-    let affected_geometry = agreed_feature_affected_ids(
+    let affected_geometry = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
+        &scan.features.replay_affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Geometry,
     );
     let generated_surfaces = scan
         .surfaces
@@ -16949,6 +16949,29 @@ fn feature_result_edge_ids_by_feature(
         .collect()
 }
 
+fn agreed_feature_geometry_ids<'a>(
+    affected_ids: &'a [crate::feature::FeatureAffectedIds],
+    replay_affected_ids: &'a [crate::feature::FeatureReplayAffectedIds],
+    feature_id: u32,
+) -> Option<&'a [u32]> {
+    let named = agreed_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    );
+    if named.is_some() {
+        return named;
+    }
+    if has_feature_affected_ids(
+        affected_ids,
+        feature_id,
+        crate::feature::AffectedIdKind::Geometry,
+    ) {
+        return None;
+    }
+    agreed_feature_replay_geometry_ids(replay_affected_ids, feature_id)
+}
+
 fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>) -> Option<f64> {
     let planes = planes.into_iter().collect::<Vec<_>>();
     let mut radii = Vec::new();
@@ -17331,23 +17354,11 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
 }
 
 fn round_support_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
-    let named_ids = agreed_feature_affected_ids(
+    let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
+        &scan.features.replay_affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Geometry,
-    );
-    let named_present = has_feature_affected_ids(
-        &scan.features.affected_ids,
-        feature_id,
-        crate::feature::AffectedIdKind::Geometry,
-    );
-    let replay_ids =
-        agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
-    let affected_ids = match (named_ids, replay_ids) {
-        (Some(ids), _) => ids,
-        (None, Some(ids)) if !named_present => ids,
-        _ => return None,
-    };
+    )?;
     let support_ids = affected_ids.get(2..)?;
     let support_planes = support_ids
         .iter()
@@ -17530,23 +17541,11 @@ fn chamfer_constant_distance(scan: &ContainerScan, feature_id: u32) -> Option<f6
                 })
             })
             .collect::<Option<Vec<_>>>()?;
-    let named_ids = agreed_feature_affected_ids(
+    let affected_ids = agreed_feature_geometry_ids(
         &scan.features.affected_ids,
+        &scan.features.replay_affected_ids,
         feature_id,
-        crate::feature::AffectedIdKind::Geometry,
-    );
-    let named_present = has_feature_affected_ids(
-        &scan.features.affected_ids,
-        feature_id,
-        crate::feature::AffectedIdKind::Geometry,
-    );
-    let replay_ids =
-        agreed_feature_replay_geometry_ids(&scan.features.replay_affected_ids, feature_id);
-    let affected_ids = match (named_ids, replay_ids) {
-        (Some(ids), _) => ids,
-        (None, Some(ids)) if !named_present => ids,
-        _ => return None,
-    };
+    )?;
     let planes = placed_planes(scan);
     let unplaced_affected_plane = affected_ids.iter().any(|id| {
         scan.surfaces

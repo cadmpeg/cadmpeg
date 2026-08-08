@@ -6052,6 +6052,35 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             edge_extent: crate::feature::ReplayExtentSource::Inherited,
             offset,
         };
+    let geometry = |ids: &[u32], offset| crate::feature::FeatureAffectedIds {
+        feature_id: 6,
+        kind: crate::feature::AffectedIdKind::Geometry,
+        ids: ids.to_vec(),
+        offset,
+    };
+    let replay_geometry = replay(&[9], &[7], 80);
+    assert_eq!(
+        agreed_feature_geometry_ids(&[], std::slice::from_ref(&replay_geometry), 6),
+        Some(&[9][..])
+    );
+    let named_empty = geometry(&[], 60);
+    assert_eq!(
+        agreed_feature_geometry_ids(
+            std::slice::from_ref(&named_empty),
+            std::slice::from_ref(&replay_geometry),
+            6,
+        ),
+        Some(&[][..])
+    );
+    let conflicting_named = [geometry(&[7], 60), geometry(&[8], 70)];
+    assert_eq!(
+        agreed_feature_geometry_ids(
+            &conflicting_named,
+            std::slice::from_ref(&replay_geometry),
+            6,
+        ),
+        None
+    );
     assert_eq!(
         agreed_feature_replay_geometry_ids(
             &[replay(&[1, 2], &[7], 80), replay(&[1, 2], &[7], 90)],
