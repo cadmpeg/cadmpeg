@@ -1030,26 +1030,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
 
-### DI-54. Helix fit thresholds
-
-**Question.** What residual bound promotes a helix mesh fit to a placed helix, and does any record support axis snapping?
-
-**Known.** `sldprt.md` §2 "An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object" authorizes the fit: the ordered points sample the helix, and their circular projection determines the axis placement and radius.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/helix.rs:84` adds two constants that the specification does not give:
-
-```rust
-if max_error > radius_estimate * 5.0e-4 { return None; }
-let snap = (max_error / radius_estimate * 20.0).max(1.0e-10);
-for component in [&mut axis.x, &mut axis.y, &mut axis.z] {
-    if component.abs() < snap { *component = 0.0; }
-}
-```
-
-`5.0e-4` decides whether the feature becomes a placed helix. `20.0` makes the snap bound depend on the mesh residual, so a finer mesh gives a different decoded axis for the same part.
-
-**Need.** We must know the bound, or state it as a decoder policy with a fixed value. A decoded axis must not change with tessellation quality.
-
 ### DI-57. Bridge-arc construction from neighbour tangency
 
 **Question.** Which record makes an unresolved bounded curve a fillet arc tangent to its neighbours?

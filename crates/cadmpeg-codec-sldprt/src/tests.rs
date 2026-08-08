@@ -1952,9 +1952,38 @@ fn helix_polyline_fit_recovers_axis_radius_and_rise() {
     assert!((origin.x - 10.0).abs() < 1.0e-9);
     assert!((origin.y - 20.0).abs() < 1.0e-9);
     assert!((origin.z - 30.0).abs() < 1.0e-9);
-    assert_eq!(axis, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
+    assert!(axis.x.abs() < 1.0e-9);
+    assert!((axis.y + 1.0).abs() < 1.0e-12);
+    assert!(axis.z.abs() < 1.0e-9);
     assert!((radius - 3.5).abs() < 1.0e-9);
     assert!((rise - 3.2).abs() < 1.0e-9);
+}
+
+#[test]
+fn helix_fit_does_not_snap_axis_to_mesh_residual() {
+    let axis_x: f64 = 4.0e-5;
+    let axis_y = -(1.0 - axis_x * axis_x).sqrt();
+    let points = (0..=64)
+        .map(|index| {
+            let t = f64::from(index) / 64.0;
+            let angle = std::f64::consts::FRAC_PI_2 * t;
+            let mut point = cadmpeg_ir::math::Point3::new(
+                10.0 + axis_x * 3.2 * t - 3.5 * axis_y.abs() * angle.sin(),
+                20.0 + axis_y * 3.2 * t - 3.5 * axis_x * angle.sin(),
+                30.0 + 3.5 * angle.cos(),
+            );
+            if index == 32 {
+                point.x += 2.0e-5;
+            }
+            point
+        })
+        .collect::<Vec<_>>();
+    let (_, axis, radius, _) =
+        crate::resolved_features::helix::fit_helix_polyline(&points, 0.25, false).unwrap();
+    assert!(axis.x > 3.0e-5 && axis.x < 5.0e-5, "{axis:?}");
+    assert!(axis.y < -0.999_999_99, "{axis:?}");
+    assert!(axis.z.abs() < 1.0e-6, "{axis:?}");
+    assert!((radius - 3.5).abs() < 1.0e-5);
 }
 
 #[test]
