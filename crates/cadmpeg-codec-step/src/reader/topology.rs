@@ -24,7 +24,9 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::geometry::{angular_parameter_candidates, scale_pcurve_geometry};
+use super::geometry::{
+    angular_parameter_candidates, scale_pcurve_geometry, surface_parameter_periods,
+};
 use super::index::CarrierIndex;
 
 pub(super) struct TopologyResult {
@@ -1549,13 +1551,13 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_committed_surfaces, pcurve_endpoint_fit};
+    use super::{drop_committed_surfaces, pcurve_endpoint_fit, pcurve_selection_seeds};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
     use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
     use cadmpeg_ir::index::ModelIndex;
-    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
     use cadmpeg_ir::units::Units;
     use std::collections::BTreeSet;
@@ -1650,6 +1652,36 @@ mod tests {
         assert_eq!(fit.start_parameter, 0.0);
         assert_eq!(fit.end_parameter, 1.0);
         assert!(fit.score <= f64::EPSILON);
+    }
+
+    #[test]
+    fn periodic_surface_line_seeds_cover_both_parameter_axes() {
+        let surface_id = SurfaceId("step:data:surface#periodic-seeds".into());
+        let surface_geometry = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 2.0,
+            minor_radius: 1.0,
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: surface_geometry.clone(),
+            source_object: None,
+        });
+        let index = ModelIndex::new(&ir);
+
+        for direction in [Point2::new(1.0, 0.0), Point2::new(0.0, 1.0)] {
+            let geometry = PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction,
+            };
+            let seeds = pcurve_selection_seeds(&index, &surface_id, &geometry, &surface_geometry);
+            assert!(seeds
+                .iter()
+                .any(|seed| { (*seed - std::f64::consts::PI).abs() <= 1.0e-12 }));
+        }
     }
 
     #[test]
@@ -3519,6 +3551,20 @@ fn pcurve_selection_seeds(
         ]);
     }
     if let Some((origin, direction)) = geometry.line_parameters() {
+        if let Some(period) = surface_parameter_periods(surface)[0] {
+            if direction.u != 0.0 {
+                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    seeds.push((period * fraction - origin.u) / direction.u);
+                }
+            }
+        }
+        if let Some(period) = surface_parameter_periods(surface)[1] {
+            if direction.v != 0.0 {
+                for fraction in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    seeds.push((period * fraction - origin.v) / direction.v);
+                }
+            }
+        }
         if let Some([[u_lower, u_upper], [v_lower, v_upper]]) =
             surface_selection_parameter_domains(index, surface_id, surface)
         {

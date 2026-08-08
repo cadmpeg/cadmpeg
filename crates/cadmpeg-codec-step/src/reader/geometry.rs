@@ -3838,7 +3838,7 @@ fn surface_parameter_scales_for_step(
     }
 }
 
-fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
+pub(super) fn surface_parameter_periods(geometry: &SurfaceGeometry) -> [Option<f64>; 2] {
     match geometry {
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
             [Some(std::f64::consts::TAU), None]

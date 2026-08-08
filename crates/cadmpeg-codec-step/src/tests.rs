@@ -2698,6 +2698,41 @@ fn degree_valued_cylindrical_pcurve_is_normalized_before_topology_selection() {
 }
 
 #[test]
+fn periodic_surface_pcurve_selection_seeds_line_parameter_branches() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#3=CARTESIAN_POINT('',(0.,0.,0.));",
+            "#3=CARTESIAN_POINT('',(-1.,0.,0.));",
+        )
+        .replace(
+            "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+            "#4=CARTESIAN_POINT('',(-0.5403023058681398,0.,0.8414709848078965));",
+        )
+        .replace("#16=LINE('',#3,#13);", "#16=CIRCLE('',#27,1.);")
+        .replace(
+            "#27=AXIS2_PLACEMENT_3D('',#3,#9,#10);",
+            "#70=CARTESIAN_POINT('',(0.,0.,0.));\n#71=DIRECTION('',(0.,1.,0.));\n#72=DIRECTION('',(1.,0.,0.));\n#27=AXIS2_PLACEMENT_3D('',#70,#71,#72);",
+        )
+        .replace("#28=PLANE('',#27);", "#28=CYLINDRICAL_SURFACE('',#27,1.);");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode periodic cylindrical pcurve");
+
+    assert!(decoded.ir.model.coedges.iter().any(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
+    }));
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("curve #57")
+            && loss.message.contains("no pcurve")
+    }));
+}
+
+#[test]
 fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
