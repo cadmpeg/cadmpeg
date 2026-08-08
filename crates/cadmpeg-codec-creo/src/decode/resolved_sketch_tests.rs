@@ -4565,6 +4565,38 @@ fn unique_parallel_round_supports_define_constant_radius() {
 }
 
 #[test]
+fn round_support_planes_define_radius_without_generated_surface_rows() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 913,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![1, 2, 3, 4],
+            offset: 0,
+        });
+    let mut ir = CadIr::empty(Units::default());
+    for (id, origin, normal) in [
+        (1, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        (2, [0.0, 5.0, 0.0], [0.0, 1.0, 0.0]),
+        (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+    ] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+}
+
+#[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     for (id, kind) in [

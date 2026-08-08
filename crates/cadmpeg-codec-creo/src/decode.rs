@@ -17254,25 +17254,24 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     {
         return Some(radius);
     }
-    let cylinder_rows = scan
+    let generated_rows = scan
         .surfaces
         .rows
         .iter()
-        .filter(|row| {
-            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-        })
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    if generated_rows.is_empty() {
+        return round_support_radius(scan, ir, feature_id);
+    }
+    let cylinder_rows = generated_rows
+        .iter()
+        .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        .copied()
         .collect::<Vec<_>>();
     if cylinder_rows.is_empty() {
-        let generated_rows = scan
-            .surfaces
-            .rows
+        if generated_rows
             .iter()
-            .filter(|row| row.feature_id == feature_id)
-            .collect::<Vec<_>>();
-        if generated_rows.is_empty()
-            || generated_rows
-                .iter()
-                .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
+            .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
         {
             return None;
         }
@@ -17290,6 +17289,10 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     {
         return unique_positive_length(&cylinder_radii);
     }
+    round_support_radius(scan, ir, feature_id)
+}
+
+fn round_support_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
     let named_ids = agreed_feature_affected_ids(
         &scan.features.affected_ids,
         feature_id,
