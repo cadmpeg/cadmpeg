@@ -174,7 +174,11 @@ Length values convert to millimetres. Plane-angle values remain radians. SI
 prefixes apply before conversion-based-unit factors. Conversion-based units
 form an acyclic chain that ends in a dimensional base unit. Representation
 uncertainty is a linear tolerance measured in the representation's length
-unit.
+unit. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
+whose unit resolves to a length unit. When several length measures are
+present, the one named `distance_accuracy_value` is selected; otherwise a
+unique length measure is required. An ambiguous set does not define a linear
+tolerance.
 
 A conical surface accepts zero reference radius at its placement origin. Its
 finite half-angle converts from the representation's plane-angle unit to

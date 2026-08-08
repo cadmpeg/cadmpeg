@@ -1277,7 +1277,51 @@ fn decode_resolves_conversion_units_and_linear_uncertainty() {
 
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.points[0].position.x, 50.8);
-    assert_eq!(result.ir.tolerances.linear, 0.0254);
+    assert!((result.ir.tolerances.linear - 0.0254).abs() < 1e-12);
+}
+
+#[test]
+fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('mixed uncertainty'),'2;1');\nFILE_NAME('mixed-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);\n#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=UNCERTAINTY_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.5),#4,'angle_accuracy','');\n#6=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.002),#3,'distance_accuracy_value','');\n#7=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#5,#6)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#8=CARTESIAN_POINT('two inches',(2.,0.,0.));\n#9=SHAPE_REPRESENTATION('construction points',(#8),#7);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode mixed uncertainty units");
+
+    assert!((result.ir.tolerances.linear - 0.0508).abs() < 1e-12);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred }));
+}
+
+#[test]
+fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('named uncertainty'),'2;1');\nFILE_NAME('named-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'manufacturing_accuracy','');\n#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'distance_accuracy_value','');\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#6=CARTESIAN_POINT('point',(1.,0.,0.));\n#7=SHAPE_REPRESENTATION('construction points',(#6),#5);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode named uncertainty");
+
+    assert!((result.ir.tolerances.linear - 0.2).abs() < 1e-12);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred }));
+}
+
+#[test]
+fn decode_reports_ambiguous_length_uncertainty() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('ambiguous uncertainty'),'2;1');\nFILE_NAME('ambiguous-uncertainty','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.1),#1,'first_accuracy','');\n#3=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1,'second_accuracy','');\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#2,#3)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));\n#6=CARTESIAN_POINT('point',(1.,0.,0.));\n#7=SHAPE_REPRESENTATION('construction points',(#6),#5);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode ambiguous uncertainty");
+
+    assert_eq!(result.ir.tolerances.linear, 1e-6);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Warning
+    }));
 }
 
 #[test]

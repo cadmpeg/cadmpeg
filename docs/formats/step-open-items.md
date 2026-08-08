@@ -309,23 +309,14 @@ value to bind a scale per representation.
 
 ### UM-02. Representation uncertainty selection
 
-**Question.** Which `UNCERTAINTY_MEASURE_WITH_UNIT` of a
-`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` is the linear tolerance, when the
-context lists more than one?
+**Resolved.** The linear tolerance is the `UNCERTAINTY_MEASURE_WITH_UNIT`
+whose unit resolves to a length unit. If several length measures are present,
+the measure named `distance_accuracy_value` takes precedence. Without that
+name, exactly one length measure is required. An angular measure does not
+block a later length measure, and an ambiguous set produces a machine-readable
+geometry loss instead of selecting by source order.
 
-**Known.** `step.md` §8 "Representation uncertainty is a linear tolerance
-measured in the representation's length unit." states the kind of the value
-but not which measure carries it. The decoder takes the first reference in the
-first uncertainty context and does not read the measure's `name`
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:2805-2821`). The writer
-emits `distance_accuracy_value` (`crates/cadmpeg-codec-step/src/lib.rs:1437`),
-so the convention is known to the project and unused by the reader.
-
-**Need.** When the first listed measure carries an angular unit, `unit_scale_mm`
-returns nothing, the whole function aborts, and `ir.tolerances.linear` keeps
-its default with no warning and no loss. That tolerance feeds Cartesian trim
-resolution and pcurve scoring, so trim selects resolve differently than the
-file states. We must know the selection rule to read the declared tolerance.
+**Known.** `step.md` §8 defines the length-unit invariant and selection rule.
 
 ### UM-03. SI prefix on plane-angle units
 
