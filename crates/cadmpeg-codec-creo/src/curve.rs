@@ -3926,34 +3926,6 @@ fn framed_rows(payload: &[u8]) -> Vec<FramedRow> {
     result
 }
 
-fn suffix_candidates(row: &[u8], body_start: usize, close: usize) -> Vec<usize> {
-    let mut candidates = Vec::new();
-    for length in 4..=11 {
-        let Some(start) = close
-            .checked_sub(length)
-            .filter(|start| *start >= body_start)
-        else {
-            continue;
-        };
-        let Ok((_, p1)) = reference_id(row, start) else {
-            continue;
-        };
-        let Ok((_, p2)) = reference_id(row, p1) else {
-            continue;
-        };
-        let Ok((_, p3)) = reference_id(row, p2) else {
-            continue;
-        };
-        let Ok((_, end)) = reference_id(row, p3) else {
-            continue;
-        };
-        if end == close {
-            candidates.push(start);
-        }
-    }
-    candidates
-}
-
 fn curve_scalar_lane(
     body: &[u8],
     type_byte: u8,
@@ -4028,8 +4000,8 @@ fn curve_scalar_lane(
     (scalars, references, opaque_spans)
 }
 
-/// Decode analytic bodies from positional curve rows, retaining ambiguous
-/// suffix boundaries without asserting topology connectivity.
+/// Decode analytic bodies from positional curve rows with one valid terminal
+/// topology suffix. Rows without a unique suffix are not typed.
 pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut records = Vec::new();
@@ -4047,10 +4019,12 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
         if row.get(close..) != Some(&[0, 0, 0xe3]) || body_start > close {
             continue;
         }
-        let candidates = suffix_candidates(row, body_start, close);
-        let Some(&suffix_start) = candidates.first() else {
+        let Some((suffix_start, _)) = topology_suffix(row) else {
             continue;
         };
+        if suffix_start < body_start {
+            continue;
+        }
         let body = row[body_start..suffix_start].to_vec();
         let (scalar_tokens, references, opaque_spans) = curve_scalar_lane(&body, type_byte, &cache);
         let scalar_values = scalar_tokens.iter().map(|token| token.value).collect();
@@ -4067,13 +4041,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<CurveParameterRecord> {
             skipped_references,
             references,
             opaque_spans,
-            suffix: if candidates.len() == 1 {
-                CurveSuffixStatus::Unique
-            } else {
-                CurveSuffixStatus::Ambiguous {
-                    candidate_count: candidates.len(),
-                }
-            },
+            suffix: CurveSuffixStatus::Unique,
             offset: framed.start,
             body_offset: framed.start + body_start,
             suffix_offset: framed.start + suffix_start,
@@ -6787,6 +6755,17 @@ mod tests {
                 offset: 15,
             }]
         );
+    }
+
+    #[test]
+    fn parameter_records_withhold_rows_with_ambiguous_terminal_suffixes() {
+        let mut payload = b"topol_ref_data\0".to_vec();
+        payload.extend_from_slice(&[7, 8, 4, 1, 0xf6]);
+        payload.extend_from_slice(&[1, 2, 3, 4, 5]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+        assert!(topology_rows(&payload).is_empty());
+        assert!(parameter_records(&payload).is_empty());
     }
 
     #[test]

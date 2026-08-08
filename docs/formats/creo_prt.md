@@ -1288,10 +1288,13 @@ carrier incidence is not limited to the stored side of each edge.
 The raw `type_byte` does not by itself identify a curve family.
 
 The parameter body is the byte range after the two direction flags and before
-the selected four-reference suffix. Its scalar walk retains each decoded token
-with body-relative offset, length, and exact bytes. Canonical `f7` entity
-references retain the same span data. Maximal bytes claimed by neither class
-form opaque spans, so the three span sets partition the complete body.
+the unique four-reference suffix. The suffix is valid only when exactly one
+canonical four-reference parse reaches `00 00 e3`; zero or multiple parses
+withhold the complete row from typed parameter records. Its scalar walk
+retains each decoded token with body-relative offset, length, and exact bytes.
+Canonical `f7` entity references retain the same span data. Maximal bytes
+claimed by neither class form opaque spans, so the three span sets partition
+the complete body.
 
 ### 4.1 Pcurve endpoints
 

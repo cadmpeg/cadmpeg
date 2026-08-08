@@ -322,14 +322,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the binding to add the generated faces to the body topology.
 
-### GS-28. Curve parameter-record suffix boundary
-
-**Question.** Which rule selects the body and suffix boundary of a curve parameter record when more than one four-reference suffix start is byte-valid?
-
-**Known.** `creo_prt.md` §4.1 defines the suffix as four references before the record close.
-
-**Need.** We must know the rule to bound the scalar lane. `curve.rs` `parameter_records` accepts the first candidate, which its `4..=11` scan makes the shortest suffix and the longest body. The record is marked ambiguous and its geometry consumers drop it, so the wrong split reaches the native arena only. The sibling function `topology_suffix` rejects the same condition.
-
 ### GS-32. `tab_cyl` chart intercept magnitude
 
 **Question.** Which field gives the first-axis intercept of a tabulated-cylinder directrix chart?
