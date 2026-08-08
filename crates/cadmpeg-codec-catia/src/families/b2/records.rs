@@ -1420,10 +1420,7 @@ pub(crate) fn b2_embedded_cylinders_from_records(
             continue;
         }
         let wrapper_pos = group.pos;
-        let end = groups
-            .get(index + 1)
-            .map_or(data.len(), |next| next.pos)
-            .min(wrapper_pos.saturating_add(2500));
+        let end = groups.get(index + 1).map_or(data.len(), |next| next.pos);
         let mut search = wrapper_pos + 3;
         while search + 3 <= end {
             let Some(relative) = data[search..end]

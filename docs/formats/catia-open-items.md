@@ -570,14 +570,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Each witness is that both lifted pcurve endpoints land within `2e-3` mm of a `05 08 01` row, with the UV pair inside the candidate's stored parameter box. A cylinder and a torus can both satisfy that. The bound carrier gives the block's shared 3D loci, so every endpoint match and pcurve after it comes from that carrier. We must know the cross-family relation.
 
-### SN-41. Type-3 class-`0x60` group extent
-
-**Question.** What bounds the extent of a type-3 `b2 03 60` cylinder group?
-
-**Known.** `catia.md` §6.5 `b2 03 60` gives "Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener." `b2::records` stops the group at the next opener or 2500 bytes after the opener, whichever comes first. Each embedded frame is about 100 bytes, so the bound truncates a group after about 24 cylinders.
-
-**Need.** A truncated group leaves its remaining cylinders undecoded. They are not framed `b2 03 28` records, so no other path recovers them, and the edge sides that need them stay unbound. We must know the extent rule, or the bound must come from the opener.
-
 ### SN-42. Consolidated record census by marker
 
 **Question.** Where does the consolidated A/B record cluster start, so that a frame walk can enumerate it?

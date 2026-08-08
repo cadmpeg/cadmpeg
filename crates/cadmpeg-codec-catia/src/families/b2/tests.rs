@@ -1355,3 +1355,17 @@ fn b2_composite_parser_reads_embedded_cylinder_frame() {
     );
     assert!(crate::families::b2::records::b2_cylinders(&bytes).is_empty());
 }
+
+#[test]
+fn b2_composite_parser_reads_the_complete_type_three_group() {
+    let one = b2_embedded_cylinder_stream();
+    let frame = one[7..].to_vec();
+    let mut bytes = one;
+    for _ in 0..30 {
+        bytes.extend_from_slice(&frame);
+    }
+
+    let cylinders = crate::families::b2::records::b2_embedded_cylinders(&bytes);
+    assert_eq!(cylinders.len(), 31);
+    assert!(cylinders.iter().all(|cylinder| cylinder.wrapper_pos == 0));
+}
