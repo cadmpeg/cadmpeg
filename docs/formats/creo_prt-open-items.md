@@ -322,16 +322,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the binding to add the generated faces to the body topology.
 
-### GS-24. Prototype first-instance row selection
-
-**Question.** Which condition makes the preceding adjacent surface row, and not the following adjacent row, the first instance of a named prototype?
-
-**Known.** `creo_prt.md` §3.2 "Named prototype fields describe the first surface instance" states that the preceding adjacent row is the first instance when the prototype separates that row from replay rows, and that the following adjacent row is the first instance in other conditions.
-
-**Conflict.** The specification makes the selection conditional. `decode.rs` `unique_surface_prototype_associations` selects the nearest preceding same-family row in all conditions and uses the following row only when the nearest preceding row has a different family. The decoder does not evaluate the separation condition.
-
-**Need.** We must know the condition to apply prototype `local_sys`, radius, and spline fields to the correct surface row. A wrong selection gives one surface the geometry of a different surface of the same family. The per-row uniqueness filter rejects two prototypes that select one row; it does not reject two prototypes that each select a different wrong row.
-
 ### GS-28. Curve parameter-record suffix boundary
 
 **Question.** Which rule selects the body and suffix boundary of a curve parameter record when more than one four-reference suffix start is byte-valid?

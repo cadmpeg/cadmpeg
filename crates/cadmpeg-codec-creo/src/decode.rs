@@ -26097,6 +26097,33 @@ fn prototype_local_frame(
 #[cfg(test)]
 mod prototype_local_frame_tests;
 
+#[cfg(test)]
+mod prototype_association_tests;
+
+fn first_instance_surface_row(
+    rows: &[crate::surface::SurfaceRow],
+    frame_start: usize,
+    frame_end: usize,
+    prototype_offset: usize,
+    row_kind: crate::surface::SurfaceKind,
+) -> Option<&crate::surface::SurfaceRow> {
+    let rows = rows
+        .iter()
+        .filter(|row| row.offset >= frame_start && row.offset < frame_end)
+        .collect::<Vec<_>>();
+    let previous = rows
+        .iter()
+        .copied()
+        .filter(|row| row.offset < prototype_offset)
+        .max_by_key(|row| row.offset);
+    if previous.is_some_and(|row| row.kind == row_kind) {
+        return previous;
+    }
+    rows.into_iter()
+        .filter(|row| row.offset > prototype_offset && row.kind == row_kind)
+        .min_by_key(|row| row.offset)
+}
+
 fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Vec<(
@@ -26134,6 +26161,9 @@ fn unique_surface_prototype_associations<'a>(
             Vec::new()
         };
         let (adjacent_start, adjacent_end) = if frame_bounds.is_empty() {
+            if !scan.framing.data.is_empty() {
+                continue;
+            }
             (section.offset, section_limit)
         } else {
             let relative_record_offset = record.offset.saturating_sub(section.offset);
@@ -26144,21 +26174,13 @@ fn unique_surface_prototype_associations<'a>(
             };
             (section.offset + start, section.offset + end)
         };
-        let adjacent_rows = scan
-            .surfaces
-            .rows
-            .iter()
-            .filter(|row| row.offset >= adjacent_start && row.offset < adjacent_end);
-        let previous = adjacent_rows
-            .clone()
-            .filter(|row| row.offset < record.offset)
-            .max_by_key(|row| row.offset);
-        let following = adjacent_rows
-            .filter(|row| row.offset > record.offset)
-            .min_by_key(|row| row.offset);
-        let previous = previous.filter(|row| row.kind == row_kind);
-        let following = following.filter(|row| row.kind == row_kind);
-        let Some(row) = previous.or(following) else {
+        let Some(row) = first_instance_surface_row(
+            &scan.surfaces.rows,
+            adjacent_start,
+            adjacent_end,
+            record.offset,
+            row_kind,
+        ) else {
             continue;
         };
         if crate::surface::unique_surface_row(&scan.surfaces.rows, row.id)
