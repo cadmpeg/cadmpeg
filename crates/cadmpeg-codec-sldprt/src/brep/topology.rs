@@ -37,6 +37,8 @@ pub struct Record {
     pub marker: Option<u8>,
     /// World-point coordinates in metres, for `00 1d` only.
     pub xyz_m: Option<[f64; 3]>,
+    /// Byte offset of the world-point coordinates, for `00 1d` only.
+    pub xyz_offset: Option<usize>,
     /// Owning entity reference carried by bridge records.
     pub owner: Option<u16>,
     /// Byte offset of the record's tag within the stream body.
@@ -104,6 +106,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
             refs,
             marker: Some(marker),
             xyz_m: None,
+            xyz_offset: None,
             owner: (owner > 1).then_some(owner),
             offset: off,
         });
@@ -127,6 +130,7 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
         refs,
         marker: Some(marker),
         xyz_m: None,
+        xyz_offset: None,
         owner: (owner > 1).then_some(owner),
         offset: off,
     })
@@ -146,6 +150,7 @@ fn parse_loop(buf: &[u8], off: usize) -> Option<Record> {
         refs,
         marker: None,
         xyz_m: None,
+        xyz_offset: None,
         owner: None,
         offset: off,
     })
@@ -191,6 +196,7 @@ fn parse_edge_use(buf: &[u8], off: usize) -> Option<Record> {
         refs,
         marker: None,
         xyz_m: None,
+        xyz_offset: None,
         owner: None,
         offset: off,
     })
@@ -223,6 +229,7 @@ fn parse_coedge(buf: &[u8], off: usize) -> Option<Record> {
         refs,
         marker: Some(marker),
         xyz_m: None,
+        xyz_offset: None,
         owner: None,
         offset: off,
     })
@@ -252,6 +259,7 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
         refs,
         marker: None,
         xyz_m: None,
+        xyz_offset: None,
         owner: None,
         offset: off,
     })
@@ -297,6 +305,7 @@ fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
         refs,
         marker: None,
         xyz_m: Some([x, y, z]),
+        xyz_offset: Some(xyz_at),
         owner: None,
         offset: off,
     })
@@ -333,29 +342,45 @@ fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>
     }
 }
 
+fn xyz_bytes(xyz_m: [f64; 3]) -> [u8; 24] {
+    let mut bytes = [0; 24];
+    for (slot, value) in bytes.chunks_exact_mut(8).zip(xyz_m) {
+        slot.copy_from_slice(&value.to_be_bytes());
+    }
+    bytes
+}
+
+/// Replace coordinates only when the old bytes still match the parsed record.
+pub(crate) fn patch_point_values(
+    buf: &mut [u8],
+    xyz_at: usize,
+    old_xyz_m: [f64; 3],
+    new_xyz_m: [f64; 3],
+) -> bool {
+    let old_bytes = xyz_bytes(old_xyz_m);
+    if buf.get(xyz_at..xyz_at + old_bytes.len()) != Some(old_bytes.as_slice()) {
+        return false;
+    }
+    let new_bytes = xyz_bytes(new_xyz_m);
+    let Some(bytes) = buf.get_mut(xyz_at..xyz_at + new_bytes.len()) else {
+        return false;
+    };
+    bytes.copy_from_slice(&new_bytes);
+    true
+}
+
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let Some(record) = scan(buf).points.remove(&attr) else {
         return false;
     };
-    let Some(p) = body_start(buf, record.offset, 0x1d) else {
+    let Some(old_xyz_m) = record.xyz_m else {
         return false;
     };
-    let mut xyz_at = p + 14;
-    let mut cursor = p + 6;
-    while buf.get(cursor + 2) == Some(&1) && cursor < p + 54 {
-        cursor += 3;
-    }
-    if cursor != p + 6 {
-        xyz_at = cursor;
-    }
-    let Some(bytes) = buf.get_mut(xyz_at..xyz_at + 24) else {
+    let Some(xyz_at) = record.xyz_offset else {
         return false;
     };
-    for (slot, value) in bytes.chunks_exact_mut(8).zip(xyz_m) {
-        slot.copy_from_slice(&value.to_be_bytes());
-    }
-    true
+    patch_point_values(buf, xyz_at, old_xyz_m, xyz_m)
 }
 
 /// Scan the stream body for every typed topology record. Successful records do
@@ -480,5 +505,31 @@ mod tests {
             assert_eq!(bridge.refs, expected);
             assert_eq!(bridge.marker, Some(0x2d));
         }
+    }
+
+    #[test]
+    fn patch_point_uses_parsed_adjacent_coordinate_offset() {
+        let mut bytes = vec![0, 0x1d];
+        bytes.extend(60_u16.to_be_bytes());
+        bytes.extend(0_u32.to_be_bytes());
+        for reference in [0_u16, 0x0102, 0, 0] {
+            bytes.extend(reference.to_be_bytes());
+        }
+        for value in [1.0_f64, 2.0, 3.0] {
+            bytes.extend(value.to_be_bytes());
+        }
+
+        assert!(!patch_point_values(
+            &mut bytes,
+            11,
+            [1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]
+        ));
+        assert!(patch_point(&mut bytes, 60, [4.0, 5.0, 6.0]));
+
+        let point = parse_point(&bytes, 0, false).expect("adjacent world point");
+        assert_eq!(point.refs, vec![0, 0x0102, 0, 0]);
+        assert_eq!(point.xyz_m, Some([4.0, 5.0, 6.0]));
+        assert_eq!(point.xyz_offset, Some(16));
     }
 }

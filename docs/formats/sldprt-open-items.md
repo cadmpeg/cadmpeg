@@ -838,29 +838,6 @@ Each of the five opens with a guard that returns `Ok` when the document carries 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/history.rs:16494` `dependency_residual` is a sixth guard with the same defect. For a `Pattern` feature it returns `Vec::new()` for both the expected and the projected side, so the consistency gate at `history.rs:16407` is always true. For extrude, revolve, sweep, loft, and rib it removes every sketch-typed dependency from both sides, so a changed profile dependency also passes. Give this guard a negative test with the other five.
 
-### EV-02. `patch_point` coordinate offset
-
-**Question.** Which offset holds the coordinates of a `00 1d` point record on the write path?
-
-**Known.** `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:280` parses the adjacent form with the references at `p + 6` and the coordinates at `p + 14`.
-
-`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:337` `patch_point` does not use the parsed position. It runs a second probe and writes at the result:
-
-```rust
-let mut xyz_at = p + 14;
-let mut cursor = p + 6;
-while buf.get(cursor + 2) == Some(&1) && cursor < p + 54 { cursor += 3; }
-if cursor != p + 6 { xyz_at = cursor; }
-```
-
-The function holds `record`, which carries the coordinates the decoder read, and never compares the bytes at `xyz_at` with them. `crates/cadmpeg-codec-sldprt/src/writer_patch.rs:397` performs exactly that comparison before it writes and refuses on a mismatch.
-
-An adjacent-form record whose second reference lies in `256..=511` has the byte `1` at `p + 8`, so the probe moves `xyz_at` to `p + 9` and the write covers three references and part of the coordinate block. `patch_point` then returns `true`.
-
-Callers: `resolved_features/sketch_write.rs:716`, `:790`, and `:968`. None of them verifies the previous bytes.
-
-**Need.** We need the write to use the offset the parse used, and to verify the previous bytes before it writes. We need a negative test that a patch at a mismatched offset fails.
-
 ### EV-03. Regenerated `SWObjects` record content
 
 **Question.** What do the undecoded bytes of a regenerated `SWObjects` metadata record hold?
