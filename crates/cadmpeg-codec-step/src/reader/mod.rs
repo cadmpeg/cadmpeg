@@ -15,6 +15,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
 mod dependencies;
+mod drawing;
 mod geometry;
 mod index;
 mod pmi;
@@ -240,6 +241,9 @@ fn decode_exchange_mode(
     typed_records.extend(pmi.typed_records);
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
+    let drawing = drawing::decode(exchange, &mut ir, &typed_records);
+    report.losses.extend(drawing.losses);
+    typed_records.extend(drawing.typed_records);
     let mut post_decode_warnings = Vec::new();
     retain_unowned_pcurves(
         exchange,

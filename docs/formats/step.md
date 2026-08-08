@@ -402,3 +402,16 @@ their source links. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.
+
+Drawing structure is a linked object graph. `DRAWING_DEFINITION` identifies the
+drawing, `DRAWING_REVISION` identifies one revision of it, and
+`DRAWING_SHEET_REVISION` identifies a sheet revision with its ordered drawing
+items, presentation context, and revision. `DRAWING_SHEET_REVISION_USAGE`
+links a sheet revision to its drawing revision and carries the sheet sequence.
+`PRESENTATION_VIEW` carries a named view, its ordered items, and presentation
+context. `PRESENTATION_SIZE` links a sheet revision to its presentation size.
+`DRAUGHTING_MODEL` carries a presentation model with its items and context;
+`DRAUGHTING_MODEL_ITEM_ASSOCIATION` links model items to their semantic
+definition. `DRAUGHTING_CALLOUT` carries an ordered callout-content set.
+Unsupported drawing graphics retain their source entity and references without
+becoming geometric carriers.
