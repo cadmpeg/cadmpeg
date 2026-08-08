@@ -3481,13 +3481,10 @@ mod tests {
             Some(&Point3::new(2.0, 0.0, 3.0))
         );
 
-        let reversed = cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0])
-            .expect("reversed physical edge helix");
-        let ProceduralCurveDefinition::Helix { center, pitch, .. } = reversed.definition else {
-            unreachable!();
-        };
-        assert_eq!(center, Point3::new(0.0, 0.0, 7.0));
-        assert!((pitch.z + 4.0 * std::f64::consts::PI).abs() < 1e-12);
+        assert!(
+            cylinder_helix(&pcurve, &cylinder, [0.0, 1.0], end, [2.0, 0.0, 3.0]).is_none(),
+            "the native edge endpoint order is authoritative"
+        );
 
         let trimmed_start = [2.0 * 0.5_f64.cos(), 2.0 * 0.5_f64.sin(), 4.0];
         let trimmed_end = [2.0 * 1.5_f64.cos(), 2.0 * 1.5_f64.sin(), 6.0];

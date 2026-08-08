@@ -2116,6 +2116,8 @@ fn bind_native_vertices(
         .map(|(vertex, point)| (vertex, points[point]))
         .collect();
     logical_coordinates.extend(native_coordinates);
+    let mut endpoint_candidates = HashMap::<u32, Vec<(u32, [f64; 3])>>::new();
+    let mut invalid_edges = HashSet::new();
     for loop_ in loops.values() {
         for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
             let (Some(vertices), Some(lifted)) = (
@@ -2124,28 +2126,39 @@ fn bind_native_vertices(
             ) else {
                 continue;
             };
-            match (
-                logical_coordinates.get(&vertices[0]).copied(),
-                logical_coordinates.get(&vertices[1]).copied(),
-            ) {
-                (Some(start), None) => {
-                    let start_lane = usize::from(
-                        distance_squared(start, lifted[1]) < distance_squared(start, lifted[0]),
-                    );
-                    logical_coordinates.insert(vertices[1], lifted[1 - start_lane]);
-                }
-                (None, Some(end)) => {
-                    let end_lane = usize::from(
-                        distance_squared(end, lifted[1]) < distance_squared(end, lifted[0]),
-                    );
-                    logical_coordinates.insert(vertices[0], lifted[1 - end_lane]);
-                }
-                (None, None) => {
-                    logical_coordinates.insert(vertices[0], lifted[0]);
-                    logical_coordinates.insert(vertices[1], lifted[1]);
-                }
-                (Some(_), Some(_)) => {}
+            if lifted
+                .iter()
+                .flatten()
+                .any(|coordinate| !coordinate.is_finite())
+            {
+                invalid_edges.insert(edge);
+                continue;
             }
+            for lane in 0..2 {
+                if let Some(existing) = logical_coordinates.get(&vertices[lane]) {
+                    if !endpoint_matches(*existing, lifted[lane]) {
+                        invalid_edges.insert(edge);
+                    }
+                } else {
+                    endpoint_candidates
+                        .entry(vertices[lane])
+                        .or_default()
+                        .push((edge, lifted[lane]));
+                }
+            }
+        }
+    }
+    for (vertex, candidates) in endpoint_candidates {
+        let Some((_, point)) = candidates.first().copied() else {
+            continue;
+        };
+        if candidates
+            .iter()
+            .all(|(_, candidate)| endpoint_matches(point, *candidate))
+        {
+            logical_coordinates.insert(vertex, point);
+        } else {
+            invalid_edges.extend(candidates.into_iter().map(|(edge, _)| edge));
         }
     }
     let mut logical_vertices: Vec<_> = logical_coordinates.into_iter().collect();
@@ -2159,7 +2172,11 @@ fn bind_native_vertices(
         logical_vertices.iter().map(|(_, point)| *point).collect();
     let logical_vertex_refs = logical_vertices.iter().map(|(vertex, _)| *vertex).collect();
     let mut edge_vertices = geometric_edges.clone();
+    edge_vertices.retain(|edge, _| !invalid_edges.contains(edge));
     for (&edge, vertices) in native_edges {
+        if invalid_edges.contains(&edge) {
+            continue;
+        }
         if let (Some(&start), Some(&end)) = (
             logical_vertex_indices.get(&vertices[0]),
             logical_vertex_indices.get(&vertices[1]),
@@ -2176,35 +2193,24 @@ fn bind_native_vertices(
             let Some(&loci) = edge_vertices.get(&edge) else {
                 continue;
             };
-            let forward = [
-                distance_squared(
-                    vertex_coordinate(points, &logical_vertex_points, loci[0]),
-                    lifted[0],
-                )
-                .sqrt(),
-                distance_squared(
-                    vertex_coordinate(points, &logical_vertex_points, loci[1]),
-                    lifted[1],
-                )
-                .sqrt(),
+            let residuals = [
+                (
+                    loci[0],
+                    distance_squared(
+                        vertex_coordinate(points, &logical_vertex_points, loci[0]),
+                        lifted[0],
+                    )
+                    .sqrt(),
+                ),
+                (
+                    loci[1],
+                    distance_squared(
+                        vertex_coordinate(points, &logical_vertex_points, loci[1]),
+                        lifted[1],
+                    )
+                    .sqrt(),
+                ),
             ];
-            let reverse = [
-                distance_squared(
-                    vertex_coordinate(points, &logical_vertex_points, loci[1]),
-                    lifted[0],
-                )
-                .sqrt(),
-                distance_squared(
-                    vertex_coordinate(points, &logical_vertex_points, loci[0]),
-                    lifted[1],
-                )
-                .sqrt(),
-            ];
-            let residuals = if forward[0].max(forward[1]) <= reverse[0].max(reverse[1]) {
-                [(loci[0], forward[0]), (loci[1], forward[1])]
-            } else {
-                [(loci[1], reverse[0]), (loci[0], reverse[1])]
-            };
             for (locus, residual) in residuals {
                 if residual > POINT_TOLERANCE && residual.is_finite() {
                     tolerances
@@ -2229,54 +2235,62 @@ fn propagate_vertex_points(
     points: &[[f64; 3]],
 ) -> HashMap<u32, usize> {
     let mut mapping = HashMap::<u32, usize>::new();
-    let mut completed = std::collections::HashSet::new();
+    let mut completed = HashSet::new();
     for seed in 0..constraints.len() {
         if completed.contains(&seed) {
             continue;
         }
-        let candidates = [false, true].map(|reverse| {
-            propagate_vertex_component(seed, reverse, constraints, adjacency, points)
-        });
-        let score = |(candidate, members): &(HashMap<u32, usize>, Vec<usize>)| {
-            members
-                .iter()
-                .map(|&index| {
-                    let (vertices, loci) = constraints[index];
-                    let assigned = [candidate[&vertices[0]], candidate[&vertices[1]]];
-                    let forward = distance_squared(points[assigned[0]], points[loci[0]])
-                        + distance_squared(points[assigned[1]], points[loci[1]]);
-                    let reverse = distance_squared(points[assigned[0]], points[loci[1]])
-                        + distance_squared(points[assigned[1]], points[loci[0]]);
-                    forward.min(reverse)
-                })
-                .sum::<f64>()
-        };
-        let selected = if score(&candidates[0]) <= score(&candidates[1]) {
-            candidates.into_iter().next().unwrap_or_default()
-        } else {
-            candidates.into_iter().nth(1).unwrap_or_default()
-        };
-        mapping.extend(selected.0);
-        completed.extend(selected.1);
+        let (component, members, consistent) =
+            propagate_vertex_component(seed, constraints, adjacency, points);
+        completed.extend(members);
+        if consistent {
+            mapping.extend(component);
+        }
     }
     mapping
 }
 
 fn propagate_vertex_component(
     seed: usize,
-    reverse: bool,
     constraints: &[([u32; 2], [usize; 2])],
     adjacency: &HashMap<u32, Vec<usize>>,
     points: &[[f64; 3]],
-) -> (HashMap<u32, usize>, Vec<usize>) {
-    let (seed_vertices, seed_loci) = constraints[seed];
-    let mut mapping = HashMap::from([
-        (seed_vertices[0], seed_loci[usize::from(reverse)]),
-        (seed_vertices[1], seed_loci[usize::from(!reverse)]),
-    ]);
+) -> (HashMap<u32, usize>, Vec<usize>, bool) {
+    let mut mapping = HashMap::new();
     let mut members = Vec::new();
-    let mut pending = std::collections::VecDeque::from([seed_vertices[0], seed_vertices[1]]);
-    let mut visited = std::collections::HashSet::new();
+    let mut pending = std::collections::VecDeque::new();
+    let mut visited = HashSet::new();
+    let mut consistent = true;
+    let assign = |mapping: &mut HashMap<u32, usize>,
+                  pending: &mut std::collections::VecDeque<u32>,
+                  consistent: &mut bool,
+                  vertex,
+                  locus| {
+        if let Some(&previous) = mapping.get(&vertex) {
+            let residual = distance_squared(points[previous], points[locus]);
+            if !residual.is_finite() || residual > INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE {
+                *consistent = false;
+            }
+        } else {
+            mapping.insert(vertex, locus);
+            pending.push_back(vertex);
+        }
+    };
+    let (seed_vertices, seed_loci) = constraints[seed];
+    assign(
+        &mut mapping,
+        &mut pending,
+        &mut consistent,
+        seed_vertices[0],
+        seed_loci[0],
+    );
+    assign(
+        &mut mapping,
+        &mut pending,
+        &mut consistent,
+        seed_vertices[1],
+        seed_loci[1],
+    );
     while let Some(vertex) = pending.pop_front() {
         for &index in adjacency.get(&vertex).into_iter().flatten() {
             if !visited.insert(index) {
@@ -2284,39 +2298,18 @@ fn propagate_vertex_component(
             }
             members.push(index);
             let (vertices, loci) = constraints[index];
-            let forward = assignment_residual(vertices, loci, &mapping, points);
-            let reverse = assignment_residual(vertices, [loci[1], loci[0]], &mapping, points);
-            let assigned = if forward <= reverse {
-                loci
-            } else {
-                [loci[1], loci[0]]
-            };
             for lane in 0..2 {
-                if let std::collections::hash_map::Entry::Vacant(entry) =
-                    mapping.entry(vertices[lane])
-                {
-                    entry.insert(assigned[lane]);
-                    pending.push_back(vertices[lane]);
-                }
+                assign(
+                    &mut mapping,
+                    &mut pending,
+                    &mut consistent,
+                    vertices[lane],
+                    loci[lane],
+                );
             }
         }
     }
-    (mapping, members)
-}
-
-fn assignment_residual(
-    vertices: [u32; 2],
-    loci: [usize; 2],
-    mapping: &HashMap<u32, usize>,
-    points: &[[f64; 3]],
-) -> f64 {
-    (0..2)
-        .filter_map(|lane| {
-            mapping
-                .get(&vertices[lane])
-                .map(|mapped| distance_squared(points[*mapped], points[loci[lane]]))
-        })
-        .sum()
+    (mapping, members, consistent)
 }
 
 fn vertex_coordinate(points: &[[f64; 3]], logical_points: &[[f64; 3]], index: usize) -> [f64; 3] {
@@ -2530,6 +2523,11 @@ fn canonical_point(
 
 fn distance_squared(left: [f64; 3], right: [f64; 3]) -> f64 {
     (left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2)
+}
+
+fn endpoint_matches(left: [f64; 3], right: [f64; 3]) -> bool {
+    let residual = distance_squared(left, right);
+    residual.is_finite() && residual <= INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE
 }
 
 fn direction_is_unit(direction: [f64; 3]) -> bool {
@@ -5952,7 +5950,7 @@ mod tests {
         };
 
         let bound = bind_native_vertices(
-            &BTreeMap::from([(1, loop_)]),
+            &BTreeMap::from([(1, loop_.clone())]),
             &geometry,
             &BTreeMap::from([(3, [10, 11])]),
             &BTreeMap::new(),
@@ -5964,6 +5962,16 @@ mod tests {
         assert_eq!(bound.refs, vec![10, 11]);
         assert_eq!(bound.points, endpoints);
         assert!(bound.tolerances.is_empty());
+
+        let mismatched = bind_native_vertices(
+            &BTreeMap::from([(1, loop_)]),
+            &geometry,
+            &BTreeMap::from([(3, [10, 11])]),
+            &BTreeMap::new(),
+            &BTreeMap::from([(10, endpoints[1])]),
+            &[],
+        );
+        assert!(mismatched.edges.is_empty());
     }
 
     #[test]
@@ -8822,7 +8830,7 @@ mod tests {
     }
 
     #[test]
-    fn native_vertex_graph_accepts_distinct_loci_for_one_tolerant_vertex() {
+    fn native_vertex_graph_rejects_inconsistent_ordered_loci() {
         let points = [
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
@@ -8832,10 +8840,7 @@ mod tests {
         let constraints = [([10, 11], [0, 1]), ([11, 12], [2, 3]), ([12, 10], [3, 0])];
         let adjacency = HashMap::from([(10, vec![0, 2]), (11, vec![0, 1]), (12, vec![1, 2])]);
         let mapping = propagate_vertex_points(&constraints, &adjacency, &points);
-        assert_eq!(
-            mapping,
-            HashMap::from([(10, 0usize), (11, 1usize), (12, 3usize)])
-        );
+        assert!(mapping.is_empty());
     }
 
     #[test]

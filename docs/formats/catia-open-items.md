@@ -638,16 +638,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it. That binding is the subject of OS-21.
 
-### OS-17. Lifted endpoint order against the `5d` vertices
-
-**Question.** Which field gives the order of an edge's two lifted endpoints against its two `5d` vertices?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "Both interval endpoints evaluate to the edge's ordered `5d` vertex loci". `graph::bind_native_vertices` keeps that order when neither vertex has a coordinate. When one vertex has a coordinate it replaces the order with the shorter of the two endpoint distances. `graph::propagate_vertex_points` and `graph::propagate_vertex_component` make the same replacement. No site refuses a tie, and no site bounds the accepted distance.
-
-**Need.** The two vertices of an edge take swapped coordinates when the order is wrong. We must know the field to bind the coordinate without a distance test.
-
-**Note.** `b5::transfer::pcurves` makes the same decision and refuses both an exact tie and a minimum above the point tolerance. The `score` function of `graph::propagate_vertex_points` gives the same value for both orientations of a one-constraint component, so its tie-break always keeps the serialized order there, which is the case the distance test was added for.
-
 ### OS-18. Endpoint-to-row match radius
 
 **Question.** What radius binds a lifted endpoint to an `05 08 01` coordinate row?
