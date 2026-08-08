@@ -528,14 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-37. Same-class edge row interchange
-
-**Question.** Which rows may exchange their endpoint pairs without changing the transferred body?
-
-**Known.** `catia.md` §5.4 "A singleton endpoint-pair domain for every physical edge" and §6.7 "**Object-stream topology:**" enumerate the admitted topology gauges: logical-vertex labels, intrinsic edge direction, boundary-cycle start, boundary rotation, boundary reversal, and permutation of separate boundaries. Permutation of same-class edge rows is not among them. `mesh_quotient::edge_class_assignment_is_canonical` rejects every assignment in which a row of lower index takes a larger sorted endpoint pair than a same-class row of higher index. It applies that filter to every partial and complete assignment. Two rows are in one class when their sorted face pair matches and both carriers are lines, or both are circles with the same stored center and radius.
-
-**Need.** The filter is sound only when every rejected assignment has an equivalent retained assignment. The class test proves the two rows have the same class and the same candidate set. It does not prove an automorphism of the boundary-cycle system. When the true binding is the rejected one, the search enumerates only the exchanged binding and reports it as unique instead of reporting distinct solutions. We must know the interchange rule, or the filter must prove it.
-
 ### SN-40. Support-carrier family precedence
 
 **Question.** Which relation selects the support carrier of a consolidated side when carriers of more than one analytic family satisfy their own witness?

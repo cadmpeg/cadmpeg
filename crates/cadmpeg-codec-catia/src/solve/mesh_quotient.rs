@@ -4765,15 +4765,18 @@ type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
 type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 type MeshFaceEquationCache = RefCell<HashMap<(usize, MeshQuotientSignature), Vec<[usize; 2]>>>;
 
-struct CanonicalEdgeClassConstraint {
+/// Search-order information for same-class rows with identical endpoint
+/// domains. The dependency order reduces branching overhead without assigning
+/// endpoint values to row positions.
+struct EdgeClassSearchConstraint {
     active: Vec<bool>,
     ordered: Vec<(usize, usize)>,
 }
 
-fn canonical_edge_class_constraint(
+fn edge_class_search_constraint(
     edge_classes: &[usize],
     choices: &[Vec<[usize; 2]>],
-) -> Option<CanonicalEdgeClassConstraint> {
+) -> Option<EdgeClassSearchConstraint> {
     if edge_classes.len() != choices.len() {
         return None;
     }
@@ -4808,35 +4811,7 @@ fn canonical_edge_class_constraint(
             ordered.push((left, right));
         }
     }
-    Some(CanonicalEdgeClassConstraint { active, ordered })
-}
-
-fn edge_class_assignment_is_canonical(
-    ordered: &[(usize, usize)],
-    assignment: &[Option<[usize; 2]>],
-) -> bool {
-    ordered.iter().copied().all(|(left, right)| {
-        let (Some(mut left_pair), Some(mut right_pair)) = (assignment[left], assignment[right])
-        else {
-            return true;
-        };
-        left_pair.sort_unstable();
-        right_pair.sort_unstable();
-        left_pair <= right_pair
-    })
-}
-
-#[cfg(test)]
-pub(crate) fn canonical_edge_class_assignment(
-    edge_classes: &[usize],
-    choices: &[Vec<[usize; 2]>],
-    assignment: &[Option<[usize; 2]>],
-) -> Option<Vec<bool>> {
-    if choices.len() != assignment.len() {
-        return None;
-    }
-    let constraint = canonical_edge_class_constraint(edge_classes, choices)?;
-    edge_class_assignment_is_canonical(&constraint.ordered, assignment).then_some(constraint.active)
+    Some(EdgeClassSearchConstraint { active, ordered })
 }
 
 fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<usize> {
@@ -6511,80 +6486,6 @@ pub(crate) fn mesh_candidates_equivalent(
     )
 }
 
-pub(crate) fn mesh_candidates_equivalent_with_edge_classes(
-    left: &(StandardTopology, Vec<usize>),
-    right: &(StandardTopology, Vec<usize>),
-    edge_classes: &[usize],
-) -> bool {
-    fn canonicalize(
-        candidate: &(StandardTopology, Vec<usize>),
-        edge_classes: &[usize],
-    ) -> Option<(StandardTopology, Vec<usize>)> {
-        let (mut topology, assignment) =
-            canonicalize_mesh_vertex_labels(candidate.0.clone(), &candidate.1)?;
-        if edge_classes.len() != topology.edge_rows.len() {
-            return None;
-        }
-        let edge_vertices = topology.edge_vertices()?;
-        let mut occurrences = vec![Vec::new(); edge_classes.len()];
-        for (face, topology_face) in topology.faces.iter().enumerate() {
-            for (boundary, topology_boundary) in topology_face.boundaries.iter().enumerate() {
-                for coedge in &topology_boundary.coedges {
-                    occurrences.get_mut(coedge.edge_row)?.push((face, boundary));
-                }
-            }
-        }
-        let mut by_class = HashMap::<usize, Vec<usize>>::new();
-        for (edge, class) in edge_classes.iter().copied().enumerate() {
-            by_class.entry(class).or_default().push(edge);
-        }
-        let mut canonical_edge = (0..edge_classes.len()).collect::<Vec<_>>();
-        for mut edges in by_class.into_values() {
-            if edges.len() < 2 {
-                continue;
-            }
-            edges.sort_unstable();
-            let mut ranked = edges
-                .iter()
-                .copied()
-                .map(|edge| {
-                    let mut endpoints = edge_vertices[edge];
-                    endpoints.sort_unstable();
-                    let mut incidence = occurrences[edge].clone();
-                    incidence.sort_unstable();
-                    ((endpoints, incidence), edge)
-                })
-                .collect::<Vec<_>>();
-            ranked.sort_unstable();
-            if ranked.windows(2).any(|window| window[0].0 == window[1].0) {
-                continue;
-            }
-            for (target, (_, source)) in edges.into_iter().zip(ranked) {
-                canonical_edge[source] = target;
-            }
-        }
-        for boundary in topology
-            .faces
-            .iter_mut()
-            .flat_map(|face| &mut face.boundaries)
-        {
-            for coedge in &mut boundary.coedges {
-                coedge.edge_row = *canonical_edge.get(coedge.edge_row)?;
-            }
-        }
-        canonicalize_topology_boundary_gauges(&mut topology)?;
-        Some((topology, assignment))
-    }
-
-    matches!(
-        (
-            canonicalize(left, edge_classes),
-            canonicalize(right, edge_classes),
-        ),
-        (Some(left), Some(right)) if left == right
-    )
-}
-
 pub(crate) fn mesh_assignment_can_merge(
     assignment: &MeshFaceBoundaryAssignment,
     quotient: &mut MeshQuotient,
@@ -6871,7 +6772,7 @@ where
         return MeshCandidateSolve::Rejected(MeshCandidateRejection::QuotientPreparation);
     };
     let Some(class_constraint) =
-        canonical_edge_class_constraint(edge_classes, &completed_edge_candidates)
+        edge_class_search_constraint(edge_classes, &completed_edge_candidates)
     else {
         return MeshCandidateSolve::Rejected(MeshCandidateRejection::EdgeClassConstraint);
     };
@@ -6887,10 +6788,7 @@ where
             assignment_predecessors[right].map_or(left, |predecessor: usize| predecessor.max(left)),
         );
     }
-    let constrained_pair_solution_valid = |pairs: &[Option<[usize; 2]>]| {
-        pair_solution_valid(pairs)
-            && edge_class_assignment_is_canonical(&class_constraint.ordered, pairs)
-    };
+    let constrained_pair_solution_valid = |pairs: &[Option<[usize; 2]>]| pair_solution_valid(pairs);
     let mut incidence_solution = None;
     let mut incidence_ambiguity = None;
     let mut incidence_exhausted = false;
@@ -6947,13 +6845,7 @@ where
                 }
             };
             match &incidence_solution {
-                Some(stored)
-                    if !mesh_candidates_equivalent_with_edge_classes(
-                        stored,
-                        &candidate,
-                        edge_classes,
-                    ) =>
-                {
+                Some(stored) if !mesh_candidates_equivalent(stored, &candidate) => {
                     incidence_ambiguity = Some(MeshCandidateAmbiguity::DistinctTopologySolutions);
                     ControlFlow::Break(())
                 }
