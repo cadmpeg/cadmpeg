@@ -159,10 +159,11 @@ pub struct SegmentOmLink {
 /// Return body objects whose latest decoded writer is not consumed by a later
 /// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
 /// the retained history area unless a decoded operation writes them. Primary
-/// primary references from operations with resolved offset-store inputs do not
+/// references from operations with resolved offset-store inputs do not
 /// participate in object-identity lineage, including missing or ambiguous
-/// body ordinals. The label arena is source/newest-first; all history
-/// positions below use oldest-first order within each section.
+/// body ordinals or duplicate primary-body fields. The label arena is
+/// source/newest-first; all history positions below use oldest-first order
+/// within each section.
 #[allow(
     clippy::too_many_arguments,
     reason = "The lineage rule consumes independent native relation arenas; keeping them explicit preserves those format-level dependencies."
@@ -183,12 +184,14 @@ pub fn terminal_feature_body_indices(
         .collect::<BTreeSet<_>>();
     let offset_store_operations =
         crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    let object_references = references
-        .iter()
-        .filter(|reference| {
+    let unique_references = crate::native::features::unique_feature_body_references(references);
+    let object_references = unique_references
+        .into_iter()
+        .filter(|(_, reference)| {
             !offset_store_references.contains(reference.id.as_str())
                 && !offset_store_operations.contains(reference.operation_label.as_str())
         })
+        .map(|(_, reference)| reference)
         .collect::<Vec<_>>();
     if object_references.is_empty() && bindings.is_empty() {
         return None;
@@ -1036,6 +1039,74 @@ mod tests {
                 &[],
             ),
             Some(std::collections::BTreeSet::new())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_ignores_ambiguous_primary_body_fields() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{FeatureBodyReference, FeatureOperationLabel};
+
+        let labels = [FeatureOperationLabel {
+            id: "operation#delete".to_string(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "DELETE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let references = [
+            FeatureBodyReference {
+                id: "reference#10".to_string(),
+                operation_label: labels[0].id.clone(),
+                body_object_index: 10,
+                raw_body_object_index: vec![10],
+                source_offset: 0,
+            },
+            FeatureBodyReference {
+                id: "reference#20".to_string(),
+                operation_label: labels[0].id.clone(),
+                body_object_index: 20,
+                raw_body_object_index: vec![20],
+                source_offset: 1,
+            },
+        ];
+        let bindings = [
+            SegmentBodyBinding {
+                id: "binding#0".to_string(),
+                stream_link: "stream#0".to_string(),
+                stream_ordinal: 0,
+                stream_kind: "partition".to_string(),
+                body_object_index: 10,
+                body_alias_object_index: 11,
+                stream_role: 19,
+                source_offset: 0,
+            },
+            SegmentBodyBinding {
+                id: "binding#1".to_string(),
+                stream_link: "stream#1".to_string(),
+                stream_ordinal: 1,
+                stream_kind: "partition".to_string(),
+                body_object_index: 20,
+                body_alias_object_index: 21,
+                stream_role: 19,
+                source_offset: 1,
+            },
+        ];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &[],
+                &[],
+                &bindings,
+                &[],
+            ),
+            Some([10, 11, 20, 21].into_iter().collect())
         );
     }
 

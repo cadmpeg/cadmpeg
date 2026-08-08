@@ -3452,7 +3452,7 @@ pub(crate) fn parse_simple_hole_template(
     ))
 }
 
-/// Decode primary body lineage references from feature-history operations.
+/// Decode complete body-reference fields from feature-history operations.
 pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
     let sections = container.om_sections();
     let mut references = Vec::new();
@@ -3482,6 +3482,29 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
         }
     }
     references
+}
+
+/// Return the one body-reference field owned by each operation that has
+/// exactly one such field.
+pub(crate) fn unique_feature_body_references(
+    references: &[FeatureBodyReference],
+) -> BTreeMap<&str, &FeatureBodyReference> {
+    let mut by_operation = BTreeMap::<&str, Vec<&FeatureBodyReference>>::new();
+    for reference in references {
+        by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
+    by_operation
+        .into_iter()
+        .filter_map(|(operation, references)| {
+            let [reference] = references.as_slice() else {
+                return None;
+            };
+            Some((operation, *reference))
+        })
+        .collect()
 }
 
 /// Decode every ordered body-reference field from bounded feature operations.
@@ -3534,6 +3557,7 @@ pub fn feature_body_segment_uses(
     blocks: &[crate::native::om::DataBlock],
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
+    let unique_references = unique_feature_body_references(references);
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
@@ -3542,7 +3566,10 @@ pub fn feature_body_segment_uses(
     references
         .iter()
         .filter(|reference| {
-            !offset_store_references.contains(reference.id.as_str())
+            unique_references
+                .get(reference.operation_label.as_str())
+                .is_some_and(|unique| unique.id == reference.id)
+                && !offset_store_references.contains(reference.id.as_str())
                 && !offset_store_operations.contains(reference.operation_label.as_str())
         })
         .filter_map(|reference| {
@@ -3605,10 +3632,17 @@ pub fn feature_body_data_block_uses(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
 ) -> Vec<FeatureBodyDataBlockUse> {
+    let unique_references = unique_feature_body_references(references);
     let store_sections = feature_input_store_sections(inputs, blocks);
     references
         .iter()
         .filter_map(|reference| {
+            if unique_references
+                .get(reference.operation_label.as_str())
+                .is_none_or(|unique| unique.id != reference.id)
+            {
+                return None;
+            }
             let section_ordinals = store_sections
                 .get(reference.operation_label.as_str())
                 .map(|sections| sections.iter().copied().collect::<Vec<_>>())
@@ -10540,6 +10574,26 @@ mod tests {
     }
 
     #[test]
+    fn unique_feature_body_references_require_one_field_per_operation() {
+        let reference =
+            |id: &str, operation_label: &str, body_object_index| super::FeatureBodyReference {
+                id: id.to_string(),
+                operation_label: operation_label.to_string(),
+                body_object_index,
+                raw_body_object_index: vec![body_object_index as u8],
+                source_offset: 0,
+            };
+        let references = [
+            reference("reference#0", "operation#0", 10),
+            reference("reference#1", "operation#0", 11),
+            reference("reference#2", "operation#1", 12),
+        ];
+        let unique = super::unique_feature_body_references(&references);
+        assert!(!unique.contains_key("operation#0"));
+        assert_eq!(unique["operation#1"].id, "reference#2");
+    }
+
+    #[test]
     fn feature_body_segment_uses_require_one_alias_pair() {
         use super::{feature_body_segment_uses, FeatureBodyReference};
         use crate::native::segments::SegmentBodyBinding;
@@ -10575,7 +10629,22 @@ mod tests {
             &[],
             &[],
             &[],
-            &[binding.clone(), binding]
+            &[binding.clone(), binding.clone()]
+        )
+        .is_empty());
+        let duplicate_reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#1".into(),
+            operation_label: reference.operation_label.clone(),
+            body_object_index: 12,
+            raw_body_object_index: vec![12],
+            source_offset: 91,
+        };
+        assert!(feature_body_segment_uses(
+            &[reference, duplicate_reference],
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&binding),
         )
         .is_empty());
     }
@@ -10753,9 +10822,24 @@ mod tests {
             block("nx:om-data-blocks-1:block#72", 1, 72),
             block("nx:om-data-blocks-2:block#72", 2, 72),
         ];
-        let uses = feature_body_data_block_uses(&[reference], &[input], &blocks);
+        let uses = feature_body_data_block_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&input),
+            &blocks,
+        );
         assert_eq!(uses.len(), 1);
         assert_eq!(uses[0].data_block, blocks[2].id);
+        let duplicate_reference = FeatureBodyReference {
+            id: "nx:feature-history:body-reference#1".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 73,
+            raw_body_object_index: vec![73],
+            source_offset: 91,
+        };
+        assert!(
+            feature_body_data_block_uses(&[reference, duplicate_reference], &[input], &blocks,)
+                .is_empty()
+        );
     }
 
     #[test]

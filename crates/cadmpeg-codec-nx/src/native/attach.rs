@@ -1177,10 +1177,8 @@ fn attach_feature_operations(
             .or_default()
             .push(use_);
     }
-    let body_writer_references_by_operation = body_references
-        .iter()
-        .map(|reference| (reference.operation_label.as_str(), reference))
-        .collect::<BTreeMap<_, _>>();
+    let body_writer_references_by_operation =
+        crate::native::features::unique_feature_body_references(body_references);
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
         let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
@@ -3274,31 +3272,28 @@ fn native_result_body_identity(
 /// namespace. An operation with any resolved offset-store input selects that
 /// namespace before its primary body ordinal is resolved; missing or
 /// ambiguous offset-store body relations must not fall back to integer-equal
-/// segment aliases.
+/// segment aliases. An operation with zero or multiple body fields has no
+/// primary-body writer.
 fn native_primary_body_references<'a>(
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
     inputs: &[crate::native::features::FeatureInputBlock],
     data_blocks: &[crate::native::om::DataBlock],
 ) -> BTreeMap<&'a str, u32> {
+    let unique_references = crate::native::features::unique_feature_body_references(references);
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
         .collect::<BTreeSet<_>>();
     let offset_store_operations =
         crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    references
-        .iter()
-        .filter(|reference| {
+    unique_references
+        .into_iter()
+        .filter(|(_, reference)| {
             !offset_store_references.contains(reference.id.as_str())
                 && !offset_store_operations.contains(reference.operation_label.as_str())
         })
-        .map(|reference| {
-            (
-                reference.operation_label.as_str(),
-                reference.body_object_index,
-            )
-        })
+        .map(|(operation, reference)| (operation, reference.body_object_index))
         .collect()
 }
 
@@ -8088,6 +8083,8 @@ mod tests {
             reference("reference#exact", "operation#exact", 99),
             reference("reference#missing", "operation#missing", 100),
             reference("reference#ambiguous", "operation#ambiguous", 101),
+            reference("reference#duplicate-a", "operation#duplicate", 102),
+            reference("reference#duplicate-b", "operation#duplicate", 103),
         ];
         let input =
             |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
@@ -8178,6 +8175,7 @@ mod tests {
         assert!(!native.contains_key("operation#exact"));
         assert!(!native.contains_key("operation#missing"));
         assert!(!native.contains_key("operation#ambiguous"));
+        assert!(!native.contains_key("operation#duplicate"));
     }
 
     #[test]
