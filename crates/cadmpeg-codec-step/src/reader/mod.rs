@@ -318,6 +318,18 @@ fn decode_exchange_mode(
                     .collect(),
             });
         }
+        for (index, signature) in exchange.signatures.iter().enumerate() {
+            let bytes = input[signature.clone()].to_vec();
+            *counts.entry("SIGNATURE".into()).or_default() += 1;
+            opaque.push(UnknownRecord {
+                id: UnknownId(format!("step:signature#{index}")),
+                offset: signature.start as u64,
+                byte_len: signature.len() as u64,
+                sha256: sha256_hex(&bytes),
+                data: Some(bytes),
+                links: Vec::new(),
+            });
+        }
         ir.set_native_unknowns_owned("step", opaque);
     } else {
         for record in exchange.records.values() {
@@ -640,7 +652,7 @@ fn byte_accounting(
         };
         claim_range(&mut classes, &record.span, class);
     }
-    if let Some(signature) = &exchange.signature {
+    for signature in &exchange.signatures {
         claim_range(&mut classes, signature, ByteClass::Structural);
     }
     let tokens = match crate::lex::lex(input) {

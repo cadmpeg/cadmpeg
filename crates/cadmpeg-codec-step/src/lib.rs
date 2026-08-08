@@ -4426,9 +4426,13 @@ impl Codec for StepCodec {
                 attributes,
             });
         }
-        if exchange.signature.is_some() {
+        for (index, _) in exchange.signatures.iter().enumerate() {
             entries.push(ContainerEntry {
-                name: "SIGNATURE".into(),
+                name: if index == 0 {
+                    "SIGNATURE".into()
+                } else {
+                    format!("SIGNATURE[{index}]")
+                },
                 role: "signature".into(),
                 compression: "none".into(),
                 compressed_size: 0,

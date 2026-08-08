@@ -110,17 +110,41 @@ impl<'a> Lexer<'a> {
 
     fn skip_signature_payload(&mut self) -> Result<(), LexError> {
         let start = self.at;
-        let tail = &self.input[start..];
-        let exchange_end = tail
-            .windows(b"END-ISO-10303-21".len())
-            .position(|window| window == b"END-ISO-10303-21")
-            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
-        let section_end = tail[..exchange_end]
-            .windows(b"ENDSEC".len())
-            .rposition(|window| window == b"ENDSEC")
-            .ok_or_else(|| Self::error(start, "unterminated signature section"))?;
-        self.at = start + section_end;
-        Ok(())
+        let name_len = b"ENDSEC".len();
+        let mut at = start;
+        while at + name_len <= self.input.len() {
+            if self.input.get(at..at + 2) == Some(b"/*") {
+                let comment_start = at;
+                at += 2;
+                let Some(end) = self.input[at..].windows(2).position(|w| w == b"*/") else {
+                    return Err(Self::error(comment_start, "unterminated comment"));
+                };
+                at += end + 2;
+                continue;
+            }
+            let candidate = at;
+            let matches_name =
+                self.input[candidate..candidate + name_len].eq_ignore_ascii_case(b"ENDSEC");
+            let preceded_by_separator = candidate == start
+                || self.input[..candidate]
+                    .last()
+                    .is_some_and(u8::is_ascii_whitespace)
+                || self.input[..candidate].ends_with(b"*/");
+            let mut after_name = candidate + name_len;
+            while self
+                .input
+                .get(after_name)
+                .is_some_and(u8::is_ascii_whitespace)
+            {
+                after_name += 1;
+            }
+            if matches_name && preceded_by_separator && self.input.get(after_name) == Some(&b';') {
+                self.at = candidate;
+                return Ok(());
+            }
+            at += 1;
+        }
+        Err(Self::error(start, "unterminated signature section"))
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {

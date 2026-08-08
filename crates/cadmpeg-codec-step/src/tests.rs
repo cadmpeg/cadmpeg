@@ -490,12 +490,48 @@ fn codec_inspects_edition3_sections_and_external_references() {
     let (exchange, diagnostics) =
         crate::parse::parse(bytes).expect("parse opaque signature payload");
     assert!(diagnostics.is_empty());
-    let signature = exchange.signature.expect("signature byte span");
-    assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
+    assert_eq!(exchange.signatures.len(), 1);
+    let signature = exchange.signatures[0].clone();
+    assert!(bytes[signature.clone()]
+        .windows(8)
+        .any(|bytes| bytes == b"YWJjZA=="));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode signature fixture");
+    let unknowns = decoded
+        .ir
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .expect("STEP unknown arena");
+    let signature_unknown = unknowns
+        .iter()
+        .find(|record| record.id.0 == "step:signature#0")
+        .expect("retained signature");
+    assert_eq!(
+        signature_unknown.data.as_deref(),
+        Some(&bytes[signature.clone()])
+    );
     assert_eq!(
         exchange.records[&2].partials[0].parameters,
         vec![crate::parse::Value::Reference(1)]
     );
+}
+
+#[test]
+fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==/* fake ENDSEC; */\nENDSEC;SIGNATURE;ZWZnaA==\nENDSEC;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("multiple signatures");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.signatures.len(), 2);
+    assert!(source[exchange.signatures[0].clone()]
+        .windows(8)
+        .any(|bytes| bytes == b"YWJjZA=="));
+    assert!(source[exchange.signatures[1].clone()]
+        .windows(8)
+        .any(|bytes| bytes == b"ZWZnaA=="));
 }
 
 #[test]

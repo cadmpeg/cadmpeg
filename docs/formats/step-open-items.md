@@ -148,7 +148,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which exact bytes does each signature method authenticate?
 
-**Known.** `step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place the optional SIGNATURE section after all DATA sections and before the exchange terminator. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define the byte boundary of the SIGNATURE section.
+**Known.** `step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place each SIGNATURE section after the exchange terminator. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define the byte boundary of the SIGNATURE section.
 
 **Need.** We must know the byte sequence to calculate the verification input.
 
@@ -642,18 +642,14 @@ error.
 
 ### EL-04. Signature section boundary
 
-**Question.** Which `ENDSEC` terminates a SIGNATURE section?
+**Resolved.** Signature sections follow `END-ISO-10303-21;`. Each section
+starts with `SIGNATURE;` and ends at its own token `ENDSEC;`. The decoder
+retains every complete section range in source order.
 
-**Known.** `step.md` §7 places the section end at the next `ENDSEC;`.
-
-**Conflict.** The lexer locates `END-ISO-10303-21` first and then takes the
-**last** `ENDSEC` before it (`crates/cadmpeg-codec-step/src/lex.rs:111-124`).
-Both markers are matched as raw substrings, not as tokens. SG-01 and SG-03
-record that the payload grammar is unknown, so nothing forbids a payload from
-containing either literal. A payload containing `END-ISO-10303-21` makes the
-file unparseable; a payload containing `ENDSEC` gives a section span that
-holds bytes the specification places outside it. The fixture payload contains
-neither, so no test distinguishes the two rules. The item needs a decision.
+**Known.** `step.md` §2 and §7 define the post-terminator placement and the
+base64 content. The lexer finds the first token-boundary `ENDSEC;` after each
+`SIGNATURE;`; it does not search for the exchange terminator or merge adjacent
+signature sections.
 
 ### EL-05. Schema identifier interpretation
 

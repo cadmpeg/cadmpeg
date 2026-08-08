@@ -19,13 +19,13 @@ separate encodings.
 A clear-text exchange structure uses this outer grammar:
 
 ```text
-exchange = "ISO-10303-21;" header anchor? reference? data+ signature?
-           "END-ISO-10303-21;"
+exchange = "ISO-10303-21;" header anchor? reference? data+
+           "END-ISO-10303-21;" signature*
 header   = "HEADER;" header_entity* "ENDSEC;"
 anchor   = "ANCHOR;" anchor_entry* "ENDSEC;"
 reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
-signature= "SIGNATURE;" signature_content "ENDSEC;"
+signature= "SIGNATURE;" base64 "ENDSEC;"
 anchor_entry    = resource "=" parameter ";"
 reference_entry = reference_name "=" resource ";"
 reference_name  = resource | instance_name
@@ -156,8 +156,9 @@ an external instance name to a resource URI. Resource names and URIs are
 delimited by `<` and `>`; an external instance name uses the `#id` form. A URI
 target outside the exchange structure is an external dependency. External
 instance names do not enter the local DATA instance graph.
-SIGNATURE content begins after `SIGNATURE;`, ends at the next `ENDSEC;`, and
-retains its complete byte range.
+Each SIGNATURE section follows the exchange terminator. Its base64 content
+begins after `SIGNATURE;`, ends at its next `ENDSEC;`, and retains its complete
+byte range. Multiple signature sections remain in source order.
 
 DATA section parameters identify the governing schema and section population.
 All DATA sections share the instance-name namespace.

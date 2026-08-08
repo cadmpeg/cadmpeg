@@ -106,8 +106,8 @@ pub struct Exchange {
     pub references: Vec<ReferenceEntry>,
     /// DATA sections in source order.
     pub data: Vec<DataSection>,
-    /// Complete SIGNATURE section byte range when present.
-    pub signature: Option<Range<usize>>,
+    /// Complete SIGNATURE section byte ranges in source order.
+    pub signatures: Vec<Range<usize>>,
     /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
     entity_ids: EntityIndex,
@@ -521,7 +521,10 @@ impl Parser<'_> {
                 records: ids,
             });
         }
-        let signature = if self.peek_name("SIGNATURE") {
+        self.name("END-ISO-10303-21")?;
+        self.punct(&TokenKind::Semicolon)?;
+        let mut signatures = Vec::new();
+        while self.peek_name("SIGNATURE") {
             let start = self.current_offset();
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
@@ -533,12 +536,8 @@ impl Parser<'_> {
             }
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
-            Some(start..self.previous_end())
-        } else {
-            None
-        };
-        self.name("END-ISO-10303-21")?;
-        self.punct(&TokenKind::Semicolon)?;
+            signatures.push(start..self.previous_end());
+        }
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
@@ -624,7 +623,7 @@ impl Parser<'_> {
                 anchors,
                 references: reference_entries,
                 data,
-                signature,
+                signatures,
                 records,
                 entity_ids: EntityIndex::default(),
             },
