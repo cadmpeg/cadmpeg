@@ -2351,7 +2351,7 @@ pub(crate) fn exact_base_feature_construction(
             result_fields: Vec::new(),
         });
     }
-    if bytes.get(start + 19) != Some(&1) {
+    if bytes.get(start + 11..start + 19)? != [0; 8] || bytes.get(start + 19) != Some(&1) {
         return None;
     }
     let combined_count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
@@ -2360,8 +2360,11 @@ pub(crate) fn exact_base_feature_construction(
     }
     let body_count = combined_count / 2;
     let expanded = scope.class_tag == "384" && scope.paired_class_tag == "264";
-    let legacy_compact = scope.class_tag == "420" && scope.paired_class_tag == "258";
-    let base_length = if expanded || legacy_compact { 262 } else { 271 };
+    let compact = matches!(
+        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
+        ("420", "258") | ("452", "266")
+    );
+    let base_length = if expanded || compact { 262 } else { 271 };
     if scope.frame_length != base_length + u64::try_from(body_count.checked_mul(52)?).ok()? {
         return None;
     }
@@ -2398,7 +2401,7 @@ pub(crate) fn exact_base_feature_construction(
             return None;
         }
         cursor += 11;
-    } else if legacy_compact {
+    } else if compact {
         if bytes.get(cursor) != Some(&1)
             || bytes.get(cursor + 1..cursor + 6) != Some(&[0; 5])
             || bytes.get(cursor + 6) != Some(&1)
@@ -2419,7 +2422,7 @@ pub(crate) fn exact_base_feature_construction(
     }
     let mut repeated_reference_fields = Vec::with_capacity(body_count);
     for ordinal in 0..body_count {
-        let expected = if legacy_compact {
+        let expected = if compact {
             u32::try_from(body_entity_suffixes[ordinal]).ok()?
         } else {
             body_reference_records[ordinal]
@@ -2439,7 +2442,7 @@ pub(crate) fn exact_base_feature_construction(
     }
     let metadata_record = u32::try_from(read_u64(bytes, cursor + 1)?).ok()?;
     let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
-    let metadata_field_width = if expanded || legacy_compact { 2 } else { 6 };
+    let metadata_field_width = if expanded || compact { 2 } else { 6 };
     let metadata_field = bytes
         .get(cursor + 9..cursor + 9 + metadata_field_width)?
         .to_vec();

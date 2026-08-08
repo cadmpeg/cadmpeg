@@ -150,6 +150,208 @@ source = "spec"
 anchor = "byte 25 is `0x01`"
 
 [[record]]
+name = "base_feature_result_body_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "For `N > 0` result bodies, bytes 11 through 18 are zero"
+size = 24
+note = "Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "bytes 11 through 18 are zero"
+
+[[record.field]]
+name = "body_count_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "byte 19 is `0x01`"
+
+[[record.field]]
+name = "combined_body_reference_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "offset 20 stores u32 `2N`"
+
+[[record]]
+name = "base_feature_result_body_entry"
+kind = "byte"
+section = "3.1"
+anchor = "every value has a six-byte trailing field"
+size = 15
+note = "This layout repeats for each body entity suffix and each passive body-reference record, with entry bases at `24 + 15i` and `24 + 15N + 15i`."
+
+[[record.field]]
+name = "reference_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "marked u64 Design body entity suffixes"
+
+[[record.field]]
+name = "reference_value"
+offset = 1
+type = "u64"
+source = "spec"
+anchor = "marked u64 Design body entity suffixes"
+
+[[record.field]]
+name = "reference_field"
+offset = 9
+type = "bytes[6]"
+source = "spec"
+anchor = "every value has a six-byte trailing field"
+
+[[record]]
+name = "base_feature_compact_result_body_count"
+kind = "byte"
+section = "3.1"
+anchor = "The class-452 form paired with class 266 uses the same compact count field"
+size = 11
+note = "Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use this field."
+
+[[record.field]]
+name = "count_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "stores `0x01`, five zero bytes, `0x01`, and u32 `N` in the eleven-byte count field"
+
+[[record.field]]
+name = "zero_run_5"
+offset = 1
+type = "bytes[5]"
+source = "spec"
+anchor = "five zero bytes"
+
+[[record.field]]
+name = "repeat_marker"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "stores `0x01`, five zero bytes, `0x01`, and u32 `N` in the eleven-byte count field"
+
+[[record.field]]
+name = "body_count"
+offset = 7
+type = "u32"
+source = "spec"
+anchor = "and u32 `N` in the eleven-byte count field"
+
+[[record]]
+name = "base_feature_compact_repeated_body_entry"
+kind = "byte"
+section = "3.1"
+anchor = "Its repeated u32 run contains the body entity suffixes instead of the passive references"
+size = 11
+note = "This layout repeats for `N` entries immediately after the compact result-body count field."
+
+[[record.field]]
+name = "body_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "repeated u32 run contains the body entity suffixes"
+
+[[record.field]]
+name = "body_entity_suffix"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "repeated u32 run contains the body entity suffixes"
+
+[[record.field]]
+name = "body_field"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six-byte trailing fields"
+
+[[record]]
+name = "base_feature_compact_metadata_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The class-452 form paired with class 266 uses the same compact count field"
+size = 16
+note = "Offsets are relative to the byte after the compact repeated body-entry run. The result-record run begins at offset 16."
+
+[[record.field]]
+name = "separator"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "One zero byte and one marked u64 shared metadata-record index"
+
+[[record.field]]
+name = "metadata_marker"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "one marked u64 shared metadata-record index"
+
+[[record.field]]
+name = "metadata_record"
+offset = 2
+type = "u64"
+source = "spec"
+anchor = "shared metadata-record index"
+
+[[record.field]]
+name = "metadata_field"
+offset = 10
+type = "bytes[2]"
+source = "spec"
+anchor = "its shared metadata-record index has a two-byte trailing field"
+
+[[record.field]]
+name = "result_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "then u32 `N`"
+
+[[record]]
+name = "base_feature_result_body_result_entry"
+kind = "byte"
+section = "3.1"
+anchor = "`N` marked u32 result-record indices with six-byte trailing fields"
+size = 11
+note = "This layout repeats for `N` result-record entries after the result count."
+
+[[record.field]]
+name = "result_marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "marked u32 result-record indices"
+
+[[record.field]]
+name = "result_record"
+offset = 1
+type = "u32"
+source = "spec"
+anchor = "marked u32 result-record indices"
+
+[[record.field]]
+name = "result_field"
+offset = 5
+type = "bytes[6]"
+source = "spec"
+anchor = "six-byte trailing fields"
+
+[[record]]
 name = "base_feature_body_snapshot_prefix"
 kind = "byte"
 section = "3.1"

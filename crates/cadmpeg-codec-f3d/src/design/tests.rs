@@ -21850,6 +21850,67 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     assert!(exact_base_feature_construction(&snapshot_bytes, &invalid_scope).is_none());
 }
 
+#[test]
+fn base_feature_scope_decodes_class_452_compact_result_body_run() {
+    let mut bytes = vec![0u8; 314];
+    bytes[19] = 1;
+    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+    let mut cursor = 24;
+    for (value, field) in [(101u64, [0; 6]), (201, [0; 6])] {
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+        bytes[cursor + 9..cursor + 15].copy_from_slice(&field);
+        cursor += 15;
+    }
+    bytes[cursor] = 1;
+    bytes[cursor + 6] = 1;
+    bytes[cursor + 7..cursor + 11].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 11;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 5].copy_from_slice(&101u32.to_le_bytes());
+    cursor += 11;
+    bytes[cursor] = 0;
+    cursor += 1;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
+    bytes[cursor + 9..cursor + 11].copy_from_slice(&[0, 0]);
+    cursor += 11;
+    bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
+    cursor += 4;
+    bytes[cursor] = 1;
+    bytes[cursor + 1..cursor + 5].copy_from_slice(&401u32.to_le_bytes());
+    assert_eq!(cursor + 11, 103);
+
+    let mut scope =
+        DesignParameterScope::empty("f3d:scope#base-feature-compact", "Base Feature", 70);
+    scope.class_tag = "452".into();
+    scope.frame_length = 314;
+    scope.kind_offset = 213;
+    scope.reference_members = vec![301];
+    scope.paired_class_tag = "266".into();
+    scope.paired_byte_offset = 314;
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .expect("class-452 compact Base Feature frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        body_entity_suffixes,
+        body_reference_records,
+        metadata_record,
+        result_records,
+        ..
+    } = construction
+    else {
+        panic!("class-452 compact Base Feature frame selected the wrong form");
+    };
+    assert_eq!(body_entity_suffixes, [101]);
+    assert_eq!(body_reference_records, [201]);
+    assert_eq!(metadata_record, 301);
+    assert_eq!(result_records, [401]);
+
+    let mut nonzero_prefix = bytes;
+    nonzero_prefix[11] = 1;
+    assert!(exact_base_feature_construction(&nonzero_prefix, &scope).is_none());
+}
+
 #[allow(
     clippy::large_stack_arrays,
     reason = "This pattern fixture keeps the decoded scope records inline for frame assertions."

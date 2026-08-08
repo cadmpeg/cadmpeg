@@ -59,6 +59,82 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
 
+## `base_feature_result_body_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+Offsets are relative to the primary indexed header. The two parallel 15-byte body-entry runs begin at offset 24.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 8 | `zero_run_8` | `bytes[8]` | little | spec | bytes 11 through 18 are zero |
+| 19 | 1 | `body_count_marker` | `u8` | little | spec | byte 19 is `0x01` |
+| 20 | 4 | `combined_body_reference_count` | `u32` | little | spec | offset 20 stores u32 `2N` |
+
+## `base_feature_result_body_entry`
+
+Spec §3.1 · layout: byte offsets · size: 15 B
+
+This layout repeats for each body entity suffix and each passive body-reference record, with entry bases at `24 + 15i` and `24 + 15N + 15i`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_marker` | `u8` | little | spec | marked u64 Design body entity suffixes |
+| 1 | 8 | `reference_value` | `u64` | little | spec | marked u64 Design body entity suffixes |
+| 9 | 6 | `reference_field` | `bytes[6]` | little | spec | every value has a six-byte trailing field |
+
+## `base_feature_compact_result_body_count`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+Offsets are relative to the byte after the two parallel 15-byte body-entry runs. The class-420 and class-452 compact forms use this field.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `count_marker` | `u8` | little | spec | stores `0x01`, five zero bytes, `0x01`, and u32 `N` in the eleven-byte count field |
+| 1 | 5 | `zero_run_5` | `bytes[5]` | little | spec | five zero bytes |
+| 6 | 1 | `repeat_marker` | `u8` | little | spec | stores `0x01`, five zero bytes, `0x01`, and u32 `N` in the eleven-byte count field |
+| 7 | 4 | `body_count` | `u32` | little | spec | and u32 `N` in the eleven-byte count field |
+
+## `base_feature_compact_repeated_body_entry`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+This layout repeats for `N` entries immediately after the compact result-body count field.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `body_marker` | `u8` | little | spec | repeated u32 run contains the body entity suffixes |
+| 1 | 4 | `body_entity_suffix` | `u32` | little | spec | repeated u32 run contains the body entity suffixes |
+| 5 | 6 | `body_field` | `bytes[6]` | little | spec | six-byte trailing fields |
+
+## `base_feature_compact_metadata_tail`
+
+Spec §3.1 · layout: byte offsets · size: 16 B
+
+Offsets are relative to the byte after the compact repeated body-entry run. The result-record run begins at offset 16.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `separator` | `u8` | little | spec | One zero byte and one marked u64 shared metadata-record index |
+| 1 | 1 | `metadata_marker` | `u8` | little | spec | one marked u64 shared metadata-record index |
+| 2 | 8 | `metadata_record` | `u64` | little | spec | shared metadata-record index |
+| 10 | 2 | `metadata_field` | `bytes[2]` | little | spec | its shared metadata-record index has a two-byte trailing field |
+| 12 | 4 | `result_count` | `u32` | little | spec | then u32 `N` |
+
+## `base_feature_result_body_result_entry`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+This layout repeats for `N` result-record entries after the result count.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `result_marker` | `u8` | little | spec | marked u32 result-record indices |
+| 1 | 4 | `result_record` | `u32` | little | spec | marked u32 result-record indices |
+| 5 | 6 | `result_field` | `bytes[6]` | little | spec | six-byte trailing fields |
+
 ## `base_feature_body_snapshot_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 24 B
