@@ -275,14 +275,17 @@ vertex-only boundary. A base `FACE` without an explicit surface derives an
 implicit plane from the first `FACE_OUTER_BOUND` in source order, or from the
 first valid boundary when no outer bound is declared. The selected loop keeps
 its ordered points and applies `FACE_BOUND.orientation`; its signed polygon
-area defines the plane normal, and its first non-degenerate edge defines the
-u-axis. In a complex face-bound instance, the partial with the boundary
-parameters supplies the inherited `FACE_BOUND` attributes; an empty
-`FACE_OUTER_BOUND` partial supplies only the outer role. A ring whose signed
-area is at most `1e-12` times the square of its largest point displacement is
-degenerate and does not produce a plane. An `ORIENTED_FACE` keeps the base
-plane carrier orientation and composes its reversal through face sense and
-boundary traversal. A base `EDGE` emits a
+area defines the plane normal. The plane origin is the arithmetic centroid of
+the selected ring. Its u-axis is the projection of the first global coordinate
+axis whose projection has the greatest length; ties keep x, then y, then z.
+Every point must be within `max(0.01, 1e-12 * ring_scale)` of that plane, where
+`ring_scale` is the largest displacement from the centroid. A ring whose
+signed area is at most `1e-12 * ring_scale^2`, or whose point residual exceeds
+that bound, does not produce a plane. In a complex face-bound instance, the
+partial with the boundary parameters supplies the inherited `FACE_BOUND`
+attributes; an empty `FACE_OUTER_BOUND` partial supplies only the outer role.
+An `ORIENTED_FACE` keeps the base plane carrier orientation and composes its
+reversal through face sense and boundary traversal. A base `EDGE` emits a
 curve-less CADIR edge when both endpoint vertices have point carriers. A base
 `VERTEX` whose point carrier is absent makes its containing member mandatory and
 unrepresentable. Sheet and wire members containing that vertex are omitted;

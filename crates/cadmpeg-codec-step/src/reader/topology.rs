@@ -3019,6 +3019,7 @@ fn implicit_face_points(
 }
 
 const IMPLICIT_FACE_AREA_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+const IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn implicit_face_plane(
     bounds: &[u64],
@@ -3029,7 +3030,12 @@ fn implicit_face_plane(
     point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
     let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions)?;
-    let origin = *points.first()?;
+    let point_count = points.len() as f64;
+    let origin = Point3::new(
+        points.iter().map(|point| point.x).sum::<f64>() / point_count,
+        points.iter().map(|point| point.y).sum::<f64>() / point_count,
+        points.iter().map(|point| point.z).sum::<f64>() / point_count,
+    );
     let relative_points = points
         .iter()
         .map(|point| point.vector_from(origin))
@@ -3054,17 +3060,31 @@ fn implicit_face_plane(
         return None;
     }
     let normal = area_normal.unit()?;
-    let u_axis = relative_points
+    let planarity_tolerance =
+        COINCIDENCE_TOLERANCE.max(IMPLICIT_FACE_PLANAR_RELATIVE_TOLERANCE * scale);
+    if relative_points
         .iter()
-        .zip(relative_points.iter().cycle().skip(1))
-        .take(relative_points.len())
-        .find_map(|(current, next)| {
-            let edge = *next - *current;
-            let projected = edge - normal.scale(edge.dot(normal));
-            (projected.norm() > f64::EPSILON)
-                .then(|| projected.unit())
-                .flatten()
-        })?;
+        .map(|point| point.dot(normal).abs())
+        .fold(0.0, f64::max)
+        > planarity_tolerance
+    {
+        return None;
+    }
+    let mut u_axis = None;
+    let mut u_axis_norm = 0.0;
+    for axis in [
+        Vector3::new(1.0, 0.0, 0.0),
+        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+    ] {
+        let projected = axis - normal.scale(axis.dot(normal));
+        let norm = projected.norm();
+        if norm > u_axis_norm {
+            u_axis_norm = norm;
+            u_axis = projected.unit();
+        }
+    }
+    let u_axis = u_axis?;
     Some(SurfaceGeometry::Plane {
         origin,
         normal,

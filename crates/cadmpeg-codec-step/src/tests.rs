@@ -1960,12 +1960,87 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
         .expect("implicit face plane");
-    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = &surface.geometry
+    else {
         panic!("implicit face did not produce a plane");
     };
-    assert_eq!(normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*normal, Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(*origin, Point3::new(10.0 / 3.0, 10.0 / 3.0, 0.0));
+    assert_eq!(*u_axis, Vector3::new(1.0, 0.0, 0.0));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_face_plane_is_invariant_under_edge_ring_rotation() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#26));",
+        );
+    let rotated = source.replace(
+        "#25=EDGE_LOOP('',(#22,#23,#24));",
+        "#25=EDGE_LOOP('',(#23,#24,#22));",
+    );
+    let first = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode base face");
+    let second = StepCodec::default()
+        .decode(&mut Cursor::new(rotated), &DecodeOptions::default())
+        .expect("decode rotated base face");
+    let first_surface = first
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("first implicit face plane");
+    let second_surface = second
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29")
+        .expect("rotated implicit face plane");
+    assert_eq!(first_surface.geometry, second_surface.geometry);
+}
+
+#[test]
+fn non_planar_base_face_is_rejected_without_an_inferred_surface() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#26));",
+        )
+        .replace(
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+            "#70=CARTESIAN_POINT('',(5.,5.,1.));\n#25=POLY_LOOP('',(#3,#4,#5,#70));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode non-planar base face");
+
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(!decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#implicit-face-29"));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+    }));
 }
 
 #[test]

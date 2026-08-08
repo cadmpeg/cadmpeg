@@ -215,38 +215,16 @@ atomic-solid invariant.
 
 ### TP-06. Implicit face-plane orientation
 
-**Question.** Which winding rule defines the normal, origin, and u-axis of an
-implicit face plane, and how does it compose with `ORIENTED_FACE` bound
-reversal?
-
-**Known.** `step.md` §8 "A base `FACE` without an explicit surface derives an
-implicit plane" gives the current rule. The decoder selects the first
-`FACE_OUTER_BOUND` in source order, takes the first ring point as the plane
-origin, takes the first non-degenerate ring edge as the u-axis, and derives
-the normal from the signed polygon area.
-
-**Need.** An `EDGE_LOOP` is a cycle. ISO 10303-42 does not give its coedge
-list a distinguished first element, so a rotation of that list is a
-semantics-preserving re-serialization. The current rule maps two such
-serializations to different plane origins and different u-axes, and therefore
-to different surface parameterizations for the same face. We need an
-origin and u-axis rule that is invariant under ring rotation, or a decision
-that the derived parameterization is not a stable identity.
-
-**Note.** This item was closed by `261edaa69` and is reopened. The closure
-wrote the rule into `step.md` §8 and closed the item as documented. Writing a
-selection rule down does not settle it. Three parts remain open:
-
-- The origin and u-axis are ring-rotation dependent, as above
-  (`crates/cadmpeg-codec-step/src/reader/topology.rs:3044`, `:3069`).
-- `implicit_face_plane` does not test the ring for planarity. Newell's method
-  returns a well-formed normal for a non-planar ring, so a non-planar boundary
-  produces a fabricated plane that no boundary point lies on, with no loss
-  (`topology.rs:3056-3067`).
-- The construction fabricates a surface that the format does not carry. ISO
-  10303-42 gives `face` no surface attribute. `step.md` states the opposite
-  policy for curves: "the decoder does not fabricate a curve carrier." We need
-  a decision on why the two carrier kinds differ.
+**Resolved.** A base `FACE` without a surface uses the first outer boundary,
+or the first valid boundary when no outer role exists. Its signed ring area
+defines the normal. The centroid defines the origin, and the projection of the
+most orthogonal global coordinate axis defines the u-axis, with x/y/z tie
+order. The ring must be planar within the document coincidence tolerance and
+`1e-12` of its scale. Degenerate or non-planar rings reject the topology root;
+an `ORIENTED_FACE` still composes reversal through the face sense and boundary
+traversal. This makes the inferred carrier independent of cyclic ring
+serialization and prevents a non-planar boundary from receiving a fabricated
+plane.
 
 ### TP-07. Pcurve recursion and normalization
 
