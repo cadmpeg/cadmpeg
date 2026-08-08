@@ -455,24 +455,12 @@ independent of instance-number order.
 
 ### BR-02. Outer and void shell roles
 
-**Question.** How does a region record which of its shells is the outer
-boundary?
-
-**Known.** The STEP rule is unambiguous: `BREP_WITH_VOIDS` attribute 1 is the
-outer shell and attribute 2 the voids. The reader discards that knowledge and
-keeps the role only as position in `region.shells`
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:2618-2644`). The writer
-recovers it with `split_first`
-(`crates/cadmpeg-codec-step/src/lib.rs:1534`). `cadmpeg_ir` documents the
-field as "typically one outer, plus voids".
-
-**Need.** Connected-component splitting appends each component of a shell in
-place, so an outer shell that decodes into two components inserts an extra
-entry ahead of the genuine voids. The writer then exports a piece of the
-outer boundary as a reversed void, and moves every void one position later.
-No loss is recorded for the role change. We must decide whether the IR
-carries an explicit outer-shell role or whether the reader must preserve the
-positional contract across component splitting.
+**Resolved.** `BREP_WITH_VOIDS` attribute 1 is the outer shell and attribute 2
+contains the void shells. The IR stores the outer role in the first
+`Region.shells` entry. The reader rejects a solid root when the outer shell
+splits into multiple connected components, because the extra component cannot
+retain the outer role in the current IR. Sheet and general roots still retain
+each valid connected component.
 
 ## 10. Product structure and assembly
 

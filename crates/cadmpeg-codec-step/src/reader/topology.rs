@@ -2628,6 +2628,13 @@ fn build_one(
                 .into_iter()
                 .enumerate()
         {
+            if has_type(root, "BREP_WITH_VOIDS")
+                && shell_steps.first().copied() == Some(shell_reference)
+                && component_index > 0
+            {
+                note_failure(failure, shell_step, "connected outer shell");
+                return None;
+            }
             let component_shell = if component_index == 0 {
                 sid.clone()
             } else {

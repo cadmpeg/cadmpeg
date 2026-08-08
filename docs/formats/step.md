@@ -277,9 +277,11 @@ parent lineage remains in the source records.
 Sheet and wire representations commit each independently resolvable shell or
 connected set. A failed member produces a decode loss. Solid roots, including
 every shell in `BREP_WITH_VOIDS`, commit atomically. A mandatory member failure
-rejects the solid root. One STEP face shared by several shell occurrences maps
-to one owner-scoped CADIR face per occurrence. Boundary edges and vertices
-remain shared when their owner scope is unambiguous.
+rejects the solid root. The outer shell of `BREP_WITH_VOIDS` must decode to one
+connected IR shell; a split outer shell rejects the root because the IR stores
+the outer role by position. One STEP face shared by several shell occurrences
+maps to one owner-scoped CADIR face per occurrence. Boundary edges and
+vertices remain shared when their owner scope is unambiguous.
 
 A face boundary uses an `EDGE_LOOP` coedge ring, a `POLY_LOOP` point ring, or a
 `VERTEX_LOOP` vertex at a surface singularity. A vertex loop emits a
