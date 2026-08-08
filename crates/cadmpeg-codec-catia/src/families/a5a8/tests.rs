@@ -9,8 +9,9 @@ use crate::tests::{
     a5_rational_surface_stream, a5_surface_extrapolated_short_tail, a5_surface_extrapolated_tail,
     a5_surface_short_tail, a5_surface_stream, a5_surface_stream_with_tail, a5_surface_tail,
     a6_freeform_curve_stream, a6_pcurve_stream, a6_surface_stream, a8_elided_surface_stream,
-    a8_freeform_curve_stream, a8_inline_tail_surface_stream, a8_pcurve_stream,
-    a8_rational_surface_stream, a8_surface_stream, a8_surface_tail, le_f64,
+    a8_freeform_curve_stream, a8_freeform_curve_stream_with_count, a8_inline_tail_surface_stream,
+    a8_pcurve_stream, a8_pcurve_stream_with_count, a8_rational_surface_stream, a8_surface_stream,
+    a8_surface_tail, le_f64,
 };
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -305,6 +306,14 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     let payload_len = u32::try_from(trailing_byte.len() - 11).unwrap();
     trailing_byte[3..7].copy_from_slice(&payload_len.to_le_bytes());
     assert!(crate::families::a5a8::records::a8_pcurves(&trailing_byte).is_empty());
+}
+
+#[test]
+fn a8_pcurve_parser_accepts_frame_bounded_site_count() {
+    let pcurves = crate::families::a5a8::records::a8_pcurves(&a8_pcurve_stream_with_count(8193));
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].knots.len(), 8193);
+    assert_eq!(pcurves[0].points.len(), 8193);
 }
 
 #[test]
@@ -854,6 +863,16 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
         crate::families::a5a8::records::a8_freeform_curves(&invalid_endpoint_multiplicity)
             .is_empty()
     );
+}
+
+#[test]
+fn a8_curve_parser_accepts_frame_bounded_site_count() {
+    let curves = crate::families::a5a8::records::a8_freeform_curves(
+        &a8_freeform_curve_stream_with_count(8193),
+    );
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].knots.len(), 8193);
+    assert_eq!(curves[0].sites.len(), 8193);
 }
 
 #[test]

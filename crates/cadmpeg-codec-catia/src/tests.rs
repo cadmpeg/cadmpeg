@@ -1169,6 +1169,43 @@ pub(crate) fn a8_pcurve_stream() -> Vec<u8> {
     record
 }
 
+pub(crate) fn a8_pcurve_stream_with_count(count: u32) -> Vec<u8> {
+    assert!(count >= 2);
+    let mut payload = vec![0, 0x18, 0x34, 0x12, 21, 0, 0];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
+    for site in 0..count {
+        let multiplicity = if site == 0 || site + 1 == count { 6 } else { 3 };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(1);
+    for array in 0..4 {
+        for _ in 0..count {
+            let value = if array == 2 { 1.0 } else { 0.0 };
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(f64::from(count - 1)));
+    payload.push(0x07);
+    let mut record = vec![0xa8, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.extend_from_slice(&0x5678u32.to_le_bytes());
+    record.extend_from_slice(&payload);
+    record
+}
+
 pub(crate) fn a5_pcurve_stream() -> Vec<u8> {
     a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0])
 }
@@ -3507,11 +3544,22 @@ pub(crate) fn a5_guide_curve_stream_with_count(count: u32) -> Vec<u8> {
 }
 
 pub(crate) fn a8_freeform_curve_stream() -> Vec<u8> {
-    let mut payload = vec![0, 9, 21, 0, 0, 9, 0x0c];
-    for value in [0.0f64, 1.0] {
-        payload.extend_from_slice(&le_f64(value));
+    a8_freeform_curve_stream_with_count(2)
+}
+
+pub(crate) fn a8_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = vec![0];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.extend_from_slice(&[21, 0, 0]);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
     }
-    payload.extend_from_slice(&[25, 25]);
+    for site in 0..count {
+        let multiplicity = if site == 0 || site + 1 == count { 6 } else { 3 };
+        payload.extend_from_slice(&compact_uint_bytes(multiplicity));
+    }
     let sites = [
         [
             1.0f64,
@@ -3539,8 +3587,17 @@ pub(crate) fn a8_freeform_curve_stream() -> Vec<u8> {
         ],
     ];
     for block in 0..3 {
-        for site in sites {
-            for value in if block == 0 { site } else { [0.0; 10] } {
+        for site in 0..count {
+            let values = if block == 0 {
+                if site == 0 {
+                    sites[0]
+                } else {
+                    sites[1]
+                }
+            } else {
+                [0.0; 10]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }

@@ -858,13 +858,19 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
     at = at.checked_add(2)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=8192).contains(&count)
-        || degree != 5
-    {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
         return None;
     }
     at = at.checked_add(if data.get(at) == Some(&0x08) { 2 } else { 1 })?;
+    let knot_bytes = count.checked_mul(8)?;
+    let block_bytes = count.checked_mul(80)?;
+    let known_bytes = knot_bytes
+        .checked_add(count)?
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(59)?;
+    if at.checked_add(known_bytes)? > end {
+        return None;
+    }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
         knots.push(f64_le(data, at)?);
@@ -877,8 +883,7 @@ fn parse_a8_curve(data: &[u8], frame: A8Frame) -> Option<A8FreeformCurve> {
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
         return None;
     }
-    let block_bytes = count.checked_mul(80)?;
-    let blocks_end = at.checked_add(3 * block_bytes)?;
+    let blocks_end = at.checked_add(block_bytes.checked_mul(3)?)?;
     if multiplicities.first() != Some(&6)
         || multiplicities.last() != Some(&6)
         || multiplicities[1..multiplicities.len() - 1]
@@ -1068,7 +1073,16 @@ fn parse_object_stream_pcurve(
     data.get(..at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     at += if data.get(at) == Some(&0x08) { 2 } else { 1 };
-    if !(2..=8192).contains(&count) || degree != 5 {
+    if count < 2 || degree != 5 {
+        return None;
+    }
+    let knot_bytes = count.checked_mul(8)?;
+    let array_bytes = count.checked_mul(8)?.checked_mul(6)?;
+    let known_bytes = knot_bytes
+        .checked_add(count)?
+        .checked_add(array_bytes)?
+        .checked_add(20)?;
+    if at.checked_add(known_bytes)? > end {
         return None;
     }
     let read = |at: &mut usize| -> Option<Vec<f64>> {
@@ -1089,6 +1103,9 @@ fn parse_object_stream_pcurve(
     }
     let mode = *data.get(at)?;
     at += 1;
+    if at.checked_add(array_bytes.checked_add(18)?)? > end {
+        return None;
+    }
     let u = read(&mut at)?;
     let v = read(&mut at)?;
     let du = read(&mut at)?;
