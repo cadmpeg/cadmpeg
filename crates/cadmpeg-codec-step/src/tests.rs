@@ -1182,6 +1182,48 @@ fn decode_builds_a_valid_connected_sheet_brep() {
 }
 
 #[test]
+fn invalid_optional_pcurve_is_omitted_and_retained_as_source_data() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#51=CARTESIAN_POINT('',(0.,0.));",
+            "#51=CARTESIAN_POINT('',(0.,1.));",
+        )
+        .replace(
+            "#54=LINE('',#51,#53);",
+            "#54=TRIMMED_CURVE('',#71,(0.),(10.),.T.,.PARAMETER.);",
+        )
+        .replace(
+            "#68=STYLED_ITEM('',(#66),#19);",
+            "#68=STYLED_ITEM('',(#66),#19);\n#71=LINE('',#51,#53);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode invalid optional pcurve");
+
+    assert!(decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PcurveOmitted
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss.message.contains("optional pcurve")
+    }));
+    assert!(decoded
+        .ir
+        .native_unknowns("step")
+        .expect("STEP unknown arena")
+        .iter()
+        .any(|record| record.id.0 == "step:data:pcurve#56"));
+
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
     let mut ir = StepCodec::default()
         .decode(
@@ -2004,7 +2046,7 @@ fn writer_round_trips_rational_nurbs_pcurves() {
         knots: vec![0.0, 0.0, 1.0, 1.0],
         control_points: vec![
             cadmpeg_ir::math::Point2::new(0.0, 0.0),
-            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            cadmpeg_ir::math::Point2::new(10.0, 0.0),
         ],
         weights: Some(vec![1.0, 2.0]),
         periodic: false,
@@ -2067,20 +2109,20 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
             minor_radius: 2.0,
         },
         PcurveGeometry::Trimmed {
-            parameter_range: [0.25, 1.75],
+            parameter_range: [0.0, std::f64::consts::PI],
             basis: Box::new(PcurveGeometry::Circle {
-                center: Point2::new(2.0, 3.0),
-                x_axis,
-                y_axis,
-                radius: 4.0,
+                center: Point2::new(5.0, 0.0),
+                x_axis: Point2::new(1.0, 0.0),
+                y_axis: Point2::new(0.0, 1.0),
+                radius: 5.0,
             }),
             same_sense: true,
         },
         PcurveGeometry::Offset {
             distance: -0.5,
             basis: Box::new(PcurveGeometry::Line {
-                origin: Point2::new(2.0, 3.0),
-                direction: Point2::new(4.0, 0.0),
+                origin: Point2::new(0.0, 0.5),
+                direction: Point2::new(10.0, 0.0),
             }),
         },
     ];
@@ -2112,9 +2154,12 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
         .expect("fixture is UTF-8")
         .replace(
             "#52=DIRECTION('',(1.,0.));",
-            "#52=CARTESIAN_POINT('',(1.,2.));",
+            "#52=CARTESIAN_POINT('',(5.,1.));",
         )
-        .replace("#53=VECTOR('',#52,1.);", "#53=CARTESIAN_POINT('',(3.,2.));")
+        .replace(
+            "#53=VECTOR('',#52,1.);",
+            "#53=CARTESIAN_POINT('',(10.,0.));",
+        )
         .replace("#54=LINE('',#51,#53);", "#54=POLYLINE('',(#51,#52,#53));");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -2130,8 +2175,8 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
             ..
         } if control_points == &[
             Point2::new(0.0, 0.0),
-            Point2::new(1.0, 2.0),
-            Point2::new(3.0, 2.0),
+            Point2::new(5.0, 1.0),
+            Point2::new(10.0, 0.0),
         ]
     ));
     assert_eq!(decoded.ir.model.bodies.len(), 1);

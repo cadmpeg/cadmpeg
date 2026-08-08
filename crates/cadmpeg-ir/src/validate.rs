@@ -42,6 +42,7 @@ use annotations_native::{check_annotations, check_native_links};
 use assets::check_assets;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
+pub use geometry_consistency::pcurve_surface_endpoint_mismatches;
 use geometry_consistency::{
     check_edge_endpoint_consistency, check_pcurve_surface_consistency,
     check_procedural_support_consistency,

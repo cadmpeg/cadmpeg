@@ -211,6 +211,8 @@ fn decode_exchange_mode(
     let presentation = presentation::decode(exchange, &topology, &mut ir);
     charge_semantic_stage(ctx, semantic_input_work, &ir, "step_validation_decode")?;
     let validation = validation::decode(exchange, &geometry, &mut ir);
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_pcurve_consistency")?;
+    omit_inconsistent_pcurves(&mut ir, &mut geometry.losses);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
     report.losses.extend(dependencies.losses);
@@ -473,6 +475,41 @@ fn charge_semantic_stage(
     let output_work = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
     let units = input_work.saturating_add(output_work);
     ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+}
+
+/// Omit an optional pcurve when its mapped endpoint contract fails.
+///
+/// The pcurve is not required for the model-space edge topology. Keeping a
+/// carrier that cannot map to the edge vertices would make the decoded IR
+/// invalid, so `retain_unowned_pcurves` will preserve its complete STEP source
+/// closure as opaque data after this neutral omission.
+fn omit_inconsistent_pcurves(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    let mismatches = cadmpeg_ir::validate::pcurve_surface_endpoint_mismatches(ir);
+    for mismatch in mismatches {
+        let Some(coedge) = ir
+            .model
+            .coedges
+            .iter_mut()
+            .find(|coedge| coedge.id.0 == mismatch.coedge)
+        else {
+            continue;
+        };
+        let count = coedge.pcurves.len();
+        if count == 0 {
+            continue;
+        }
+        coedge.pcurves.clear();
+        losses.push(
+            LossNote::new(
+                LossKind::PcurveOmitted,
+                format!(
+                    "coedge {}: {} optional pcurve(s) omitted because mapping through the face surface misses edge vertices by {:.6}, exceeding allowance {:.6}",
+                    mismatch.coedge, count, mismatch.mismatch, mismatch.allowance
+                ),
+            )
+            .with_severity(Severity::Error),
+        );
+    }
 }
 
 /// Count the source graph nodes that each semantic pass may inspect.

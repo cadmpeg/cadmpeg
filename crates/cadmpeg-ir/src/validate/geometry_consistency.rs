@@ -406,7 +406,23 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
 /// the topology tolerances or the evaluated pcurve carriers' fit tolerances.
 /// Pcurve parameter sign and direction are independent of edge sense, so
 /// either sign and either endpoint assignment satisfy the check.
-pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+#[derive(Debug, Clone, PartialEq)]
+pub struct PcurveSurfaceEndpointMismatch {
+    /// Coedge whose optional pcurve support failed the endpoint contract.
+    pub coedge: String,
+    /// Best endpoint mismatch over the candidate parameter intervals.
+    pub mismatch: f64,
+    /// Document and topology tolerance allowance used by the contract.
+    pub allowance: f64,
+}
+
+/// Return coedges whose optional pcurve support cannot be reconciled with the
+/// edge vertices through the owning face surface.
+///
+/// This is the same contract used by validation. Codecs may use the result to
+/// omit an optional pcurve and retain its source record as opaque data instead
+/// of emitting a neutral coedge that fails validation.
+pub fn pcurve_surface_endpoint_mismatches(ir: &CadIr) -> Vec<PcurveSurfaceEndpointMismatch> {
     let surfaces = ir
         .model
         .surfaces
@@ -444,6 +460,7 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         .map(|lp| (lp.id.0.as_str(), lp))
         .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
+    let mut mismatches = Vec::new();
 
     for coedge in &ir.model.coedges {
         let Some((first_use, last_use)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
@@ -535,16 +552,28 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         if !mismatch.is_finite() || mismatch > bound {
-            findings.push(Finding {
-                check: Check::GeometricConsistency,
-                severity: Severity::Error,
-                message: format!(
-                    "pcurve mapped through the face surface misses the edge's vertex positions \
-                     by {mismatch:.6}"
-                ),
-                entity: Some(coedge.id.0.clone()),
+            mismatches.push(PcurveSurfaceEndpointMismatch {
+                coedge: coedge.id.0.clone(),
+                mismatch,
+                allowance: bound,
             });
         }
+    }
+    mismatches
+}
+
+pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Finding>) {
+    for mismatch in pcurve_surface_endpoint_mismatches(ir) {
+        findings.push(Finding {
+            check: Check::GeometricConsistency,
+            severity: Severity::Error,
+            message: format!(
+                "pcurve mapped through the face surface misses the edge's vertex positions \
+                 by {:.6}",
+                mismatch.mismatch
+            ),
+            entity: Some(mismatch.coedge),
+        });
     }
 }
 

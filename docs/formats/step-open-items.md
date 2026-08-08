@@ -70,8 +70,11 @@ not yet prove that every omitted semantic construct has one stable loss.
 document-wide linear uncertainty as their baseline. Edge, vertex, face, and
 solved-carrier tolerances widen that baseline when present. A small endpoint
 deviation within the declared uncertainty is therefore valid; a larger
-deviation remains an error. The STEP face-bound rule is retained as a source
-validity diagnostic.
+deviation remains an error. The STEP reader applies this same contract before
+final retention: an optional pcurve that fails the surface-to-edge endpoint
+contract is omitted from the neutral coedge, retained with its complete source
+closure, and reported as `PcurveOmitted`. The STEP face-bound rule is retained
+as a source validity diagnostic.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
 artifact. Classify each failure as a source-invalid case with a retained
