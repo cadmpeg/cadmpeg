@@ -660,10 +660,13 @@ fn parse_directory_region(
     // real descriptor. The extent count sits at `desc_offset + 0x50`.
     let mut o = 0usize;
     while o + 4 <= dirbuf.len() {
-        let Some(k) = u32_be(dirbuf, o).map(|value| value as usize) else {
+        let Some(k) = u32_be(dirbuf, o).and_then(|value| usize::try_from(value).ok()) else {
             break;
         };
-        if (1..=64).contains(&k) && o + 4 + 20 * k <= dirbuf.len() {
+        let extents_end = k
+            .checked_mul(20)
+            .and_then(|extent_bytes| o.checked_add(4)?.checked_add(extent_bytes));
+        if k != 0 && extents_end.is_some_and(|end| end <= dirbuf.len()) {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, physical_base, file_len) {
                 if cum > 0 && o >= 0x50 {
                     let ds = o - 0x50;
@@ -1239,8 +1242,9 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 #[cfg(test)]
 mod tests {
     use super::{
-        identify_variant, outer_container_declarations, outer_container_for_extent, parse_extents,
-        reconstruct_logical_stream, summarize, Census, ContainerScan, Descriptor, Extent, InnerDir,
+        identify_variant, outer_container_declarations, outer_container_for_extent,
+        parse_directory_region, parse_extents, reconstruct_logical_stream, summarize, Census,
+        ContainerScan, Descriptor, Extent, InnerDir,
     };
     use crate::variant::Variant;
 
@@ -1272,6 +1276,37 @@ mod tests {
         assert_eq!(logical_length, 8);
         assert_eq!(extents[0].flags, 0xa501_0080);
         assert!(parse_extents(&directory, 0, 1, usize::MAX, usize::MAX).is_none());
+    }
+
+    #[test]
+    fn directory_parser_accepts_a_structurally_bounded_extent_roster_above_64() {
+        let descriptor_start = 16;
+        let extent_count_offset = descriptor_start + 0x50;
+        let extent_count = 65usize;
+        let directory_end = extent_count_offset + 4 + extent_count * 20;
+        let mut directory = vec![0u8; directory_end];
+        directory[..super::DIR_MAGIC.len()].copy_from_slice(super::DIR_MAGIC);
+        directory[descriptor_start + 0x0c..descriptor_start + 0x10]
+            .copy_from_slice(&(extent_count as u32).to_be_bytes());
+        directory[extent_count_offset..extent_count_offset + 4]
+            .copy_from_slice(&(extent_count as u32).to_be_bytes());
+        for index in 0..extent_count {
+            let extent = extent_count_offset + 4 + index * 20;
+            directory[extent..extent + 4].copy_from_slice(&(index as u32).to_be_bytes());
+            directory[extent + 4..extent + 8].copy_from_slice(&1u32.to_be_bytes());
+            directory[extent + 8..extent + 12].copy_from_slice(&1u32.to_be_bytes());
+            directory[extent + 12..extent + 16].copy_from_slice(&(index as u32).to_be_bytes());
+        }
+
+        let parsed = parse_directory_region(&directory, 0, 0, directory.len())
+            .expect("bounded extent roster");
+        let descriptor = parsed
+            .descriptors
+            .iter()
+            .find(|descriptor| descriptor.desc_offset == descriptor_start)
+            .expect("descriptor at synthesized header");
+        assert_eq!(descriptor.logical_length, extent_count as u32);
+        assert_eq!(descriptor.extents.len(), extent_count);
     }
 
     #[test]
