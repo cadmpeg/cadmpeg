@@ -321,7 +321,7 @@ pub fn decode_parameter_owners(
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
         let owner = at.and_then(|at| {
-            [108, 107, 104, 103, 101, 99]
+            [108, 107, 104, 103, 101, 100, 99]
                 .into_iter()
                 .find_map(|length| {
                     at.checked_add(length)
@@ -406,6 +406,23 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
             90,
             91,
             95..101,
+        ),
+        100 if frame.get(40) == Some(&1) => (
+            f64::from(u32_at(frame, 41)?),
+            45,
+            46,
+            50..56,
+            56,
+            64,
+            65,
+            69..77,
+            None,
+            77,
+            78,
+            82..89,
+            89,
+            90,
+            94..100,
         ),
         103 => (
             f64_at(frame, 40)?,
@@ -522,10 +539,11 @@ pub(crate) fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner
         // The frame length already selected the field layout above, and any
         // length outside that set returned there. The remaining lengths 99,
         // 103, and 104 all read the evaluated value at 40; only the counted
-        // form at 101 and the tagged forms at 107 and 108 shift it. A new
-        // layout arm above must add its own offset here rather than inherit 40.
+        // form at 101, the compact typed-counted form at 100, and the tagged
+        // forms at 107 and 108 shift it. A new layout arm above must add its
+        // own offset here rather than inherit 40.
         evaluated_value_offset: match frame.len() {
-            101 => 41,
+            100 | 101 => 41,
             107 | 108 => 44,
             _ => 40,
         },

@@ -2236,6 +2236,29 @@ fn counted_parameter_owner_frame() -> Vec<u8> {
     frame
 }
 
+fn compact_typed_counted_parameter_owner_frame() -> Vec<u8> {
+    let mut frame = vec![0; 100];
+    frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+    frame[4..7].copy_from_slice(b"320");
+    frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+    frame[19] = 1;
+    frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+    frame[24] = 1;
+    frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+    frame[40] = 1;
+    frame[41..45].copy_from_slice(&19u32.to_le_bytes());
+    frame[45] = 1;
+    frame[46..50].copy_from_slice(&46u32.to_le_bytes());
+    frame[56..60].copy_from_slice(&9u32.to_le_bytes());
+    frame[64] = 1;
+    frame[65..69].copy_from_slice(&12u32.to_le_bytes());
+    frame[77] = 1;
+    frame[78..82].copy_from_slice(&45u32.to_le_bytes());
+    frame[89] = 1;
+    frame[90..94].copy_from_slice(&12u32.to_le_bytes());
+    frame
+}
+
 fn compact_counted_parameter_owner_frame() -> Vec<u8> {
     let mut frame = vec![0; 99];
     frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -2389,6 +2412,21 @@ fn counted_parameter_owner_uses_typed_u32_scalar() {
     assert_eq!(parsed.evaluated_value_offset, 41);
     assert_eq!(parsed.parameter_record_index, 45);
     assert_eq!(parsed.companion_record_index, 46);
+}
+
+#[test]
+fn compact_typed_counted_parameter_owner_omits_variant_slot() {
+    let parsed = parse_parameter_owner(&compact_typed_counted_parameter_owner_frame())
+        .expect("compact typed counted parameter owner");
+    assert_eq!(parsed.record_index, 44);
+    assert_eq!(parsed.scope_record_index, 12);
+    assert_eq!(parsed.local_ordinal, 0);
+    assert_eq!(parsed.evaluated_value, 19.0);
+    assert_eq!(parsed.evaluated_value_offset, 41);
+    assert_eq!(parsed.parameter_record_index, 46);
+    assert_eq!(parsed.owned_ordinal, 9);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.companion_record_index, 45);
 }
 
 #[test]
