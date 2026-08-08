@@ -1210,9 +1210,10 @@ fn attach_feature_operations(
             std::collections::btree_map::Entry::Occupied(_) => {}
         }
     }
-    for (section_key, boolean_blocks) in
-        boolean_offset_store_body_blocks(booleans.values().copied(), data_blocks)
-    {
+    for (section_key, boolean_blocks) in crate::native::segments::boolean_offset_store_body_blocks(
+        booleans.values().copied(),
+        data_blocks,
+    ) {
         let blocks = offset_store_body_blocks_by_section
             .entry(section_key.clone())
             .or_default();
@@ -5820,60 +5821,6 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-/// Resolve every Boolean participant to one unique offset-store block only when
-/// all target and tool indices resolve in one store. The relation is scoped to
-/// the feature-history section that owns the Boolean operation.
-fn boolean_offset_store_body_blocks<'a>(
-    operations: impl IntoIterator<Item = &'a crate::native::features::FeatureBooleanOperation>,
-    data_blocks: &[crate::native::om::DataBlock],
-) -> BTreeMap<String, BTreeMap<u32, String>> {
-    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&crate::native::om::DataBlock>>::new();
-    for block in data_blocks {
-        blocks_by_ordinal
-            .entry(block.block_ordinal)
-            .or_default()
-            .push(block);
-    }
-    let mut body_blocks_by_section = BTreeMap::<String, BTreeMap<u32, String>>::new();
-    for operation in operations {
-        let Some((section_key, _)) = operation.operation_label.rsplit_once('-') else {
-            continue;
-        };
-        let participants = std::iter::once(operation.target_object_index)
-            .chain(operation.tool_object_indices.iter().copied())
-            .collect::<Vec<_>>();
-        let resolved = participants
-            .iter()
-            .map(|object_index| {
-                let matches = blocks_by_ordinal.get(object_index)?;
-                let [block] = matches.as_slice() else {
-                    return None;
-                };
-                Some(*block)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(resolved) = resolved else {
-            continue;
-        };
-        let Some(section_ordinal) = resolved.first().map(|block| block.section_ordinal) else {
-            continue;
-        };
-        if resolved
-            .iter()
-            .any(|block| block.section_ordinal != section_ordinal)
-        {
-            continue;
-        }
-        let body_blocks = body_blocks_by_section
-            .entry(section_key.to_string())
-            .or_default();
-        for (object_index, block) in participants.into_iter().zip(resolved) {
-            body_blocks.insert(object_index, block.id.clone());
-        }
-    }
-    body_blocks_by_section
-}
-
 /// Identity namespace used to prove that two Boolean selections are disjoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FeatureBodyIdentity {
@@ -8381,7 +8328,10 @@ mod tests {
         };
         let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
         assert_eq!(
-            super::boolean_offset_store_body_blocks(std::iter::once(&operation), &same_store),
+            crate::native::segments::boolean_offset_store_body_blocks(
+                std::iter::once(&operation),
+                &same_store,
+            ),
             BTreeMap::from([(
                 "nx:feature-history:operation-label#section".to_string(),
                 BTreeMap::from([
@@ -8392,10 +8342,11 @@ mod tests {
             )])
         );
         let mixed_store = vec![block(3, 401), block(4, 402), block(4, 403)];
-        assert!(
-            super::boolean_offset_store_body_blocks(std::iter::once(&operation), &mixed_store)
-                .is_empty()
-        );
+        assert!(crate::native::segments::boolean_offset_store_body_blocks(
+            std::iter::once(&operation),
+            &mixed_store,
+        )
+        .is_empty());
     }
 
     #[test]

@@ -1952,34 +1952,14 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, model: &crate::native::NativeM
     if ir.model.bodies.len() <= 1 {
         return false;
     }
-    // These families are read straight from the pre-built model; extracting
-    // them here as well would parse the same container bytes a second time.
-    // `feature_operation_body_operands` already folds in the body-member and
-    // reference-occurrence families the legacy code computed inline.
-    let labels = model.features.feature_operation_labels.as_slice();
-    let body_references = model.features.feature_body_references.as_slice();
-    let body_data_block_uses = model.features.feature_body_data_block_uses.as_slice();
-    let booleans = model.features.feature_boolean_operations.as_slice();
     let bindings = model.segments.segment_body_bindings.as_slice();
-    let body_operands = model.features.feature_operation_body_operands.as_slice();
-    let Some(statuses) = crate::native::segment_body_lineage_statuses(
-        labels,
-        body_references,
-        body_data_block_uses,
-        booleans,
-        body_operands,
-        bindings,
-    ) else {
+    let statuses = model.segments.segment_body_lineage_statuses.as_slice();
+    if statuses.len() != bindings.len() {
         return false;
-    };
+    }
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for (binding, status) in bindings.iter().filter_map(|binding| {
-        statuses
-            .iter()
-            .find(|status| status.segment_body_binding == binding.id)
-            .map(|status| (binding, status))
-    }) {
+    for (binding, status) in bindings.iter().zip(statuses) {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model

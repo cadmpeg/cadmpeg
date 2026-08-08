@@ -236,7 +236,9 @@ target's selected namespace. When the object-namespace primary body has a
 segment body-image binding, every surviving neutral body from that image is an
 output of the operation. An offset-store primary body or unbound
 object-namespace primary body retains its native relation but has no neutral
-output.
+output. A Boolean whose complete target and tool participant set resolves to
+one offset store has no segment-image writer or consumption effect; equal
+integer values in the two namespaces do not establish a cross-store relation.
 
 Every non-`DELETE` operation with an unambiguous primary-body writer declares
 one intermediate result body. The result body's feature-local identity is the

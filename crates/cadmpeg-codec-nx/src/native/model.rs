@@ -759,6 +759,7 @@ impl NativeModel {
             &feature_operation_labels,
             &feature_body_references,
             &feature_body_data_block_uses,
+            &data_blocks,
             &feature_boolean_operations,
             &feature_operation_body_operands,
             &segment_body_bindings,

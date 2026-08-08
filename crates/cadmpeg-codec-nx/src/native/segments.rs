@@ -10,7 +10,7 @@ use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation,
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
-use crate::native::om::OmSchemaRole;
+use crate::native::om::{DataBlock, OmSchemaRole};
 
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -151,6 +151,7 @@ pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
+    data_blocks: &[DataBlock],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
@@ -175,6 +176,7 @@ pub fn terminal_feature_body_indices(
         .collect::<BTreeMap<_, _>>();
     let aliases = body_alias_roots(bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
+    let segment_boolean_operations = segment_boolean_operation_labels(booleans, data_blocks);
     let operation_kinds = chronological_labels
         .iter()
         .map(|label| (label.id.as_str(), label.value.as_str()))
@@ -198,13 +200,19 @@ pub fn terminal_feature_body_indices(
             }
             record_writer(canonical(reference.body_object_index), position);
         }
-        for operation in booleans {
+        for operation in booleans
+            .iter()
+            .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
+        {
             let position = *positions.get(operation.operation_label.as_str())?;
             record_writer(canonical(operation.target_object_index), position);
         }
     }
     let mut consumed = BTreeSet::new();
-    for operation in booleans {
+    for operation in booleans
+        .iter()
+        .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
+    {
         let position = *positions.get(operation.operation_label.as_str())?;
         for tool in &operation.tool_object_indices {
             let tool = canonical(*tool);
@@ -272,6 +280,7 @@ pub fn segment_body_lineage_statuses(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
+    data_blocks: &[DataBlock],
     booleans: &[FeatureBooleanOperation],
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
@@ -280,6 +289,7 @@ pub fn segment_body_lineage_statuses(
         labels,
         references,
         data_block_uses,
+        data_blocks,
         booleans,
         operands,
         bindings,
@@ -306,6 +316,89 @@ pub fn segment_body_lineage_statuses(
             })
         })
         .collect()
+}
+
+/// Return Boolean operations that do not have a complete offset-store
+/// participant set. A complete offset-store selection has no segment-body
+/// effect; integer equality across the two namespaces is not an identity
+/// proof. Other operations retain the native Boolean lineage rules because no
+/// offset-store selection has been established for them.
+fn segment_boolean_operation_labels(
+    booleans: &[FeatureBooleanOperation],
+    data_blocks: &[DataBlock],
+) -> BTreeSet<String> {
+    booleans
+        .iter()
+        .filter_map(|operation| {
+            let participants = std::iter::once(operation.target_object_index)
+                .chain(operation.tool_object_indices.iter().copied())
+                .collect::<Vec<_>>();
+            let offset_store_namespace =
+                boolean_offset_store_body_blocks(std::iter::once(operation), data_blocks)
+                    .values()
+                    .any(|blocks| {
+                        participants
+                            .iter()
+                            .all(|identity| blocks.contains_key(identity))
+                    });
+            (!offset_store_namespace).then(|| operation.operation_label.clone())
+        })
+        .collect()
+}
+
+/// Resolve every Boolean participant to one unique offset-store block only
+/// when all target and tool indices resolve in one store. The returned map is
+/// scoped by feature-history section because an object index has no global
+/// identity across sections.
+pub(crate) fn boolean_offset_store_body_blocks<'a>(
+    operations: impl IntoIterator<Item = &'a FeatureBooleanOperation>,
+    data_blocks: &[DataBlock],
+) -> BTreeMap<String, BTreeMap<u32, String>> {
+    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
+    for block in data_blocks {
+        blocks_by_ordinal
+            .entry(block.block_ordinal)
+            .or_default()
+            .push(block);
+    }
+    let mut body_blocks_by_section = BTreeMap::<String, BTreeMap<u32, String>>::new();
+    for operation in operations {
+        let Some((section_key, _)) = operation.operation_label.rsplit_once('-') else {
+            continue;
+        };
+        let participants = std::iter::once(operation.target_object_index)
+            .chain(operation.tool_object_indices.iter().copied())
+            .collect::<Vec<_>>();
+        let resolved = participants
+            .iter()
+            .map(|object_index| {
+                let matches = blocks_by_ordinal.get(object_index)?;
+                let [block] = matches.as_slice() else {
+                    return None;
+                };
+                Some(*block)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(resolved) = resolved else {
+            continue;
+        };
+        let Some(section_ordinal) = resolved.first().map(|block| block.section_ordinal) else {
+            continue;
+        };
+        if resolved
+            .iter()
+            .any(|block| block.section_ordinal != section_ordinal)
+        {
+            continue;
+        }
+        let body_blocks = body_blocks_by_section
+            .entry(section_key.to_string())
+            .or_default();
+        for (object_index, block) in participants.into_iter().zip(resolved) {
+            body_blocks.insert(object_index, block.id.clone());
+        }
+    }
+    body_blocks_by_section
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
@@ -704,7 +797,15 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[]),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &booleans,
+                &[],
+                &[],
+            ),
             Some([10].into_iter().collect())
         );
     }
@@ -763,7 +864,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &booleans, &[], &bindings),
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &booleans, &[], &bindings,),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -834,6 +935,7 @@ mod tests {
                 &labels,
                 &references,
                 &[],
+                &[],
                 &booleans,
                 &[],
                 &bindings,
@@ -875,7 +977,15 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &[],
+                &[],
+                &bindings,
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -913,9 +1023,16 @@ mod tests {
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses =
-            super::segment_body_lineage_statuses(&labels, &references, &[], &[], &[], &bindings)
-                .expect("complete delete-only lineage");
+        let statuses = super::segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &[],
+            &[],
+            &[],
+            &[],
+            &bindings,
+        )
+        .expect("complete delete-only lineage");
         assert_eq!(statuses.len(), 2);
         assert!(!statuses[0].terminal);
         assert!(statuses[1].terminal);
@@ -966,11 +1083,80 @@ mod tests {
             &data_block_uses,
             &[],
             &[],
+            &[],
             &bindings,
         )
         .expect("segment binding establishes lineage");
         assert_eq!(statuses.len(), 1);
         assert!(statuses[0].terminal);
+    }
+
+    #[test]
+    fn feature_body_lineage_ignores_complete_offset_store_boolean_collisions() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+        };
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let operation_label = "nx:feature-history:operation-label#section-boolean".to_string();
+        let labels = [FeatureOperationLabel {
+            id: operation_label.clone(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "UNITE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#offset-store".to_string(),
+            operation_label,
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 11,
+            raw_target_object_index: vec![11],
+            target_source_offset: 0,
+            tool_object_indices: vec![21],
+            raw_tool_object_indices: vec![vec![21]],
+            tool_source_offsets: vec![0],
+            source_offset: 0,
+        }];
+        let block = |ordinal| DataBlock {
+            id: format!("nx:om-data-blocks-3:block#{ordinal}"),
+            section_ordinal: 3,
+            block_ordinal: ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        };
+        let blocks = [block(11), block(21)];
+        let binding = |ordinal, body, alias| SegmentBodyBinding {
+            id: format!("binding#{ordinal}"),
+            stream_link: format!("stream#{ordinal}"),
+            stream_ordinal: ordinal,
+            stream_kind: "partition".to_string(),
+            body_object_index: body,
+            body_alias_object_index: alias,
+            stream_role: 19,
+            source_offset: u64::from(ordinal),
+        };
+        let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(
+                &labels,
+                &[],
+                &[],
+                &blocks,
+                &booleans,
+                &[],
+                &bindings,
+            ),
+            Some([10, 11, 20, 21].into_iter().collect())
+        );
     }
 
     #[test]
@@ -1010,7 +1196,15 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &[],
+                &[],
+                &bindings,
+            ),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -1052,7 +1246,15 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &[], &[], &bindings,),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &[],
+                &[],
+                &bindings,
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1098,7 +1300,15 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &references, &[], &booleans, &[], &[],),
+            super::terminal_feature_body_indices(
+                &labels,
+                &references,
+                &[],
+                &[],
+                &booleans,
+                &[],
+                &[],
+            ),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1156,6 +1366,7 @@ mod tests {
                 &labels,
                 &references,
                 &[],
+                &[],
                 &booleans,
                 &[],
                 &bindings,
@@ -1200,7 +1411,7 @@ mod tests {
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &[], &operands, &bindings,),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1241,7 +1452,7 @@ mod tests {
             source_offset: 0,
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(&labels, &[], &[], &[], &operands, &bindings),
+            super::terminal_feature_body_indices(&labels, &[], &[], &[], &[], &operands, &bindings,),
             Some([20, 30].into_iter().collect())
         );
     }

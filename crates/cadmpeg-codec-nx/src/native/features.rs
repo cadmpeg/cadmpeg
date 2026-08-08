@@ -10492,6 +10492,7 @@ mod tests {
             &labels,
             &references,
             &[],
+            &[],
             &booleans,
             &[],
             &[
@@ -10664,9 +10665,16 @@ mod tests {
             binding("binding#2", 2, 40, 20),
         ];
 
-        let statuses =
-            segment_body_lineage_statuses(&labels, &references, &[], &booleans, &[], &bindings)
-                .expect("required invariant");
+        let statuses = segment_body_lineage_statuses(
+            &labels,
+            &references,
+            &[],
+            &[],
+            &booleans,
+            &[],
+            &bindings,
+        )
+        .expect("required invariant");
         assert_eq!(statuses.len(), 3);
         assert!(statuses.iter().all(|status| !status.terminal));
     }
