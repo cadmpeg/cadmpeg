@@ -578,7 +578,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** `wire::records::consolidated_records` is the only record source for the consolidated, `a5a8`, `b2`, freeform, and standard paths, and its complement defines where `05 08 01` vertex rows are read. It is a marker scan: it accepts an offset when the lead byte is in `a5..a7` or `b2..b4`, the next byte is `03`, `13`, or `83`, and the declared length stays in bounds. It applies no length-closure test. We must know the cluster start to walk the frames as the specification requires.
 
-**Note.** Two properties make in-payload coincidences reachable. After it accepts a record the scanner advances by one byte, so it re-examines the accepted record's own header, where a payload-length byte of `0xa5` to `0xa7` or `0xb2` to `0xb4` can open a phantom record. Suppression holds one payload range only, so a phantom overwrites the real record's range and stops suppressing it. An A-family phantom takes its length from payload bytes, so it can also claim a large range and hide the real records inside it.
+**Note.** `wire::records::consolidated_records` advances to the end of an accepted frame, so marker-like bytes in that frame's header or payload do not open phantom records. It still searches for the first valid candidate in each gap and has no cluster-boundary or complete-run proof. A valid false candidate in a gap can still start a record walk before the intended cluster.
 
 ## 4. Object stream
 

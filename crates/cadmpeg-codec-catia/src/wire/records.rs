@@ -163,90 +163,71 @@ pub struct ConsolidatedRecord {
     pub payload: Range<usize>,
 }
 
-/// Inventory length-closed consolidated A/B records while suppressing candidates
-/// nested inside the payload of an already accepted frame.
+/// Inventory length-closed consolidated A/B records while resuming the marker
+/// search only after an accepted frame or a gap.
 #[must_use]
 pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
-    let flags = [0x03, 0x13, 0x83];
     let mut records = Vec::new();
-    let mut active_payload: Option<Range<usize>> = None;
     let mut pos = 0;
-    while pos < data.len().saturating_sub(4) {
-        if let Some(payload) = active_payload
-            .as_ref()
-            .filter(|payload| payload.contains(&pos))
-        {
-            pos = payload.end;
-            continue;
-        }
-        let (family, width, token_at, length) = if let Some(width) = data[pos]
-            .checked_sub(0xa4)
-            .filter(|width| (1..=3).contains(width))
-        {
-            let Some(length) = u32_le(data, pos + 3).and_then(|v| usize::try_from(v).ok()) else {
-                pos += 1;
-                continue;
-            };
-            (ConsolidatedFamily::A, width, pos + 7, length)
-        } else if let Some(width) = data[pos]
-            .checked_sub(0xb1)
-            .filter(|width| (1..=3).contains(width))
-        {
-            (
-                ConsolidatedFamily::B,
-                width,
-                pos + 4,
-                usize::from(data[pos + 3]),
-            )
-        } else {
+    while pos < data.len() {
+        let Some(record) = parse_consolidated_record(data, pos) else {
             pos += 1;
             continue;
         };
-        let Some(&flag) = data.get(pos + 1) else {
-            pos += 1;
-            continue;
-        };
-        let Some(&class) = data.get(pos + 2) else {
-            pos += 1;
-            continue;
-        };
-        if !flags.contains(&flag) {
-            pos += 1;
-            continue;
-        }
-        let width_usize = usize::from(width);
-        let Some(payload_start) = token_at.checked_add(width_usize) else {
-            pos += 1;
-            continue;
-        };
-        let Some(end) = payload_start.checked_add(length) else {
-            pos += 1;
-            continue;
-        };
-        if end > data.len() {
-            pos += 1;
-            continue;
-        }
-        let header_token = data[token_at..payload_start]
-            .iter()
-            .enumerate()
-            .fold(0u32, |value, (shift, byte)| {
-                value | (u32::from(*byte) << (8 * shift))
-            });
-        let record = ConsolidatedRecord {
-            family,
-            width,
-            flag,
-            class,
-            header_token,
-            range: pos..end,
-            payload: payload_start..end,
-        };
-        active_payload = Some(record.payload.clone());
+        pos = record.range.end;
         records.push(record);
-        pos += 1;
     }
     records
+}
+
+fn parse_consolidated_record(data: &[u8], pos: usize) -> Option<ConsolidatedRecord> {
+    let flags = [0x03, 0x13, 0x83];
+    let (family, width, token_at, length) = if let Some(width) = data
+        .get(pos)
+        .and_then(|byte| byte.checked_sub(0xa4))
+        .filter(|width| (1..=3).contains(width))
+    {
+        let length =
+            u32_le(data, pos.checked_add(3)?).and_then(|value| usize::try_from(value).ok())?;
+        (ConsolidatedFamily::A, width, pos.checked_add(7)?, length)
+    } else {
+        let width = data
+            .get(pos)
+            .and_then(|byte| byte.checked_sub(0xb1))
+            .filter(|width| (1..=3).contains(width))?;
+        (
+            ConsolidatedFamily::B,
+            width,
+            pos.checked_add(4)?,
+            usize::from(*data.get(pos.checked_add(3)?)?),
+        )
+    };
+    let flag = *data.get(pos.checked_add(1)?)?;
+    let class = *data.get(pos.checked_add(2)?)?;
+    if !flags.contains(&flag) {
+        return None;
+    }
+    let payload_start = token_at.checked_add(usize::from(width))?;
+    let end = payload_start.checked_add(length)?;
+    if end > data.len() {
+        return None;
+    }
+    let header_token = data
+        .get(token_at..payload_start)?
+        .iter()
+        .enumerate()
+        .fold(0u32, |value, (shift, byte)| {
+            value | (u32::from(*byte) << (8 * shift))
+        });
+    Some(ConsolidatedRecord {
+        family,
+        width,
+        flag,
+        class,
+        header_token,
+        range: pos..end,
+        payload: payload_start..end,
+    })
 }
 
 pub(crate) fn a_family_frames_from_records(
@@ -314,7 +295,20 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::scan_vertex_records;
+    use super::{consolidated_records, scan_vertex_records, ConsolidatedFamily};
+
+    #[test]
+    fn record_walk_does_not_rescan_a_wide_header_token() {
+        let mut bytes = vec![0xa7, 0x03, 0x20];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x20]);
+        bytes.extend_from_slice(&[0; 8]);
+
+        let records = consolidated_records(&bytes);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].family, ConsolidatedFamily::A);
+        assert_eq!(records[0].range, 0..18);
+    }
 
     #[test]
     fn vertex_scanner_accepts_finite_coordinates_without_model_size_cutoff() {
