@@ -1179,27 +1179,6 @@ The site runs on the production path through `resolved_features/profiles.rs:1472
 
 **Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
 
-### DI-58. Extrusion Boolean precedence between class and type token
-
-**Question.** Which source gives the Boolean operation of an extrusion when the feature-input class and the Keywords type token disagree?
-
-**Known.** `sldprt.md` §2 "Feature-tree" states that the class is authoritative: "An extrusion bound to `moCut_c` has Boolean operation cut independently of its localized Keywords type token."
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/history.rs:7232` reads the token first and uses the class only as a fallback:
-
-```rust
-fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
-    extrude_op(&feature.kind)
-        .or_else(|| (feature.input_class.as_deref() == Some("moCut_c")).then_some(BooleanOp::Cut))
-}
-```
-
-`extrude_op` removes the non-alphanumeric characters of the token, so a `Boss-Extrude` token gives `Join` and the `moCut_c` test never runs. The specification sentence states the opposite order.
-
-`sldprt.md` §2 also states that every instance with one exact `Type` token uses one feature-input class. That constrains the pairing; it does not forbid a `moCut_c` record whose token normalizes to `bossextrude`.
-
-**Need.** We must apply the stated precedence. A pocket must not decode as a boss.
-
 ### DI-55. Configuration-local feature state gaps
 
 **Question.** What is the disposition of a feature slot that a configuration's own `Config-N-ResolvedFeatures` lane does not resolve?

@@ -4205,6 +4205,7 @@ mod history_reference_tests {
     #[test]
     fn localized_cut_extrusion_uses_its_native_class_operation() {
         let mut cut = feature("cut", Some("43"), 0);
+        cut.kind = "BossExtrude".into();
         cut.input_class = Some("moCut_c".into());
         cut.parameters.insert("D1".into(), "45".into());
         let history = FeatureHistory {
@@ -7230,8 +7231,12 @@ fn is_extrude(feature: &Feature) -> bool {
 }
 
 fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
-    extrude_op(&feature.kind)
-        .or_else(|| (feature.input_class.as_deref() == Some("moCut_c")).then_some(BooleanOp::Cut))
+    // DI-58: the native cut class is authoritative over the localized
+    // Keywords type token. A localized BossExtrude token can remain on a
+    // feature whose feature-input object is the cut class.
+    (feature.input_class.as_deref() == Some("moCut_c"))
+        .then_some(BooleanOp::Cut)
+        .or_else(|| extrude_op(&feature.kind))
 }
 
 fn is_revolve(feature: &Feature) -> bool {
