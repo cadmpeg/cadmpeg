@@ -858,10 +858,7 @@ fn parse_outer_container_declarations(
             continue;
         }
         let strings_start = start + 40;
-        let search_end = (strings_start + 192).min(data.len());
-        let Some(relative_terminal) =
-            memchr::memmem::find(&data[strings_start..search_end], TERMINAL)
-        else {
+        let Some(relative_terminal) = memchr::memmem::find(&data[strings_start..], TERMINAL) else {
             continue;
         };
         let terminal = strings_start + relative_terminal;
@@ -1513,5 +1510,55 @@ mod tests {
         );
         assert_eq!(summary.entries[1].attributes["container_ordinal"], "2");
         assert_eq!(summary.entries[1].attributes["container_data_offset"], "0");
+    }
+
+    #[test]
+    fn outer_data_declaration_uses_the_terminal_marker_after_long_class_names() {
+        let long_class = "C".repeat(193);
+        let mut data = vec![0; 40];
+        data[8..12].copy_from_slice(b"\x01\x00\x03\x00");
+        data[12..16].copy_from_slice(&2u32.to_le_bytes());
+        data[16..24].copy_from_slice(b"\x01\x00\x6c\x00\x02\x00\x00\x00");
+        data[32..36].copy_from_slice(b"\x02\x00\x81\x20");
+        data.extend_from_slice(long_class.as_bytes());
+        data.extend_from_slice(b"\0CATProdCont\0\0");
+        data.extend_from_slice(b"\x03\x00\xf7\x00\x03\x00\x00\x00");
+        data.extend_from_slice(&0x4bbc_295cu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1048u32.to_be_bytes());
+        data.extend_from_slice(&0x62eb_7b6fu32.to_be_bytes());
+        data.extend_from_slice(&0x0000_1825u32.to_be_bytes());
+        let data_len = u32::try_from(data.len()).expect("bounded declaration");
+        let outer = InnerDir {
+            inner: 0,
+            descriptors: vec![
+                Descriptor {
+                    name: "Data".to_string(),
+                    desc_offset: 10,
+                    logical_length: data_len,
+                    extents: vec![Extent {
+                        phys_off: 0,
+                        phys_len: data_len,
+                        flags: 0,
+                    }],
+                },
+                Descriptor {
+                    name: "1048_62eb7b6f_1825".to_string(),
+                    desc_offset: 20,
+                    logical_length: 1,
+                    extents: vec![Extent {
+                        phys_off: data_len,
+                        phys_len: 1,
+                        flags: 0,
+                    }],
+                },
+            ],
+        };
+        data.push(0);
+
+        let declarations = outer_container_declarations(&data, &outer);
+
+        assert_eq!(declarations.len(), 1);
+        assert_eq!(declarations[0].class_name, long_class);
+        assert_eq!(declarations[0].base_class, "CATProdCont");
     }
 }
