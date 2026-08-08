@@ -3250,6 +3250,142 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        let mut referenced_shells = BTreeSet::new();
+        let mut referenced_faces = BTreeSet::new();
+        let mut referenced_loops = BTreeSet::new();
+        let mut referenced_coedges = BTreeSet::new();
+        let mut referenced_edges = BTreeSet::new();
+        let mut referenced_vertices = BTreeSet::new();
+        for region in &self.ir.model.regions {
+            for shell_id in &region.shells {
+                if !referenced_shells.insert(shell_id.as_str()) {
+                    continue;
+                }
+                let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
+                    continue;
+                };
+                for edge_id in &shell.wire_edges {
+                    referenced_edges.insert(edge_id.as_str());
+                    if let Some(edge) = self.edges.get(edge_id.as_str()).copied() {
+                        referenced_vertices.insert(edge.start.as_str());
+                        referenced_vertices.insert(edge.end.as_str());
+                    }
+                }
+                referenced_vertices.extend(
+                    shell
+                        .free_vertices
+                        .iter()
+                        .map(cadmpeg_ir::ids::VertexId::as_str),
+                );
+                for face_id in &shell.faces {
+                    if !referenced_faces.insert(face_id.as_str()) {
+                        continue;
+                    }
+                    let Some(face) = self.faces.get(face_id.as_str()).copied() else {
+                        continue;
+                    };
+                    for loop_id in &face.loops {
+                        if !referenced_loops.insert(loop_id.as_str()) {
+                            continue;
+                        }
+                        let Some(loop_) = self.loops.get(loop_id.as_str()).copied() else {
+                            continue;
+                        };
+                        referenced_vertices
+                            .extend(loop_.vertex_uses.iter().map(|use_| use_.vertex.as_str()));
+                        for vertex_use in &loop_.vertex_uses {
+                            if let Some(after) = &vertex_use.after {
+                                referenced_coedges.insert(after.as_str());
+                            }
+                        }
+                        for coedge_id in &loop_.coedges {
+                            if !referenced_coedges.insert(coedge_id.as_str()) {
+                                continue;
+                            }
+                            let Some(coedge) = self.coedges.get(coedge_id.as_str()).copied() else {
+                                continue;
+                            };
+                            referenced_edges.insert(coedge.edge.as_str());
+                            if let Some(edge) = self.edges.get(coedge.edge.as_str()).copied() {
+                                referenced_vertices.insert(edge.start.as_str());
+                                referenced_vertices.insert(edge.end.as_str());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let omitted_bodies = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
+            .count();
+        let omitted_shells = self
+            .ir
+            .model
+            .shells
+            .iter()
+            .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
+            .count();
+        let omitted_faces = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| !referenced_faces.contains(face.id.as_str()))
+            .count();
+        let omitted_loops = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
+            .count();
+        let omitted_coedges = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
+            .count();
+        let omitted_edges = self
+            .ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
+            .count();
+        let omitted_vertices = self
+            .ir
+            .model
+            .vertices
+            .iter()
+            .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
+            .count();
+        let omitted_topology = [
+            ("body", omitted_bodies),
+            ("shell", omitted_shells),
+            ("face", omitted_faces),
+            ("loop", omitted_loops),
+            ("coedge", omitted_coedges),
+            ("edge", omitted_edges),
+            ("vertex", omitted_vertices),
+        ];
+        if omitted_topology.iter().any(|(_, count)| *count > 0) {
+            let details = omitted_topology
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{count} {kind}(s)"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.omit(
+                LossKind::TopologyNotTransferred,
+                Severity::Warning,
+                format!("topology not reachable from any emitted region shape item: {details}"),
+            );
+        }
         let nonstandard_analytic_surfaces = self
             .ir
             .model

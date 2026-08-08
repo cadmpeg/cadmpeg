@@ -4397,6 +4397,24 @@ fn writer_reports_region_without_shells() {
 }
 
 #[test]
+fn writer_reports_topology_without_an_emitted_region() {
+    let mut ir = unit_cube();
+    ir.model.regions.clear();
+    ir.model.bodies[0].regions.clear();
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes the empty shape representation");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss
+                .message
+                .contains("topology not reachable from any emitted region shape item")
+            && loss.message.contains("face(s)")
+            && loss.message.contains("vertex(s)")
+    }));
+}
+
+#[test]
 fn writer_reports_wire_region_without_connected_edges() {
     let mut ir = unit_cube();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
