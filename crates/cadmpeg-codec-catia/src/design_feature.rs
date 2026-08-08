@@ -374,6 +374,17 @@ pub(crate) fn transfer_design_features(
         .iter()
         .map(|entity| (entity.id.as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let design_objects = native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let native_operation_object_ids = native
+        .design_objects
+        .iter()
+        .filter(|object| native_operation_candidate(object, &records).is_some())
+        .map(|object| object.id.as_str())
+        .collect::<HashSet<_>>();
     let mut transfer = DesignFeatureTransfer::default();
 
     for object in native
@@ -392,7 +403,14 @@ pub(crate) fn transfer_design_features(
                 transfer_sketch(ir, &mut transfer, object, owner_record);
             }
             (None, None, Some(candidate)) => {
-                transfer_native_operation(ir, &mut transfer, &candidate, &entities);
+                transfer_native_operation(
+                    ir,
+                    &mut transfer,
+                    &candidate,
+                    &entities,
+                    &design_objects,
+                    &native_operation_object_ids,
+                );
             }
             (Some(_), Some(_), _) | (Some(_), None, Some(_)) | (None, Some(_), Some(_)) => {
                 // One object cannot safely occupy two neutral feature identities.
@@ -521,11 +539,18 @@ fn transfer_native_operation(
     transfer: &mut DesignFeatureTransfer,
     candidate: &NativeOperationCandidate<'_>,
     entities: &HashMap<&str, &CatiaEntityRecord>,
+    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    native_operation_object_ids: &HashSet<&str>,
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
     let (properties, definition_value_count, definition_chain_value_count) =
-        native_operation_definition_properties(object, entities);
+        native_operation_definition_properties(
+            object,
+            entities,
+            design_objects,
+            native_operation_object_ids,
+        );
     let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -555,30 +580,55 @@ fn transfer_native_operation(
 }
 
 /// Retain complete definition-bound values on the exact native operation
-/// object that owns them. A one-definition value carries a source definition
-/// and a typed suffix payload, while a two-definition value carries its
-/// repeated selector, role, and selected payload. Neither production assigns
-/// an operation role here. Store the exact selectors and payload state as
-/// native properties; supported two-definition roles are also exposed through
-/// the independent typed-parameter transfer.
+/// owner chain. A one-definition value carries a source definition and a
+/// typed suffix payload, while a two-definition value carries its repeated
+/// selector, role, and selected payload. Neither production assigns an
+/// operation role here. Store the exact selectors and payload state as native
+/// properties; supported two-definition roles are also exposed through the
+/// independent typed-parameter transfer.
 fn native_operation_definition_properties(
     object: &CatiaDesignObject,
     entities: &HashMap<&str, &CatiaEntityRecord>,
+    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    native_operation_object_ids: &HashSet<&str>,
 ) -> (BTreeMap<String, String>, usize, usize) {
     let mut properties = BTreeMap::new();
     let mut definition_value_count = 0;
     let mut definition_chain_value_count = 0;
 
-    for (ordinal, entity_id) in object.definition_values.iter().enumerate() {
-        let Some(entity) = entities.get(entity_id.as_str()) else {
-            continue;
-        };
-        let Some(value) = entity.definition_value.as_ref() else {
-            continue;
-        };
+    let owned_objects = design_objects
+        .values()
+        .filter(|candidate| {
+            candidate.parent == object.parent
+                && native_operation_owner_chain_reaches(
+                    candidate.id.as_str(),
+                    object.id.as_str(),
+                    design_objects,
+                    native_operation_object_ids,
+                )
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    let mut definition_values = owned_objects
+        .iter()
+        .flat_map(|owned| owned.definition_values.iter())
+        .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
+        .filter(|entity| entity.definition_value.is_some())
+        .collect::<Vec<_>>();
+    definition_values.sort_by(|left, right| {
+        left.byte_offset
+            .cmp(&right.byte_offset)
+            .then(left.ordinal.cmp(&right.ordinal))
+            .then(left.id.cmp(&right.id))
+    });
+    for (ordinal, entity) in definition_values.into_iter().enumerate() {
         definition_value_count += 1;
         let prefix = format!("catia_definition_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        let value = entity
+            .definition_value
+            .as_ref()
+            .expect("definition values were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
             &format!("{prefix}_definition"),
@@ -598,16 +648,26 @@ fn native_operation_definition_properties(
         }
     }
 
-    for (ordinal, entity_id) in object.definition_chain_values.iter().enumerate() {
-        let Some(entity) = entities.get(entity_id.as_str()) else {
-            continue;
-        };
-        let Some(value) = entity.definition_chain_value.as_ref() else {
-            continue;
-        };
+    let mut definition_chain_values = owned_objects
+        .iter()
+        .flat_map(|owned| owned.definition_chain_values.iter())
+        .filter_map(|entity_id| entities.get(entity_id.as_str()).copied())
+        .filter(|entity| entity.definition_chain_value.is_some())
+        .collect::<Vec<_>>();
+    definition_chain_values.sort_by(|left, right| {
+        left.byte_offset
+            .cmp(&right.byte_offset)
+            .then(left.ordinal.cmp(&right.ordinal))
+            .then(left.id.cmp(&right.id))
+    });
+    for (ordinal, entity) in definition_chain_values.into_iter().enumerate() {
         definition_chain_value_count += 1;
         let prefix = format!("catia_definition_chain_value_{ordinal}");
         properties.insert(format!("{prefix}_entity"), entity.id.clone());
+        let value = entity
+            .definition_chain_value
+            .as_ref()
+            .expect("definition chains were filtered to complete records");
         insert_schema_value_properties(
             &mut properties,
             &format!("{prefix}_selector"),
@@ -626,6 +686,39 @@ fn native_operation_definition_properties(
         definition_value_count,
         definition_chain_value_count,
     )
+}
+
+/// Return whether a design object belongs to one operation's exact structural
+/// owner chain. A nearer admitted operation owns the value instead of an
+/// outer operation. Missing links and non-reflexive cycles reject the whole
+/// chain so a partial owner path cannot invent feature properties.
+fn native_operation_owner_chain_reaches(
+    design_object_id: &str,
+    operation_object_id: &str,
+    design_objects: &HashMap<&str, &CatiaDesignObject>,
+    native_operation_object_ids: &HashSet<&str>,
+) -> bool {
+    let mut current = Some(design_object_id);
+    let mut visited = HashSet::new();
+    while let Some(current_id) = current {
+        if !visited.insert(current_id) {
+            return false;
+        }
+        if current_id == operation_object_id {
+            return true;
+        }
+        if native_operation_object_ids.contains(current_id) {
+            return false;
+        }
+        let Some(object) = design_objects.get(current_id).copied() else {
+            return false;
+        };
+        current = object
+            .owner_design_object
+            .as_deref()
+            .filter(|parent| *parent != current_id);
+    }
+    false
 }
 
 fn insert_schema_value_properties(
@@ -1463,6 +1556,120 @@ mod tests {
                 (
                     "catia_definition_chain_value_0_value_opcode_offset".to_string(),
                     "12".to_string(),
+                ),
+            ])
+        );
+        assert_eq!(transfer.native_operation_definition_chain_value_count, 1);
+    }
+
+    #[test]
+    fn transfers_definition_chains_from_exact_operation_owner_descendants() {
+        let mut operation = native_operation_object(
+            "operation-object",
+            None,
+            1,
+            "operation-record",
+            "Prism_ThickThin1",
+            "operation-entry",
+        );
+        operation.first_field_byte_offset = 10;
+        let mut descendant = design_object("descendant-object", Some("operation-object"));
+        descendant.first_field_byte_offset = 20;
+        descendant
+            .definition_chain_values
+            .push("descendant-chain-entity".to_string());
+        let mut descendant_entity =
+            entity_record("descendant-chain-entity", "descendant-record", 30, 2);
+        descendant_entity.definition_chain_value = Some(CatiaDefinitionChainValue {
+            selector: CatiaEntitySchemaValue {
+                offset: 2,
+                ordinal: 4,
+                entry: "selector-entry".to_string(),
+                value: "Length".to_string(),
+            },
+            role: CatiaEntitySchemaValue {
+                offset: 7,
+                ordinal: 5,
+                entry: "role-entry".to_string(),
+                value: "UnsupportedRole".to_string(),
+            },
+            value: CatiaEntitySuffixSchemaValue::Atom { value: 3 },
+        });
+        let native = CatiaNative {
+            design_objects: vec![operation, descendant],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![object_record(
+                    "operation-record",
+                    None,
+                    Some(1),
+                    None,
+                    Some("Prism_ThickThin1"),
+                    Some("operation-entry"),
+                )],
+            }],
+            entity_records: vec![descendant_entity],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+
+        let FeatureDefinition::Native { properties, .. } = &ir.model.features[0].definition else {
+            panic!("expected an opaque native operation");
+        };
+        assert_eq!(
+            properties,
+            &BTreeMap::from([
+                (
+                    "catia_definition_chain_value_0_entity".to_string(),
+                    "descendant-chain-entity".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_entry".to_string(),
+                    "role-entry".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_offset".to_string(),
+                    "7".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_ordinal".to_string(),
+                    "5".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_role_value".to_string(),
+                    "UnsupportedRole".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_entry".to_string(),
+                    "selector-entry".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_offset".to_string(),
+                    "2".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_ordinal".to_string(),
+                    "4".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_selector_value".to_string(),
+                    "Length".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_kind".to_string(),
+                    "atom".to_string(),
+                ),
+                (
+                    "catia_definition_chain_value_0_value_atom".to_string(),
+                    "3".to_string(),
                 ),
             ])
         );
