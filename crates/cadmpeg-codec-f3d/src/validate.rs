@@ -1046,10 +1046,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         alignment.offset[2],
                     ]
                 };
-                let compact_frames = matches!(
-                    (scope.paired_class_tag.as_str(), scope.frame_length),
-                    ("258", 633 | 732)
-                );
+                let compact_frames = matches!(scope.frame_length, 633 | 732);
                 let axial_frames = matches!(scope.frame_length, 705 | 772);
                 let frame_reference_offsets = if axial_frames {
                     [29, 168]
@@ -1090,7 +1087,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     alignment.operand_paths.as_ref(),
                 ) {
                     (None, None) => true,
-                    // The class-261 forms store exact connector frames but no
+                    // The axial forms store exact connector frames but no
                     // occurrence-path records that qualify them.
                     (Some(_), None) => axial_frames,
                     (Some(frames), Some(paths)) => {
@@ -1109,9 +1106,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 !path.occurrence_guids.is_empty()
                                     && path.occurrence_guids.len()
                                         == path.occurrence_guid_offsets.len()
-                                    && matches!(path.class_tag.as_str(), "329" | "386" | "390")
+                                    && matches!(
+                                        path.class_tag.as_str(),
+                                        "294" | "329" | "386" | "390"
+                                    )
                                     && path.identity_guids.len() == path.identity_guid_offsets.len()
-                                    && if matches!(path.class_tag.as_str(), "386" | "390") {
+                                    && if matches!(path.class_tag.as_str(), "294" | "386" | "390") {
                                         path.identity_guids.len() == 4
                                     } else {
                                         path.identity_guids.is_empty()
@@ -1136,7 +1136,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         .occurrence_guid_offsets
                                         .iter()
                                         .all(|offset| *offset > path.byte_offset)
-                                    && (path.class_tag == "386"
+                                    && (matches!(path.class_tag.as_str(), "294" | "386")
                                         || path.occurrence_guids.first().is_some_and(|guid| {
                                             native
                                                 .design_component_occurrences

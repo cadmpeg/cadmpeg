@@ -22115,6 +22115,34 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assert_eq!(legacy_frames[0].reference_offset, 25);
     assert_eq!(legacy_frames[0].transform_offset, 36);
 
+    let mut dynamic_standard_bytes = assembly_bytes.clone();
+    dynamic_standard_bytes[641..644].copy_from_slice(b"262");
+    let dynamic_standard_scope = DesignParameterScope {
+        paired_class_tag: "262".into(),
+        ..scope.clone()
+    };
+    assert!(exact_assembly_alignment(
+        &dynamic_standard_bytes,
+        &IndexedRecordOffsets::build(&dynamic_standard_bytes),
+        &dynamic_standard_scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+
+    let mut dynamic_compact_bytes = legacy_assembly_bytes.clone();
+    dynamic_compact_bytes[637..640].copy_from_slice(b"262");
+    let dynamic_compact_scope = DesignParameterScope {
+        paired_class_tag: "262".into(),
+        ..legacy_assembly_scope.clone()
+    };
+    assert!(exact_assembly_alignment(
+        &dynamic_compact_bytes,
+        &IndexedRecordOffsets::build(&dynamic_compact_bytes),
+        &dynamic_compact_scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_frames.is_some()));
+
     let mut axial_assembly_bytes = vec![0_u8; 772];
     axial_assembly_bytes[..11].copy_from_slice(&assembly_bytes[..11]);
     axial_assembly_bytes[20..25].copy_from_slice(&[1, 0, 0, 0, 0]);
@@ -22403,6 +22431,68 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             (68, vec!["33333333-3333-3333-3333-333333333333".into()],),
         ]
     );
+
+    let push_class_294_path =
+        |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
+            bytes.extend_from_slice(&3_u32.to_le_bytes());
+            bytes.extend_from_slice(b"294");
+            bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&[1, 0, 0, 0]);
+            for guid in [occurrence, identities[0], identities[1]] {
+                let encoded = guid.encode_utf16().collect::<Vec<_>>();
+                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+            }
+            bytes.extend_from_slice(&2_u64.to_le_bytes());
+            for guid in &identities[2..] {
+                let encoded = guid.encode_utf16().collect::<Vec<_>>();
+                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+            }
+            bytes.extend_from_slice(&2_u32.to_le_bytes());
+            bytes.extend_from_slice(&[0; 8]);
+        };
+    let class_294_identities = [
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "cccccccc-cccc-cccc-cccc-cccccccccccc",
+        "dddddddd-dddd-dddd-dddd-dddddddddddd",
+    ];
+    let mut class_294_path_bytes = assembly_bytes[..648].to_vec();
+    push_class_294_path(
+        &mut class_294_path_bytes,
+        65,
+        "11111111-1111-1111-1111-111111111111",
+        &class_294_identities,
+    );
+    push_class_294_path(
+        &mut class_294_path_bytes,
+        68,
+        "22222222-2222-2222-2222-222222222222",
+        &class_294_identities,
+    );
+    class_294_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
+    class_294_path_bytes.extend_from_slice(b"396");
+    class_294_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
+    let class_294_paths = exact_assembly_alignment(
+        &class_294_path_bytes,
+        &IndexedRecordOffsets::build(&class_294_path_bytes),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("class-294 identity-qualified assembly occurrence paths");
+    assert!(class_294_paths.iter().all(|path| {
+        path.class_tag == "294"
+            && path.occurrence_guids.len() == 1
+            && path
+                .identity_guids
+                .iter()
+                .map(String::as_str)
+                .eq(class_294_identities.iter().copied())
+    }));
+
     assembly_bytes[25] = 0;
     assert!(exact_assembly_alignment(
         &assembly_bytes,

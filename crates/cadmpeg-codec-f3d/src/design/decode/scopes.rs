@@ -1147,14 +1147,10 @@ fn exact_assembly_operand_frames(
     }
 
     let start = usize::try_from(scope.byte_offset).ok()?;
-    let (frame_offsets, frame_variant) = match (
-        scope.class_tag.as_str(),
-        scope.paired_class_tag.as_str(),
-        scope.frame_length,
-    ) {
-        (_, "259", 637 | 692) | ("459", "264", 627) => ((28, 40, 168, 180), FrameVariant::Standard),
-        (_, "258", 633 | 732) => ((24, 36, 164, 176), FrameVariant::Compact),
-        (_, "261", 705 | 772) => ((28, 39, 167, 178), FrameVariant::Axial),
+    let (frame_offsets, frame_variant) = match scope.frame_length {
+        627 | 637 | 692 => ((28, 40, 168, 180), FrameVariant::Standard),
+        633 | 732 => ((24, 36, 164, 176), FrameVariant::Compact),
+        705 | 772 => ((28, 39, 167, 178), FrameVariant::Axial),
         _ => return None,
     };
     if usize::try_from(scope.paired_byte_offset).ok()?
@@ -1250,32 +1246,97 @@ fn exact_assembly_operand_path(
     limit: usize,
 ) -> Option<DesignAssemblyOperandPath> {
     let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 1..=8, u8::is_ascii_digit)?;
-    if read_u64(bytes, after_tag)? != u64::from(record_index)
-        || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
-    {
+    if read_u64(bytes, after_tag)? != u64::from(record_index) {
         return None;
     }
-    let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
-    if !(1..=64).contains(&count) {
-        return None;
-    }
-    let mut position = after_tag + 18;
-    let mut occurrence_guids = Vec::with_capacity(count);
-    let mut occurrence_guid_offsets = Vec::with_capacity(count);
-    for _ in 0..count {
-        let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
-        if !crate::bytes::is_guid_relaxed(&guid) {
-            return None;
-        }
-        occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
-        occurrence_guids.push(guid);
-        position = after_guid;
-    }
+    let mut occurrence_guids = Vec::new();
+    let mut occurrence_guid_offsets = Vec::new();
     let mut identity_guids = Vec::new();
     let mut identity_guid_offsets = Vec::new();
     match class_tag.as_str() {
-        "329" => {}
+        "294" => {
+            let end = next_indexed_record_offset(bytes, start + 1)?;
+            if end > limit
+                || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
+                || bytes.get(after_tag + 14) != Some(&1)
+                || bytes.get(after_tag + 15..after_tag + 18)? != [0; 3]
+            {
+                return None;
+            }
+            let mut position = after_tag + 18;
+            let (occurrence, after_occurrence) =
+                lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
+            if !crate::bytes::is_guid_relaxed(&occurrence) {
+                return None;
+            }
+            occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
+            occurrence_guids.push(occurrence);
+            position = after_occurrence;
+            for _ in 0..2 {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                identity_guids.push(guid);
+                position = after_guid;
+            }
+            if read_u64(bytes, position)? != 2 {
+                return None;
+            }
+            position += 8;
+            for _ in 0..2 {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..end)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                identity_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                identity_guids.push(guid);
+                position = after_guid;
+            }
+            if u32_at(bytes, position)? != 2
+                || !bytes.get(position + 4..end)?.iter().all(|byte| *byte == 0)
+            {
+                return None;
+            }
+        }
+        "329" => {
+            if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
+                return None;
+            }
+            let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
+            if !(1..=64).contains(&count) {
+                return None;
+            }
+            let mut position = after_tag + 18;
+            for _ in 0..count {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                occurrence_guids.push(guid);
+                position = after_guid;
+            }
+        }
         "386" | "390" => {
+            if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6] {
+                return None;
+            }
+            let count = usize::try_from(u32_at(bytes, after_tag + 14)?).ok()?;
+            if !(1..=64).contains(&count) {
+                return None;
+            }
+            let mut position = after_tag + 18;
+            for _ in 0..count {
+                let (guid, after_guid) = lp_utf16_bounded(bytes.get(..limit)?, position, 36..=36)?;
+                if !crate::bytes::is_guid_relaxed(&guid) {
+                    return None;
+                }
+                occurrence_guid_offsets.push(u64::try_from(position + 4).ok()?);
+                occurrence_guids.push(guid);
+                position = after_guid;
+            }
             let end = next_indexed_record_offset(bytes, start + 1)?;
             if end > limit {
                 return None;
