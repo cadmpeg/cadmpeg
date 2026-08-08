@@ -172,10 +172,6 @@ fn parser_allows_an_empty_data_population_in_edition_three() {
 fn parser_enforces_legacy_implementation_level_restrictions() {
     let cases = [
         (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "2;1 requires one FILE_SCHEMA identifier",
-        ),
-        (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;",
             "2;1 requires one DATA section",
         ),
@@ -208,6 +204,22 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "expected {message:?}, got {error}"
         );
     }
+}
+
+#[test]
+fn parser_accepts_historical_implementation_level_spellings() {
+    for level in ["1", "2", "2;1", "2;2", "3;1", "3;2"] {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'{level}');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        crate::parse::parse(source.as_bytes()).expect("historical implementation level");
+    }
+}
+
+#[test]
+fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('CONFIG_CONTROL_DESIGN','GEOMETRIC_VALIDATION_PROPERTIES_MIM'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(source).expect("2;1 permits multiple schema identifiers");
 }
 
 #[test]

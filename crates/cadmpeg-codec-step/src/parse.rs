@@ -556,7 +556,10 @@ impl Parser<'_> {
         if implementation_level == ImplementationLevel::LegacyEdition1 && data.is_empty() {
             return self.err("2;1 requires one DATA section");
         }
-        if data.len() == 1 && data[0].parameters.is_empty() && schema_identifier_count(&header) != 1
+        if implementation_level == ImplementationLevel::Edition3
+            && data.len() == 1
+            && data[0].parameters.is_empty()
+            && schema_identifier_count(&header) != 1
         {
             return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
@@ -885,8 +888,8 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
     }
     let implementation_level = match description.get(1) {
         Some(Value::String(value)) => match value.as_slice() {
-            b"2;1" => ImplementationLevel::LegacyEdition1,
-            b"3;1" => ImplementationLevel::LegacyEdition2,
+            b"1" | b"2" | b"2;1" | b"2;2" => ImplementationLevel::LegacyEdition1,
+            b"3;1" | b"3;2" => ImplementationLevel::LegacyEdition2,
             b"4;1" | b"4;2" | b"4;3" => ImplementationLevel::Edition3,
             _ => return Err("FILE_DESCRIPTION has an unsupported implementation level"),
         },
@@ -922,9 +925,6 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
             .any(|(index, value)| identifiers[..index].contains(value))
     {
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
-    }
-    if implementation_level == ImplementationLevel::LegacyEdition1 && identifiers.len() != 1 {
-        return Err("2;1 requires one FILE_SCHEMA identifier");
     }
     Ok(implementation_level)
 }
