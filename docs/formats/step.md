@@ -197,12 +197,13 @@ or signed `HH:MM` time-zone offset. Each `FILE_SCHEMA` identifier has an
 effective length of at most 1024 characters. Its schema name is a non-empty
 ASCII identifier containing uppercase letters, digits, and underscores after
 case normalization. Its optional object identifier is a non-empty sequence of
-unsigned decimal components enclosed in braces.
+signed decimal components enclosed in braces. A component may have an optional
+leading sign and contains at least one decimal digit.
 Each parameterized DATA section names one schema from this list. The schema
 name compares with the identifier's schema-name portion when the identifier
 has an object identifier.
 An identifier is a schema name with an optional brace-delimited object
-identifier containing space-separated unsigned components. The supported
+identifier containing space-separated signed decimal components. The supported
 identifiers are:
 
 | Identifier | Protocol and edition |

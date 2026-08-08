@@ -603,7 +603,7 @@ signature sections.
 **Resolved.** `FILE_SCHEMA` contains one or more unique string identifiers.
 The first identifier governs the application protocol and edition. An
 identifier is a schema name with an optional brace-delimited object identifier
-whose components are space-separated unsigned integers. The decoder selects
+whose components are space-separated signed decimal integers. The decoder selects
 AP242 edition 1, 2, or 3 only for the exact long-form name and exact object
 identifiers `1 0 10303 442 1 1 4`, `1 0 10303 442 3 1 4`, and
 `1 0 10303 442 4 1 4`. Other AP242 object identifiers report an unspecified

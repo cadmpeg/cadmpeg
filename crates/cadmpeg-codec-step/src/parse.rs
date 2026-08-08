@@ -1612,11 +1612,16 @@ fn valid_schema_identifier(identifier: &str) -> bool {
     }
     object_identifier.is_none_or(|value| {
         let mut components = value.split_whitespace();
-        components.next().is_some()
-            && components.all(|component| {
-                !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-            })
+        components.next().is_some() && value.split_whitespace().all(valid_schema_oid_component)
     })
+}
+
+fn valid_schema_oid_component(component: &str) -> bool {
+    let digits = component
+        .strip_prefix('-')
+        .or_else(|| component.strip_prefix('+'))
+        .unwrap_or(component);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 fn decoded_string(value: &Value, implementation_level: ImplementationLevel) -> Option<String> {
