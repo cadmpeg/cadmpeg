@@ -77,6 +77,9 @@ fixtures, claims above L1 remain unproven.
   offsets do not order material bodies.
 - Named surface rows require byte-backed `orient` and `boundary_type`
   discriminators; absent or undefined values remain opaque.
+- Eight-slot type-24 terminal frames require mutually exclusive
+  single-diameter and square-radial invariants; a collision withholds the
+  carrier.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
   namespaces independent; a complete numeric collision between them withholds
   the section frame.

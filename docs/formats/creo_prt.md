@@ -629,6 +629,10 @@ unbounded, its axis is the positive omitted model coordinate, and it has no
 stored axial length. A finite body occupying a repeated-diameter frame and
 control shell remains a repeated-diameter body and is not a square-radial form.
 
+An exactly eight-slot terminal frame is a single-diameter form only when the
+square-radial invariants do not also hold. If both the single-diameter and
+square-radial forms satisfy their invariants, neither form defines the carrier.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

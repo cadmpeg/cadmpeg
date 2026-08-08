@@ -342,14 +342,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the condition to apply prototype `local_sys`, radius, and spline fields to the correct surface row. A wrong selection gives one surface the geometry of a different surface of the same family. The per-row uniqueness filter rejects two prototypes that select one row; it does not reject two prototypes that each select a different wrong row.
 
-### GS-25. Eight-slot type-24 terminal frame precedence
-
-**Question.** Which rule separates the single-diameter round frame from the square-radial round frame when a type-24 terminal scalar frame has exactly eight slots?
-
-**Known.** `creo_prt.md` §3.2 defines both forms. It gives a precedence rule against the repeated-diameter form only. At eight slots both grammars read the same six corner slots, so both are admissible.
-
-**Need.** We must know the rule to build the correct cylinder axis and radius. `surface.rs` `type24_round_frame` accepts the single-diameter form first and does not test the square-radial form. A square-radial body whose auxiliary slot equals one span decodes as a cylinder with a diagonal axis and the wrong radius, and the face is placed on that carrier.
-
 ### GS-26. Positional cylinder terminal radius boundary
 
 **Question.** Which token boundary separates the twelve-slot `local_sys` from the terminal radius in a positional cylinder body?

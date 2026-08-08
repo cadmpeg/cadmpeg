@@ -57,6 +57,7 @@ fn push_generated_scalar(bytes: &mut Vec<u8>, value: f64) {
         1.0 => bytes.push(0xe4),
         -1.0 => bytes.extend_from_slice(&[0x43, 0xf0, 0x00]),
         2.0 => bytes.extend_from_slice(&[0x2f, 0x00, 0x00]),
+        4.0 => bytes.extend_from_slice(&[0x2f, 0x10, 0x00]),
         -2.0 => bytes.extend_from_slice(&[0x48, 0x00, 0x00]),
         0.5 => {
             bytes.push(0x71);
@@ -627,6 +628,22 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
         scan.surfaces.parameters[1].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
+}
+
+#[test]
+fn scan_withholds_type24_carrier_when_eight_slot_forms_collide() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    for value in [2.0, 4.0, 0.0, 0.0, 0.0, 2.0, 2.0, 4.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.push(0xe3);
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surfaces.parameters.len(), 1);
+    assert!(scan.surfaces.parameters[0]
+        .positional_cylinder_frame
+        .is_none());
 }
 
 #[test]

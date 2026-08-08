@@ -790,8 +790,15 @@ impl SurfaceParameterRecord {
         (type_byte == 0x24).then_some(())?;
         self.repeated_diameter_type24_round_frame(cache)
             .or_else(|| self.type24_held_coordinate_round_frame())
-            .or_else(|| self.type24_single_diameter_round_frame())
-            .or_else(|| self.type24_square_radial_round_frame())
+            .or_else(|| {
+                match (
+                    self.type24_single_diameter_round_frame(),
+                    self.type24_square_radial_round_frame(),
+                ) {
+                    (Some(frame), None) | (None, Some(frame)) => Some(frame),
+                    (Some(_), Some(_)) | (None, None) => None,
+                }
+            })
     }
 
     fn terminal_scalar_frame_has_owned_end(
@@ -7687,6 +7694,18 @@ mod tests {
         assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
         assert_eq!(frame.radius, 1.0);
         assert!((frame.length.expect("bounded carrier") - 31.25_f64.sqrt() * 5.0).abs() < 1e-12);
+
+        let collision_body = [
+            0x2f, 0x00, 0x00, 0x2f, 0x10, 0x00, 0x0f, 0x0f, 0x0f, 0x2f, 0x00, 0x00, 0x2f, 0x00,
+            0x00, 0x2f, 0x10, 0x00,
+        ];
+        let mut collision_payload = vec![7, 0x24, 4, 0x01, 0, 0];
+        collision_payload.extend_from_slice(&collision_body);
+        collision_payload.push(0xe3);
+        let collision = parameter_records(&collision_payload).remove(0);
+        assert!(collision.type24_single_diameter_round_frame().is_some());
+        assert!(collision.type24_square_radial_round_frame().is_some());
+        assert!(collision.positional_cylinder_frame.is_none());
 
         let unbounded_body = [
             0x18, 0x2d, 0x5f, 0x25, 0xa4, 0x69, 0xd7, 0x34, 0x2d, 0x00, 0x12, 0x00, 0x2d, 0x67,
