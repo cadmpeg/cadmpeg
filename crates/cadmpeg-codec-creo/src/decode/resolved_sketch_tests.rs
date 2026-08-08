@@ -1061,6 +1061,77 @@ fn mixed_current_and_generated_edges_remain_native() {
 }
 
 #[test]
+fn agreed_empty_edge_selection_is_resolved() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.affected_ids.extend([
+        crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: Vec::new(),
+            offset: 0,
+        },
+        crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: Vec::new(),
+            offset: 1,
+        },
+    ]);
+
+    assert_eq!(
+        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
+        Some(EdgeSelection::Resolved {
+            edges: Vec::new(),
+            native: "creo:allfeatur:edgs_affected#10:".to_string(),
+        })
+    );
+
+    let mut replay_scan = crate::container::scan_bytes(Vec::new());
+    replay_scan
+        .features
+        .replay_affected_ids
+        .push(crate::feature::FeatureReplayAffectedIds {
+            feature_id: 10,
+            geometry_ids: vec![1, 2, 3],
+            edge_ids: Vec::new(),
+            geometry_extent: crate::feature::ReplayExtentSource::Explicit,
+            edge_extent: crate::feature::ReplayExtentSource::Explicit,
+            offset: 0,
+        });
+    assert_eq!(
+        feature_edge_selection(&replay_scan, &CadIr::empty(Units::default()), 10),
+        Some(EdgeSelection::Resolved {
+            edges: Vec::new(),
+            native: "creo:allfeatur:replay_edgs_affected#10:".to_string(),
+        })
+    );
+}
+
+#[test]
+fn conflicting_empty_and_nonempty_edge_selections_remain_unresolved() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features.affected_ids.extend([
+        crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: Vec::new(),
+            offset: 0,
+        },
+        crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: vec![45],
+            offset: 1,
+        },
+    ]);
+
+    assert_eq!(
+        feature_edge_selection(&scan, &CadIr::empty(Units::default()), 10),
+        None
+    );
+}
+
+#[test]
 fn geometry_generator_features_join_surface_and_curve_evidence() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

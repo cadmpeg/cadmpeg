@@ -17234,7 +17234,11 @@ fn feature_edge_selection(
         crate::feature::AffectedIdKind::Edges,
     ) {
         if ids.is_empty() {
-            return None;
+            let native = format!("creo:allfeatur:edgs_affected#{feature_id}:");
+            return Some(EdgeSelection::Resolved {
+                edges: Vec::new(),
+                native,
+            });
         }
         let native = format!(
             "creo:allfeatur:edgs_affected#{feature_id}:{}",
@@ -17251,7 +17255,11 @@ fn feature_edge_selection(
         }
         let ids = agreed_feature_replay_edge_ids(&scan.features.replay_affected_ids, feature_id)?;
         if ids.is_empty() {
-            return None;
+            let native = format!("creo:allfeatur:replay_edgs_affected#{feature_id}:");
+            return Some(EdgeSelection::Resolved {
+                edges: Vec::new(),
+                native,
+            });
         }
         let native = format!(
             "creo:allfeatur:replay_edgs_affected#{feature_id}:{}",
