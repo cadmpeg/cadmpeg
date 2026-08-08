@@ -119,7 +119,12 @@ fn decode_exchange_mode(
     let mut geometry = geometry::decode(exchange, &mut ir);
     let dependencies = dependencies::decode(exchange);
     let carrier_index = index::CarrierIndex::from_ir(&ir);
-    let topology = topology::decode(exchange, &mut ir, &carrier_index);
+    let topology = topology::decode(
+        exchange,
+        &mut ir,
+        &carrier_index,
+        geometry.plane_angle_scale,
+    );
     geometry::repair_angular_pcurve_units(
         &mut ir,
         geometry.plane_angle_scale,

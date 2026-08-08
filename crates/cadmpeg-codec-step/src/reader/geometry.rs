@@ -1739,7 +1739,7 @@ fn angular_parameter_axes(geometry: &SurfaceGeometry) -> Option<[bool; 2]> {
     }
 }
 
-fn angular_parameter_candidates(
+pub(super) fn angular_parameter_candidates(
     geometry: &SurfaceGeometry,
     plane_angle_scale: f64,
 ) -> Option<Vec<[f64; 2]>> {
@@ -3891,7 +3891,7 @@ fn nurbs_surface_parameter_period(degree: u32, knots: &[f64], count: u32) -> Opt
 /// general harmonic forms when the two coordinate scales differ. The remaining
 /// analytic forms require an affine 2D carrier to preserve that parameterization;
 /// report them as unsupported instead of applying a scalar approximation.
-fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> bool {
+pub(super) fn scale_pcurve_geometry(geometry: &mut PcurveGeometry, scales: [f64; 2]) -> bool {
     let [u_scale, v_scale] = scales;
     let scale_point = |point: Point2| Point2::new(point.u * u_scale, point.v * v_scale);
     let isotropic = u_scale == v_scale;

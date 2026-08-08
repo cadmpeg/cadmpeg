@@ -8,7 +8,7 @@ use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
 use cadmpeg_ir::eval::{
     model_surface_partials_by_id, model_surface_point_by_id, pcurve_tangent, pcurve_uv,
 };
-use cadmpeg_ir::geometry::{PcurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -24,6 +24,7 @@ use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
+use super::geometry::{angular_parameter_candidates, scale_pcurve_geometry};
 use super::index::CarrierIndex;
 
 pub(super) struct TopologyResult {
@@ -187,6 +188,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
     carrier_index: &CarrierIndex,
+    plane_angle_scale: f64,
 ) -> TopologyResult {
     let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
@@ -407,6 +409,7 @@ pub(super) fn decode(
             &shells,
             &decoded_pcurves,
             point_positions,
+            plane_angle_scale,
             scope_root,
             &mut result.warnings,
             &mut result.losses,
@@ -1822,13 +1825,14 @@ fn build(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
-    ir: &CadIr,
+    ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
     point_positions: &CarrierIndex,
+    plane_angle_scale: f64,
     scope_root: bool,
     warnings: &mut Vec<String>,
     losses: &mut Vec<LossNote>,
@@ -1862,6 +1866,7 @@ fn build(
             shell_definitions,
             decoded_pcurves,
             point_positions,
+            plane_angle_scale,
             &shell_steps,
             body,
             &region,
@@ -1924,6 +1929,7 @@ fn build(
             shell_definitions,
             decoded_pcurves,
             point_positions,
+            plane_angle_scale,
             &[shell_reference],
             body,
             &region,
@@ -1954,13 +1960,14 @@ fn build_one(
     id: u64,
     root: &RawRecord,
     exchange: &Exchange,
-    ir: &CadIr,
+    ir: &mut CadIr,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     shell_definitions: &BTreeMap<u64, ShellDef>,
     decoded_pcurves: &BTreeSet<PcurveId>,
     point_positions: &CarrierIndex,
+    plane_angle_scale: f64,
     shell_steps: &[u64],
     bid: BodyId,
     rid: &RegionId,
@@ -2406,6 +2413,7 @@ fn build_one(
                                     edge,
                                     vdefs,
                                     point_positions,
+                                    plane_angle_scale,
                                     candidates,
                                 )
                             });
@@ -3091,12 +3099,73 @@ struct SelectedPcurve {
     parameter_range: Option<[f64; 2]>,
 }
 
-fn select_associated_pcurve(
+#[derive(Clone)]
+struct PcurveCandidateFit {
+    geometry: PcurveGeometry,
+    endpoint: PcurveEndpointFit,
+}
+
+fn pcurve_parameterization_variants(
     ir: &CadIr,
+    surface_id: &SurfaceId,
+    surface: &SurfaceGeometry,
+    plane_angle_scale: f64,
+    geometry: &PcurveGeometry,
+) -> Vec<PcurveGeometry> {
+    let scales = angular_parameter_candidates(surface, plane_angle_scale).or_else(|| {
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .any(|procedural| {
+                procedural.surface == *surface_id
+                    && matches!(
+                        &procedural.definition,
+                        ProceduralSurfaceDefinition::AxisRevolution { .. }
+                    )
+            })
+            .then(|| axis_revolution_parameter_candidates(plane_angle_scale))
+    });
+    let scales = scales.unwrap_or_else(|| vec![[1.0, 1.0]]);
+    let variants = scales
+        .into_iter()
+        .filter_map(|scales| {
+            let mut scaled = geometry.clone();
+            scale_pcurve_geometry(&mut scaled, scales).then_some(scaled)
+        })
+        .collect::<Vec<_>>();
+    if variants.is_empty() {
+        vec![geometry.clone()]
+    } else {
+        variants
+    }
+}
+
+fn axis_revolution_parameter_candidates(plane_angle_scale: f64) -> Vec<[f64; 2]> {
+    let current = if plane_angle_scale.is_finite() && plane_angle_scale > 0.0 {
+        plane_angle_scale
+    } else {
+        1.0
+    };
+    let alternate = if (current - 1.0).abs() <= 1.0e-12 {
+        std::f64::consts::PI / 180.0
+    } else {
+        1.0
+    };
+    let alternate_ratio = alternate / current;
+    if alternate_ratio.is_finite() && alternate_ratio > 0.0 {
+        vec![[1.0, 1.0], [alternate_ratio, 1.0]]
+    } else {
+        vec![[1.0, 1.0]]
+    }
+}
+
+fn select_associated_pcurve(
+    ir: &mut CadIr,
     surface_step: u64,
     edge: &EdgeDef,
     vdefs: &BTreeMap<u64, VertexDef>,
     point_positions: &CarrierIndex,
+    plane_angle_scale: f64,
     candidates: &[PcurveId],
 ) -> Option<SelectedPcurve> {
     let surface_identity = format!("step:data:surface#{surface_step}");
@@ -3105,7 +3174,7 @@ fn select_associated_pcurve(
         .surfaces
         .iter()
         .find(|surface| surface.id.0 == surface_identity)
-        .map(|surface| &surface.geometry)?;
+        .map(|surface| surface.geometry.clone())?;
     let surface_id = SurfaceId(surface_identity);
     let index = ModelIndex::new(ir);
     let start = vdefs
@@ -3124,10 +3193,27 @@ fn select_associated_pcurve(
                 .pcurves
                 .iter()
                 .find(|pcurve| pcurve.id == *candidate)?;
-            pcurve_endpoint_fit(&index, &surface_id, &pcurve.geometry, surface, start, end)
+            let variants = pcurve_parameterization_variants(
+                ir,
+                &surface_id,
+                &surface,
+                plane_angle_scale,
+                &pcurve.geometry,
+            );
+            variants
+                .into_iter()
+                .filter_map(|geometry| {
+                    let endpoint =
+                        pcurve_endpoint_fit(&index, &surface_id, &geometry, &surface, start, end)?;
+                    Some(PcurveCandidateFit { geometry, endpoint })
+                })
+                .min_by(|left, right| left.endpoint.score.total_cmp(&right.endpoint.score))
         })
         .collect::<Option<Vec<_>>>()?;
-    let scores = fits.iter().map(|fit| fit.score).collect::<Vec<_>>();
+    let scores = fits
+        .iter()
+        .map(|fit| fit.endpoint.score)
+        .collect::<Vec<_>>();
     let (best_index, &best) = scores
         .iter()
         .enumerate()
@@ -3137,24 +3223,18 @@ fn select_associated_pcurve(
         return None;
     }
     let selected = |candidate_index: usize| {
-        let pcurve = ir
-            .model
-            .pcurves
-            .iter()
-            .find(|pcurve| pcurve.id == candidates[candidate_index])?;
-        let parameter_range = pcurve_declared_parameter_range(&pcurve.geometry).and_then(|range| {
+        let fit = &fits[candidate_index];
+        let parameter_range = pcurve_declared_parameter_range(&fit.geometry).and_then(|range| {
             let declared = pcurve_declared_endpoint_fit(
                 &index,
                 &surface_id,
-                &pcurve.geometry,
+                &fit.geometry,
                 range,
                 start,
                 end,
             )?;
-            (declared.is_finite() && declared > bound).then_some([
-                fits[candidate_index].start_parameter,
-                fits[candidate_index].end_parameter,
-            ])
+            (declared.is_finite() && declared > bound)
+                .then_some([fit.endpoint.start_parameter, fit.endpoint.end_parameter])
         });
         Some(SelectedPcurve {
             id: candidates[candidate_index].clone(),
@@ -3166,15 +3246,6 @@ fn select_associated_pcurve(
         .iter()
         .filter(|score| (**score - best).abs() <= tie_tolerance)
         .count();
-    if equally_good == 1 {
-        return selected(best_index);
-    }
-
-    let best_pcurve = ir
-        .model
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == candidates[best_index])?;
     let equivalent_ties = scores
         .iter()
         .enumerate()
@@ -3183,39 +3254,46 @@ fn select_associated_pcurve(
             if candidate_index == best_index {
                 return true;
             }
-            let Some(pcurve) = ir
-                .model
-                .pcurves
-                .iter()
-                .find(|pcurve| pcurve.id == candidates[candidate_index])
-            else {
-                return false;
-            };
             pcurve_loci_equivalent(
                 &index,
                 &surface_id,
-                &best_pcurve.geometry,
+                &fits[best_index].geometry,
                 [
-                    fits[best_index].start_parameter,
-                    fits[best_index].end_parameter,
+                    fits[best_index].endpoint.start_parameter,
+                    fits[best_index].endpoint.end_parameter,
                 ],
-                &pcurve.geometry,
+                &fits[candidate_index].geometry,
                 [
-                    fits[candidate_index].start_parameter,
-                    fits[candidate_index].end_parameter,
+                    fits[candidate_index].endpoint.start_parameter,
+                    fits[candidate_index].endpoint.end_parameter,
                 ],
                 COINCIDENCE_TOLERANCE.max(ir.tolerances.linear),
             )
         });
-    equivalent_ties.then(|| {
-        let selected_index = candidates
+    let selected_index = if equally_good == 1 {
+        best_index
+    } else if equivalent_ties {
+        candidates
             .iter()
             .enumerate()
             .find(|(candidate_index, _)| (scores[*candidate_index] - best).abs() <= tie_tolerance)
             .map(|(candidate_index, _)| candidate_index)
-            .expect("tied candidate set is non-empty");
-        selected(selected_index)
-    })?
+            .expect("tied candidate set is non-empty")
+    } else {
+        return None;
+    };
+    let selected = selected(selected_index)?;
+    let selected_geometry = fits[selected_index].geometry.clone();
+    drop(index);
+    if let Some(pcurve) = ir
+        .model
+        .pcurves
+        .iter_mut()
+        .find(|pcurve| pcurve.id == candidates[selected_index])
+    {
+        pcurve.geometry = selected_geometry;
+    }
+    Some(selected)
 }
 
 #[derive(Clone, Copy)]
