@@ -875,8 +875,8 @@ governing-schema rule.
 
 ### EL-06. Omitted entity name repair and anchor order
 
-**Question.** Which entity names carry an inherited leading `name` attribute,
-and when may a reader insert one that the source omits?
+**Resolved.** Omitted inherited `name` repair runs after edition-3 anchor
+values resolve.
 
 **Known.** The parser holds a table of about 100 entity names and inserts an
 empty name when a single-partial record of one of those names has a first
@@ -886,10 +886,9 @@ has its own diagnostic, produces a `NoncanonicalSourceSyntax` loss with byte
 provenance, and is rejected by strict decode. `step.md` states no attribute
 layout for these entities and this ledger has no item for the repair.
 
-**Need.** The repair runs while records are built, and anchor substitution
-runs later, in `exchange()` (`parse.rs:548-575`). A record whose first
-attribute is an anchor reference therefore looks like an omitted name, so the
-parser inserts an empty string, shifts every parameter by one, and reports a
-deviation that the source does not contain. `step.md` §7 requires anchors to
-resolve before schema decoding. We must know the attribute layouts that the
-table asserts, and the repair must run after anchor resolution.
+**Rule.** The parser reads each raw record, resolves all anchors in anchor
+values and record parameters, then tests the first parameter of each single
+named carrier against the carrier's inherited `name` slot. A resource anchor
+that resolves to a string is therefore a real name and does not trigger repair.
+The existing carrier table remains the scope of repair; other entity layouts
+are not shifted.

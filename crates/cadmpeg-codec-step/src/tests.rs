@@ -171,6 +171,24 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 }
 
 #[test]
+fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("anchored line name");
+
+    assert!(diagnostics
+        .iter()
+        .all(|diagnostic| diagnostic.kind != crate::parse::ParseDiagnosticKind::OmittedEntityName));
+    assert_eq!(
+        exchange.records[&4].partials[0].parameters,
+        vec![
+            crate::parse::Value::String(b"anchored line".to_vec()),
+            crate::parse::Value::Reference(1),
+            crate::parse::Value::Reference(3),
+        ]
+    );
+}
+
+#[test]
 fn parser_retains_user_defined_entity_and_type_names() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=!VENDOR_ENTITY(!VENDOR_TYPE(#2));#2=KNOWN();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("user-defined names");

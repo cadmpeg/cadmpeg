@@ -145,7 +145,8 @@ application protocol and edition. ASCII case differences compare equal.
 
 ANCHOR entries bind a resource name to an in-file parameter value. Anchor names
 are unique. Resource values that name anchors resolve recursively before schema
-decoding. A cycle is a structural error.
+decoding and before omitted inherited `name` attributes are repaired. A cycle
+is a structural error.
 
 REFERENCE entries bind a local resource name to a resource URI. They also bind
 an external instance name to a resource URI. Resource names and URIs are

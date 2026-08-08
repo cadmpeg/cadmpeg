@@ -573,6 +573,16 @@ impl Parser<'_> {
                 }
             }
         }
+        for record in records.values_mut() {
+            if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
+                record.partials[0]
+                    .parameters
+                    .insert(0, Value::String(Vec::new()));
+                self.omitted_entity_name_count += 1;
+                self.first_omitted_entity_name_offset
+                    .get_or_insert(record.span.start);
+            }
+        }
         let mut refs = Vec::new();
         for anchor in &anchors {
             refs.clear();
@@ -628,7 +638,7 @@ impl Parser<'_> {
             return self.err("expected instance name");
         };
         self.punct(&TokenKind::Equals)?;
-        let mut partials = if self.peek(&TokenKind::LParen) {
+        let partials = if self.peek(&TokenKind::LParen) {
             self.next_kind()?;
             let mut parts = Vec::new();
             while !self.peek(&TokenKind::RParen) {
@@ -668,11 +678,6 @@ impl Parser<'_> {
         } else {
             vec![self.partial()?]
         };
-        if partials.len() == 1 && omitted_entity_name(&partials[0]) {
-            partials[0].parameters.insert(0, Value::String(Vec::new()));
-            self.omitted_entity_name_count += 1;
-            self.first_omitted_entity_name_offset.get_or_insert(start);
-        }
         self.punct(&TokenKind::Semicolon)?;
         Ok(RawRecord {
             id,
