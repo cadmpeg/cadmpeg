@@ -2146,6 +2146,41 @@ pub(super) fn associate_replica_bases(exchange: &Exchange, ir: &mut CadIr, index
     }
 }
 
+/// Associate each surface-curve wrapper with its 3D basis carrier.
+///
+/// A `SURFACE_CURVE`, `SEAM_CURVE`, or `INTERSECTION_CURVE` is a source
+/// relationship around a separate 3D curve. Topology normally reaches the
+/// basis through the edge, but a free representation can retain only the
+/// wrapper. The IR has no wrapper arena, so the native wrapper becomes the
+/// source owner of the basis carrier.
+pub(super) fn associate_surface_curve_bases(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) {
+    for (curve_id, record) in
+        exchange.entities_any(&["SURFACE_CURVE", "SEAM_CURVE", "INTERSECTION_CURVE"])
+    {
+        let Some(parent_id) = surface_curve_basis(record) else {
+            continue;
+        };
+        let Some(parent_index) = index.curves.get(&parent_id).copied() else {
+            continue;
+        };
+        ir.model.curves[parent_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{curve_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
+}
+
 /// Associate surfaces referenced only as PCURVE supports with their STEP
 /// PCURVE records. The canonical pcurve stores its parameter-space geometry
 /// inline, so this source association preserves reachability of the separate
