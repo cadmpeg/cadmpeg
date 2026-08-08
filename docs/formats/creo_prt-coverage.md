@@ -69,6 +69,9 @@ fixtures, claims above L1 remain unproven.
   `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
   select the sweep direction, and missing section or cap evidence remains
   unresolved.
+- Plane placement keeps `ActDatums` datum-geometry and model-surface
+  namespaces independent; a complete numeric collision between them withholds
+  the section frame.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.

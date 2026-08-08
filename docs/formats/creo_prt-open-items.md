@@ -684,16 +684,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bytes to give the line its endpoints. `decode.rs` `saved_section_missing_line_geometry` takes the two unmated endpoints of the other evaluated entities, which assumes the profile is closed and that the missing line closes it. No byte of the missing line is read. An open profile with a dangling line gives a chord between the two free ends, and that geometry seeds trim-vertex coordinates and generated side surfaces.
 
-### SP-37. Sketch-plane identifier namespace
-
-**Question.** Which namespace does `gsec3d_ptr.plane_id` name when the value resolves in both the `ActDatums` datum-geometry namespace and the model surface namespace?
-
-**Known.** `creo_prt.md` §6 states that these identifiers occupy the outer datum namespace used by `gsec3d.plane_id` and are distinct from `ActDatums.srf_array.geom_id` values. `creo_prt.md` §6 states that the row's `geom_id` remains the separate datum-geometry identifier. The specification admits both a placed plane carrier and an axis-aligned `ActDatums` plane as a sketch plane.
-
-**Need.** We must know the namespace to build the section frame. `placement.rs` `plane_equation` resolves the datum namespace first and returns on a unique datum match without consulting the model surfaces. Each namespace carries its own uniqueness gate; no gate spans the two. A sketch placed on a model face whose surface identifier equals a datum `geom_id` builds its complete frame on the datum, and every profile entity and swept carrier follows.
-
-**Note.** Standard datum planes take small identifiers and model surface identifiers begin above them, so the two ranges stay apart for a part that holds only standard datums. The item is the missing arbitration rule, not an observed wrong frame. Answer it before a construction that raises the datum identifier range makes the ranges meet.
-
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding

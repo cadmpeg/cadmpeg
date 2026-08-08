@@ -2875,6 +2875,13 @@ The datum surface row's `feat_id` is the owning modeling feature identifier.
 The row's `geom_id` remains the separate datum-geometry identifier used by
 `gsec3d` plane references.
 
+Plane lookup keeps the datum-geometry and model-surface namespaces separate. A
+reference is eligible only when one namespace supplies one complete plane
+equation. If one numeric identifier has both a unique complete `ActDatums`
+datum plane and a unique complete model-space plane carrier, the reference is
+ambiguous; neither namespace takes precedence and the section placement remains
+unresolved. A unique complete candidate in one namespace remains eligible.
+
 `FeatDefsDtm` `matrix` records are display or saved-view matrices under `View`, `viewattr`, `world_matrix`, and `model2world` records. They do not define datum-plane placement.
 
 `gsec3d_ptr` binds a 2D section to its placement, saved-section data, plane references, reference planes, order table, and dimension tables. `plane_flip` negates the sketch normal and extrusion side when it is not `f6`.

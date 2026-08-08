@@ -401,32 +401,43 @@ fn plane_equation(
         .iter()
         .filter(|datum| datum.id == id)
         .collect::<Vec<_>>();
+    let model_planes = model_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let model_equation = match model_planes.as_slice() {
+        [plane] => plane
+            .normal
+            .zip(plane.origin)
+            .map(|(normal, origin)| (normal, dot(normal, origin))),
+        _ => None,
+    };
+    let outline_planes = outline_planes
+        .iter()
+        .filter(|plane| plane.surface_id == id)
+        .collect::<Vec<_>>();
+    let outline_equation = match outline_planes.as_slice() {
+        [plane] => Some((plane.normal, dot(plane.normal, plane.origin))),
+        _ => None,
+    };
+    // The datum-geometry and model-surface identifiers are separate namespaces;
+    // a numeric collision supplies no rule for choosing between their equations.
+    if datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()) {
+        return None;
+    }
     if let [datum] = datums.as_slice() {
         return Some((datum.normal, datum.offset));
     }
     if !datums.is_empty() {
         return None;
     }
-    let model_planes = model_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    if let [plane] = model_planes.as_slice() {
-        if let (Some(normal), Some(origin)) = (plane.normal, plane.origin) {
-            return Some((normal, dot(normal, origin)));
-        }
+    if let Some(equation) = model_equation {
+        return Some(equation);
     }
     if model_planes.len() > 1 {
         return None;
     }
-    let outline_planes = outline_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let [plane] = outline_planes.as_slice() else {
-        return None;
-    };
-    Some((plane.normal, dot(plane.normal, plane.origin)))
+    outline_equation
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<([f64; 3], f64)> {
@@ -1173,6 +1184,37 @@ mod tests {
         assert_eq!(
             plane_equation(7, &[], &[unresolved], &[outline]),
             Some(([0.0, 0.0, 1.0], 3.0))
+        );
+    }
+
+    #[test]
+    fn plane_namespace_collision_withholds_equation() {
+        let model = PlaneLocalSystem {
+            surface_id: 7,
+            body: Vec::new(),
+            slots: vec![None; 12],
+            origin: Some([0.0, 2.0, 0.0]),
+            u_axis: Some([1.0, 0.0, 0.0]),
+            normal: Some([0.0, 1.0, 0.0]),
+            classification: crate::surface::LocalSystemClassification::Unclassified,
+            row_offset: 10,
+            offset: 11,
+        };
+        assert_eq!(
+            plane_equation(7, &[datum(7, [0.0, 1.0, 0.0], 2.0)], &[model], &[]),
+            None
+        );
+
+        let outline = OutlinePlane {
+            surface_id: 7,
+            origin: [0.0, 2.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 12,
+        };
+        assert_eq!(
+            plane_equation(7, &[datum(7, [0.0, 1.0, 0.0], 2.0)], &[], &[outline]),
+            None
         );
     }
 
