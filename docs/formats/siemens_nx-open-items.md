@@ -250,6 +250,22 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The two rules disagree when a stream holds interleaved sequences. The §7.2 rule takes the last envelope in the stream, which belongs to one sequence, so the current-revision records of every other sequence fall before that offset and merge as historical. The decoder applies the §7.2 rule and never reads `node_id` for sequencing. The §9.2 `xmt == 3` delimiter is also not enforced. We must reconcile the two sections, or state that paired partition and deltas streams hold exactly one body sequence.
 
+### PS-30. Fixed-record field shift selection
+
+**Question.** Which field establishes the escape and large-index shift of a fixed analytic record, and what bounds a record that the ownership graph does not own?
+
+**Known.** `siemens_nx.md` §4.1 "Lengths are logical, before escape/large-index shifts. Each code is a Parasolid XT node ty" defines the tags and the record lengths before escape and large-index shifts. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
+
+**Conflict.** The decoder recovers records that the ownership graph does not own by trying six field shifts in order and accepting the first whose payload passes a magnitude test. `crates/cadmpeg-codec-nx/src/geometry.rs` rejects a coordinate at or above `1.0e3` meters and a radius outside `1.0e-9` to `1.0e3`. Those bounds contradict §6. A model larger than one kilometer loses its recovered carriers, and an unrelated byte run inside a payload can pass the test and enter the model as an analytic carrier. Recovered carriers are not separable from graph-resolved carriers in the model, and an unreferenced recovered surface or curve is never removed. We must know the shift field so that recovery does not need a magnitude test.
+
+### PS-31. `OFFSET_SURF` discriminator and true-offset roles
+
+**Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?
+
+**Known.** `siemens_nx.md` §6.1 "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref" defines the layout and the evaluation `P = base(u,v) + offset_distance * unit_normal(u,v)`. It assigns no role to the discriminator or to `true_offset`.
+
+**Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
@@ -510,6 +526,46 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
 
+### OM-33. Decisive active-body membership
+
+**Question.** What makes an `RMFastLoad` membership assignment decisive for one body image against another?
+
+**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the membership table, the shared FACE, EDGE, and VERTEX identity space, independent per-image assignment, and the rule that an image without active membership is retained unless another image has a decisive membership assignment. It does not define decisive.
+
+**Need.** We must know the condition to select the active bodies. The decoder supplies its own: it keeps each image whose matched fraction is above `0.10`, and it discards every other image when the best image has at least five times the matched count of the next image. Both numbers are absent from the format model. The selection deletes the other bodies and their complete topology and geometry from the model, so a wrong threshold removes a current body permanently. The exact feature-history rule runs only when this condition declines, so the thresholds take precedence over it.
+
+### OM-34. OM registry schema-role precedence
+
+**Question.** Which schema role does a linked OM registry take when it declares more than one role marker?
+
+**Known.** `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" names `UGS::Solid::Topol` for the model store, `UGS::FEATURE_RECORD` for feature history, `UGS::EXP_expression` for expressions, and `UGS::OM::SaveAuditTrail` for audit data when no preceding specialized marker applies. It orders the audit-data marker against the others. It does not order the first three against each other.
+
+**Need.** We must know the precedence, or the rule that makes the first three markers mutually exclusive. The decoder tests them in a fixed order and takes the first present marker without testing the others. The role selects which sections the feature-history extractors walk, so a registry that carries two markers can supply operation labels, body references, and lineage from a store that is not feature history.
+
+### OM-35. Tagged-reference admission in a bounded record
+
+**Question.** Which field separates a tagged-reference stream from per-class field data inside one bounded OM record?
+
+**Known.** `siemens_nx.md` §7.1 "**Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cr" defines the persistent-handle and tagged-reference token forms and states that they occur as pairs inside one externally bounded record. It defines an unconditional retention rule for offset-store control blocks only. It states no admission rule for an OM entity record.
+
+**Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
+
+### OM-36. Named payload interval terminator
+
+**Question.** What ends a named payload interval in an offset store?
+
+**Known.** `siemens_nx.md` §7.1 "A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point" defines the interval as ending exclusively at the next complete name field or at the reconstructed payload boundary, and rejects the typed point when an additional scalar occurs. `siemens_nx.md` §7.1 "A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00" defines the name field. Block boundaries do not delimit values or named-record boundaries.
+
+**Need.** We must know the terminator to apply the scalar-cardinality rule. The decoder adds one data block at a time and stops at the first accumulated span that holds exactly two scalars, so it never observes a third scalar in a later block. An interval that the format rejects then transfers as a typed point carrying the first two of its values.
+
+### OM-37. OM registry and record-area terminators
+
+**Question.** What ends a member-field registry, and what bounds the search for a section record-area pointer?
+
+**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" defines the schema trailer that carries the record-area pointer. Neither gives a terminator for the last declaration in a registry, nor a bound for the pointer search.
+
+**Need.** We must know both terminators. The decoder supplies fixed byte windows: it stops enumerating member declarations after 256 bytes with no match, and it looks for the record-area pointer only inside 4096 bytes after the last member declaration, which also bounds the uniqueness test that rejects an ambiguous pointer. A section that exceeds either window loses its declarations or its complete record area and reports no loss.
+
 ## 3. Assembly and material data
 
 ### AM-01. Fast-load structure stream
@@ -597,6 +653,14 @@ member as a neutral suppression or visibility state.
 **Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes.
 
 **Need.** We must know the relation to assign material and appearance state to neutral faces.
+
+### AM-11. JT 9 high-degree lane count
+
+**Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?
+
+**Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
+
+**Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
 
 ## 4. Test evidence
 
