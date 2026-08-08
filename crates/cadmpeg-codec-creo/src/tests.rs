@@ -21,6 +21,24 @@ use crate::CreoCodec;
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
 /// `(header_name, payload)` sections joined by the `#\n` terminator rule.
 fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let sections = sections
+        .iter()
+        .map(|(name, payload)| {
+            let payload =
+                if *name == "DEPDB_DATA" && !payload.starts_with(b"\xe0\x00p_dep_db\0\xe3") {
+                    let mut prefixed = b"\xe0\x00p_dep_db\0\xe3".to_vec();
+                    prefixed.extend_from_slice(payload);
+                    prefixed
+                } else {
+                    payload.clone()
+                };
+            (*name, payload)
+        })
+        .collect::<Vec<_>>();
+    build_prt_raw(version, &sections)
+}
+
+fn build_prt_raw(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(format!("#UGC:2 P {version}\n").as_bytes());
     out.extend_from_slice(b"#-END_OF_UGC_HEADER\n");
@@ -9776,6 +9794,32 @@ fn nd_decoration_selects_nd_layout() {
     assert_eq!(scan.framing.sections[0].name, "VisibGeom");
     assert_eq!(scan.framing.sections[0].raw_name, "ND:0:VisibGeom:1");
     assert_eq!(scan.framing.census.srf_array_count, Some(3));
+}
+
+#[test]
+fn depdb_root_record_overrides_embedded_nd_decoration() {
+    let data = build_prt(
+        "c",
+        &[
+            ("DEPDB_DATA", b"\xe0\x00p_dep_db\0\xe3".to_vec()),
+            ("ND:0:Model_L05P:1", Vec::new()),
+        ],
+    );
+    let scan = container::scan_bytes(data);
+    assert_eq!(scan.framing.layout, Layout::Depdb);
+}
+
+#[test]
+fn depdb_layout_requires_root_record() {
+    let data = build_prt_raw(
+        "c",
+        &[
+            ("DEPDB_DATA", b"not-a-root".to_vec()),
+            ("ND:0:Model_L05P:1", Vec::new()),
+        ],
+    );
+    let scan = container::scan_bytes(data);
+    assert_eq!(scan.framing.layout, Layout::Unknown);
 }
 
 #[test]

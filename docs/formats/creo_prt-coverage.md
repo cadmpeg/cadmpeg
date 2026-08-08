@@ -88,6 +88,9 @@ fixtures, claims above L1 remain unproven.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
   namespaces independent; a complete numeric collision between them withholds
   the section frame.
+- Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
+  do not override the persistence-layout discriminator, and missing
+  discriminators remain unknown.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.

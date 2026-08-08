@@ -23,14 +23,14 @@
               "entity_id": "7"
             }
           },
-          "id": "creo:depdb:curve_expression_feature#7-113",
+          "id": "creo:depdb:curve_expression_feature#7-125",
           "name": "Curve Equation 7",
-          "native_ref": "creo:depdb:curve_expression#active-7-113",
+          "native_ref": "creo:depdb:curve_expression#active-7-125",
           "ordinal": 0,
           "source_content": [
             {
               "kind": "parameter",
-              "value": "creo:depdb:curve_expression_parameter#7-113-0"
+              "value": "creo:depdb:curve_expression_parameter#7-125-0"
             }
           ],
           "source_tag": "crv_fr_eqn",
@@ -113,11 +113,11 @@
       "parameters": [
         {
           "expression": "rel_model_name()",
-          "id": "creo:depdb:curve_expression_parameter#7-113-0",
+          "id": "creo:depdb:curve_expression_parameter#7-125-0",
           "name": "name",
-          "native_ref": "creo:depdb:curve_expression#active-7-113",
+          "native_ref": "creo:depdb:curve_expression#active-7-125",
           "ordinal": 0,
-          "owner": "creo:depdb:curve_expression_feature#7-113",
+          "owner": "creo:depdb:curve_expression_feature#7-125",
           "properties": {
             "activation": "active",
             "source_assignment_ordinal": "0"
@@ -169,7 +169,7 @@
                   "activation": "active",
                   "dependencies": [],
                   "expression": "rel_model_name()",
-                  "offset": 154,
+                  "offset": 166,
                   "target": {
                     "declared_unit": null,
                     "kind": "parameter",
@@ -180,10 +180,10 @@
               ],
               "backup": false,
               "entity_id": 7,
-              "id": "creo:depdb:curve_expression#active-7-113",
+              "id": "creo:depdb:curve_expression#active-7-125",
               "lines": [
                 {
-                  "offset": 154,
+                  "offset": 166,
                   "text": "name=rel_model_name()"
                 }
               ],
@@ -202,10 +202,10 @@
       "attributes": {
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
-        "file_size": "176",
+        "file_size": "188",
         "layout": "DEPDB",
         "model_name": "widget.prt ",
-        "section.0.length": "77",
+        "section.0.length": "89",
         "section.0.name": "DEPDB_DATA",
         "section.0.offset": "99",
         "section.0.raw_name": "DEPDB_DATA",
@@ -561,10 +561,10 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:depdb:curve_expression_feature#7-113": {
+        "creo:depdb:curve_expression_feature#7-125": {
           "entity": "derived"
         },
-        "creo:depdb:curve_expression_parameter#7-113-0": {
+        "creo:depdb:curve_expression_parameter#7-125-0": {
           "entity": "derived"
         },
         "creo:model:occurrence#root": {
@@ -575,18 +575,18 @@
         }
       },
       "provenance": {
-        "creo:depdb:curve_expression#active-7-113": {
-          "offset": 139,
+        "creo:depdb:curve_expression#active-7-125": {
+          "offset": 151,
           "stream": 1,
           "tag": "curve_expression_program"
         },
-        "creo:depdb:curve_expression_feature#7-113": {
-          "offset": 139,
+        "creo:depdb:curve_expression_feature#7-125": {
+          "offset": 151,
           "stream": 1,
           "tag": "curve_expression_feature"
         },
-        "creo:depdb:curve_expression_parameter#7-113-0": {
-          "offset": 154,
+        "creo:depdb:curve_expression_parameter#7-125-0": {
+          "offset": 166,
           "stream": 1,
           "tag": "curve_expression_assignment"
         },

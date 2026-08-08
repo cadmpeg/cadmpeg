@@ -69,6 +69,13 @@ PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology ma
 | ND     | approximately 40 or more | Dense PSB rows in `VisibGeom`, including `srf_array` and `crv_array`. |
 | DEPDB  |         approximately 12 | Sparse PSB views and feature/section records.                         |
 
+The outer layout discriminator is the first record in `DEPDB_DATA`. A
+`DEPDB_DATA` payload that begins with `e0 00 p_dep_db\0 e3` is a DEPDB layout.
+Names of embedded records may carry an `ND:` decoration; that decoration does
+not change the outer layout. An `ND:` decoration on an outer section identifies
+an ND layout. A file with neither discriminator is an unknown layout. Section
+cardinality is descriptive and does not select a layout.
+
 ### 1.2 Section map
 
 | Section                          | Contents                                                                                                             |

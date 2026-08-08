@@ -807,11 +807,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §1.2 "| `THMB_IMG_MAIN`" states that the payload begins with `FF D8 FF` and holds no model geometry. `creo_prt.md` §1 "A section payload beginning" defines the Unix-compress framing and the expanded-length check. A `THMB_IMG_MAIN` payload takes either form: the marker can begin the payload directly, or the section can begin `1f 9d <flags>` and hold the marker only after expansion.
 
 **Need.** We must know the retention rule to preserve the thumbnail of a compressed section. `decode.rs` `preserve_passthrough_sections` searches the raw section bytes for `FF D8 FF`. A compressed section holds no such window before expansion, so the function discards the section and emits no passthrough record. The `expanded_sections` arena then retains the section lengths and digest but no bytes, and no loss is reported. `container.rs` `has_thumbnail` searches the same raw bytes, so it reports the thumbnail as absent.
-
-### PP-11. Layout family identification
-
-**Question.** Which field gives the layout family of a part that carries no `ND:` section decoration?
-
-**Known.** `creo_prt.md` §1.1 gives the section cardinality of each family as approximate: about 40 or more for ND, about 12 for DEPDB. The `ND:` section decoration identifies an ND part. No field states the family.
-
-**Need.** We must know the field to select the layout-gated transfer paths. `container.rs` `identify_layout` uses the section counts 24 and 32 as cut-points. Neither constant comes from the specification. A DEPDB part with 32 or more enumerated sections is declared ND, which admits it to the first-instance prototype and paired-envelope-sphere transfers. An undecorated ND part with 25 through 31 sections is declared unknown, which withholds those transfers and reports no loss.

@@ -658,20 +658,36 @@ fn is_name_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-' | b'#')
 }
 
-/// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). ND is signalled by `ND:`
-/// name decoration or a large section count; DEPDB by a `DEPDB_DATA` section
-/// with a sparse section list.
-fn identify_layout(sections: &[Section]) -> Layout {
+const DEPDB_ROOT_RECORD: &[u8] = b"\xe0\x00p_dep_db\0\xe3";
+
+/// Identify the layout family structurally ([spec §1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). The
+/// `DEPDB_DATA` root record is authoritative because a persistence payload can
+/// contain embedded names with the `ND:` decoration. An undecorated file with
+/// neither a valid root record nor an outer `ND:` name remains unknown.
+fn identify_layout(data: &[u8], sections: &[Section]) -> Layout {
+    let has_depdb_root = sections.iter().any(|section| {
+        if section.name != "DEPDB_DATA" {
+            return false;
+        }
+        let Some(header_end) = section.offset.checked_add(section.raw_name.len() + 2) else {
+            return false;
+        };
+        let Some(section_end) = section.offset.checked_add(section.length) else {
+            return false;
+        };
+        data.get(header_end..section_end)
+            .is_some_and(|payload| payload.starts_with(DEPDB_ROOT_RECORD))
+    });
+    let has_depdb_section = sections.iter().any(|section| section.name == "DEPDB_DATA");
     let has_nd_decoration = sections.iter().any(|s| s.raw_name.starts_with("ND:"));
-    let has_depdb = sections.iter().any(|s| s.name == "DEPDB_DATA");
-    if has_nd_decoration {
+    if has_depdb_section {
+        if has_depdb_root {
+            Layout::Depdb
+        } else {
+            Layout::Unknown
+        }
+    } else if has_nd_decoration {
         Layout::Nd
-    } else if has_depdb && sections.len() <= 24 {
-        Layout::Depdb
-    } else if sections.len() >= 32 {
-        Layout::Nd
-    } else if has_depdb {
-        Layout::Depdb
     } else {
         Layout::Unknown
     }
@@ -1830,7 +1846,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         })
         .collect();
     let reference_ellipses = reference::ellipse_carriers(&reference_conics);
-    let layout = identify_layout(&sections);
+    let layout = identify_layout(&data, &sections);
     let model_geometry_sections = model_geometry_sections(&data, &sections);
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
