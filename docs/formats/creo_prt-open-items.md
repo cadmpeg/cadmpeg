@@ -306,16 +306,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the binding to add the generated faces to the body topology.
 
-### GS-32. `tab_cyl` chart intercept magnitude
-
-**Question.** Which field gives the first-axis intercept of a tabulated-cylinder directrix chart?
-
-**Known.** `creo_prt.md` §3.2 states that layouts whose second and fifth scalar prefixes are `46` require a first-axis intercept magnitude of 30, and that every remaining complete replay-bound frame selects its chart from a zero-offset form or a form with a first-axis intercept magnitude of 30 and a reflected sweep-axis sign.
-
-**Note.** The magnitude 30 is a length in model units. A length is not a container constant. The specification states the value as settled, so this item disputes the specification and the decoder together. `decode.rs` `placed_tabulated_cylinder_directrix` admits only the magnitudes 0 and 30. A directrix chart with any other intercept leaves the surface without a NURBS carrier.
-
-**Need.** We must know the field to place every tabulated-cylinder directrix, and to know whether the two admitted magnitudes are a rule or a property of the parts that gave them.
-
 ## 3. Section solving and feature placement
 
 ### SP-01. Nonlinear simultaneous equations

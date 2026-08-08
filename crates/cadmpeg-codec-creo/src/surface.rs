@@ -234,6 +234,49 @@ impl SurfacePrototypeRecord {
     pub fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
         self.parameters.iter().find(|field| field.name == name)
     }
+
+    /// Return the chart-origin vector carried by a `tab_cyl` local system.
+    pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
+        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+            return None;
+        }
+        let SurfaceNamedValue::ScalarArray {
+            dimensions: 4,
+            count: 3,
+            values,
+            ..
+        } = &self.field("local_sys")?.value
+        else {
+            return None;
+        };
+        if values.len() != 12 {
+            return None;
+        }
+        if values.iter().all(|value| value.is_some_and(f64::is_finite)) {
+            return Some([values[9]?, values[10]?, values[11]?]);
+        }
+        let compact_chart = values[..7]
+            .iter()
+            .all(|value| value.is_some_and(|value| value == 0.0))
+            && values[7..10]
+                .iter()
+                .all(|value| value.is_some_and(f64::is_finite))
+            && values[10..12].iter().all(Option::is_none);
+        compact_chart.then_some([values[7]?, values[8]?, values[9]?])
+    }
+
+    /// Return the four contiguous control-point IDs in a `tab_cyl` prototype.
+    pub(crate) fn tabulated_cylinder_control_point_ids(&self) -> Option<[u32; 4]> {
+        if self.declared_family != "tab_cyl" || self.family != SurfacePrototypeFamily::Extrusion {
+            return None;
+        }
+        let SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } =
+            &self.field("c_pnts")?.value
+        else {
+            return None;
+        };
+        entity_ids.as_slice().try_into().ok()
+    }
 }
 
 /// Structural boundary that terminates a positional surface parameter body.
@@ -6243,6 +6286,19 @@ mod tests {
                     vec![0x2d, 8, 0, 0, 0, 0, 0, 0],
                 ],
             })
+        );
+    }
+
+    #[test]
+    fn tabulated_cylinder_control_point_field_expands_contiguous_ids() {
+        let payload = b"srf_prim_ptr(tab_cyl)\0\
+            \xe0\x00c_pnts\0\xf8\x04\xf7\x50\xfb";
+
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].tabulated_cylinder_control_point_ids(),
+            Some([80, 81, 82, 83])
         );
     }
 

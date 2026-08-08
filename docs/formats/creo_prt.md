@@ -710,6 +710,16 @@ marker and occupies no coordinate slot. When that form leaves the final tuple
 one coordinate short at the field boundary, the omitted terminal coordinate is
 zero. A terminal `18` occupies one explicit zero slot.
 
+The `tab_cyl` prototype's `local_sys f9 04 03` supplies a chart-origin vector.
+In the complete form, all twelve slots are finite and slots 9 through 11 are
+the vector. In the compact chart form, slots 0 through 6 are finite zero,
+slots 7 through 9 are finite vector components, and slots 10 and 11 are
+omitted or inherited; slots 7 through 9 are the vector. A replay joins its
+prototype only when both records are in the same section and the prototype's
+`c_pnts f8 04 f7 <start> fb` expands to the replay's four control-point IDs in
+the same order. A missing or non-unique join leaves the prototype chart origin
+undefined.
+
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes
 `00 0c 9a`. The directrix construction begins after this marker. Replay-bound
@@ -774,10 +784,18 @@ and four store the sweep bounds. In a first-coordinate frame slot,
 `4a <tail6>` reconstructs as the positive `40 <tail6> 00` exception. When exactly two
 frame-axis spans equal the first-to-last control-point spans of the two
 directrix coordinates, those axes define the directrix chart. Interior control
-points do not widen these spans. Each directrix axis is a
-signed unit-slope affine map selected by the frame bounds and the layout's
-required intercept magnitude. A missing or non-unique map leaves the frame
-opaque. The remaining axis defines the extrusion vector. The four placed
+points do not widen these spans. Each directrix axis is a signed unit-slope
+affine map. A layout whose second and fifth scalar prefixes are `46` uses the
+magnitude of the joined prototype chart-origin component on the first
+directrix axis and zero on the second axis. The `_ 42 _ _ 18 _` layout uses zero
+intercepts on both axes. Every other complete frame selects exactly one of a
+zero-intercept chart, which retains the stored sweep-axis sign, and a
+prototype-origin chart, which reflects the sweep-axis sign; the latter exists
+only when a joined prototype supplies a nonzero first-axis component. The
+prototype-origin intercept magnitude is finite and can have any model-unit
+value; frame sign and reversal select its signed affine map.
+The selected map and frame-axis assignment must be unique; otherwise the frame
+is opaque. The remaining axis defines the extrusion vector. The four placed
 points form a non-rational clamped cubic B-spline with knot vector
 `[0,0,0,0,1,1,1,1]`.
 For a replay-bound row, this unique ordered frame-axis construction defines the
@@ -809,20 +827,13 @@ the two surfaces, and neither surface is periodic transverse to the edge. The
 shared curve retains one boundary's degree, knots, control points, weights, and
 periodicity.
 
-Layouts whose second and fifth scalar prefixes are `46` require a first-axis
-intercept magnitude of 30, a zero second-axis intercept, and retain the stored
-sweep-axis sign. The
-`_ 42 _ _ 18 _` layout requires zero intercepts and retains the stored
-sweep-axis sign. The fifth-slot `18` is a one-byte zero bound and does not
-consume bytes from the sixth slot. Its first and fourth slots accept the
-complete first-coordinate scalar lane; its third and sixth slots accept the second-coordinate
-scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
-four also use the first-coordinate lane. Every remaining complete replay-bound
-frame selects its directrix chart from exactly two forms: a zero-offset form
-retaining the sweep-axis sign, or a first-axis intercept magnitude of 30 with a
-zero second-axis intercept and a reflected sweep-axis sign. Scalar prefixes
-select the encoding of each coordinate; they do not otherwise constrain chart
-selection. A missing or non-unique form leaves the frame opaque.
+The fifth-slot `18` is a one-byte zero bound and does not consume bytes from the
+sixth slot. Its first and fourth slots accept the complete first-coordinate
+scalar lane; its third and sixth slots accept the second-coordinate scalar
+lane. In the `_ 2d _ _ 2d _` layout, slots one and four also use the
+first-coordinate lane. Scalar prefixes select the encoding of each coordinate;
+they do not otherwise constrain chart selection. A missing or non-unique form
+leaves the frame opaque.
 Each endpoint bound carries its own stored sign; resolving a chart may negate
 the two bounds independently. The resulting unit-slope affine map remains
 unique.

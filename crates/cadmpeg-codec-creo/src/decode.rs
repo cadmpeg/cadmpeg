@@ -6951,12 +6951,12 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
                     frame
                 };
                 let slope = if reversed { -1.0 } else { 1.0 };
-                let intercept = target[0] - slope * local[0];
-                if close(target[1], slope * local[1] + intercept)
-                    && close(intercept.abs(), offset)
-                    && !matches.contains(&(slope, intercept))
+                let chart_intercept = target[0] - slope * local[0];
+                if close(target[1], slope * local[1] + chart_intercept)
+                    && close(chart_intercept.abs(), offset)
+                    && !matches.contains(&(slope, chart_intercept))
                 {
-                    matches.push((slope, intercept));
+                    matches.push((slope, chart_intercept));
                 }
             }
         }
@@ -6970,14 +6970,13 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
 fn placed_tabulated_cylinder_directrix(
     replay: &crate::surface::TabulatedCylinderCurveReplay,
     parameters: &crate::surface::SurfaceParameterRecord,
+    chart_origin: Option<[f64; 3]>,
 ) -> Option<(NurbsCurve, [f64; 3])> {
     #[derive(Clone, Copy)]
     enum FrameLayout {
         LegacyReflected,
-        SignedPlanar {
-            first_offset: f64,
-            reflect_sweep: bool,
-        },
+        PrototypeOffsetPlanar,
+        ZeroOffsetPlanar,
         SelectedPlanar,
     }
     if parameters.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
@@ -6996,21 +6995,9 @@ fn placed_tabulated_cylinder_directrix(
             let offset_planar_layout = matches!(heads.as_slice(), [_, 0x46, _, _, 0x46, _]);
             let zero_offset_layout = matches!(heads.as_slice(), [_, 0x42, _, _, 0x18, _]);
             if offset_planar_layout {
-                (
-                    values,
-                    FrameLayout::SignedPlanar {
-                        first_offset: 30.0,
-                        reflect_sweep: false,
-                    },
-                )
+                (values, FrameLayout::PrototypeOffsetPlanar)
             } else if zero_offset_layout {
-                (
-                    values,
-                    FrameLayout::SignedPlanar {
-                        first_offset: 0.0,
-                        reflect_sweep: false,
-                    },
-                )
+                (values, FrameLayout::ZeroOffsetPlanar)
             } else {
                 (values, FrameLayout::SelectedPlanar)
             }
@@ -7050,26 +7037,44 @@ fn placed_tabulated_cylinder_directrix(
         FrameLayout::LegacyReflected => {
             close((second[axis] - first[axis]).abs(), local_span[coordinate])
         }
-        FrameLayout::SignedPlanar { first_offset, .. } => signed_unit_chart(
+        FrameLayout::PrototypeOffsetPlanar => chart_origin.is_some_and(|origin| {
+            signed_unit_chart(
+                [local_start[coordinate], local_end[coordinate]],
+                [first[axis], second[axis]],
+                if coordinate == 0 {
+                    origin[axis].abs()
+                } else {
+                    0.0
+                },
+            )
+            .is_some()
+        }),
+        FrameLayout::ZeroOffsetPlanar => signed_unit_chart(
             [local_start[coordinate], local_end[coordinate]],
             [first[axis], second[axis]],
-            if coordinate == 0 { first_offset } else { 0.0 },
+            0.0,
         )
         .is_some(),
         FrameLayout::SelectedPlanar => {
-            let offsets: &[f64] = if coordinate == 0 {
-                &[0.0, 30.0]
-            } else {
-                &[0.0]
-            };
-            offsets.iter().any(|offset| {
-                signed_unit_chart(
-                    [local_start[coordinate], local_end[coordinate]],
-                    [first[axis], second[axis]],
-                    *offset,
-                )
-                .is_some()
-            })
+            let zero_offset = signed_unit_chart(
+                [local_start[coordinate], local_end[coordinate]],
+                [first[axis], second[axis]],
+                0.0,
+            )
+            .is_some();
+            let prototype_offset = (coordinate == 0)
+                .then(|| chart_origin.map(|origin| origin[axis].abs()))
+                .flatten()
+                .filter(|offset| offset.is_finite() && !close(*offset, 0.0))
+                .is_some_and(|offset| {
+                    signed_unit_chart(
+                        [local_start[coordinate], local_end[coordinate]],
+                        [first[axis], second[axis]],
+                        offset,
+                    )
+                    .is_some()
+                });
+            zero_offset || prototype_offset
         }
     };
     let assignments = (0..3)
@@ -7088,15 +7093,12 @@ fn placed_tabulated_cylinder_directrix(
     };
     let (signed_chart, reflect_sweep) = match layout {
         FrameLayout::LegacyReflected => (None, false),
-        FrameLayout::SignedPlanar {
-            first_offset,
-            reflect_sweep,
-        } => (
+        FrameLayout::PrototypeOffsetPlanar => (
             Some((
                 signed_unit_chart(
                     [local_start[0], local_end[0]],
                     [first[*first_axis], second[*first_axis]],
-                    first_offset,
+                    chart_origin?[*first_axis].abs(),
                 )?,
                 signed_unit_chart(
                     [local_start[1], local_end[1]],
@@ -7104,10 +7106,32 @@ fn placed_tabulated_cylinder_directrix(
                     0.0,
                 )?,
             )),
-            reflect_sweep,
+            false,
+        ),
+        FrameLayout::ZeroOffsetPlanar => (
+            Some((
+                signed_unit_chart(
+                    [local_start[0], local_end[0]],
+                    [first[*first_axis], second[*first_axis]],
+                    0.0,
+                )?,
+                signed_unit_chart(
+                    [local_start[1], local_end[1]],
+                    [first[*second_axis], second[*second_axis]],
+                    0.0,
+                )?,
+            )),
+            false,
         ),
         FrameLayout::SelectedPlanar => {
-            let candidates = [(0.0, false), (30.0, true)]
+            let mut first_intercepts = vec![(0.0, false)];
+            if let Some(origin) = chart_origin {
+                let intercept = origin[*first_axis].abs();
+                if intercept.is_finite() && !close(intercept, 0.0) {
+                    first_intercepts.push((intercept, true));
+                }
+            }
+            let candidates = first_intercepts
                 .into_iter()
                 .filter_map(|(first_offset, reflect_sweep)| {
                     Some((
@@ -26619,6 +26643,26 @@ fn transfer_positional_line_extrusion_planes(
     transferred
 }
 
+fn section_contains_offset(section: &crate::container::Section, offset: usize) -> bool {
+    offset >= section.offset && offset < section.offset.saturating_add(section.length)
+}
+
+fn unique_tabulated_cylinder_prototype<'a>(
+    scan: &'a ContainerScan<'_>,
+    replay: &crate::surface::TabulatedCylinderCurveReplay,
+) -> Option<&'a crate::surface::SurfacePrototypeRecord> {
+    let section = exactly_one(
+        scan.framing
+            .sections
+            .iter()
+            .filter(|section| section_contains_offset(section, replay.surface_row_offset)),
+    )?;
+    exactly_one(scan.surfaces.prototype_records.iter().filter(|record| {
+        section_contains_offset(section, record.offset)
+            && record.tabulated_cylinder_control_point_ids() == Some(replay.control_point_ids)
+    }))
+}
+
 fn transfer_tabulated_cylinder_spline_extrusions(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -26645,7 +26689,10 @@ fn transfer_tabulated_cylinder_spline_extrusions(
         else {
             continue;
         };
-        let Some((directrix, sweep)) = placed_tabulated_cylinder_directrix(replay, parameters)
+        let chart_origin = unique_tabulated_cylinder_prototype(scan, replay)
+            .and_then(crate::surface::SurfacePrototypeRecord::tabulated_cylinder_chart_origin);
+        let Some((directrix, sweep)) =
+            placed_tabulated_cylinder_directrix(replay, parameters, chart_origin)
         else {
             continue;
         };

@@ -1392,7 +1392,7 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
     };
 
     let (curve, sweep) =
-        placed_tabulated_cylinder_directrix(&replay, &parameters).expect("placement");
+        placed_tabulated_cylinder_directrix(&replay, &parameters, None).expect("placement");
     assert_eq!(curve.control_points[0], Point3::new(-13.0, -20.0, 5.0));
     assert_eq!(curve.control_points[3], Point3::new(-10.0, -22.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
@@ -1403,14 +1403,14 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
         prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
     });
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
         .expect("broad signed-DICT placement");
     assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
     assert_eq!(sweep, [0.0, 0.0, 5.0]);
 
     broad_signed_frame.scalar_frames.clear();
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
         .expect("complete frame supplies its signed sweep");
     assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
@@ -1420,15 +1420,20 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
         prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
     });
-    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame).is_none());
+    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
 
     broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
         values: [29.0, 5.0, 2.0, -26.0, 10.0, 4.0],
         prefixes: [0x4a, 0x46, 0x2f, 0x46, 0x46, 0x2e],
     });
     replay.control_points[1] = Some([10.0, -5.0]);
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
-        .expect("independently signed offset placement");
+    assert!(
+        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none(),
+        "the offset layout requires its prototype chart origin"
+    );
+    let (curve, sweep) =
+        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, Some([-30.0, 0.0, 0.0]))
+            .expect("independently signed offset placement");
     assert_eq!(curve.control_points[0], Point3::new(-29.0, 5.0, 2.0));
     assert_eq!(curve.control_points[1], Point3::new(-20.0, 5.0, -5.0));
     assert_eq!(curve.control_points[3], Point3::new(-26.0, 5.0, 4.0));
@@ -1439,7 +1444,7 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
     });
     replay.control_points[1] = Some([2.0, 2.5]);
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None)
         .expect("scalar encodings do not change the coordinate chart");
     assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
     assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
@@ -1449,7 +1454,25 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         values: [1.0, 1.0, 2.0, 4.0, 4.0, 4.0],
         prefixes: [0xdd, 0xa1, 0x9e, 0xd8, 0xa2, 0x9e],
     });
-    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame).is_none());
+    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
+
+    replay.control_points = [
+        Some([1.0, 2.0]),
+        Some([2.0, 2.5]),
+        Some([3.0, 3.5]),
+        Some([4.0, 4.0]),
+    ];
+    broad_signed_frame.tabulated_cylinder_frame = Some(crate::surface::TabulatedCylinderFrame {
+        values: [-11.25, 2.0, 5.0, -8.25, 4.0, 10.0],
+        prefixes: [0x46, 0x46, 0x2f, 0x46, 0x46, 0x2e],
+    });
+    let (curve, sweep) =
+        placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, Some([-12.25, 0.0, 0.0]))
+            .expect("prototype chart origin supplies an arbitrary intercept");
+    assert_eq!(curve.control_points[0], Point3::new(-11.25, 2.0, 5.0));
+    assert_eq!(curve.control_points[3], Point3::new(-8.25, 4.0, 5.0));
+    assert_eq!(sweep, [0.0, 0.0, 5.0]);
+    assert!(placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame, None).is_none());
 }
 
 #[test]
@@ -1544,7 +1567,7 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         offset: 0,
         body_offset: 0,
     };
-    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters)
+    let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &parameters, None)
         .expect("zero-offset directrix placement");
     assert_eq!(
         curve.control_points[0],
