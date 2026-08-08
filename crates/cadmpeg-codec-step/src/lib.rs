@@ -972,8 +972,10 @@ impl<'a> Builder<'a> {
                     PresentationItem::Surface { surface } => {
                         self.surface_refs.get(surface.as_str()).copied()
                     }
-                    PresentationItem::Point { .. }
-                    | PresentationItem::Product { .. }
+                    PresentationItem::Point { point } => {
+                        self.point_refs.get(point.as_str()).copied()
+                    }
+                    PresentationItem::Product { .. }
                     | PresentationItem::Occurrence { .. }
                     | PresentationItem::Pmi { .. }
                     | PresentationItem::Tessellation { .. }

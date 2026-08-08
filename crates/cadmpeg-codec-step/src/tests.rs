@@ -9106,6 +9106,31 @@ fn vertex_appearance_binding_styles_the_vertex_point() {
     }));
 }
 
+#[test]
+fn point_presentation_layer_writes_the_cartesian_point_carrier() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let point = ir.model.points[0].id.clone();
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#point".to_string()),
+        name: "point layer".to_string(),
+        description: Some("standalone points".to_string()),
+        items: vec![PresentationItem::Point { point }],
+    });
+
+    let mut bytes = Vec::new();
+    let report =
+        write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write point layer");
+    assert!(!report.losses.iter().any(|loss| {
+        loss.message
+            .contains("layer 'point layer' has 1 item(s) without a writable STEP carrier")
+    }));
+    let text = String::from_utf8(bytes).expect("STEP is UTF-8");
+    assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('point layer','standalone points',"));
+}
+
 /// The soccer-ball case: a body carries a base color and one face overrides it.
 /// Every face must be styled (body color pushed down onto the faces that do not
 /// override it), and the overriding face must carry its own color.
