@@ -1232,6 +1232,15 @@ fn pmi_semantic_payload_record(
     value: f64,
     display_text: &str,
 ) -> Vec<u8> {
+    pmi_semantic_payload_record_with_items(cad_text, guid, &[(subtype, value)], display_text)
+}
+
+fn pmi_semantic_payload_record_with_items(
+    cad_text: &str,
+    guid: &str,
+    items: &[(&str, f64)],
+    display_text: &str,
+) -> Vec<u8> {
     fn string(bytes: &mut Vec<u8>, value: &str) {
         assert!(value.len() < 32);
         bytes.push(0xa0 | value.len() as u8);
@@ -1247,23 +1256,26 @@ fn pmi_semantic_payload_record(
     string(&mut payload, "cadText");
     string(&mut payload, cad_text);
     string(&mut payload, "dimItems");
-    payload.push(0x91);
-    payload.push(0x87);
-    string(&mut payload, "class");
-    string(&mut payload, "DimSemData");
-    string(&mut payload, "dimSubType");
-    string(&mut payload, subtype);
-    string(&mut payload, "isBasic");
-    payload.push(0xc3);
-    string(&mut payload, "isInspection");
-    payload.push(0xc2);
-    string(&mut payload, "isReferenceOnly");
-    payload.push(0xc3);
-    string(&mut payload, "valPrecision");
-    payload.push(3);
-    string(&mut payload, "value");
-    payload.push(0xcb);
-    payload.extend_from_slice(&value.to_be_bytes());
+    assert!(items.len() < 16);
+    payload.push(0x90 | items.len() as u8);
+    for (subtype, value) in items {
+        payload.push(0x87);
+        string(&mut payload, "class");
+        string(&mut payload, "DimSemData");
+        string(&mut payload, "dimSubType");
+        string(&mut payload, subtype);
+        string(&mut payload, "isBasic");
+        payload.push(0xc3);
+        string(&mut payload, "isInspection");
+        payload.push(0xc2);
+        string(&mut payload, "isReferenceOnly");
+        payload.push(0xc3);
+        string(&mut payload, "valPrecision");
+        payload.push(3);
+        string(&mut payload, "value");
+        payload.push(0xcb);
+        payload.extend_from_slice(&value.to_be_bytes());
+    }
     string(&mut payload, "dimText");
     string(&mut payload, display_text);
     string(&mut payload, "dimType");
@@ -19523,6 +19535,45 @@ fn decode_extracts_pmi_semantic_dimension() {
     assert!(!dimension.basic);
     assert!(dimension.inspection);
     assert!(!dimension.reference_only);
+}
+
+#[test]
+fn multi_item_pmi_dimension_is_not_bound() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x49,
+        "Contents/PMISemanticDataDB",
+        &pmi_semantic_payload_record_with_items(
+            "D1@Sketch1",
+            "01234567-89ab-cdef-0123-456789abcdef",
+            &[("Linear", 0.025), ("Linear", 0.025)],
+            "25.000 mm",
+        ),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let [dimension] = native.pmi_dimensions.as_slice() else {
+        panic!("one native PMI dimension");
+    };
+    assert_eq!(dimension.item_count, 2);
+    assert!(!decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D1" && parameter.pmi.is_some()));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+    }));
 }
 
 #[test]

@@ -67,6 +67,7 @@ mod tests {
             offset: 0,
             guid: "guid".into(),
             cad_text: "D1@Pattern1".into(),
+            item_count: 1,
             subtype: subtype.into(),
             value,
             value_offset: 0,
@@ -269,6 +270,7 @@ mod tests {
 /// editable semantic field must agree before those records are aliases.
 pub(crate) fn equivalent_dimensions(left: &PmiDimension, right: &PmiDimension) -> bool {
     left.cad_text == right.cad_text
+        && left.item_count == right.item_count
         && left.subtype == right.subtype
         && left.value.to_bits() == right.value.to_bits()
         && left.precision == right.precision
@@ -294,10 +296,11 @@ pub(crate) fn agreed_dimension_records(records: &[PmiDimension]) -> Vec<&PmiDime
         .filter_map(|mut group| {
             group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
             let canonical = *group.first()?;
-            group
-                .iter()
-                .all(|record| equivalent_dimensions(canonical, record))
-                .then_some(canonical)
+            (canonical.item_count == 1
+                && group.iter().all(|record| {
+                    record.item_count == 1 && equivalent_dimensions(canonical, record)
+                }))
+            .then_some(canonical)
         })
         .collect::<Vec<_>>();
     representatives.sort_unstable_by(|left, right| left.id.cmp(&right.id));
@@ -415,6 +418,9 @@ pub(crate) fn patch_payload(
         .iter()
         .filter(|record| record.parent == block_id)
     {
+        if record.item_count != 1 {
+            continue;
+        }
         let mut parameters = ir.model.parameters.iter().filter(|parameter| {
             parameter.pmi.as_ref().is_some_and(|pmi| {
                 pmi.native_ref == record.id
@@ -678,6 +684,9 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             let Some(Value::Array(items)) = outer.get("dimItems") else {
                 continue;
             };
+            let Ok(item_count) = u32::try_from(items.len()) else {
+                continue;
+            };
             let Some(Value::Map(item)) = items.first() else {
                 continue;
             };
@@ -732,6 +741,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
                 offset: offset as u64,
                 guid,
                 cad_text: cad_text.to_string(),
+                item_count,
                 subtype: string_field(item, "dimSubType")
                     .unwrap_or_default()
                     .to_string(),

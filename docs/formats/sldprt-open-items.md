@@ -919,23 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-37. Multi-item `dimItems` arrays
-
-**Question.** What does each element after the first denote in a `PMISemanticDataDB` `dimItems` array?
-
-**Known.** `sldprt.md` §8 describes `PMISemanticDataDB` through `cadText`. It gives no cardinality for `dimItems`.
-
-`crates/cadmpeg-codec-sldprt/src/pmi.rs:535` takes the first element and refuses the record when its class is not `DimSemData`:
-
-```rust
-let Some(Value::Map(item)) = items.first() else { continue; };
-if string_field(item, "class") != Some("DimSemData") { continue; }
-```
-
-There is no test of the element count. `field_marker` at `pmi.rs:611` takes the first occurrence of each MessagePack key in the record window, so the write-path offsets also address the first element.
-
-**Need.** We must know what the other elements denote. A dual-unit annotation must not lose its second value while the record reports as fully bound.
-
 ### DI-38. Relation class declaration binding
 
 **Question.** Which class declaration owns a relation scalar?
