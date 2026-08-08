@@ -3447,7 +3447,7 @@ impl Codec for StepCodec {
 
     fn inspect_impl(
         &self,
-        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         let bytes = root.window();
@@ -3455,8 +3455,7 @@ impl Codec for StepCodec {
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let (exchange, diagnostics) =
-            parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let (exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
         let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics)?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
@@ -3630,6 +3629,7 @@ impl Codec for StepCodec {
                 container_only: ctx.container_only(),
                 policy: *ctx.policy(),
             },
+            ctx,
         )
     }
 }

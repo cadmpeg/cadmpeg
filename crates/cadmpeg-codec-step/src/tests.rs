@@ -130,6 +130,22 @@ fn parser_bounds_aggregate_anchor_materialization() {
 }
 
 #[test]
+fn parser_uses_the_decode_session_work_budget() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+        .expect("root fits the test policy");
+    let error = crate::parse::parse_with_context(source, &ctx).expect_err("budget must refuse");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+    ));
+}
+
+#[test]
 fn parser_rejects_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");
