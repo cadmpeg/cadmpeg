@@ -202,7 +202,7 @@
           "records.edge": "0",
           "records.face": "0",
           "records.fin": "0",
-          "records.loop": "1",
+          "records.loop": "0",
           "records.region": "0",
           "records.shell": "0",
           "records.vertex": "0",

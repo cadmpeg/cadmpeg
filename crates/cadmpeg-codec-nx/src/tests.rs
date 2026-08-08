@@ -4954,11 +4954,60 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
 
 #[test]
 fn topology_selects_one_candidate_at_an_ambiguous_record_offset() {
-    let mut stream = vec![0; 40];
+    let mut stream = vec![0; 26];
     stream[..7].copy_from_slice(&[0, 12, 0xff, 0xfe, 0x00, 0x02, 0x01]);
+    let mut successor = record(12, 24);
+    put_ref(&mut successor, 2, 3);
+    stream.extend_from_slice(&successor);
     let graph = crate::topology::Graph::parse(&stream);
-    assert_eq!(graph.of_kind(12).count(), 1);
+    assert_eq!(graph.of_kind(12).count(), 2);
     assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(65_536));
+    assert_eq!(graph.at_pos(26).map(|node| node.xmt), Some(3));
+}
+
+#[test]
+fn topology_disambiguates_direct_large_index_from_escaped_compact_record() {
+    let mut stream = vec![0; 25];
+    stream[..6].copy_from_slice(&[0, 17, 0xff, 0x7f, 0x00, 0x01]);
+    for index in 0..8 {
+        put_ref(&mut stream, 6 + index * 2, 2);
+    }
+    stream[22..24].copy_from_slice(b"++");
+    stream[24] = b'+';
+
+    let mut successor = record(17, 23);
+    put_ref(&mut successor, 2, 7);
+    for index in 0..9 {
+        put_ref(&mut successor, 4 + index * 2, 2);
+    }
+    successor[22] = b'+';
+    stream.extend_from_slice(&successor);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.at_pos(0).map(|node| node.xmt), Some(32_896));
+    assert_eq!(graph.at_pos(0).map(crate::topology::Node::end), Some(25));
+    assert_eq!(graph.at_pos(25).map(|node| node.xmt), Some(7));
+
+    let mut ambiguous = stream[..25].to_vec();
+    ambiguous.extend_from_slice(&[0; 5]);
+    assert!(crate::topology::Graph::parse(&ambiguous)
+        .at_pos(0)
+        .is_none());
+}
+
+#[test]
+fn topology_rejects_duplicate_fixed_record_identity() {
+    let mut first = record(29, 40);
+    put_ref(&mut first, 2, 11);
+    put_vec3(&mut first, 16, [0.01, 0.02, 0.03]);
+    let mut duplicate = record(29, 40);
+    put_ref(&mut duplicate, 2, 11);
+    put_vec3(&mut duplicate, 16, [0.04, 0.05, 0.06]);
+    first.extend(duplicate);
+
+    let graph = crate::topology::Graph::parse(&first);
+    assert!(graph.get(29, 11).is_none());
+    assert!(graph.of_kind(29).next().is_none());
 }
 
 #[test]

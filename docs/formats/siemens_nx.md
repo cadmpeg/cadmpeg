@@ -844,6 +844,10 @@ body → shell → [region] → face → loop → fin → edge → vertex → po
 
 Any fixed record may place an envelope escape byte `ff` between its type and xmt fields. The xmt begins one byte later and all logical payload offsets shift by one. When the first xmt byte is also `ff`, both the escaped and unescaped large-index forms are structurally possible; the complete family field grammar disambiguates them.
 
+When both readings are complete, exactly one reading must end at the stream
+boundary or immediately before a complete recognized fixed-record tag. If both
+readings or neither reading has that boundary, neither candidate is a node.
+
 Topology node layouts (logical offsets, pre-shift):
 
 | Type        | Fields                                                                                                                                                                                                                           |
@@ -859,6 +863,11 @@ Topology node layouts (logical offsets, pre-shift):
 | REGION (19) | `node_id +4`; referenced by SHELL                                                                                                                                                                                                |
 
 A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`, and `+16/+18` to equal `1`, non-null `body_ref` and `region_ref`, and a resolvable `first_face`. With null `face_anchor`, `FACE.next_face` defines a finite ownership chain whose members back-reference the SHELL. With non-null `face_anchor == first_face`, every FACE that back-references the SHELL belongs to it. The body and region references remain ownership identities when the stream omits the corresponding BODY or REGION record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a positive finite meter value whose converted millimeter value is finite. The format imposes no magnitude bound on a tolerance. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
+
+Within one physical graph view, each fixed-record `(type, XMT)` identity is
+unique. Multiple complete records with the same identity invalidate that
+identity and transfer no node. Delta replacements are resolved before graph
+construction and do not form duplicate identities.
 
 For SHELL, FACE, LOOP, FIN, EDGE, and VERTEX, a non-null `attributes`
 reference identifies the stream-local attribute list owned by that exact topology

@@ -322,6 +322,7 @@ impl Node {
 pub struct Graph {
     nodes: BTreeMap<(u8, u32), Node>,
     by_pos: BTreeMap<usize, (u8, u32)>,
+    invalid_keys: BTreeSet<(u8, u32)>,
 }
 
 /// A type-133 parameter restriction over a basis curve.
@@ -680,63 +681,90 @@ impl Graph {
             let Some(len) = fixed_len(kind) else {
                 continue;
             };
-            let mut candidates = Vec::new();
-            if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
-                candidates.push((xmt, shift));
-            }
-            if stream.get(pos + 2) == Some(&0xff) {
-                if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
-                    candidates.push((xmt, shift + 1));
-                }
-            }
-            let nodes = candidates
-                .into_iter()
-                .filter_map(|(xmt, shift)| {
-                    // 1 is Parasolid's null reference. A node itself cannot occupy it.
-                    if xmt <= 1 {
-                        return None;
-                    }
-                    let payload_shift = payload_shift(stream, pos, kind, shift)?;
-                    let bytes = stream.get(pos..pos + len + shift + payload_shift)?;
-                    let node = Node {
-                        kind,
-                        xmt,
-                        pos,
-                        shift,
-                        bytes: bytes.to_vec(),
-                    };
-                    if !node.has_valid_family_framing() {
-                        return None;
-                    }
-                    Some(node)
-                })
-                .collect::<Vec<_>>();
-            let Some(mut node) = nodes.first() else {
+            let nodes = Self::fixed_record_candidates(stream, pos, kind, len);
+            let Some(node) = Self::select_fixed_record_candidate(stream, &nodes) else {
                 continue;
             };
-            if let Some(escaped) = nodes.get(1) {
-                let standard_quality = node.family_quality();
-                let escaped_quality = escaped.family_quality();
-                if escaped_quality > standard_quality
-                    || (escaped_quality == standard_quality && escaped.shift == 1)
-                {
-                    node = escaped;
-                }
-            }
             let node = node.clone();
             let key = (kind, node.xmt);
-            let replace = graph
-                .nodes
-                .get(&key)
-                .is_none_or(|current| node.family_quality() > current.family_quality());
-            if replace {
-                if let Some(current) = graph.nodes.insert(key, node) {
-                    graph.by_pos.remove(&current.pos);
-                }
-                graph.by_pos.insert(pos, key);
+            if graph.invalid_keys.contains(&key) {
+                continue;
             }
+            if let Some(current) = graph.nodes.remove(&key) {
+                graph.by_pos.remove(&current.pos);
+                graph.invalid_keys.insert(key);
+                continue;
+            }
+            graph.nodes.insert(key, node);
+            graph.by_pos.insert(pos, key);
         }
         graph
+    }
+
+    fn fixed_record_candidates(stream: &[u8], pos: usize, kind: u8, len: usize) -> Vec<Node> {
+        let mut candidates = Vec::new();
+        if let Some((xmt, shift)) = read_xmt(stream, pos + 2) {
+            candidates.push((xmt, shift));
+        }
+        if stream.get(pos + 2) == Some(&0xff) {
+            if let Some((xmt, shift)) = read_xmt(stream, pos + 3) {
+                candidates.push((xmt, shift + 1));
+            }
+        }
+        candidates
+            .into_iter()
+            .filter_map(|(xmt, shift)| {
+                // 1 is Parasolid's null reference. A node itself cannot occupy it.
+                if xmt <= 1 {
+                    return None;
+                }
+                let payload_shift = payload_shift(stream, pos, kind, shift)?;
+                let bytes = stream.get(pos..pos + len + shift + payload_shift)?;
+                let node = Node {
+                    kind,
+                    xmt,
+                    pos,
+                    shift,
+                    bytes: bytes.to_vec(),
+                };
+                node.has_valid_family_framing().then_some(node)
+            })
+            .collect()
+    }
+
+    fn select_fixed_record_candidate<'a>(
+        stream: &[u8],
+        candidates: &'a [Node],
+    ) -> Option<&'a Node> {
+        match candidates {
+            [] => None,
+            [candidate] => Some(candidate),
+            [direct, escaped] => match (
+                Self::fixed_record_boundary(stream, direct.end()),
+                Self::fixed_record_boundary(stream, escaped.end()),
+            ) {
+                (true, false) => Some(direct),
+                (false, true) => Some(escaped),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn fixed_record_boundary(stream: &[u8], end: usize) -> bool {
+        if end == stream.len() {
+            return true;
+        }
+        if stream.get(end) != Some(&0) {
+            return false;
+        }
+        let Some(&kind) = stream.get(end + 1) else {
+            return false;
+        };
+        let Some(len) = fixed_len(kind) else {
+            return false;
+        };
+        !Self::fixed_record_candidates(stream, end, kind, len).is_empty()
     }
 
     /// Look up a node by record type and XMT identifier.
@@ -1012,21 +1040,6 @@ impl Graph {
 }
 
 impl Node {
-    fn family_quality(&self) -> usize {
-        match self.kind {
-            13 => self.shell_fields().map_or(0, |fields| {
-                usize::from(fields.attributes == 1)
-                    + usize::from(fields.body > 1)
-                    + usize::from(fields.first_face > 1)
-                    + usize::from(fields.sentinel_0 == 1)
-                    + usize::from(fields.sentinel_1 == 1)
-                    + usize::from(fields.region > 1)
-                    + usize::from(fields.last_face > 0)
-            }),
-            _ => 0,
-        }
-    }
-
     fn has_valid_family_framing(&self) -> bool {
         match self.kind {
             13 => self.shell_fields().is_some(),
