@@ -8,6 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point,
     nurbs_pcurve_parameter_domain, nurbs_pcurve_parameter_near_point, pcurve_uv,
+    surface_pcurve_parameter_near_point,
 };
 use cadmpeg_ir::geometry::{
     derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
@@ -237,20 +238,38 @@ pub(super) fn infer_pcurve_parameter_ranges(
     let tolerance = ir.tolerances.linear.max(1.0e-9);
 
     for (coedge_index, start, end, surface, pcurve, seed_range) in candidates {
-        let Some(start_uv) = analytic_surface_parameters(&surface, start) else {
-            continue;
+        let analytic_inferred = match (
+            analytic_surface_parameters(&surface, start),
+            analytic_surface_parameters(&surface, end),
+        ) {
+            (Some(start_uv), Some(end_uv)) => {
+                pcurve_parameter_near_uv(&pcurve, start_uv, seed_range[0], tolerance).zip(
+                    pcurve_parameter_near_uv(&pcurve, end_uv, seed_range[1], tolerance),
+                )
+            }
+            _ => None,
         };
-        let Some(end_uv) = analytic_surface_parameters(&surface, end) else {
-            continue;
-        };
-        let Some(start_parameter) =
-            pcurve_parameter_near_uv(&pcurve, start_uv, seed_range[0], tolerance)
-        else {
-            continue;
-        };
-        let Some(end_parameter) =
-            pcurve_parameter_near_uv(&pcurve, end_uv, seed_range[1], tolerance)
-        else {
+        let inferred = analytic_inferred.or_else(|| {
+            pcurve_parameter_domain(&pcurve).and_then(|parameter_range| {
+                surface_pcurve_parameter_near_point(
+                    &surface,
+                    &pcurve,
+                    start,
+                    tolerance,
+                    parameter_range,
+                    seed_range[0],
+                )
+                .zip(surface_pcurve_parameter_near_point(
+                    &surface,
+                    &pcurve,
+                    end,
+                    tolerance,
+                    parameter_range,
+                    seed_range[1],
+                ))
+            })
+        });
+        let Some((start_parameter, end_parameter)) = inferred else {
             continue;
         };
         if !start_parameter.is_finite()

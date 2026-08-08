@@ -393,6 +393,9 @@ pub fn nurbs_pcurve_parameter_domain(
 
 const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
 const NURBS_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
+const SURFACE_PCURVE_MAX_NEWTON_ITERATIONS: usize = 16;
+const SURFACE_PCURVE_MAX_BACKTRACKS: usize = 8;
+const SURFACE_PCURVE_MAX_PROBES: usize = 16;
 
 #[derive(Clone, Copy)]
 struct NurbsSearchWindow<'a> {
@@ -2812,6 +2815,120 @@ pub fn pcurve_tangent(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
     pcurve_uv_differential_inner(geometry, t, 0)?.tangent
 }
 
+/// Find a pcurve parameter whose surface image lies within `tolerance` of a
+/// model-space point.
+///
+/// The search is bounded and seed-directed. It evaluates the composite
+/// surface/pcurve tangent for safeguarded Newton steps, then retries from a
+/// fixed set of probes across the supplied pcurve domain. A parameter is
+/// returned only after the composite carrier is evaluated at that parameter;
+/// `None` means that the bounded search found no witness or that a carrier is
+/// not evaluable.
+pub fn surface_pcurve_parameter_near_point(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    point: Point3,
+    tolerance: f64,
+    parameter_range: [f64; 2],
+    seed: f64,
+) -> Option<f64> {
+    let [lower, upper] = parameter_range;
+    if !point.x.is_finite()
+        || !point.y.is_finite()
+        || !point.z.is_finite()
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || !lower.is_finite()
+        || !upper.is_finite()
+        || lower >= upper
+        || !seed.is_finite()
+    {
+        return None;
+    }
+    let mut probes = Vec::with_capacity(SURFACE_PCURVE_MAX_PROBES + 3);
+    probes.push(seed.clamp(lower, upper));
+    probes.extend([lower, upper]);
+    for index in 1..SURFACE_PCURVE_MAX_PROBES {
+        let fraction = index as f64 / SURFACE_PCURVE_MAX_PROBES as f64;
+        probes.push(lower + (upper - lower) * fraction);
+    }
+    probes.into_iter().find_map(|probe| {
+        surface_pcurve_parameter_newton(surface, pcurve, point, tolerance, [lower, upper], probe)
+    })
+}
+
+fn surface_pcurve_parameter_newton(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    target: Point3,
+    tolerance: f64,
+    [lower, upper]: [f64; 2],
+    seed: f64,
+) -> Option<f64> {
+    let mut parameter = seed.clamp(lower, upper);
+    let mut mapped = surface_pcurve_point(surface, pcurve, parameter)?;
+    let mut mismatch = mapped.distance(target);
+    if !mismatch.is_finite() {
+        return None;
+    }
+    for _ in 0..SURFACE_PCURVE_MAX_NEWTON_ITERATIONS {
+        if mismatch <= tolerance {
+            return Some(parameter);
+        }
+        let uv = pcurve_uv(pcurve, parameter)?;
+        let pcurve_derivative = pcurve_tangent(pcurve, parameter)?;
+        let surface_derivatives = surface_partials(surface, uv.u, uv.v)?;
+        let tangent = surface_derivatives.du.scale(pcurve_derivative.u)
+            + surface_derivatives.dv.scale(pcurve_derivative.v);
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let residual = mapped.vector_from(target);
+        let step = residual.dot(tangent) / denominator;
+        if !step.is_finite() {
+            return None;
+        }
+        let mut next = (parameter - step).clamp(lower, upper);
+        if next == parameter {
+            return None;
+        }
+        let mut next_mismatch = surface_pcurve_point(surface, pcurve, next)?.distance(target);
+        if !next_mismatch.is_finite() {
+            return None;
+        }
+        for _ in 0..SURFACE_PCURVE_MAX_BACKTRACKS {
+            if next_mismatch <= mismatch {
+                break;
+            }
+            next = parameter + (next - parameter) * 0.5;
+            if next == parameter {
+                break;
+            }
+            next_mismatch = surface_pcurve_point(surface, pcurve, next)?.distance(target);
+            if !next_mismatch.is_finite() {
+                return None;
+            }
+        }
+        if next_mismatch > mismatch {
+            return None;
+        }
+        parameter = next;
+        mapped = surface_pcurve_point(surface, pcurve, parameter)?;
+        mismatch = next_mismatch;
+    }
+    (mismatch <= tolerance).then_some(parameter)
+}
+
+fn surface_pcurve_point(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    parameter: f64,
+) -> Option<Point3> {
+    let uv = pcurve_uv(pcurve, parameter)?;
+    surface_point(surface, uv.u, uv.v)
+}
+
 fn pcurve_uv_inner(geometry: &PcurveGeometry, t: f64, depth: usize) -> Option<Point2> {
     pcurve_uv_differential_inner(geometry, t, depth).map(|differential| differential.point)
 }
@@ -3181,7 +3298,8 @@ mod tests {
         nurbs_curve_speed_bound, nurbs_pcurve_parameter_domain, nurbs_pcurve_parameter_near_point,
         nurbs_pcurve_uv, nurbs_surface_isocurve, nurbs_surface_isoline, nurbs_surface_partials,
         nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent, pcurve_uv,
-        surface_partials, surface_second_partials, IsolineDirection,
+        surface_partials, surface_pcurve_parameter_near_point, surface_second_partials,
+        IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -3833,6 +3951,69 @@ mod tests {
         )
         .expect("pcurve inverse");
         assert!((parameter - 0.25).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn surface_pcurve_inverse_follows_a_nurbs_surface_image() {
+        let surface = SurfaceGeometry::Nurbs(NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        });
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            weights: None,
+            periodic: false,
+        };
+        let parameter = surface_pcurve_parameter_near_point(
+            &surface,
+            &pcurve,
+            Point3::new(0.75, 0.75, 0.0),
+            1.0e-12,
+            [0.0, 1.0],
+            0.75,
+        )
+        .expect("surface/pcurve endpoint witness");
+        assert!((parameter - 0.75).abs() < 1.0e-12);
+
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let parameter = surface_pcurve_parameter_near_point(
+            &plane,
+            &pcurve,
+            Point3::new(0.75, 0.75, 0.0),
+            1.0e-12,
+            [0.0, 1.0],
+            0.75,
+        )
+        .expect("analytic surface/pcurve endpoint witness");
+        assert!((parameter - 0.75).abs() < 1.0e-12);
+        assert!(surface_pcurve_parameter_near_point(
+            &plane,
+            &pcurve,
+            Point3::new(2.0, 2.0, 0.0),
+            1.0e-12,
+            [0.0, 1.0],
+            0.5,
+        )
+        .is_none());
     }
 
     #[test]

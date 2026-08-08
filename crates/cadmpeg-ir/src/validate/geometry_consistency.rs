@@ -534,10 +534,10 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 
 /// Candidate pcurve intervals for an edge. Native pcurves can parameterize the
 /// same edge with the opposite sign, and a stored use interval can wrap a
-/// periodic pcurve's seam, so no single interval is authoritative. The stored
-/// use range and the pcurve's intrinsic parameter extremes are candidates; the
-/// 3D edge interval is excluded because the two STEP carriers may use
-/// different neutral parameter scales.
+/// periodic pcurve's seam. A non-periodic use range is therefore authoritative
+/// when present; periodic carriers retain their intrinsic extremes as seam
+/// candidates. The 3D edge interval is excluded because the two STEP carriers
+/// may use different neutral parameter scales.
 fn pcurve_parameter_ranges(
     pcurve: &crate::geometry::Pcurve,
     pcurve_range: Option<[f64; 2]>,
@@ -546,10 +546,31 @@ fn pcurve_parameter_ranges(
     if let Some(range) = pcurve_range.or(pcurve.parameter_range) {
         ranges.push(range);
     }
-    if let Some(extremes) = pcurve_parameter_extremes(pcurve) {
-        ranges.push(extremes);
+    if pcurve_range.is_none() || pcurve_geometry_is_periodic(&pcurve.geometry) {
+        if let Some(extremes) = pcurve_parameter_extremes(pcurve) {
+            ranges.push(extremes);
+        }
     }
     (!ranges.is_empty()).then_some(ranges)
+}
+
+fn pcurve_geometry_is_periodic(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. } => true,
+        PcurveGeometry::Nurbs { periodic, .. } | PcurveGeometry::PolarNurbs { periodic, .. } => {
+            *periodic
+        }
+        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
+            pcurve_geometry_is_periodic(basis)
+        }
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::PolarHarmonic { .. } => false,
+    }
 }
 
 /// The parameter extremes over which a pcurve is checked. Ordinary NURBS
@@ -606,15 +627,37 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
 
 #[cfg(test)]
 mod tests {
-    use super::check_procedural_support_consistency;
+    use super::{check_procedural_support_consistency, pcurve_parameter_ranges};
     use crate::document::CadIr;
     use crate::geometry::{
-        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, PcurveGeometry,
+        Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
         ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceCurveFamily, SurfaceGeometry,
     };
-    use crate::ids::{CurveId, ProceduralCurveId, SurfaceId};
+    use crate::ids::{CurveId, PcurveId, ProceduralCurveId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
     use crate::units::Units;
+
+    #[test]
+    fn nonperiodic_use_range_supersedes_the_nurbs_intrinsic_domain() {
+        let pcurve = Pcurve {
+            id: PcurveId("pcurve".to_string()),
+            geometry: PcurveGeometry::Nurbs {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                weights: None,
+                periodic: false,
+            },
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        };
+        assert_eq!(
+            pcurve_parameter_ranges(&pcurve, Some([0.0, 0.75])),
+            Some(vec![[0.0, 0.75]])
+        );
+    }
 
     fn mapped_surface_curve(mapping: [f64; 2]) -> CadIr {
         let mut ir = CadIr::empty(Units::default());
