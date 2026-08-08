@@ -14,7 +14,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Sense, Shell,
+    Vertex, VertexUse,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
@@ -4150,6 +4151,19 @@ fn emit_standard_topology(
                     ))
                 })
                 .collect();
+            let vertex_uses: Vec<VertexUse> = boundary
+                .coedges
+                .iter()
+                .enumerate()
+                .map(|(coedge_index, edge_use)| VertexUse {
+                    vertex: VertexId(format!(
+                        "catia:standard:v#{}",
+                        point_assignment[edge_use.end_vertex]
+                    )),
+                    after: Some(coedge_ids[coedge_index].clone()),
+                    pcurves: Vec::new(),
+                })
+                .collect();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
                 let support = &supports[edge_use.edge_row];
                 let logical_vertices = edge_vertices[edge_use.edge_row];
@@ -4253,7 +4267,8 @@ fn emit_standard_topology(
             );
             annotations
                 .derived(&loop_id, "face")
-                .derived(&loop_id, "coedges");
+                .derived(&loop_id, "coedges")
+                .derived(&loop_id, "vertex_uses");
             if boundary_role != LoopBoundaryRole::Unspecified {
                 annotations.derived(&loop_id, "boundary_role");
             }
@@ -4262,7 +4277,7 @@ fn emit_standard_topology(
                 face: FaceId(format!("catia:standard:face#{face_index}")),
                 boundary_role,
                 coedges: coedge_ids,
-                vertex_uses: Vec::new(),
+                vertex_uses,
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
@@ -8916,6 +8931,23 @@ mod route_tests {
                 &HashMap::new(),
                 &[None],
                 &[],
+            );
+
+            let [loop_] = ir.model.loops.as_slice() else {
+                panic!("standard edge emission must create one loop");
+            };
+            let [vertex_use] = loop_.vertex_uses.as_slice() else {
+                panic!("standard edge emission must retain one vertex use");
+            };
+            assert_eq!(
+                vertex_use.vertex,
+                VertexId("catia:standard:v#1".to_string())
+            );
+            assert_eq!(
+                vertex_use.after,
+                Some(cadmpeg_ir::ids::CoedgeId(
+                    "catia:standard:coedge#0:0:0".to_string()
+                ))
             );
 
             let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
