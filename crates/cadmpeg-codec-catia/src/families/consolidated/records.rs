@@ -731,7 +731,8 @@ pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeE
 /// NURBS carriers.
 ///
 /// A carrier binds only when record identity or chart geometry determines one
-/// solution. Ambiguous candidates remain unresolved.
+/// solution. Ambiguous candidates, including matches from different analytic
+/// families, remain unresolved.
 #[must_use]
 #[cfg(test)]
 pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
@@ -765,6 +766,7 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
             let mut supports = std::array::from_fn(|side| {
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
+                let mut ambiguous_family = false;
                 for cylinder in &standalone {
                     if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
                         winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
@@ -778,57 +780,46 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                         });
                     }
                 }
-                if winners.is_empty() {
-                    let identity_circles: Vec<_> = circles
-                        .iter()
-                        .filter(|circle| circle.record_id == pcurve.support_id)
-                        .collect();
-                    if let [circle] = identity_circles.as_slice() {
-                        if pcurve_matches_circle(pcurve, circle) {
-                            winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
-                        }
-                    } else if identity_circles.is_empty() {
-                        let geometric_circle_winners: Vec<_> = circles
+                let identity_circles: Vec<_> = circles
+                    .iter()
+                    .filter(|circle| circle.record_id == pcurve.support_id)
+                    .collect();
+                if identity_circles.len() > 1 {
+                    ambiguous_family = true;
+                } else if let [circle] = identity_circles.as_slice() {
+                    if pcurve_matches_circle(pcurve, circle) {
+                        winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                    }
+                } else {
+                    winners.extend(
+                        circles
                             .iter()
                             .filter(|circle| pcurve_matches_circle(pcurve, circle))
-                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
-                            .collect();
-                        if let [winner] = geometric_circle_winners.as_slice() {
-                            winners.push(winner.clone());
-                        }
-                    }
+                            .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos }),
+                    );
                 }
-                if winners.is_empty() {
-                    let mut cone_winners: Vec<_> = cones
+                winners.extend(
+                    cones
                         .iter()
                         .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
-                        .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos })
-                        .collect();
-                    if cone_winners.len() == 1 {
-                        winners.append(&mut cone_winners);
-                    }
-                }
-                if winners.is_empty() {
-                    let mut sphere_winners: Vec<_> = spheres
+                        .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
+                );
+                winners.extend(
+                    spheres
                         .iter()
                         .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
-                        .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos })
-                        .collect();
-                    if sphere_winners.len() == 1 {
-                        winners.append(&mut sphere_winners);
-                    }
-                }
-                if winners.is_empty() {
-                    let mut torus_winners: Vec<_> = tori
-                        .iter()
+                        .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
+                );
+                winners.extend(
+                    tori.iter()
                         .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
-                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos })
-                        .collect();
-                    if torus_winners.len() == 1 {
-                        winners.append(&mut torus_winners);
-                    }
+                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
+                );
+                if !ambiguous_family && winners.len() == 1 {
+                    winners.pop()
+                } else {
+                    None
                 }
-                (winners.len() == 1).then(|| winners.remove(0))
             });
             for anchor_side in [0, 1] {
                 let partner = 1 - anchor_side;

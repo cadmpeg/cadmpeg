@@ -566,9 +566,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which relation selects the support carrier of a consolidated side when carriers of more than one analytic family satisfy their own witness?
 
-**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" gives a uniqueness rule inside each family, for example "Multiple matching torus charts leave the support unresolved". It gives no rule across families. `consolidated::records` tests cylinders, then circles, then cones, then spheres, then tori, and enters each tier only when every earlier tier found nothing. The final uniqueness gate therefore compares candidates inside one family only.
+**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" gives a uniqueness rule inside each family, for example "Multiple matching torus charts leave the support unresolved". It gives no rule across families. `consolidated::records` collects every independently matching analytic-family candidate and withholds the binding unless exactly one global candidate remains. A repeated identity-bearing circle family also withholds the binding.
 
-**Need.** Each witness is that both lifted pcurve endpoints land within `2e-3` mm of a `05 08 01` row, with the UV pair inside the candidate's stored parameter box. A cylinder and a torus can both satisfy that. The bound carrier gives the block's shared 3D loci, so every endpoint match and pcurve after it comes from that carrier. We must know the cross-family relation.
+**Need.** Each witness is that both lifted pcurve endpoints land within `2e-3` mm of a `05 08 01` row, with the UV pair inside the candidate's stored parameter box. A cylinder and a torus can both satisfy that. The bound carrier gives the block's shared 3D loci, so every endpoint match and pcurve after it comes from that carrier. The native cross-family precedence remains unknown, so the decoder must withhold rather than select by implementation order.
 
 ### SN-42. Consolidated record census by marker
 

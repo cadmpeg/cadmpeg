@@ -1813,6 +1813,31 @@ pub(crate) fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
     bytes
 }
 
+#[test]
+fn consolidated_support_resolution_withholds_cross_family_matches() {
+    let mut bytes = a5_cone_bound_edge_stream();
+    let cylinder = crate::families::b2::records::b2_cylinders(&b2_cylinder_stream())
+        .into_iter()
+        .next()
+        .expect("one cylinder carrier");
+    bytes.extend_from_slice(&b2_cylinder_stream());
+    for uv in [[0.0, 2.0], [1.0, 3.0]] {
+        let point = crate::families::b2::records::b2_cylinder_point(&cylinder, uv)
+            .expect("cylinder endpoint");
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [point.x, point.y, point.z] {
+            bytes.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    let [edge] = resolved.as_slice() else {
+        panic!("one consolidated edge block");
+    };
+    assert_eq!(edge.supports, [None, None]);
+    assert!(edge.shared_loci.is_none());
+}
+
 pub(crate) fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     let cylinder_uv = ([0.0f64, 1.0], [0.0f64, 1.0]);
     let surface_uv = ([0.0f64, 1.0], [0.0f64, 0.0]);
