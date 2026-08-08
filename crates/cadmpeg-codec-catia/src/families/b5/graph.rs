@@ -1387,14 +1387,22 @@ fn parse_a8_class21_pcurve(object_id: u32, payload: &[u8]) -> Option<B5Pcurve> {
     (degree == 5 && payload.get(position..position + 2) == Some(&[0x01, 0x01])).then_some(())?;
     position += 2;
     let knot_count = usize::try_from(wire::compact_uint(payload, &mut position)?).ok()?;
-    (2..=8192).contains(&knot_count).then_some(())?;
+    (knot_count >= 2).then_some(())?;
     matches!(payload.get(position), Some(0x01 | 0x11 | 0x19)).then_some(())?;
     position += 1;
+    let scalar_bytes = knot_count.checked_mul(8)?;
+    let minimum_known_bytes = scalar_bytes
+        .checked_mul(7)?
+        .checked_add(knot_count)?
+        .checked_add(36)?;
+    if position.checked_add(minimum_known_bytes)? > payload.len() {
+        return None;
+    }
     let read_values = |position: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(knot_count);
         for _ in 0..knot_count {
             values.push(scalar(payload, *position)?);
-            *position += 8;
+            *position = position.checked_add(8)?;
         }
         Some(values)
     };
@@ -7692,6 +7700,49 @@ mod tests {
         assert_eq!(pcurve.class_21_suffix_scalar, Some(10.0));
 
         payload[6] = 0x0d;
+        assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
+    }
+
+    fn a8_class21_large_test_payload(knot_count: usize) -> Vec<u8> {
+        let mut payload = vec![0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x08, 0x01, 0x20, 0x01];
+        for index in 0..knot_count {
+            payload.extend_from_slice(
+                &f64::from(u32::try_from(index).expect("test knot index fits u32")).to_le_bytes(),
+            );
+        }
+        payload.push(0x19);
+        payload.extend(std::iter::repeat_n(0x0d, knot_count - 2));
+        payload.push(0x19);
+        for _ in 0..6 {
+            for _ in 0..knot_count {
+                payload.extend_from_slice(&0.0f64.to_le_bytes());
+            }
+        }
+        payload.extend_from_slice(&[0x05, 0x05]);
+        for value in [0.0f64, 10.0, 1.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0x00, 0x07]);
+        payload
+    }
+
+    #[test]
+    fn a8_class21_jet_uses_frame_extent_for_knot_count() {
+        let knot_count = 8193;
+        let payload = a8_class21_large_test_payload(knot_count);
+        let pcurve = parse_a8_class21_pcurve(7, &payload).expect("frame-sized class-21 jet");
+
+        assert_eq!(pcurve.distinct_knots.len(), knot_count);
+        assert_eq!(pcurve.multiplicities.len(), knot_count);
+        assert_eq!(pcurve.control_points.len(), 6 * (knot_count - 1));
+    }
+
+    #[test]
+    fn a8_class21_jet_rejects_count_without_frame_extent() {
+        let payload = vec![
+            0x81, 0x83, 0x01, 0x15, 0x01, 0x01, 0x10, 0xff, 0xff, 0xff, 0xff, 0x01,
+        ];
+
         assert_eq!(parse_a8_class21_pcurve(7, &payload), None);
     }
 
