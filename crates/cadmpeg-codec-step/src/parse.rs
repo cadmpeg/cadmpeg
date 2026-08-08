@@ -480,14 +480,19 @@ impl Parser<'_> {
             Ok(level) => level,
             Err(message) => return self.err(message),
         };
+        let schema_identifiers = schema_identifiers(&header, implementation_level);
         if let Err(message) = validate_header_sections(implementation_level, &header) {
             return self.err(message);
         }
         let mut anchors = Vec::new();
-        if implementation_level == ImplementationLevel::LegacyEdition2
+        if implementation_level != ImplementationLevel::Edition3
             && (self.peek_name("ANCHOR") || self.peek_name("REFERENCE"))
         {
-            return self.err("3;1 forbids ANCHOR and REFERENCE sections");
+            return self.err(match implementation_level {
+                ImplementationLevel::LegacyEdition1 => "2;1 forbids ANCHOR and REFERENCE sections",
+                ImplementationLevel::LegacyEdition2 => "3;1 forbids ANCHOR and REFERENCE sections",
+                ImplementationLevel::Edition3 => unreachable!(),
+            });
         }
         if self.peek_name("ANCHOR") {
             self.next_kind()?;
@@ -558,20 +563,32 @@ impl Parser<'_> {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
         }
-        let mut data = Vec::new();
+        let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
+        let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
             self.next_kind()?;
             if implementation_level == ImplementationLevel::LegacyEdition1 && !data.is_empty() {
                 return self.err("2;1 requires one DATA section");
             }
             let parameters = if self.peek(&TokenKind::LParen) {
+                if data
+                    .first()
+                    .is_some_and(|section| section.parameters.is_empty())
+                {
+                    return self.err("multiple DATA sections require section parameters");
+                }
                 if implementation_level == ImplementationLevel::LegacyEdition1 {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameters()?;
-                if !valid_data_parameters(&parameters) {
-                    return self.err("DATA section parameters must contain a name and one schema");
+                if let Err(message) = valid_data_parameters(
+                    &parameters,
+                    &schema_identifiers,
+                    implementation_level,
+                    &mut data_section_names,
+                ) {
+                    return self.err(message);
                 }
                 parameters
             } else {
@@ -610,10 +627,12 @@ impl Parser<'_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
-        if implementation_level == ImplementationLevel::LegacyEdition2
-            && self.peek_name("SIGNATURE")
-        {
-            return self.err("3;1 forbids SIGNATURE sections");
+        if implementation_level != ImplementationLevel::Edition3 && self.peek_name("SIGNATURE") {
+            return self.err(match implementation_level {
+                ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
+                ImplementationLevel::LegacyEdition2 => "3;1 forbids SIGNATURE sections",
+                ImplementationLevel::Edition3 => unreachable!(),
+            });
         }
         while self.peek_name("SIGNATURE") {
             let start = self.current_offset();
@@ -1062,6 +1081,9 @@ fn validate_header_sections(
         ImplementationLevel::LegacyEdition1 if has("SECTION_CONTEXT") => {
             Err("2;1 forbids SECTION_CONTEXT in HEADER")
         }
+        ImplementationLevel::LegacyEdition1 if has("SCHEMA_POPULATION") => {
+            Err("2;1 forbids SCHEMA_POPULATION in HEADER")
+        }
         ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
             Err("3;1 forbids SCHEMA_POPULATION in HEADER")
         }
@@ -1076,12 +1098,67 @@ fn schema_identifier_count(header: &[HeaderRecord]) -> usize {
     }
 }
 
-fn valid_data_parameters(parameters: &[Value]) -> bool {
-    matches!(
-        parameters,
-        [Value::String(_), Value::List(schema)]
-            if schema.len() == 1 && matches!(schema.first(), Some(Value::String(_)))
-    )
+fn valid_data_parameters(
+    parameters: &[Value],
+    schema_identifiers: &[String],
+    implementation_level: ImplementationLevel,
+    section_names: &mut BTreeSet<String>,
+) -> Result<(), &'static str> {
+    let [Value::String(section_name), Value::List(schema)] = parameters else {
+        return Err("DATA section parameters must contain a name and one schema");
+    };
+    let [Value::String(schema_name)] = schema.as_slice() else {
+        return Err("DATA section parameters must contain a name and one schema");
+    };
+    let section_name = decode_string(section_name, implementation_level)
+        .map_err(|_| "DATA section parameters contain an invalid string")?;
+    if !section_names.insert(section_name) {
+        return Err("DATA section names must be unique");
+    }
+    let schema_name = decode_string(schema_name, implementation_level)
+        .map_err(|_| "DATA section parameters contain an invalid string")?;
+    let schema_name = schema_name.to_ascii_uppercase();
+    if !schema_identifiers.iter().any(|identifier| {
+        identifier == &schema_name || schema_name_without_oid(identifier) == schema_name.trim()
+    }) {
+        return Err("DATA section schema is not listed in FILE_SCHEMA");
+    }
+    Ok(())
+}
+
+fn schema_name_without_oid(identifier: &str) -> &str {
+    identifier
+        .split_once('{')
+        .map_or(identifier, |(name, _)| name.trim_end())
+}
+
+fn schema_identifiers(
+    header: &[HeaderRecord],
+    implementation_level: ImplementationLevel,
+) -> Vec<String> {
+    let Some(Value::List(identifiers)) = header[2].parameters.first() else {
+        return Vec::new();
+    };
+    identifiers
+        .iter()
+        .filter_map(|value| match value {
+            Value::String(bytes) => decode_string(bytes, implementation_level).ok(),
+            _ => None,
+        })
+        .map(|identifier| identifier.to_ascii_uppercase())
+        .collect()
+}
+
+fn decode_string(
+    bytes: &[u8],
+    implementation_level: ImplementationLevel,
+) -> Result<String, crate::strings::StringError> {
+    match implementation_level {
+        ImplementationLevel::Edition3 => crate::strings::decode_utf8(bytes),
+        ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
+            crate::strings::decode(bytes)
+        }
+    }
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {

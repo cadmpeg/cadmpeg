@@ -200,6 +200,18 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "2;1 forbids DATA section parameters",
         ),
         (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "2;1 forbids ANCHOR and REFERENCE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
+            "2;1 forbids SIGNATURE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "2;1 forbids SCHEMA_POPULATION in HEADER",
+        ),
+        (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "3;1 forbids ANCHOR and REFERENCE sections",
         ),
@@ -254,8 +266,20 @@ fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
             "multiple DATA sections require section parameters",
         ),
         (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;DATA('section',('AP242'));#2=ITEM();ENDSEC;END-ISO-10303-21;",
+            "multiple DATA sections require section parameters",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('section',('AP242'));#1=ITEM();ENDSEC;DATA('section',('AP242'));#2=ITEM();ENDSEC;END-ISO-10303-21;",
+            "DATA section names must be unique",
+        ),
+        (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('section');#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "DATA section parameters must contain a name and one schema",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('section',('AP214'));#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "DATA section schema is not listed in FILE_SCHEMA",
         ),
         (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
@@ -664,8 +688,9 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
     ];
 
     for (identifiers, expected_edition) in cases {
+        let first_identifier = identifiers.split(',').next().expect("first schema");
         let source = format!(
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA('section',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA('section',({first_identifier}));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
         let summary = StepCodec::default()
             .inspect(
