@@ -9,9 +9,10 @@ note = """
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
-`SplitFace` prefix, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`. Container
-and manifest layers are text grammars and are listed under "Not tabulated".
+`SplitFace` prefix, the grouped recipe-reference prefix, and the sheet-metal
+`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
+in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
+are listed under "Not tabulated".
 """
 
 # --- §3.1 Design-segment fixed headers -------------------------------------
@@ -49,6 +50,35 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "grouped_recipe_reference_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A grouped selector-bearing prefix stores ten zero bytes, `u32 1`, `u32 5`, and exactly five groups."
+size = 18
+note = "Offsets are relative to the recipe prefix. Five variable-length counted operand groups and one final u32 zero follow this fixed header."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "stores ten zero bytes"
+
+[[record.field]]
+name = "constant_one"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "`u32 1`"
+
+[[record.field]]
+name = "group_count"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "`u32 5`, and exactly five groups"
 
 [[record]]
 name = "indexed_companion_record_prefix"

@@ -10,9 +10,10 @@ Table source: `docs/layouts/f3d.toml`.
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
-`SplitFace` prefix, and the sheet-metal `EdgeFlange` fixed operation section
-(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`. Container
-and manifest layers are text grammars and are listed under "Not tabulated".
+`SplitFace` prefix, the grouped recipe-reference prefix, and the sheet-metal
+`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
+in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
+are listed under "Not tabulated".
 
 ## `indexed_design_record_header`
 
@@ -29,6 +30,18 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `grouped_recipe_reference_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 18 B
+
+Offsets are relative to the recipe prefix. Five variable-length counted operand groups and one final u32 zero follow this fixed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 10 | `zero_run_10` | `bytes[10]` | little | spec | stores ten zero bytes |
+| 10 | 4 | `constant_one` | `u32` | little | spec | `u32 1` |
+| 14 | 4 | `group_count` | `u32` | little | spec | `u32 5`, and exactly five groups |
 
 ## `indexed_companion_record_prefix`
 
