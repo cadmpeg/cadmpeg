@@ -3,6 +3,7 @@
 
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point,
@@ -28,6 +29,8 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::index::{step_instance_id, CarrierIndex};
 use super::opaque_record_id;
 
+const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
+
 pub(super) struct GeometryResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
@@ -44,7 +47,10 @@ pub(super) struct GeometryResult {
 /// `VERTEX_POINT` references. The neutral edge range is needed by pcurve
 /// consistency checks; using the carrier's complete domain would compare a
 /// trimmed edge with unrelated points on the same circle or spline.
-pub(super) fn infer_edge_parameter_ranges(ir: &mut CadIr) {
+pub(super) fn infer_edge_parameter_ranges(
+    ir: &mut CadIr,
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     let points = ir
         .model
         .points
@@ -75,6 +81,7 @@ pub(super) fn infer_edge_parameter_ranges(ir: &mut CadIr) {
             Some((index, curve, start, end))
         })
         .collect::<Vec<_>>();
+    charge_range_inference(ctx, candidates.len(), "step_edge_parameter_inference")?;
 
     let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
     let inferred = candidates
@@ -105,6 +112,7 @@ pub(super) fn infer_edge_parameter_ranges(ir: &mut CadIr) {
             edge.param_range = Some(range);
         }
     }
+    Ok(())
 }
 
 fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
@@ -141,7 +149,10 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
 /// topological endpoint witnesses. A pcurve and its model-space edge are
 /// allowed to use different neutral parameters, so the edge interval is only
 /// a search seed; the stored range belongs to the pcurve itself.
-pub(super) fn infer_pcurve_parameter_ranges(ir: &mut CadIr) {
+pub(super) fn infer_pcurve_parameter_ranges(
+    ir: &mut CadIr,
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+) -> Result<(), CodecError> {
     let points = ir
         .model
         .points
@@ -217,6 +228,7 @@ pub(super) fn infer_pcurve_parameter_ranges(ir: &mut CadIr) {
             ))
         })
         .collect::<Vec<_>>();
+    charge_range_inference(ctx, candidates.len(), "step_pcurve_parameter_inference")?;
     let tolerance = ir.tolerances.linear.max(1.0e-9);
 
     for (coedge_index, start, end, surface, pcurve, seed_range) in candidates {
@@ -251,6 +263,17 @@ pub(super) fn infer_pcurve_parameter_ranges(ir: &mut CadIr) {
             use_.parameter_range = Some([start_parameter, end_parameter]);
         }
     }
+    Ok(())
+}
+
+fn charge_range_inference(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    candidate_count: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let count = u64::try_from(candidate_count).unwrap_or(u64::MAX);
+    let units = count.saturating_mul(RANGE_INFERENCE_WORK_UNITS);
+    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
 }
 
 fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {

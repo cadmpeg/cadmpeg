@@ -146,6 +146,33 @@ fn parser_uses_the_decode_session_work_budget() {
 }
 
 #[test]
+fn semantic_decode_uses_the_decode_session_work_budget() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut semantic_operation = None;
+    for max_work_units in 1..=256 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+            .expect_err("a small work budget must refuse one decode stage");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation != "step_lex_token"
+            && limit.context.operation != "step_parse_record"
+            && limit.context.operation != "step_parse_parameter"
+        {
+            semantic_operation = Some(limit.context.operation);
+            break;
+        }
+    }
+    assert_eq!(semantic_operation, Some("step_geometry_decode"));
+}
+
+#[test]
 fn parser_rejects_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");

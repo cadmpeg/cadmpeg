@@ -34,7 +34,7 @@ pub fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<DecodeResult, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, options, &exchange, &diagnostics)
+    decode_exchange(input, options, &exchange, &diagnostics, Some(ctx))
 }
 
 pub(super) fn decode_exchange(
@@ -42,14 +42,16 @@ pub(super) fn decode_exchange(
     options: DecodeOptions,
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_exchange_mode(input, options, exchange, diagnostics, true).map(|(result, _)| result)
+    decode_exchange_mode(input, options, exchange, diagnostics, true, ctx).map(|(result, _)| result)
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
 ) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     decode_exchange_mode(
         input,
@@ -57,6 +59,7 @@ pub(super) fn inspect_exchange(
         exchange,
         diagnostics,
         false,
+        ctx,
     )
 }
 
@@ -66,6 +69,7 @@ fn decode_exchange_mode(
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
 ) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
@@ -112,16 +116,24 @@ fn decode_exchange_mode(
         ));
     }
 
+    charge_semantic_stage(ctx, exchange, "step_geometry_decode")?;
     let mut geometry = geometry::decode(exchange, &mut ir);
+    charge_semantic_stage(ctx, exchange, "step_dependency_decode")?;
     let dependencies = dependencies::decode(exchange);
+    charge_semantic_stage(ctx, exchange, "step_carrier_index")?;
     let carrier_index = index::CarrierIndex::from_ir(&ir);
+    charge_semantic_stage(ctx, exchange, "step_topology_decode")?;
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
-    geometry::infer_edge_parameter_ranges(&mut ir);
-    geometry::infer_pcurve_parameter_ranges(&mut ir);
+    geometry::infer_edge_parameter_ranges(&mut ir, ctx)?;
+    geometry::infer_pcurve_parameter_ranges(&mut ir, ctx)?;
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
+    charge_semantic_stage(ctx, exchange, "step_topology_association")?;
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
+    charge_semantic_stage(ctx, exchange, "step_replica_association")?;
     geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
+    charge_semantic_stage(ctx, exchange, "step_pcurve_association")?;
     geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
+    charge_semantic_stage(ctx, exchange, "step_geometric_set_association")?;
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut ir,
@@ -129,6 +141,7 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    charge_semantic_stage(ctx, exchange, "step_representation_association")?;
     geometry::associate_free_representation_members(
         exchange,
         &mut ir,
@@ -136,10 +149,15 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
+    charge_semantic_stage(ctx, exchange, "step_product_decode")?;
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
+    charge_semantic_stage(ctx, exchange, "step_tessellation_decode")?;
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
+    charge_semantic_stage(ctx, exchange, "step_pmi_decode")?;
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
+    charge_semantic_stage(ctx, exchange, "step_presentation_decode")?;
     let presentation = presentation::decode(exchange, &topology, &mut ir);
+    charge_semantic_stage(ctx, exchange, "step_validation_decode")?;
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
@@ -268,6 +286,13 @@ fn decode_exchange_mode(
                 .collect::<Vec<_>>()
                 .join("+");
             *counts.entry(kind).or_default() += 1;
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(
+                    u64::try_from(record.span.len()).unwrap_or(u64::MAX),
+                    "step_opaque_record",
+                    None,
+                )?;
+            }
             let bytes = input[record.span.clone()].to_vec();
             let mut links = BTreeSet::new();
             for partial in &record.partials {
@@ -352,6 +377,15 @@ fn decode_exchange_mode(
         DecodeResult::new(ir, report, source_fidelity),
         opaque_offsets,
     ))
+}
+
+fn charge_semantic_stage(
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    exchange: &Exchange,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let units = u64::try_from(exchange.records.len()).unwrap_or(u64::MAX);
+    ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
 }
 
 fn retain_unowned_pcurves(
@@ -767,6 +801,7 @@ mod tests {
             &exchange,
             &[],
             true,
+            None,
         )
         .expect("synthesized unknown record conversion")
         .0;

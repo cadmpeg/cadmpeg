@@ -51,8 +51,8 @@ A **proven** score satisfies every criterion for the declared envelope:
 | Creo Parametric `.prt`                                                | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                      |
 | Rhino `.3dm` (V3/V4)                                                  | **L1 tested**  | metadata and bounded object-record retention                                                                               |
 | Rhino `.3dm` (V1/V2 and archive 5)                                    | **L0 tested**  | header-only inspection; decode is rejected                                                                                 |
-| STEP Part 21 AP242 editions 1–3                                       | **L9 tested**  |                                                                                                                            |
-| STEP Part 21 AP203 editions 1–2 and AP214                             | **L9 tested**  |                                                                                                                            |
+| STEP Part 21 AP242 editions 1–3                                       | **L8 tested**  | bounded semantic writing and round-trip checks remain extras; L9 gate open |
+| STEP Part 21 AP203 editions 1–2 and AP214                             | **L8 tested**  | bounded semantic writing and round-trip checks remain extras; L9 gate open |
 | IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                      | **L8 tested**  | bounded semantic writing and application checks remain extras; L9 gate open |
 
 Each current score applies to the envelope described in its profile.

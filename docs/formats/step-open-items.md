@@ -14,6 +14,78 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
+## Top-priority implementation gates
+
+These items are open implementation gates. They are not unresolved Part 21
+format rules. The STEP score remains L8 tested until every gate below closes.
+
+### L9-01. Pathological endpoint inference
+
+**Defect.** Endpoint-range recovery previously rebuilt the complete model index
+for every edge and used an unbounded practical NURBS search. Large valid inputs
+could consume more than three minutes without producing output. This is
+unacceptable decode behaviour.
+
+**Current control.** The inference pass reuses one model index. NURBS Newton
+search and certified interval search have fixed bounds. The decode session
+charges the worst-case range-inference allowance before the pass.
+
+**Closure.** Run the full admitted-file sweep with one timeout per file. Every
+file must either complete within the declared limit or return a deterministic
+`ResourceLimit` error. No process may remain CPU-bound after the timeout. Add a
+regression fixture for the former quadratic index path and for bounded NURBS
+search.
+
+### L9-02. Semantic resource accounting
+
+**Defect.** Parser work was bounded before semantic decoding and opaque-record
+retention were charged. A parser limit therefore did not bound the complete
+decode operation.
+
+**Current control.** Parser tokens, records, parameters, semantic passes,
+bounded endpoint inference, and copied opaque-record bytes charge the shared
+decode session.
+
+**Closure.** Exercise desktop and service policies with large, deeply nested,
+high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
+operation, used amount, and limit are stable. Audit every semantic loop and
+retained allocation for an uncovered unbounded path.
+
+### L9-03. Valid IR and complete loss accounting
+
+**Defect.** Decode success does not prove valid IR. Some admitted files still
+produce topology or geometric-consistency findings, and the decode report does
+not yet prove that every omitted semantic construct has one stable loss.
+
+**Closure.** For every admitted file, run `cadmpeg validate` on the decoded
+artifact. Classify each failure as a source-invalid case with a retained
+diagnostic or fix the decoder. Reconcile typed records, named opaque records,
+unclassified bytes, and loss notes. Require zero unexplained validation errors
+and zero unclassified source bytes.
+
+### L9-04. Native write and re-decode proof
+
+**Defect.** The writer has synthesized and fixture-level round trips, but this
+does not prove semantic write-back for the complete admitted envelope or for
+edits to retained documents.
+
+**Closure.** Write source-less and edited documents for each supported AP and
+version target. Re-decode and validate every result. Compare a defined semantic
+fingerprint, verify deterministic output, exercise explicit refusal for
+unsupported content, and record independent application acceptance where the
+application is available.
+
+### L9-05. Fuzz and termination proof
+
+**Defect.** Parser tests cover selected malformed structures, but the L9 proof
+does not yet cover every reader and writer path with a reproducible bounded fuzz
+campaign.
+
+**Closure.** Add parser and writer fuzz targets for the admitted envelope. Run
+bounded campaigns with resource policies enabled. Retain minimized synthesized
+regressions for crashes, hangs, stack growth, allocation failures, invalid IR,
+and nondeterministic losses.
+
 ## 1. External resources
 
 ### ER-01. URI resolution
