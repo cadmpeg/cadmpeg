@@ -88,21 +88,25 @@ pub(super) fn infer_edge_parameter_ranges(
     let inferred = candidates
         .into_iter()
         .filter_map(|(edge_index, curve, start, end)| {
+            let curve_geometry = model_index
+                .curves(curve.0.as_str())
+                .map(|curve| &curve.geometry)?;
+            let start_seed = curve_endpoint_seed(curve_geometry, false, 0.0);
             let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 start,
-                0.0,
+                start_seed,
             )?;
+            let end_seed = curve_endpoint_seed(curve_geometry, true, start_parameter);
             let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
                 &model_index,
                 &curve,
                 end,
-                start_parameter,
+                end_seed,
             )?;
-            let curve_geometry = model_index.curves(curve.0.as_str())?.geometry.clone();
             let [start_parameter, end_parameter] =
-                edge_parameter_range(&curve_geometry, start_parameter, end_parameter)?;
+                edge_parameter_range(curve_geometry, start_parameter, end_parameter)?;
             Some((edge_index, [start_parameter, end_parameter]))
         })
         .collect::<Vec<_>>();
@@ -114,6 +118,27 @@ pub(super) fn infer_edge_parameter_ranges(
         }
     }
     Ok(())
+}
+
+/// Select endpoint witnesses on the ordered branch of a non-periodic carrier.
+/// A seed near the start endpoint is correct for a periodic seam search, but
+/// it can select an earlier coincident knot when the terminal endpoint is on a
+/// later non-periodic NURBS span. The canonical domain endpoints provide the
+/// branch anchors without changing analytic or periodic carrier behaviour.
+fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> f64 {
+    match geometry {
+        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic => {
+            nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
+                if upper {
+                    upper_bound
+                } else {
+                    lower
+                }
+            })
+        }
+        CurveGeometry::Transformed { basis, .. } => curve_endpoint_seed(basis, upper, fallback),
+        _ => fallback,
+    }
 }
 
 fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
@@ -3900,6 +3925,7 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_ir::eval::nurbs_curve_point;
 
     #[test]
     fn every_iso_si_prefix_resolves_to_its_exact_factor() {
@@ -3959,5 +3985,43 @@ mod tests {
         let [start, end] = edge_parameter_range(&geometry, tau, tau + 0.5).expect("edge range");
         assert!(start.abs() < 1.0e-12);
         assert!((end - 0.5).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
+        let nurbs = NurbsCurve {
+            degree: 3,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+                Point3::new(5.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let geometry = CurveGeometry::Nurbs(nurbs.clone());
+        let start_point =
+            nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 0.0)
+                .expect("start point");
+        let end_point =
+            nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 1.0)
+                .expect("end point");
+        let start_seed = curve_endpoint_seed(&geometry, false, 0.0);
+        let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
+            .expect("start witness");
+        let start_seed_end =
+            nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, start).expect("old end");
+        assert!((start_seed_end - 1.0).abs() > 0.1);
+        let end_seed = curve_endpoint_seed(&geometry, true, start);
+        let end = nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, end_seed)
+            .expect("end witness");
+
+        assert!((start - 0.0).abs() < 1.0e-12);
+        assert!((end - 1.0).abs() < 1.0e-12);
     }
 }
