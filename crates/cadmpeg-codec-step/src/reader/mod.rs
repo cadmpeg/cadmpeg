@@ -11,6 +11,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
+use cadmpeg_ir::SourceFidelity;
 
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
@@ -30,7 +31,7 @@ pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 pub fn decode(input: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
     let (exchange, diagnostics) =
         parse::parse(input).map_err(|error| CodecError::Malformed(error.to_string()))?;
-    Ok(decode_exchange(input, options, &exchange, &diagnostics))
+    decode_exchange(input, options, &exchange, &diagnostics)
 }
 
 pub(super) fn decode_exchange(
@@ -38,15 +39,15 @@ pub(super) fn decode_exchange(
     options: DecodeOptions,
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
-) -> DecodeResult {
-    decode_exchange_mode(input, options, exchange, diagnostics, true).0
+) -> Result<DecodeResult, CodecError> {
+    decode_exchange_mode(input, options, exchange, diagnostics, true).map(|(result, _)| result)
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
-) -> (DecodeResult, BTreeSet<usize>) {
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     decode_exchange_mode(
         input,
         DecodeOptions::default(),
@@ -62,7 +63,7 @@ fn decode_exchange_mode(
     exchange: &Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
-) -> (DecodeResult, BTreeSet<usize>) {
+) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert("schema".into(), schema_name(exchange));
@@ -102,10 +103,10 @@ fn decode_exchange_mode(
         })
     }));
     if options.container_only {
-        return (
+        return Ok((
             DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
             BTreeSet::new(),
-        );
+        ));
     }
 
     let mut geometry = geometry::decode(exchange, &mut ir);
@@ -241,6 +242,7 @@ fn decode_exchange_mode(
             .collect()
     };
     let mut counts = BTreeMap::<String, usize>::new();
+    let mut source_fidelity = SourceFidelity::default();
     if retain_opaque {
         let opaque_ids = exchange
             .records
@@ -287,7 +289,7 @@ fn decode_exchange_mode(
                     .collect(),
             });
         }
-        ir.set_native_unknowns_owned("step", opaque);
+        source_fidelity.attach_native_unknown_records(&mut ir, "step", opaque)?;
     } else {
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
@@ -341,10 +343,10 @@ fn decode_exchange_mode(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
-    (
-        DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+    Ok((
+        DecodeResult::new(ir, report, source_fidelity),
         opaque_offsets,
-    )
+    ))
 }
 
 fn retain_unowned_pcurves(
@@ -761,6 +763,7 @@ mod tests {
             &[],
             true,
         )
+        .expect("synthesized unknown record conversion")
         .0;
         assert!(result.report.losses.iter().any(|loss| {
             loss.code == LossKind::DecodeDiagnostic

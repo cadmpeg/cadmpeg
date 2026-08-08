@@ -3457,7 +3457,7 @@ impl Codec for StepCodec {
         }
         let (exchange, diagnostics) =
             parse::parse(bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
-        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics);
+        let (decoded, opaque_offsets) = reader::inspect_exchange(bytes, &exchange, &diagnostics)?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
