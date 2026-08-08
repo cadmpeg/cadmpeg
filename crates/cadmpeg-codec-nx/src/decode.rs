@@ -7262,12 +7262,20 @@ fn emit_topology(
         } else {
             fin_fields.forward
         };
-        let end = graph
-            .get(17, end_fin)
-            .and_then(Node::fin_fields)
-            .and_then(|next| vertices.get(&next.vertex))
-            .cloned()
-            .unwrap_or_else(|| start.clone());
+        let Some(end_fields) = graph.get(17, end_fin).and_then(Node::fin_fields) else {
+            continue;
+        };
+        let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
+            (end_fin == fin.xmt
+                && fin_fields.vertex == 1
+                && end_fields.vertex == 1
+                && fin_fields.forward == fin.xmt
+                && fin_fields.backward == fin.xmt)
+                .then(|| start.clone())
+        });
+        let Some(end) = end else {
+            continue;
+        };
         let (mut start, mut end) = (start, end);
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");

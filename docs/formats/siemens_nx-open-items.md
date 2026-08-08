@@ -232,7 +232,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `siemens_nx.md` §5.3 "An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP" and `siemens_nx.md` §5.3 "POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.ver" define endpoint incidence through the FIN chain and the POINT-to-vertex condition. They do not define the case in which the resolved end vertex has no decoded POINT.
 
-**Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. The decoder substitutes the start vertex for an unresolved end vertex, which makes the two forms identical in the model and changes edge-use counting and body-kind classification.
+**Need.** We must know the reading to separate a closed edge from an edge that lost one endpoint. Without that rule, the decoder retains neither the edge nor its dependent loop when the end vertex has no decoded POINT.
 
 ### PS-29. Interleaved body revision sequences
 

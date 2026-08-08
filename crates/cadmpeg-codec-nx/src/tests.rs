@@ -649,6 +649,45 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
 }
 
 #[test]
+fn decode_does_not_alias_unresolved_edge_end_to_start_vertex() {
+    let mut stream = topology_partition_stream();
+    let first_fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("first fin record");
+    put_ref(&mut stream, first_fin + 8, 20);
+    put_ref(&mut stream, first_fin + 10, 20);
+    put_ref(&mut stream, first_fin + 14, 20);
+
+    let mut second_fin = record(17, 23);
+    put_ref(&mut second_fin, 2, 20);
+    put_ref(&mut second_fin, 6, 5);
+    put_ref(&mut second_fin, 8, 7);
+    put_ref(&mut second_fin, 10, 7);
+    put_ref(&mut second_fin, 12, 21);
+    put_ref(&mut second_fin, 14, 7);
+    put_ref(&mut second_fin, 16, 8);
+    put_ref(&mut second_fin, 18, 9);
+    second_fin[22] = b'+';
+    stream.extend(second_fin);
+
+    let mut unresolved_vertex = record(18, 28);
+    put_ref(&mut unresolved_vertex, 2, 21);
+    put_ref(&mut unresolved_vertex, 16, 99);
+    put_f64(&mut unresolved_vertex, 18, 0.000_1);
+    stream.extend(unresolved_vertex);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result.ir.model.edges.is_empty());
+    assert!(result.ir.model.coedges.is_empty());
+    assert!(result.ir.model.loops.is_empty());
+}
+
+#[test]
 fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
     let mut stream = record(14, 39);
     put_ref(&mut stream, 2, 4);
