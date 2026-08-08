@@ -563,7 +563,10 @@ fn definition_chain_parameter_candidate(
             (expression, Some(value))
         }
     };
-    let mut properties = parameter_properties(parameter_type, Some(name.as_str()));
+    // A definition chain names the parameter in its first definition. It does
+    // not carry the named-parameter value record's scope/expression binding,
+    // so do not publish the definition name as `catia_binding`.
+    let mut properties = parameter_properties(parameter_type, None);
     properties.insert(
         "catia_definition_selector_entry".to_string(),
         chain.selector.entry.clone(),

@@ -16181,7 +16181,7 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     );
     assert_eq!(parameter.owner, None);
     assert_eq!(parameter.properties["value_type"], "Real");
-    assert_eq!(parameter.properties["catia_binding"], "FeatureFEDGE");
+    assert!(!parameter.properties.contains_key("catia_binding"));
     assert_eq!(
         parameter.properties["catia_definition_evaluation_opcode_offset"],
         "8"
