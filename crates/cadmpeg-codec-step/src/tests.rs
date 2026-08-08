@@ -128,6 +128,17 @@ fn lexer_ignores_controls_inside_tokens_and_print_controls_between_tokens() {
 }
 
 #[test]
+fn lexer_accepts_exponent_before_trailing_decimal_point() {
+    let token = crate::lex::lex(b"6E-16.").expect("real with trailing decimal point")[0]
+        .kind
+        .clone();
+    let crate::lex::TokenKind::Real(value) = token else {
+        panic!("expected a real token");
+    };
+    assert!(value.abs() < 1e-15);
+}
+
+#[test]
 fn lexer_rejects_strings_that_exceed_the_stored_length_limit() {
     let mut source = Vec::with_capacity(32_770);
     source.push(b'\'');

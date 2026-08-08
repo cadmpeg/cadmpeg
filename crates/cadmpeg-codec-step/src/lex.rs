@@ -419,7 +419,7 @@ impl<'a> Lexer<'a> {
             match b {
                 byte if byte.is_ascii_control() => self.at += 1,
                 b'0'..=b'9' => self.at += 1,
-                b'.' if !dot && !exponent => {
+                b'.' if !dot => {
                     dot = true;
                     self.at += 1;
                 }
@@ -439,7 +439,10 @@ impl<'a> Lexer<'a> {
                 _ => break,
             }
         }
-        let raw = self.normalized(start, self.at);
+        let mut raw = self.normalized(start, self.at);
+        if exponent && raw.ends_with('.') {
+            raw.pop();
+        }
         if dot || exponent {
             let parsed = if raw
                 .as_bytes()

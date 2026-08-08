@@ -76,7 +76,10 @@ standard_name = letter (letter | digit | "_" | "-")*
 user_name     = "!" standard_name
 resource      = "<" resource_character* ">"
 integer       = sign? digit+
-real          = sign? ((digit+ "." digit*) | ("." digit+)) exponent?
+real          = sign? ((digit+ "." digit* exponent?)
+                       | ("." digit+ exponent?)
+                       | (digit+ exponent ".")
+                       | (digit+ exponent))
 exponent      = ("E" | "e" | "D" | "d") sign? digit+
 enumeration   = "." standard_name "."
 string        = "'" string_item* "'"
@@ -106,8 +109,10 @@ anchor name is a nonempty URI fragment identifier with at least one non-digit
 character. A reference left-hand side is a numeric entity or value occurrence
 name.
 
-`1.`, `0.E+000`, and Fortran `D` exponents are real values. A binary literal
-starts with one indicator nibble and continues with hexadecimal payload digits.
+`1.`, `0.E+000`, exponent-form values without a decimal point, exponent-form
+values with a trailing decimal point such as `6E-16.`, and Fortran `D`
+exponents are real values. A binary literal starts with one indicator nibble
+and continues with hexadecimal payload digits.
 The indicator gives the number of unused low-order bits in the final payload
 digit. Its value is `0..=3`, and each unused bit is zero. Payload digits pack
 most-significant nibble first. The decoded bit length is four times the payload
