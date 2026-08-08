@@ -1,6 +1,6 @@
 ISO-10303-21;
 HEADER;
-FILE_DESCRIPTION(('edition 3 sections'),'4;1');
+FILE_DESCRIPTION(('edition 3 sections'),'4;2');
 FILE_NAME('sections','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');
 FILE_SCHEMA(('AP242'));
 ENDSEC;
@@ -9,7 +9,7 @@ ANCHOR;
 <alias>=<root>;
 ENDSEC;
 REFERENCE;
-<#ext>=<https://example.invalid/external-part>;
+#100=<https://example.invalid/external-part>;
 ENDSEC;
 DATA('section-1',('AP242'));
 #1=PRODUCT('P1','Part','',());

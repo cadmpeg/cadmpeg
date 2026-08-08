@@ -109,7 +109,7 @@ pub struct AnchorTag {
 /// One edition-3 external REFERENCE binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceEntry {
-    /// Local resource name or external instance name such as `#123`.
+    /// External entity or value occurrence name such as `#123`.
     pub name: String,
     /// External resource URI.
     pub uri: String,
@@ -337,7 +337,26 @@ struct Parser<'a> {
 enum ImplementationLevel {
     LegacyEdition1,
     LegacyEdition2,
-    Edition3,
+    Edition3Class1,
+    Edition3Class2,
+    Edition3Class3,
+}
+
+impl ImplementationLevel {
+    fn is_edition3(self) -> bool {
+        matches!(
+            self,
+            Self::Edition3Class1 | Self::Edition3Class2 | Self::Edition3Class3
+        )
+    }
+
+    fn allows_edition3_sections(self) -> bool {
+        matches!(self, Self::Edition3Class2 | Self::Edition3Class3)
+    }
+
+    fn allows_class3_occurrences(self) -> bool {
+        matches!(self, Self::Edition3Class3)
+    }
 }
 
 /// Return whether a simple geometry, topology, or representation carrier
@@ -487,13 +506,16 @@ impl Parser<'_> {
             return self.err(message);
         }
         let mut anchors = Vec::new();
-        if implementation_level != ImplementationLevel::Edition3
+        if !implementation_level.allows_edition3_sections()
             && (self.peek_name("ANCHOR") || self.peek_name("REFERENCE"))
         {
             return self.err(match implementation_level {
                 ImplementationLevel::LegacyEdition1 => "2;1 forbids ANCHOR and REFERENCE sections",
                 ImplementationLevel::LegacyEdition2 => "3;1 forbids ANCHOR and REFERENCE sections",
-                ImplementationLevel::Edition3 => unreachable!(),
+                ImplementationLevel::Edition3Class1 => "4;1 forbids ANCHOR and REFERENCE sections",
+                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
+                    unreachable!()
+                }
             });
         }
         if self.peek_name("ANCHOR") {
@@ -540,7 +562,6 @@ impl Parser<'_> {
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
                 let (name, occurrence_id) = match self.next_kind()? {
-                    TokenKind::Resource(name) => (name, None),
                     TokenKind::Instance(id) => (format!("#{id}"), Some((b'#', id))),
                     TokenKind::ValueInstance(id) => (format!("@{id}"), Some((b'@', id))),
                     _ => return self.err("expected reference name"),
@@ -625,10 +646,10 @@ impl Parser<'_> {
                 records: ids,
             });
         }
-        if implementation_level != ImplementationLevel::Edition3 && data.is_empty() {
+        if !implementation_level.is_edition3() && data.is_empty() {
             return self.err("historical implementation levels require one DATA section");
         }
-        if implementation_level == ImplementationLevel::Edition3
+        if implementation_level.is_edition3()
             && data.len() == 1
             && data[0].parameters.is_empty()
             && schema_identifier_count(&header) != 1
@@ -642,11 +663,14 @@ impl Parser<'_> {
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
-        if implementation_level != ImplementationLevel::Edition3 && self.peek_name("SIGNATURE") {
+        if !implementation_level.allows_edition3_sections() && self.peek_name("SIGNATURE") {
             return self.err(match implementation_level {
                 ImplementationLevel::LegacyEdition1 => "2;1 forbids SIGNATURE sections",
                 ImplementationLevel::LegacyEdition2 => "3;1 forbids SIGNATURE sections",
-                ImplementationLevel::Edition3 => unreachable!(),
+                ImplementationLevel::Edition3Class1 => "4;1 forbids SIGNATURE sections",
+                ImplementationLevel::Edition3Class2 | ImplementationLevel::Edition3Class3 => {
+                    unreachable!()
+                }
             });
         }
         while self.peek_name("SIGNATURE") {
@@ -775,25 +799,45 @@ impl Parser<'_> {
                 return Self::err_at(record.span.start, "unresolved value instance reference");
             }
         }
-        let contains_edition3_occurrence_in_exchange =
-            implementation_level != ImplementationLevel::Edition3
+        let contains_forbidden_class3_occurrence =
+            !implementation_level.allows_class3_occurrences()
                 && (header
                     .iter()
-                    .any(|record| record.parameters.iter().any(contains_edition3_occurrence))
+                    .any(|record| record.parameters.iter().any(contains_class3_occurrence))
                     || anchors.iter().any(|anchor| {
-                        contains_edition3_occurrence(&anchor.value)
+                        contains_class3_occurrence(&anchor.value)
                             || anchor
                                 .tags
                                 .iter()
-                                .any(|tag| contains_edition3_occurrence(&tag.value))
+                                .any(|tag| contains_class3_occurrence(&tag.value))
                     })
                     || records.values().any(|record| {
                         record.partials.iter().any(|partial| {
-                            partial.parameters.iter().any(contains_edition3_occurrence)
+                            partial.parameters.iter().any(contains_class3_occurrence)
                         })
                     }));
-        if contains_edition3_occurrence_in_exchange {
-            return self.err("historical implementation levels forbid edition-3 occurrence names");
+        if contains_forbidden_class3_occurrence {
+            return self.err(match implementation_level {
+                ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
+                    "historical implementation levels forbid edition-3 occurrence names"
+                }
+                ImplementationLevel::Edition3Class1 | ImplementationLevel::Edition3Class2 => {
+                    "this implementation level forbids value instances and EXPRESS constants"
+                }
+                ImplementationLevel::Edition3Class3 => unreachable!(),
+            });
+        }
+        let has_resource_value = header
+            .iter()
+            .any(|record| record.parameters.iter().any(contains_resource_value))
+            || records.values().any(|record| {
+                record
+                    .partials
+                    .iter()
+                    .any(|partial| partial.parameters.iter().any(contains_resource_value))
+            });
+        if has_resource_value {
+            return self.err("resource values are only valid in edition-3 anchor items");
         }
         if let Some(offset) = self.first_omitted_entity_name_offset {
             self.diagnostics.push(ParseDiagnostic {
@@ -1038,7 +1082,9 @@ fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'sta
             match level.as_str() {
                 "1" | "2" | "2;1" | "2;2" => ImplementationLevel::LegacyEdition1,
                 "3;1" | "3;2" => ImplementationLevel::LegacyEdition2,
-                "4;1" | "4;2" | "4;3" => ImplementationLevel::Edition3,
+                "4;1" => ImplementationLevel::Edition3Class1,
+                "4;2" => ImplementationLevel::Edition3Class2,
+                "4;3" => ImplementationLevel::Edition3Class3,
                 _ => return Err("FILE_DESCRIPTION has an unsupported implementation level"),
             }
         }
@@ -1132,8 +1178,18 @@ fn validate_header_sections(
     if implementation_level == ImplementationLevel::LegacyEdition1 && has("SECTION_CONTEXT") {
         return Err("2;1 forbids SECTION_CONTEXT in HEADER");
     }
-    if implementation_level == ImplementationLevel::LegacyEdition2 && has("SCHEMA_POPULATION") {
-        return Err("3;1 forbids SCHEMA_POPULATION in HEADER");
+    if matches!(
+        implementation_level,
+        ImplementationLevel::LegacyEdition2 | ImplementationLevel::Edition3Class1
+    ) && has("SCHEMA_POPULATION")
+    {
+        return Err(match implementation_level {
+            ImplementationLevel::LegacyEdition2 => "3;1 forbids SCHEMA_POPULATION in HEADER",
+            ImplementationLevel::Edition3Class1 => "4;1 forbids SCHEMA_POPULATION in HEADER",
+            ImplementationLevel::LegacyEdition1
+            | ImplementationLevel::Edition3Class2
+            | ImplementationLevel::Edition3Class3 => unreachable!(),
+        });
     }
 
     let mut user_defined = false;
@@ -1444,10 +1500,12 @@ fn decode_string(
     implementation_level: ImplementationLevel,
 ) -> Result<String, crate::strings::StringError> {
     match implementation_level {
-        ImplementationLevel::Edition3 => crate::strings::decode_utf8(bytes),
         ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {
             crate::strings::decode(bytes)
         }
+        ImplementationLevel::Edition3Class1
+        | ImplementationLevel::Edition3Class2
+        | ImplementationLevel::Edition3Class3 => crate::strings::decode_utf8(bytes),
     }
 }
 
@@ -1592,11 +1650,20 @@ fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>
     }
 }
 
-fn contains_edition3_occurrence(value: &Value) -> bool {
+fn contains_class3_occurrence(value: &Value) -> bool {
     match value {
         Value::ValueReference(_) | Value::ConstantEntity(_) | Value::ConstantValue(_) => true,
-        Value::List(values) => values.iter().any(contains_edition3_occurrence),
-        Value::Typed(_, value) => contains_edition3_occurrence(value),
+        Value::List(values) => values.iter().any(contains_class3_occurrence),
+        Value::Typed(_, value) => contains_class3_occurrence(value),
+        _ => false,
+    }
+}
+
+fn contains_resource_value(value: &Value) -> bool {
+    match value {
+        Value::Resource(_) => true,
+        Value::List(values) => values.iter().any(contains_resource_value),
+        Value::Typed(_, value) => contains_resource_value(value),
         _ => false,
     }
 }

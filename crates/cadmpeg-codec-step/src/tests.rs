@@ -249,6 +249,47 @@ fn parser_accepts_historical_implementation_level_spellings() {
 }
 
 #[test]
+fn parser_enforces_edition_three_conformance_classes() {
+    let cases = [
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<item>=#1;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "4;1 forbids ANCHOR and REFERENCE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "4;1 forbids SCHEMA_POPULATION in HEADER",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
+            "4;1 forbids SIGNATURE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@10=<part.step#value>;ENDSEC;DATA;#1=ITEM(@10);ENDSEC;END-ISO-10303-21;",
+            "this implementation level forbids value instances and EXPRESS constants",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#PI);ENDSEC;END-ISO-10303-21;",
+            "this implementation level forbids value instances and EXPRESS constants",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;",
+            "resource values are only valid in edition-3 anchor items",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid conformance class");
+        assert!(
+            error.to_string().contains(message),
+            "expected {message:?}, got {error}"
+        );
+    }
+
+    let class_three = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@10=<part.step#value>;ENDSEC;DATA;#1=ITEM(@10,#PI);ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(class_three).expect("class three value occurrences");
+}
+
+#[test]
 fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('CONFIG_CONTROL_DESIGN','GEOMETRIC_VALIDATION_PROPERTIES_MIM'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     crate::parse::parse(source).expect("2;1 permits multiple schema identifiers");
@@ -256,7 +297,7 @@ fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
 
 #[test]
 fn parser_validates_optional_header_entities_and_data_section_targets() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));!VENDOR(('metadata'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));!VENDOR(('metadata'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, _) = crate::parse::parse(source).expect("valid optional header entities");
     assert_eq!(exchange.data[0].records, vec![1]);
     assert_eq!(exchange.header[7].name, "!VENDOR");
@@ -285,7 +326,7 @@ fn parser_validates_optional_header_entities_and_data_section_targets() {
     ];
     for (extra, message) in invalid {
         let source = format!(
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));{extra}ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));{extra}ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
         let error = crate::parse::parse(source.as_bytes()).expect_err("invalid header entity");
         assert!(
@@ -348,7 +389,7 @@ fn parser_bounds_exponential_anchor_expansion() {
             .expect("write anchor fixture");
     }
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
     );
     let error = crate::parse::parse(source.as_bytes()).unwrap_err();
     assert!(error.to_string().contains("expanded anchor value exceeds"));
@@ -366,7 +407,7 @@ fn parser_bounds_aggregate_anchor_materialization() {
         records
     });
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
     let error = crate::parse::parse(source.as_bytes()).unwrap_err();
     assert!(error.to_string().contains("expanded anchor"));
@@ -385,7 +426,7 @@ fn parser_rejects_duplicate_complex_partial_names() {
 
 #[test]
 fn parser_accepts_external_instance_references_in_edition_three() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
 
     assert!(diagnostics.is_empty());
@@ -402,8 +443,15 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 }
 
 #[test]
+fn parser_requires_numeric_reference_left_hand_sides() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;<external>=<part.step#root>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let error = crate::parse::parse(source).expect_err("resource reference name");
+    assert!(error.to_string().contains("expected reference name"));
+}
+
+#[test]
 fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<constant_entity>=#PI; <constant_value>=@E; <external_value>=@100;ENDSEC;REFERENCE;#200=<part.step#entity>;@100=<part.step#value>;ENDSEC;DATA;#1=ITEM(#PI,@E,@100,#200);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<constant_entity>=#PI; <constant_value>=@E; <external_value>=@100;ENDSEC;REFERENCE;#200=<part.step#entity>;@100=<part.step#value>;ENDSEC;DATA;#1=ITEM(#PI,@E,@100,#200);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("edition-3 occurrences");
 
     assert!(diagnostics.is_empty());
@@ -436,7 +484,7 @@ fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
 
 #[test]
 fn parser_retains_anchor_tags_and_resolves_their_references() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<shape>=#1 {source:<part.step#shape>} {width:@100};ENDSEC;REFERENCE;@100=<part.step#width>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("anchor tags");
 
     assert!(diagnostics.is_empty());
@@ -465,7 +513,7 @@ fn parser_enforces_anchor_name_and_item_grammar() {
     ];
     for (entry, message) in cases {
         let source = format!(
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{entry}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{entry}ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
         let error = crate::parse::parse(source.as_bytes()).expect_err("invalid anchor entry");
         assert!(
@@ -474,19 +522,19 @@ fn parser_enforces_anchor_name_and_item_grammar() {
         );
     }
 
-    let valid = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,(2));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let valid = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,(2));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     crate::parse::parse(valid).expect("nested anchor item");
 }
 
 #[test]
 fn parser_rejects_unresolved_or_colliding_value_instances() {
-    let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
+    let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(unresolved).expect_err("unresolved value instance");
     assert!(error
         .to_string()
         .contains("unresolved value instance reference"));
 
-    let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
+    let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;3');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(collision).expect_err("colliding value instance");
     assert!(error
         .to_string()
@@ -504,7 +552,7 @@ fn parser_rejects_edition_three_occurrences_in_historical_data() {
 
 #[test]
 fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("anchored line name");
 
     assert!(diagnostics
@@ -887,7 +935,7 @@ fn codec_inspects_edition3_sections_and_external_references() {
 
 #[test]
 fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==\nENDSEC;SIGNATURE;ZWZnaA==\nENDSEC;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==\nENDSEC;SIGNATURE;ZWZnaA==\nENDSEC;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("multiple signatures");
 
     assert!(diagnostics.is_empty());
@@ -908,7 +956,7 @@ fn parser_rejects_invalid_signature_base64() {
         ("YWJjZA=", "SIGNATURE base64 content has incomplete quantum"),
     ] {
         let source = format!(
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
         );
         let error = crate::parse::parse(source.as_bytes()).expect_err("invalid signature");
         assert!(matches!(

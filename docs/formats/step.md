@@ -41,12 +41,16 @@ anchor_name     = "<" uri_fragment_identifier ">"
 Outside string escape sequences, implementation levels with a major value
 below `4` interpret character bytes as ISO-8859-1. Edition 3 uses
 implementation levels `4;1`, `4;2`, and `4;3` and interprets direct character
-bytes as UTF-8. Historical levels `1`, `2`, `2;1`, and `2;2` require one
+bytes as UTF-8. Class 1 (`4;1`) forbids ANCHOR, REFERENCE, SCHEMA_POPULATION,
+and SIGNATURE sections. Class 2 (`4;2`) permits those sections but forbids
+value instances and EXPRESS constants. Class 3 (`4;3`) permits all edition-3
+occurrence forms. Historical levels `1`, `2`, `2;1`, and `2;2` require one
 unparameterized DATA section and no FILE_POPULATION, SECTION_LANGUAGE, or
 SECTION_CONTEXT header entity. Levels `3;1` and `3;2` require at least one
 DATA section and forbid ANCHOR, REFERENCE, SCHEMA_POPULATION, and SIGNATURE
-sections. Every UTF-8 sequence uses the shortest form, encodes one Unicode
-scalar value, and excludes surrogate code points.
+sections, value instances, EXPRESS constants, and resource values. Every
+UTF-8 sequence uses the shortest form, encodes one Unicode scalar value, and
+excludes surrogate code points.
 
 Whitespace consists of space, horizontal tab, carriage return, and line feed.
 The `/*` delimiter starts a comment, and `*/` ends it. Comment delimiters form
