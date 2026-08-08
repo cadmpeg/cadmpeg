@@ -120,16 +120,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value to solve the section variable.
 
-### SE-14. Paired cache tail collisions
-
-**Question.** Which `46 <byte1> <tail6>` token supplies the leading byte for a `9e` or `a3` token when more than one cache token has the same six-byte tail and a different `<byte1>`?
-
-**Known.** `creo_prt.md` §2.3 "Lane-specific seven-byte forms include" defines the paired reconstruction and names one source token for each tail. The section cache holds each distinct eight-byte `46` image, so two tokens can share a tail and differ in `<byte1>`. A round value has an all-zero tail, thus a collision is common.
-
-**Conflict.** The specification names one source token. `scalar.rs` `ScalarCache::from_section` keeps the first token scanned for each tail through `or_insert` and discards the other tokens. It applies no uniqueness gate.
-
-**Need.** We must know the selection rule to reconstruct the correct magnitude. A wrong selection gives a finite coordinate or radius with the exponent of a different value, and no gate rejects it.
-
 ### SE-15. `18` standalone-zero and cache-index boundary
 
 **Question.** Which rule separates a standalone-zero `18` from an `18 <index>` cache reference?

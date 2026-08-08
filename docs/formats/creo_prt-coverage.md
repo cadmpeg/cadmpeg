@@ -30,6 +30,9 @@ fixtures, claims above L1 remain unproven.
 
 - Saved planar sections transfer placed sketch points, lines, arcs, splines,
   dimensions, and typed or identity-preserving native constraints.
+- Paired `9e` and `a3` scalars require one distinct section-cache `46` image
+  for their six-byte tail; duplicate images are valid and differing payload
+  bytes withhold the scalar.
 - Section-reference lines transfer as construction-line geometry when both
   stored endpoint references resolve to distinct section coordinates.
 - Section lines with a uniquely proven fixed coordinate and unresolved

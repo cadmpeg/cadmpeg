@@ -180,7 +180,7 @@ coordinate lane. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
 `34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
 occupies four.
 
-Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds the `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`.
+Lane-specific seven-byte forms include `6a <tail6>` for positive IEEE with leading byte `40` and implicit trailing `00`; `9e <tail6>` and `a3 <tail6>` for positive and negative forms paired with the section-local `46` cache; `b9`, `d1`, `d3`, `de`, and `df` for negative sub-unit forms with leading byte `BF`; and `41`, `4b`, `66`, `67`, `68`, `77`, and `82..8f` for positive sub-unit forms with leading byte `3F`. A paired form finds exactly one distinct `46 <byte1> <tail6>` token with the same six-byte tail and reconstructs `40 <byte1> <tail6>` for `9e` or `C0 <byte1> <tail6>` for `a3`. Duplicate copies of one token do not add a candidate; differing `<byte1>` values leave the paired scalar unresolved.
 
 In positional surface and curve row lanes, `71 <tail6>` is a seven-byte
 sub-unit form reconstructed as `3F <tail6> 00`. In named scalar lanes, `71`

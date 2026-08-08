@@ -107,7 +107,9 @@ pub fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
     entries: Vec<CacheEntry>,
-    paired_byte_1_by_tail: BTreeMap<[u8; 6], u8>,
+    /// Unique leading payload byte for each paired-form tail. `None` marks a
+    /// tail shared by distinct cache images.
+    paired_byte_1_by_tail: BTreeMap<[u8; 6], Option<u8>>,
 }
 
 #[derive(Debug, Clone)]
@@ -135,9 +137,13 @@ impl ScalarCache {
             }
             let mut ieee = raw;
             ieee[0] = 0x40;
-            paired_byte_1_by_tail
-                .entry(raw[2..].try_into().expect("six-byte cache tail"))
-                .or_insert(raw[1]);
+            let tail = raw[2..].try_into().expect("six-byte cache tail");
+            let paired_byte_1 = paired_byte_1_by_tail.entry(tail).or_insert(Some(raw[1]));
+            if let Some(existing) = *paired_byte_1 {
+                if existing != raw[1] {
+                    *paired_byte_1 = None;
+                }
+            }
             entries.push(CacheEntry {
                 value: f64::from_be_bytes(ieee),
             });
@@ -158,6 +164,7 @@ impl ScalarCache {
         self.paired_byte_1_by_tail
             .get(<&[u8; 6]>::try_from(tail).ok()?)
             .copied()
+            .flatten()
     }
 }
 
@@ -1826,15 +1833,12 @@ mod tests {
     }
 
     #[test]
-    fn paired_cache_tail_keeps_its_first_exponent() {
+    fn paired_cache_tail_collision_withholds_value() {
         let cache = ScalarCache::from_section(&[
             0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6,
         ]);
-        let expected = f64::from_be_bytes([0x40, 0x08, 1, 2, 3, 4, 5, 6]);
-        assert_eq!(
-            decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
-            Some((expected, 7))
-        );
+        assert_eq!(decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache), None);
+        assert_eq!(decode_in_lane(&[0xa3, 1, 2, 3, 4, 5, 6], 0, &cache), None);
     }
 
     #[test]
