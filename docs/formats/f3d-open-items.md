@@ -297,16 +297,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-40. Location and operand assignment of the occurrence-path records
-
-**Question.** Which stored reference locates the two occurrence-path records of an `Assemble` scope, and what assigns each path to one operand frame?
-
-**Known.** `f3d.md` §3.1 "The 705- and 772-byte forms store no occurrence paths" gives the path record indices as five and two below the construction index in a four-owner scope, and 39 and 36 below it in an eight-owner scope. The same paragraph states that "The two path records qualify the two operand transforms in order".
-
-Both rules are positional. No stored reference in the scope names either path record, and no field in either path record names the operand frame it qualifies. `exact_assembly_operand_paths` in `design/decode/scopes.rs` keys the two deltas on `scope.frame_length == 732` rather than on the owner count the specification names; `exact_assembly_alignment` accepts owner counts four, six, eight, and ten across the frame lengths 627, 633, 637, 692, and 732, so the two keys are not equal.
-
-**Need.** An eight-owner scope whose frame length is not 732 reads the deltas five and two and reaches two records that are not the path records. A joint whose paths are exchanged names the two joined occurrences in the wrong order. The stored reference and the operand assignment rule settle both.
-
 ### DR-41. Selection of one closed spatial-Sketch profile
 
 **Question.** Which field selects one of several closed spatial-Sketch profiles?

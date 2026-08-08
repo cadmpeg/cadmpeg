@@ -11,9 +11,10 @@ Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
-operation prologues and cross-document selector, the pathless axial `Assemble`
-carrier and selector prefixes, and the sheet-metal `EdgeFlange` fixed operation
-section (§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+operation prologues and cross-document selector, the axial `Assemble` carrier
+and selector prefixes, the non-axial `Assemble` operand-path locator run,
+locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
+(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 
@@ -32,6 +33,67 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `assembly_operand_path_locator_reference_run`
+
+Spec §Assembly operands · layout: byte offsets · size: 26 B
+
+Offsets are relative to the count. The run starts at scope offset 362 in the 627-, 637-, and 692-byte forms and at scope offset 358 in the 633- and 732-byte forms.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `locator_count` | `u32` | little | spec | stores a u32 count of two |
+| 4 | 11 | `first_locator_reference` | `bytes[11]` | little | spec | followed by two marked same-segment operand-path-locator references |
+| 15 | 11 | `second_locator_reference` | `bytes[11]` | little | spec | followed by two marked same-segment operand-path-locator references |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The standard assembly forms use the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The compact assembly forms use the two tabulated scope-relative locator-reference offsets.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser locates the count immediately before the first locator reference.
+
+## `assembly_operand_path_locator`
+
+Spec §Assembly operands · layout: byte offsets · size: 190 B
+
+Offsets are relative to the locator's indexed header. The variable-length occurrence-path record starts immediately after this record.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its eleven-byte header is followed by ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its eleven-byte header is followed by ten zero bytes |
+| 21 | 11 | `nonzero_record_reference` | `bytes[11]` | little | spec | a nonzero marked same-segment reference at offset 21 |
+| 32 | 1 | `zero_32` | `u8` | little | spec | one zero byte at offset 32 |
+| 33 | 128 | `transform` | `f64[16]` | little | spec | a row-major rigid 4×4 transform at offset 33 |
+| 161 | 1 | `zero_161` | `u8` | little | spec | one zero byte at offset 161 |
+| 162 | 11 | `scope_backlink` | `bytes[11]` | little | spec | a marked backlink to the `Assemble` scope at offset 162 |
+| 173 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | a marked reference to record index `N+2` at offset 173 |
+| 184 | 4 | `constant_two` | `u32` | little | spec | u32 value 2 at offset 184 |
+| 188 | 2 | `zero_tail_2` | `bytes[2]` | little | spec | two zero bytes at offset 188 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed locator length.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser starts the path at the end of the locator.
+
+## `assembly_operand_path_wrapper`
+
+Spec §Assembly operands · layout: byte offsets · size: 37 B
+
+Offsets are relative to the wrapper's indexed header. The next indexed record starts at the end of this fixed record.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its eleven-byte indexed header, ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | its eleven-byte indexed header, ten zero bytes |
+| 21 | 1 | `constant_one_byte` | `u8` | little | spec | byte value 1 at offset 21 |
+| 22 | 4 | `constant_one_word` | `u32` | little | spec | u32 value 1 at offset 22 |
+| 26 | 11 | `path_reference` | `bytes[11]` | little | spec | a marked reference to path record `N+1` at offset 26 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/assembly.rs` — The decoder and validator share the fixed wrapper length.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser requires the wrapper to end at the next indexed record.
 
 ## `assembly_axial_construction_carrier`
 

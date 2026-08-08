@@ -10,9 +10,10 @@ Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
-operation prologues and cross-document selector, the pathless axial `Assemble`
-carrier and selector prefixes, and the sheet-metal `EdgeFlange` fixed operation
-section (§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+operation prologues and cross-document selector, the axial `Assemble` carrier
+and selector prefixes, the non-axial `Assemble` operand-path locator run,
+locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
+(§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
 Container and manifest layers are text grammars and are listed under "Not
 tabulated".
 """
@@ -52,6 +53,191 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "assembly_operand_path_locator_reference_run"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Every other form stores a u32 count of two followed by two marked same-segment operand-path-locator references."
+size = 26
+note = "Offsets are relative to the count. The run starts at scope offset 362 in the 627-, 637-, and 692-byte forms and at scope offset 358 in the 633- and 732-byte forms."
+
+[[record.field]]
+name = "locator_count"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "stores a u32 count of two"
+
+[[record.field]]
+name = "first_locator_reference"
+offset = 4
+type = "bytes[11]"
+source = "spec"
+anchor = "followed by two marked same-segment operand-path-locator references"
+
+[[record.field]]
+name = "second_locator_reference"
+offset = 15
+type = "bytes[11]"
+source = "spec"
+anchor = "followed by two marked same-segment operand-path-locator references"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "627 | 637 | 692 => Some([366, 377]),"
+note = "The standard assembly forms use the two tabulated scope-relative locator-reference offsets."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "633 | 732 => Some([362, 373]),"
+note = "The compact assembly forms use the two tabulated scope-relative locator-reference offsets."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let count_at = scope_at.checked_add(locator_offsets[0].checked_sub(4)?)?;"
+note = "The parser locates the count immediately before the first locator reference."
+
+[[record]]
+name = "assembly_operand_path_locator"
+kind = "byte"
+section = "Assembly operands"
+anchor = "An operand-path locator is a fixed 190-byte indexed record with record index `N`."
+size = 190
+note = "Offsets are relative to the locator's indexed header. The variable-length occurrence-path record starts immediately after this record."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its eleven-byte header is followed by ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Its eleven-byte header is followed by ten zero bytes"
+
+[[record.field]]
+name = "nonzero_record_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a nonzero marked same-segment reference at offset 21"
+
+[[record.field]]
+name = "zero_32"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "one zero byte at offset 32"
+
+[[record.field]]
+name = "transform"
+offset = 33
+type = "f64[16]"
+source = "spec"
+anchor = "a row-major rigid 4×4 transform at offset 33"
+
+[[record.field]]
+name = "zero_161"
+offset = 161
+type = "u8"
+source = "spec"
+anchor = "one zero byte at offset 161"
+
+[[record.field]]
+name = "scope_backlink"
+offset = 162
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked backlink to the `Assemble` scope at offset 162"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 173
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record index `N+2` at offset 173"
+
+[[record.field]]
+name = "constant_two"
+offset = 184
+type = "u32"
+source = "spec"
+anchor = "u32 value 2 at offset 184"
+
+[[record.field]]
+name = "zero_tail_2"
+offset = 188
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes at offset 188"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "pub(crate) const OPERAND_PATH_LOCATOR_LENGTH: usize = 190;"
+note = "The decoder and validator share the fixed locator length."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let path_at = locator_at.checked_add(crate::design::assembly::OPERAND_PATH_LOCATOR_LENGTH)?;"
+note = "The parser starts the path at the end of the locator."
+
+[[record]]
+name = "assembly_operand_path_wrapper"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The wrapper is exactly 37 bytes"
+size = 37
+note = "Offsets are relative to the wrapper's indexed header. The next indexed record starts at the end of this fixed record."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its eleven-byte indexed header, ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "its eleven-byte indexed header, ten zero bytes"
+
+[[record.field]]
+name = "constant_one_byte"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "byte value 1 at offset 21"
+
+[[record.field]]
+name = "constant_one_word"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "u32 value 1 at offset 22"
+
+[[record.field]]
+name = "path_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to path record `N+1` at offset 26"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/assembly.rs"
+contains = "pub(crate) const OPERAND_PATH_WRAPPER_LENGTH: usize = 37;"
+note = "The decoder and validator share the fixed wrapper length."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end"
+note = "The parser requires the wrapper to end at the next indexed record."
 
 [[record]]
 name = "assembly_axial_construction_carrier"
