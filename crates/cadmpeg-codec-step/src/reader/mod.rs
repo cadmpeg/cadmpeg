@@ -151,7 +151,12 @@ fn decode_exchange_mode(
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
-    let presentation = presentation::decode(exchange, &topology, &mut ir);
+    let presentation = presentation::decode(
+        exchange,
+        &topology,
+        &mut ir,
+        &product.product_definition_ids_by_source,
+    );
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);

@@ -28,6 +28,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     topology: &TopologyResult,
     ir: &mut CadIr,
+    product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
 ) -> PresentationResult {
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
@@ -77,12 +78,7 @@ pub(super) fn decode(
             .iter()
             .map(|item| item.id.0.clone())
             .collect(),
-        products: ir
-            .model
-            .product_definitions
-            .iter()
-            .map(|item| item.id.0.clone())
-            .collect(),
+        products: product_definition_ids_by_source.clone(),
         occurrences: ir
             .model
             .occurrences
@@ -634,6 +630,13 @@ fn presentation_item(
             .map(|vertex| PresentationItem::Vertex { vertex })
             .collect();
     }
+    if let Some(products) = entity_ids.products.get(&id) {
+        return products
+            .iter()
+            .cloned()
+            .map(|product| PresentationItem::Product { product })
+            .collect();
+    }
     vec![presentation_item_one(
         id,
         exchange,
@@ -693,15 +696,7 @@ fn presentation_item_one(
         };
     };
     let has = |name: &str| has_partial(record, name);
-    if has("PRODUCT")
-        && entity_ids
-            .products
-            .contains(&format!("step:product:product#{id}"))
-    {
-        PresentationItem::Product {
-            product: ProductDefinitionId(format!("step:product:product#{id}")),
-        }
-    } else if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+    if has("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
         && entity_ids
             .occurrences
             .contains(&format!("step:product:occurrence#{id}"))
@@ -746,7 +741,7 @@ struct EntityIds {
     points: BTreeSet<String>,
     curves: BTreeSet<String>,
     surfaces: BTreeSet<String>,
-    products: BTreeSet<String>,
+    products: BTreeMap<u64, Vec<ProductDefinitionId>>,
     occurrences: BTreeSet<String>,
     pmi: BTreeSet<String>,
     tessellations: BTreeSet<String>,

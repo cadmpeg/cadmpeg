@@ -31,6 +31,7 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
 ];
 
 pub(super) struct ProductResult {
+    pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
@@ -96,6 +97,7 @@ pub(super) fn decode(
                 counts
             });
     let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
+    let mut product_definition_ids_by_source = BTreeMap::<u64, Vec<ProductDefinitionId>>::new();
 
     for (step_id, record) in exchange.entities("PRODUCT") {
         let Some(parameters) = record
@@ -208,7 +210,7 @@ pub(super) fn decode(
                 ));
             }
             ir.model.product_definitions.push(ProductDefinition {
-                id: product_definition_id,
+                id: product_definition_id.clone(),
                 kind: ProductDefinitionKind::Part,
                 source_name: name.clone(),
                 label: name.clone(),
@@ -220,6 +222,10 @@ pub(super) fn decode(
                     definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
                 ),
             });
+            product_definition_ids_by_source
+                .entry(step_id)
+                .or_default()
+                .push(product_definition_id);
         }
         typed.insert(step_id);
     }
@@ -445,6 +451,7 @@ pub(super) fn decode(
         }
     }
     ProductResult {
+        product_definition_ids_by_source,
         typed_records: typed,
         warnings,
         losses,

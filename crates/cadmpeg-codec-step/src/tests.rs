@@ -5474,6 +5474,40 @@ fn product_definition_views_keep_distinct_prototypes_and_metadata() {
 }
 
 #[test]
+fn presentation_layer_expands_all_product_definition_views() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('design view','',#4,#5);
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+#8=PRODUCT_DEFINITION('manufacturing view','',#7,#5);
+#9=PRESENTATION_LAYER_ASSIGNMENT('definition views','',(#3));",
+    );
+
+    let layer = result
+        .ir
+        .model
+        .presentation_layers
+        .first()
+        .expect("product presentation layer");
+    assert!(matches!(
+        layer.items.as_slice(),
+        [
+            PresentationItem::Product { product: first },
+            PresentationItem::Product { product: second },
+        ] if first.as_str() == "step:product:product#3-definition-6"
+            && second.as_str() == "step:product:product#3-definition-8"
+    ));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     let mut ir = unit_cube();
     ir.model.assets.push(cadmpeg_ir::assets::Asset {

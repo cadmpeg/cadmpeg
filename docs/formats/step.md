@@ -532,7 +532,9 @@ Product definitions and product-definition formations use the inherited base
 attribute prefix. A direct subtype carries that prefix in its own parameter
 list. A multiple-inheritance complex instance uses the parameters of its
 `PRODUCT_DEFINITION` or `PRODUCT_DEFINITION_FORMATION` partial. Product
-records use the parameters of their `PRODUCT` partial.
+records use the parameters of their `PRODUCT` partial. A presentation layer
+item that references a `PRODUCT` expands to every CADIR product-definition
+view derived from that product, in source-definition order.
 
 A shape representation contains at least one representation item. The two
 items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations
