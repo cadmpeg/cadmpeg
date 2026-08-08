@@ -40,6 +40,57 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the superseded face to prevent duplicate faces in the final body.
 
+### BC-04. Unclaimed face disposition
+
+**Question.** Which body owns a canonical face when the site has body records and no body record claims that face?
+
+**Known.** `sldprt.md` §6 "The disc04-root layout uses" defines interval ownership. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:901` deletes each face that no body record claims:
+
+```rust
+if !body_records.is_empty() {
+    faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
+}
+```
+
+The decoder records no loss for a deleted face. A site with no body records keeps all faces and reports `TopologyBodyHierarchyDerived`. One recognized body record changes the disposition from a reported loss to a silent deletion.
+
+**Need.** We must know the owner to construct the final body membership. Until we know it, the decoder must report the unclaimed faces as a loss.
+
+### BC-05. Head-to-component assignment order
+
+**Question.** Which component does a schema-33103 head select when two unassigned components have equal face overlap in its section interval?
+
+**Known.** `sldprt.md` §6 defines the maximum-overlap rule and the one-to-one assignment. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:2684` selects the component with `max_by_key` and refuses a zero overlap. It has no rule for equal overlap. `Vec::max_by_key` selects the last of the equal elements. The component order comes from `HashSet` iteration at `entity.rs:2640`, so two runs of the same binary can give different assignments.
+
+**Need.** We must know the tie rule to bind each head to one component. The assignment must also be stable between runs.
+
+### BC-06. Multi-region disc14 sites
+
+**Question.** How many bodies does a disc14 partition with more than one `0x1a` region contain, and which region gives each body its identity?
+
+**Known.** `sldprt.md` §6 defines the disc14 layout for one `0x1a` region and one reachable `0x16` shell. `sldprt.md` §6 states that multiple disc17 records represent distinct stored bodies. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:2548` collects all regions into one body and takes the body attribute and offset from `region_records[0]`. The region order comes from `HashMap` iteration, so the body identity can change between runs.
+
+**Need.** We must know the body count to construct the stored bodies. We must know the identity rule to give each body a stable neutral identifier.
+
+### BC-07. Two bridges with one owner
+
+**Question.** What do two face-use bridges denote when both name the same owner entity?
+
+**Known.** `sldprt.md` §4 defines `00 0e.ref0` as the owner/use discriminator. `sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." states that a full deltas bridge denotes a face of the final state. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:557` sorts the faces by bridge attribute and keeps the first face for each owner:
+
+```rust
+faces.sort_by_key(|f| f.bridge_attr);
+let mut face_owners = HashSet::new();
+faces.retain(|face| {
+    t.bridges.get(&face.bridge_attr).and_then(|bridge| bridge.owner)
+        .is_none_or(|owner| face_owners.insert(owner))
+});
+```
+
+The discarded face keeps no loss record. Its loops, coedges, and edges do not enter the graph.
+
+**Need.** We must know what the second bridge denotes to keep or to discard it correctly. The lower bridge attribute is not a defined selector.
+
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
@@ -98,6 +149,84 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier and relation to construct the exact surface geometry.
 
+### GC-08. Stored edge direction anchor
+
+**Question.** Which coedge anchors the stored edge direction in a prefixed deltas edge-use record?
+
+**Known.** `sldprt.md` §4.1 "canonical coedge = same-site coedge with attr == 00 10.refs[0]" defines the anchor. `sldprt.md` §4.1 "The `00 10.refs[0]` coedge anchors the stored edge direction." states the rule. `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:156` fills all six references for the bare form. The prefixed deltas form at `topology.rs:185` fills `refs[3]` only, so `refs[0]` is not available for that form.
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:571` does not use `refs[0]` for the bare form either. It sorts the faces by bridge attribute and takes the direction from the coedge that the walk reaches first:
+
+```rust
+edge_ends.entry(edge_attr).or_insert((start_vuse, end_vuse, curve_attr));
+```
+
+The same statement reads `refs[3]` from the edge-use record for the curve carrier, so the anchor is available and unused. `crates/cadmpeg-ir/src/validate/topology.rs` has no vertex-continuity check for a loop, so a reversed edge passes validation.
+
+**Need.** We must use the anchor for the bare form. We must know the anchor for the prefixed deltas form.
+
+### GC-09. Sphere seam pole selection
+
+**Question.** Which pole does a spherical face's degenerate seam use, and what identifies it?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:3086` selects the nearer of the two poles for an edge with a resolved endpoint. It selects `+axis` when the edge has no resolved endpoint:
+
+```rust
+.map_or(north, |endpoint| {
+    if squared_distance(*endpoint, north) <= squared_distance(*endpoint, south) { north } else { south }
+})
+```
+
+`graph.rs:3159` uses `+axis` with no test. When no loop vertex is within the distance limit of that pole, `graph.rs:3203` creates a new point and vertex there. `graph.rs:3246` gives the paired pcurve the fixed origin `Point2::new(0.0, FRAC_PI_2)`. The entry gate counts loops, coedges, and circular edges. It does not test which pole the face reaches.
+
+**Need.** We must know the pole to construct the seam. A face that reaches the `-axis` pole must not receive a vertex at `+axis`.
+
+### GC-10. Isoparametric trim line parameter
+
+**Question.** Which field fixes the `v` parameter of an isoparametric trim line on a ruled B-spline surface?
+
+**Known.** `sldprt.md` §7.1 defines the ruled-surface carrier. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:2681` searches each knot span with a golden-section minimization and accepts the parameter with the smallest residual:
+
+```rust
+let (v, error) = best?;
+if error.sqrt() > 0.01 { return None; }
+```
+
+The limit `0.01` millimetres is not a stated bound. The decoder does not compare the best parameter with the second-best parameter. The two boundary cases above it use the stored boundary control rows and are exact.
+
+**Need.** We must know the field to construct the trim without a search. Two rulings inside the limit must not select by residual order.
+
+### GC-11. Cylindrical pcurve parameter range
+
+**Question.** Which field fixes the start and end parameters of a NURBS edge on a cylindrical face?
+
+**Known.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1949` searches the knot spans for the parameter nearest each vertex point and accepts it below `0.01`:
+
+```rust
+let (parameter, squared_distance) = best?;
+(squared_distance.sqrt() <= 0.01).then_some(parameter)
+```
+
+The decoder does not test that one parameter only is inside the limit. `derive_cylindrical_pcurves` uses the two results as the pcurve `parameter_range`.
+
+**Need.** We must know the field to bound the trim. A curve that approaches its own start must not collapse to a sliver.
+
+### GC-12. Compact carrier marker position
+
+**Question.** What fixes the position of the `0x2b` or `0x2d` marker in a tripled deltas analytic carrier?
+
+**Known.** `sldprt.md` §7.1 defines the compact analytic carriers. `crates/cadmpeg-codec-sldprt/src/brep.rs:251` uses a fixed position when the form gives one. For the deltas form it accepts the first position in a 56-byte window:
+
+```rust
+(hdr + 8..(hdr + 64).min(body.len())).find(|at| {
+    matches!(body.get(*at), Some(0x2b | 0x2d)) && body.get(at.saturating_sub(1)) == Some(&1)
+})?
+```
+
+`brep.rs:263` then refuses the record when a value is not finite or its magnitude is more than `1e6`. `sldprt.md` states no coordinate magnitude limit. The frame invariants at `brep.rs:102` are exact and come from `sldprt.md` §7.1.
+
+**Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
@@ -140,6 +269,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know each slot count to find record boundaries without treating payload bytes as delimiters.
 
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:70` gives three families an explicit slot count and gives every other family the count `6`:
+
+```rust
+_ => 6,
+```
+
+The table has no schema dimension. The count is load-bearing: `refs()` uses it to select between the prefixed-triple form and the bare u16 form, and to bound the read. A wrong count changes every reference the layout recognizers chain through. The decoder has no branch that refuses an unlisted family.
+
+`crates/cadmpeg-codec-sldprt/src/brep/attrib.rs:78` and `attrib.rs:126` accept a `00 4f` name length and a `00 52` list count in the range `1..64`. `sldprt.md` states no bound for either. Both modules scan every byte offset for the tags, which is the practice this item names.
+
 ### CM-06. Partition and deltas precedence
 
 **Question.** Which record takes precedence when partition and deltas streams contain records with the same site, attribute, and sequence?
@@ -147,6 +286,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §3.2 "An attribute id is **not** globally unique." defines the shared site namespace. `sldprt.md` §4.2 "A deltas stream groups its records into change sets." through `sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." define deltas change sets and final-state faces, but do not define equal-key precedence.
 
 **Need.** We must know the precedence to select one final record.
+
+**Note.** The decoder answers this question. `crates/cadmpeg-codec-sldprt/src/decode.rs:1869` sorts the partition stream before the deltas stream. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:494` then keeps the first non-empty body set, and `brep.rs:206` merges only the carriers that the partition index does not have. The partition record wins.
+
+`crates/cadmpeg-codec-sldprt/src/brep.rs:377` states a source for that choice:
+
+> the first (partition-order) wins, matching the "weak deltas must not overwrite a stronger partition record" rule ([spec §4.2](...))
+
+`sldprt.md` §4.2 does not contain that rule. The quoted sentence is not in the specification. Remove the citation or replace it with the decided rule.
+
+The same comment is also wrong about the code below it. `CarrierIndex::insert` at `brep.rs:166` uses `HashMap::insert`, so inside one stream body the carrier at the higher offset wins, not the first.
+
+`sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." states the opposite direction for bridges: a full deltas bridge denotes a face of the final state, and the partition faces it supersedes do not persist.
 
 ### CM-07. `moTransRefPlaneData_c` gap
 
@@ -162,6 +313,137 @@ Observed gap:
 
 **Need.** We must know the gap to write the record back. A writer that omits it moves every later record in the SW Objects payload, which moves the byte offset each `sldprt:metadata:` identifier carries, so a rewrite that changes nothing still renames those attributes.
 
+**Note.** The Known statement "Every other record in that table starts its fields at token end +0" is not correct for the decoder. See CM-11: the decoder reads `moLengthUserUnits_c` with a 200-byte forward search, not at token end +0. Either that record also starts after a gap, and this statement is wrong, or the search is unnecessary latitude. Settle CM-11 and this statement together.
+
+### CM-08. Active configuration partition binding
+
+**Question.** Which field binds a Keywords configuration to its `Config-N-Partition` section?
+
+**Known.** `sldprt.md` §2 "A Keywords configuration's decimal `id` attribute is the slot identity for" states that the configuration `id` is the slot identity for `Config-N-ResolvedFeatures` and that it is independent of `Config-N-Partition`.
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/container.rs:767` binds them by list position. It takes the position of the active `Configuration` element among its siblings and uses that position to index the sorted, deduplicated partition slot numbers:
+
+```rust
+if partitions.len() == configuration_count {
+    return partitions.get(position).copied();
+}
+partitions.contains(&position).then_some(position)
+```
+
+The `SourceIndex` attribute at `container.rs:790` is the only other path. `SourceIndex` occurs one time in the repository, at that read. No writer sets it and `sldprt.md` does not name it, so the position rule is the only live path.
+
+The result adds `1_000_000` to the score in `select_active_parasolid`, so it selects the active block. That block gives the active body set at `decode.rs:3518` and is the block the writer patches at `writer.rs:397` and `writer_patch.rs:46`.
+
+**Need.** We must know the field to select the active configuration's geometry. Element order is not a defined selector, and the specification states that the two identities are independent.
+
+### CM-09. Active body stream selection
+
+**Question.** Which field identifies the active B-rep stream when no configuration record selects one?
+
+**Known.** `sldprt.md` §1.2 names the `Config-N-Partition`, `Config-N-Deltas`, and `Config-N-GhostPartition` families. It gives no rank between them and no rule that selects one as the active B-rep.
+
+`crates/cadmpeg-codec-sldprt/src/container.rs:716` selects with a weighted score:
+
+```rust
+let mut score = (ps.len() / 64) as i64;
+... score -= 1_000_000;   // ghost
+... score -= 1_000_000;   // resolvedfeatures
+... score += 100_000;     // partition
+... score += 1_000_000;   // matches the active configuration
+... score += 50_000;      // deltas
+```
+
+The values `64`, `50_000`, `100_000`, and `1_000_000` are not in `sldprt.md` or in `docs/layouts/sldprt.toml`. The comparison uses `>`, so the earlier block wins an equal score. The function has no branch that withholds.
+
+`crates/cadmpeg-codec-sldprt/src/container.rs:691` uses a second rule for the compound envelope. It takes the largest body stream with `max_by_key` and gives partition and deltas equal rank.
+
+**Need.** We must know the field to select the active stream. Stream size is not a defined selector.
+
+**Note.** The test for `partition` uses the section name only. The test for `deltas` uses the section name or the stream description. `crates/cadmpeg-codec-sldprt/src/parasolid.rs:188` shows that the description carries both words. A block with an empty or unprintable preamble therefore gets no partition score while a sibling deltas block still gets `50_000` from its description. The writer then patches the deltas lane. Correct this asymmetry with the selection rule.
+
+### CM-10. Parasolid stream boundary
+
+**Question.** What fixes the end of a Parasolid stream inside one block payload?
+
+**Known.** `sldprt.md` §3.1 gives the stream header: the `PS 00 00` signature, `desc_len u16 BE`, the description, the padding, `schema_len u8`, and the schema. The header has no total-length field. `sldprt.md` §3.2 states that a block can hold a partition stream and a deltas stream, and gives no delimiter between them.
+
+`crates/cadmpeg-codec-sldprt/src/parasolid.rs:32` ends each stream at the next `PS\0\0` signature in the payload. `parasolid.rs:95` repeats the rule. `stream_header` reads the front of each candidate only, so a stream that a signature inside its own payload cuts short keeps a valid header and is accepted. The decoder records no loss.
+
+**Need.** We must know the boundary to read a complete stream. A `PS\0\0` byte sequence in coordinate or string data must not end a stream.
+
+### CM-11. `moLengthUserUnits_c` name position
+
+**Question.** What fixes the position of the unit-name string in a `moLengthUserUnits_c` record?
+
+**Known.** `sldprt.md` §8 "**Materials / metadata**" gives the record fields at token end +0: `bytes[3]` = `ff fe ff`, then a `u8` code-unit count, then the UTF-16LE name.
+
+`crates/cadmpeg-codec-sldprt/src/metadata.rs:99` does not use that position. It accepts the first `ff fe ff` in the next 200 bytes:
+
+```rust
+let limit = search.saturating_add(200).min(payload.len());
+let Some(relative) = payload[search..limit]
+    .windows(STRING_MARKER.len())
+    .position(|bytes| bytes == STRING_MARKER)
+```
+
+The tests that follow are non-empty, an even byte count, and non-blank text. No test holds the marker at +0 and no test rejects a marker at another offset. The SW Objects payload holds many other `ff fe ff` strings, so a record with an absent or empty name can take a neighbouring string.
+
+**Need.** We must know the position to read the correct string. See the Note on CM-07: this record and `moTransRefPlaneData_c` are the two records that the decoder does not read at token end +0.
+
+### CM-12. Site identity
+
+**Question.** What identifies a site?
+
+**Known.** `sldprt.md` §3.2 "An attribute id is **not** globally unique." states that a site is one validated outer block, identified by its marker offset, and that streams in different outer blocks are distinct sites.
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/decode.rs:2008` identifies a site by the section name with the `partition` or `deltas` suffix removed:
+
+```rust
+for suffix in ["partition", "deltas"] {
+    if let Some(at) = key.rfind(suffix) { key.truncate(at); break; }
+}
+```
+
+The block offset is available on `BodyStream` through `BodyOrigin::Block` and is not used. A `Config-0-Partition` stream in one block and a `Config-0-Deltas` stream in another block become one site, so the decoder binds attribute `7` of the first to attribute `7` of the second.
+
+**Need.** We must know which identity is correct. The existence of this function is evidence that a configuration's streams occur in separate blocks; the specification states that such streams are distinct sites.
+
+### CM-13. Primary site selection
+
+**Question.** Which field identifies the primary B-rep site when a file has more than one decodable site?
+
+**Known.** `sldprt.md` §3.2 defines a site. It gives no rule that ranks sites.
+
+`crates/cadmpeg-codec-sldprt/src/decode.rs:1910` selects the site with the most faces, then the most bodies, then the most points:
+
+```rust
+let score = (decoded.faces.len(), decoded.bodies.len(), decoded.points.len());
+```
+
+The other sites are merged in and are not refused. `crates/cadmpeg-codec-sldprt/src/decode.rs:2561` then writes the selected site's block identifier onto every untyped surface and curve in the merged model, including the untyped records of the other sites. That identifier is the only route back to the defining bytes.
+
+The decoder has a second and different idea of the active stream, `container::select_active_parasolid`, which uses `swConfigurationName`. `decode.rs:2637` uses that one for the `active_parasolid_block` attribute. The two are not reconciled.
+
+**Need.** We must know the field to select the primary site. An untyped carrier must point at the block that holds its bytes.
+
+### CM-14. Configuration body membership
+
+**Question.** Which field binds a configuration without a stored source index to its bodies?
+
+**Known.** `sldprt.md` §2 "A Keywords configuration's decimal `id` attribute is the slot identity for" states that the configuration `id` is independent of `Config-N-Partition`. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for a configuration whose body membership is not established.
+
+`crates/cadmpeg-codec-sldprt/src/decode.rs:3550` uses the configuration ordinal as the partition index. `crates/cadmpeg-codec-sldprt/src/decode.rs:3586` then replaces every remaining `Unresolved` value with an empty resolved list:
+
+```rust
+if configuration.bodies.is_unresolved() {
+    configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new());
+}
+```
+
+An empty resolved list states that the configuration holds no bodies. It is not distinct from a configuration that holds none. The `unresolved_configuration_bodies` counter at `decode.rs:427` therefore cannot be nonzero for a file with geometry, so `ConfigIncoherentBodyRefs` cannot report this state.
+
+**Need.** We must know the field to bind the bodies. Until we know it, the decoder must keep `Unresolved` and report the loss.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
@@ -171,6 +453,43 @@ Observed gap:
 **Known.** `sldprt.md` §7.3 "**`00 28` chart**" defines the DisplayLists descriptor table, strip lengths, and triangle-count relations. `sldprt.md` §5 "Face records use these families:" defines B-rep face identities.
 
 **Need.** We must know the mapping to attach each tessellated triangle to its face.
+
+### AL-02. DisplayLists descriptor table position
+
+**Question.** What fixes the position of the descriptor table after a `uoTempFaceTessData_c` class token?
+
+**Known.** `sldprt.md` §7.3 "**`00 28` chart**" gives the descriptor relations `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`. It gives no offset for the table. `docs/layouts/sldprt.toml` records the offset as `not_applicable` and states that the parser asserts fixed offsets that the specification does not give.
+
+`crates/cadmpeg-codec-sldprt/src/tessellation.rs:257` tries two offsets in order and takes the first that frames:
+
+```rust
+for relative in [8usize, 40] {
+    if let Some((mesh, mut at)) = parse_table(payload, end + relative) {
+```
+
+`parse_table` does check the strip totals against the vertex count, so a distant offset is refused. The decoder does not test that the `+8` reading is invalid before it accepts it, and it does not withhold when both offsets frame.
+
+**Need.** We must know the offset to find the table. Two offsets that both frame must not select by order.
+
+### AL-03. Color record framing
+
+**Question.** What frames a `00 53` color record, and what does a second record for one attribute denote?
+
+**Known.** `sldprt.md` §5 names `00 53` as a color, property, or helper record. It gives no field grammar. `sldprt.md` §5 states that top-level tag bytes inside slots are data and not record delimiters.
+
+`crates/cadmpeg-codec-sldprt/src/brep/entity.rs:141` accepts a record at any byte offset when the tag is `00 53`, the low byte of the flags is `3`, the attribute is more than `1`, and three big-endian f64 values are finite and inside `0.0..=1.0`:
+
+```rust
+if attr <= 1 || ![r, g, b].iter().all(|value| value.is_finite() && (0.0..=1.0).contains(value)) {
+    return None;
+}
+```
+
+The range test is the acceptance rule, not a decoded invariant. `entity.rs:182` inserts each hit into a map keyed by attribute, so a second hit for one attribute replaces the first. The decoder records no loss.
+
+The disc-`0x0014` path reads its color at a computed offset and does not use this scan.
+
+**Need.** We must know the framing to find the records without a scan of every offset. A normalized knot vector or a unit direction after the same two tag bytes must not become a color.
 
 ## 5. Design intent
 
@@ -429,6 +748,111 @@ Observed gap:
 **Known.** Both forms contain scalar triples that can satisfy the unit-vector invariant.
 
 **Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.
+
+### DI-33. Bounded arc sweep direction
+
+**Question.** Which field gives the sweep direction of a bounded arc?
+
+**Known.** A centre and two distinct endpoints define two arcs. Their sweeps add to 2π.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:4418` selects the arc with the sweep that is not more than π. It exchanges the two endpoints when the stored order gives the other arc:
+
+```rust
+let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+let (start_angle, end_angle) = if sweep <= std::f64::consts::PI + tolerance {
+    (start_angle, end_angle)
+} else {
+    (end_angle, start_angle)
+};
+```
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/curves.rs:352` repeats the same selection in `tangent_bounded_curve`.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs:249` repeats it a third time in `transformed_dimensioned_arc`. That site also exchanges the two entries of `endpoint_refs`, so the entity's endpoint identities change with the geometry. The test at `dimensions.rs:263` then asserts `sweep <= PI + quantum`, which the exchange above it has already made true. That test cannot fail.
+
+Every sldprt sketch-arc constructor uses one of those two functions, except `curves.rs:203`. The codec therefore does not emit a sketch arc with a sweep of more than π. `cadmpeg-ir` sets no such limit: `crates/cadmpeg-ir/src/validate/sketches.rs` tests only that the angles are finite and different, and `crates/cadmpeg-codec-freecad/src/design.rs:1797` passes stored start and end angles through with no change.
+
+**Conflict.** `sldprt.md` §2 "A detailed curve record is immediately followed by a curve-detail marker of the same generation:" gives the detail record a unit 2D start tangent at detail +64 and +72, states that the tangent and the endpoints determine one circle, and then states: "The bounded arc is the minor sweep between those endpoints."
+
+A start point and a start tangent give the direction of travel, so they give the sweep. `tangent_bounded_curve` uses the tangent to place the centre at `start + normal * scale` and then discards it for the ≤π test. The specification and the decoder both read the witness and then do not use it.
+
+`sldprt.md` §2 states the same limit in three more places: "The angle order represents the minor arc between the endpoints.", "distinct endpoint indices define the minor arc.", and "every ordered endpoint pair has a positive counterclockwise sweep no greater than π".
+
+**Need.** We must know the field to construct an arc with a sweep of more than π. A 270° arc must not become its 90° complement.
+
+**Note.** `curves.rs:203` `set_arc` is the one constructor that does not apply the limit. It serves the slot end cap, which sweeps π exactly. It orders its endpoints by the sign of their projection on the perpendicular of the centre-to-centre axis, which is a second geometric rule and not a stored witness. That special case exists because the general rule does not hold.
+
+The comparison `sweep <= PI + tolerance` tests an angle in radians against the length tolerance that the sketch resolvers thread through. Give the angular test its own limit.
+
+### DI-34. Endpoint index base and roster
+
+**Question.** Which field selects the index base and the roster for the endpoint fields of a compact indexed curve record?
+
+**Known.** `sldprt.md` §2 "The current, compact legacy, and extended marker prefixes have a solved curve or arc with role u16 `1` at marker +27 that uses a compact indexed record." gives the endpoint fields at marker +56 and +58 for several record widths. The same paragraph gives an ordered rule for the extended-prefix widths:
+
+> An extended-prefix 84-byte, 104-byte, or terminal 102-byte profile-locus record first adds one to each endpoint index and resolves the resulting point object indices. If that pair does not resolve, each raw field is a direct point object identifier ... If that pair also does not resolve, both fields are direct ordinals in the complete feature-local sketch-marker roster in marker order.
+
+`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:1196` implements that shape. It reads the same two u16 fields under a second roster and a second index base and takes whichever resolves:
+
+```rust
+resolve(complete_entity_roster, one_based)
+    .or_else(|| { ... .then(|| resolve(false, false)).flatten() })
+    .unwrap_or_default()
+```
+
+A stored field has one interpretation. `sldprt.md` §2 contains nine sentences of the form "if that pair does not resolve", each of which gives an order of attempts and not a discriminator.
+
+**Need.** We must know the field that selects the base and the roster. A first interpretation that resolves two markers that are not the endpoints gives a line between two unrelated points, and the later tiers never run.
+
+### DI-35. PMI and Keywords dimension precedence
+
+**Question.** Which value holds when a `PMISemanticDataDB` record and a Keywords dimension give different values for one parameter?
+
+**Known.** `sldprt.md` §8 states the rule: PMI values "supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence."
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/pmi.rs:473` overwrites the parameter with the PMI value and has no test for an existing value:
+
+```rust
+if let Some(parameter) = existing_parameter.map(|index| &mut parameters[index]) {
+    parameter.expression = expression;
+    parameter.display = display;
+    parameter.value = value;
+```
+
+`decode.rs:2074` and `decode.rs:2910` call it after `project_design_history` has set the Keywords value, so the PMI value wins. The sibling function `enrich_history_parameters_with_features` at `pmi.rs:242` honours the rule with `.entry(name).or_insert_with(...)`.
+
+A `PmiDimensionSubtype::Native` record formats its value as a bare decimal in metres at `pmi.rs:462`, where the typed arms format millimetres with a unit suffix. Such a record replaces a Keywords `12mm` with `0.012`.
+
+**Need.** We must apply the stated precedence. The decoder must not replace an explicit Keywords dimension.
+
+### DI-36. Repeated PMI dimension records
+
+**Question.** Which record holds when two `PMISemanticDataDB` records give the same owner and dimension name but different values?
+
+**Known.** `sldprt.md` §8 states the binding is valid "when the feature name is unique and all records for the same owner and dimension name encode the same value."
+
+`crates/cadmpeg-codec-sldprt/src/pmi.rs:411` implements the owner-uniqueness half. The value-agreement half is not implemented. `pmi.rs:607` sorts the records by GUID and `pmi.rs:473` overwrites, so the last GUID in lexicographic order wins. `pmi.rs:236` shows the correct shape in the same file: sort, dedup, and withhold when more than one value remains.
+
+The parameter keeps the identifier of the first record and the `native_ref` of the last, so `patch_payload` at `pmi.rs:272` can no longer match the first record and leaves its bytes stale.
+
+**Need.** We must apply the stated agreement test. Records that disagree must leave the parameter unbound.
+
+### DI-37. Multi-item `dimItems` arrays
+
+**Question.** What does each element after the first denote in a `PMISemanticDataDB` `dimItems` array?
+
+**Known.** `sldprt.md` §8 describes `PMISemanticDataDB` through `cadText`. It gives no cardinality for `dimItems`.
+
+`crates/cadmpeg-codec-sldprt/src/pmi.rs:535` takes the first element and refuses the record when its class is not `DimSemData`:
+
+```rust
+let Some(Value::Map(item)) = items.first() else { continue; };
+if string_field(item, "class") != Some("DimSemData") { continue; }
+```
+
+There is no test of the element count. `field_marker` at `pmi.rs:611` takes the first occurrence of each MessagePack key in the record window, so the write-path offsets also address the first element.
+
+**Need.** We must know what the other elements denote. A dual-unit annotation must not lose its second value while the record reports as fully bound.
 
 ## 6. Write-path evidence
 
