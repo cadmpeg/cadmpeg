@@ -294,7 +294,7 @@ fn parser_validates_header_string_bounds_timestamps_and_schema_identifiers() {
 
     let signed_schema_oid = source(
         "'name','2026-02-28T23:59:59',('author'),('organization'),'preprocessor','',''",
-        "'AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'",
+        "' AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 } '",
         "",
     );
     crate::parse::parse(signed_schema_oid.as_bytes())

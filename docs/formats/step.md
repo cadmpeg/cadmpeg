@@ -198,7 +198,8 @@ effective length of at most 1024 characters. Its schema name is a non-empty
 ASCII identifier containing uppercase letters, digits, and underscores after
 case normalization. Its optional object identifier is a non-empty sequence of
 signed decimal components enclosed in braces. A component may have an optional
-leading sign and contains at least one decimal digit.
+leading sign and contains at least one decimal digit. Leading and trailing
+whitespace around the identifier is ignored.
 Each parameterized DATA section names one schema from this list. The schema
 name compares with the identifier's schema-name portion when the identifier
 has an object identifier.

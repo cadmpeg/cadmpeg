@@ -607,7 +607,8 @@ whose components are space-separated signed decimal integers. The decoder select
 AP242 edition 1, 2, or 3 only for the exact long-form name and exact object
 identifiers `1 0 10303 442 1 1 4`, `1 0 10303 442 3 1 4`, and
 `1 0 10303 442 4 1 4`. Other AP242 object identifiers report an unspecified
-edition. Later identifiers remain metadata and do not change the selection.
+edition. Leading and trailing whitespace around an identifier is ignored.
+Later identifiers remain metadata and do not change the selection.
 
 ### EL-06. Omitted entity name repair and anchor order
 

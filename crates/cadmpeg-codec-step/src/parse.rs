@@ -1589,7 +1589,7 @@ fn valid_base64_text(bytes: &[u8]) -> bool {
 }
 
 fn valid_schema_identifier(identifier: &str) -> bool {
-    let identifier = identifier.to_ascii_uppercase();
+    let identifier = identifier.trim().to_ascii_uppercase();
     if identifier.is_empty() || identifier.chars().count() > 1024 {
         return false;
     }
@@ -1636,9 +1636,10 @@ fn decoded_bytes(bytes: &[u8], implementation_level: ImplementationLevel) -> Opt
 }
 
 fn schema_identifier_matches(schema_identifiers: &[String], schema_name: &str) -> bool {
-    let schema_name = schema_name.to_ascii_uppercase();
+    let schema_name = schema_name.trim().to_ascii_uppercase();
     schema_identifiers.iter().any(|identifier| {
-        identifier == &schema_name || schema_name_without_oid(identifier) == schema_name.trim()
+        let identifier = identifier.trim();
+        identifier == schema_name || schema_name_without_oid(identifier) == schema_name
     })
 }
 
@@ -1733,8 +1734,9 @@ fn valid_data_parameters(
 
 fn schema_name_without_oid(identifier: &str) -> &str {
     identifier
+        .trim()
         .split_once('{')
-        .map_or(identifier, |(name, _)| name.trim_end())
+        .map_or_else(|| identifier.trim(), |(name, _)| name.trim())
 }
 
 fn schema_identifiers(
