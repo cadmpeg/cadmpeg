@@ -460,11 +460,15 @@ in the component frame?
 
 **Resolved.** `transform_item_1` belongs to `rep_1` and `transform_item_2`
 belongs to `rep_2`. For an occurrence, the reader identifies the child and
-parent representation sets from the usage definitions. It maps item 1 to item
-2 when `rep_1` is the child and `rep_2` is the parent; it maps item 2 to item 1
-when the relationship endpoints are reversed. An endpoint pair that matches
-neither order leaves the occurrence placement unresolved and reports
-`AssemblyPlacementsNotTransferred`.
+parent representation sets from the usage definitions. An endpoint belongs to
+a set when it is a member of that set or is connected to a member by one or
+more parameterized `SHAPE_REPRESENTATION_RELATIONSHIP` edges. Those edges are
+undirected for representation identity matching. An empty inherited subtype
+partial contributes no edge. The reader maps item 1 to item 2 when `rep_1` is
+the child and `rep_2` is the parent; it maps item 2 to item 1 when the
+relationship endpoints are reversed. An endpoint pair that matches neither
+order, or matches both orders, leaves the occurrence placement unresolved and
+reports `AssemblyPlacementsNotTransferred`.
 
 ### PS-03. Repeated mapped placements of one representation
 

@@ -630,6 +630,7 @@ fn occurrence_placements(
         })
         .collect::<BTreeMap<_, _>>();
     let definition_representations = definition_representations(exchange, &pds);
+    let representation_links = representation_links(exchange);
     let mut result = BTreeMap::new();
     for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
         if let Some((usage, transform)) = occurrence_placement(
@@ -639,6 +640,7 @@ fn occurrence_placements(
             &pds,
             usages,
             &definition_representations,
+            &representation_links,
         ) {
             if usages.contains_key(&usage) {
                 result.insert(usage, transform);
@@ -941,6 +943,7 @@ fn occurrence_placement(
     pds: &BTreeMap<u64, u64>,
     usages: &BTreeMap<u64, Usage>,
     definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
+    representation_links: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, Transform)> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
@@ -964,24 +967,79 @@ fn occurrence_placement(
         .and_then(ValueExt::reference)?;
     let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
         .and_then(ValueExt::reference)?;
-    let (from_id, to_id) = if child_representations.contains(&relation_representations.0)
-        && parent_representations.contains(&relation_representations.1)
-    {
-        (item_one, item_two)
-    } else if parent_representations.contains(&relation_representations.0)
-        && child_representations.contains(&relation_representations.1)
-    {
-        (item_two, item_one)
-    } else {
-        return None;
+    let child_to_parent = representation_matches(
+        relation_representations.0,
+        child_representations,
+        representation_links,
+    ) && representation_matches(
+        relation_representations.1,
+        parent_representations,
+        representation_links,
+    );
+    let parent_to_child = representation_matches(
+        relation_representations.0,
+        parent_representations,
+        representation_links,
+    ) && representation_matches(
+        relation_representations.1,
+        child_representations,
+        representation_links,
+    );
+    let (from_id, to_id) = match (child_to_parent, parent_to_child) {
+        (true, false) => (item_one, item_two),
+        (false, true) => (item_two, item_one),
+        _ => return None,
     };
     let from = geometry.placements.get(&from_id)?;
     let to = geometry.placements.get(&to_id)?;
     Some((usage, between(*from, *to)))
 }
 
+fn representation_links(exchange: &Exchange) -> BTreeMap<u64, BTreeSet<u64>> {
+    let mut links = BTreeMap::<u64, BTreeSet<u64>>::new();
+    for record in exchange.records.values() {
+        let Some(relationship) = record.partial("SHAPE_REPRESENTATION_RELATIONSHIP") else {
+            continue;
+        };
+        if relationship.parameters.is_empty() {
+            continue;
+        }
+        let Some((left, right)) = representation_relationship_endpoints(record) else {
+            continue;
+        };
+        links.entry(left).or_default().insert(right);
+        links.entry(right).or_default().insert(left);
+    }
+    links
+}
+
+fn representation_matches(
+    candidate: u64,
+    definitions: &BTreeSet<u64>,
+    links: &BTreeMap<u64, BTreeSet<u64>>,
+) -> bool {
+    if definitions.contains(&candidate) {
+        return true;
+    }
+    let mut pending = VecDeque::from([candidate]);
+    let mut visited = BTreeSet::from([candidate]);
+    while let Some(current) = pending.pop_front() {
+        for &linked in links.get(&current).into_iter().flatten() {
+            if definitions.contains(&linked) {
+                return true;
+            }
+            if visited.insert(linked) {
+                pending.push_back(linked);
+            }
+        }
+    }
+    false
+}
+
 fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
-    let relationship = record.partial("REPRESENTATION_RELATIONSHIP")?;
+    let relationship = record
+        .partial("REPRESENTATION_RELATIONSHIP")
+        .or_else(|| record.partial("SHAPE_REPRESENTATION_RELATIONSHIP"))?;
     let mut references = relationship
         .parameters
         .iter()

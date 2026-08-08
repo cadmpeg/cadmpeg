@@ -508,12 +508,17 @@ items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations
 connected by its representation relationship. An occurrence placement belongs
 to its defining relationship and representation context. A
 `SHAPE_REPRESENTATION_RELATIONSHIP` connects its two shape-representation
-endpoints for body reachability. In a complex instance, the endpoint attributes
-come from the inherited `REPRESENTATION_RELATIONSHIP` partial when the subtype
-partial has no parameters. For an occurrence relationship, the transform maps
-the child representation to the parent representation. If the relationship
-lists those endpoints in reverse order, the item direction is inverted. If
-neither endpoint order identifies the child and parent representations, the
+endpoints for body reachability and representation identity. A contextual
+occurrence endpoint identifies a child or parent definition representation
+when it is that representation or is connected to it by one or more
+parameterized shape-representation relationships. These identity edges are
+undirected. An empty inherited subtype partial has no endpoints and creates no
+edge. In a complex instance, endpoint attributes come from the inherited
+`REPRESENTATION_RELATIONSHIP` partial when the subtype partial has no
+parameters. For an occurrence relationship, the transform maps the child
+representation to the parent representation. If the relationship lists those
+endpoints in reverse order, the item direction is inverted. If neither order,
+or both orders, identifies the child and parent representations, the
 occurrence placement is unresolved.
 
 Exact and tessellated representations of one product remain linked when their
