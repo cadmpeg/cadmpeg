@@ -460,11 +460,11 @@
         "attributes": {
           "file_offset": "76",
           "kind": "partition",
-          "records.body": "2",
+          "records.body": "1",
           "records.edge": "1",
           "records.face": "1",
           "records.fin": "1",
-          "records.live.body": "2",
+          "records.live.body": "1",
           "records.live.edge": "1",
           "records.live.face": "1",
           "records.live.fin": "1",
