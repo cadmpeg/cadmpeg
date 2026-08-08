@@ -79,15 +79,24 @@ fn writer_pipeline_round_trips_the_full_cube_across_schemas_and_refuses_lossy_st
     let ir = unit_cube();
     for schema in [
         StepSchema::Ap203Edition1,
+        StepSchema::Ap203Edition2,
         StepSchema::Ap214,
+        StepSchema::Ap242Edition1,
+        StepSchema::Ap242Edition2,
         StepSchema::Ap242Edition3,
     ] {
-        let mut bytes = Vec::new();
         let options = StepWriteOptions {
             schema,
             ..StepWriteOptions::default()
         };
+        let mut bytes = Vec::new();
         write_step(&ir, &mut bytes, &options).expect("STEP cube write");
+        let mut repeated = Vec::new();
+        write_step(&ir, &mut repeated, &options).expect("repeat STEP cube write");
+        assert_eq!(
+            bytes, repeated,
+            "STEP output must be deterministic for {schema:?}"
+        );
         assert_eq!(StepCodec::default().detect(&bytes), Confidence::High);
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
