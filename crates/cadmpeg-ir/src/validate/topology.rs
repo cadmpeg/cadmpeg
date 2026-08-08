@@ -5982,6 +5982,13 @@ pub(super) fn check_loops(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut Vec<F
     }
 }
 
+#[derive(Clone, Copy)]
+enum RadialStatus {
+    Closed(usize),
+    DoesNotClose,
+    CrossesEdge,
+}
+
 pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
     let by_id: HashMap<&str, &Coedge> = ir
         .model
@@ -5989,48 +5996,97 @@ pub(super) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|c| (c.id.0.as_str(), c))
         .collect();
+    let mut statuses = HashMap::<&str, RadialStatus>::new();
     for coedge in &ir.model.coedges {
-        let mut current = coedge;
-        let mut closed = false;
-        let mut members = 1usize;
-        for _ in 0..=ir.model.coedges.len() {
-            let Some(next) = by_id.get(current.radial_next.0.as_str()) else {
+        let start = coedge.id.0.as_str();
+        if statuses.contains_key(start) {
+            continue;
+        }
+        let expected_edge = &coedge.edge;
+        let mut path = Vec::<&str>::new();
+        let mut positions = HashMap::<&str, usize>::new();
+        let mut current = start;
+        loop {
+            if let Some(status) = statuses.get(current).copied() {
+                let status = match status {
+                    RadialStatus::Closed(_) => RadialStatus::DoesNotClose,
+                    status => status,
+                };
+                for member in path {
+                    statuses.insert(member, status);
+                }
+                break;
+            }
+            if let Some(&cycle_start) = positions.get(current) {
+                let cycle_len = path.len() - cycle_start;
+                for &member in &path[cycle_start..] {
+                    statuses.insert(member, RadialStatus::Closed(cycle_len));
+                }
+                for &member in &path[..cycle_start] {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
+                break;
+            }
+            positions.insert(current, path.len());
+            path.push(current);
+            let Some(current_coedge) = by_id.get(current) else {
+                for member in path {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
                 break;
             };
-            if next.edge != coedge.edge {
+            let Some(next) = by_id.get(current_coedge.radial_next.0.as_str()) else {
+                for member in path {
+                    statuses.insert(member, RadialStatus::DoesNotClose);
+                }
+                break;
+            };
+            if next.edge != *expected_edge {
+                for member in path {
+                    statuses.insert(member, RadialStatus::CrossesEdge);
+                }
+                break;
+            }
+            current = next.id.0.as_str();
+        }
+    }
+    for coedge in &ir.model.coedges {
+        match statuses[coedge.id.0.as_str()] {
+            RadialStatus::CrossesEdge => {
                 findings.push(Finding {
                     check: Check::CoedgePairing,
                     severity: Severity::Error,
                     message: "radial ring crosses edges".into(),
                     entity: Some(coedge.id.0.clone()),
                 });
-                break;
+                findings.push(Finding {
+                    check: Check::CoedgePairing,
+                    severity: Severity::Error,
+                    message: "radial ring does not close".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
             }
-            if next.id == coedge.id {
-                closed = true;
-                break;
+            RadialStatus::DoesNotClose => {
+                findings.push(Finding {
+                    check: Check::CoedgePairing,
+                    severity: Severity::Error,
+                    message: "radial ring does not close".into(),
+                    entity: Some(coedge.id.0.clone()),
+                });
             }
-            members += 1;
-            current = next;
-        }
-        if !closed {
-            findings.push(Finding {
-                check: Check::CoedgePairing,
-                severity: Severity::Error,
-                message: "radial ring does not close".into(),
-                entity: Some(coedge.id.0.clone()),
-            });
-        } else if members == 2 {
-            if let Some(other) = by_id.get(coedge.radial_next.0.as_str()) {
-                if other.sense == coedge.sense {
-                    findings.push(Finding {
-                        check: Check::CoedgePairing,
-                        severity: Severity::Warning,
-                        message: "two-member radial ring has equal coedge senses".into(),
-                        entity: Some(coedge.id.0.clone()),
-                    });
+            RadialStatus::Closed(2) => {
+                if let Some(other) = by_id.get(coedge.radial_next.0.as_str()) {
+                    if other.sense == coedge.sense {
+                        findings.push(Finding {
+                            check: Check::CoedgePairing,
+                            severity: Severity::Warning,
+                            message: "two-member radial ring has equal coedge senses".into(),
+                            entity: Some(coedge.id.0.clone()),
+                        });
+                    }
                 }
             }
+            RadialStatus::Closed(_) => {}
         }
     }
 }
