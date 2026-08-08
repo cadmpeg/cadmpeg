@@ -31,8 +31,8 @@ use crate::wire::bytes::{
     allocation_ref, compact_int, finite_f64_lane, persistent_ref, read_f64_array,
 };
 use crate::wire::records::{
-    consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedPcurve,
-    ConsolidatedRecord,
+    consolidated_records, records_are_contiguous, scan_vertex_records, ConsolidatedFamily,
+    ConsolidatedPcurve, ConsolidatedRecord,
 };
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
@@ -385,6 +385,9 @@ pub(crate) fn consolidated_edge_blocks_from_records(
             let [first_record, second_record, parameter_record] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if first_record.class == 0x20
                 && second_record.class == 0x20
                 && first_record.family == second_record.family
@@ -436,6 +439,9 @@ pub(crate) fn consolidated_topology_edge_runs_from_records(
             let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if pcurve0.class == 0x20
                 && pcurve1.class == 0x20
                 && pcurve0.family == pcurve1.family
@@ -492,6 +498,9 @@ pub(crate) fn consolidated_analytic_circle_edge_runs_from_records(
             let [parameter, circle, definition, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if parameter.family != ConsolidatedFamily::B
                 || parameter.class != 0x18
                 || circle.family != ConsolidatedFamily::B
@@ -558,6 +567,9 @@ pub(crate) fn consolidated_class25_edge_runs_from_records(
             let [descriptor, definition, use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if descriptor.family != ConsolidatedFamily::B
                 || descriptor.class != 0x18
                 || definition.family != ConsolidatedFamily::B
@@ -619,6 +631,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
             let [use0, use1, node] = window else {
                 return None;
             };
+            if !records_are_contiguous(window) {
+                return None;
+            }
             if use0.family != ConsolidatedFamily::B
                 || use0.class != 0x06
                 || use1.family != ConsolidatedFamily::B
@@ -646,7 +661,9 @@ pub(crate) fn consolidated_edge_use_runs_from_records(
                 .checked_sub(1)
                 .and_then(|preceding| records.get(preceding))
                 .filter(|record| {
-                    record.family == ConsolidatedFamily::B && matches!(record.class, 0x23..=0x25)
+                    record.range.end == use0.range.start
+                        && record.family == ConsolidatedFamily::B
+                        && matches!(record.class, 0x23..=0x25)
                 })
                 .map(|record| ConsolidatedEdgeDefinition {
                     pos: record.range.start,

@@ -173,6 +173,18 @@ pub struct ConsolidatedRecord {
     pub payload: Range<usize>,
 }
 
+/// Return whether a record slice is one physically contiguous frame run.
+///
+/// A record census may contain independently discovered frames separated by
+/// bytes whose grammar is not known. Those frames remain useful for individual
+/// typed decoding, but they cannot establish an ordered multi-frame owner
+/// relationship. Every semantic window must prove this invariant locally.
+pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
+    records
+        .windows(2)
+        .all(|pair| pair[0].range.end == pair[1].range.start)
+}
+
 /// Inventory length-closed consolidated A/B records while resuming the marker
 /// search only after an accepted frame or a gap.
 #[must_use]
@@ -305,7 +317,9 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{consolidated_records, scan_vertex_records, ConsolidatedFamily};
+    use super::{
+        consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedRecord,
+    };
 
     #[test]
     fn record_walk_does_not_rescan_a_wide_header_token() {
@@ -318,6 +332,30 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].family, ConsolidatedFamily::A);
         assert_eq!(records[0].range, 0..18);
+    }
+
+    #[test]
+    fn record_runs_require_physical_adjacency() {
+        let first = ConsolidatedRecord {
+            family: ConsolidatedFamily::A,
+            width: 1,
+            flag: 0x03,
+            class: 0x20,
+            header_token: 0,
+            range: 0..4,
+            payload: 3..4,
+        };
+        let adjacent = ConsolidatedRecord {
+            range: 4..8,
+            ..first.clone()
+        };
+        let separated = ConsolidatedRecord {
+            range: 5..9,
+            ..first.clone()
+        };
+
+        assert!(super::records_are_contiguous(&[first.clone(), adjacent]));
+        assert!(!super::records_are_contiguous(&[first, separated]));
     }
 
     #[test]

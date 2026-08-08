@@ -69,6 +69,22 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
 }
 
 #[test]
+fn consolidated_edge_block_does_not_cross_an_unframed_gap() {
+    let source = a5_edge_block_stream();
+    let records = crate::wire::records::consolidated_records(&source);
+    assert_eq!(records.len(), 3);
+    let split = records[0].range.end;
+    let mut bytes = source[..split].to_vec();
+    bytes.push(0);
+    bytes.extend_from_slice(&source[split..]);
+
+    assert!(
+        crate::families::consolidated::records::consolidated_edge_blocks(&bytes).is_empty(),
+        "a multi-frame edge block must not cross an unframed gap"
+    );
+}
+
+#[test]
 fn indexed_resolver_matches_the_one_shot_resolver_identity() {
     let bytes = a5_cylinder_bound_edge_stream();
     let records = crate::wire::records::consolidated_records(&bytes);
