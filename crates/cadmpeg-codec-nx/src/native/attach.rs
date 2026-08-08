@@ -3073,6 +3073,9 @@ fn attach_feature_operations(
             .then(|| {
                 delete_body_feature_definition(
                     body_references.get(label.id.as_str()).copied(),
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
                     &body_alias_roots,
                     &bodies_by_object_index,
                 )
@@ -6041,27 +6044,37 @@ pub(crate) fn boolean_feature_definition(
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
     body_object_index: Option<u32>,
+    offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    let body = body_object_index?;
-    let selection = feature_body_selection(
-        &[body],
-        body_alias_roots,
-        bodies_by_object_index,
-        format!("nx:om-object-index#{body}"),
-    )
-    .selection;
+    let bodies = match (body_object_index, offset_store_bodies) {
+        (Some(body), []) => {
+            let selection = feature_body_selection(
+                &[body],
+                body_alias_roots,
+                bodies_by_object_index,
+                format!("nx:om-object-index#{body}"),
+            )
+            .selection;
+            match selection {
+                BodySelection::Native(native) => BodySelection::Local {
+                    bodies: vec![format!("nx:om-body-object#{body}")],
+                    native,
+                },
+                selection => selection,
+            }
+        }
+        (None, [(object_index, data_block)]) => BodySelection::Local {
+            bodies: vec![data_block.clone()],
+            native: format!("nx:om-object-index#{object_index}"),
+        },
+        _ => return None,
+    };
     Some(FeatureDefinition::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
-        bodies: match selection {
-            BodySelection::Native(native) => BodySelection::Local {
-                bodies: vec![format!("nx:om-body-object#{body}")],
-                native,
-            },
-            selection => selection,
-        },
+        bodies,
         mode: BodyRetentionMode::DeleteSelected,
     })
 }
@@ -8324,7 +8337,7 @@ mod tests {
 
         let roots = BTreeMap::from([(20, 20)]);
         assert_eq!(
-            super::delete_body_feature_definition(Some(20), &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(Some(20), &[], &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#20".to_string()],
@@ -8334,7 +8347,7 @@ mod tests {
             })
         );
         assert_eq!(
-            super::delete_body_feature_definition(Some(72), &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(Some(72), &[], &roots, &BTreeMap::new()),
             Some(FeatureDefinition::DeleteBody {
                 bodies: BodySelection::Local {
                     bodies: vec!["nx:om-body-object#72".to_string()],
@@ -8344,9 +8357,34 @@ mod tests {
             })
         );
         assert_eq!(
-            super::delete_body_feature_definition(None, &roots, &BTreeMap::new()),
+            super::delete_body_feature_definition(None, &[], &roots, &BTreeMap::new()),
             None
         );
+        assert_eq!(
+            super::delete_body_feature_definition(
+                None,
+                &[(72, "nx:om-data-blocks-4:block#72".to_string())],
+                &roots,
+                &BTreeMap::new(),
+            ),
+            Some(FeatureDefinition::DeleteBody {
+                bodies: BodySelection::Local {
+                    bodies: vec!["nx:om-data-blocks-4:block#72".to_string()],
+                    native: "nx:om-object-index#72".to_string(),
+                },
+                mode: BodyRetentionMode::DeleteSelected,
+            })
+        );
+        assert!(super::delete_body_feature_definition(
+            None,
+            &[
+                (72, "nx:om-data-blocks-4:block#72".to_string()),
+                (73, "nx:om-data-blocks-4:block#73".to_string()),
+            ],
+            &roots,
+            &BTreeMap::new(),
+        )
+        .is_none());
     }
 
     #[test]
