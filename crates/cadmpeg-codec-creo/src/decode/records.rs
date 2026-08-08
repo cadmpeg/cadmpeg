@@ -2002,6 +2002,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .map_or_else(Vec::new, |table| table.solved_external_ids.clone()),
             variables: {
                 let resolved_coordinates = resolved_section_coordinates(definition);
+                let resolved_radii = resolved_section_radii(definition);
                 definition
                     .variables
                     .iter()
@@ -2025,6 +2026,7 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                             2 => resolved_coordinates
                                 .get(&row.key)
                                 .and_then(|point| point[1]),
+                            3 => resolved_radii.get(&row.key).copied(),
                             _ => None,
                         },
                         offset: row.offset,

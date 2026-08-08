@@ -4616,9 +4616,10 @@ fn scan_classifies_named_var_arr_guess_sentinel() {
 #[test]
 fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let mut payload =
-        b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0var_arr\0\xf8\x03\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
     payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[3, 6, 0x46, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes(data.clone());
@@ -4654,9 +4655,9 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
         .expect("table headers");
     assert_eq!(headers.len(), 1);
     assert_eq!(headers[0]["kind"], "variables");
-    assert_eq!(headers[0]["declared_count"], 2);
+    assert_eq!(headers[0]["declared_count"], 3);
     assert_eq!(headers[0]["entity_ref"], 1);
-    assert_eq!(headers[0]["row_count"], 2);
+    assert_eq!(headers[0]["row_count"], 3);
     let points = sketch_fields["section_points"]
         .as_array()
         .expect("section points");
@@ -4668,7 +4669,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let variables = sketch_fields["variables"]
         .as_array()
         .expect("variables array");
-    assert_eq!(variables.len(), 2);
+    assert_eq!(variables.len(), 3);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
     assert_eq!(
@@ -4698,6 +4699,13 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[1]["known"], 1);
     assert_eq!(variables[1]["homogeneity"], 0);
     assert_eq!(variables[1]["uvar_id"], 4);
+    assert_eq!(variables[2]["variable_type"], 3);
+    assert_eq!(variables[2]["key"], 6);
+    assert_eq!(variables[2]["value"], 4.0);
+    assert_eq!(variables[2]["resolved_value"], 4.0);
+    assert_eq!(variables[2]["known"], 1);
+    assert_eq!(variables[2]["homogeneity"], 0);
+    assert_eq!(variables[2]["uvar_id"], 6);
     assert_annotation(
         &result.source_fidelity.annotations,
         "creo:featdefs:sketch#40",
