@@ -17367,6 +17367,12 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
                 .filter(|row| row.feature_id == feature_id)
                 .count()
     {
+        // A complete placed-cylinder set is an independent radius witness.
+        // Its unequal positive radii identify a variable-radius round and
+        // must not be hidden by a constant support-plane fallback.
+        if differing_positive_lengths(&cylinder_radii) {
+            return None;
+        }
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
