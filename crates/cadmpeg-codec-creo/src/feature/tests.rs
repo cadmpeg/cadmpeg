@@ -2008,6 +2008,28 @@ fn positional_gsec3d_retains_placement_and_complete_reference_prefix() {
 }
 
 #[test]
+fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
+    let payload = b"\xe0\x00gsec3d_ptr\0\
+            \xe0\x01plane_id\0\x2a\
+            \xe0\x01plane_flip\0\xf6\
+            \xe0\x00ref_planes\0\xf8\x01\xf7\x80\x8c\xfb\xe2\
+            \xe0\x01plane_id\0\x06\
+            \xe0\x01ref_type\0\x05\
+            \xe0\x01ext_ref_id\0\xf6\
+            \xe0\x01seg_id\0\x02\
+            \xe0\x01sub_index\0\xf6\
+            \xe0\x01flip_flag\0\x00\
+            \xe0\x00p_saved_result\0";
+
+    let definitions = definitions_in_ranges(&payload[..], &[(0, 1, None, false)]);
+    let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
+
+    assert_eq!(section.sketch_plane_entity_id, Some(42));
+    assert_eq!(section.reference_plane_datum_geometry_id, Some(6));
+    assert_eq!(section.sketch_plane_flip, None);
+}
+
+#[test]
 fn positional_relation_table_replays_rows_after_its_prototype() {
     let payload = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
             prototype\xf1\xf7\x64\xe2\

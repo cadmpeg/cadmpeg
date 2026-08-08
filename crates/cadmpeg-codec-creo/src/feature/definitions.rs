@@ -3015,7 +3015,16 @@ fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> 
 
 fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
     let label = b"plane_id\0";
+    let reference_planes = find_bytes(payload, b"\xe0\x00ref_planes\0", start, end).unwrap_or(end);
     let mut cursor = start;
+    while let Some(at) = find_bytes(payload, label, cursor, reference_planes) {
+        cursor = at + label.len();
+        let (value, next) = segment_int(payload, cursor);
+        if next <= reference_planes && value.is_some() {
+            return value;
+        }
+    }
+    cursor = reference_planes;
     while let Some(at) = find_bytes(payload, label, cursor, end) {
         cursor = at + label.len();
         if payload.get(at.saturating_sub(2)..at) == Some(&[psb::token::NAMED_RECORD, 1]) {
