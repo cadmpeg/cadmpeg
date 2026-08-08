@@ -156,7 +156,9 @@ current scores require those matrices and representative fixtures.
   Every transferred numeric
   parameter retains its canonical
   `LENGTH`, `ANGLE`, `Real`, or `Integer` value type independently of whether
-  an evaluated value exists.
+  an evaluated value exists. Complete lead-`2` parameters also retain the
+  second selector's exact value in `properties["catia_binding"]`, including
+  an empty value, without assigning a feature or configuration role.
 - Complete native numeric-pair payloads retain their two prefix atoms and two
   source-ordered nullable binary64 slots with exact bits and payload-relative
   offsets. The fixed type, layout, and value atoms and exact two-slot framing

@@ -285,7 +285,10 @@ pub(crate) fn transfer_parameters(
                                         TypedParameterEvaluation::Value(value) => Some(value),
                                     },
                                     dependencies,
-                                    properties: parameter_properties(parameter_type),
+                                    properties: parameter_properties(
+                                        parameter_type,
+                                        Some(output_value.binding.value.as_str()),
+                                    ),
                                     pmi: None,
                                     native_ref: Some(output.id.clone()),
                                 },
@@ -580,7 +583,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value,
                         dependencies: Vec::new(),
-                        properties: parameter_properties(parameter_type),
+                        properties: parameter_properties(parameter_type, None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -633,7 +636,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value: Some(ParameterValue::String(string.value.clone())),
                         dependencies: Vec::new(),
-                        properties: parameter_properties("String"),
+                        properties: parameter_properties("String", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -687,7 +690,7 @@ fn collect_legacy_parameters(
                         display: None,
                         value: Some(value),
                         dependencies: Vec::new(),
-                        properties: parameter_properties("Integer"),
+                        properties: parameter_properties("Integer", None),
                         pmi: None,
                         native_ref: Some(run.id.clone()),
                     },
@@ -904,7 +907,10 @@ fn typed_entity_parameter_candidate(
             display: None,
             value,
             dependencies: Vec::new(),
-            properties: parameter_properties(parameter_type),
+            properties: parameter_properties(
+                parameter_type,
+                Some(parameter.binding.value.as_str()),
+            ),
             pmi: None,
             native_ref: Some(entity.id.clone()),
         },
@@ -990,8 +996,15 @@ fn parameter_expression(value: &ParameterValue) -> String {
     }
 }
 
-fn parameter_properties(parameter_type: &'static str) -> BTreeMap<String, String> {
-    BTreeMap::from([("value_type".to_string(), parameter_type.to_string())])
+fn parameter_properties(
+    parameter_type: &'static str,
+    binding: Option<&str>,
+) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::from([("value_type".to_string(), parameter_type.to_string())]);
+    if let Some(binding) = binding {
+        properties.insert("catia_binding".to_string(), binding.to_string());
+    }
+    properties
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

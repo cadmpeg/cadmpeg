@@ -12698,7 +12698,41 @@ fn complete_relation_program_inputs_transfer_typed_parameters() {
         parameter.properties.get("value_type").map(String::as_str),
         Some("LENGTH")
     );
+    assert_eq!(
+        parameter
+            .properties
+            .get("catia_binding")
+            .map(String::as_str),
+        Some("#1_ /2")
+    );
     assert_eq!(parameter.native_ref, Some(parameter_entity.id.clone()));
+
+    let mut empty_binding_native = native.clone();
+    empty_binding_native.entity_records[2]
+        .parameter_value
+        .as_mut()
+        .expect("complete input parameter")
+        .binding
+        .value
+        .clear();
+    let mut empty_binding_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let empty_binding_transfer = crate::formula::transfer_parameters(
+        &mut empty_binding_ir,
+        &empty_binding_native,
+        &mut Annotations::default(),
+        None,
+    );
+    let [empty_binding_parameter] = empty_binding_ir.model.parameters.as_slice() else {
+        panic!("one empty-binding input parameter")
+    };
+    assert_eq!(empty_binding_transfer.relation_program_parameter_count, 1);
+    assert_eq!(
+        empty_binding_parameter
+            .properties
+            .get("catia_binding")
+            .map(String::as_str),
+        Some("")
+    );
 
     let mut conflicting_native = native.clone();
     let mut conflicting_instance = conflicting_native.entity_records[0]
@@ -17181,12 +17215,14 @@ fn decode_transfers_a_closed_length_formula_and_its_input() {
     assert_eq!(input.expression, "35 mm");
     assert_eq!(input.value, Some(ParameterValue::Length(Length(35.0))));
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert!(input.dependencies.is_empty());
     assert_eq!(output.name, "Result");
     assert_eq!(output.ordinal, 1);
     assert_eq!(output.expression, "#1_ /2-2mm");
     assert_eq!(output.value, Some(ParameterValue::Length(Length(33.0))));
     assert_eq!(output.properties["value_type"], "LENGTH");
+    assert_eq!(output.properties["catia_binding"], "#result_ /1");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(
         decoded
@@ -18601,10 +18637,12 @@ fn decode_transfers_an_unset_typed_formula_input_as_an_unset_output() {
     assert!(input.expression.is_empty());
     assert!(input.dependencies.is_empty());
     assert_eq!(input.properties["value_type"], "LENGTH");
+    assert_eq!(input.properties["catia_binding"], "#1_ /2");
     assert_eq!(output.value, None);
     assert_eq!(output.expression, "#1_ /2+1mm");
     assert_eq!(output.dependencies, std::slice::from_ref(&input.id));
     assert_eq!(output.properties["value_type"], "LENGTH");
+    assert_eq!(output.properties["catia_binding"], "#result_ /1");
 }
 
 #[test]
@@ -18635,6 +18673,7 @@ fn decode_transfers_unset_non_numeric_formula_inputs_without_deriving_the_output
         assert!(input.expression.is_empty());
         assert!(input.dependencies.is_empty());
         assert_eq!(input.properties["value_type"], parameter_type);
+        assert_eq!(input.properties["catia_binding"], "#1_ /2");
         assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
     }
 }

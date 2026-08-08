@@ -192,7 +192,7 @@ pub struct DesignParameter {
     /// Parameters referenced by `expression`, in source expression order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<ParameterId>,
-    /// Source dimension properties not represented by another field.
+    /// Source parameter properties not represented by another field.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
     /// Product-manufacturing dimension semantics, when present.
