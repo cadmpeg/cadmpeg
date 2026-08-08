@@ -1426,7 +1426,7 @@ pub(crate) fn positional_variable_table(
     table_class: u32,
     cache: &scalar::ScalarCache,
 ) -> Option<FeatureVariableTable> {
-    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+    let mut candidates = (start..end).filter_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -1441,7 +1441,11 @@ pub(crate) fn positional_variable_table(
                 payload[after_count + 1..after_reference].to_vec(),
             )
         })
-    })?;
+    });
+    let (table, declared_count, mut cursor, reference_bytes) = candidates.next()?;
+    // A positional definition has one variable array. Do not bind the first
+    // header when another array in the same bounded definition matches it.
+    candidates.next().is_none().then_some(())?;
     (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
     let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
     cursor = after_row_class;

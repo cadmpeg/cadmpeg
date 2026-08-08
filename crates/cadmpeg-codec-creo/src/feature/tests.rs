@@ -1809,6 +1809,19 @@ fn positional_variable_table_joins_coordinate_rows() {
 }
 
 #[test]
+fn positional_variable_table_rejects_duplicate_table_headers() {
+    let payload = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78
+            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2
+            \x02\x07\x18\x18\x01\x00\x0a
+            \xf8\x02\xf7\x77\xfb\xe2\xf7\x78
+            \x01\x08\x18\x18\x01\x00\x0b\xf1\xf7\x77\xe2
+            \x02\x08\x18\x18\x01\x00\x0c";
+    let cache = scalar::ScalarCache::from_section(payload);
+
+    assert!(positional_variable_table(payload, 0, payload.len(), 119, &cache).is_none());
+}
+
+#[test]
 fn positional_variable_guess_zero_preserves_compact_trailing_fields_at_table_boundary() {
     let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
             \x07\x00\x18\x18\x01\x01\x0f\xf1\xf7\x77\xe2\
