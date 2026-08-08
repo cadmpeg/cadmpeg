@@ -20631,6 +20631,30 @@ fn decode_float_packed_stream_transfers_topology_under_decimal_object_ids() {
 }
 
 #[test]
+fn decode_does_not_transfer_a_loop_with_multiple_face_owners() {
+    let mut stream = b5_closed_triangle_stream();
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x03);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode duplicate loop-owner stream");
+
+    assert!(result.ir.model.bodies.is_empty());
+    assert!(result.ir.model.faces.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::TopologyNotTransferred
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
+}
+
+#[test]
 fn decode_reports_structurally_typed_unresolved_b5_faces() {
     let mut stream = b5_closed_triangle_stream();
     append_b5_record(

@@ -20,8 +20,8 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface,
-    B5SupportedSurface, B5Surface,
+    face_loop_owner_counts, loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph,
+    B5OffsetSurface, B5SupportedSurface, B5Surface,
 };
 
 mod edges;
@@ -168,6 +168,12 @@ pub(crate) fn transfer(
                         .get(loop_id)
                         .is_some_and(|loop_| loop_.surface == face.surface)
                 })
+        });
+        let loop_owner_counts = face_loop_owner_counts(&graph.faces);
+        graph.faces.retain(|face| {
+            face.loops
+                .iter()
+                .all(|loop_id| loop_owner_counts.get(loop_id).copied() == Some(1))
         });
         let referenced_loops: HashSet<u32> = graph
             .faces

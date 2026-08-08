@@ -495,7 +495,10 @@ current scores require those matrices and representative fixtures.
   reference-resolved subset assigns the first reference as carrier and remaining
   references as loops only when every target closes under that grammar. Decode
   coverage counts controls and uncounted framing independently for typed and
-  reference-resolved faces, including when no topology graph closes.
+  reference-resolved faces, including when no topology graph closes. A loop
+  named by more than one resolved face invalidates those face bindings; the
+  affected faces remain outside the connected graph while independent
+  face-loop components may transfer.
   Counted object-stream loops require an exact edge-count lane and complete
   control tail: the loop control, three signed controls per edge, and the
   optional finite binary64/binary32 numeric extension. The resolved graph

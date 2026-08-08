@@ -623,6 +623,17 @@ pub struct B5Face {
     pub terminal_control: Option<u8>,
 }
 
+/// Count the face incidences for each object-stream loop.
+pub(crate) fn face_loop_owner_counts(faces: &[B5Face]) -> HashMap<u32, usize> {
+    let mut owners = HashMap::new();
+    for face in faces {
+        for &loop_id in &face.loops {
+            *owners.entry(loop_id).or_insert(0) += 1;
+        }
+    }
+    owners
+}
+
 /// One structurally complete class-`5f` face reference production.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct B5FaceRecord {
@@ -1122,6 +1133,9 @@ pub(crate) fn parse_from_records(
         .collect();
     loops.retain(|loop_id, _| referenced_loops.contains(loop_id));
     let complete = faces.len() == source_face_count
+        && face_loop_owner_counts(&faces)
+            .values()
+            .all(|count| *count == 1)
         && referenced_loops.iter().all(|loop_id| {
             loops.get(loop_id).is_some_and(|loop_| {
                 loop_
@@ -8496,6 +8510,23 @@ mod tests {
 
         graph.complete = false;
         assert_eq!(graph.referenced_edge_vertex_references(), None);
+    }
+
+    #[test]
+    fn duplicate_face_loop_ownership_does_not_close_the_graph() {
+        let mut bytes = crate::tests::b5_closed_triangle_stream();
+        let mut face_payload = vec![0x82];
+        face_payload.extend_from_slice(&crate::tests::b5_object_ref(100));
+        face_payload.extend_from_slice(&crate::tests::b5_object_ref(400));
+        face_payload.push(0x03);
+        crate::tests::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
+
+        let graph = parse(&bytes).expect("structurally parseable B5 graph");
+
+        assert_eq!(graph.faces.len(), 2);
+        assert_eq!(graph.loops.len(), 1);
+        assert!(!graph.complete);
+        assert_eq!(face_loop_owner_counts(&graph.faces).get(&400), Some(&2));
     }
 
     #[test]
