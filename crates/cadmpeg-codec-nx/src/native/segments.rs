@@ -10,7 +10,7 @@ use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
     FeatureOperationBodyOperand, FeatureOperationLabel,
 };
-use crate::native::om::{DataBlock, OmSchemaRole};
+use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
 
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,87 +335,92 @@ pub fn segment_body_lineage_statuses(
         .collect()
 }
 
-/// Return Boolean operations that do not have a complete offset-store
-/// participant set. A complete offset-store selection has no segment-body
-/// effect; integer equality across the two namespaces is not an identity
-/// proof. Other operations retain the native Boolean lineage rules because no
-/// offset-store selection has been established for them.
+/// Namespace proof for one Boolean's target and ordered tool participants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BooleanOffsetStoreResolution {
+    /// No participant ordinal occurs in an offset-only data block.
+    None,
+    /// Every participant resolves to one block in one offset store.
+    Complete(BTreeMap<u32, String>),
+    /// At least one participant has offset-store evidence, but the complete
+    /// one-store relation is not proven.
+    Unresolved,
+}
+
+/// Classify one Boolean participant set before applying any integer identity.
+/// A partial, duplicate, or cross-store offset-store relation is unresolved;
+/// it must not fall back to a segment-body alias with the same integer.
+pub(crate) fn boolean_offset_store_resolution(
+    operation: &FeatureBooleanOperation,
+    data_blocks: &[DataBlock],
+) -> BooleanOffsetStoreResolution {
+    let participants = std::iter::once(operation.target_object_index)
+        .chain(operation.tool_object_indices.iter().copied())
+        .collect::<Vec<_>>();
+    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
+    for block in data_blocks {
+        if block.role != DataBlockRole::Column {
+            continue;
+        }
+        blocks_by_ordinal
+            .entry(block.block_ordinal)
+            .or_default()
+            .push(block);
+    }
+    let mut has_offset_store_evidence = false;
+    let mut resolved = Vec::with_capacity(participants.len());
+    for object_index in &participants {
+        let Some(matches) = blocks_by_ordinal.get(object_index) else {
+            continue;
+        };
+        has_offset_store_evidence = true;
+        let [block] = matches.as_slice() else {
+            return BooleanOffsetStoreResolution::Unresolved;
+        };
+        resolved.push((*object_index, *block));
+    }
+    if !has_offset_store_evidence {
+        return BooleanOffsetStoreResolution::None;
+    }
+    if resolved.len() != participants.len() {
+        return BooleanOffsetStoreResolution::Unresolved;
+    }
+    let Some(section_ordinal) = resolved.first().map(|(_, block)| block.section_ordinal) else {
+        return BooleanOffsetStoreResolution::Unresolved;
+    };
+    if resolved
+        .iter()
+        .any(|(_, block)| block.section_ordinal != section_ordinal)
+    {
+        return BooleanOffsetStoreResolution::Unresolved;
+    }
+    BooleanOffsetStoreResolution::Complete(
+        resolved
+            .into_iter()
+            .map(|(object_index, block)| (object_index, block.id.clone()))
+            .collect(),
+    )
+}
+
+/// Return Boolean operations that are safe to treat as segment-object
+/// lineage. Complete offset-store selections and unresolved offset-store
+/// candidates have no segment-body effect; integer equality across the two
+/// namespaces is not an identity proof. Only operations with no offset-store
+/// participant evidence retain the native Boolean lineage rules.
 fn segment_boolean_operation_labels(
     booleans: &[FeatureBooleanOperation],
     data_blocks: &[DataBlock],
 ) -> BTreeSet<String> {
     booleans
         .iter()
-        .filter_map(|operation| {
-            let participants = std::iter::once(operation.target_object_index)
-                .chain(operation.tool_object_indices.iter().copied())
-                .collect::<Vec<_>>();
-            let offset_store_namespace =
-                boolean_offset_store_body_blocks(std::iter::once(operation), data_blocks)
-                    .values()
-                    .any(|blocks| {
-                        participants
-                            .iter()
-                            .all(|identity| blocks.contains_key(identity))
-                    });
-            (!offset_store_namespace).then(|| operation.operation_label.clone())
+        .filter(|operation| {
+            matches!(
+                boolean_offset_store_resolution(operation, data_blocks),
+                BooleanOffsetStoreResolution::None
+            )
         })
+        .map(|operation| operation.operation_label.clone())
         .collect()
-}
-
-/// Resolve every Boolean participant to one unique offset-store block only
-/// when all target and tool indices resolve in one store. The returned map is
-/// scoped by feature-history section because an object index has no global
-/// identity across sections.
-pub(crate) fn boolean_offset_store_body_blocks<'a>(
-    operations: impl IntoIterator<Item = &'a FeatureBooleanOperation>,
-    data_blocks: &[DataBlock],
-) -> BTreeMap<String, BTreeMap<u32, String>> {
-    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
-    for block in data_blocks {
-        blocks_by_ordinal
-            .entry(block.block_ordinal)
-            .or_default()
-            .push(block);
-    }
-    let mut body_blocks_by_section = BTreeMap::<String, BTreeMap<u32, String>>::new();
-    for operation in operations {
-        let Some((section_key, _)) = operation.operation_label.rsplit_once('-') else {
-            continue;
-        };
-        let participants = std::iter::once(operation.target_object_index)
-            .chain(operation.tool_object_indices.iter().copied())
-            .collect::<Vec<_>>();
-        let resolved = participants
-            .iter()
-            .map(|object_index| {
-                let matches = blocks_by_ordinal.get(object_index)?;
-                let [block] = matches.as_slice() else {
-                    return None;
-                };
-                Some(*block)
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(resolved) = resolved else {
-            continue;
-        };
-        let Some(section_ordinal) = resolved.first().map(|block| block.section_ordinal) else {
-            continue;
-        };
-        if resolved
-            .iter()
-            .any(|block| block.section_ordinal != section_ordinal)
-        {
-            continue;
-        }
-        let body_blocks = body_blocks_by_section
-            .entry(section_key.to_string())
-            .or_default();
-        for (object_index, block) in participants.into_iter().zip(resolved) {
-            body_blocks.insert(object_index, block.id.clone());
-        }
-    }
-    body_blocks_by_section
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
@@ -1234,6 +1239,74 @@ mod tests {
             source_offset: 0,
         };
         let blocks = [block(11), block(21)];
+        let binding = |ordinal, body, alias| SegmentBodyBinding {
+            id: format!("binding#{ordinal}"),
+            stream_link: format!("stream#{ordinal}"),
+            stream_ordinal: ordinal,
+            stream_kind: "partition".to_string(),
+            body_object_index: body,
+            body_alias_object_index: alias,
+            stream_role: 19,
+            source_offset: u64::from(ordinal),
+        };
+        let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        assert_eq!(
+            super::terminal_feature_body_indices(
+                &labels,
+                &[],
+                &[],
+                &blocks,
+                &booleans,
+                &[],
+                &bindings,
+                &[],
+            ),
+            Some([10, 11, 20, 21].into_iter().collect())
+        );
+    }
+
+    #[test]
+    fn feature_body_lineage_ignores_unresolved_offset_store_boolean_collisions() {
+        use super::SegmentBodyBinding;
+        use crate::native::features::{
+            FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+        };
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let operation_label = "nx:feature-history:operation-label#section-boolean".to_string();
+        let labels = [FeatureOperationLabel {
+            id: operation_label.clone(),
+            section_link: "history#0".to_string(),
+            ordinal: 0,
+            value: "UNITE".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+            source_offset: 0,
+        }];
+        let booleans = [FeatureBooleanOperation {
+            id: "boolean#unresolved-offset-store".to_string(),
+            operation_label,
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 11,
+            raw_target_object_index: vec![11],
+            target_source_offset: 0,
+            tool_object_indices: vec![21],
+            raw_tool_object_indices: vec![vec![21]],
+            tool_source_offsets: vec![0],
+            source_offset: 0,
+        }];
+        let blocks = [DataBlock {
+            id: "nx:om-data-blocks-3:block#11".to_string(),
+            section_ordinal: 3,
+            block_ordinal: 11,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        }];
         let binding = |ordinal, body, alias| SegmentBodyBinding {
             id: format!("binding#{ordinal}"),
             stream_link: format!("stream#{ordinal}"),

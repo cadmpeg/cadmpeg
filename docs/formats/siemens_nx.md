@@ -239,6 +239,9 @@ object-namespace primary body retains its native relation but has no neutral
 output. A Boolean whose complete target and tool participant set resolves to
 one offset store has no segment-image writer or consumption effect; equal
 integer values in the two namespaces do not establish a cross-store relation.
+Partial, duplicate, or cross-store offset-store participant evidence is also
+unresolved in the segment namespace and has no segment-image writer or
+consumption effect.
 
 Every non-`DELETE` operation with an unambiguous primary-body writer declares
 one intermediate result body. The result body's feature-local identity is the
@@ -1387,7 +1390,8 @@ visible text and the second string is the font family. The operation label is
 both the annotation object and its native identity. Any other payload
 cardinality remains native-only.
 
-Bodies named by validated segment binding tuples exist at the start of retained feature history. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A Boolean target list writes its selected body image. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
+Bodies named by validated segment binding tuples exist at the start of retained feature history. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A Boolean target list writes its selected body image. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one emitted body remains terminal.
+A complete mapping may retain every emitted body; this is a resolved all-terminal result, not an unresolved selection.
 
 An `OFFSET` operation projects as a neutral surface-offset feature. Exactly one
 segment-bound output image establishes a native support selection when its

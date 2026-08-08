@@ -8755,7 +8755,7 @@ mod tests {
             crate::native::attach::boolean_feature_definition(
                 &operation,
                 &roots,
-                None,
+                &crate::native::segments::BooleanOffsetStoreResolution::None,
                 &BTreeMap::new(),
             ),
             FeatureDefinition::Combine {
@@ -8771,7 +8771,7 @@ mod tests {
             crate::native::attach::boolean_feature_definition(
                 &operation,
                 &missing_tool,
-                None,
+                &crate::native::segments::BooleanOffsetStoreResolution::None,
                 &BTreeMap::new(),
             ),
             FeatureDefinition::Combine {
