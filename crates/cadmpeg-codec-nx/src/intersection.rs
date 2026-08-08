@@ -340,7 +340,7 @@ fn scan_with_auxiliaries(
     terms: &BTreeMap<u32, Point3>,
     graph: &topology::Graph,
 ) -> CurveScan {
-    let uv = uv_records(stream);
+    let (uv, uv_markers) = uv_records(stream);
     let bridges = blend_bound_records(stream);
     let referenced_curves = graph.referenced_curve_xmts();
     let mut result = CurveScan::default();
@@ -349,20 +349,29 @@ fn scan_with_auxiliaries(
         .into_iter()
         .chain(topology::intersection_data_curves(stream))
     {
-        match enrich(construction, charts, terms, &uv, &bridges, graph) {
+        match enrich(
+            construction,
+            charts,
+            terms,
+            &uv,
+            &uv_markers,
+            &bridges,
+            graph,
+        ) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);
             }
             Err(rejection)
                 if referenced_curves.contains(&construction.xmt)
-                    && construction_supports(construction, &bridges, graph).is_some()
+                    && construction_supports(construction, &uv_markers, &bridges, graph)
+                        .is_some()
                     && construction_has_endpoint_witnesses(construction, terms, graph) =>
             {
                 result.constructions.push(construction);
                 if matches!(rejection, Rejection::MissingChart) {
                     if let (Some(supports), Some(witness)) = (
-                        construction_supports(construction, &bridges, graph)
+                        construction_supports(construction, &uv_markers, &bridges, graph)
                             .filter(|supports| supports[1] > 1),
                         graph
                             .unique_curve_edge_witness(construction.xmt)
@@ -393,6 +402,7 @@ fn enrich(
     charts: &BTreeMap<u32, Chart>,
     terms: &BTreeMap<u32, Point3>,
     uv: &BTreeMap<u32, SupportUv>,
+    uv_markers: &BTreeMap<u32, u8>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Result<IntersectionCurve, Rejection> {
@@ -448,7 +458,8 @@ fn enrich(
         .get(&construction.references[5])
         .cloned()
         .unwrap_or([None, None]);
-    let supports = construction_supports(construction, bridges, graph).unwrap_or([1, 1]);
+    let supports =
+        construction_supports(construction, uv_markers, bridges, graph).unwrap_or([1, 1]);
     Ok(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
@@ -464,18 +475,23 @@ fn enrich(
 
 fn construction_supports(
     construction: CompositeCurve,
+    uv_markers: &BTreeMap<u32, u8>,
     bridges: &BTreeMap<u32, u32>,
     graph: &topology::Graph,
 ) -> Option<[u32; 2]> {
-    let first_is_surface = is_surface(graph, construction.references[0]);
-    let second_is_surface = is_surface(graph, construction.references[1]);
-    let (primary, bridge) = if first_is_surface {
+    let (primary, bridge) = if construction.delta_twin {
         (construction.references[0], construction.references[1])
-    } else if second_is_surface {
-        (construction.references[1], construction.references[0])
     } else {
-        (1, 1)
+        // A present marker-3 values array explicitly reverses the serialized
+        // support order. Without that array, retain the type-38 references'
+        // order; no alternate order was serialized.
+        match uv_markers.get(&construction.references[5]).copied() {
+            Some(3) => (construction.references[1], construction.references[0]),
+            Some(2 | 4) | None => (construction.references[0], construction.references[1]),
+            Some(_) => return None,
+        }
     };
+    is_surface(graph, primary).then_some(())?;
     let secondary = bridges
         .get(&bridge)
         .copied()
@@ -903,11 +919,17 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
-    support_uv_records(stream)
-        .into_iter()
+fn uv_records(stream: &[u8]) -> (BTreeMap<u32, SupportUv>, BTreeMap<u32, u8>) {
+    let records = support_uv_records(stream);
+    let uv = records
+        .iter()
         .map(|record| (record.xmt, record.support_uv()))
-        .collect()
+        .collect();
+    let markers = records
+        .into_iter()
+        .map(|record| (record.xmt, record.marker))
+        .collect();
+    (uv, markers)
 }
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.

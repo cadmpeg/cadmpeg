@@ -6795,6 +6795,22 @@ fn decode_emits_both_intersection_support_pcurves() {
 }
 
 #[test]
+fn intersection_support_order_follows_type_38_values_marker() {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let uv = stream
+        .windows(8)
+        .position(|window| window == [0, 204, 0, 0, 0, 8, 0, 23])
+        .expect("support UV record");
+    stream[uv + 8] = 3;
+
+    let scan = crate::intersection::scan(&stream);
+    let [curve] = scan.curves.as_slice() else {
+        panic!("one charted intersection");
+    };
+    assert_eq!(curve.supports, [13, 6]);
+}
+
+#[test]
 fn decode_retains_uncharted_intersection_without_inventing_a_range() {
     let mut stream = two_support_charted_intersection_curve_stream();
     let intersection = stream
