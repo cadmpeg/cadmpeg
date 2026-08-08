@@ -65,6 +65,10 @@ fixtures, claims above L1 remain unproven.
   or one-circle B-reps when the section transform agrees with the carrier
   direction. Complete NURBS-translation carriers provide the same span to
   generated NURBS feature surfaces when their profile is supported.
+- Rectilinear generated-plane fallback uses the uniquely owned section's
+  `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
+  select the sweep direction, and missing section or cap evidence remains
+  unresolved.
 - Axis-aligned coaxial cone-cylinder intersections transfer the unique circle
   whose axial center coordinate agrees with the repeated `fc 14` held
   world-coordinate token.

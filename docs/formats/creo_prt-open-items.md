@@ -684,14 +684,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bytes to give the line its endpoints. `decode.rs` `saved_section_missing_line_geometry` takes the two unmated endpoints of the other evaluated entities, which assumes the profile is closed and that the missing line closes it. No byte of the missing line is read. An open profile with a dangling line gives a chord between the two free ends, and that geometry seeds trim-vertex coordinates and generated side surfaces.
 
-### SP-36. Generated cap reversal polarity
-
-**Question.** Which field gives the reversal state of the start cap of a generated rectilinear sweep?
-
-**Known.** `creo_prt.md` §6 states that a source row's reversal flag orients its plane normal. It does not relate the flag to the feature's Boolean operation.
-
-**Need.** We must know the field to select the sweep axis and direction. `decode.rs` `generated_rectilinear_plane_extent` sets the expected start reversal from the Boolean operation: set for `Join` and `NewBody`, clear for `Cut`. A sketch plane whose stored normal points into the material makes the true sweep family fail the test, and another axis family that holds opposite flags becomes the unique candidate. The feature then takes the length and direction of that other family.
-
 ### SP-37. Sketch-plane identifier namespace
 
 **Question.** Which namespace does `gsec3d_ptr.plane_id` name when the value resolves in both the `ActDatums` datum-geometry namespace and the model surface namespace?

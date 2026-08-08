@@ -6016,24 +6016,21 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         plane(36, Point3::new(0.0, 30.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
         plane(35, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
     ]);
+    let mut section = crate::feature::FeatureSection3d {
+        sketch_plane_entity_id: Some(30),
+        sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
+        reference_plane_entity_ids: vec![29],
+        reference_plane_datum_geometry_id: None,
+        orientation: crate::feature::FeatureSectionOrientation {
+            section_flip: Some(crate::feature::BinaryFlag::Set),
+            ..Default::default()
+        },
+        dimension_ids: Vec::new(),
+        offset: 0,
+    };
 
     assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut),
-        Some((
-            ExtrudeExtent::OneSided {
-                side: ExtrudeSide {
-                    termination: Termination::Blind {
-                        length: Length(42.0),
-                    },
-                    draft: None,
-                    offset: None,
-                },
-            },
-            [0.0, 1.0, 0.0],
-        ))
-    );
-    assert_eq!(
-        generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Join),
+        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
         Some((
             ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
@@ -6047,14 +6044,48 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             [0.0, -1.0, 0.0],
         ))
     );
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Unresolved).is_none());
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Intersect).is_none());
+    section.sketch_plane_flip = Some(crate::feature::BinaryFlag::Set);
+    assert_eq!(
+        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(42.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, 1.0, 0.0],
+        ))
+    );
+    section.orientation.section_flip = Some(crate::feature::BinaryFlag::Clear);
+    assert_eq!(
+        generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)),
+        Some((
+            ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::Blind {
+                        length: Length(42.0),
+                    },
+                    draft: None,
+                    offset: None,
+                },
+            },
+            [0.0, -1.0, 0.0],
+        ))
+    );
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, None).is_none());
+    let mut incomplete_section = section.clone();
+    incomplete_section.sketch_plane_entity_id = None;
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&incomplete_section)).is_none());
 
     scan.surfaces.rows[3].reversed = false;
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut).is_none());
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
     scan.surfaces.rows[3].reversed = true;
     ir.model.surfaces.pop();
-    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, BooleanOp::Cut).is_none());
+    assert!(generated_rectilinear_plane_extent(&scan, &ir, 7, Some(&section)).is_none());
 }
 
 #[test]

@@ -6060,8 +6060,13 @@ fn generated_rectilinear_plane_extent(
     scan: &ContainerScan,
     ir: &CadIr,
     feature_id: u32,
-    op: BooleanOp,
+    section: Option<&crate::feature::FeatureSection3d>,
 ) -> Option<(ExtrudeExtent, [f64; 3])> {
+    let section = section?;
+    section.sketch_plane_entity_id?;
+    let plane_flip = section.sketch_plane_flip == Some(crate::feature::BinaryFlag::Set);
+    let section_flip = section.orientation.section_flip == Some(crate::feature::BinaryFlag::Set);
+    let start_reversed = plane_flip ^ section_flip;
     let rows = scan
         .surfaces
         .rows
@@ -6150,11 +6155,6 @@ fn generated_rectilinear_plane_extent(
             >= 2)
         .then_some(())?;
 
-    let start_reversed = match op {
-        BooleanOp::Join | BooleanOp::NewBody => true,
-        BooleanOp::Cut => false,
-        BooleanOp::Unresolved | BooleanOp::Intersect => return None,
-    };
     let candidates = families
         .iter()
         .filter_map(|family| {
@@ -18842,6 +18842,7 @@ fn schema_feature_definition(
             [] => unique_owned_feature_definition(&scan.features.definitions, feature_id),
             _ => None,
         };
+        let section = definition.and_then(|definition| definition.section_3d.as_ref());
         let profile = definition.map(|definition| {
             section_profile_ref(ir, feature_sketch_record_id_in_scan(scan, definition))
         });
@@ -18879,9 +18880,9 @@ fn schema_feature_definition(
                 })
             })
             .or_else(|| {
-                (transforms.is_empty())
-                    .then_some(())
-                    .and_then(|()| generated_rectilinear_plane_extent(scan, ir, feature_id, op))
+                (transforms.is_empty()).then_some(()).and_then(|()| {
+                    generated_rectilinear_plane_extent(scan, ir, feature_id, section)
+                })
             });
         let construction = extent_and_direction.map(|(extent, direction)| {
             (

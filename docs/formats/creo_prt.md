@@ -2563,7 +2563,7 @@ axis is its in-plane reference direction, and the stored origin is the datum
 origin. Incomplete sibling `local_sys` fields do not compete with the complete
 frame.
 
-For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
+For a linear section sweep, generated plane carriers parallel to the section normal bound the sweep axially. Their signed offsets are measured from the section origin along the section normal. The extreme nonzero offset on one side defines a blind extrusion from offset zero to that offset; its sign determines the sweep direction. Extreme offsets on opposite sides define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. Interior axis-normal planes do not shorten the sweep. When no complete section transform or ordered cap equations are available, a rectilinear plane-family carrier chart uses the uniquely owned `gsec3d_ptr` record with a resolved sketch-plane identifier. Its start-cap `orient` reversal is the parity of set `plane_flip` and set section `flip`; each field independently negates the sketch normal. `flip_flag` and the feature Boolean operation do not select cap polarity. Without that section flag witness, the direction and extent remain unresolved. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain. The first resolved section sweep in feature-definition order forms the base body. A later sweep requires its Boolean operation before it can be committed as an independent body. A section-sweep definition is solid when its evaluated closed-profile topology produces a solid body. An absent evaluated body does not define a nonsolid sweep.
 One or more uniquely decoded positional cylinder frames joined from section arcs
 to same-feature generated cylinder rows independently define a blind extent when
 their axes, positive lengths, and section-plane origins agree. Generated arc
@@ -2580,7 +2580,8 @@ entity. Both cap identifiers must be materialized by the table and resolve to
 unique same-feature plane rows. Parallel placed cap equations define a blind
 extent: their absolute normal separation is the length, and their ordered
 signed separation is the direction.
-Without complete placement or cap equations, the same non-rotational class
+Without complete placement, ordered cap equations, or the rectilinear section
+flag witness, the same non-rotational class
 remains a linear extrusion with unresolved direction and extent. Its uniquely
 owned section definition still supplies the native profile reference. That
 reference resolves to the neutral sketch when the sketch contains a resolved
