@@ -4,7 +4,9 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PrincipalPlane, SketchSpace};
+use cadmpeg_ir::features::{
+    Feature, FeatureDefinition, FeatureId, ParameterId, PrincipalPlane, SketchSpace,
+};
 use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
 
 use crate::native::{CatiaDesignObject, CatiaNative, CatiaObjectRecord};
@@ -28,7 +30,8 @@ impl DesignFeatureTransfer {
     }
 
     /// Bind parameters to a transferred feature only through their exact
-    /// entity-record and object-record ownership chain.
+    /// entity-record and object-record ownership chain. The same exact
+    /// incidences populate feature-local parameter ordinals.
     pub(crate) fn assign_parameter_owners(&self, ir: &mut CadIr, native: &CatiaNative) {
         let entities = native
             .entity_records
@@ -46,11 +49,9 @@ impl DesignFeatureTransfer {
             .iter()
             .map(|object| (object.id.as_str(), object))
             .collect::<HashMap<_, _>>();
+        let mut exact_feature_owners = HashMap::new();
 
         for parameter in &mut ir.model.parameters {
-            if parameter.owner.is_some() {
-                continue;
-            }
             let Some(native_ref) = parameter.native_ref.as_deref() else {
                 continue;
             };
@@ -68,8 +69,21 @@ impl DesignFeatureTransfer {
             else {
                 continue;
             };
-            parameter.owner = Some(feature_id);
+            if parameter.owner.is_none() {
+                parameter.owner = Some(feature_id.clone());
+            }
+            if parameter.owner.as_ref() == Some(&feature_id) {
+                exact_feature_owners.insert(parameter.id.clone(), feature_id);
+            }
         }
+
+        assign_feature_parameter_ordinals(
+            ir,
+            &entities,
+            &object_records,
+            &exact_feature_owners,
+            &self.feature_ids,
+        );
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -109,6 +123,64 @@ impl DesignFeatureTransfer {
             if feature_parent_chain_is_acyclic(&feature.id, &parents) {
                 feature.parent = Some(parent.clone());
             }
+        }
+    }
+}
+
+fn assign_feature_parameter_ordinals(
+    ir: &mut CadIr,
+    entities: &HashMap<&str, &crate::native::CatiaEntityRecord>,
+    object_records: &HashMap<&str, &CatiaObjectRecord>,
+    exact_feature_owners: &HashMap<ParameterId, FeatureId>,
+    feature_ids: &HashMap<String, FeatureId>,
+) {
+    let transferred_features = feature_ids.values().cloned().collect::<HashSet<_>>();
+    let mut parameters_by_feature = HashMap::<FeatureId, Vec<(u64, u64, ParameterId)>>::new();
+    for parameter in &ir.model.parameters {
+        let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
+            continue;
+        };
+        if !transferred_features.contains(feature_id) {
+            continue;
+        }
+        let Some(entity_id) = parameter.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(entity) = entities.get(entity_id) else {
+            continue;
+        };
+        let Some(object_record) = object_records.get(entity.object_record.as_str()) else {
+            continue;
+        };
+        parameters_by_feature
+            .entry(feature_id.clone())
+            .or_default()
+            .push((
+                object_record.byte_offset,
+                entity.byte_offset,
+                parameter.id.clone(),
+            ));
+    }
+
+    let mut parameter_ordinals = HashMap::new();
+    for parameters in parameters_by_feature.values_mut() {
+        parameters.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then(left.1.cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+        });
+        for (ordinal, parameter) in parameters.iter().enumerate() {
+            let Some(ordinal) = u32::try_from(ordinal).ok() else {
+                continue;
+            };
+            parameter_ordinals.insert(parameter.2.clone(), ordinal);
+        }
+    }
+
+    for parameter in &mut ir.model.parameters {
+        if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
+            parameter.ordinal = *ordinal;
         }
     }
 }
@@ -436,7 +508,7 @@ mod tests {
     use super::*;
     use cadmpeg_ir::units::Units;
 
-    use crate::native::{CatiaDesignClass, CatiaObjectGraph, CatiaObjectOwner};
+    use crate::native::{CatiaDesignClass, CatiaEntityRecord, CatiaObjectGraph, CatiaObjectOwner};
     use crate::object_graph::ObjectPayload;
 
     fn design_object(id: &str, owner_design_object: Option<&str>) -> CatiaDesignObject {
@@ -530,6 +602,66 @@ mod tests {
             repeated_reference_schema_selection: None,
             subtype: PayloadSubtype::Empty,
             references: Vec::new(),
+        }
+    }
+
+    fn entity_record(
+        id: &str,
+        object_record: &str,
+        byte_offset: u64,
+        entity_id: u32,
+    ) -> CatiaEntityRecord {
+        CatiaEntityRecord {
+            id: id.to_string(),
+            object_graph: "graph".to_string(),
+            object_record: object_record.to_string(),
+            ordinal: 0,
+            byte_offset,
+            byte_len: 0,
+            lead: 0,
+            definition_len: 0,
+            definition_prefix: Vec::new(),
+            definition_schema_selections: Vec::new(),
+            entity_id,
+            definition_suffix: Vec::new(),
+            value_len: 0,
+            value_payload: Vec::new(),
+            value_fields: Vec::new(),
+            value_schema_selections: Vec::new(),
+            relation_expression: None,
+            parameter_value: None,
+            constraint_range: None,
+            definition_value: None,
+            definition_chain_value: None,
+            relation_program_instance: None,
+            configuration_record: None,
+            configuration_row_link: None,
+            formula_relation: None,
+            value_packets: Vec::new(),
+            numeric_pair: None,
+            reference_signature: None,
+            record_suffix: Vec::new(),
+            suffix_value: None,
+            suffix_framing: None,
+            suffix_schema_selection: None,
+        }
+    }
+
+    fn parameter(id: &str, native_ref: &str) -> cadmpeg_ir::features::DesignParameter {
+        cadmpeg_ir::features::DesignParameter {
+            id: ParameterId(id.to_string()),
+            owner: None,
+            ordinal: 99,
+            name: id.to_string(),
+            expression: "1 mm".to_string(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(1.0),
+            )),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(native_ref.to_string()),
         }
     }
 
@@ -713,6 +845,102 @@ mod tests {
         assert_eq!(
             transfer.consumed_records(),
             transfer.native_operation_records
+        );
+    }
+
+    #[test]
+    fn orders_exact_feature_parameters_by_serialized_field_position() {
+        let operation = native_operation_object(
+            "operation-object",
+            None,
+            1,
+            "operation-record",
+            "Prism_ThickThin1",
+            "operation-entry",
+        );
+        let operation_record = object_record(
+            "operation-record",
+            None,
+            Some(1),
+            None,
+            Some("Prism_ThickThin1"),
+            Some("operation-entry"),
+        );
+        let mut late_parameter_record = object_record(
+            "late-parameter-record",
+            Some("operation-object"),
+            Some(3),
+            Some(1),
+            None,
+            None,
+        );
+        late_parameter_record.byte_offset = 30;
+        late_parameter_record.entity_record = Some("late-parameter-entity".to_string());
+        let mut early_parameter_record = object_record(
+            "early-parameter-record",
+            Some("operation-object"),
+            Some(2),
+            Some(1),
+            None,
+            None,
+        );
+        early_parameter_record.byte_offset = 20;
+        early_parameter_record.entity_record = Some("early-parameter-entity".to_string());
+        let native = CatiaNative {
+            design_objects: vec![operation],
+            object_graphs: vec![CatiaObjectGraph {
+                id: "graph".to_string(),
+                byte_offset: 0,
+                byte_len: 0,
+                finjpl_segment: None,
+                outer_container: None,
+                catalog_byte_offset: None,
+                catalog: None,
+                records: vec![
+                    operation_record,
+                    late_parameter_record,
+                    early_parameter_record,
+                ],
+            }],
+            entity_records: vec![
+                entity_record("late-parameter-entity", "late-parameter-record", 300, 3),
+                entity_record("early-parameter-entity", "early-parameter-record", 200, 2),
+            ],
+            ..CatiaNative::default()
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .parameters
+            .push(parameter("late-parameter", "late-parameter-entity"));
+        ir.model
+            .parameters
+            .push(parameter("early-parameter", "early-parameter-entity"));
+
+        let transfer = transfer_design_features(&mut ir, &native, None);
+        transfer.assign_parameter_owners(&mut ir, &native);
+
+        assert_eq!(
+            ir.model
+                .parameters
+                .iter()
+                .map(|parameter| (
+                    parameter.id.clone(),
+                    parameter.owner.clone(),
+                    parameter.ordinal
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    ParameterId("late-parameter".to_string()),
+                    Some(FeatureId::from("operation-object:feature")),
+                    1,
+                ),
+                (
+                    ParameterId("early-parameter".to_string()),
+                    Some(FeatureId::from("operation-object:feature")),
+                    0,
+                ),
+            ]
         );
     }
 

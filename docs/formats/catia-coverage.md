@@ -262,6 +262,11 @@ current scores require those matrices and representative fixtures.
   chain resolves to exactly one transferred feature identity. A missing
   object, non-reflexive cycle, or ambiguous feature identity leaves the
   parameter at document scope.
+- Exact feature-owned parameters receive feature-local ordinals in serialized
+  object-record order, with the entity-record position as a deterministic
+  tie-breaker. This records parameter order and ownership only; it does not
+  assign a parameter to an operation role such as profile, direction, extent,
+  or output.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
