@@ -42,6 +42,8 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` are not the form, direction, or bend-position selectors. The gap-and-length, radius-and-angle, and gap-length-radius frames have distinct fixed-section lengths and rule-radius offsets.
 
+**Note.** `f3d.md` §3.1 states that the form is carried by the parameter set and the executed transition and not by a fixed-section discriminator. `exact_hem_operation` in `design/decode/scopes.rs` does not receive the parameter source kinds. Its gap-and-length reader and its rolled reader share every gate — the reference count, the frame length, and the leading word — and differ only in whether the owner slots parse at offsets 42 and 53 or at 41 and 54. The form therefore comes from offset fit. The rolled reader's own comment concedes that the fixed frame proves the record identities only. The projector re-derives each role from the owner's parameter source kind, so a wrong form stays in the native arena and does not reach the neutral model.
+
 **Need.** A source-preserving writer needs the independent settings carried by those fields and the indexed settings record.
 
 ### DR-12. Placement `refType` values
@@ -261,6 +263,264 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** The projector needs one occurrence identity per operand. Without it the feature stays a native node although its two connector frames and its alignment values are complete. Emitting a joint whose operands are empty would assert a join between unnamed bodies, so the operand identity has to come from the construction record the frame reference names, and that record's members are not resolved.
 
+### DR-34. Sketch-curve geometry-family discriminator
+
+**Question.** Which stored field selects the geometry family of a sketch-curve record?
+
+**Known.** `f3d.md` §3.1 "A sketch-curve record contains" gives the circle-and-arc record class `F0130424-8B7E-4092-93C9-1CA807482534`. It names no class for a line and none for a NURBS. `decode_sketch_curve_identities` in `design/decode/sketch.rs` reads the record's class tag and does not resolve it against the segment type table. It selects the family with an ordered chain: legacy NURBS, NURBS, circular arc, line, compact planar line, then referenced analytic. The first grammar that accepts wins.
+
+The arc grammar and the line grammar read the same twelve f64 at the same offset and give them different meanings. The arc grammar is first. It accepts when the second and fourth triples are unit vectors, the two are orthogonal, the radius is positive, and the angular interval is nonzero. A line record whose stored displacement has unit length and whose stored auxiliary direction is orthogonal to it satisfies the arc grammar. `f3d.md` §3.1 "A sketch-line geometry payload begins with" states that an imported sketch can keep a stale auxiliary direction, so the two conditions are not exclusive.
+
+**Need.** The decoder must select the family from a stored field. A line that decodes as an arc gives the profile loop a wrong endpoint incidence, and the spatial-sketch classifier then puts the curve in the wrong branch. The line and NURBS record classes settle the item.
+
+### DR-35. Live copy of a repeated record index
+
+**Question.** Which copy of a record index is the live copy when a Design stream holds more than one copy that parses?
+
+**Known.** `decode_sketch_texts`, `decode_sketch_points`, and `decode_sketch_curve_identities` in `design/decode/sketch.rs` each hold a set of emitted record indices and keep the copy that occurs first in byte order. The comment in `decode_sketch_texts` states the condition: "A stream can retain a superseded copy of a record beside the copy its index names, and both parse." `f3d.md` gives no rule that separates a superseded copy from the live copy.
+
+**Need.** A stream that appends the current copy after the superseded copy makes every one of these records decode to the pre-edit content: a sketch text keeps its earlier string, height, and anchor, and a sketch point keeps its earlier coordinates. The decoder emits one record and records no loss, so no consumer can detect the substitution. The rule that marks the live copy settles the item. Until then the two copies must decode to equal content, or the record must be withheld with a loss.
+
+### DR-36. Parameter-owner frame length
+
+**Question.** What gives the serialized length of an indexed parameter-owner frame?
+
+**Known.** `f3d.md` §3.1 "Every dimension or feature-input parameter has an indexed owner frame" gives the owner as a member sequence with an optional three-byte variant block. It gives no length. `decode_parameter_owners` in `design/decode/parameters.rs` supplies the length from the ordered list `[108, 107, 104, 103, 101, 100, 99]` and keeps the first length whose fixed-member checks hold. `parse_parameter_owner` then reads every field from a per-length offset table.
+
+The owner is one logical indexed record delimited by two headers that carry the same record index, as `f3d.md` §3.1 "A parameter scope is one logical indexed record" states for a scope. The paired header therefore gives the frame end. `decode_parameter_owners` holds the complete header map and does not use it. `exact_fixed_scalar` in `design/decode/scopes.rs` measures the length from the record boundaries in the same way this function must.
+
+**Need.** A frame whose length is not in the list produces no owner, no companion, no dimension frame, and no feature parameter, and no loss is recorded. A frame whose bytes satisfy a longer arm before the correct arm shifts every field offset and gives the parameter and companion joins a wrong record index. The validator compares the owner value against the parameter value and catches the second case only. `f3d.md` §3.1 "`Loft` stores its result operation" names a 105-byte scalar frame that the list does not hold.
+
+### DR-37. Extent carrier of the current Extrude prologue
+
+**Question.** Which per-side words carry the extent form of a current-generation `Extrude` prologue?
+
+**Known.** `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" states that the two u32 after the operation are the travel direction and the face-extend option and that "they are not an extent pair". It gives direction values `1 = one side`, `2 = two sides`, and `3 = symmetric`. `f3d.md` §3.1 "The extent form is carried by" puts the two per-side extent words after the profile normal and the scope reference slots, with values `0 = absent`, `1 = distance`, and `2 = to entity with an offset`.
+
+**Conflict.** `exact_current_extrude_prologue` in `design/decode/scopes.rs` names the pair at `operation + 4` and `operation + 8` `extent_discriminators` and takes the extent form from it: `[1, 1]` gives a one-sided to-face extent, `[1, 2]` a one-sided distance, `[2, 0]` a two-sided distance, and `[3, 2]` a symmetric distance. The first element of each pair reproduces the direction enum the specification gives. The mapping of the second element also opposes the extent enum, because it takes `1` as a to-face extent where the extent enum gives `1` as a distance. `exact_legacy_shifted_extrude_prologue` reads the same pair, names it `direction_face_extend_values`, and takes the extents from separate per-side offsets. `validate.rs` repeats the same four pairs, so the validator confirms the decoder and not the format.
+
+**Need.** The two readings disagree about which words carry the extent. A one-sided blind extrude whose face-extend option is `1` decodes as a to-face extrude, and the projector then requires a termination group that the record does not hold. The decision names the correct offsets for the current form.
+
+### DR-38. Extent of the legacy-distance Extrude dialect
+
+**Question.** Which field carries the extent form of the legacy-distance `Extrude` prologue?
+
+**Known.** `exact_legacy_distance_extrude_prologue` in `design/decode/scopes.rs` reads one word at `operation + 4` and refuses the record when the value is not `2`. Under `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" that word is the travel direction and the value `2` is two sides. `DesignExtrudePrologue::extent` in `records.rs` returns a one-sided distance for this dialect without reading a field.
+
+**Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
+
+### DR-39. Alignment lane roles of an `Assemble` scope
+
+**Question.** Which stored field assigns the roles of an `Assemble` scope's alignment owner lanes?
+
+**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" ties the four-owner alignment of angle, X, Y, and Z to the 627-, 633-, 637-, and 692-byte forms, the eight-owner layout to the 732-byte form, and the axial `alignAngle` and `alignOffset` pair to the 705- and 772-byte forms. `exact_assembly_alignment` in `design/decode/scopes.rs` selects the lane slice and the role assignment from the lane count alone: four lanes take the whole run, six and eight lanes drop the first four, and ten lanes drop the first eight. It does not read `scope.frame_length`, which the same function has.
+
+The check `scope.reference_members.ends_with(&owner_record_indices)` holds the chosen lanes to the end of the ordered reference table, which `f3d.md` states for the alignment owners.
+
+**Need.** A non-axial frame that carries six contiguous owners takes the axial arm, drops four lanes as placement lanes, and forces the X and Y offsets to zero. The frame length is a settled discriminator for the frame offsets in the same function chain and must select the lane roles as well.
+
+### DR-40. Location and operand assignment of the occurrence-path records
+
+**Question.** Which stored reference locates the two occurrence-path records of an `Assemble` scope, and what assigns each path to one operand frame?
+
+**Known.** `f3d.md` §3.1 "Except in the 705- and 772-byte forms" gives the path record indices as five and two below the construction index in a four-owner scope, and 39 and 36 below it in an eight-owner scope. The same paragraph states that "The two path records qualify the two operand transforms in order".
+
+Both rules are positional. No stored reference in the scope names either path record, and no field in either path record names the operand frame it qualifies. `exact_assembly_operand_paths` in `design/decode/scopes.rs` keys the two deltas on `scope.frame_length == 732` rather than on the owner count the specification names; `exact_assembly_alignment` accepts owner counts four, six, eight, and ten across the frame lengths 627, 633, 637, 692, and 732, so the two keys are not equal.
+
+**Need.** An eight-owner scope whose frame length is not 732 reads the deltas five and two and reaches two records that are not the path records. A joint whose paths are exchanged names the two joined occurrences in the wrong order. The stored reference and the operand assignment rule settle both.
+
+### DR-41. Selection of one closed spatial-Sketch profile
+
+**Question.** Which field selects one of several closed spatial-Sketch profiles?
+
+**Known.** This question is the third of the five DR-17 lists. `f3d.md` §3.1 "An Extrude selection resolves" gives the fallback chain, and DR-17 states that each unknown makes the selection fall back to native retention.
+
+`spatial_polyline_profile_for_face` in `design/profile_select.rs` does not fall back. It sorts the inserted face's loop edge lengths, sorts each candidate profile's edge lengths, and accepts a profile whose sorted list agrees within `tolerance * (1 + max(|a|, |b|))`. A sorted multiset of edge lengths is not an identity. The inner map returns nothing for a boundary use whose entity is not a spatial line, so a profile that holds one arc or one NURBS segment never enters the comparison and the uniqueness gate cannot see it. The relative tolerance form is not in `f3d.md`.
+
+**Need.** A spatial sketch that holds an all-line profile and a mixed profile with equal loop lengths gives the all-line profile as the sole match, and the feature asserts a selection the file does not name. DR-17 promises native retention for this case. Either the edge-length rule is the format's rule, or the selection must withhold.
+
+### DR-42. Clause ordinal of a rectangular sketch-relation
+
+**Question.** Which member gives the auxiliary-run position where a rectangular sketch-relation's first direction clause opens?
+
+**Known.** `f3d.md` §3.1 "The two reference runs hold the same members." gives each clause as the evaluated count, the count-parameter reference, a three-component unit direction, a source distance scalar, and the distance-parameter reference. It gives no rule that locates the first clause when the class walk is incomplete.
+
+`decode_pattern_definition` in `design/decode/sketch.rs` takes the ordinal from `rectangular_clause_ordinal`. That field is absent both when the class was not named and when one clause reference is absent. The fallback then uses `auxiliary_references.len() == 5` as the ordinal. The field's own comment names the behaviour: the ordinals "are guessed from the length of the auxiliary run".
+
+**Need.** The two absent cases are different. A relation with one absent clause reference and a run of length five reads the clause pair one position late, and the two directions then carry the wrong parameter references. Only the unit-direction test and the count range reject the shift.
+
+### DR-43. Envelope of a whole-body construction operand
+
+**Question.** What bounds the byte span in which one whole-body construction operand's body recipe stands?
+
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the member sequence and the record envelope from index `N` to `N + 4`. It gives no byte bound on the span.
+
+`unique_body_recipe` in `design/decode/operands.rs` requires exactly one recipe in the span, which is the correct exact-witness form, and then clamps the lower end of the span to 65,536 bytes below the envelope end. The clamp and the uniqueness gate oppose each other: a span longer than the clamp that holds two recipes gives one match inside the clamped window, the gate passes, and the operand binds to a recipe that is not the only candidate. Without the clamp the same span gives two matches and the operand withholds.
+
+**Need.** The bound is not in `f3d.md` or in `docs/layouts/f3d.toml`. A wrong recipe gives a `Combine` tool or an Extrude target-shape group a body it does not select. The real span bound settles the item; a buffer-derived bound removes the opposition.
+
+### DR-44. Selection scope of an edge-treatment transition chain
+
+**Question.** Which feature families and which member counts may take the complete transition edge chain as one group's selection?
+
+**Known.** `f3d.md` §3.1 gives two rules. An executed edge-treatment group with one selection operand resolves a connected source-edge chain from its exact ASM transition. A group of `n` compact persistent members whose transition deletes exactly `n` edges selects the complete deleted-edge set.
+
+`resolved_edge_group_with_transition_chain` in `design/edge_resolve.rs` holds a third rule that neither paragraph gives. A group of one member with one identity operand takes the whole chain, with no test of the feature family and no `allow_edge_treatment_transition_chain` bit. `resolved_edge_group` reaches that code for `RuledSurface`, `Loft`, `SurfacePatch`, `EdgeFlange`, and `Hem`; the `RuledSurface` projector requires one member in every edge group, so the one-member shape is the usual shape there.
+
+The same function holds a fourth rule for a group of more than one full-layout member. Its final test compares each operand's transition candidates against the chain. `history.rs` computes the transition candidates once for each `(history, current state, previous state)` triple and copies the same vector into every identity operand of the scope, so that test compares a vector with itself and cannot fail. `radius_edge_identity_group_candidates` holds the same defect: its per-member test ends in a disjunct that the chain's own construction makes true for every operand.
+
+**Note.** `f3d.md` §3.1 conditions the sole-group fixed-radius form on the transition assigning the radius to a nonempty chain "for every member". The code does not hold that condition.
+
+**Need.** Two of the four rules have no per-member evidence. Three single-member `RuledSurface` groups take one chain and give three byte-distinct selections one neutral value. A variable-radius `Fillet` that names two edges takes every edge the transition deleted. The member count and the family that bound each rule settle the item.
+
+### DR-45. Face set of an Extrude to-shape target
+
+**Question.** Which faces of a whole-body recipe target define the shape an Extrude terminates on?
+
+**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the role-`0x0000000500000000` target group whose members are whole-body recipe operands. It gives no rule that turns the group into a neutral face set. `f3d.md` §3.1 "A `Combine` scope stores" uses the candidate faces of a body recipe in the opposite direction, as a check on a body identity: "if candidate faces are present, that body must occur in their body incidence".
+
+`resolved_body_recipe_shape` in `design/face_resolve.rs` collects the union of every reference's candidate faces and emits it as the resolved face set of the termination. A reference's candidate faces are the active faces whose persistent subentity tag holds that reference. The set is not proved to be the body's complete boundary and is not proved to be the termination surface.
+
+**Need.** A recipe reference that tags three faces of a twelve-face body makes the neutral model state that the extrusion terminates on those three faces. The rule that gives the target shape from a whole-body recipe settles the item.
+
+### DR-46. Join from a `Chamfer` dimensional specification to its edge group
+
+**Question.** Which stored field joins a `Chamfer` dimensional specification to one construction-operand group?
+
+**Known.** `f3d.md` §3.1 "Within a scope of the Chamfer family," states that the groups in scope-reference order pair one to one with the specifications in increasing owner-local order. `project_chamfer` in `design/feature_project.rs` implements that rule with a positional zip of the two sorted lists.
+
+The `Fillet` family has a stored join for the same relation. `DesignFilletRadiusLaw` carries the parameter record index of each radius, and `project_fillet_arm` joins on it.
+
+**Need.** The `Chamfer` join is positional and the `Fillet` join is not. Either the `Chamfer` record holds an equivalent stored index that the decoder does not read, or the positional rule is the format's rule. A scope whose owner-local order does not follow the scope-reference order separates the two.
+
+### DR-47. Recipe-kind conditioning of a recipe-backed linear dimension
+
+**Question.** Does the recipe kind of a dimension companion's records restrict the candidate family of a recipe-backed linear dimension?
+
+**Known.** `f3d.md` §3.1 "A recipe-backed linear dimension" gives the candidate rule and states that candidates are axis-aligned point pairs and parallel line pairs. It states no condition on the recipe kind.
+
+`design/dimensions.rs` adds one. When every recipe record of the companion has the `Edge` kind, the candidate list keeps only the parallel-line-pair results and drops the point-pair results. The filter removes a rival candidate instead of proving it wrong: a companion whose candidates hold one point pair and one line pair of equal measurement gives one surviving candidate and the dimension asserts it.
+
+**Need.** The filter is in neither `f3d.md` nor this document. Either the recipe kind carries the candidate family, or the two candidates must give a repeated dimension or native retention.
+
+### DR-48. Adjacent-versus-span discriminator of a rectangular sketch pattern
+
+**Question.** Which stored member states whether a rectangular sketch-pattern distance is adjacent spacing or the seed-to-final span?
+
+**Conflict.** `f3d.md` §3.1 "The two reference runs hold the same members." states that the member is stored: "A non-empty counted reference run stores adjacent spacing in the source distance scalar. An empty counted reference run stores the total seed-to-final span." DR-27 states of the same run that the field has "a width and no meaning" and that the decoder transfers nothing from it. `exact_rectangular_pattern` in `design/constraints.rs` reads neither: it builds the instances under both readings and keeps the reading that gives a unique result.
+
+**Known.** The two readings agree for a count of two, because the span divided by count minus one equals the adjacent spacing. Both arms then give equal directions and equal instances and differ only in which parameter slot holds the reference. The uniqueness gate fails and every two-instance rectangular pattern falls back to a native relation.
+
+**Need.** The three statements disagree. The reading decides whether the decoder must retain the counted run's emptiness and whether a two-instance pattern can transfer at all.
+
+### DR-49. Verification of a spatial counted-offset pair
+
+**Question.** What proves the offset distance and the offset side of a spatial offset pair whose curves are not lines?
+
+**Known.** `f3d.md` §3.1 gives the counted offset relation. `spatial_counted_offset_dimension_definition` in `design/dimensions.rs` measures a pair only when both curves are lines. A pair of circles, arcs, or NURBS bypasses the distance check, enters the emitted pair list, and takes the reversal flag that a line pair elsewhere in the same relation set. One witnessed pair legitimizes every other pair.
+
+The planar sibling `exact_counted_offset` in the same file is stronger. It requires a measured offset for every pair and holds an arc-specific rule.
+
+**Need.** A relation with one line pair and three arc pairs states an offset distance and an offset side for the three arc pairs that nothing measured. The measurement rule for a non-line spatial offset settles the item.
+
+### DR-50. Construction order of scopes with no history-state identity
+
+**Question.** What gives the construction order of two feature scopes that carry no history-state identity?
+
+**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" gives a partial order only: "When one scope's preceding identity equals another scope's current identity, the former follows and depends on the latter." A suppressed `Extrude`, `Fillet`, or `Chamfer` and every `Sketch` carry no such identity and contribute no edge.
+
+`assign_feature_ordinals` in `design/feature_project.rs` seeds each feature's ordinal from the scope's byte offset and uses it as the tie-break of the topological sort. The neutral `Feature.ordinal` is documented as the stable construction order within the source history.
+
+**Need.** The neutral model states a construction sequence that the file does not state for every state-null scope. The field that carries the timeline position settles the item.
+
+### DR-51. Authored order of design configuration variants
+
+**Question.** Where does a document store the authored order of the variants of a configuration table?
+
+**Known.** `f3d.md` gives the configuration tables as JSON documents. `design/configurations.rs` reads the variants from a `serde_json::Map`. No crate in the workspace enables the `preserve_order` feature of `serde_json`, so that map is a `BTreeMap` and its iteration order is the ASCII order of the variant names. The projector derives `NeutralConfiguration.ordinal` from that iteration and from a counter that runs across every table. `cadmpeg-ir` documents the field as the position in the design configuration list.
+
+**Need.** A table authored as `Small`, `Medium`, `Large` is exported with `Large` at ordinal zero. Either the JSON document holds the authored order in a member the decoder does not read, or the order is not recoverable and the neutral model must not state one.
+
+### DR-52. Location of the ACT table and the root-component discriminator
+
+**Question.** Which stored reference locates the `ACTTable` record, and which field marks the root component's link?
+
+**Known.** `f3d.md` §3.1 gives the per-component links and states that "the record whose entity key names entity 3 is the root component's". `decode_root_components` in `act.rs` applies no entity-3 test and emits every link as an `ActRootComponent`, whose fields are documented as the document root entity and the document display name. An N-component document therefore holds N records that each claim to be the document root.
+
+`decode_table` in the same file locates the table by the first `ACTTable` byte window in the stream and returns an empty entity table and an empty GUID pool from five distinct rejection paths. No loss is recorded at either call site, so a document whose first window is not the table decodes to an ACT arena that has lost its table half in silence.
+
+**Need.** The entity-3 rule is in the specification and not in the decoder. The table's stored location, and a per-record mark for the root link, settle both halves.
+
+### DR-53. ACT entity identity when one record index carries two entity ids
+
+**Question.** What identifies an ACT entity when one record index carries more than one entity id?
+
+**Known.** `decode` in `act.rs` keys its entity map on the pair of record index and entity id, so the code states that one record index can carry two ids. `crate::ids::native_scoped_id` builds the emitted identity from the record index alone. Two arena records then carry equal identities. The channel assignment overwrites rather than merges, so the later scan position wins.
+
+**Need.** The identity is the join key for annotations and for the writer's patch lookup. Two records with one identity make the patch target ambiguous. Either the record index is the identity and the map key is too wide, or the entity id is part of the identity and the emitted id is too narrow.
+
+### DR-54. Selection of the design asset folder
+
+**Question.** Which manifest member names the design asset folder?
+
+**Known.** `f3d.md` §1.3 states that a document can hold sibling asset folders with independent GUIDs and asset types, and that the manifest holds the asset-folder name run with the design folder first in the counted run. `scan` in `container.rs` does not read that run. It takes the folder of the first archive entry whose name holds `Breps.BlobParts` and keeps it.
+
+The value filters the Design stream for the occurrence binder, the recipe and parameter decoders, two body binders, and the T-spline reader. A document whose first B-rep-bearing entry belongs to another asset folder makes every one of those passes match no stream, and the decode then reports an empty design model with no error. A document with no B-rep leaves the value absent and the filter widens to every folder whose name holds `Design`.
+
+**Need.** The manifest run is the stored authority and is not read. The two regimes above differ and neither is stated.
+
+### DR-55. Localized names of the edge-treatment families
+
+**Question.** Which localized scope-kind names does the edge-treatment group-retention rule cover?
+
+**Known.** `f3d.md` §3.1 names `Congé` and `Chanfrein` as the localized forms that do not require every selection to use a counted group. `extend_related_design_records` in `decode.rs` matches those two strings. `design_feature_family` in `design/mod.rs` is the crate's localization map and holds `Fillet`, `Congé`, `Abrundung`, and `Arredondamento` for one family and `Chamfer` and `Chanfrein` for the other.
+
+**Need.** A German or Portuguese `Fillet` scope keeps construction-operand groups that the French document drops, so the decode output depends on the authoring language. The complete localized name set settles the rule for both documents.
+
+### DR-56. Mask width of a sketch-relation state word
+
+**Question.** Which class member gives the width of a sketch-relation's stored state mask?
+
+**Known.** `relation_has_paired_member_run` in `design/decode/sketch.rs` reads a discriminator byte and returns no answer when the leading scan fails or when the byte is neither zero nor one. `validate_sketch_relation_edits` in `writer/patch/edits.rs` then assumes the wide form and writes eight bytes at the state offset. A record that stores the u32 form loses the four bytes after the mask, which are the next member of the record.
+
+**Need.** The writer substitutes a width for an unresolved discriminator instead of refusing. The class member that gives the width settles the item.
+
+### DR-57. Members of a generated presentation envelope and browser-node join
+
+**Question.** Which GUID of a presentation envelope joins to a browser-node record, and which members must a generated envelope hold?
+
+**Known.** `f3d.md` §3.1 "A browser body record carries" states that exactly one GUID in the presentation envelope equals a browser-node record's GUID and that the node record carries the body's Design entity suffix. `encode_design_bulkstream` in `writer/generate/records.rs` writes the literal string `Body` and the all-zero GUID `00000000-0000-0000-0000-000000000000` into the envelope, and separately synthesizes each browser-node GUID from the body's position in the neutral body list as `00000000-0000-0000-0000-{ordinal:012X}`. The envelope GUID and the node GUID therefore never agree, and a re-ordering of the neutral body list changes every emitted node identity.
+
+The decoder does not use the documented structure either. `decode_design_assignments` in `materials.rs` searches backward up to ten strings for an entity id and forward up to fifteen strings for the library marker, and takes the string before that marker as the visual GUID. The two invented strings satisfy that search.
+
+**Need.** A generated document holds a browser-node set and an appearance envelope that the documented join cannot connect. The envelope's real member sequence, and the source of a browser-node GUID, settle what a writer must emit.
+
+### DR-58. Bound of a Design body-map pair count
+
+**Question.** What bounds the pair count of a Design body map?
+
+**Known.** `f3d.md` §3.1 gives the body map as a count followed by that many sixteen-byte pairs. It gives no bound. `body_bindings` in `design/decode/body.rs` tries the counts one through 64 in ascending order and keeps the first count whose stored word equals the trial. The comment states the reason the ascending scan is taken to be unambiguous: the high halves of the little-endian ids are zero. That statement is an observation of the values present and not a checked invariant.
+
+**Need.** A blob with more than 64 pairs produces no binding at all, and every body in it loses its Design binding, its visibility, and its material assignment with no loss recorded. An entity suffix at or above 2^32 whose high word equals a trial count makes the scan accept the wrong count and mis-pair every key.
+
+### DR-59. Body visibility when two browser-node records name one entity suffix
+
+**Question.** Which browser-node record gives the visibility of a body when two records name one entity suffix?
+
+**Known.** `browser_node_records` in `design/decode/body.rs` is an unanchored byte scan: every offset that holds a length word, a 36-character GUID, a zero-or-one byte, the pair `01 01`, and a u64 is accepted. `browser_node_hidden_flags` collects the results into a map, so the last scan hit wins in silence. `browser_node_entities` reads the same record set, detects the same collision, and drops the entity instead of keeping one.
+
+**Need.** The two functions read one record set and resolve the same ambiguity in opposite ways. A body is exported hidden when it is shown, with no loss recorded. The record that owns the visibility of an entity suffix settles the item.
+
+### DR-60. Member order of a spline-group constraint
+
+**Question.** Which reference run gives the member order of a neutral spline-group constraint?
+
+**Conflict.** `f3d.md` §3.1 "The two reference runs hold the same members." states that "Only the second run is in semantic order" and that "The first run holds the same members in an unrelated order, so its last entry does not name the spline". `project_spatial_sketch_constraints` in `design/sketch_project.rs` builds the neutral spline-group members from the first run. `constraints.rs` makes the same choice for a planar sketch. The control-polygon inference earlier in `sketch_project.rs` uses the second run and states the rule in its comment.
+
+**Known.** `cadmpeg-ir` documents the neutral field as the ordered spline-group members. The validator checks the member count only.
+
+**Need.** A spline group of three or more members carries an order the specification calls unrelated, and its last entry is not the spline. A consumer that reads the last entry as the spline curve, or that rebuilds the control polygon from adjacent pairs, gets the wrong entity.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
@@ -295,6 +555,36 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must know the targets to write a complete occurrence placement. A reader takes the target path, the discriminators, and the transform without them.
 
+### XR-05. Precedence of a role-adjacent carrier against a placement record
+
+**Question.** Which carrier gives the occurrence transforms of an external reference when a Design stream holds both a class-256 role-adjacent carrier and one or more placement records for one role?
+
+**Known.** `f3d.md` §3.1 states that in class-256 carriers the placement occurrence is an LP-UTF16 occurrence-role GUID, two zero bytes, and a rigid transform equal to the scope transform. `f3d.md` §1.4 "**Placement.**" gives the `CE2913AA` placement record and states that several placements may carry the same role and place the same target document more than once.
+
+`bind_occurrences` in `xref.rs` prefers the carrier form for a whole stream. It scans the stream for role-adjacent transforms, and when that scan returns any result it discards every structured placement of that stream. The scan applies no class-tag gate, does not check the two zero bytes, and accepts every needle hit in every indexed record whose following window decodes as a rigid matrix.
+
+**Need.** A stream that holds both forms loses the placement count and the placement transforms. Components then appear at the wrong pose or in the wrong number, and the merged `.f3z` document repeats the error. The precedence, and the gate that limits the carrier scan to class-256 records, settle the item.
+
+### XR-06. Gate of the placement tagged run
+
+**Question.** Which stored field gates the tagged u32 run of an occurrence placement?
+
+**Known.** `f3d.md` §1.4 "**Placement.**" states that the tagged u32 run and its reference occur only where the meta stream's serializer magic is `1234`. `placement_tail` in `xref.rs` does not read that magic. It takes the run to be present when the next byte is neither zero nor one, which is the presence encoding of a reference.
+
+The crate reads the same magic elsewhere: `design/decode/sketch.rs` selects a header width from it, and `ids::design_segment` reaches the sibling meta stream.
+
+**Need.** A modern-container placement whose tag byte is zero or one takes the legacy branch, the record does not close on its end, and the placement is dropped. The stored discriminator is available and unread.
+
+### XR-07. Absent occurrence transform against the identity placement
+
+**Question.** How does a reader separate an occurrence that stores no transform from an occurrence whose placement did not decode?
+
+**Known.** `f3d.md` §1.4 states that an external occurrence without a serialized transform places the target document unchanged. `project_occurrences` in `xref.rs` substitutes the identity matrix for an absent transform. The absence has two causes: the record carried the identity marker, which is the documented form, and the placement did not decode or no placement named the role.
+
+The `.f3z` merge writes the note `(identity placement)` for the first cause. The plain `.f3d` path writes nothing, and `DesignProjectionGaps` holds no counter for a missing occurrence transform.
+
+**Need.** A component placed at the origin because its placement failed is indistinguishable from a component the document places at the origin. The decode must record a loss for the second cause.
+
 ## 3. Material assets
 
 ### MA-03. Distance unit-tag values
@@ -302,6 +592,8 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 **Question.** What are the unit tags of a Distance value other than the three known length tags?
 
 **Known.** `f3d.md` §3.2 "Boolean stores one u8." gives the tag structure `(quantity class << 12) | unit index`, with the unit index one-based, and gives three length tags: `0x200d` is centimetre, `0x200e` is millimetre, and `0x2016` is inch. The decoder converts these three to millimetres and returns no unit for every other tag. The tag is a property of the asset and does not track the document display length unit, so a change of that unit does not enumerate further tags. The schema `unit` attribute of a Distance property does not predict the tag, and one record mixes tags across its own members, so the attribute does not bound the tag set.
+
+**Note.** The neutral model does not have a value with no scale. `distance_property` in `materials.rs` returns no value for an unknown tag, and every caller in `texture_asset` then substitutes `0.0`. A bump depth or a real-world scale authored in an unknown length unit is therefore exported as zero, which is also the unset value, and no loss is recorded. The item's Need and the decoder disagree.
 
 **Need.** A Distance with an unknown tag gets no unit. The neutral model then has a value with no scale. We must know which further unit indexes the length class `0x2` has, and whether a Distance takes a quantity class other than length.
 
@@ -318,6 +610,8 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 **Question.** Which member does a `TextureMap2dSchema` closure omit from its value block?
 
 **Known.** `f3d.md` §3.2 "An `InstanceProperties` record opens with" states that such a block is one four-byte slot shorter than its closure, and that only omitting `texture_MapChannel_ID_Advanced` or `texture_MapChannel` leaves every surviving member at its schema default. The two are byte-degenerate: both are four-byte integers at adjacent positions, and the surviving pair reads `1` and `0` under either choice, which are the two members' declared defaults in either assignment.
+
+**Note.** The decoder has already taken one of the two choices and exports the result. `instance_property_serializes` in `protein.rs` omits `texture_MapChannel_ID_Advanced`, and its own comment states that the choice is not decidable from the bytes. `texture_asset` in `materials.rs` then reads the surviving first word as `texture_MapChannel` and puts it in the neutral `map_channel`. If the omitted member is the other one, that neutral value is the advanced channel id and the texture binds to the wrong UV set. The record consumes exactly, so the exact-consumption check cannot separate the two.
 
 **Need.** A writer must emit the same member set the reader expects, and the two choices shift every following member by four bytes. A texture asset authored with a map channel other than `1`, or with a non-default advanced channel id, separates them.
 
@@ -336,6 +630,64 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 **Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §3.2 "Per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
+
+### MA-09. Face identity of a browser-node-reference appearance assignment
+
+**Question.** How does a face-scoped appearance assignment in the browser-node-reference generation name its face?
+
+**Known.** `f3d.md` §3.1 "A browser body record carries" gives the record and its body-scope form. A face-scoped record of this generation carries no physical-material preset name and no `299`-tagged head, so neither body-identity form applies. Its presentation envelope holds two lowercase GUIDs before the visual GUID. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
+
+**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual GUID as the face identity, writes the choice into `f3d.md` §3.2 "In the paired-library browser-node-reference generation," as a rule, and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual GUID and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved. Writing the choice into the specification is not evidence for it.
+
+The closure also has no operand. `resolve_face_appearance_bindings` in `decode.rs` builds its face map only from face attributes that hold `NEUTRON_Material_attrib_def`, and this item states that the stream of this generation carries no such attribute. Either that statement is wrong, or the closed rule binds nothing in the generation it settles. The commit resolves neither reading.
+
+**Need.** Face colour cannot transfer for this generation without the face operand. A document assigning distinct appearances to two named faces of one body separates the two GUIDs and fixes which one carries face identity. The same document also shows which attribute carries the face-side join.
+
+### MA-10. Precedence of the base-colour members of one schema record
+
+**Question.** Which member gives the base colour when one appearance record holds more than one colour member?
+
+**Known.** `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the colour records against appearance bindings. It gives no precedence among the colour members inside one record. `appearances_from_schema_records` in `materials.rs` takes the first member that resolves from the ordered list `generic_diffuse`, `opaque_albedo`, `surface_albedo`, `common_Tint_color`.
+
+`common_Tint_color` is a `CommonSchema` member and stands beside `surface_albedo` on a Prism record. The list prefers `surface_albedo` and drops the tint with no loss recorded.
+
+**Need.** The order is the only arbiter and is not in the specification. A tinted Prism appearance carries both members, and the neutral colour must come from the member the source uses.
+
+### MA-11. Owner join of a Design material assignment
+
+**Question.** Which stored reference joins a Design material-assignment token to its target entity and to its visual GUID?
+
+**Known.** `f3d.md` §3.2 gives the join backbone through the numeric design-entity namespace. It gives no adjacency rule. `decode_design_assignments` in `materials.rs` searches the ten strings before the material token for the nearest one that parses as `<name>_<digits>`, and the fifteen strings after it for the library marker, and takes the string before that marker as the visual GUID.
+
+`entity_suffix` accepts any string of that shape, so an unrelated stored name such as a texture slot or a component label between the true entity id and the token retargets the assignment. The three window sizes are in neither `f3d.md` nor `docs/layouts/f3d.toml`, and a record with one extra string in the run drops the assignment with no loss recorded.
+
+**Need.** The record's own framing is settled — `f3d.md` §3.2 "Per-face appearance assignments live" gives the class, the count, and the entry width — and the decoder does not use it. The stored reference from a token to its entity settles the item.
+
+### MA-12. Appearance identity of an assignment with no preset
+
+**Question.** What distinguishes two body appearance assignments that carry no preset name and whose visual GUIDs name no catalog asset?
+
+**Known.** `decode_with_bodies` and `bind_bodies` in `materials.rs` accept an appearance for an assignment when the visual GUIDs agree or when the assignment's preset name equals the appearance's name. A decoded appearance always carries a name; a synthesized one carries the assignment's preset, which is absent unless the string begins with `Prism-`.
+
+Two preset-less assignments whose GUIDs resolve to no asset therefore compare equal on the name clause, because both names are absent. The first synthesizes one appearance and the second finds it, so the second GUID produces no appearance and no loss. Both bodies then bind to the first appearance.
+
+**Need.** The name clause exists for the preset-named case. The identity of a preset-less assignment must come from its visual GUID alone, or two bodies with different appearances are reported as sharing one.
+
+### MA-13. Body identity when several bodies carry one key
+
+**Question.** Which body does a material assignment name when more than one body carries its ASM body key, or when two body keys carry one entity suffix?
+
+**Known.** `body_for_key` and `decode_body_map` in `materials.rs` both state the multiplicity in their own comments and both resolve it by taking the smallest identity, for a stable digest across process runs. `resolve_body_selector` in `brep.rs` meets the same shape and raises `Malformed` instead.
+
+**Need.** Determinism is not correctness. The other bodies keep no appearance binding and no loss is recorded. The field that separates the bodies settles the item; without it the two paths must agree on refusing.
+
+### MA-14. Length of a visual GUID and the uniqueness of its match
+
+**Question.** Is a visual GUID exactly 36 characters, and may two appearances agree on their first 36 characters?
+
+**Known.** `visual_guid_matches` in `materials.rs` compares only the first 36 characters and `is_guid_prefix` accepts a longer string. `resolve_face_appearance_bindings` in `decode.rs` then takes the first appearance that matches, with no uniqueness gate, so two appearances that agree on the prefix bind by arena order. `f3d.md` §3.2 gives the library-qualified preset form, in which a suffix follows the GUID.
+
+**Need.** The comparison is deliberately truncated and the selection is not gated. The suffix's role, and whether it separates two assets, settle whether the truncation is safe.
 
 ## 4. T-splines
 
@@ -363,6 +715,8 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 **Question.** What geometric or topological quantity does the scalar after an `e` record's half-edge root hold?
 
 **Known.** `f3d.md` §1.1.1 "Topology uses zero-based indices in record order." gives the field position and its finite-value invariant. The scalar is present on smooth and creased edges. It is usually near one, but it also takes exact binary fractions and other positive values. Crease membership is stored independently by the `ec` records, so the scalar is not the edge's crease flag. The decoder retains the complete `.tsm` entry but does not transfer this scalar to the neutral subdivision cage.
+
+**Note.** The decision to withhold the scalar is correct, but its result is not recorded. `tsm.rs` emits every `SubdEdge` with `sharpness` `[0.0, 0.0]` and `sector_coefficients` `[0.0, 0.0]` while setting `tag` to `Crease` from the `ec` records. A creased edge therefore carries a tag that says crease and a numeric sharpness that says smooth, and the only loss the reader emits for this family is the unknown-record count. A consumer that reads the numeric field renders every crease smooth.
 
 **Need.** We must know the quantity and its endpoint convention before the decoder can assign it to `SubdEdge.sharpness`, `sector_coefficients`, or a new neutral field. Assigning it to sharpness without that distinction would mark smooth edges as sharp.
 
@@ -414,6 +768,16 @@ A neutral assembly joint needs one occurrence per operand. Every other form supp
 
 **Need.** We must know the five payloads to write a mesh body from a neutral model, which duplicate matrix governs if they differ, and how a negative-determinant matrix affects triangle winding.
 
+### PM-03. Join from a mesh geometry container to its feature scope
+
+**Question.** Which stored reference joins a mesh body's geometry container to the `Base Mesh Feature` scope that owns it?
+
+**Known.** `f3d.md` §3.1 "A mesh body's geometry container" gives the mesh-body record and its marked reference to the scope's record index. `marked_record_indices` in `design/decode/mesh.rs` does not read one reference. It scans every byte offset of the payload for the pattern of a marker byte, eight bytes, and two zero bytes, and keeps every hit. `decode.rs` then registers the tessellation under every hit.
+
+`decode_mesh_bodies` reaches the container through two chained first-match searches: the first record whose bytes hold the GUID, then the first record in the same stream whose bytes hold the reference and whose two stored matrices decode. Neither search proves that no second record qualifies.
+
+**Need.** A document with two mesh bodies whose byte windows collide gives one feature two tessellations. The single stored reference the specification names must be read at its own offset.
+
 ## 7. Test evidence
 
 ### EV-01. Typed feature projection reached only by a direct call
@@ -431,5 +795,7 @@ The projector leaves are tested. `crates/cadmpeg-codec-f3d/src/design/tests.rs` 
 **Question.** Which generate-writer behaviour do the `attributes`, `sketch_link`, and `topology_base` goldens each pin?
 
 **Known.** `crates/cadmpeg-codec-f3d/tests/golden/generate` holds `attributes.bin`, `sketch_link.bin`, and `topology_base.bin`. The three are byte-identical and each is 2,055 bytes. Their source fixtures under `tests/golden/fixtures` differ from one another, and their decode goldens under `tests/golden/decode` differ from one another. The generate writer therefore maps three different inputs to one output, and two of the three names separate nothing.
+
+**Note.** The three goldens are the only pins on the generate lane's Design BulkStream output. That output holds the fabricated members DR-57 names — the literal `Body`, the all-zero envelope GUID, and the ordinal-derived browser-node GUID — and the body-key assignment that DR-57 and MA-13 name. No golden separates any of them, so a change to those members moves one 2,055-byte file or none.
 
 **Need.** A reader of the golden tree counts three generate cases where one exists. We must find whether the generate lane is meant to discard what separates these inputs. If it is, two names must go or must state that they are duplicates. If it is not, the writer drops content that the decode side keeps.
