@@ -17,8 +17,8 @@ use super::{
     legacy_linked_coordinates, legacy_single_incidence_profile_point_coordinates,
     linked_profile_point, marker_coordinates, marker_is_geometry_locus, marker_local_id,
     marker_object_index, marker_spatial_coordinates,
-    packed_legacy_linked_profile_point_coordinates, relation_bindings, sketch_input_entities,
-    terminal_extended_profile_point_coordinates,
+    packed_legacy_linked_profile_point_coordinates, relation_bindings, relation_bindings_scoped,
+    sketch_input_entities, terminal_extended_profile_point_coordinates,
 };
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputOperand, FeatureInputOperandKind,
@@ -297,6 +297,85 @@ fn relation_binding_requires_family_operand_signature() {
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+    )
+    .is_empty());
+}
+
+#[test]
+fn relation_binding_with_ambiguous_declarations_is_withheld() {
+    let class = |offset: u64, name: &str| FeatureInputClass {
+        id: format!("class-{offset}"),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset,
+        name: name.into(),
+        role: FeatureInputClassRole::SketchConstraint,
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::Native(0x8152),
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("sketch".into()),
+        ordinal: 0,
+        offset: 30,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: vec![0, 1],
+        operands: vec![operand(0), operand(1)],
+    };
+
+    assert!(relation_bindings(
+        "lane",
+        &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
+        &[scalar],
+    )
+    .is_empty());
+}
+
+#[test]
+fn scoped_relation_binding_does_not_cross_feature_interval() {
+    let class = FeatureInputClass {
+        id: "class".into(),
+        parent: "lane".into(),
+        ordinal: 0,
+        offset: 10,
+        name: "sgPntPntDist".into(),
+        role: FeatureInputClassRole::SketchConstraint,
+    };
+    let operand = |entity_index| FeatureInputOperand {
+        offset: 0,
+        reference_ref: String::new(),
+        kind: FeatureInputOperandKind::Native(0x8152),
+        entity_index,
+        entity_ref: None,
+    };
+    let scalar = FeatureInputScalar {
+        id: "scalar".into(),
+        parent: "lane".into(),
+        feature_ref: Some("second".into()),
+        ordinal: 0,
+        offset: 120,
+        object_id: 1,
+        name: "name".into(),
+        value: 1.0,
+        role: FeatureInputScalarRole::Driving,
+        entity_indices: vec![0, 1],
+        operands: vec![operand(0), operand(1)],
+    };
+
+    assert!(relation_bindings_scoped(
+        "lane",
+        &[class],
+        &[scalar],
+        &[(0, 100, "first".into()), (100, u64::MAX, "second".into())],
     )
     .is_empty());
 }

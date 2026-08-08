@@ -13,7 +13,7 @@ use super::endpoints::{
     marker_profile_curve_role, wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
-use super::relation_records::relation_signature;
+use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
@@ -21,7 +21,7 @@ use super::{
 };
 use crate::records::{
     FeatureInputClass, FeatureInputLane, FeatureInputReference, FeatureInputRelationBinding,
-    FeatureInputRelationFamily, FeatureInputScalar, SketchInputEntity, SketchInputKind,
+    FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::math::Point3;
@@ -672,27 +672,18 @@ pub(crate) fn relation_bindings(
     classes: &[FeatureInputClass],
     scalars: &[FeatureInputScalar],
 ) -> Vec<FeatureInputRelationBinding> {
+    relation_bindings_scoped(parent, classes, scalars, &[])
+}
+
+pub(crate) fn relation_bindings_scoped(
+    parent: &str,
+    classes: &[FeatureInputClass],
+    scalars: &[FeatureInputScalar],
+    intervals: &[(u64, u64, String)],
+) -> Vec<FeatureInputRelationBinding> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    classes
-        .iter()
-        .filter_map(|class| {
-            let family = match class.name.as_str() {
-                "sgLLDist" => FeatureInputRelationFamily::LineLineDistance,
-                "sgPntPntDist" => FeatureInputRelationFamily::PointPointDistance,
-                "sgPntLineDist" => FeatureInputRelationFamily::PointLineDistance,
-                "sgPntPntHorDist" => FeatureInputRelationFamily::PointPointHorizontalDistance,
-                "sgPntPntVertDist" => FeatureInputRelationFamily::PointPointVerticalDistance,
-                "sgAnglDim" => FeatureInputRelationFamily::Angle,
-                "sgCircleDim" => FeatureInputRelationFamily::CircleDiameter,
-                _ => return None,
-            };
-            let scalar = scalars
-                .iter()
-                .filter(|scalar| scalar.offset > class.offset)
-                .min_by_key(|scalar| scalar.offset)?;
-            (scalar.offset - class.offset <= 128 && relation_signature(family, &scalar.operands))
-                .then_some((class, scalar, family))
-        })
+    unique_relation_declaration_candidates(classes, scalars, intervals)
+        .into_iter()
         .enumerate()
         .map(
             |(ordinal, (class, scalar, family))| FeatureInputRelationBinding {

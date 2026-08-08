@@ -1,11 +1,98 @@
 //! Relation instance records and scalar roles.
 
+use super::scalars::feature_object_name;
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
-    FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
+    FeatureInputClass, FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind,
+    FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+    FeatureInputScalarRole,
 };
 use std::collections::{HashMap, HashSet};
+
+pub(super) fn feature_intervals(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Vec<(u64, u64, String)> {
+    let mut starts = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            Some((
+                feature_object_name(feature, lane)?.offset,
+                feature.id.clone(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    starts.sort_unstable_by_key(|(offset, _)| *offset);
+    starts.dedup_by_key(|(offset, _)| *offset);
+    starts
+        .iter()
+        .enumerate()
+        .map(|(index, (start, feature))| {
+            (
+                *start,
+                starts.get(index + 1).map_or(u64::MAX, |(next, _)| *next),
+                feature.clone(),
+            )
+        })
+        .collect()
+}
+
+fn feature_at_offset(offset: u64, intervals: &[(u64, u64, String)]) -> Option<&str> {
+    intervals
+        .iter()
+        .find(|(start, end, _)| offset > *start && offset < *end)
+        .map(|(_, _, feature)| feature.as_str())
+}
+
+pub(super) fn relation_declaration_candidates<'a>(
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, u64, String)],
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    classes
+        .iter()
+        .filter_map(|class| {
+            let family = relation_family(&class.name)?;
+            let scalar = scalars
+                .iter()
+                .filter(|scalar| scalar.offset > class.offset)
+                .min_by_key(|scalar| scalar.offset)?;
+            if scalar.offset - class.offset > 128
+                || (!intervals.is_empty()
+                    && feature_at_offset(class.offset, intervals) != scalar.feature_ref.as_deref())
+                || !relation_signature(family, &scalar.operands)
+            {
+                return None;
+            }
+            Some((class, scalar, family))
+        })
+        .collect()
+}
+
+pub(super) fn unique_relation_declaration_candidates<'a>(
+    classes: &'a [FeatureInputClass],
+    scalars: &'a [FeatureInputScalar],
+    intervals: &[(u64, u64, String)],
+) -> Vec<(
+    &'a FeatureInputClass,
+    &'a FeatureInputScalar,
+    FeatureInputRelationFamily,
+)> {
+    let candidates = relation_declaration_candidates(classes, scalars, intervals);
+    let mut counts = HashMap::<&str, usize>::new();
+    for (_, scalar, _) in &candidates {
+        *counts.entry(scalar.id.as_str()).or_default() += 1;
+    }
+    candidates
+        .into_iter()
+        .filter(|(_, scalar, _)| counts.get(scalar.id.as_str()) == Some(&1))
+        .collect()
+}
 
 pub(super) fn relation_instances(
     histories: &[crate::records::FeatureHistory],
@@ -17,13 +104,27 @@ pub(super) fn relation_instances(
         .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let declarations = lane
-        .classes
-        .iter()
-        .filter_map(|class| {
-            relation_family(&class.name).map(|family| (class.offset, family, class.id.as_str()))
+    let intervals = feature_intervals(histories, lane);
+    let declaration_candidates =
+        relation_declaration_candidates(&lane.classes, &lane.scalars, &intervals);
+    let mut candidate_counts = HashMap::<&str, usize>::new();
+    for (_, scalar, _) in &declaration_candidates {
+        *candidate_counts.entry(scalar.id.as_str()).or_default() += 1;
+    }
+    let declarations = declaration_candidates
+        .into_iter()
+        .filter(|(_, scalar, _)| candidate_counts.get(scalar.id.as_str()) == Some(&1))
+        .map(|(class, scalar, family)| {
+            (
+                scalar.id.as_str(),
+                (class.offset, family, class.id.as_str()),
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<HashMap<_, _>>();
+    let ambiguous_scalars = candidate_counts
+        .into_iter()
+        .filter_map(|(scalar, count)| (count > 1).then_some(scalar))
+        .collect::<HashSet<_>>();
     let mut groups = Vec::<(
         String,
         FeatureInputRelationFamily,
@@ -40,13 +141,51 @@ pub(super) fn relation_instances(
         else {
             continue;
         };
-        let Some((class_offset, family, class_ref)) = declarations
-            .iter()
-            .filter(|(offset, family, _)| {
-                *offset < scalar.offset && relation_signature(*family, &scalar.operands)
-            })
-            .max_by_key(|(offset, _, _)| offset)
-        else {
+        let declaration = declarations.get(scalar.id.as_str());
+        let Some((class_offset, family, class_ref)) = declaration else {
+            if ambiguous_scalars.contains(scalar.id.as_str()) {
+                continue;
+            }
+            let Some((owner, family, class_ref, operands, group_scalars, last_index)) =
+                groups.last()
+            else {
+                continue;
+            };
+            let Some(last_scalar) = group_scalars.last() else {
+                continue;
+            };
+            let same_run = owner == feature_ref
+                && *last_index + 1 == scalar_index
+                && !lane.classes.iter().any(|class| {
+                    class.offset > last_scalar.offset
+                        && class.offset < scalar.offset
+                        && relation_family(&class.name).is_some()
+                })
+                && operands
+                    .iter()
+                    .map(|operand| (operand.kind, operand.entity_index))
+                    .eq(scalar
+                        .operands
+                        .iter()
+                        .map(|operand| (operand.kind, operand.entity_index)));
+            if same_run && scalar.role == FeatureInputScalarRole::Driving {
+                if group_scalars.len() == 1 {
+                    let (_, _, _, _, scalars, last_index) = groups
+                        .last_mut()
+                        .expect("a continuation requires an existing relation group");
+                    scalars.push(scalar);
+                    *last_index = scalar_index;
+                } else {
+                    groups.push((
+                        owner.clone(),
+                        *family,
+                        class_ref.clone(),
+                        scalar.operands.clone(),
+                        vec![scalar],
+                        scalar_index,
+                    ));
+                }
+            }
             continue;
         };
         // A display scalar can precede the declaration selected by its adjacent
@@ -148,6 +287,7 @@ mod relation_records_tests {
     use super::*;
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+        FeatureInputName,
     };
     use std::collections::BTreeMap;
 
@@ -285,6 +425,80 @@ mod relation_records_tests {
                 FeatureInputRelationFamily::PointPointHorizontalDistance,
             ]
         );
+    }
+
+    #[test]
+    fn ambiguous_relation_declarations_leave_scalar_unbound() {
+        let distance = class(10, "sgPntPntDist");
+        let vertical = class(20, "sgPntPntVertDist");
+        let lane = lane(
+            vec![distance, vertical],
+            vec![scalar(30, FeatureInputScalarRole::Driving)],
+        );
+
+        assert!(relation_instances(&sketch_history(), &lane).is_empty());
+    }
+
+    #[test]
+    fn relation_declarations_do_not_cross_feature_intervals() {
+        let mut history = sketch_history();
+        history[0].features[0].id = "first".into();
+        history[0].features[0].name = "First".into();
+        let mut second = history[0].features[0].clone();
+        second.id = "second".into();
+        second.name = "Second".into();
+        second.ordinal = 1;
+        history[0].features.push(second);
+
+        let mut relation_scalar = scalar(120, FeatureInputScalarRole::Driving);
+        relation_scalar.feature_ref = Some("second".into());
+        let mut lane = lane(vec![class(10, "sgPntPntDist")], vec![relation_scalar]);
+        lane.names = vec![
+            FeatureInputName {
+                id: "name-first".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: None,
+                value: "First".into(),
+            },
+            FeatureInputName {
+                id: "name-second".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 100,
+                object_id: None,
+                value: "Second".into(),
+            },
+        ];
+
+        assert!(relation_instances(&history, &lane).is_empty());
+    }
+
+    #[test]
+    fn repeated_driving_scalar_starts_another_anchored_relation() {
+        let lane = lane(
+            vec![class(10, "sgPntPntDist")],
+            vec![
+                scalar(20, FeatureInputScalarRole::Display),
+                scalar(30, FeatureInputScalarRole::Driving),
+                scalar(40, FeatureInputScalarRole::Driving),
+            ],
+        );
+
+        let relations = relation_instances(&sketch_history(), &lane);
+        assert_eq!(relations.len(), 2);
+        assert_eq!(
+            relations
+                .iter()
+                .map(|relation| relation.scalar_refs.len())
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+        assert!(relations.iter().all(|relation| {
+            relation.family == FeatureInputRelationFamily::PointPointDistance
+                && relation.class_ref == "class-10"
+        }));
     }
 }
 

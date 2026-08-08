@@ -11,10 +11,12 @@ use super::endpoints::{
     compact_legacy_curve_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
     marker_is_selected_construction_line, wide_indexed_curve_endpoint_indices,
 };
-use super::markers::{current_reverse_incidence_endpoint_offsets, linked_profile_point};
+use super::markers::{
+    current_reverse_incidence_endpoint_offsets, linked_profile_point, relation_bindings_scoped,
+};
 use super::operands::resolve_scalar_operand_markers;
 use super::reference_geometry::explicit_reference_plane_frame;
-use super::relation_records::relation_instances;
+use super::relation_records::{feature_intervals, relation_instances};
 use super::scalars::feature_object_name;
 use super::selections::{
     compact_body_selections, compact_edge_selections, compact_surface_selections,
@@ -737,6 +739,9 @@ pub(super) fn finalize_lane_bindings(
             .cloned()
             .flatten();
     }
+    let intervals = feature_intervals(histories, lane);
+    lane.relation_bindings =
+        relation_bindings_scoped(&lane.id, &lane.classes, &lane.scalars, &intervals);
     lane.relation_instances = relation_instances(histories, lane);
     lane.body_selections = compact_body_selections(histories, lane);
     lane.edge_selections = compact_edge_selections(histories, lane);

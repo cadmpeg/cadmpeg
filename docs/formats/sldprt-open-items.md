@@ -919,29 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-38. Relation class declaration binding
-
-**Question.** Which class declaration owns a relation scalar?
-
-**Known.** `sldprt.md` §2 "Sketch relations use named scalar records with reference cells at fixed scalar-record slots." names the relation declaration as the discriminator. It does not define how a scalar selects its declaration.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_records.rs:43` selects the nearest preceding declaration:
-
-```rust
-.filter(|(offset, family, _)| {
-    *offset < scalar.offset && relation_signature(*family, &scalar.operands)
-})
-.max_by_key(|(offset, _, _)| offset)
-```
-
-`relation_signature` at `relation_records.rs:318` does not separate the colliding families. Two `Native(0x8152)` operands satisfy `PointPointDistance`, `PointPointHorizontalDistance`, and `PointPointVerticalDistance`. Two `Native(0x8dcb)` operands satisfy the horizontal and the vertical family. There is no uniqueness gate and no withhold branch. The declarations are not scoped to the feature, so a declaration in one feature can claim a scalar in another.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/names.rs:101` recognizes the full ASCII declaration form only, so the repeated lane-scoped class tokens are not in `lane.classes` and a per-instance declaration is not visible to this rule.
-
-**Need.** We must know the binding to give each scalar its family. A horizontal dimension must not become an inactive vertical one.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
-
 ### DI-44. Component-path entry grammar
 
 **Question.** Which field selects between the wide and narrow component-path entry layouts, and which separator width applies in a mixed path?
