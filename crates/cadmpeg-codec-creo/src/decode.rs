@@ -17324,6 +17324,13 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
     if generated_rows.is_empty() {
         return round_support_radius(scan, ir, feature_id);
     }
+    // Unequal decoded rolling-radius samples identify a variable-radius
+    // round even when another generated row has no radius proof. A support
+    // plane fallback must not turn that incomplete, unequal sample set into
+    // a false constant radius.
+    if differing_positive_lengths(&round_observed_radii(scan, feature_id)) {
+        return None;
+    }
     let cylinder_rows = generated_rows
         .iter()
         .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
