@@ -1219,6 +1219,10 @@ It also discards the `Sense::Reversed` flag, so an outward boss cylinder qualifi
 
 **Need.** We must know the identity rule. A shifted triplet gives every principal plane the wrong fixed frame.
 
+**Note.** The shifted source-identifier layout has the same question and a different answer. `crates/cadmpeg-codec-sldprt/src/classification.rs:499` accepts a triplet that starts at source identifier `3` and maps `3`, `4`, and `5` to Front, Top, and Right by position in the triplet. `sldprt.md` §2 binds the identities to the identifier values: source IDs `2`, `3`, and `4` are Front, Top, and Right. Read against the values, identifier `3` is Top. `sldprt.md` §2 places three `moRefPlane_c` records at `3`, `4`, and `5` in the origin-at-six layout and does not say which of them is Front, so the specification does not settle the shifted case. The decoder chose the positional reading and a test pins it.
+
+Also unresolved here: `history.rs:7294` has no cross-history uniqueness gate, so two disjoint matching runs each produce a Front, a Top, and a Right.
+
 ### DI-53. Reference-plane frame encoding precedence
 
 **Question.** Which field selects the frame encoding of a constructed reference plane?
@@ -1269,6 +1273,27 @@ No native field states that the curve is tangent to its neighbours. The construc
 The site runs on the production path through `resolved_features/profiles.rs:1472`.
 
 **Need.** We must know the record that carries the tangency. A straight chamfer between two arcs must not become a fillet.
+
+### DI-58. Extrusion Boolean precedence between class and type token
+
+**Question.** Which source gives the Boolean operation of an extrusion when the feature-input class and the Keywords type token disagree?
+
+**Known.** `sldprt.md` §2 "Feature-tree" states that the class is authoritative: "An extrusion bound to `moCut_c` has Boolean operation cut independently of its localized Keywords type token."
+
+**Conflict.** `crates/cadmpeg-codec-sldprt/src/history.rs:7232` reads the token first and uses the class only as a fallback:
+
+```rust
+fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
+    extrude_op(&feature.kind)
+        .or_else(|| (feature.input_class.as_deref() == Some("moCut_c")).then_some(BooleanOp::Cut))
+}
+```
+
+`extrude_op` removes the non-alphanumeric characters of the token, so a `Boss-Extrude` token gives `Join` and the `moCut_c` test never runs. The specification sentence states the opposite order.
+
+`sldprt.md` §2 also states that every instance with one exact `Type` token uses one feature-input class. That constrains the pairing; it does not forbid a `moCut_c` record whose token normalizes to `bossextrude`.
+
+**Need.** We must apply the stated precedence. A pocket must not decode as a boss.
 
 ### DI-55. Configuration-local feature state gaps
 
