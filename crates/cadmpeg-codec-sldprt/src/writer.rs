@@ -1929,8 +1929,10 @@ pub(crate) fn brep_body(
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let face_colors = face_colors(ir)?;
-    let color_attrs = face_colors
-        .keys()
+    let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
+    colored_faces.sort();
+    let color_attrs = colored_faces
+        .into_iter()
         .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     for point in &ir.model.points {
@@ -2062,7 +2064,9 @@ pub(crate) fn brep_body(
         &mut next,
         &mut out,
     )?;
-    for (face, color) in face_colors {
+    let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
+    colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
+    for (face, color) in colored_faces {
         entity53(&mut out, color_attrs[&face], color);
     }
     Ok(out)
@@ -2168,7 +2172,9 @@ fn write_body_hierarchy(
             "face is not assigned to a body".into(),
         ));
     }
-    for (face, owner) in face_owners {
+    let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
+    face_owner_items.sort_by_key(|(left, _)| *left);
+    for (face, owner) in face_owner_items {
         let mut refs = [0; 6];
         refs[5] = color_attrs.get(face).copied().unwrap_or(0);
         entity51(

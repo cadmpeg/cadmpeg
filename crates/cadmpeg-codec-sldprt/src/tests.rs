@@ -2189,6 +2189,44 @@ fn encoder_writes_source_less_ir() {
 }
 
 #[test]
+fn semantic_writer_emits_face_records_deterministically() {
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+        face.color = Some(Color {
+            r: index as f32 / 10.0,
+            g: (index + 1) as f32 / 10.0,
+            b: (index + 2) as f32 / 10.0,
+            a: 1.0,
+        });
+    }
+
+    let mut expected = None;
+    for _ in 0..4 {
+        let mut encoded = Vec::new();
+        SldprtCodec
+            .plan(cadmpeg_ir::codec::EncodeInput {
+                ir: &ir,
+                fidelity: None,
+            })
+            .and_then(|plan| plan.write_to(&mut encoded))
+            .unwrap();
+        if let Some(expected) = &expected {
+            assert_eq!(expected, &encoded);
+        } else {
+            expected = Some(encoded);
+        }
+    }
+}
+
+#[test]
 fn encoder_rejects_source_less_unresolved_extrusion_profile() {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeExtent, ExtrudeSide, Feature, FeatureDefinition, FeatureId, Length,

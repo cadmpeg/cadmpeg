@@ -859,13 +859,3 @@ The metadata attributes carry `Exactness::ByteExact` (`metadata.rs:311`), which 
 `crates/cadmpeg-codec-sldprt/src/container.rs:542` never reads the descriptor or the trailer, so `DirectoryEntry` cannot carry them. `crates/cadmpeg-codec-sldprt/src/writer.rs:2827` emits 14 zero bytes and the specification's example trailer for every regenerated entry. `writer.rs:342` replays a source entry verbatim when the name, `type_id`, and size all match, so a file whose separator differs and one of whose sections changed size gets two different separators in one directory.
 
 **Need.** We must read and retain both fields. A file must keep one separator for all entries.
-
-### EV-05. Writer output determinism
-
-**Question.** Which order do the generated `00 51` and `00 53` records use?
-
-**Known.** `crates/cadmpeg-codec-sldprt/src/writer.rs:297` `sort_arenas` sorts every other arena before it writes. `writer.rs:2065` and `writer.rs:2171` iterate a `HashMap` instead, so the record order of the generated colour and attribute records changes between runs of the same binary on the same input.
-
-`golden_tests.rs:333` compares decoded text and the semantic round trip compares documents, so no test compares the written bytes.
-
-**Need.** We need a fixed order and a test that compares the written bytes of two runs.
