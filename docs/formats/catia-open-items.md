@@ -528,14 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-33. Derived plane normal sense
-
-**Question.** Which field gives the sense of a plane normal that no trim-packet frame vector gives?
-
-**Known.** `catia.md` §5.7 "**Plane normal** from three non-collinear incident circle centers" gives the normal direction from three circle centers, from two line directions, or from the axis of a cylinder that a cap closes. It gives no sense. `decode::standard_plane_normal_from_circle_centers` and `decode::standard_plane_normal_from_adjacent_circle_carriers` make the first component with magnitude more than `1e-5` positive.
-
-**Need.** The neutral face orientation is the product of the stored face sense and this normal, so the sense is not a gauge. Two coaxial caps of one boss take the same normal from the same cylinder axis, so one of the two is reversed. A plane target that one exact face and one derived face share can also lose its exact normal, because the merge sees two different values and keeps none. We must know the sense field, or we must withhold the normal as the no-witness path already does.
-
 ### SN-37. Same-class edge row interchange
 
 **Question.** Which rows may exchange their endpoint pairs without changing the transferred body?
