@@ -2931,6 +2931,10 @@ fn finish_decode(
             transferred_principal_plane_records.len(),
         ),
         (
+            "transferred_native_operation_count".to_string(),
+            design_feature_transfer.native_operation_records.len(),
+        ),
+        (
             "unresolved_design_record_count".to_string(),
             unresolved_object_record_count,
         ),

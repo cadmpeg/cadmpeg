@@ -272,6 +272,12 @@ current scores require those matrices and representative fixtures.
   history node with the design object's first-field byte offset as its source
   history ordinal. Schema fields named `PRTSketch` or `Sketch` do not establish
   sketch instances.
+- Exact separator-form owner declarations for the admitted native operation
+  classes `EdgeFillet`, `Prism_ThickThin1`, `Prism_ThickThin2`,
+  `Revol_ThickThin1`, and `Sweep_ThickThin1` transfer opaque native operation
+  nodes with source order, identity, and structural parent linkage. Their
+  operands, profiles, directions, extents, outputs, dependencies, and typed
+  parameter roles remain unresolved; this slice does not raise the CATIA score.
 - Several non-primary envelopes transfer connected topology or exact analytic,
   NURBS, and procedural carrier subsets. These are extras until every
   cumulative gate in one closed envelope passes.
