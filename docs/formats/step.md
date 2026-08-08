@@ -27,9 +27,11 @@ reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
 data_parameters = "(" string "," "(" string ")" ")"
 signature= "SIGNATURE;" base64 "ENDSEC;"
-anchor_entry    = resource "=" parameter ";"
+anchor_entry    = resource "=" anchor_item anchor_tag* ";"
+anchor_item     = parameter
+anchor_tag      = "{" tag_name ":" anchor_item "}"
 reference_entry = reference_name "=" resource ";"
-reference_name  = resource | instance_name
+reference_name  = resource | entity_instance_name | value_instance_name
 ```
 
 Outside string escape sequences, implementation levels with a major value
@@ -55,7 +57,10 @@ parse error.
 ## 3. Tokens
 
 ```text
-instance_name = "#" digit+
+entity_instance_name = "#" digit+
+value_instance_name  = "@" digit+
+constant_entity_name = "#" upper (upper | digit)*
+constant_value_name  = "@" upper (upper | digit)*
 standard_name = letter (letter | digit | "_" | "-")*
 user_name     = "!" standard_name
 resource      = "<" resource_character* ">"
@@ -69,11 +74,23 @@ indicator     = "0" | "1" | "2" | "3"
 omitted       = "$"
 derived       = "*"
 sign          = "+" | "-"
+tag_name      = (letter | "_") (letter | digit | "_")*
 ```
 
 Keywords and entity names use ASCII letters, digits, underscore, and hyphen.
 User-defined names begin with `!` where the grammar admits them. Keywords
-ignore ASCII case. Canonical spelling uses uppercase.
+ignore ASCII case. Canonical spelling uses uppercase. Anchor tag names preserve
+source case and use letters, digits, and underscore; a tag name cannot begin
+with a digit.
+
+Numeric `#` and `@` occurrences require at least one nonzero digit. Leading
+zeroes are accepted and removed from the stored integer. Entity and value
+occurrence integers share one namespace: an integer used by one prefix cannot
+be used by the other prefix in the same exchange. Named occurrences begin with
+an ASCII letter or underscore, use only ASCII letters, digits, and underscore,
+and are canonicalized to uppercase. A numeric `#` occurrence is a DATA entity
+reference. A numeric `@` occurrence is a value reference declared by a
+`REFERENCE` entry. Named occurrences are EXPRESS entity or value constants.
 
 `1.`, `0.E+000`, and Fortran `D` exponents are real values. A binary literal
 starts with one indicator nibble and continues with hexadecimal payload digits.
@@ -82,10 +99,10 @@ digit. Its value is `0..=3`, and each unused bit is zero. Payload digits pack
 most-significant nibble first. The decoded bit length is four times the payload
 digit count minus the indicator. The empty bit sequence is written `"0"`.
 
-Comma, equals sign, parentheses, and semicolon are individual punctuation
-tokens. A resource token contains a UTF-8 byte sequence between `<` and `>`.
-The sequence excludes `>`. Line breaks have the same separator role as other
-whitespace.
+Comma, equals sign, parentheses, braces, colon, and semicolon are individual
+punctuation tokens. A resource token contains a UTF-8 byte sequence between
+`<` and `>`. The sequence excludes `>`. Line breaks have the same separator
+role as other whitespace.
 
 ## 4. Strings
 
@@ -107,10 +124,12 @@ the same scalar values where their repertoires overlap.
 
 ## 5. Values and records
 
-A parameter is an instance reference, integer, real, enumeration, string,
-binary literal, omitted value, derived value, list, or typed parameter. A list
-is a parenthesized comma-separated sequence. A typed parameter is a name
-followed by one parenthesized parameter. Empty lists are valid.
+A parameter is an entity reference, value reference, named entity constant,
+named value constant, integer, real, enumeration, string, binary literal,
+resource, omitted value, derived value, list, or typed parameter. A list is a
+parenthesized comma-separated sequence. A typed parameter is a name followed
+by one parenthesized parameter. Empty lists are valid. Numeric value references
+and named constants are values, not local DATA entity identifiers.
 
 A simple entity instance is:
 
@@ -130,13 +149,14 @@ mapping. `*` marks an inherited attribute supplied by a sibling leaf. The
 merged instance retains every leaf name and parameter sequence. Schema
 accessors resolve inherited attributes against that representation.
 
-Instance names share one namespace across all DATA sections. Forward and
-backward references resolve after all DATA sections are read. A reference to an
-absent local instance is a structural reference error. An instance name
-declared by a REFERENCE entry is an external reference and is not required in
-the local DATA graph. An unknown standard or user-defined entity name produces
-a named opaque record that retains its complete token span, byte span, and
-links to other named opaque records.
+Entity instance names share one namespace across all DATA sections. Forward
+and backward references resolve after all DATA sections are read. A reference
+to an absent local instance is a structural reference error. An entity or
+value occurrence declared by a REFERENCE entry is external and is not required
+in the local DATA graph. A value occurrence cannot resolve to a DATA entity
+instance. An unknown standard or user-defined entity name produces a named
+opaque record that retains its complete token span, byte span, and links to
+other named opaque records.
 
 ## 6. Header
 
@@ -148,6 +168,9 @@ repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
 supplies one or more unique string identifiers. The first identifier governs
 the application protocol and edition; later identifiers do not override it.
+Each parameterized DATA section names one schema from this list. The schema
+name compares with the identifier's schema-name portion when the identifier
+has an object identifier.
 An identifier is a schema name with an optional brace-delimited object
 identifier containing space-separated unsigned components. The supported
 identifiers are:
@@ -166,25 +189,30 @@ ASCII case differences compare equal.
 
 ## 7. Edition 3 sections
 
-ANCHOR entries bind a resource name to an in-file parameter value. Anchor names
-are unique. Resource values that name anchors resolve recursively before schema
-decoding and before omitted inherited `name` attributes are repaired. A cycle
-is a structural error.
+ANCHOR entries bind a resource name to an in-file parameter value and may carry
+ordered `{tag:value}` metadata tags. Anchor and tag values retain their source
+values after resource references resolve. Anchor names are unique. Resource
+values that name anchors resolve recursively before schema decoding and before
+omitted inherited `name` attributes are repaired. A cycle is a structural
+error. Resource references in tag values use the same recursive resolution
+rules as anchor values.
 
 REFERENCE entries bind a local resource name to a resource URI. They also bind
-an external instance name to a resource URI. Resource names and URIs are
-delimited by `<` and `>`; an external instance name uses the `#id` form. A URI
-target outside the exchange structure is an external dependency. External
-instance names do not enter the local DATA instance graph.
+an external entity or value occurrence name to a resource URI. Resource names
+and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
+Entity and value occurrence integers are unique across both prefixes, and
+neither may collide with a local DATA entity instance. A URI target outside the
+exchange structure is an external dependency. External names do not enter the
+local DATA instance graph.
 Each SIGNATURE section follows the exchange terminator. Its base64 content
 begins after `SIGNATURE;`, ends at its next `ENDSEC;`, and retains its complete
 byte range. Multiple signature sections remain in source order.
 
 DATA sections are optional in edition 3. One unnamed DATA section requires one
-FILE_SCHEMA identifier. If a DATA section has parameters, they contain its
-unique name and one governing schema name. Multiple DATA sections require
-parameters on every section. All DATA sections share the instance-name
-namespace.
+FILE_SCHEMA identifier. If a DATA section has parameters, they contain a
+decoded unique section name and one governing schema name listed in
+FILE_SCHEMA. Multiple DATA sections require parameters on every section. All
+DATA sections share the entity-instance namespace.
 
 ## 8. Entity-layer invariants
 

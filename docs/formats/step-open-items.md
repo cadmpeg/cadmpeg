@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each external resource combine with the local instance graph?
 
-**Known.** `step.md` §5 "Instance names share one namespace across all DATA sections." through `step.md` §5 "Instance names share one namespace across all DATA sections." define identity and reference resolution inside the DATA sections. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define local resource bindings and external dependencies.
+**Known.** `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define identity and reference resolution inside the DATA sections. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define local resource bindings and external dependencies.
 
 **Need.** We must know the composition rule to resolve cross-resource identities and build one product graph.
 
@@ -62,7 +62,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do AP242 BO-Model XML identities and values combine with the Part 21 instance graph?
 
-**Known.** `step.md` §5 "Instance names share one namespace across all DATA sections." through `step.md` §5 "Instance names share one namespace across all DATA sections." define identity and reference resolution inside the Part 21 DATA sections. The specification gives no cross-encoding composition rule.
+**Known.** `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define identity and reference resolution inside the Part 21 DATA sections. The specification gives no cross-encoding composition rule.
 
 **Need.** We must know the composition rule to build one product graph from the Part 21 exchange structure and its sidecar.
 
@@ -96,7 +96,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each Part 28 XML construct map to the entity graph and invariants in `step.md`?
 
-**Known.** `step.md` §5 "A parameter is an instance reference, integer, real, enumeration, string," through `step.md` §5 "Instance names share one namespace across all DATA sections." define Part 21 values, records, identities, and references. The specification gives no Part 28 mapping.
+**Known.** `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define Part 21 values, records, identities, and references. The specification gives no Part 28 mapping.
 
 **Need.** We must know the mapping to apply schema decoding to a Part 28 exchange structure.
 
@@ -112,7 +112,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each Part 26 HDF5 construct map to the entity graph and invariants in `step.md`?
 
-**Known.** `step.md` §5 "A parameter is an instance reference, integer, real, enumeration, string," through `step.md` §5 "Instance names share one namespace across all DATA sections." define Part 21 values, records, identities, and references. The specification gives no Part 26 mapping.
+**Known.** `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define Part 21 values, records, identities, and references. The specification gives no Part 26 mapping.
 
 **Need.** We must know the mapping to apply schema decoding to a Part 26 exchange structure.
 
@@ -122,7 +122,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What entity semantics does each user-defined `!` entity name select?
 
-**Known.** `step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "Instance names share one namespace across all DATA sections." through `step.md` §5 "Instance names share one namespace across all DATA sections." require an unknown entity to retain its name, complete spans, and links to other named opaque records.
+**Known.** `step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." require an unknown entity to retain its name, complete spans, and links to other named opaque records.
 
 **Need.** We must know the semantics to transfer a user-defined entity to typed native or neutral records.
 
@@ -130,7 +130,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What value semantics does each user-defined `!` type name select?
 
-**Known.** `step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "A parameter is an instance reference, integer, real, enumeration, string," through `step.md` §5 "A parameter is an instance reference, integer, real, enumeration, string," define a typed parameter as a name with one parameter.
+**Known.** `step.md` §3 "user_name" defines the syntax of a user-defined name. `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," through `step.md` §5 "A parameter is an entity reference, value reference, named entity constant," define a typed parameter as a name with one parameter.
 
 **Need.** We must know the semantics to decode the wrapped parameter as a typed value.
 
