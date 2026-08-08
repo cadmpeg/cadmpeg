@@ -291,14 +291,24 @@ fn input_owned_edge_vectors_exclude_future_owned_cache_records() {
 }
 
 #[test]
-fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
-    let mut first = marker("first", Some([0.0, 0.0]));
+fn compact_d6_operand_indexes_point_handles_in_byte_order() {
+    let mut first = marker("arc", Some([0.0, 0.0]));
     first.offset = 10;
     first.kind = SketchInputKind::Arc;
-    let mut second = marker("second", Some([1.0, 0.0]));
+    let mut second = marker("point", Some([1.0, 0.0]));
     second.offset = 20;
-    second.kind = SketchInputKind::LineOrCircle;
-    let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+    let mut third = marker("line", Some([2.0, 0.0]));
+    third.offset = 30;
+    third.kind = SketchInputKind::LineOrCircle;
+    let mut fourth = marker("constrained-point", Some([3.0, 0.0]));
+    fourth.offset = 40;
+    fourth.kind = SketchInputKind::ConstrainedPoint;
+    let markers = HashMap::from([
+        (first.id.as_str(), &first),
+        (second.id.as_str(), &second),
+        (third.id.as_str(), &third),
+        (fourth.id.as_str(), &fourth),
+    ]);
     let relation = FeatureInputRelationInstance {
         id: "relation".into(),
         parent: "lane".into(),
@@ -314,7 +324,7 @@ fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
             offset: 0,
             reference_ref: "reference".into(),
             kind: FeatureInputOperandKind::D6,
-            entity_index: 1,
+            entity_index: 0,
             entity_ref: Some("stored-marker".into()),
         }],
     };
@@ -326,7 +336,22 @@ fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
             &SketchId("sldprt:model:sketch#compact:lane:1".into()),
             &markers,
         ),
-        Some("second")
+        Some("point")
+    );
+    let mut constrained_operand = relation.operands[0].clone();
+    constrained_operand.entity_index = 1;
+    let constrained_relation = FeatureInputRelationInstance {
+        operands: vec![constrained_operand],
+        ..relation.clone()
+    };
+    assert_eq!(
+        relation_operand_marker(
+            &constrained_relation,
+            0,
+            &SketchId("sldprt:model:sketch#compact:lane:1".into()),
+            &markers,
+        ),
+        Some("constrained-point")
     );
     assert_eq!(
         relation_operand_marker(&relation, 0, &SketchId("sketch".into()), &markers),

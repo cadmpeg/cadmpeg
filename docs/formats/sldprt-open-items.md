@@ -1008,16 +1008,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
 
-### DI-39. Compact-sketch `D6` operand roster
-
-**Question.** Which roster does a `D6` operand index in a compact sketch, and which marker kinds does it contain?
-
-**Known.** `sldprt.md` §2 lists `d6 80` as a point-reference tag. It defines no index roster for it. `sldprt.md` §2 defines the solver-line and solver-point rosters as "coordinate-bearing point and constrained-point markers", and `relation_geometry.rs:463` uses that kind filter.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_loci.rs:1496` builds its roster from every coordinate-bearing marker of the feature, sorted by offset, with no kind filter, and indexes it by `operand.entity_index`. A coordinate-bearing line or arc handle therefore takes a roster slot.
-
-**Need.** We must know the roster membership to select the correct marker.
-
 ### DI-40. Marker-arc centre selection by record order
 
 **Question.** Which coordinate-bearing marker is the centre of a connected marker arc?

@@ -1499,6 +1499,12 @@ pub(super) fn relation_operand_marker<'a>(
             .copied()
             .filter(|marker| marker.feature_ref.as_deref() == Some(&relation.feature_ref))
             .filter(|marker| marker.coordinates_m.is_some())
+            .filter(|marker| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
             .collect::<Vec<_>>();
         coordinate_handles.sort_unstable_by_key(|marker| marker.offset);
         return coordinate_handles
