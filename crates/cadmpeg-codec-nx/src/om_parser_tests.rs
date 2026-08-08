@@ -1435,6 +1435,42 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 }
 
 #[test]
+fn om_registry_uses_the_bounded_record_area_as_its_registry_end() {
+    let mut bytes = size_framed_om_section();
+    bytes.extend(std::iter::repeat_n(0xa5, 4097));
+    bytes.extend_from_slice(&[
+        (b"m_lateField".len() + 1) as u8,
+        b'm',
+        b'_',
+        b'l',
+        b'a',
+        b't',
+        b'e',
+        b'F',
+        b'i',
+        b'e',
+        b'l',
+        b'd',
+        0x82,
+    ]);
+    let pointer_offset = bytes.len();
+    let record_area_offset = pointer_offset + 20;
+    bytes.extend_from_slice(&(record_area_offset as u32).to_le_bytes());
+    bytes.resize(record_area_offset, 0);
+    bytes.extend_from_slice(&[13, 0, 0, 0, 14, 0, 0, 0, 44, 0, 0, 0]);
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0");
+    let payload_len = u32::try_from(bytes.len() - 16).expect("synthetic section fits");
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+
+    let section = super::sections(&bytes).remove(0);
+    assert_eq!(
+        section.fields.last().expect("late field").name,
+        "m_lateField"
+    );
+    assert_eq!(section.record_area_offset, Some(record_area_offset));
+}
+
+#[test]
 fn om_operation_labels_require_the_complete_frame() {
     let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x02\x03\xff\xff\x03\x08SKETCH\0";
     let labels = super::operation_labels(bytes, 100);

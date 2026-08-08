@@ -154,10 +154,14 @@ history, `UGS::EXP_expression` marks expressions, and
 `UGS::OM::SaveAuditTrail` marks audit data when no preceding specialized marker
 applies.
 
-A size-framed OM section's schema trailer can contain a little-endian
-section-relative record-area offset. The target begins with three `u32 LE`
-control words followed by `04|05 01 text_length:u8 "NX " product_text 00`.
-The pointed record area extends to the size-framed section boundary.
+A size-framed OM section can identify its internal record area with a
+section-relative little-endian pointer after its type registry. The pointer is
+valid only when it is the unique `u32 LE` word whose target is forward from the
+pointer, remains inside the same size-framed section, and begins with three
+`u32 LE` control words followed by `04|05 01 text_length:u8 "NX " product_text
+00`. When this pointer exists, the field registry ends at the pointer word;
+every length-framed `m_` declaration before it belongs to that registry. The
+pointed record area extends to the size-framed section boundary.
 Feature-history sections are traversed in ascending physical section-offset
 order. Multiple validated segment-index links to one section identify one
 semantic feature-history section; the complete segment-link set remains raw

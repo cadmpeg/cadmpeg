@@ -536,13 +536,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
 
-### OM-37. OM registry and record-area terminators
+### OM-37. Final field declaration in a pointerless OM section
 
-**Question.** What ends a member-field registry, and what bounds the search for a section record-area pointer?
+**Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?
 
-**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" defines the schema trailer that carries the record-area pointer. Neither gives a terminator for the last declaration in a registry, nor a bound for the pointer search.
+**Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. A section-relative `u32 LE` word after the type registry is a record-area pointer only when its forward target remains inside the section, starts with the three control words and product record, and is unique. When valid, that pointer bounds the complete field registry.
 
-**Need.** We must know both terminators. The decoder supplies fixed byte windows: it stops enumerating member declarations after 256 bytes with no match, and it looks for the record-area pointer only inside 4096 bytes after the last member declaration, which also bounds the uniqueness test that rejects an ambiguous pointer. A section that exceeds either window loses its declarations or its complete record area and reports no loss.
+**Need.** We must know the terminal marker or alternate boundary for the final field declaration when no valid record-area pointer exists. A pointerless section cannot establish a complete field registry from the settled byte structure alone.
 
 ### OM-38. `RMFastLoad` membership table location
 
