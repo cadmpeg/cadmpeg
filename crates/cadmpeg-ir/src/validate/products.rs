@@ -104,10 +104,8 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let external_valid = operand.external_document.as_ref().is_none_or(|document| {
                     document.path.is_some() ^ document.document_id.is_some()
                 });
-                let resolution_valid = match &operand.external_document {
-                    Some(_) => operand.occurrence.is_none(),
-                    None => operand.occurrence.is_some(),
-                };
+                let resolution_valid =
+                    !(operand.external_document.is_some() && operand.occurrence.is_some());
                 operand.object.is_some()
                     && resolution_valid
                     && operand
@@ -160,4 +158,88 @@ fn invalid(findings: &mut Vec<Finding>, entity: &str, message: &str) {
         message: message.into(),
         entity: Some(entity.into()),
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::check_products;
+    use crate::document::CadIr;
+    use crate::ids::OccurrenceId;
+    use crate::products::{
+        AssemblyJoint, ExternalDocumentReference, ExternalResolution, JointId, JointKind,
+        JointOperand, Occurrence, OccurrenceParent, PrototypeReference,
+    };
+    use crate::transform::Transform;
+    use crate::units::Units;
+
+    fn root_operand(object: &str) -> JointOperand {
+        JointOperand {
+            occurrence: None,
+            external_document: None,
+            object: Some(object.into()),
+            subelements: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn joint_operands_allow_document_root_and_reject_two_qualifiers() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.assembly_joints.push(AssemblyJoint {
+            id: JointId("test:model:joint#root".into()),
+            kind: JointKind::Fixed,
+            operands: vec![root_operand("root:first"), root_operand("root:second")],
+            frames: vec![Transform::identity(), Transform::identity()],
+            offset_frames: Vec::new(),
+            suppressed: false,
+            detached: [false; 2],
+            angle: None,
+            translation_offset: None,
+            distance: None,
+            distance2: None,
+            angular_limits: None,
+            linear_limits: None,
+            properties: BTreeMap::new(),
+            native_ref: None,
+        });
+
+        let mut findings = Vec::new();
+        check_products(&ir, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+
+        let occurrence = OccurrenceId("test:model:occurrence#placed".into());
+        ir.model.occurrences.push(Occurrence {
+            id: occurrence.clone(),
+            prototype: PrototypeReference::Unresolved,
+            parent: OccurrenceParent::Root,
+            ordinal: 0,
+            transform: Transform::identity(),
+            prototype_transform: Transform::identity(),
+            scale: [1.0; 3],
+            name: None,
+            linked_subelements: Vec::new(),
+            visible: None,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: None,
+        });
+        ir.model.assembly_joints[0].operands[0].occurrence = Some(occurrence);
+        ir.model.assembly_joints[0].operands[0].external_document =
+            Some(ExternalDocumentReference {
+                path: Some("external.f3d".into()),
+                document_id: None,
+                resolution: ExternalResolution::Unresolved,
+            });
+
+        findings.clear();
+        check_products(&ir, &mut findings);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(findings[0].entity.as_deref(), Some("test:model:joint#root"));
+    }
 }

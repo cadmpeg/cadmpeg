@@ -3471,7 +3471,12 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint")));
     let mut corrupted = result.ir.clone();
-    corrupted.model.assembly_joints[0].operands[0].occurrence = None;
+    corrupted.model.assembly_joints[0].operands[0].external_document =
+        Some(cadmpeg_ir::ExternalDocumentReference {
+            path: Some("external.FCStd".into()),
+            document_id: None,
+            resolution: cadmpeg_ir::ExternalResolution::Unresolved,
+        });
     assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
         .findings
         .iter()
