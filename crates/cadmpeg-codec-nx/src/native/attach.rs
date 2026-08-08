@@ -987,7 +987,6 @@ fn attach_initial_segment_bodies(
         .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
     annotations.derived(&id, "definition");
-    annotations.derived(&id, "outputs");
     ir.model.features.push(Feature {
         id: id.clone(),
         ordinal: ir.model.features.len() as u64,
@@ -3249,6 +3248,17 @@ fn attach_feature_operations(
                         native_ref: Some(native_ref),
                     });
             }
+        }
+    }
+    if let Some(initial_body_id) = initial_body_id {
+        let has_outputs = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == initial_body_id)
+            .is_some_and(|feature| !feature.outputs.is_empty());
+        if has_outputs {
+            annotations.derived(&initial_body_id, "outputs");
         }
     }
 }
