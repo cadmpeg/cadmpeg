@@ -4495,6 +4495,34 @@ fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
     assert_eq!(decoded.transform, move_transform);
     assert_eq!(decoded.form, 5);
 
+    let class_433_move_at = bytes.len();
+    let mut class_433_move = vec![0; 253];
+    class_433_move[0..4].copy_from_slice(&3u32.to_le_bytes());
+    class_433_move[4..7].copy_from_slice(b"433");
+    class_433_move[7..11].copy_from_slice(&92u32.to_le_bytes());
+    class_433_move[43..47].copy_from_slice(&5u32.to_le_bytes());
+    for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
+        let at = 48 + ordinal * 8;
+        class_433_move[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    class_433_move.extend_from_slice(&3u32.to_le_bytes());
+    class_433_move.extend_from_slice(b"265");
+    class_433_move.extend_from_slice(&92u32.to_le_bytes());
+    bytes.extend_from_slice(&class_433_move);
+    let mut class_433_move_scope = scope.clone();
+    class_433_move_scope.kind = "Move".into();
+    class_433_move_scope.reference_members = vec![92];
+    let decoded = crate::design::decode::scopes::exact_move_operation(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &class_433_move_scope,
+    )
+    .expect("class-433 Move frame");
+    assert_eq!(decoded.transform, move_transform);
+    assert_eq!(decoded.transform_offset, (class_433_move_at + 48) as u64);
+    assert_eq!(decoded.transform_record_index, 92);
+    assert_eq!(decoded.form, 5);
+
     let scale_at = bytes.len();
     let mut scale = vec![0; 317];
     scale[20..24].copy_from_slice(&1u32.to_le_bytes());
