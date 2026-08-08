@@ -141,11 +141,21 @@ fn shape_representation_relationships(exchange: &Exchange) -> BTreeMap<u64, Vec<
             .parameters
             .iter()
             .filter_map(ValueExt::reference);
-        let Some(first) = references.next() else {
-            continue;
-        };
-        let Some(second) = references.next() else {
-            continue;
+        let (first, second) = match (references.next(), references.next()) {
+            (Some(first), Some(second)) => (first, second),
+            _ => {
+                let Some(base) = record.partial("REPRESENTATION_RELATIONSHIP") else {
+                    continue;
+                };
+                let mut references = base.parameters.iter().filter_map(ValueExt::reference);
+                let Some(first) = references.next() else {
+                    continue;
+                };
+                let Some(second) = references.next() else {
+                    continue;
+                };
+                (first, second)
+            }
         };
         related.entry(first).or_default().push(second);
         related.entry(second).or_default().push(first);
