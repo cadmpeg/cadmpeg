@@ -105,6 +105,21 @@ pub struct SegmentBodyBinding {
     pub source_offset: u64,
 }
 
+/// Return the one segment body binding named by an object index.
+///
+/// A primary-body or operand relation is valid only when the index matches
+/// exactly one alias pair. Zero matches and alias collisions are unresolved.
+pub(crate) fn unique_segment_body_binding(
+    object_index: u32,
+    bindings: &[SegmentBodyBinding],
+) -> Option<&SegmentBodyBinding> {
+    let mut matches = bindings.iter().filter(|binding| {
+        binding.body_object_index == object_index || binding.body_alias_object_index == object_index
+    });
+    let binding = matches.next()?;
+    matches.next().is_none().then_some(binding)
+}
+
 /// Unambiguous terminal status of one segment-bound body image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentBodyLineageStatus {

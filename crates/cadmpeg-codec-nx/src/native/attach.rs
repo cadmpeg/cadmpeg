@@ -1636,7 +1636,7 @@ fn attach_feature_operations(
             let object_index = body_references.get(template.operation_label.as_str())?;
             Some((
                 template.operation_label.clone(),
-                feature_body_outputs(*object_index, &bodies_by_object_index),
+                feature_body_outputs(*object_index, body_bindings, &bodies_by_object_index),
             ))
         })
         .collect::<BTreeMap<_, _>>();
@@ -1973,7 +1973,7 @@ fn attach_feature_operations(
             body_references
                 .get(label.id.as_str())
                 .map_or_else(Vec::new, |body| {
-                    feature_body_outputs(*body, &bodies_by_object_index)
+                    feature_body_outputs(*body, body_bindings, &bodies_by_object_index)
                 })
         };
         if outputs.is_empty() {
@@ -6387,8 +6387,14 @@ fn trim_body_feature_definition(
 
 fn feature_body_outputs(
     object_index: u32,
+    segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Vec<BodyId> {
+    if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
+        .is_none()
+    {
+        return Vec::new();
+    }
     bodies_by_object_index
         .get(&object_index)
         .cloned()
@@ -8025,6 +8031,19 @@ mod tests {
             }
         );
         let bindings = BTreeMap::from([(94, vec![first.clone()])]);
+        let segment_binding = |id: &str, stream_ordinal, body_object_index, alias| {
+            crate::native::segments::SegmentBodyBinding {
+                id: id.to_string(),
+                stream_link: format!("stream-link#{stream_ordinal}"),
+                stream_ordinal,
+                stream_kind: "partition".to_string(),
+                body_object_index,
+                body_alias_object_index: alias,
+                stream_role: 0,
+                source_offset: 0,
+            }
+        };
+        let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
         assert_eq!(
             super::feature_body_selection(
                 &[94],
@@ -8038,8 +8057,16 @@ mod tests {
                 native: "nx:om-object-index#94".to_string(),
             }
         );
-        assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
-        assert!(super::feature_body_outputs(123, &bindings).is_empty());
+        assert_eq!(
+            super::feature_body_outputs(94, &segment_bindings, &bindings),
+            vec![first]
+        );
+        assert!(super::feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
+        let ambiguous_bindings = [
+            segment_binding("binding#0", 0, 94, 150),
+            segment_binding("binding#1", 1, 94, 151),
+        ];
+        assert!(super::feature_body_outputs(94, &ambiguous_bindings, &bindings).is_empty());
     }
 
     #[test]

@@ -3546,16 +3546,10 @@ pub fn feature_body_segment_uses(
                 && !offset_store_operations.contains(reference.operation_label.as_str())
         })
         .filter_map(|reference| {
-            let matches = bindings
-                .iter()
-                .filter(|binding| {
-                    binding.body_object_index == reference.body_object_index
-                        || binding.body_alias_object_index == reference.body_object_index
-                })
-                .collect::<Vec<_>>();
-            let [binding] = matches.as_slice() else {
-                return None;
-            };
+            let binding = crate::native::segments::unique_segment_body_binding(
+                reference.body_object_index,
+                bindings,
+            )?;
             Some(FeatureBodySegmentUse {
                 id: reference
                     .id
