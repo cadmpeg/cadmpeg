@@ -1008,16 +1008,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
 
-### DI-41. Diameter-dimension circle witnesses
-
-**Question.** How does a diameter dimension select its centre and radial markers when no link relation identifies them?
-
-**Known.** `sldprt.md` §2 "An `sgCircleDim` operand that selects an arc marker carries a bounded arc when inline center, start, and end coordinates" defines the witness rules and states that "A missing, repeated, or inconsistent radial witness leaves the relation native."
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/relation_geometry.rs:796` adds a third tier with no uniqueness gate. It sorts the markers by offset, requires an even count, takes the pair at `operand.entity_index` from `chunks_exact(2)`, and accepts the pair when the distance equals the driving radius. The two tiers above it require exactly one candidate.
-
-**Need.** We must know the witness rule. Consecutive pairing is not a defined roster form.
-
 ### DI-42. Scalar header disambiguation
 
 **Question.** Which field selects the scalar header width?

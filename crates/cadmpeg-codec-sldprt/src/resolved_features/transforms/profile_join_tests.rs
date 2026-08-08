@@ -6252,13 +6252,21 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     let (resolved, radius) = implicit_circle_marker(
         std::slice::from_ref(&implicit_lane),
         "feature-native",
-        FeatureInputOperandKind::Native(0x8ab6),
+        FeatureInputOperandKind::Native(0x83fe),
         0,
         5.0,
     )
     .expect("implicit circle pair");
     assert_eq!(resolved.id, "implicit-center");
     assert!((radius - 5.0).abs() < 1.0e-12);
+    assert!(implicit_circle_marker(
+        std::slice::from_ref(&implicit_lane),
+        "feature-native",
+        FeatureInputOperandKind::Native(0x8ab6),
+        0,
+        5.0,
+    )
+    .is_none());
 }
 
 #[test]

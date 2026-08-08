@@ -793,6 +793,13 @@ pub(super) fn implicit_circle_marker<'a>(
         return Some(*candidate);
     }
 
+    // Only 83fe defines an ordered center/radial point roster. Other native
+    // carriers may use the relation-qualified witness tiers above, but their
+    // point-marker order does not identify a circular-dimension pair.
+    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+        return None;
+    }
+
     let mut markers = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
