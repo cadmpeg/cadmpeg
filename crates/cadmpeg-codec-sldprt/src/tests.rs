@@ -19617,7 +19617,7 @@ fn semantically_distinct_pmi_records_remain_unbound() {
         .unwrap();
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
-            == "1 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
+            == "2 semantic dimension record(s) are not bound to parameters; 0 parameter dimension(s) retain native subtypes."
     }));
 }
 

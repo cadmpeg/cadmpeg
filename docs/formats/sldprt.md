@@ -757,7 +757,7 @@ A compact reference-plane frame stores xyz origin coordinates in metres at offse
 
 Legacy coordinate-frame groups without serialized plane-reference wrappers contain three consecutive `moRefPlane_c` history records followed by three consecutive `moRefAxis_c` records. All six history ordinals and source IDs are consecutive. The axes use ordered plane pairs `(0,1)`, `(0,2)`, and `(2,1)` in axis-record order.
 
-Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
+Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode one equivalent semantic dimension with the same subtype, value, precision, display text, and flags. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 
 ---
 

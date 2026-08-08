@@ -919,18 +919,6 @@ A stored field has one interpretation. `sldprt.md` §2 contains nine sentences o
 
 `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
 
-### DI-36. Repeated PMI dimension records
-
-**Question.** Which record holds when two `PMISemanticDataDB` records give the same owner and dimension name but different values?
-
-**Known.** `sldprt.md` §8 states the binding is valid "when the feature name is unique and all records for the same owner and dimension name encode the same value."
-
-`crates/cadmpeg-codec-sldprt/src/pmi.rs:411` implements the owner-uniqueness half. The value-agreement half is not implemented. `pmi.rs:607` sorts the records by GUID and `pmi.rs:473` overwrites, so the last GUID in lexicographic order wins. `pmi.rs:236` shows the correct shape in the same file: sort, dedup, and withhold when more than one value remains.
-
-The parameter keeps the identifier of the first record and the `native_ref` of the last, so `patch_payload` at `pmi.rs:272` can no longer match the first record and leaves its bytes stale.
-
-**Need.** We must apply the stated agreement test. Records that disagree must leave the parameter unbound.
-
 ### DI-37. Multi-item `dimItems` arrays
 
 **Question.** What does each element after the first denote in a `PMISemanticDataDB` `dimItems` array?
