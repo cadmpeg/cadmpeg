@@ -978,8 +978,10 @@ impl<'a> Builder<'a> {
                     PresentationItem::Product { .. }
                     | PresentationItem::Occurrence { .. }
                     | PresentationItem::Pmi { .. }
-                    | PresentationItem::Tessellation { .. }
                     | PresentationItem::Source { .. } => None,
+                    PresentationItem::Tessellation { tessellation } => {
+                        self.tessellation_step_refs.get(&tessellation).copied()
+                    }
                 };
                 if let Some(reference) = reference {
                     assigned.push(reference);

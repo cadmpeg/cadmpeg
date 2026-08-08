@@ -5114,6 +5114,33 @@ fn presentation_layers_target_complex_tessellation_surface_sets() {
     )));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &decoded.ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write tessellation layer");
+    assert!(!report.losses.iter().any(|loss| {
+        loss.message
+            .contains("layer 'mesh layer' has 1 item(s) without a writable STEP carrier")
+    }));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode tessellation layer");
+    assert!(roundtrip.ir.model.presentation_layers.iter().any(|layer| {
+        layer.name == "mesh layer"
+            && layer.items.iter().any(|item| {
+                matches!(
+                    item,
+                    cadmpeg_ir::presentation::PresentationItem::Tessellation { .. }
+                )
+            })
+    }));
 }
 
 #[test]
