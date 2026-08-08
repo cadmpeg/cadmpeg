@@ -174,8 +174,7 @@ pub(crate) fn decode_recipe_references(
         let length_prefixed =
             lp_ascii_filtered(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic).and_then(
                 |(token, marker_at)| {
-                    (!token.is_empty()
-                        && token.bytes().all(|byte| byte.is_ascii_digit())
+                    (is_decimal_integer_token(token.as_bytes())
                         && u32_at(prefix, marker_at) == Some(0))
                     .then_some((token, token_encoding_at + 4, marker_at + 4))
                 },
@@ -183,11 +182,10 @@ pub(crate) fn decode_recipe_references(
         let packed = (1usize..=8).find_map(|length| {
             let token = prefix.get(token_encoding_at..token_encoding_at + length)?;
             let zero_at = token_encoding_at.checked_add(length)?;
-            (token.iter().all(u8::is_ascii_digit)
-                && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-            .then(|| std::str::from_utf8(token).ok())
-            .flatten()
-            .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
+            (is_decimal_integer_token(token) && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
+                .then(|| std::str::from_utf8(token).ok())
+                .flatten()
+                .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
         });
         let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
             return Vec::new();
@@ -235,6 +233,11 @@ pub(crate) fn decode_recipe_references(
     } else {
         Vec::new()
     }
+}
+
+fn is_decimal_integer_token(token: &[u8]) -> bool {
+    let digits = token.strip_prefix(b"-").unwrap_or(token);
+    !digits.is_empty() && digits.iter().all(u8::is_ascii_digit)
 }
 
 fn recipe_reference_suffix(bytes: &[u8]) -> bool {

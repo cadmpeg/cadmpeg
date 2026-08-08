@@ -2716,6 +2716,68 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
 }
 
 #[test]
+fn dimension_recipe_decodes_signed_decimal_reference_tokens() {
+    let mut prefix = vec![0; 10];
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&3u32.to_le_bytes());
+    prefix.extend_from_slice(&4u32.to_le_bytes());
+
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    prefix.extend_from_slice(b"-2");
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&301u32.to_le_bytes());
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+
+    prefix.extend_from_slice(&2u32.to_le_bytes());
+    prefix.extend_from_slice(b"-1");
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    prefix.extend_from_slice(&1u32.to_le_bytes());
+    prefix.extend_from_slice(&304u32.to_le_bytes());
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].selector, 1);
+    assert_eq!(references[0].token, "-2");
+    assert_eq!(references[0].design_reference, 301);
+    assert_eq!(references[1].selector, 2);
+    assert_eq!(references[1].token, "-1");
+    assert_eq!(references[1].design_reference, 304);
+}
+
+#[test]
+fn dimension_recipe_rejects_non_decimal_reference_tokens() {
+    for token in [b"-".as_slice(), b"+1", b"1-"] {
+        let mut prefix = vec![0; 10];
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&3u32.to_le_bytes());
+        prefix.extend_from_slice(&4u32.to_le_bytes());
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(
+            &u32::try_from(token.len())
+                .expect("synthetic token length")
+                .to_le_bytes(),
+        );
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&301u32.to_le_bytes());
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+
+        assert!(
+            crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000)
+                .is_empty(),
+            "accepted token {token:?}"
+        );
+    }
+}
+
+#[test]
 fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let mut bytes = vec![0; 80];
     bytes[0..4].copy_from_slice(&3u32.to_le_bytes());

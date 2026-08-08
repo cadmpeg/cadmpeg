@@ -595,14 +595,8 @@ fn complete_counted_face_recipe(operand: &DesignFaceOperand) -> Option<usize> {
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
-    let direct = match operand.preceding_candidate_faces.as_slice() {
-        [face] => face,
-        _ => {
-            let [face] = operand.changed_candidate_faces.as_slice() else {
-                return resolve_face_operand_support_candidate(operand);
-            };
-            face
-        }
+    let Some(direct) = unique_face_operand_history_candidate(operand) else {
+        return resolve_face_operand_support_candidate(operand);
     };
     if !historical_face_operand_candidates(operand).contains(direct)
         && nested_bounded_face_history_candidates(operand)
@@ -611,6 +605,31 @@ pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperan
         return None;
     }
     direct.0.rsplit_once('#')?.1.parse().ok()
+}
+
+pub(crate) fn resolve_face_operand_history_candidate_from(
+    operand: &DesignFaceOperand,
+    candidates: &[cadmpeg_ir::ids::FaceId],
+) -> Option<i64> {
+    let Some(direct) = unique_face_operand_history_candidate(operand) else {
+        return resolve_face_operand_support_candidate(operand);
+    };
+    candidates
+        .contains(direct)
+        .then(|| direct.0.rsplit_once('#')?.1.parse().ok())
+        .flatten()
+}
+
+fn unique_face_operand_history_candidate(
+    operand: &DesignFaceOperand,
+) -> Option<&cadmpeg_ir::ids::FaceId> {
+    match operand.preceding_candidate_faces.as_slice() {
+        [face] => Some(face),
+        _ => match operand.changed_candidate_faces.as_slice() {
+            [face] => Some(face),
+            _ => None,
+        },
+    }
 }
 
 pub(crate) fn resolve_bounded_face_history_candidates(

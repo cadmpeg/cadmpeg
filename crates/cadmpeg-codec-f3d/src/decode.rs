@@ -1066,6 +1066,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 }
                 face_selection(removed_faces);
             }
+            FeatureDefinition::CosmeticThread { face, .. } => face_selection(face),
             FeatureDefinition::SheetMetalHem { edges, .. } => edge_selection(edges),
             FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
@@ -4585,6 +4586,44 @@ mod tests {
         assert_eq!(
             design_projection_gaps(&ir, &native).unresolved_body_bindings,
             1
+        );
+    }
+
+    #[test]
+    fn design_projection_gaps_count_cosmetic_thread_faces() {
+        let mut ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        for (ordinal, face) in [
+            serde_json::json!({"kind": "native", "value": "native:thread-face"}),
+            serde_json::json!({"kind": "unresolved"}),
+            serde_json::json!({
+                "kind": "historical",
+                "value": {
+                    "state": "feature-input",
+                    "faces": ["historical:face"],
+                    "native": "native:thread-group"
+                }
+            }),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.features.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": format!("thread-{ordinal}"),
+                    "ordinal": ordinal,
+                    "definition": {
+                        "definition": "cosmetic_thread",
+                        "face": face,
+                        "diameter": 2.5
+                    }
+                }))
+                .expect("CosmeticThread feature"),
+            );
+        }
+
+        assert_eq!(
+            design_projection_gaps(&ir, &F3dNative::default()).face_selections,
+            2
         );
     }
 
