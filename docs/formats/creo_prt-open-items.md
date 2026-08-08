@@ -638,14 +638,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the row to apply the correct orientation sense. `feature/definitions.rs` `positional_section_3d` retains every `plane_id` but keeps the orientation fields of row zero alone. `placement.rs` then selects the orienting reference geometrically, as the unique referenced plane not parallel to the sketch plane, and applies row zero's `flip_flag` to it. When the selected row is not row zero, a missing negation mirrors the sketch and every surface swept from it.
 
-### SP-30. gsec3d named-field record binding
-
-**Question.** Which bytes bound one `gsec3d_ptr` record, so that a named field inside those bounds belongs to that record?
-
-**Known.** `creo_prt.md` §8.2 defines the gsec3d field order and names `p_saved_result` as the placement close.
-
-**Need.** We must know the bounds to bind `plane_id`, `plane_flip`, and the nested reference fields. `feature/definitions.rs` `section_3d` searches forward from the record header through windows of 260, 400, and 48 bytes. None of the three constants comes from the format. A definition holding two `gsec3d_ptr` records, where the first omits a null field, takes the second record's value for the first record, and a record longer than its window loses the field.
-
 ### SP-32. `ActDatums` positional row acceptance
 
 **Question.** Which bytes identify a positional `<gid> 22` datum row, and what bounds a datum geometry identifier?

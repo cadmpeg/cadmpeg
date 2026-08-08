@@ -145,6 +145,9 @@ fixtures, claims above L1 remain unproven.
 - Class-913 and class-914 unanchored replay rows accept explicit affected-array
   pairs only with a bounded compound-close or generated-array separator prefix
   and exact consumption through the repeated-row suffix.
+- Named `gsec3d_ptr` fields stay inside the span through their first
+  `p_saved_result` close, or the next `gsec3d_ptr`/definition boundary when the
+  close is absent; nested `ref_planes` identifiers use their typed field.
 - Unique feature-owned class-200 materialized surfaces now emit feature-result
   topology face identities. Hole placement, thicken inputs, and knit inputs
   use generated face references only when those identities and their producer

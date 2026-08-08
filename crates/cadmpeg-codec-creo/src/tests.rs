@@ -5699,6 +5699,38 @@ fn scan_decodes_featdefs_gsec3d_placement_references() {
 }
 
 #[test]
+fn named_gsec3d_fields_stop_at_the_next_record() {
+    let mut payload = b"feat_defs_40\0\xe0\x00gsec3d_ptr\0".to_vec();
+    payload
+        .extend_from_slice(b"\xe0\x00gsec3d_ptr\0plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let section = scan.features.definitions[0]
+        .section_3d
+        .as_ref()
+        .expect("first gsec3d");
+    assert_eq!(section.sketch_plane_entity_id, None);
+}
+
+#[test]
+fn named_gsec3d_fields_extend_to_the_placement_close() {
+    let mut payload =
+        b"feat_defs_40\0\xe0\x00gsec3d_ptr\0\xe0\x00ref_planes\0\xf8\x01\xf7\x05\xfb\xe2".to_vec();
+    payload.resize(payload.len() + 300, 0);
+    payload
+        .extend_from_slice(b"\xe0\x01plane_id\0\x09plane_id\0\x83\x01\xe0\x00p_saved_result\0\xe3");
+    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+
+    let section = scan.features.definitions[0]
+        .section_3d
+        .as_ref()
+        .expect("gsec3d");
+    assert_eq!(section.sketch_plane_entity_id, Some(769));
+    assert_eq!(section.reference_plane_entity_ids, vec![5]);
+    assert_eq!(section.reference_plane_datum_geometry_id, Some(9));
+}
+
+#[test]
 fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     let mut payload = b"feat_defs_40\0\xe0\x00gsec2d_ptr\0\
         dimtab_ptr\0\xf8\x03\xf7\x81\x02\xfb\xe2\

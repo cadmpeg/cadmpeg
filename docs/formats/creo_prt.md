@@ -3007,6 +3007,13 @@ record, the recipe record's feature identifier owns the section. The section
 retains the same `segtab_ptr`, `dimtab_ptr`, `relat_ptr`, `var_arr`,
 `gsec3d_ptr`, and `p_saved_result` grammars as a nested feature definition.
 
+A named `gsec3d_ptr` placement span begins at its record header and ends at the
+first following `p_saved_result` record. If that close is absent, the span ends
+at the next `gsec3d_ptr` header or at the enclosing definition boundary. Named
+fields outside this span do not belong to the record. The placement's plain
+`plane_id` field supplies the sketch-plane entity; an `e0 01 plane_id` field
+inside `ref_planes` supplies the nested datum-geometry identifier.
+
 Positional `segtab_ptr` replay ends at the first following section-table label,
 including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
 `p_saved_result`, or at the next sibling `S2D<N>` record. Bytes in later tables

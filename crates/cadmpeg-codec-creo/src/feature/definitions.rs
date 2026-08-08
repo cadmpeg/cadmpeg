@@ -2966,17 +2966,37 @@ fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> 
     value.filter(|_| next <= end)
 }
 
+fn gsec3d_plane_id(payload: &[u8], start: usize, end: usize) -> Option<u32> {
+    let label = b"plane_id\0";
+    let mut cursor = start;
+    while let Some(at) = find_bytes(payload, label, cursor, end) {
+        cursor = at + label.len();
+        if payload.get(at.saturating_sub(2)..at) == Some(&[psb::token::NAMED_RECORD, 1]) {
+            continue;
+        }
+        let (value, next) = segment_int(payload, cursor);
+        if next <= end && value.is_some() {
+            return value;
+        }
+    }
+    None
+}
+
 fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
-    let section = find_bytes(payload, b"\xe0\x00gsec3d_ptr\0", start, end)?;
-    let nearby_end = section.saturating_add(260).min(end);
-    let sketch_plane_entity_id = named_compact_int(payload, b"plane_id\0", section, nearby_end);
-    let sketch_plane_flip = find_bytes(payload, b"plane_flip\0", section, nearby_end)
+    const GSEC3D: &[u8] = b"\xe0\x00gsec3d_ptr\0";
+    const SAVED_RESULT: &[u8] = b"\xe0\x00p_saved_result\0";
+    let section = find_bytes(payload, GSEC3D, start, end)?;
+    let record_end = find_bytes(payload, GSEC3D, section + GSEC3D.len(), end).unwrap_or(end);
+    let placement_end =
+        find_bytes(payload, SAVED_RESULT, section, record_end).unwrap_or(record_end);
+    let sketch_plane_entity_id = gsec3d_plane_id(payload, section, placement_end);
+    let sketch_plane_flip = find_bytes(payload, b"plane_flip\0", section, placement_end)
         .and_then(|at| payload.get(at + b"plane_flip\0".len()).copied())
         .and_then(BinaryFlag::decode);
 
     let mut reference_plane_entity_ids = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
-    if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, nearby_end) {
+    if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
         if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
             let (count, next) = psb::compact_int(payload, cursor + 1);
@@ -2991,14 +3011,12 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
                 reference_plane_entity_ids.push(entity_id);
                 cursor = next;
             }
-            let nested_end = cursor.saturating_add(48).min(end);
+            let nested_end = placement_end;
             reference_plane_datum_geometry_id =
                 named_compact_int(payload, b"\xe0\x01plane_id\0", cursor, nested_end);
         }
     }
 
-    let placement_end = find_bytes(payload, b"\xe0\x00p_saved_result\0", section, end)
-        .unwrap_or_else(|| section.saturating_add(400).min(end));
     let named_flag = |label: &[u8]| {
         find_bytes(payload, label, section, placement_end)
             .and_then(|at| payload.get(at + label.len()).copied())
