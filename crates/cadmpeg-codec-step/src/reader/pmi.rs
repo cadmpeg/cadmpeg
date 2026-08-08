@@ -57,11 +57,8 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         characteristic_values(exchange, &mut measurements)
     };
     for (id, record) in exchange.entities("DATUM") {
-        let identification = record
-            .parameters()
-            .iter()
-            .rev()
-            .find_map(|value| {
+        let identification = named_parameter(record, "DATUM", 0)
+            .and_then(|value| {
                 decode_text(
                     value,
                     &mut losses,

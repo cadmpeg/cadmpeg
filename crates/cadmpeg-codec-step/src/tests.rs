@@ -8633,6 +8633,35 @@ fn complex_datum_names_use_the_inherited_shape_aspect_name() {
     assert_eq!(names, [Some("datum name"), Some("system name")]);
 }
 
+#[test]
+fn complex_datum_reads_identification_from_its_named_partial() {
+    use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT('datum name','',#5,.F.));
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let datum = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.id.as_str() == "step:presentation:pmi#7")
+        .expect("complex datum");
+    assert_eq!(datum.name.as_deref(), Some("datum name"));
+    assert!(matches!(
+        &datum.definition,
+        PmiDefinition::Datum { identification } if identification == "A"
+    ));
+    assert_eq!(
+        datum.targets,
+        vec![PmiTarget::ShapeAspect {
+            source_id: "#7".into()
+        }]
+    );
+}
+
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();

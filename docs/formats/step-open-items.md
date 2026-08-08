@@ -666,8 +666,9 @@ representation may carry more than one property.
 
 ### AP-01. Datum identification for a complex datum
 
-**Question.** Which partial supplies the `identification` attribute of a
-complex `DATUM` instance?
+**Resolved.** The `DATUM` partial supplies the `identification` attribute of
+a complex `DATUM` instance. The inherited `SHAPE_ASPECT` partial supplies its
+name, target, and product shape.
 
 **Known.** `RecordExt::parameters` returns the parameters of the first partial
 only (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1274-1279`). The datum
@@ -675,12 +676,10 @@ reader scans those parameters for the identification text and substitutes the
 synthetic string `#<id>` when it finds none (`pmi.rs:59-73`). Part 21 orders
 complex partials alphabetically, and the parser enforces that order.
 
-**Need.** For `(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT(...))`
-the first partial is `COMMON_DATUM`, which has no attributes, so the datum
-letter is replaced by an invented value and no loss is recorded. The same
-reader uses a partial-aware lookup for the datum name two lines later. We
-must know which partial governs each inherited attribute of a complex shape
-aspect.
+**Rule.** The reader looks up datum identification by partial name instead of
+using the first complex partial. A synthesized complex datum with an empty
+`COMMON_DATUM` partial retains identification `A` and its inherited
+`SHAPE_ASPECT` target.
 
 ### AP-02. Dimension nominal value selection
 

@@ -384,8 +384,10 @@ the assignment has no resolvable colour. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral
 geometry arena retains its carrier identity as the style target. Semantic PMI
 retains its shape-aspect target, including a shape-aspect partial in a complex
-datum feature. A complex dimension uses its dimensional partial for its kind
-and all inherited partials for its name, targets, and characteristic value.
+datum feature. A complex datum reads identification from its `DATUM` partial
+and name, targets, and product shape from its inherited `SHAPE_ASPECT` partial.
+A complex dimension uses its dimensional partial for its kind and all inherited
+partials for its name, targets, and characteristic value.
 Complex measure records referenced by a characteristic representation remain
 typed measure carriers.
 Geometric validation properties read area, volume, and centroid values through
