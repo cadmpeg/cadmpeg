@@ -958,7 +958,10 @@ fn plan_e5_boundary(
                     .max(endpoints[1].distance(*start));
                 let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
                     .or_else(|| {
-                        ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
+                        let edge = topology.edges.get(&edge_ref)?;
+                        (edge.parameter_start == edge.parameter_end
+                            && (forward - reverse_error).abs() > 1e-9)
+                            .then_some(reverse_error < forward)
                     });
                 let Some(reversed) = reversed else {
                     return None;
@@ -2330,13 +2333,13 @@ mod route_tests {
     use crate::assemble::{quintic_jet_pcurve, rational_pcurve_arc};
     use crate::families::e5::decode::{
         e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_context,
-        e5_ownership_plan, e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_e5_plane_axes,
-        fit_rank_one_e5_plane_axes, parameter_range_agreement_tolerance, parameter_ranges_reversed,
-        solve_e5_plane_frame,
+        e5_ownership_plan, e5_pcurve_on_surface, e5_stored_pcurve_reversed,
+        equivalent_e5_curve_carriers, fit_e5_plane_axes, fit_rank_one_e5_plane_axes,
+        parameter_range_agreement_tolerance, parameter_ranges_reversed, solve_e5_plane_frame,
     };
 
     use crate::families::e5::graph::{
-        E5CurveSupport, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+        E5BoundEntry, E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
     };
 
     use cadmpeg_ir::document::CadIr;
@@ -2491,6 +2494,58 @@ mod route_tests {
         assert_eq!(parameter_ranges_reversed([1.0, 1.0], [0.0, 1.0]), None);
         assert_eq!(
             parameter_ranges_reversed([0.0, f64::INFINITY], [0.0, 1.0]),
+            None
+        );
+    }
+
+    #[test]
+    fn degenerate_bound_parameters_do_not_select_pcurve_direction() {
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::from([(
+                1,
+                E5Edge {
+                    record_id: 1,
+                    support: 0,
+                    start_vertex: 0,
+                    end_vertex: 0,
+                    parameter_start: 10,
+                    parameter_end: 11,
+                    tail: Vec::new(),
+                },
+            )]),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::from([
+                (
+                    10,
+                    E5Bounds {
+                        record_id: 10,
+                        entries: vec![E5BoundEntry {
+                            representation: 20,
+                            parameter: 1.0,
+                            code: 0,
+                        }],
+                    },
+                ),
+                (
+                    11,
+                    E5Bounds {
+                        record_id: 11,
+                        entries: vec![E5BoundEntry {
+                            representation: 20,
+                            parameter: 1.0,
+                            code: 0,
+                        }],
+                    },
+                ),
+            ]),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+
+        assert_eq!(
+            e5_stored_pcurve_reversed(&topology, 1, 20, [0.0, 1.0]),
             None
         );
     }
