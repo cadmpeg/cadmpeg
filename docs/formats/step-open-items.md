@@ -475,21 +475,13 @@ placement. Without one, the occurrence keeps identity transform and reports
 **Question.** Which of `transform_item_1` and `transform_item_2` is expressed
 in the component frame?
 
-**Known.** `step.md` §8 "The two items of an `ITEM_DEFINED_TRANSFORMATION`
-belong to the two representations connected by its representation
-relationship." states the correspondence but not the direction. The decoder
-assumes item 1 is the component and item 2 the assembly, and never reads the
-`REPRESENTATION_RELATIONSHIP` `rep_1` and `rep_2` operands
-(`crates/cadmpeg-codec-step/src/reader/product.rs:863-892`). The child's
-representation set is available at `product.rs:593` and is not consulted.
-
-**Need.** Swapping only the relationship endpoints in a fixture leaves the
-child at the same place, where the correspondence rule requires the inverse.
-The assumption matches the usual assembly-structure convention, so conforming
-files decode correctly, but nothing detects a file that orders its endpoints
-the other way and the error is a full mirror of the placement. We must know
-whether the direction is fixed by the attribute position or by the
-relationship endpoints.
+**Resolved.** `transform_item_1` belongs to `rep_1` and `transform_item_2`
+belongs to `rep_2`. For an occurrence, the reader identifies the child and
+parent representation sets from the usage definitions. It maps item 1 to item
+2 when `rep_1` is the child and `rep_2` is the parent; it maps item 2 to item 1
+when the relationship endpoints are reversed. An endpoint pair that matches
+neither order leaves the occurrence placement unresolved and reports
+`AssemblyPlacementsNotTransferred`.
 
 ### PS-03. Repeated mapped placements of one representation
 

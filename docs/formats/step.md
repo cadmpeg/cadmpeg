@@ -404,7 +404,11 @@ to its defining relationship and representation context. A
 `SHAPE_REPRESENTATION_RELATIONSHIP` connects its two shape-representation
 endpoints for body reachability. In a complex instance, the endpoint attributes
 come from the inherited `REPRESENTATION_RELATIONSHIP` partial when the subtype
-partial has no parameters.
+partial has no parameters. For an occurrence relationship, the transform maps
+the child representation to the parent representation. If the relationship
+lists those endpoints in reverse order, the item direction is inverted. If
+neither endpoint order identifies the child and parent representations, the
+occurrence placement is unresolved.
 
 Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A missing or ambiguous owner detaches the

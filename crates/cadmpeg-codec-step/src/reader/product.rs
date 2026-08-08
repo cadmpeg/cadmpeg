@@ -629,15 +629,22 @@ fn occurrence_placements(
             ))
         })
         .collect::<BTreeMap<_, _>>();
+    let definition_representations = definition_representations(exchange, &pds);
     let mut result = BTreeMap::new();
     for (_, record) in exchange.entities("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION") {
-        if let Some((usage, transform)) = occurrence_placement(record, exchange, geometry, &pds) {
+        if let Some((usage, transform)) = occurrence_placement(
+            record,
+            exchange,
+            geometry,
+            &pds,
+            usages,
+            &definition_representations,
+        ) {
             if usages.contains_key(&usage) {
                 result.insert(usage, transform);
             }
         }
     }
-    let definition_representations = definition_representations(exchange, &pds);
     let occurrence_representations = exchange
         .entities("SHAPE_DEFINITION_REPRESENTATION")
         .filter_map(|(_, record)| {
@@ -932,6 +939,8 @@ fn occurrence_placement(
     exchange: &Exchange,
     geometry: &GeometryResult,
     pds: &BTreeMap<u64, u64>,
+    usages: &BTreeMap<u64, Usage>,
+    definition_representations: &BTreeMap<u64, BTreeSet<u64>>,
 ) -> Option<(u64, Transform)> {
     let relation = exchange.records.get(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 0)
@@ -941,21 +950,43 @@ fn occurrence_placement(
         &named_parameter(record, "CONTEXT_DEPENDENT_SHAPE_REPRESENTATION", 1)
             .and_then(ValueExt::reference)?,
     )?;
+    let usage_data = usages.get(&usage)?;
+    let child_representations = definition_representations.get(&usage_data.child_definition)?;
+    let parent_representations = definition_representations.get(&usage_data.parent_definition)?;
+    let relation_representations = representation_relationship_endpoints(relation)?;
     let transform_id = relation
         .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")?
         .parameters
         .first()?
         .reference()?;
     let transform = exchange.records.get(&transform_id)?;
-    let from = geometry.placements.get(
-        &named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
-            .and_then(ValueExt::reference)?,
-    )?;
-    let to = geometry.placements.get(
-        &named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
-            .and_then(ValueExt::reference)?,
-    )?;
+    let item_one = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 2)
+        .and_then(ValueExt::reference)?;
+    let item_two = named_parameter(transform, "ITEM_DEFINED_TRANSFORMATION", 3)
+        .and_then(ValueExt::reference)?;
+    let (from_id, to_id) = if child_representations.contains(&relation_representations.0)
+        && parent_representations.contains(&relation_representations.1)
+    {
+        (item_one, item_two)
+    } else if parent_representations.contains(&relation_representations.0)
+        && child_representations.contains(&relation_representations.1)
+    {
+        (item_two, item_one)
+    } else {
+        return None;
+    };
+    let from = geometry.placements.get(&from_id)?;
+    let to = geometry.placements.get(&to_id)?;
     Some((usage, between(*from, *to)))
+}
+
+fn representation_relationship_endpoints(record: &RawRecord) -> Option<(u64, u64)> {
+    let relationship = record.partial("REPRESENTATION_RELATIONSHIP")?;
+    let mut references = relationship
+        .parameters
+        .iter()
+        .filter_map(ValueExt::reference);
+    Some((references.next()?, references.next()?))
 }
 
 fn between(from: (Point3, Vector3, Vector3), to: (Point3, Vector3, Vector3)) -> Transform {

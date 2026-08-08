@@ -5734,6 +5734,35 @@ fn decode_builds_product_occurrences_with_relative_placement() {
 }
 
 #[test]
+fn occurrence_transform_direction_follows_relationship_endpoints() {
+    let source = String::from_utf8(include_bytes!(
+        "../tests/fixtures/ap242_assembly.p21"
+    )
+    .to_vec())
+    .expect("fixture is UTF-8")
+    .replace(
+        "#37=(REPRESENTATION_RELATIONSHIP('','',#23,#22) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#36) SHAPE_REPRESENTATION_RELATIONSHIP());",
+        "#37=(REPRESENTATION_RELATIONSHIP('','',#22,#23) REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#36) SHAPE_REPRESENTATION_RELATIONSHIP());",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode endpoint-reversed assembly relationship");
+
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
+        .expect("placed child occurrence");
+    assert_eq!(child.transform.rows[0][3], -25.0);
+    assert!(!result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
+            && loss.message.contains("NAUO #12")
+    }));
+}
+
+#[test]
 fn unresolved_occurrence_transform_is_reported_as_error() {
     let result = decode_inline(
         "#1=APPLICATION_CONTEXT('mechanical design');
