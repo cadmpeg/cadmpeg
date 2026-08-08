@@ -456,9 +456,12 @@ link and does not add a shape-aspect target. The defined-unit and
 defined-area-unit partials retain their unit sizes and area shape; modifier
 aggregates retain their enumeration values. Presentation PMI
 retains annotation identity, text, and placement across inherited annotation
-partials. A presentation graph search types only the text carrier it consumes;
-unmodeled tessellated annotation carriers remain named opaque records with
-their source links. `PLUS_MINUS_TOLERANCE` carries
+partials. A direct text carrier or a graph with exactly one reachable text
+carrier supplies the presentation text. A graph with multiple reachable text
+carriers has no ordered composition in this model, so the text remains absent,
+a metadata loss is emitted, and the carriers remain named opaque records with
+their source links. Unmodeled tessellated annotation carriers remain named
+opaque records with their source links. `PLUS_MINUS_TOLERANCE` carries
 numeric lower and upper
 deviations, or the form variance, zone variance, grade, and source fields of
 `LIMITS_AND_FITS`.

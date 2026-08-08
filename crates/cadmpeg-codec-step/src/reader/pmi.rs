@@ -813,10 +813,46 @@ fn find_annotation_text(
     losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<String> {
-    if depth >= 256 || !visited.insert(id) {
-        return None;
+    let mut candidates = BTreeMap::new();
+    collect_annotation_text(id, exchange, visited, &mut candidates, losses, depth);
+    match candidates.len() {
+        0 => None,
+        1 => {
+            let (text_id, text) = candidates
+                .into_iter()
+                .next()
+                .expect("one annotation text candidate");
+            used.insert(text_id);
+            Some(text)
+        }
+        count => {
+            losses.push(LossNote {
+                code: LossKind::MetadataNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "presentation annotation #{id} has {count} reachable text carriers with no ordered composition"
+                ),
+                provenance: None,
+            });
+            None
+        }
     }
-    let record = exchange.records.get(&id)?;
+}
+
+fn collect_annotation_text(
+    id: u64,
+    exchange: &Exchange,
+    visited: &mut BTreeSet<u64>,
+    candidates: &mut BTreeMap<u64, String>,
+    losses: &mut Vec<LossNote>,
+    depth: usize,
+) {
+    if depth >= 256 || !visited.insert(id) {
+        return;
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        return;
+    };
     if let Some(value) = named_parameter(record, "TEXT_LITERAL", 0)
         .or_else(|| named_parameter(record, "TEXT_LITERAL_WITH_ASSOCIATED_CURVES", 0))
     {
@@ -828,15 +864,12 @@ fn find_annotation_text(
             "PMI annotation text",
             LossKind::MetadataNotTransferred,
         ) {
-            used.insert(id);
-            return Some(text);
+            candidates.insert(id, text);
         }
     }
-    all_parameters(record)
-        .flat_map(references)
-        .find_map(|reference| {
-            find_annotation_text(reference, exchange, visited, used, losses, depth + 1)
-        })
+    for reference in all_parameters(record).flat_map(references) {
+        collect_annotation_text(reference, exchange, visited, candidates, losses, depth + 1);
+    }
 }
 
 fn find_placement(

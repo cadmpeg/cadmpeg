@@ -558,20 +558,12 @@ supported leaf entity by its corresponding IR kind.
 
 ### AP-04. Annotation text completeness
 
-**Question.** Which text carriers form the text of one annotation?
-
-**Known.** `step.md` §8 "A presentation graph search types only the text
-carrier it consumes" states the typing rule. The decoder returns the first
-`TEXT_LITERAL` that a depth-first walk of the reachable graph reaches and
-records nothing about the others
-(`crates/cadmpeg-codec-step/src/reader/pmi.rs:822-853`).
-
-**Need.** A feature control frame or a toleranced callout carries its symbol,
-value, and datum letters as separate literals. The IR keeps one and drops the
-rest, and which one survives depends on the producer's serialization order of
-the callout contents. A multi-literal callout is indistinguishable from a
-single-literal one in the output. We must know the composition rule for a
-multi-compartment annotation.
+**Resolved.** A direct text carrier or a graph with exactly one reachable text
+carrier supplies the presentation text. A graph with multiple reachable text
+carriers has no ordered composition in this model, so the text remains absent,
+a metadata loss is emitted, and every carrier remains a named opaque record
+with its source links. The reader never selects a carrier by traversal or
+serialization order.
 
 ### AP-05. Style precedence for independent styled items
 

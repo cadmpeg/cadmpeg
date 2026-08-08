@@ -7060,6 +7060,42 @@ fn complex_presentation_annotation_inherits_text_and_placement() {
 }
 
 #[test]
+fn composite_presentation_text_does_not_depend_on_set_order() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=TEXT_LITERAL('first',$,'left',.RIGHT.,$);
+#2=TEXT_LITERAL('second',$,'left',.RIGHT.,$);
+#3=COMPOSITE_TEXT('composite',(#1,#2));
+#4=ANNOTATION_TEXT_OCCURRENCE('note',(),#3);",
+    );
+
+    let PmiDefinition::Presentation { ref text, .. } = result.ir.model.pmi[0].definition else {
+        panic!("composite annotation is not presentation PMI")
+    };
+    assert!(text.is_none());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
+            && loss.message.contains("2 reachable text carriers")
+    }));
+    let unknowns = result
+        .ir
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .expect("STEP unknown records");
+    for id in [1, 2, 3] {
+        assert!(
+            unknowns
+                .iter()
+                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+            "ambiguous text carrier #{id} was not retained"
+        );
+    }
+}
+
+#[test]
 fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
     let source = String::from_utf8(
         include_bytes!("../tests/fixtures/ap242_presentation_pmi.p21").to_vec(),
