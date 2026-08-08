@@ -4694,6 +4694,122 @@ fn round_support_planes_define_radius_without_generated_surface_rows() {
 }
 
 #[test]
+fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.framing.layout = crate::container::Layout::Nd;
+    scan.framing.sections.push(crate::container::Section {
+        name: "VisibGeom".to_string(),
+        raw_name: "VisibGeom".to_string(),
+        offset: 0,
+        length: 1_000,
+        expanded_length: None,
+        role: crate::container::role::GEOMETRY,
+    });
+    scan.surfaces.rows.extend([
+        crate::surface::SurfaceRow {
+            id: 11,
+            type_byte: 0x24,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 100,
+        },
+        crate::surface::SurfaceRow {
+            id: 12,
+            type_byte: 0x26,
+            kind: crate::surface::SurfaceKind::TorusOrSphere,
+            feature_id: 913,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 200,
+        },
+    ]);
+    let replay_frame = crate::surface::SurfaceParameterScalarFrame {
+        offset: 0,
+        slots: vec![parameter_slot(0.5)],
+    };
+    scan.surfaces
+        .parameters
+        .push(crate::surface::SurfaceParameterRecord {
+            surface_id: 12,
+            body: vec![0],
+            scalar_values: vec![0.5],
+            scalar_tokens: replay_frame.slots.clone(),
+            opaque_spans: Vec::new(),
+            scalar_frames: vec![replay_frame.clone()],
+            terminal_scalar_frame: Some(replay_frame),
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
+            split_cylinder_outline_bounds: None,
+            positional_cone_frame: None,
+            positional_torus_frame: None,
+            boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
+            offset: 200,
+            body_offset: 201,
+        });
+    let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
+        name: name.to_string(),
+        value: crate::surface::SurfaceNamedValue::ScalarSequence(vec![value]),
+        body: Vec::new(),
+        offset: 150,
+        value_offset: 150,
+    };
+    scan.surfaces
+        .prototype_records
+        .push(crate::surface::SurfacePrototypeRecord {
+            declared_family: "torus".to_string(),
+            family: crate::surface::SurfacePrototypeFamily::Torus,
+            parameters: vec![scalar("radius1", 10.0), scalar("radius2", 0.5)],
+            offset: 150,
+        });
+
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.surfaces.push(Surface {
+        id: SurfaceId("creo:visibgeom:surface#11".to_string()),
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.5,
+        },
+        source_object: None,
+    });
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 913,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![1, 2, 3, 4],
+            offset: 0,
+        });
+    for (id, x) in [(3, -9.0), (4, -8.0)] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(x, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(round_constant_radius(&scan, &ir, 913), Some(0.5));
+
+    if let Some(Surface {
+        geometry: SurfaceGeometry::Cylinder { radius, .. },
+        ..
+    }) = ir.model.surfaces.first_mut()
+    {
+        *radius = 0.75;
+    }
+    assert_eq!(round_constant_radius(&scan, &ir, 913), None);
+}
+
+#[test]
 fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     for (id, kind) in [
