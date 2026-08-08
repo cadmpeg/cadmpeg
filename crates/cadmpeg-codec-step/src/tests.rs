@@ -3406,6 +3406,50 @@ fn complex_advanced_face_uses_its_explicit_surface_carrier() {
 }
 
 #[test]
+fn advanced_face_name_transfers_through_inherited_representation_item() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=ADVANCED_FACE('named face',(#26),#28,.T.);",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode named face");
+    assert_eq!(
+        decoded.ir.model.faces[0].name.as_deref(),
+        Some("named face")
+    );
+
+    let mut output = Vec::new();
+    write_step(&decoded.ir, &mut output, &StepWriteOptions::default()).expect("write named face");
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written named face");
+    assert_eq!(
+        roundtrip.ir.model.faces[0].name.as_deref(),
+        Some("named face")
+    );
+}
+
+#[test]
+fn complex_advanced_face_name_uses_representation_item_partial() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=(FACE('',(#26)) FACE_SURFACE('',#28,.T.) ADVANCED_FACE() REPRESENTATION_ITEM('complex named face'));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex named face");
+    assert_eq!(
+        decoded.ir.model.faces[0].name.as_deref(),
+        Some("complex named face")
+    );
+}
+
+#[test]
 fn complex_vertex_point_instances_retain_their_point_carriers() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -3963,6 +4007,48 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
             && loss.message.contains("1 product BOM property")
+    }));
+}
+
+#[test]
+fn writer_reports_unrepresented_topology_metadata() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode topology metadata fixture")
+        .ir;
+    ir.model.faces[0].tolerance = Some(0.01);
+    ir.model.edges[0].tolerance = Some(0.02);
+    ir.model.vertices[0].tolerance = Some(0.03);
+    let edge_curve = ir.model.edges[0].curve.clone().expect("edge curve");
+    let coedge = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| !coedge.pcurves.is_empty())
+        .expect("pcurve-backed coedge");
+    coedge.pcurves[0].isoparametric = Some(true);
+    coedge.pcurves[0].parameter_range = Some([0.0, 1.0]);
+    coedge.use_curve = Some(edge_curve);
+    coedge.use_curve_parameter_range = Some([0.0, 1.0]);
+
+    let report = write_step(&ir, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("report mode writes topology metadata fixture");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PcurveOmitted && loss.message.contains("1 pcurve use")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AttributesNotTransferred
+            && loss.message.contains("1 coedge-local 3D curve use")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AttributesNotTransferred
+            && loss.message.contains("topology metadata")
+            && loss.message.contains("face tolerance=1")
+            && loss.message.contains("edge tolerance=1")
+            && loss.message.contains("vertex tolerance=1")
     }));
 }
 

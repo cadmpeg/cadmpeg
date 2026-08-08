@@ -2069,6 +2069,15 @@ fn build_one(
             let surface_step = face_info.surface;
             let face_same_sense = face_info.same_sense;
             let fid = FaceId(format!("step:data:face#{face_step}{face_suffix}"));
+            let name = face_info.name.as_ref().and_then(|value| {
+                super::decode_text(
+                    value,
+                    losses,
+                    face_step,
+                    "face name",
+                    LossKind::MetadataNotTransferred,
+                )
+            });
             let mut loop_ids = vec![];
             let mut outer_bound_count = 0;
             for bound_step in face_info.bounds {
@@ -2451,7 +2460,7 @@ fn build_one(
                     Sense::Reversed
                 },
                 loops: loop_ids,
-                name: None,
+                name,
                 color: None,
                 tolerance: None,
             });
@@ -3548,6 +3557,7 @@ fn shell_def_for(
 #[derive(Default)]
 struct FaceInfo {
     bounds: Vec<u64>,
+    name: Option<Value>,
     surface: Option<u64>,
     same_sense: bool,
     reverse_bound_orientation: bool,
@@ -3588,6 +3598,9 @@ fn face_attributes(
                 base.reverse_bound_orientation = !base.reverse_bound_orientation;
             }
             base.same_sense = base.same_sense == orientation;
+            if let Some(name) = face_name_value(record) {
+                base.name = Some(name);
+            }
             base.typed.insert(face_element);
             Some(base)
         }
@@ -3597,8 +3610,12 @@ fn face_attributes(
                 face_attributes(exchange.records.get(&parent)?, exchange, active)?;
             let bounds = direct_face_bounds(record, exchange)?;
             parent_info.typed.insert(parent);
+            if let Some(name) = face_name_value(record) {
+                parent_info.name = Some(name);
+            }
             Some(FaceInfo {
                 bounds,
+                name: parent_info.name,
                 surface: parent_info.surface,
                 same_sense: parent_info.same_sense,
                 reverse_bound_orientation: parent_info.reverse_bound_orientation,
@@ -3609,6 +3626,7 @@ fn face_attributes(
             let bounds = direct_face_bounds(record, exchange)?;
             Some(FaceInfo {
                 bounds,
+                name: face_name_value(record),
                 surface: None,
                 same_sense: true,
                 reverse_bound_orientation: false,
@@ -3622,6 +3640,7 @@ fn face_attributes(
             let same_sense = direct_face_same_sense(record, governing)?;
             Some(FaceInfo {
                 bounds,
+                name: face_name_value(record),
                 surface: Some(surface),
                 same_sense,
                 reverse_bound_orientation: false,
@@ -3632,6 +3651,34 @@ fn face_attributes(
     })();
     active.remove(&record.id);
     result
+}
+
+fn face_name_value(record: &RawRecord) -> Option<Value> {
+    let value = if record.partials.len() == 1 {
+        record.parameter(0)
+    } else {
+        record
+            .partial("REPRESENTATION_ITEM")
+            .and_then(|partial| partial.parameters.first())
+            .or_else(|| {
+                [
+                    "ORIENTED_FACE",
+                    "SUBFACE",
+                    "ADVANCED_FACE",
+                    "FACE_SURFACE",
+                    "FACE",
+                ]
+                .into_iter()
+                .find_map(|name| {
+                    record
+                        .partial(name)
+                        .and_then(|partial| partial.parameters.first())
+                })
+            })
+    };
+    value
+        .filter(|value| !matches!(value, Value::String(bytes) if bytes.is_empty()))
+        .cloned()
 }
 
 fn direct_face_bounds(record: &RawRecord, exchange: &Exchange) -> Option<Vec<u64>> {

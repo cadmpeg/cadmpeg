@@ -2118,7 +2118,11 @@ impl<'a> Builder<'a> {
         let flag = if same_sense { ".T." } else { ".F." };
         let advanced_face = self.emitter.emit(
             "ADVANCED_FACE",
-            &format!("'',{},{surf_ref},{flag}", refs(&bound_refs)),
+            &format!(
+                "{},{},{surf_ref},{flag}",
+                string(face.name.as_deref().unwrap_or("")),
+                refs(&bound_refs)
+            ),
         );
         self.face_step_refs
             .insert(face_id.to_string(), advanced_face);
@@ -3730,6 +3734,100 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let pcurve_use_metadata_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| &coedge.pcurves)
+            .chain(
+                self.ir
+                    .model
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| &loop_.vertex_uses)
+                    .flat_map(|vertex_use| &vertex_use.pcurves),
+            )
+            .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
+            .count();
+        if pcurve_use_metadata_count > 0 {
+            self.omit(
+                LossKind::PcurveOmitted,
+                Severity::Info,
+                format!(
+                    "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                ),
+            );
+        }
+        let coedge_use_curve_metadata_count = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                coedge.use_curve.is_some() || coedge.use_curve_parameter_range.is_some()
+            })
+            .count();
+        if coedge_use_curve_metadata_count > 0 {
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{coedge_use_curve_metadata_count} coedge-local 3D curve use(s) were not represented in STEP"
+                ),
+            );
+        }
+        // EDGE_CURVE carries its bounded domain through the two vertex
+        // endpoints. The IR parameter interval is a derived parameterization
+        // detail, not a separate STEP attribute, so it is not a loss here.
+        let topology_metadata = [
+            (
+                "face tolerance",
+                self.ir
+                    .model
+                    .faces
+                    .iter()
+                    .filter(|face| face.tolerance.is_some())
+                    .count(),
+            ),
+            (
+                "edge tolerance",
+                self.ir
+                    .model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.tolerance.is_some())
+                    .count(),
+            ),
+            (
+                "vertex tolerance",
+                self.ir
+                    .model
+                    .vertices
+                    .iter()
+                    .filter(|vertex| vertex.tolerance.is_some())
+                    .count(),
+            ),
+        ];
+        let topology_metadata_count = topology_metadata
+            .iter()
+            .map(|(_, count)| count)
+            .sum::<usize>();
+        if topology_metadata_count > 0 {
+            let details = topology_metadata
+                .iter()
+                .filter(|(_, count)| *count > 0)
+                .map(|(kind, count)| format!("{kind}={count}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.loss(
+                LossKind::AttributesNotTransferred,
+                Severity::Info,
+                format!(
+                    "{topology_metadata_count} topology metadata value(s) were not represented in STEP: {details}"
+                ),
+            );
+        }
         if !self.ir.model.subds.is_empty() {
             self.omit(
                 LossKind::SubdOmitted,
@@ -3998,6 +4096,19 @@ impl<'a> Builder<'a> {
                 .iter()
                 .filter(|tessellation| {
                     tessellation
+                        .source_object
+                        .as_ref()
+                        .is_some_and(|source| source.format != "step")
+                })
+                .count();
+        let source_object_count = source_object_count
+            + self
+                .ir
+                .model
+                .points
+                .iter()
+                .filter(|point| {
+                    point
                         .source_object
                         .as_ref()
                         .is_some_and(|source| source.format != "step")
