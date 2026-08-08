@@ -372,6 +372,19 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
         [175]
     );
+    let duplicate_owned_producer = table(
+        175,
+        67,
+        vec![entry(192, 200, Some(175)), entry(192, 200, Some(175))],
+    );
+    assert_eq!(
+        feature_entity_dependencies(&[duplicate_owned_producer.clone(), consumer.clone()], 416),
+        [175]
+    );
+    assert_eq!(
+        knit_class_100_operand_entity_ids(416, &[duplicate_owned_producer, consumer.clone()]),
+        None
+    );
     assert_eq!(
         knit_class_100_operand_entity_ids(416, &[producer.clone(), consumer.clone()]),
         Some(vec![192])

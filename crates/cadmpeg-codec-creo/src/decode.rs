@@ -16193,7 +16193,12 @@ fn feature_entity_dependencies(
                         })
                         .collect::<Vec<_>>()
                 })
-                .collect::<Vec<_>>();
+                .fold(Vec::new(), |mut producers, producer| {
+                    if !producers.contains(&producer) {
+                        producers.push(producer);
+                    }
+                    producers
+                });
             let [producer] = producers.as_slice() else {
                 continue;
             };
