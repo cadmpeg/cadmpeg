@@ -266,6 +266,54 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
 
+### PS-32. Procedural-intersection support ordering
+
+**Question.** Which reference of a type-38 construction is the primary support?
+
+**Known.** `siemens_nx.md` §6.3 "For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for t" gives the rule: the `0x5a` twin has a fixed layout, and a type-38 construction takes its primary reference from the `0x00cc` marker, where marker 2 selects reference 0 and marker 3 selects reference 1.
+
+**Conflict.** The decoder does not apply this rule. `construction_supports` in `crates/cadmpeg-codec-nx/src/intersection.rs` tests reference 0 and then reference 1 for surface identity and takes the first that is a surface. The marker is decoded and retained, but it selects only the tuple width. The two rules agree when one reference is a type-59 bridge, and they disagree when both references resolve to surface records and the marker is 3. The support lane then attaches to the wrong surface. `siemens_nx.md` §6.3 also requires every evaluable lane point to reproduce its chart point inside the chart tolerance; the serialized-lane path does not apply that test, so nothing later rejects the wrong attachment.
+
+### PS-33. Chart point layout selection
+
+**Question.** Which field selects the `Hvec` layout of a `CHART_s` point array?
+
+**Known.** `siemens_nx.md` §6.3 "Hvec form depends on the stream: partition streams use **`xyz3`** (`x,y,z` meters); delt" gives the rule: the stream kind selects the layout. `siemens_nx.md` §6 "All geometric doubles are finite binary64 values in meters" states that the format imposes no model-magnitude bound.
+
+**Conflict.** The decoder does not apply the stream rule. `chart_points` in `crates/cadmpeg-codec-nx/src/intersection.rs` tries the wide layout first, accepts it when every tangent is near unit norm and the native parameters ascend, and otherwise reads the same bytes with the narrow stride. The caller separates partition bytes from replacement-stream bytes already, so the stream kind is available and unused. A wide record that fails the norm test is then read as narrow triples that cross field boundaries, and the resulting point sequence is transferred as curve geometry. The same function rejects any coordinate at or above one hundred meters, which contradicts §6 and drops every charted intersection of a larger model.
+
+### PS-34. B-spline form-code semantics
+
+**Question.** What does each B-spline form code mean?
+
+**Known.** `siemens_nx.md` §9.3 "A type-126 B-surface descriptor stores U and V degrees, pole counts, form codes, distinc" names the form-code field. `siemens_nx.md` §9.3 "The B-spline form code does not determine whether a control grid is rational. The contro" excludes one interpretation. No section assigns a meaning to a form-code value.
+
+**Need.** We must know the meaning of each code. The decoder admits the codes `1`, `4`, `5`, and `6`, and transfers the single code `6` as the periodic flag of the surface, curve, or pcurve. A periodic carrier whose code is not `6` transfers as open, so its seam trims as a boundary. Periodicity also gates the offset-surface cache relation, so a wrong flag admits or discards that relation.
+
+### PS-35. Escaped and direct fixed-record disambiguation
+
+**Question.** Which test separates a direct large-index fixed record from an escaped record when the byte after the type is `ff`?
+
+**Known.** `siemens_nx.md` §5.1 "Any fixed record may place an envelope escape byte `ff` between its type and xmt fields." states that the complete family field grammar disambiguates the two readings. `siemens_nx.md` §4.2 "Status-framed fixed records use a status byte in `0..=1` after each encoded reference. A" requires that exactly one reading ends before a recognized node type.
+
+**Conflict.** The decoder applies neither test. `Graph::parse` in `crates/cadmpeg-codec-nx/src/topology.rs` builds both readings, filters each by family framing, and then prefers the escaped reading on a quality tie. The quality function scores only SHELL records and returns zero for every other kind, so the escaped reading always wins for FACE, LOOP, EDGE, FIN, VERTEX, and POINT. A direct record whose remainder byte is `ff` is then indexed under a different identity, and every reference that names it fails to resolve. The same comparison decides which of two records with equal type and identity keeps the graph slot, and it discards the other without reporting a loss.
+
+### PS-36. Standalone `0x5a` record anchor
+
+**Question.** What anchors a standalone `0x5a` intersection record in a deltas stream?
+
+**Known.** `siemens_nx.md` §4.2 "The type-38 form has the header" gives the exact schema prefix, in which the name `intersection_data` precedes the `0x5a` tag at a fixed distance. `siemens_nx.md` §4.2 "Status-framed type-38 `INTERSECTION` records end after their six construction references" states that these records occur standalone and need no following recognized tag.
+
+**Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
+
+### PS-37. NURBS record count and degree limits
+
+**Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
+
+**Known.** `siemens_nx.md` §9.3 "Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and sto" defines the array-record envelopes and states that counts are nonzero and identities are non-null. `siemens_nx.md` §6.2 "Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rationa" gives the basis constraints that relate degree, pole count, and multiplicity sums.
+
+**Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
@@ -565,6 +613,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §7.1 "The first record at `oid_end` begins `04 01, declared_len:u8, version_text[declared_len-2], 00`" defines the product record and the bounded registry suffix through the next length-framed `m_` declaration. `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" defines the schema trailer that carries the record-area pointer. Neither gives a terminator for the last declaration in a registry, nor a bound for the pointer search.
 
 **Need.** We must know both terminators. The decoder supplies fixed byte windows: it stops enumerating member declarations after 256 bytes with no match, and it looks for the record-area pointer only inside 4096 bytes after the last member declaration, which also bounds the uniqueness test that rejects an ambiguous pointer. A section that exceeds either window loses its declarations or its complete record area and reports no loss.
+
+### OM-38. `RMFastLoad` membership table location
+
+**Question.** Which field gives the position of the `RMFastLoad` active object-id table?
+
+**Known.** `siemens_nx.md` §7.2 "`RMFastLoad` stores the active object-id set alongside the partition and deltas body records." defines the table as a little-endian count word followed by exactly that many ordered identity words, and states that FACE, EDGE, and VERTEX identities share the space. It does not give the position of the table.
+
+**Need.** We must know the position field. The decoder walks forward from the class marker and takes the first offset whose count word and following identity words fall inside fixed numeric ranges. The count must reach fifty, so a part with fewer active identities never matches its own table, and the active-body selection silently does not run. A count above the upper range is rejected the same way. This location rule supplies the input to the membership decision in OM-33.
 
 ## 3. Assembly and material data
 
