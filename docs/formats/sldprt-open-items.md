@@ -1040,25 +1040,6 @@ The caller at `reference_geometry.rs:862` anchors the scan to `moPlaneInterAxisD
 
 **Need.** We must know the carrier, or mark the constructed axis so a consumer can tell it from a decoded one. A sketch on a mid-plane datum must not rotate.
 
-### DI-51. Hole bore ownership
-
-**Question.** Which cylindrical faces does a hole feature own?
-
-**Known.** `sldprt.md` §5 "Face records use these families:" defines the persistent producer binding through `ATOM_ID_2001`. `sldprt.md` §2 gates the plane-owned and carrier bore forms on a unique diameter: "Another active hole with the same diameter … leaves this ownership form unresolved."
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/holes.rs:1639` adds a branch with no uniqueness gate and no producer test. It claims every cylinder whose radius and axial span match the hole diameter and blind depth:
-
-```rust
-let bore_axes = cylindrical_face_axes_at_depth(radius, depth, topology);
-if !bore_axes.is_empty() {
-```
-
-It also discards the `Sense::Reversed` flag, so an outward boss cylinder qualifies. The specification form requires a reversed cylindrical face.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/holes.rs:1582` adds a second branch that accepts every same-radius cylinder in the model when their count equals the lane's generated-surface-identity count. `generated_surface_identities` carries `feature_source_id`, so the producer link exists and is not used as a filter.
-
-**Need.** We must use the producer binding. Two identical holes must not each claim both bores.
-
 ### DI-52. Identity of an ID-less principal-plane triplet
 
 **Question.** What identifies the Front, Top, and Right planes in a legacy history whose records carry no source identifier?

@@ -1430,16 +1430,6 @@ pub(crate) fn project_hole_axes(
     lanes: &[FeatureInputLane],
 ) {
     let surfaces = topology.surfaces;
-    let native_sources = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            Some((
-                feature.id.as_str(),
-                feature.source_id.as_deref()?.parse::<u32>().ok()?,
-            ))
-        })
-        .collect::<HashMap<_, _>>();
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -1511,19 +1501,6 @@ pub(crate) fn project_hole_axes(
             feature_frames.insert((lane.id.as_str(), feature.id.as_str()), frame);
         }
     }
-    let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
-    for lane in lanes {
-        let counts = lane.generated_surface_identities.iter().fold(
-            HashMap::<u32, usize>::new(),
-            |mut counts, identity| {
-                *counts.entry(identity.feature_source_id).or_default() += 1;
-                counts
-            },
-        );
-        for (source, count) in counts {
-            counts_by_source.entry(source).or_default().insert(count);
-        }
-    }
     let hole_diameter_counts = model_features
         .iter()
         .filter(|feature| feature.suppressed != Some(true))
@@ -1546,7 +1523,6 @@ pub(crate) fn project_hole_axes(
         let FeatureDefinition::Hole {
             placements,
             diameter: Some(Length(diameter)),
-            extent,
             ..
         } = &mut feature.definition
         else {
@@ -1555,37 +1531,7 @@ pub(crate) fn project_hole_axes(
         if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
             continue;
         }
-        let expected = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native| native_sources.get(native))
-            .and_then(|source| counts_by_source.get(source))
-            .and_then(|counts| {
-                (counts.len() == 1)
-                    .then(|| counts.iter().next().copied())
-                    .flatten()
-            });
         let radius = *diameter / 2.0;
-        let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
-        let candidates = surfaces
-            .iter()
-            .filter_map(|surface| match &surface.geometry {
-                SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    radius: candidate,
-                    ..
-                } if (*candidate - radius).abs() <= tolerance => Some((*origin, *axis)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        if expected == Some(candidates.len()) && !candidates.is_empty() {
-            *placements = candidates
-                .into_iter()
-                .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
-                .collect();
-            continue;
-        }
         let Some(native_feature) = feature
             .native_ref
             .as_deref()
@@ -1627,21 +1573,6 @@ pub(crate) fn project_hole_axes(
             }
             if let Some(bore_placements) = bore_carrier_placements(radius, topology) {
                 *placements = bore_placements;
-                continue;
-            }
-        }
-        if let Some(depth) = match extent {
-            Some(Termination::Blind {
-                length: Length(depth),
-            }) => Some(*depth),
-            _ => None,
-        } {
-            let bore_axes = cylindrical_face_axes_at_depth(radius, depth, topology);
-            if !bore_axes.is_empty() {
-                *placements = bore_axes
-                    .into_iter()
-                    .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
-                    .collect();
                 continue;
             }
         }
@@ -1829,38 +1760,6 @@ fn bore_carrier_placements(radius: f64, topology: &HoleTopology<'_>) -> Option<V
         .map(|(_, placement)| placement)
         .collect::<Vec<_>>();
     (!placements.is_empty()).then_some(placements)
-}
-
-fn cylindrical_face_axes_at_depth(
-    radius: f64,
-    depth: f64,
-    topology: &HoleTopology<'_>,
-) -> Vec<(Point3, Vector3)> {
-    if !radius.is_finite() || radius <= 0.0 || !depth.is_finite() || depth <= 0.0 {
-        return Vec::new();
-    }
-    let radius_tolerance = (radius * 1.0e-9).max(1.0e-9);
-    let depth_tolerance = (depth * 1.0e-9).max(1.0e-9);
-    let mut axes = cylindrical_bore_face_spans(topology)
-        .into_iter()
-        .filter_map(|(origin, axis, candidate_radius, span, _)| {
-            ((candidate_radius - radius).abs() <= radius_tolerance
-                && (span - depth).abs() <= depth_tolerance)
-                .then_some((origin, axis))
-        })
-        .collect::<Vec<_>>();
-    axes.sort_by_key(|(origin, axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            axis.x.to_bits(),
-            axis.y.to_bits(),
-            axis.z.to_bits(),
-        ]
-    });
-    axes.dedup();
-    axes
 }
 
 fn cylindrical_bore_face_spans(

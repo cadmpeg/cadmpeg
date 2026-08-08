@@ -15,13 +15,12 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Vertex};
 
 use super::{
-    bore_carrier_placements, compact_position_loci, cylindrical_face_axes_at_depth,
-    cylindrical_support_normal, direct_hole_position_feature, enrich_history_hole_constructions,
-    enrich_history_parameters, hole_position_feature, hole_position_sketch_source,
-    hole_temporary_axis, marker_pattern_bore_axes, plane_owned_bore_placements,
-    profiled_hole_construction, project_hole_axes, project_hole_position_sketches,
-    project_profiled_hole_constructions, project_spatial_hole_position_sketches,
-    project_topological_hole_constructions, HoleTopology,
+    bore_carrier_placements, compact_position_loci, cylindrical_support_normal,
+    direct_hole_position_feature, enrich_history_hole_constructions, enrich_history_parameters,
+    hole_position_feature, hole_position_sketch_source, hole_temporary_axis,
+    marker_pattern_bore_axes, plane_owned_bore_placements, profiled_hole_construction,
+    project_hole_axes, project_hole_position_sketches, project_profiled_hole_constructions,
+    project_spatial_hole_position_sketches, project_topological_hole_constructions, HoleTopology,
 };
 use crate::records::{
     FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputGeneratedSurfaceIdentity,
@@ -277,7 +276,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
 }
 
 #[test]
-fn cylindrical_face_span_identifies_a_blind_bore_depth() {
+fn topological_hole_projection_uses_a_reversed_bore_span() {
     let surface = Surface {
         id: SurfaceId("surface".into()),
         geometry: SurfaceGeometry::Cylinder {
@@ -349,37 +348,6 @@ fn cylindrical_face_span_identifies_a_blind_bore_depth() {
             source_object: None,
         },
     ];
-
-    assert_eq!(
-        cylindrical_face_axes_at_depth(
-            2.0,
-            10.0,
-            &HoleTopology {
-                surfaces: std::slice::from_ref(&surface),
-                faces: std::slice::from_ref(&face),
-                loops: std::slice::from_ref(&loop_),
-                coedges: std::slice::from_ref(&coedge),
-                edges: std::slice::from_ref(&edge),
-                vertices: &vertices,
-                points: &points,
-            },
-        ),
-        vec![(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0))]
-    );
-    assert!(cylindrical_face_axes_at_depth(
-        2.0,
-        9.0,
-        &HoleTopology {
-            surfaces: std::slice::from_ref(&surface),
-            faces: std::slice::from_ref(&face),
-            loops: std::slice::from_ref(&loop_),
-            coedges: std::slice::from_ref(&coedge),
-            edges: std::slice::from_ref(&edge),
-            vertices: &vertices,
-            points: &points,
-        },
-    )
-    .is_empty());
 
     let mut bore_face = face;
     bore_face.sense = Sense::Reversed;
@@ -1678,11 +1646,11 @@ fn parameter_class_supplies_an_operandless_scalar_unit() {
 }
 
 #[test]
-fn hole_axes_require_exact_output_cardinality() {
+fn hole_axes_do_not_claim_unowned_same_radius_surfaces() {
     let history = native_history();
     let lane = lane();
     let mut features = vec![model_hole()];
-    let mut surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
+    let surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
 
     project_hole_axes(
         &mut features,
@@ -1698,31 +1666,6 @@ fn hole_axes_require_exact_output_cardinality() {
         },
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    );
-    let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
-        unreachable!();
-    };
-    assert_eq!(placements.len(), 2);
-
-    let FeatureDefinition::Hole { placements, .. } = &mut features[0].definition else {
-        unreachable!();
-    };
-    placements.clear();
-    surfaces.push(cylinder(2, 15.0));
-    project_hole_axes(
-        &mut features,
-        &[],
-        &HoleTopology {
-            surfaces: &surfaces,
-            faces: &[],
-            loops: &[],
-            coedges: &[],
-            edges: &[],
-            vertices: &[],
-            points: &[],
-        },
-        &[history],
-        &[lane],
     );
     let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
         unreachable!();
