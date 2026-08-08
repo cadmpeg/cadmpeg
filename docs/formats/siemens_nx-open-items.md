@@ -282,14 +282,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the anchor to admit exactly the real records. The decoder treats every `0x5a` byte as a candidate and accepts it when a header reference equals one, or when the name occurs anywhere in about eighty preceding bytes. Neither condition is the fixed prefix. A record whose header is farther upstream is dropped, and a payload byte run that satisfies the structural tests enters the model as a curve.
 
-### PS-37. NURBS record count and degree limits
-
-**Question.** What bounds the counts, degrees, and pole counts of B-spline support records?
-
-**Known.** `siemens_nx.md` §9.3 "Type 127 stores `00 7f [ff], 0000, count:u16 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and sto" defines the array-record envelopes and states that counts are nonzero and identities are non-null. `siemens_nx.md` §6.2 "Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rationa" gives the basis constraints that relate degree, pole count, and multiplicity sums.
-
-**Need.** We must know the bounds, or confirm that the basis constraints are the only ones. The decoder locates these records by scanning the complete stream and admits a record only inside fixed numeric ranges for the array count, the degree, the pole count, and the distinct-knot count. A surface or curve outside those ranges is omitted, and its face keeps an unresolved carrier.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

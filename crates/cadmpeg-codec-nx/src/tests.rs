@@ -4984,6 +4984,190 @@ fn nurbs_periodicity_uses_logical_flags_not_knot_types() {
 }
 
 #[test]
+fn nurbs_accepts_encoded_cardinality_without_arbitrary_ceiling() {
+    fn curve_stream(degree: u16, poles: u16) -> Vec<u8> {
+        assert!(poles > degree);
+        let distinct = usize::from(poles) + 1;
+        let mut stream = Vec::new();
+
+        let mut wrapper = record(134, 23);
+        put_ref(&mut wrapper, 2, 50);
+        wrapper[18] = b'+';
+        put_ref(&mut wrapper, 19, 40);
+        put_ref(&mut wrapper, 21, 41);
+        stream.extend(wrapper);
+
+        let mut descriptor = record(136, 27);
+        put_ref(&mut descriptor, 2, 40);
+        put_ref(&mut descriptor, 4, degree);
+        put_ref(&mut descriptor, 8, poles);
+        put_ref(&mut descriptor, 10, 3);
+        put_ref(&mut descriptor, 14, distinct as u16);
+        descriptor[16] = 2;
+        descriptor[20] = 2;
+        put_ref(&mut descriptor, 23, 42);
+        put_ref(&mut descriptor, 25, 43);
+        stream.extend(descriptor);
+
+        let value_count = usize::from(poles) * 3;
+        let mut payload = record(135, 15 + value_count * 8);
+        put_ref(&mut payload, 2, 41);
+        payload[9..13].copy_from_slice(&(value_count as u32).to_be_bytes());
+        put_ref(&mut payload, 13, 1);
+        for pole in 0..usize::from(poles) {
+            let at = 15 + pole * 24;
+            put_f64(&mut payload, at, pole as f64 * 0.01);
+            put_f64(&mut payload, at + 8, 0.0);
+            put_f64(&mut payload, at + 16, 0.0);
+        }
+        stream.extend(payload);
+
+        let mut multiplicities = record(127, 8 + distinct * 2);
+        multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        put_ref(&mut multiplicities, 6, 42);
+        put_ref(&mut multiplicities, 8, degree + 1);
+        for index in 1..distinct {
+            put_ref(&mut multiplicities, 8 + index * 2, 1);
+        }
+        stream.extend(multiplicities);
+
+        let mut knots = record(128, 8 + distinct * 8);
+        knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+        put_ref(&mut knots, 6, 43);
+        for index in 0..distinct {
+            put_f64(&mut knots, 8 + index * 8, index as f64);
+        }
+        stream.extend(knots);
+        stream
+    }
+
+    fn surface_stream(u_degree: u16, u_poles: u16, v_degree: u16, v_poles: u16) -> Vec<u8> {
+        assert!(u_poles > u_degree && v_poles > v_degree);
+        let u_distinct = usize::from(u_poles) + 1;
+        let v_distinct = usize::from(v_poles) + 1;
+        let poles = usize::from(u_poles) * usize::from(v_poles);
+        let mut stream = Vec::new();
+
+        let mut wrapper = record(124, 23);
+        put_ref(&mut wrapper, 2, 10);
+        wrapper[18] = b'+';
+        put_ref(&mut wrapper, 19, 20);
+        put_ref(&mut wrapper, 21, 21);
+        stream.extend(wrapper);
+
+        let mut descriptor = record(126, 48);
+        put_ref(&mut descriptor, 2, 20);
+        put_ref(&mut descriptor, 6, u_degree);
+        put_ref(&mut descriptor, 8, v_degree);
+        put_ref(&mut descriptor, 12, u_poles);
+        put_ref(&mut descriptor, 16, v_poles);
+        descriptor[18] = 2;
+        descriptor[19] = 2;
+        descriptor[20..24].copy_from_slice(&(u_distinct as u32).to_be_bytes());
+        descriptor[24..28].copy_from_slice(&(v_distinct as u32).to_be_bytes());
+        put_ref(&mut descriptor, 36, 30);
+        put_ref(&mut descriptor, 38, 31);
+        put_ref(&mut descriptor, 40, 32);
+        put_ref(&mut descriptor, 42, 33);
+        put_ref(&mut descriptor, 44, 125);
+        put_ref(&mut descriptor, 46, 21);
+        stream.extend(descriptor);
+
+        let value_count = poles * 3;
+        let mut payload = record(125, 97 + value_count * 8);
+        put_ref(&mut payload, 2, 21);
+        payload[90] = b'+';
+        payload[91..95].copy_from_slice(&(value_count as u32).to_be_bytes());
+        put_ref(&mut payload, 95, 1);
+        for v in 0..usize::from(v_poles) {
+            for u in 0..usize::from(u_poles) {
+                let at = 97 + (v * usize::from(u_poles) + u) * 24;
+                put_f64(&mut payload, at, u as f64 * 0.001);
+                put_f64(&mut payload, at + 8, v as f64 * 0.001);
+                put_f64(&mut payload, at + 16, 0.0);
+            }
+        }
+        stream.extend(payload);
+
+        for (reference, degree, distinct) in
+            [(30, u_degree, u_distinct), (31, v_degree, v_distinct)]
+        {
+            let mut multiplicities = record(127, 8 + distinct * 2);
+            multiplicities[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            put_ref(&mut multiplicities, 6, reference);
+            put_ref(&mut multiplicities, 8, degree + 1);
+            for index in 1..distinct {
+                put_ref(&mut multiplicities, 8 + index * 2, 1);
+            }
+            stream.extend(multiplicities);
+        }
+        for (reference, distinct) in [(32, u_distinct), (33, v_distinct)] {
+            let mut knots = record(128, 8 + distinct * 8);
+            knots[4..6].copy_from_slice(&(distinct as u16).to_be_bytes());
+            put_ref(&mut knots, 6, reference);
+            for index in 0..distinct {
+                put_f64(&mut knots, 8 + index * 8, index as f64);
+            }
+            stream.extend(knots);
+        }
+        stream
+    }
+
+    let [high_degree] = crate::nurbs::curves(&curve_stream(11, 12))
+        .try_into()
+        .expect("one high-degree curve");
+    let CurveGeometry::Nurbs(high_degree) = high_degree.geometry else {
+        panic!("expected high-degree NURBS curve");
+    };
+    assert_eq!(high_degree.degree, 11);
+    assert_eq!(high_degree.control_points.len(), 12);
+    assert_eq!(high_degree.knots.len(), 24);
+
+    let [wide_curve] = crate::nurbs::curves(&curve_stream(1, 5000))
+        .try_into()
+        .expect("one wide curve");
+    let CurveGeometry::Nurbs(wide_curve) = wide_curve.geometry else {
+        panic!("expected wide NURBS curve");
+    };
+    assert_eq!(wide_curve.control_points.len(), 5000);
+    assert_eq!(wide_curve.knots.len(), 5002);
+
+    let [wide_surface] = crate::nurbs::surfaces(&surface_stream(1, 2001, 1, 2))
+        .try_into()
+        .expect("one wide surface");
+    let SurfaceGeometry::Nurbs(wide_surface) = wide_surface.geometry else {
+        panic!("expected wide NURBS surface");
+    };
+    assert_eq!(wide_surface.control_points.len(), 4002);
+    assert_eq!(wide_surface.u_knots.len(), 2003);
+    assert_eq!(wide_surface.v_knots.len(), 4);
+
+    let mut wide_curve_pole_count = curve_stream(1, 12);
+    let curve_descriptor = wide_curve_pole_count
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    wide_curve_pole_count[curve_descriptor + 6] = 1;
+    assert!(crate::nurbs::curves(&wide_curve_pole_count).is_empty());
+
+    let mut wide_curve_distinct_count = curve_stream(1, 12);
+    wide_curve_distinct_count[curve_descriptor + 12] = 1;
+    assert!(crate::nurbs::curves(&wide_curve_distinct_count).is_empty());
+
+    let mut wide_surface_pole_count = surface_stream(1, 2, 1, 2);
+    let surface_descriptor = wide_surface_pole_count
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    wide_surface_pole_count[surface_descriptor + 10] = 1;
+    assert!(crate::nurbs::surfaces(&wide_surface_pole_count).is_empty());
+
+    let mut wide_surface_distinct_count = surface_stream(1, 2, 1, 2);
+    wide_surface_distinct_count[surface_descriptor + 20] = 1;
+    assert!(crate::nurbs::surfaces(&wide_surface_distinct_count).is_empty());
+}
+
+#[test]
 fn nurbs_carriers_reject_invalid_basis_cardinality() {
     let mut surface = bspline_partition_stream();
     let descriptor = surface

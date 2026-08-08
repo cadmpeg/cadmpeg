@@ -2076,17 +2076,17 @@ anchor = "`u_degree +6`, `v_degree +8`"
 
 [[record.field]]
 name = "u_pole_count"
-offset = 12
-type = "u16"
+offset = 10
+type = "u32"
 source = "spec"
-anchor = "`u_pole_count +12`, `v_pole_count +16`"
+anchor = "`u_pole_count +10`, `v_pole_count +14`"
 
 [[record.field]]
 name = "v_pole_count"
-offset = 16
-type = "u16"
+offset = 14
+type = "u32"
 source = "spec"
-anchor = "`u_pole_count +12`, `v_pole_count +16`"
+anchor = "`u_pole_count +10`, `v_pole_count +14`"
 
 [[record.field]]
 name = "u_knot_type"
@@ -2121,16 +2121,6 @@ offset = 0
 size = 4
 note = "Type tag and the encoded XMT identity."
 
-[[record.gap]]
-offset = 10
-size = 2
-note = "Unassigned bytes between the V degree and U pole count in the NX descriptor prefix."
-
-[[record.gap]]
-offset = 14
-size = 2
-note = "Unassigned bytes between the U and V pole counts in the NX descriptor prefix."
-
 [[record.code]]
 path = "crates/cadmpeg-codec-nx/src/nurbs.rs"
 contains = "let u_periodic = logical_at(bytes, pos + 4 + shift)?;"
@@ -2140,7 +2130,7 @@ note = "The parser reads the two logical flags at the declared shifted offsets."
 name = "nurbs_curve_descriptor_prefix"
 kind = "byte"
 section = "6.2"
-anchor = "`degree +4`, `pole_count +8`, `dimension +10`"
+anchor = "`degree +4`, `pole_count +6`, `dimension +10`"
 size = 21
 endianness = "big"
 note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The reference lane begins at +21 or +23 depending on the selected descriptor framing."
@@ -2150,14 +2140,14 @@ name = "degree"
 offset = 4
 type = "u16"
 source = "spec"
-anchor = "`degree +4`, `pole_count +8`"
+anchor = "`degree +4`, `pole_count +6`"
 
 [[record.field]]
 name = "pole_count"
-offset = 8
-type = "u16"
+offset = 6
+type = "u32"
 source = "spec"
-anchor = "`pole_count +8`, `dimension +10`"
+anchor = "`pole_count +6`, `dimension +10`"
 
 [[record.field]]
 name = "dimension"
@@ -2168,10 +2158,10 @@ anchor = "`dimension +10` (2=UV, 3=XYZ)"
 
 [[record.field]]
 name = "distinct_knot_count"
-offset = 14
-type = "u16"
+offset = 12
+type = "u32"
 source = "spec"
-anchor = "distinct-knot `+14`"
+anchor = "distinct-knot `+12`"
 
 [[record.field]]
 name = "knot_type"
@@ -2212,16 +2202,6 @@ anchor = "curve form `+20`"
 offset = 0
 size = 4
 note = "Type tag and the encoded XMT identity."
-
-[[record.gap]]
-offset = 6
-size = 2
-note = "Unassigned bytes between degree and pole count in the NX descriptor prefix."
-
-[[record.gap]]
-offset = 12
-size = 2
-note = "Unassigned bytes between dimension and distinct-knot count in the NX descriptor prefix."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-nx/src/nurbs.rs"

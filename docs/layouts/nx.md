@@ -712,8 +712,8 @@ Offsets are relative to the type tag after the optional envelope and large-index
 | 5 | 1 | `v_periodic` | `u8` | big | spec | `u_periodic +4`, `v_periodic +5` |
 | 6 | 2 | `u_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
 | 8 | 2 | `v_degree` | `u16` | big | spec | `u_degree +6`, `v_degree +8` |
-| 12 | 2 | `u_pole_count` | `u16` | big | spec | `u_pole_count +12`, `v_pole_count +16` |
-| 16 | 2 | `v_pole_count` | `u16` | big | spec | `u_pole_count +12`, `v_pole_count +16` |
+| 10 | 4 | `u_pole_count` | `u32` | big | spec | `u_pole_count +10`, `v_pole_count +14` |
+| 14 | 4 | `v_pole_count` | `u32` | big | spec | `u_pole_count +10`, `v_pole_count +14` |
 | 18 | 1 | `u_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
 | 19 | 1 | `v_knot_type` | `u8` | big | spec | U/V knot types `+18/+19` |
 | 20 | 4 | `u_distinct_knot_count` | `u32` | big | spec | distinct-knot counts `+20/+24` |
@@ -722,8 +722,6 @@ Offsets are relative to the type tag after the optional envelope and large-index
 Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
-- `10..12` (2 B): Unassigned bytes between the V degree and U pole count in the NX descriptor prefix.
-- `14..16` (2 B): Unassigned bytes between the U and V pole counts in the NX descriptor prefix.
 
 Cross-checked against code:
 
@@ -737,10 +735,10 @@ Offsets are relative to the type tag after the optional envelope and large-index
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 4 | 2 | `degree` | `u16` | big | spec | `degree +4`, `pole_count +8` |
-| 8 | 2 | `pole_count` | `u16` | big | spec | `pole_count +8`, `dimension +10` |
+| 4 | 2 | `degree` | `u16` | big | spec | `degree +4`, `pole_count +6` |
+| 6 | 4 | `pole_count` | `u32` | big | spec | `pole_count +6`, `dimension +10` |
 | 10 | 2 | `dimension` | `u16` | big | spec | `dimension +10` (2=UV, 3=XYZ) |
-| 14 | 2 | `distinct_knot_count` | `u16` | big | spec | distinct-knot `+14` |
+| 12 | 4 | `distinct_knot_count` | `u32` | big | spec | distinct-knot `+12` |
 | 16 | 1 | `knot_type` | `u8` | big | spec | knot type `+16` |
 | 17 | 1 | `periodic` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
 | 18 | 1 | `closed` | `u8` | big | spec | periodic/closed/rational `+17/+18/+19` |
@@ -750,8 +748,6 @@ Offsets are relative to the type tag after the optional envelope and large-index
 Unstated regions:
 
 - `0..4` (4 B): Type tag and the encoded XMT identity.
-- `6..8` (2 B): Unassigned bytes between degree and pole count in the NX descriptor prefix.
-- `12..14` (2 B): Unassigned bytes between dimension and distinct-knot count in the NX descriptor prefix.
 
 Cross-checked against code:
 
