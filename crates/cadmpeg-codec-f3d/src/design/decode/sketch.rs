@@ -1368,11 +1368,9 @@ pub(crate) fn decode_pattern_definition(
         // Each direction clause writes its evaluated count directly before its
         // count-parameter reference, so the count is five bytes before that
         // reference's target. The clauses follow the class members that precede
-        // them, which is one leading reference or none; where the class was not
-        // named that is read off the length of the auxiliary run.
-        let clause_ordinal = parsed
-            .rectangular_clause_ordinal
-            .unwrap_or(usize::from(parsed.auxiliary_references.len() == 5));
+        // them. The rectangular class parser records their exact position only
+        // when all four parameter references are present.
+        let clause_ordinal = parsed.rectangular_clause_ordinal?;
         if parsed.auxiliary_references.len() < clause_ordinal + 4 {
             return None;
         }
@@ -3144,9 +3142,8 @@ pub(crate) struct ParsedSketchRelation {
     pub(crate) text_glyph_transforms: Option<Vec<[[f64; 4]; 4]>>,
     /// Position within `auxiliary_references` of the first direction clause's
     /// count-parameter reference on a rectangular pattern whose four clause
-    /// references are all present. `None` where the class was not named or a
-    /// clause reference is absent, which leaves the ordinals to be guessed from
-    /// the length of the auxiliary run.
+    /// references are all present. `None` for every other relation class and
+    /// when a rectangular clause reference is absent.
     pub(crate) rectangular_clause_ordinal: Option<usize>,
     pub(crate) return_members: Vec<u32>,
     pub(crate) return_member_offsets: Vec<usize>,
@@ -3963,6 +3960,40 @@ mod relation_class_tests {
         };
         assert_eq!(directions[0].evaluated_count, 4);
         assert_eq!(directions[1].evaluated_count, 2);
+    }
+
+    #[test]
+    fn rectangular_pattern_withholds_when_a_clause_reference_is_absent() {
+        let mut class_members = vec![0, 0, 0];
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        // The first seed reference uses the segment form. Its trailing segment
+        // value is a plausible count if a reader starts one reference early.
+        class_members.push(1);
+        class_members.extend_from_slice(&900u64.to_le_bytes());
+        class_members.extend_from_slice(&[0, 1]);
+        class_members.extend_from_slice(&2u32.to_le_bytes());
+        push_reference(&mut class_members, 901);
+        class_members.extend_from_slice(&empty_pattern_tables());
+
+        class_members.extend_from_slice(&0u32.to_le_bytes());
+        push_absent_reference(&mut class_members);
+        // Together with the empty table counts and absent-reference marker,
+        // these bytes form a shifted unit vector `[0, 1, 0]`.
+        class_members.extend_from_slice(&[0x00, 0xf0, 0x3f, 0, 0, 0, 0, 0]);
+        class_members.extend_from_slice(&0.0f64.to_le_bytes());
+        class_members.extend_from_slice(&0.0f64.to_le_bytes());
+        class_members.extend_from_slice(&0.0f64.to_le_bytes());
+        push_reference(&mut class_members, 470);
+
+        push_direction_clause(&mut class_members, 1, 467, [1.0, 0.0, 0.0], 0.5, 473);
+        let record = relation_record(&[(300, 1)], &class_members, 201, 0x2000_0000, &[300]);
+        let parsed =
+            parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+                .expect("the classed parse retains the incomplete relation");
+
+        assert_eq!(parsed.auxiliary_references, [900, 901, 470, 467, 473]);
+        assert_eq!(parsed.rectangular_clause_ordinal, None);
+        assert_eq!(decode_pattern_definition(&record, &parsed), None);
     }
 
     #[test]
