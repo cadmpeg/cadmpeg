@@ -139,6 +139,11 @@ fixtures, claims above L1 remain unproven.
   use generated face references only when those identities and their producer
   dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
   remain native selections.
+- Unique feature-owned `crv_array` topology rows now emit feature-result edge
+  identities. Fillet and chamfer affected-edge selections use generated edge
+  references only when the topology row is unique and its producer result
+  declares the matching local edge identity. The coverage map counts both
+  result-topology states and their declared result edges.
 - Feature-local pre-rollback, post-rollback, and post-regeneration outlines
   retain each of their six exact scalar bodies independently of numeric decode.
 - Bare `Body`, `Körper`, and `Surface` operation states without a recipe,

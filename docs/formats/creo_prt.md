@@ -2792,6 +2792,16 @@ and rows owned by another feature do not declare a result state. A generated
 face selection is valid only when its producer feature and `surface#<geom_id>`
 identity occur in that producer's result state.
 
+A regenerated-result edge identity is declared for each unique `crv_array`
+topology row whose `feat_id` is the producing feature. The topology row is
+already a complete materialized edge record: its two face-side identifiers and
+two successor-edge identifiers are bounded by the row grammar. If the same
+curve identifier occurs more than once in the complete curve namespace, that
+feature's edge roster is unresolved. The result state names a declared edge as
+`curve#<crv_id>`. An affected edge that is absent from the current B-rep binds
+to this result identity only when its unique topology row and producing
+feature result state both declare `curve#<crv_id>`.
+
 `edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
 and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
 declared compact count and the entity-class identifier following its `f7`

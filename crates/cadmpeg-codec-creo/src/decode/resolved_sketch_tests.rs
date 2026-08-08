@@ -637,15 +637,39 @@ fn feature_result_faces_require_owned_materialized_class_200_entries() {
         offset: 0,
     };
     let rows = [row(98, 97), row(145, 97)];
+    let curve_rows = [crate::curve::CurveTopologyRow {
+        id: 77,
+        type_byte: 8,
+        feature_id: 97,
+        directions: [1, 0xf6],
+        faces: [98, 145],
+        next_edges: [77, 77],
+        offset: 0,
+    }];
+    assert_eq!(feature_result_edge_ids(&curve_rows, 97), Some(vec![77]));
+    let duplicate_curve_rows = [
+        curve_rows[0].clone(),
+        crate::curve::CurveTopologyRow {
+            offset: 1,
+            ..curve_rows[0].clone()
+        },
+    ];
+    assert!(feature_result_edge_ids(&duplicate_curve_rows, 97).is_none());
     assert_eq!(
         feature_result_surface_ids(std::slice::from_ref(&table), &rows, 97),
         Some(vec![98, 145])
     );
     assert_eq!(
-        feature_result_topology(std::slice::from_ref(&table), &rows, 97)
+        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
             .expect("complete result topology")
             .faces,
         vec!["surface#98", "surface#145"]
+    );
+    assert_eq!(
+        feature_result_topology(std::slice::from_ref(&table), &rows, &curve_rows, 97)
+            .expect("complete result topology")
+            .edges,
+        vec!["curve#77"]
     );
 
     let mut duplicate = table.clone();
@@ -749,9 +773,10 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         IrFeatureId("creo:model:feature#12".to_string()),
         IrFeatureId("creo:model:feature#18".to_string()),
     ]);
+    let result_edge_ids = BTreeMap::from([(12, vec![45]), (18, vec![46])]);
 
     assert_eq!(
-        generated_curve_edge_refs(&[45, 46], &rows, &producers),
+        generated_curve_edge_refs(&[45, 46], &rows, &producers, &result_edge_ids),
         Some(vec![
             GeneratedEdgeRef {
                 feature: IrFeatureId("creo:model:feature#12".to_string()),
@@ -764,11 +789,20 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
         ])
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &[row(45, 12, 100), row(45, 12, 300)], &producers),
+        generated_curve_edge_refs(
+            &[45],
+            &[row(45, 12, 100), row(45, 12, 300)],
+            &producers,
+            &result_edge_ids,
+        ),
         None
     );
     assert_eq!(
-        generated_curve_edge_refs(&[45], &rows, &BTreeSet::new()),
+        generated_curve_edge_refs(&[45], &rows, &BTreeSet::new(), &result_edge_ids),
+        None
+    );
+    assert_eq!(
+        generated_curve_edge_refs(&[45], &rows, &producers, &BTreeMap::new()),
         None
     );
 }

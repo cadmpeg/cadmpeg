@@ -16769,6 +16769,7 @@ fn feature_edge_selection(
         );
         (ids, native)
     };
+    let result_edge_ids = feature_result_edge_ids_by_feature(&scan.curves.topology_rows);
     let edges = ids
         .iter()
         .map(|id| EdgeId(format!("creo:visibgeom:edge#{id}")))
@@ -16788,6 +16789,7 @@ fn feature_edge_selection(
             .iter()
             .map(|feature| feature.id.clone())
             .collect(),
+        &result_edge_ids,
     ) {
         Some(EdgeSelection::Generated { edges, native })
     } else {
@@ -16799,7 +16801,10 @@ fn generated_curve_edge_refs(
     curve_ids: &[u32],
     rows: &[crate::curve::CurveTopologyRow],
     available_features: &BTreeSet<IrFeatureId>,
+    result_edge_ids: &BTreeMap<u32, Vec<u32>>,
 ) -> Option<Vec<GeneratedEdgeRef>> {
+    let unique_curve_ids = curve_ids.iter().copied().collect::<BTreeSet<_>>();
+    (unique_curve_ids.len() == curve_ids.len()).then_some(())?;
     let unique_rows = crate::topology::uniquely_identified_rows(rows)
         .into_iter()
         .map(|row| (row.id, row))
@@ -16809,12 +16814,52 @@ fn generated_curve_edge_refs(
         .map(|curve_id| {
             let row = unique_rows.get(curve_id)?;
             let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
-            available_features
-                .contains(&feature)
-                .then_some(GeneratedEdgeRef {
-                    feature,
-                    local_id: format!("curve#{curve_id}"),
-                })
+            (available_features.contains(&feature)
+                && result_edge_ids
+                    .get(&row.feature_id)
+                    .is_some_and(|ids| ids.contains(curve_id)))
+            .then_some(GeneratedEdgeRef {
+                feature,
+                local_id: format!("curve#{curve_id}"),
+            })
+        })
+        .collect()
+}
+
+/// Return the complete feature-local edge roster proven by unique topology rows.
+///
+/// A decoded `crv_array` topology row is one materialized edge identity. The
+/// global curve namespace must contain that identifier exactly once before the
+/// row can be exposed in a feature result state.
+fn feature_result_edge_ids(
+    rows: &[crate::curve::CurveTopologyRow],
+    feature_id: u32,
+) -> Option<Vec<u32>> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for row in rows {
+        *counts.entry(row.id).or_default() += 1;
+    }
+    let feature_rows = rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    (!feature_rows.is_empty()).then_some(())?;
+    feature_rows
+        .iter()
+        .all(|row| counts.get(&row.id) == Some(&1))
+        .then_some(())?;
+    Some(feature_rows.into_iter().map(|row| row.id).collect())
+}
+
+fn feature_result_edge_ids_by_feature(
+    rows: &[crate::curve::CurveTopologyRow],
+) -> BTreeMap<u32, Vec<u32>> {
+    rows.iter()
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|feature_id| {
+            feature_result_edge_ids(rows, feature_id).map(|edge_ids| (feature_id, edge_ids))
         })
         .collect()
 }
@@ -17837,19 +17882,27 @@ fn feature_result_surface_ids_by_feature(
 
 fn feature_result_topology(
     tables: &[crate::feature::FeatureEntityTable],
-    rows: &[crate::surface::SurfaceRow],
+    surface_rows: &[crate::surface::SurfaceRow],
+    curve_rows: &[crate::curve::CurveTopologyRow],
     feature_id: u32,
 ) -> Option<FeatureResultTopology> {
-    let surface_ids = feature_result_surface_ids(tables, rows, feature_id)?;
+    let faces = feature_result_surface_ids(tables, surface_rows, feature_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|surface_id| format!("surface#{surface_id}"))
+        .collect::<Vec<_>>();
+    let edges = feature_result_edge_ids(curve_rows, feature_id)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|curve_id| format!("curve#{curve_id}"))
+        .collect::<Vec<_>>();
+    (!faces.is_empty() || !edges.is_empty()).then_some(())?;
     Some(FeatureResultTopology {
         id: FeatureResultTopologyId(format!("creo:model:feature-result-topology#{feature_id}")),
         output_of: IrFeatureId(format!("creo:model:feature#{feature_id}")),
         bodies: Vec::new(),
-        faces: surface_ids
-            .into_iter()
-            .map(|surface_id| format!("surface#{surface_id}"))
-            .collect(),
-        edges: Vec::new(),
+        faces,
+        edges,
         vertices: Vec::new(),
         native_ref: None,
     })
@@ -17892,6 +17945,7 @@ fn emit_feature_result_topologies(scan: &ContainerScan, ir: &mut CadIr) -> usize
         let Some(state) = feature_result_topology(
             &scan.features.entity_tables,
             &scan.surfaces.rows,
+            &scan.curves.topology_rows,
             feature_id,
         ) else {
             continue;
@@ -30796,6 +30850,12 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir, &prototype_feature_dependencies);
     let feature_result_topology_count = emit_feature_result_topologies(scan, &mut ir);
+    let feature_result_edge_count = ir
+        .model
+        .feature_result_topologies
+        .iter()
+        .map(|state| state.edges.len())
+        .sum::<usize>();
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let transferred_curve_expression_parameter_count =
@@ -31023,6 +31083,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
         &ir,
         geometry_generator_feature_count,
         feature_result_topology_count,
+        feature_result_edge_count,
         &mut coverage,
     );
     Ok(BuiltIr {
@@ -31745,6 +31806,7 @@ fn collect_feature_coverage(
     ir: &CadIr,
     geometry_generator_feature_count: usize,
     feature_result_topology_count: usize,
+    feature_result_edge_count: usize,
     coverage: &mut BTreeMap<String, usize>,
 ) {
     let native_feature_count = ir
@@ -32191,6 +32253,10 @@ fn collect_feature_coverage(
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
+    );
+    coverage.insert(
+        "transferred_feature_result_edge_count".to_string(),
+        feature_result_edge_count,
     );
     coverage.insert(
         "transferred_feature_result_topology_count".to_string(),
