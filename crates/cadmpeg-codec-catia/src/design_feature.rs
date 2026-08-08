@@ -84,8 +84,8 @@ impl DesignFeatureTransfer {
             &exact_feature_owners,
             &self.feature_ids,
         );
-        assign_native_operation_parameter_values(ir, &exact_feature_owners);
         normalize_parameter_names(ir);
+        assign_native_operation_parameter_values(ir, &exact_feature_owners);
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -188,33 +188,27 @@ fn assign_feature_parameter_ordinals(
 }
 
 /// Expose exact feature-owned parameter expressions on an opaque native
-/// operation without assigning operation-specific roles. A source-name
-/// collision makes the map non-injective, so the whole feature is omitted
-/// rather than silently merging or renaming inputs.
+/// operation without assigning operation-specific roles. The map uses the
+/// neutral, scope-unique parameter names assigned by
+/// [`normalize_parameter_names`]. A changed name retains its source spelling
+/// in the corresponding parameter's `source_name` property.
 fn assign_native_operation_parameter_values(
     ir: &mut CadIr,
     exact_feature_owners: &HashMap<ParameterId, FeatureId>,
 ) {
-    let mut values_by_feature = HashMap::<FeatureId, Option<BTreeMap<String, String>>>::new();
+    let mut values_by_feature = HashMap::<FeatureId, BTreeMap<String, String>>::new();
     for parameter in &ir.model.parameters {
         let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
             continue;
         };
-        let entry = values_by_feature
+        values_by_feature
             .entry(feature_id.clone())
-            .or_insert_with(|| Some(BTreeMap::new()));
-        let Some(values) = entry else {
-            continue;
-        };
-        if parameter.name.is_empty() || values.contains_key(&parameter.name) {
-            *entry = None;
-            continue;
-        }
-        values.insert(parameter.name.clone(), parameter.expression.clone());
+            .or_default()
+            .insert(parameter.name.clone(), parameter.expression.clone());
     }
 
     for feature in &mut ir.model.features {
-        let Some(Some(values)) = values_by_feature.remove(&feature.id) else {
+        let Some(values) = values_by_feature.remove(&feature.id) else {
             continue;
         };
         let FeatureDefinition::Native { parameters, .. } = &mut feature.definition else {
@@ -1081,7 +1075,7 @@ mod tests {
     }
 
     #[test]
-    fn omits_native_parameter_map_when_source_names_collide() {
+    fn native_parameter_map_uses_disambiguated_names_when_source_names_collide() {
         let mut ir = CadIr::empty(Units::default());
         ir.model.features.push(Feature {
             id: FeatureId::from("feature"),
@@ -1108,6 +1102,7 @@ mod tests {
         second.name = "Length".to_string();
         ir.model.parameters.extend([first, second]);
 
+        normalize_parameter_names(&mut ir);
         assign_native_operation_parameter_values(
             &mut ir,
             &HashMap::from([
@@ -1122,7 +1117,13 @@ mod tests {
         let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
             panic!("expected an opaque native operation");
         };
-        assert!(parameters.is_empty());
+        assert_eq!(
+            parameters,
+            &BTreeMap::from([
+                ("Length".to_string(), "1 mm".to_string()),
+                ("Length#1".to_string(), "1 mm".to_string()),
+            ])
+        );
     }
 
     #[test]
