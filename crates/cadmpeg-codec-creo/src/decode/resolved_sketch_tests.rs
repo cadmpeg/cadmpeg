@@ -703,6 +703,38 @@ fn generated_face_dependencies_follow_the_producer_feature() {
 }
 
 #[test]
+fn generated_edge_dependencies_follow_the_producer_feature() {
+    let producer = IrFeatureId("creo:model:feature#97".to_string());
+    let generated_edges = EdgeSelection::Generated {
+        edges: vec![GeneratedEdgeRef {
+            feature: producer.clone(),
+            local_id: "curve#77".to_string(),
+        }],
+        native: "creo:allfeatur:fillet#9".to_string(),
+    };
+    let fillet = IrFeatureDefinition::Fillet {
+        groups: vec![cadmpeg_ir::features::FilletGroup {
+            edges: generated_edges.clone(),
+            radius: RadiusSpec::Unresolved { form: None },
+            tangency_weight: None,
+        }],
+    };
+    assert_eq!(
+        feature_generated_dependencies(&fillet),
+        vec![producer.clone()]
+    );
+
+    let chamfer = IrFeatureDefinition::Chamfer {
+        groups: vec![cadmpeg_ir::features::ChamferGroup {
+            edges: generated_edges,
+            spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+        }],
+        flip_direction: false,
+    };
+    assert_eq!(feature_generated_dependencies(&chamfer), vec![producer]);
+}
+
+#[test]
 fn surface_merge_quilts_resolve_through_unique_generated_surface_outputs() {
     let entry = |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
         entity_id,

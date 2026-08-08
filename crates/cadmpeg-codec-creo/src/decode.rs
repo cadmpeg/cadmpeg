@@ -16439,7 +16439,7 @@ fn reconcile_feature_links(
 }
 
 fn feature_generated_dependencies(definition: &IrFeatureDefinition) -> Vec<IrFeatureId> {
-    let selections = match definition {
+    let face_selections = match definition {
         IrFeatureDefinition::Hole {
             face: Some(face), ..
         }
@@ -16447,7 +16447,16 @@ fn feature_generated_dependencies(definition: &IrFeatureDefinition) -> Vec<IrFea
         | IrFeatureDefinition::KnitSurface { faces: face, .. } => vec![face],
         _ => Vec::new(),
     };
-    selections
+    let edge_selections = match definition {
+        IrFeatureDefinition::Fillet { groups } => {
+            groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+        }
+        IrFeatureDefinition::Chamfer { groups, .. } => {
+            groups.iter().map(|group| &group.edges).collect::<Vec<_>>()
+        }
+        _ => Vec::new(),
+    };
+    face_selections
         .into_iter()
         .flat_map(|selection| match selection {
             FaceSelection::Generated { faces, .. } => faces
@@ -16456,6 +16465,15 @@ fn feature_generated_dependencies(definition: &IrFeatureDefinition) -> Vec<IrFea
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         })
+        .chain(edge_selections.into_iter().flat_map(|selection| {
+            match selection {
+                EdgeSelection::Generated { edges, .. } => edges
+                    .iter()
+                    .map(|edge| edge.feature.clone())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            }
+        }))
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
                 dependencies.push(dependency);
