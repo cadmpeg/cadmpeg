@@ -830,8 +830,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         native_ref: Some(format!("scalar-{ordinal}")),
         dependencies: Vec::new(),
     };
-    let mut center = marker("center", Some([0.0, 0.0]));
-    center.kind = SketchInputKind::LineOrCircle;
+    let center = marker("center", Some([0.0, 0.0]));
     let mut first = marker("first", Some([0.005, 0.0]));
     first.offset = 100;
     let mut second = marker("second", Some([0.0, 0.008]));
@@ -845,13 +844,11 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     native_payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
     native_payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
     native_payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-    native_payload[56..60].copy_from_slice(&[1, 0, 1, 0]);
-    native_payload[60..64].copy_from_slice(&1u32.to_le_bytes());
-    native_payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-    native_payload[72..76].copy_from_slice(&1i32.to_le_bytes());
-    for at in (78..94).step_by(4) {
-        native_payload[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
-    }
+    native_payload[64..66].copy_from_slice(&1u16.to_le_bytes());
+    native_payload[66..68].copy_from_slice(&1u16.to_le_bytes());
+    native_payload[68..72].copy_from_slice(&1u32.to_le_bytes());
+    native_payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+    native_payload[80..84].copy_from_slice(&1u32.to_le_bytes());
     let lane = FeatureInputLane {
         id: "lane".into(),
         configuration: None,
@@ -868,7 +865,19 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         references: Vec::new(),
         sketch_entities: vec![center, first, second],
     };
+    let carrier = SketchEntity {
+        id: SketchEntityId("carrier".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: Some("center".into()),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Native {
+            native_kind: "sldprt:marker-geometry:0".into(),
+        },
+    };
     let mut entities = vec![
+        carrier,
         SketchEntity {
             id: SketchEntityId("first-entity".into()),
             sketch: sketch_id.clone(),
@@ -892,6 +901,26 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
             },
         },
     ];
+    assert_eq!(
+        crate::resolved_features::dimensions::extended_radial_circle_index(&lane.native_payload, 0,),
+        Some(1)
+    );
+
+    let mut invalid_lane = lane.clone();
+    let mut extra = marker("unowned-radial", Some([0.011, 0.0]));
+    extra.offset = 300;
+    invalid_lane.sketch_entities.push(extra);
+    let mut invalid_entities = entities.clone();
+    let mut invalid_sketches = sketches.clone();
+    project_marker_dimensioned_circles(
+        &mut invalid_entities,
+        &mut invalid_sketches,
+        std::slice::from_ref(&feature),
+        &[parameter(0, 10.0), parameter(1, 16.0)],
+        std::slice::from_ref(&invalid_lane),
+    );
+    assert_eq!(invalid_entities.len(), 3);
+    assert!(invalid_sketches[0].profiles.is_empty());
 
     project_marker_dimensioned_circles(
         &mut entities,

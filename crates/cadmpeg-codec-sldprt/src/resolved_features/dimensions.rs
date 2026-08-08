@@ -914,40 +914,38 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .filter_map(|(center_index, center)| {
                     let [cu, cv] = center.coordinates_m?;
                     let later = &roster[center_index + 1..];
-                    radial_dimensions
-                        .iter()
-                        .all(|(_, radius)| {
-                            later
+                    let mut matched_radials = HashSet::new();
+                    let one_to_one = later.len() == radial_dimensions.len()
+                        && radial_dimensions.iter().all(|(_, radius)| {
+                            let matches = later
                                 .iter()
-                                .filter(|radial| {
-                                    let [ru, rv] = radial
-                                        .coordinates_m
-                                        .expect("coordinate markers carry coordinates");
+                                .enumerate()
+                                .filter_map(|(index, radial)| {
+                                    let [ru, rv] = radial.coordinates_m?;
                                     same_dimension_length(
                                         (ru - cu).hypot(rv - cv) * NATIVE_TO_IR,
                                         *radius,
                                     )
+                                    .then_some(index)
                                 })
-                                .count()
-                                == 1
-                        })
+                                .collect::<Vec<_>>();
+                            let [index] = matches.as_slice() else {
+                                return false;
+                            };
+                            matched_radials.insert(*index)
+                        });
+                    (one_to_one && matched_radials.len() == later.len())
                         .then_some((center_index, *center))
                 })
                 .collect::<Vec<_>>();
-            if let [(center_index, center_marker)] = centers.as_slice() {
+            if let [(_, center_marker)] = centers.as_slice() {
                 let [cu, cv] = center_marker
                     .coordinates_m
                     .expect("coordinate markers carry coordinates");
-                let mut radii = roster[center_index + 1..]
+                let radii = radial_dimensions
                     .iter()
-                    .filter_map(|radial| {
-                        let [ru, rv] = radial.coordinates_m?;
-                        let radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
-                        (radius.is_finite() && radius > QUANTUM).then_some(radius)
-                    })
+                    .map(|(_, radius)| *radius)
                     .collect::<Vec<_>>();
-                radii.sort_by(f64::total_cmp);
-                radii.dedup_by(|left, right| same_dimension_length(*left, *right));
                 let carrier_radius = roster
                     .get(radial_index)
                     .and_then(|radial| radial.coordinates_m)
@@ -977,7 +975,9 @@ pub(crate) fn project_marker_dimensioned_circles(
                         .0
                         .rsplit_once('#')
                         .map_or(feature.id.0.as_str(), |(_, key)| key);
-                    for (index, radius) in radii.into_iter().enumerate() {
+                    for (index, ((parameter, _), radius)) in
+                        radial_dimensions.iter().copied().zip(radii).enumerate()
+                    {
                         let entity_id = SketchEntityId(format!(
                             "sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"
                         ));
@@ -988,10 +988,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             native_ref: carrier_radius
                                 .is_some_and(|carrier| same_dimension_length(carrier, radius))
                                 .then(|| carrier_ref.clone()),
-                            geometry_ref: radial_dimensions
-                                .iter()
-                                .find(|(_, candidate)| same_dimension_length(*candidate, radius))
-                                .and_then(|(parameter, _)| parameter.native_ref.clone()),
+                            geometry_ref: parameter.native_ref.clone(),
                             endpoint_refs: Vec::new(),
                             geometry: SketchGeometry::Circle {
                                 center,
@@ -1006,6 +1003,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     continue;
                 }
             }
+            continue 'feature;
         }
         let radial_records = owned_lanes
             .iter()

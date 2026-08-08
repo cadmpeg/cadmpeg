@@ -686,22 +686,6 @@ if oriented.is_empty() { candidates.to_vec() } else { oriented }
 
 **Need.** We must select one entity to bind the reference operand.
 
-### DI-12. Omitted dimensioned circles
-
-**Question.** Which native field marks dimensioned circular geometry as construction geometry when it is absent from the selected profile stream?
-
-**Known.** `sldprt.md` §2 "A compact-legacy kind `2` bounded curve with locus `05 00 01 00` and the compact indexed" through `sldprt.md` §2 "An extended-prefix kind-`1` profile circle uses the same equal-index 104-byte or terminal" define ordinary and construction full-circle layouts. `sldprt.md` §2 "An `sgSlot_c` declaration may immediately precede a current-, legacy-, or extended-prefix slot record with" distinguishes aggregate slot descriptors from independent curve geometry.
-
-**Need.** We must know the discriminator to prevent omitted construction circles from becoming profile geometry.
-
-**Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/dimensions.rs:941` makes a circle from the distance of every later roster point to the centre, and stamps `construction: false` on each:
-
-```rust
-let mut radii = roster[center_index + 1..].iter().filter_map(|radial| { ... }).collect::<Vec<_>>();
-```
-
-The gate above it tests that each radial dimension has one matching witness. It does not test the converse, that each witness has a dimension. `sldprt.md` §2 "Feature-tree" requires the witness count to equal the diameter count and a one-to-one distance match, and states that missing, repeated, or ambiguous matches leave the circles unresolved. An undimensioned display or reference point therefore becomes a solid circle with its own profile. The identity bind at `dimensions.rs:991` also uses `find` on an equal length rather than a unique match.
-
 ### DI-13. Marker-only profile placement
 
 **Question.** How is a marker-only profile placed in model space when it has no local, contextual, or unique lane-wide compact reference-plane record?
