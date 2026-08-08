@@ -334,6 +334,47 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
+## `shifted_extrude_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the shifted Extrude primary indexed header. The operation fields end at the start-support byte; extent lanes and the ordered reference table follow in the enclosing scope.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | stores u32 `1` at primary-header offset 20 |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 24 through 26 |
+| 27 | 4 | `operation` | `u32` | little | spec | stores the result-operation u32 at offset 27 |
+| 31 | 4 | `direction` | `u32` | little | spec | the travel direction at offset 31 |
+| 35 | 4 | `face_extend` | `u32` | little | spec | the face-extend option at offset 35 |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | the direction-reversal Boolean at offset 39 |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | the geometry-kind Boolean at offset 40 |
+| 41 | 1 | `start_support` | `u8` | little | spec | the start-support byte at offset 41 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding shifted-operation envelope are outside this field run.
+
+## `shifted_extrude_offset_283_two_sided_tail`
+
+Spec §3.1 · layout: byte offsets · size: 204 B
+
+Offsets are relative to the shifted Extrude primary indexed header. The tail ends immediately before the following LP-UTF16 GUID field.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 139 | 11 | `first_parameter_reference` | `bytes[11]` | little | spec | with marked parameter references at offsets 139 and 170 |
+| 166 | 4 | `first_side_extent` | `u32` | little | spec | the side extents at offsets 166 and 181 |
+| 170 | 11 | `second_parameter_reference` | `bytes[11]` | little | spec | with marked parameter references at offsets 139 and 170 |
+| 181 | 4 | `second_side_extent` | `u32` | little | spec | the side extents at offsets 166 and 181 |
+| 185 | 11 | `trailing_entity_reference` | `bytes[11]` | little | spec | a trailing marked entity reference at offset 185 |
+| 196 | 8 | `zero_run_8` | `bytes[8]` | little | spec | eight zero bytes at offsets 196 through 203 |
+
+Unstated regions:
+
+- `0..139` (139 B): The preceding shifted prologue and profile-normal envelope are outside this tail.
+- `150..166` (16 B): Sixteen zero bytes separate the first parameter reference from the first-side extent.
+
 ## `edge_flange_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

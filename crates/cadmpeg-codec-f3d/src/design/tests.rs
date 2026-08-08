@@ -6982,7 +6982,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             });
             bytes.resize(reference_count_offset, 0);
         }
-        if legacy_side_extents.is_some_and(|(_, widened)| widened)
+        let compact_two_sided = legacy_reference_count_offset == Some(283) && extent.0 == 2;
+        if compact_two_sided {
+            for reference_at in [139, 170, 185] {
+                bytes[reference_at] = 1;
+                bytes[reference_at + 1..reference_at + 5].copy_from_slice(&55u32.to_le_bytes());
+            }
+        } else if legacy_side_extents.is_some_and(|(_, widened)| widened)
             || legacy_side_extents.is_some() && extent.0 == 2
         {
             for reference_at in [139, 159, 182] {
@@ -7008,8 +7014,9 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 bytes[106..110].copy_from_slice(&1u32.to_le_bytes());
                 bytes[110..114].copy_from_slice(&0u32.to_le_bytes());
             }
-            let (first_extent_at, second_extent_at) = if legacy_reference_count_offset == Some(294)
-            {
+            let (first_extent_at, second_extent_at) = if compact_two_sided {
+                (166, 181)
+            } else if legacy_reference_count_offset == Some(294) {
                 (116, 129)
             } else if extent.0 == 2 {
                 (155, 178)
@@ -7151,6 +7158,26 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             ..
         })
     ));
+    let shifted_compact_symmetric = scope(
+        "Extrude",
+        4,
+        (3, 2),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((1, 0), true)),
+        Some(283),
+    );
+    assert!(matches!(
+        shifted_compact_symmetric.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            side_extent_discriminator_offsets: [116, 130],
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            ..
+        })
+    ));
     let shifted_two_sided = scope(
         "Extrude",
         2,
@@ -7169,6 +7196,26 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             .and_then(DesignExtrudePrologue::extent),
         Some(DesignExtrudeExtent::TwoSidedDistance)
     );
+    let shifted_compact_two_sided = scope(
+        "Extrude",
+        2,
+        (2, 0),
+        0,
+        1,
+        0,
+        None,
+        false,
+        Some(((1, 1), false)),
+        Some(283),
+    );
+    assert!(matches!(
+        shifted_compact_two_sided.extrude_prologue,
+        Some(DesignExtrudePrologue::LegacyShifted {
+            side_extent_discriminator_offsets: [166, 181],
+            extent: Some(DesignExtrudeExtent::TwoSidedDistance),
+            ..
+        })
+    ));
 
     let shifted_through_all = scope(
         "Extrude",
@@ -17920,6 +17967,53 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         } if sketch == &spatial_sketch.id && profiles == &[0]
     ));
     assert_eq!(spatial_extrude.dependencies, [spatial_feature.id.clone()]);
+
+    let (mut open_spatial_features, _) = project_parameter_design(
+        std::slice::from_ref(&owned_along),
+        std::slice::from_ref(&owner),
+        &scopes,
+        &[],
+        &[],
+        &[],
+        &[],
+        std::slice::from_ref(&placement),
+    );
+    let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
+        id: neutral_spatial_sketch_id(&placement),
+        name: None,
+        configuration: None,
+        profiles: Vec::new(),
+        native_ref: Some(placement.id.clone()),
+    };
+    crate::design::feature_project::bind_sketch_feature_geometry(
+        &mut open_spatial_features,
+        &scopes,
+        std::slice::from_ref(&placement),
+        &[],
+        std::slice::from_ref(&open_spatial_sketch),
+    );
+    let open_spatial_extrude = open_spatial_features
+        .iter()
+        .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+        .expect("open spatial-profile Extrude feature");
+    assert!(matches!(
+        open_spatial_extrude.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::SpatialSketchSelection {
+                ref sketch,
+                ref selections
+            },
+            ..
+        } if sketch == &open_spatial_sketch.id
+            && selections == &[format!(
+                "f3d:Design/BulkStream.dat:design-record-header#{}",
+                scope
+                    .extrude_profile
+                    .as_ref()
+                    .expect("test profile operand")
+                    .byte_offset
+            )]
+    ));
 
     let body_group = DesignConstructionOperandGroup {
         id: "f3d:Design/BulkStream.dat:operand-group#101".into(),

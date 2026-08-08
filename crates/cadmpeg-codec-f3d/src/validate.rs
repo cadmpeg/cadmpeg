@@ -1531,10 +1531,19 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         )
                         && side_extent_discriminator_offsets
                             == if direction_face_extend_values[0] == 2 {
-                                [
-                                    scope.byte_offset.saturating_add(155),
-                                    scope.byte_offset.saturating_add(178),
-                                ]
+                                if scope.reference_count_offset.checked_sub(scope.byte_offset)
+                                    == Some(283)
+                                {
+                                    [
+                                        scope.byte_offset.saturating_add(166),
+                                        scope.byte_offset.saturating_add(181),
+                                    ]
+                                } else {
+                                    [
+                                        scope.byte_offset.saturating_add(155),
+                                        scope.byte_offset.saturating_add(178),
+                                    ]
+                                }
                             } else if side_extent_discriminators[0] == 2 {
                                 let first_offset = side_extent_discriminator_offsets[0];
                                 if matches!(

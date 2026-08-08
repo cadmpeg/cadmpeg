@@ -5370,6 +5370,11 @@ fn exact_legacy_shifted_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
+    if u32_at(bytes, start.checked_add(20)?)? != 1
+        || bytes.get(start.checked_add(24)?..start.checked_add(27)?)? != [0; 3]
+    {
+        return None;
+    }
     let operation_offset = start.checked_add(27)?;
     let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
@@ -5388,6 +5393,26 @@ fn exact_legacy_shifted_extrude_prologue(
         return None;
     }
     let two_sided_offsets = || {
+        if reference_count_at.checked_sub(start)? == 283 {
+            let first_parameter_at = start.checked_add(139)?;
+            let first_side_extent_offset = start.checked_add(166)?;
+            let second_parameter_at = start.checked_add(170)?;
+            let second_side_extent_offset = start.checked_add(181)?;
+            let compact_valid = bytes.get(start.checked_add(150)?..first_side_extent_offset)?
+                == [0; 16]
+                && bytes.get(start.checked_add(175)?..second_side_extent_offset)? == [0; 6]
+                && [first_parameter_at, second_parameter_at]
+                    .into_iter()
+                    .map(|offset| marked_record_reference(bytes, offset))
+                    .all(|reference| {
+                        reference.is_some_and(|value| reference_members.contains(&value))
+                    })
+                && marked_record_reference(bytes, start.checked_add(185)?).is_some()
+                && bytes.get(start.checked_add(196)?..start.checked_add(204)?)? == [0; 8];
+            if compact_valid {
+                return Some([first_side_extent_offset, second_side_extent_offset]);
+            }
+        }
         let first_parameter_at = start.checked_add(139)?;
         let first_side_extent_offset = start.checked_add(155)?;
         let first_offset_at = start.checked_add(159)?;
@@ -5442,7 +5467,9 @@ fn exact_legacy_shifted_extrude_prologue(
             let (first_offset, second_offset) = match reference_count_at.checked_sub(start)? {
                 252 | 262 | 263 => (106, 110),
                 272 => (116, 130),
+                283 => (116, 130),
                 294 => (116, 129),
+                692 => (106, 110),
                 _ => return None,
             };
             candidate(

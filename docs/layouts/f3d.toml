@@ -956,6 +956,135 @@ offset = 194
 size = 147
 note = "The carrier tail is not assigned a semantic field."
 
+[[record]]
+name = "shifted_extrude_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The shifted Extrude prologue stores u32 `1` at primary-header offset 20"
+size = 42
+note = "Offsets are relative to the shifted Extrude primary indexed header. The operation fields end at the start-support byte; extent lanes and the ordered reference table follow in the enclosing scope."
+
+[[record.gap]]
+offset = 0
+size = 20
+note = "The indexed header and the preceding shifted-operation envelope are outside this field run."
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "stores u32 `1` at primary-header offset 20"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes at offsets 24 through 26"
+
+[[record.field]]
+name = "operation"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "stores the result-operation u32 at offset 27"
+
+[[record.field]]
+name = "direction"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "the travel direction at offset 31"
+
+[[record.field]]
+name = "face_extend"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "the face-extend option at offset 35"
+
+[[record.field]]
+name = "direction_reversed"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "the direction-reversal Boolean at offset 39"
+
+[[record.field]]
+name = "geometry_kind"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "the geometry-kind Boolean at offset 40"
+
+[[record.field]]
+name = "start_support"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "the start-support byte at offset 41"
+
+[[record]]
+name = "shifted_extrude_offset_283_two_sided_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The offset-283 two-sided form stores the side extents at offsets 166 and 181"
+size = 204
+note = "Offsets are relative to the shifted Extrude primary indexed header. The tail ends immediately before the following LP-UTF16 GUID field."
+
+[[record.gap]]
+offset = 0
+size = 139
+note = "The preceding shifted prologue and profile-normal envelope are outside this tail."
+
+[[record.field]]
+name = "first_parameter_reference"
+offset = 139
+type = "bytes[11]"
+source = "spec"
+anchor = "with marked parameter references at offsets 139 and 170"
+
+[[record.gap]]
+offset = 150
+size = 16
+note = "Sixteen zero bytes separate the first parameter reference from the first-side extent."
+
+[[record.field]]
+name = "first_side_extent"
+offset = 166
+type = "u32"
+source = "spec"
+anchor = "the side extents at offsets 166 and 181"
+
+[[record.field]]
+name = "second_parameter_reference"
+offset = 170
+type = "bytes[11]"
+source = "spec"
+anchor = "with marked parameter references at offsets 139 and 170"
+
+[[record.field]]
+name = "second_side_extent"
+offset = 181
+type = "u32"
+source = "spec"
+anchor = "the side extents at offsets 166 and 181"
+
+[[record.field]]
+name = "trailing_entity_reference"
+offset = 185
+type = "bytes[11]"
+source = "spec"
+anchor = "a trailing marked entity reference at offset 185"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 196
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 196 through 203"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

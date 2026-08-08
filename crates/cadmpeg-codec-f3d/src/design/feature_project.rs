@@ -1714,6 +1714,13 @@ pub fn bind_sketch_feature_geometry(
         };
     }
     for feature in features.iter_mut() {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
         let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
             continue;
         };
@@ -1738,6 +1745,22 @@ pub fn bind_sketch_feature_geometry(
             continue;
         };
         if spatial.profiles.is_empty() {
+            let Some(profile_operand) = scope.extrude_profile.as_ref() else {
+                continue;
+            };
+            let Some(stream) = native_stream(&scope.id) else {
+                continue;
+            };
+            // The spatial carrier has no closed loop that can be represented
+            // by a profile index. Keep the exact profile frame as a native
+            // selection instead of retaining the provisional planar ID.
+            *profile = ProfileRef::SpatialSketchSelection {
+                sketch: spatial.id.clone(),
+                selections: vec![format!(
+                    "{stream}:design-record-header#{}",
+                    profile_operand.byte_offset
+                )],
+            };
             continue;
         }
         let Ok(profile_count) = u32::try_from(spatial.profiles.len()) else {
