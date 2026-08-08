@@ -548,7 +548,9 @@ current scores require those matrices and representative fixtures.
   Object-stream class-`1d` pcurves require the complete sphere great-circle
   grammar, exact redundant chart relations, and a support resolving to the
   exact class-`2a` sphere chart. They transfer as analytic spherical
-  great-circle pcurves and exact model-space circles.
+  great-circle pcurves and exact model-space circles. Their chart-bound
+  stations bind loop endpoints, and their native stations bind class-`06`
+  vertex-incidence coordinates.
   Class-`24` support curves and class-`14` fixed-direction curve offsets feed
   class-`2c` extrusion carriers and class-`30` surface offsets. A transferred
   class-`2c` carrier retains its directrix construction and may trim it to a

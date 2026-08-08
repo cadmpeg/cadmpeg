@@ -1032,6 +1032,12 @@ pub(crate) fn parse_from_records(
             .get(&pcurve.surface)
             .and_then(|surface| lift_pcurve_endpoints(surface, &profiles, &pcurve.control_points));
     }
+    let geometry = B5PcurveContext {
+        pcurves: &pcurves,
+        opaque_pcurves: &opaque_pcurves,
+        surfaces: &surfaces,
+        profiles: &profiles,
+    };
     let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
     let mut loops: BTreeMap<u32, B5Loop> = records
         .iter()
@@ -1066,7 +1072,7 @@ pub(crate) fn parse_from_records(
         .into_iter()
         .map(|point| [point.x, point.y, point.z])
         .collect::<Vec<_>>();
-    let geometric_edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points);
+    let geometric_edge_vertices = bind_edge_vertices(&loops, &geometry, &vertex_points);
     let edges: BTreeMap<u32, B5Edge> = records
         .iter()
         .filter(|record| record.class == 0x5e)
@@ -1096,13 +1102,11 @@ pub(crate) fn parse_from_records(
         &native_edge_vertices,
         &vertex_incidence_links,
         &by_id,
-        &pcurves,
-        &surfaces,
-        &profiles,
+        &geometry,
     );
     let bound_vertices = bind_native_vertices(
         &loops,
-        &pcurves,
+        &geometry,
         &native_edge_vertices,
         &geometric_edge_vertices,
         &native_vertex_coordinates,
@@ -1772,13 +1776,18 @@ fn parse_edge(record: &B5Record) -> Option<B5Edge> {
     })
 }
 
+struct B5PcurveContext<'a> {
+    pcurves: &'a BTreeMap<u32, B5Pcurve>,
+    opaque_pcurves: &'a BTreeMap<u32, B5OpaquePcurve>,
+    surfaces: &'a BTreeMap<u32, B5Surface>,
+    profiles: &'a BTreeMap<u32, B5Profile>,
+}
+
 fn incidence_vertex_coordinates(
     native_edges: &BTreeMap<u32, [u32; 2]>,
     vertex_incidence_links: &BTreeMap<u32, B5VertexIncidenceLink>,
     by_id: &HashMap<u32, &B5Record>,
-    pcurves: &BTreeMap<u32, B5Pcurve>,
-    surfaces: &BTreeMap<u32, B5Surface>,
-    profiles: &BTreeMap<u32, B5Profile>,
+    geometry: &B5PcurveContext<'_>,
 ) -> BTreeMap<u32, [f64; 3]> {
     native_edges
         .values()
@@ -1796,10 +1805,21 @@ fn incidence_vertex_coordinates(
                     .into_iter()
                     .zip(incidence.parameters)
                     .find_map(|(pcurve_id, parameter)| {
-                        let pcurve = pcurves.get(&pcurve_id)?;
-                        let uv = evaluate_pcurve(pcurve, parameter)?;
-                        lift_pcurve_endpoints(surfaces.get(&pcurve.surface)?, profiles, &[uv, uv])
-                            .map(|points| points[0])
+                        if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
+                            let uv = evaluate_pcurve(pcurve, parameter)?;
+                            return lift_pcurve_endpoints(
+                                geometry.surfaces.get(&pcurve.surface)?,
+                                geometry.profiles,
+                                &[uv, uv],
+                            )
+                            .map(|points| points[0]);
+                        }
+                        let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
+                        sphere_great_circle_point(
+                            opaque.sphere_great_circle.as_ref()?,
+                            geometry.surfaces.get(&opaque.surface)?,
+                            parameter,
+                        )
                     })
             })?;
             Some((vertex, point))
@@ -1945,7 +1965,7 @@ struct BoundNativeVertices {
 
 fn bind_native_vertices(
     loops: &BTreeMap<u32, B5Loop>,
-    pcurves: &BTreeMap<u32, B5Pcurve>,
+    geometry: &B5PcurveContext<'_>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     geometric_edges: &BTreeMap<u32, [usize; 2]>,
     native_coordinates: &BTreeMap<u32, [f64; 3]>,
@@ -1968,12 +1988,9 @@ fn bind_native_vertices(
     logical_coordinates.extend(native_coordinates);
     for loop_ in loops.values() {
         for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let (Some(vertices), Some(lifted)) = (
-                native_edges.get(&edge),
-                pcurves
-                    .get(&pcurve)
-                    .and_then(|pcurve| pcurve.lifted_endpoints),
-            ) else {
+            let (Some(vertices), Some(lifted)) =
+                (native_edges.get(&edge), pcurve_endpoints(pcurve, geometry))
+            else {
                 continue;
             };
             if lifted
@@ -2029,10 +2046,7 @@ fn bind_native_vertices(
     let mut tolerances = BTreeMap::<usize, f64>::new();
     for loop_ in loops.values() {
         for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let Some(lifted) = pcurves
-                .get(&pcurve)
-                .and_then(|pcurve| pcurve.lifted_endpoints)
-            else {
+            let Some(lifted) = pcurve_endpoints(pcurve, geometry) else {
                 continue;
             };
             let Some(&loci) = edge_vertices.get(&edge) else {
@@ -2260,7 +2274,7 @@ fn parse_profile(record: &B5Record) -> Option<B5Profile> {
 
 fn bind_edge_vertices(
     loops: &BTreeMap<u32, B5Loop>,
-    pcurves: &BTreeMap<u32, B5Pcurve>,
+    geometry: &B5PcurveContext<'_>,
     points: &[[f64; 3]],
 ) -> BTreeMap<u32, [usize; 2]> {
     let point_index = point_index(points);
@@ -2271,10 +2285,7 @@ fn bind_edge_vertices(
             if conflicts.contains(&edge_id) {
                 continue;
             }
-            let Some(endpoints) = pcurves
-                .get(&pcurve_id)
-                .and_then(|pcurve| pcurve.lifted_endpoints)
-            else {
+            let Some(endpoints) = pcurve_endpoints(pcurve_id, geometry) else {
                 continue;
             };
             let indices: Option<[usize; 2]> = endpoints
@@ -2300,6 +2311,20 @@ fn bind_edge_vertices(
         }
     }
     edges
+}
+
+fn pcurve_endpoints(pcurve_id: u32, geometry: &B5PcurveContext<'_>) -> Option<[[f64; 3]; 2]> {
+    if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
+        return pcurve.lifted_endpoints;
+    }
+    let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
+    let pcurve = opaque.sphere_great_circle.as_ref()?;
+    let surface = geometry.surfaces.get(&opaque.surface)?;
+    let [start, end] = pcurve.chart_bounds[0];
+    Some([
+        sphere_great_circle_point(pcurve, surface, start)?,
+        sphere_great_circle_point(pcurve, surface, end)?,
+    ])
 }
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
@@ -4085,6 +4110,63 @@ fn parse_sphere_great_circle_pcurve(
         })
 }
 
+fn sphere_great_circle_point(
+    pcurve: &B5SphereGreatCirclePcurve,
+    surface: &B5Surface,
+    parameter: f64,
+) -> Option<[f64; 3]> {
+    let B5Surface::Sphere {
+        center,
+        direction_x,
+        direction_y,
+        axis,
+        radius,
+        construction_radius,
+        ..
+    } = surface
+    else {
+        return None;
+    };
+    let [start, end] = pcurve.chart_bounds[0];
+    if ![start, end, parameter].into_iter().all(f64::is_finite)
+        || start >= end
+        || parameter < start
+        || parameter > end
+        || !pcurve.chart_scale.is_finite()
+        || pcurve.chart_scale <= 0.0
+        || pcurve.chart_scale != *construction_radius
+        || !pcurve.chart_shift.is_finite()
+        || !pcurve.slope.is_finite()
+        || !pcurve.phase.is_finite()
+        || !radius.is_finite()
+        || *radius <= 0.0
+    {
+        return None;
+    }
+    let azimuth = parameter / pcurve.chart_scale;
+    let phase = pcurve.chart_shift / pcurve.chart_scale + pcurve.phase;
+    let latitude = (pcurve.slope * (azimuth - phase).cos()).atan();
+    let cos_latitude = latitude.cos();
+    let sin_latitude = latitude.sin();
+    let cos_azimuth = azimuth.cos();
+    let sin_azimuth = azimuth.sin();
+    let point = [
+        center[0]
+            + radius
+                * (cos_latitude * (cos_azimuth * direction_x[0] + sin_azimuth * direction_y[0])
+                    + sin_latitude * axis[0]),
+        center[1]
+            + radius
+                * (cos_latitude * (cos_azimuth * direction_x[1] + sin_azimuth * direction_y[1])
+                    + sin_latitude * axis[1]),
+        center[2]
+            + radius
+                * (cos_latitude * (cos_azimuth * direction_x[2] + sin_azimuth * direction_y[2])
+                    + sin_latitude * axis[2]),
+    ];
+    point.into_iter().all(f64::is_finite).then_some(point)
+}
+
 fn circle_pcurves_from_frames(bytes: &[u8], frames: &[ObjectFrame]) -> Vec<B5Pcurve> {
     let mut pcurves = Vec::new();
     for frame in frames {
@@ -5523,9 +5605,187 @@ mod tests {
             metadata: test_loop_metadata(1),
             surface: 4,
         };
+        let pcurves = BTreeMap::new();
+        let opaque_pcurves = BTreeMap::new();
+        let surfaces = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+        };
         assert_eq!(
-            bind_edge_vertices(&BTreeMap::from([(1, loop_)]), &BTreeMap::new(), &[]),
+            bind_edge_vertices(&BTreeMap::from([(1, loop_)]), &geometry, &[],),
             BTreeMap::new()
+        );
+    }
+
+    #[test]
+    fn sphere_great_circle_pcurve_binds_endpoint_rows() {
+        let chart_scale = 8.0;
+        let parameter_end = chart_scale * std::f64::consts::FRAC_PI_2;
+        let pcurve = B5OpaquePcurve {
+            object_id: 2,
+            surface: 4,
+            class: 0x1d,
+            payload: Vec::new(),
+            sphere_great_circle: Some(B5SphereGreatCirclePcurve {
+                chart_bounds: [
+                    [0.0, parameter_end],
+                    [0.0, chart_scale * std::f64::consts::TAU],
+                ],
+                chart_shift: 0.0,
+                chart_scale,
+                slope: 0.0,
+                phase: 0.0,
+            }),
+        };
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            metadata: test_loop_metadata(1),
+            surface: 4,
+        };
+        let surface = B5Surface::Sphere {
+            center: [0.0, 0.0, 0.0],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 5.0,
+            azimuth_range: [0.0, std::f64::consts::TAU],
+            latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+            construction_radius: chart_scale,
+            chart_origin: 0.0,
+        };
+        let opaque_pcurves = BTreeMap::from([(2, pcurve)]);
+        let surfaces = BTreeMap::from([(4, surface)]);
+        let pcurves = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+        };
+        let endpoints = pcurve_endpoints(2, &geometry).expect("validated sphere pcurve endpoints");
+        assert!(distance_squared(endpoints[0], [5.0, 0.0, 0.0]) < 1e-24);
+        assert!(distance_squared(endpoints[1], [0.0, 5.0, 0.0]) < 1e-24);
+
+        assert_eq!(
+            bind_edge_vertices(
+                &BTreeMap::from([(1, loop_)]),
+                &geometry,
+                &[[5.0, 0.0, 0.0], [0.0, 5.0, 0.0]],
+            ),
+            BTreeMap::from([(3, [0, 1])])
+        );
+    }
+
+    #[test]
+    fn sphere_great_circle_pcurve_binds_native_incidence_coordinates() {
+        let chart_scale = 8.0;
+        let parameter = chart_scale * std::f64::consts::FRAC_PI_2;
+        let opaque_pcurves = BTreeMap::from([(
+            2,
+            B5OpaquePcurve {
+                object_id: 2,
+                surface: 4,
+                class: 0x1d,
+                payload: Vec::new(),
+                sphere_great_circle: Some(B5SphereGreatCirclePcurve {
+                    chart_bounds: [[0.0, parameter], [0.0, chart_scale * std::f64::consts::TAU]],
+                    chart_shift: 0.0,
+                    chart_scale,
+                    slope: 0.0,
+                    phase: 0.0,
+                }),
+            },
+        )]);
+        let surfaces = BTreeMap::from([(
+            4,
+            B5Surface::Sphere {
+                center: [0.0, 0.0, 0.0],
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                radius: 5.0,
+                azimuth_range: [0.0, std::f64::consts::TAU],
+                latitude_range: [-std::f64::consts::FRAC_PI_2, std::f64::consts::FRAC_PI_2],
+                construction_radius: chart_scale,
+                chart_origin: 0.0,
+            },
+        )]);
+        let mut incidence_payload = vec![0x81, 0x82, 0x81];
+        incidence_payload.extend_from_slice(&parameter.to_le_bytes());
+        incidence_payload.push(0x01);
+        let records = [
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x05,
+                object_id: 20,
+                payload: vec![0x81, 0x9e],
+            },
+            B5Record {
+                offset: 1,
+                family: 0xb5,
+                class: 0x06,
+                object_id: 30,
+                payload: incidence_payload,
+            },
+        ];
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect::<HashMap<_, _>>();
+        let pcurves = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+        };
+        assert_eq!(counted_references(&records[0], 0x05), Some(vec![30]));
+        let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
+        assert_eq!(incidence.curves, [2]);
+        assert_eq!(incidence.parameters, [parameter]);
+        assert!(
+            distance_squared(
+                sphere_great_circle_point(
+                    opaque_pcurves[&2]
+                        .sphere_great_circle
+                        .as_ref()
+                        .expect("great circle"),
+                    &surfaces[&4],
+                    parameter,
+                )
+                .expect("sphere endpoint"),
+                [0.0, 5.0, 0.0]
+            ) < 1e-24
+        );
+        let coordinates = incidence_vertex_coordinates(
+            &BTreeMap::from([(40, [10, 11])]),
+            &BTreeMap::from([(
+                10,
+                B5VertexIncidenceLink {
+                    object_id: 10,
+                    incidence: 20,
+                    terminal_control: 0x00,
+                },
+            )]),
+            &by_id,
+            &geometry,
+        );
+
+        assert_eq!(coordinates.len(), 1);
+        assert!(
+            distance_squared(
+                *coordinates.get(&10).expect("native vertex coordinate"),
+                [0.0, 5.0, 0.0]
+            ) < 1e-24
         );
     }
 
@@ -5581,9 +5841,18 @@ mod tests {
             (12, pcurve(12, [[0.0, 0.0, 0.0], [2.0, 0.0, 0.0]])),
         ]);
         let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+        let opaque_pcurves = BTreeMap::new();
+        let surfaces = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+        };
 
         assert_eq!(
-            bind_edge_vertices(&loops, &pcurves, &points),
+            bind_edge_vertices(&loops, &geometry, &points),
             BTreeMap::from([(21, [0, 2])])
         );
     }
