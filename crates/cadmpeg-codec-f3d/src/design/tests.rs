@@ -131,9 +131,9 @@ use crate::records::{
     DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
-    DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
-    SketchSurface, DESIGN_MODULE_SKETCH,
+    DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand, SketchSurface, DESIGN_MODULE_SKETCH,
 };
 
 use cadmpeg_ir::attributes::AttributeTarget;
@@ -635,7 +635,10 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 
     let mut thread = DesignParameterScope::empty(&format!("{stream}:scope#thread"), "Thread", 70);
     thread.thread_construction = Some(DesignThreadConstruction {
+        form: DesignThreadForm::Compact,
+        designation_offset: 0,
         designation: "M3.5x0.6".into(),
+        nominal_size_text: "3.5".into(),
         nominal_size: 3.5,
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
@@ -6910,19 +6913,77 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     bytes[138..146].copy_from_slice(&2.7568f64.to_le_bytes());
     bytes[146..148].copy_from_slice(&[0, 1]);
 
-    assert_eq!(
-        parse_thread_payload(&bytes, 0, vec![988]),
-        Some(DesignThreadConstruction {
-            designation: "M30x3.5".into(),
-            nominal_size: 30.0,
-            profile: "ISO Metric profile".into(),
-            major_diameter: 2.97345,
-            minor_diameter: 2.5732,
-            pitch: 0.35,
-            pitch_diameter: 2.7568,
-            face_group_record_indices: vec![988],
-        })
+    let expected = DesignThreadConstruction {
+        form: DesignThreadForm::Standard,
+        designation_offset: 38,
+        designation: "M30x3.5".into(),
+        nominal_size_text: "30.0".into(),
+        nominal_size: 30.0,
+        profile: "ISO Metric profile".into(),
+        major_diameter: 2.97345,
+        minor_diameter: 2.5732,
+        pitch: 0.35,
+        pitch_diameter: 2.7568,
+        face_group_record_indices: vec![988],
+    };
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Standard, vec![988]),
+        &expected,
     );
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#standard-thread", "Thread", 987);
+    scope.class_tag = "901".into();
+    scope.paired_class_tag = "902".into();
+    scope.frame_length = 17;
+    scope.reference_members = vec![988, 989];
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &expected);
+
+    let mut owner_marked = bytes;
+    owner_marked.splice(20..20, [1, 0, 0, 0]);
+    let shifted_expected =
+        parse_thread_payload(&owner_marked, 42, DesignThreadForm::Standard, vec![988])
+            .expect("owner-marked standard Thread payload");
+    assert_eq!(shifted_expected.designation_offset, 42);
+    scope.frame_length += 4;
+    assert_thread_construction(
+        exact_thread_construction(&owner_marked, &scope),
+        &shifted_expected,
+    );
+    let mut invalid_owner_marker = owner_marked.clone();
+    invalid_owner_marker[20..24].copy_from_slice(&2u32.to_le_bytes());
+    assert_eq!(
+        exact_thread_construction(&invalid_owner_marker, &scope),
+        None
+    );
+    assert_eq!(
+        parse_thread_payload(&owner_marked, 42, DesignThreadForm::Compact, vec![988]),
+        None
+    );
+}
+
+fn assert_thread_construction(
+    actual: Option<DesignThreadConstruction>,
+    expected: &DesignThreadConstruction,
+) {
+    let actual = actual.expect("typed Thread construction");
+    assert_eq!(actual.form, expected.form);
+    assert_eq!(actual.designation_offset, expected.designation_offset);
+    assert_eq!(actual.designation, expected.designation);
+    assert_eq!(actual.nominal_size_text, expected.nominal_size_text);
+    assert_eq!(actual.profile, expected.profile);
+    assert_eq!(
+        actual.face_group_record_indices,
+        expected.face_group_record_indices
+    );
+    for (actual, expected) in [
+        (actual.nominal_size, expected.nominal_size),
+        (actual.major_diameter, expected.major_diameter),
+        (actual.minor_diameter, expected.minor_diameter),
+        (actual.pitch, expected.pitch),
+        (actual.pitch_diameter, expected.pitch_diameter),
+    ] {
+        assert!((actual - expected).abs() < 1.0e-12);
+    }
 }
 
 #[test]
@@ -6947,7 +7008,10 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
 
     let expected = DesignThreadConstruction {
+        form: DesignThreadForm::Compact,
+        designation_offset: 38,
         designation: "M3.5x0.6".into(),
+        nominal_size_text: "3.5".into(),
         nominal_size: 3.5,
         profile: "GB Metric profile".into(),
         major_diameter: 0.35995,
@@ -6956,25 +7020,37 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         pitch_diameter: 0.3166,
         face_group_record_indices: vec![988],
     };
-    assert_eq!(
-        parse_thread_payload(&bytes, 0, vec![988]),
-        Some(expected.clone())
+    assert_thread_construction(
+        parse_thread_payload(&bytes, 38, DesignThreadForm::Compact, vec![988]),
+        &expected,
     );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
-    scope.class_tag = "426".into();
-    scope.frame_length = 405;
+    scope.class_tag = "903".into();
+    scope.frame_length = 19;
     scope.reference_members = vec![988, 989, 992, 993];
-    scope.paired_class_tag = "266".into();
-    let mut plural_expected = expected;
+    scope.paired_class_tag = "904".into();
+    let mut plural_expected = expected.clone();
     plural_expected.face_group_record_indices.push(992);
+    assert_thread_construction(exact_thread_construction(&bytes, &scope), &plural_expected);
+
+    let mut owner_marked = bytes;
+    owner_marked.splice(20..20, [1, 0, 0, 0]);
+    plural_expected.designation_offset += 4;
+    scope.frame_length += 4;
+    assert_thread_construction(
+        exact_thread_construction(&owner_marked, &scope),
+        &plural_expected,
+    );
+    let mut invalid_owner_separator = owner_marked.clone();
+    invalid_owner_separator[24] = 1;
     assert_eq!(
-        exact_thread_construction(&bytes, &scope),
-        Some(plural_expected)
+        exact_thread_construction(&invalid_owner_separator, &scope),
+        None
     );
 
     scope.reference_members.push(994);
-    assert_eq!(exact_thread_construction(&bytes, &scope), None);
+    assert_eq!(exact_thread_construction(&owner_marked, &scope), None);
 }
 
 #[test]

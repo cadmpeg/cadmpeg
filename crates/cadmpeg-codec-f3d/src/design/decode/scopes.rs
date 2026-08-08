@@ -32,7 +32,7 @@ use crate::records::{
     DesignRuledSurfaceOperation, DesignScaleOperation, DesignSheetMetalHeightDatum,
     DesignSolidPrimitive, DesignSurfaceExtendMethod, DesignSurfaceExtendOperation,
     DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
-    DesignThreadConstruction, DesignWorkAxisConstruction,
+    DesignThreadConstruction, DesignThreadForm, DesignWorkAxisConstruction,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -189,56 +189,85 @@ pub(crate) fn exact_thread_construction(
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    if scope.kind != "Thread" {
+    if scope.kind != "Thread"
+        || scope.reference_members.len() < 2
+        || !scope.reference_members.len().is_multiple_of(2)
+    {
         return None;
     }
-    let standard = scope.paired_class_tag == "258"
-        && scope.frame_length == 449
-        && scope.reference_members.len() == 4
-        && bytes.get(start + 11..start + 21)? == [0; 10]
-        && f64_at(bytes, start + 21)?.to_bits() == 60.0f64.to_bits()
-        && bytes.get(start + 29..start + 34)? == [1, 2, 0, 0, 0]
-        && bytes.get(start + 34..start + 38)? == [0x36, 0, 0x67, 0];
-    let compact = scope.class_tag == "426"
-        && scope.paired_class_tag == "266"
-        && scope.reference_members.len() >= 2
-        && scope.reference_members.len().is_multiple_of(2)
-        && bytes.get(start + 11..start + 21)? == [0; 10]
-        && f64_at(bytes, start + 21)?.to_bits() == 60.0f64.to_bits()
-        && bytes.get(start + 29..start + 34)? == [0, 2, 0, 0, 0]
-        && bytes.get(start + 34..start + 38)? == [0x36, 0, 0x48, 0];
-    if !standard && !compact {
-        return None;
-    }
-    let face_group_record_indices = if compact {
-        scope.reference_members.iter().step_by(2).copied().collect()
-    } else {
-        vec![scope.reference_members[0]]
+    let (form, designation_delta) = exact_thread_prefix(bytes.get(start..)?)?;
+    let designation_at = start.checked_add(designation_delta)?;
+    let face_group_record_indices = match form {
+        DesignThreadForm::Standard => vec![scope.reference_members[0]],
+        DesignThreadForm::Compact => scope.reference_members.iter().step_by(2).copied().collect(),
     };
-    parse_thread_payload(bytes, start, face_group_record_indices)
+    parse_thread_payload(bytes, designation_at, form, face_group_record_indices)
+}
+
+fn exact_thread_prefix(bytes: &[u8]) -> Option<(DesignThreadForm, usize)> {
+    let direct =
+        if bytes.get(11..21)? == [0; 10] && f64_at(bytes, 21)?.to_bits() == 60.0f64.to_bits() {
+            thread_form(bytes, 29, 34).map(|form| (form, 38))
+        } else {
+            None
+        };
+    let owner_marked = if bytes.get(11..20)? == [0; 9]
+        && u32_at(bytes, 20)? == 1
+        && bytes.get(24) == Some(&0)
+        && f64_at(bytes, 25)?.to_bits() == 60.0f64.to_bits()
+    {
+        thread_form(bytes, 33, 38).map(|form| (form, 42))
+    } else {
+        None
+    };
+    match (direct, owner_marked) {
+        (Some(prefix), None) | (None, Some(prefix)) => Some(prefix),
+        _ => None,
+    }
+}
+
+fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<DesignThreadForm> {
+    match (
+        bytes.get(marker_at..marker_at + 5)?,
+        bytes.get(token_at..token_at + 4)?,
+    ) {
+        ([1, 2, 0, 0, 0], [0x36, 0, 0x67, 0]) => Some(DesignThreadForm::Standard),
+        ([0, 2, 0, 0, 0], [0x36, 0, 0x48, 0]) => Some(DesignThreadForm::Compact),
+        _ => None,
+    }
 }
 
 pub(crate) fn parse_thread_payload(
     bytes: &[u8],
-    start: usize,
+    designation_at: usize,
+    expected_form: DesignThreadForm,
     face_group_record_indices: Vec<u32>,
 ) -> Option<DesignThreadConstruction> {
-    let (designation, after_designation) = lp_utf16_bounded(bytes, start + 38, 1..=128)?;
-    let (nominal, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
+    let (designation, after_designation) = lp_utf16_bounded(bytes, designation_at, 1..=128)?;
+    let (nominal_size_text, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
-    let compact = match bytes.get(after_profile..after_profile + 5)? {
-        [0, 1, 0, 0, 0] => false,
-        [1, 2, 0, 0, 0] => true,
+    let form = match bytes.get(after_profile..after_profile + 5)? {
+        [0, 1, 0, 0, 0] => DesignThreadForm::Standard,
+        [1, 2, 0, 0, 0] => DesignThreadForm::Compact,
         _ => return None,
     };
-    let nominal_size = nominal.parse::<f64>().ok()?;
+    if form != expected_form {
+        return None;
+    }
+    let nominal_size = nominal_size_text.parse::<f64>().ok()?;
     let major_diameter = f64_at(bytes, after_profile + 5)?;
     let minor_diameter = f64_at(bytes, after_profile + 13)?;
-    let pitch_marker = u8::from(!compact);
+    let pitch_marker = match form {
+        DesignThreadForm::Standard => 1,
+        DesignThreadForm::Compact => 0,
+    };
     let pitch = (bytes.get(after_profile + 21) == Some(&pitch_marker))
         .then(|| f64_at(bytes, after_profile + 22))??;
     let pitch_diameter = f64_at(bytes, after_profile + 30)?;
-    let trailer: &[u8] = if compact { &[0, 0, 0, 1] } else { &[0, 1] };
+    let trailer: &[u8] = match form {
+        DesignThreadForm::Standard => &[0, 1],
+        DesignThreadForm::Compact => &[0, 0, 0, 1],
+    };
     if bytes.get(after_profile + 38..after_profile + 38 + trailer.len())? != trailer
         || ![
             nominal_size,
@@ -254,7 +283,10 @@ pub(crate) fn parse_thread_payload(
         return None;
     }
     Some(DesignThreadConstruction {
+        form,
+        designation_offset: u64::try_from(designation_at).ok()?,
         designation,
+        nominal_size_text,
         nominal_size,
         profile,
         major_diameter,

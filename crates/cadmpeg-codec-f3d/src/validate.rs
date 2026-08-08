@@ -1402,28 +1402,31 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             (None, _) => true,
             (Some(_), family) if family != Some(design::DesignFeatureFamily::Thread) => false,
             (Some(construction), _) => {
-                let compact = scope.class_tag == "426"
-                    && scope.paired_class_tag == "266"
-                    && scope.reference_members.len() >= 2
-                    && scope.reference_members.len().is_multiple_of(2);
-                let standard = scope.paired_class_tag == "258"
-                    && scope.frame_length == 449
-                    && scope.reference_members.len() == 4;
-                let expected_groups = if compact {
-                    scope
+                let expected_groups: Vec<_> = match construction.form {
+                    records::DesignThreadForm::Standard => scope
                         .reference_members
-                        .iter()
-                        .step_by(2)
+                        .first()
                         .copied()
-                        .collect::<Vec<_>>()
-                } else if standard {
-                    vec![scope.reference_members[0]]
-                } else {
-                    Vec::new()
+                        .into_iter()
+                        .collect(),
+                    records::DesignThreadForm::Compact => {
+                        scope.reference_members.iter().step_by(2).copied().collect()
+                    }
                 };
-                !expected_groups.is_empty()
+                scope.reference_members.len() >= 2
+                    && scope.reference_members.len().is_multiple_of(2)
                     && construction.face_group_record_indices == expected_groups
+                    && matches!(
+                        construction
+                            .designation_offset
+                            .checked_sub(scope.byte_offset),
+                        Some(38 | 42)
+                    )
                     && !construction.designation.is_empty()
+                    && construction
+                        .nominal_size_text
+                        .parse::<f64>()
+                        .is_ok_and(|value| value.to_bits() == construction.nominal_size.to_bits())
                     && !construction.profile.is_empty()
                     && [
                         construction.nominal_size,
@@ -1441,7 +1444,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .iter()
                         .enumerate()
                         .all(|(group_ordinal, record_index)| {
-                            let compact_member = if compact {
+                            let compact_member = if construction.form
+                                == records::DesignThreadForm::Compact
+                            {
                                 let reference_ordinal = group_ordinal.saturating_mul(2);
                                 let Some(member_record_index) = scope
                                     .reference_members

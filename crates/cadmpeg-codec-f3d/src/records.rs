@@ -1541,12 +1541,29 @@ pub struct DesignCombineOperation {
     pub body_selection_record_indexes: Vec<u32>,
 }
 
-/// Exact standard and size construction carried by a `Thread` scope.
+/// Thread construction form selected by the scope prefix and payload marker.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignThreadForm {
+    /// Standard prefix, construction marker, and trailer layout.
+    Standard,
+    /// Compact prefix, construction marker, and trailer layout.
+    Compact,
+}
+
+/// Exact form and size construction carried by a `Thread` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignThreadConstruction {
+    /// Standard or compact construction form.
+    pub form: DesignThreadForm,
+    /// Byte offset of the designation LP-UTF16 field.
+    pub designation_offset: u64,
     /// Standard thread designation.
     pub designation: String,
+    /// Exact nominal-size text interpreted into `nominal_size`.
+    pub nominal_size_text: String,
     /// Numeric nominal size interpreted by `profile`.
     pub nominal_size: f64,
     /// Thread profile name.
@@ -1770,7 +1787,7 @@ pub struct DesignParameterScope {
     /// Exact Boolean construction carried by a `Combine` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub combine_operation: Option<DesignCombineOperation>,
-    /// Exact standard and size construction carried by a `Thread` scope.
+    /// Exact form and size construction carried by a `Thread` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_construction: Option<DesignThreadConstruction>,
     /// Exact signed-angle construction carried by a `Draft` scope.
