@@ -680,16 +680,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the namespaces to bind the edge, supports, and incidences.
 
-### ZE-05. Radial-twin selection without the midpoint
-
-**Question.** Which condition lets a radial-twin candidate omit the midpoint witness?
-
-**Known.** `catia.md` §8 "Packed loop sense orients each lifted endpoint pair" gives "Two occurrences are radial-twin candidates when their unordered endpoint pairs and midpoint points are uniquely equal within the same tolerance." Each pcurve support retains the surface point at the midpoint of its bounded parameter interval, and the decoder stores it.
-
-**Need.** Face-incidence components partition a coincident bounded-witness group, and a component of exactly two occurrences becomes one physical edge. A wrong component merges two occurrences into one edge with one curve. We must know the condition to keep or to remove the witness.
-
-**Conflict.** `zero_entity::topology::selected_radial_matches` returns the match without the midpoint test when the endpoint match is a mutual singleton. Two occurrences that share both endpoints on different curves, such as the two complementary arcs of a circle each used by one face, then form one physical edge. The stored midpoints would separate them. One of the two documents is wrong: the specification sentence, or the decoder.
-
 ### ZE-06. `34c8` and `345e` knot run extents
 
 **Question.** Which field gives the length of the U knot run and of the V knot run in a `34c8` or `345e` carrier?

@@ -348,11 +348,6 @@ fn selected_radial_matches(
         .iter()
         .enumerate()
         .map(|(index, matches)| {
-            if let [other] = matches.as_slice() {
-                if endpoint_matches[*other].as_slice() == [index] {
-                    return vec![*other];
-                }
-            }
             matches
                 .iter()
                 .copied()
@@ -493,17 +488,14 @@ mod tests {
     }
 
     #[test]
-    fn unique_endpoint_pair_does_not_require_equal_parameter_midpoints() {
+    fn unique_endpoint_pair_requires_equal_parameter_midpoints() {
         let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let occurrences = [
             occurrence(10, 1, endpoints, Point3::new(0.4, 0.1, 0.0)),
             occurrence(11, 2, endpoints, Point3::new(0.6, 0.1, 0.0)),
         ];
 
-        assert_eq!(
-            endpoint_pair_candidates(&occurrences)[0].support_record_ordinals,
-            [1, 2]
-        );
+        assert!(endpoint_pair_candidates(&occurrences).is_empty());
     }
 
     #[test]
