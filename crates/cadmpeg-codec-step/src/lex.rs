@@ -139,12 +139,68 @@ impl<'a> Lexer<'a> {
                 after_name += 1;
             }
             if matches_name && preceded_by_separator && self.input.get(after_name) == Some(&b';') {
+                self.validate_signature_payload(start, candidate)?;
                 self.at = candidate;
                 return Ok(());
             }
             at += 1;
         }
         Err(Self::error(start, "unterminated signature section"))
+    }
+
+    fn validate_signature_payload(&self, start: usize, end: usize) -> Result<(), LexError> {
+        let mut quantum_len = 0;
+        let mut padding = 0;
+        let mut finished = false;
+        let mut saw_content = false;
+        for (relative, &byte) in self.input[start..end].iter().enumerate() {
+            if byte.is_ascii_whitespace() {
+                continue;
+            }
+            saw_content = true;
+            let is_alphabet = byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/');
+            if finished || (padding != 0 && is_alphabet) {
+                return Err(Self::error(
+                    start + relative,
+                    "invalid SIGNATURE base64 padding",
+                ));
+            }
+            if is_alphabet {
+                quantum_len += 1;
+            } else if byte == b'=' {
+                if quantum_len < 2 || padding == 2 {
+                    return Err(Self::error(
+                        start + relative,
+                        "invalid SIGNATURE base64 padding",
+                    ));
+                }
+                padding += 1;
+                quantum_len += 1;
+            } else {
+                return Err(Self::error(
+                    start + relative,
+                    "invalid SIGNATURE base64 character",
+                ));
+            }
+            if quantum_len == 4 {
+                finished = padding != 0;
+                quantum_len = 0;
+                padding = 0;
+            }
+        }
+        if !saw_content {
+            return Err(Self::error(
+                start,
+                "SIGNATURE section has empty base64 content",
+            ));
+        }
+        if quantum_len != 0 {
+            return Err(Self::error(
+                end,
+                "SIGNATURE base64 content has incomplete quantum",
+            ));
+        }
+        Ok(())
     }
 
     fn skip_trivia(&mut self) -> Result<bool, LexError> {

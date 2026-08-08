@@ -701,7 +701,7 @@ fn codec_inspects_edition3_sections_and_external_references() {
 
 #[test]
 fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==/* fake ENDSEC; */\nENDSEC;SIGNATURE;ZWZnaA==\nENDSEC;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signatures'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==\nENDSEC;SIGNATURE;ZWZnaA==\nENDSEC;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("multiple signatures");
 
     assert!(diagnostics.is_empty());
@@ -712,6 +712,25 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     assert!(source[exchange.signatures[1].clone()]
         .windows(8)
         .any(|bytes| bytes == b"ZWZnaA=="));
+}
+
+#[test]
+fn parser_rejects_invalid_signature_base64() {
+    for (payload, expected_message) in [
+        ("YWJjZA==!", "invalid SIGNATURE base64 padding"),
+        ("YWJjZA==AAAA", "invalid SIGNATURE base64 padding"),
+        ("YWJjZA=", "SIGNATURE base64 content has incomplete quantum"),
+    ] {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;{payload}\nENDSEC;"
+        );
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid signature");
+        assert!(matches!(
+            error,
+            crate::parse::ParseError::Lex(crate::lex::LexError { message, .. })
+                if message == expected_message
+        ));
+    }
 }
 
 #[test]
