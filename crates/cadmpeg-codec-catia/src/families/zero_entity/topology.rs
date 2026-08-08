@@ -2,11 +2,13 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_core::decode::WorkBudget;
 use cadmpeg_ir::math::Point3;
 
 use super::records::ZeroEntitySupportRun;
 
 const MODEL_POINT_TOLERANCE: f64 = 2e-3;
+pub(crate) const MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS: usize = 1_000_000;
 
 /// One sense-oriented support occurrence owned by a face.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +41,19 @@ pub(crate) struct ZeroEntityEndpointLocusCandidate {
 pub(crate) fn zero_entity_endpoint_pair_candidates(
     runs: &[ZeroEntitySupportRun],
 ) -> Vec<ZeroEntityEndpointPairCandidate> {
+    endpoint_pair_candidates(&zero_entity_oriented_occurrences(runs))
+}
+
+pub(crate) fn zero_entity_endpoint_pair_candidates_with_budget(
+    runs: &[ZeroEntitySupportRun],
+    budget: &WorkBudget<'_>,
+) -> Option<Vec<ZeroEntityEndpointPairCandidate>> {
+    endpoint_pair_candidates_with_budget(&zero_entity_oriented_occurrences(runs), budget)
+}
+
+fn zero_entity_oriented_occurrences(
+    runs: &[ZeroEntitySupportRun],
+) -> Vec<ZeroEntityOrientedOccurrence> {
     let mut occurrences = Vec::new();
     for run in runs {
         let Some(face) = run.face.as_ref() else {
@@ -68,13 +83,27 @@ pub(crate) fn zero_entity_endpoint_pair_candidates(
             }
         }
     }
-    endpoint_pair_candidates(&occurrences)
+    occurrences
 }
 
 pub(crate) fn endpoint_pair_candidates(
     occurrences: &[ZeroEntityOrientedOccurrence],
 ) -> Vec<ZeroEntityEndpointPairCandidate> {
-    let endpoint_matches = endpoint_match_graph(occurrences);
+    endpoint_pair_candidates_inner(occurrences, None).unwrap_or_default()
+}
+
+pub(crate) fn endpoint_pair_candidates_with_budget(
+    occurrences: &[ZeroEntityOrientedOccurrence],
+    budget: &WorkBudget<'_>,
+) -> Option<Vec<ZeroEntityEndpointPairCandidate>> {
+    endpoint_pair_candidates_inner(occurrences, Some(budget))
+}
+
+fn endpoint_pair_candidates_inner(
+    occurrences: &[ZeroEntityOrientedOccurrence],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<ZeroEntityEndpointPairCandidate>> {
+    let endpoint_matches = endpoint_match_graph(occurrences, budget)?;
     let radial_matches = selected_radial_matches(occurrences, &endpoint_matches);
     let face_indices = occurrences
         .iter()
@@ -140,12 +169,26 @@ pub(crate) fn endpoint_pair_candidates(
         }
     }
     candidates.sort_by_key(|candidate| candidate.support_record_ordinals);
-    candidates
+    Some(candidates)
 }
 
 pub(crate) fn endpoint_locus_candidates(
     endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
 ) -> Vec<ZeroEntityEndpointLocusCandidate> {
+    endpoint_locus_candidates_inner(endpoint_pairs, None).unwrap_or_default()
+}
+
+pub(crate) fn endpoint_locus_candidates_with_budget(
+    endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
+    budget: &WorkBudget<'_>,
+) -> Option<Vec<ZeroEntityEndpointLocusCandidate>> {
+    endpoint_locus_candidates_inner(endpoint_pairs, Some(budget))
+}
+
+fn endpoint_locus_candidates_inner(
+    endpoint_pairs: &[ZeroEntityEndpointPairCandidate],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<ZeroEntityEndpointLocusCandidate>> {
     let endpoints = endpoint_pairs
         .iter()
         .enumerate()
@@ -173,9 +216,15 @@ pub(crate) fn endpoint_locus_candidates(
                         cell[2].saturating_add(dz),
                     ];
                     for other in cells.get(&neighbor_cell).into_iter().flatten() {
-                        if *other > index
-                            && point.distance(endpoints[*other].2) <= MODEL_POINT_TOLERANCE
-                        {
+                        if *other <= index {
+                            continue;
+                        }
+                        if let Some(budget) = budget {
+                            if !budget.charge() {
+                                return None;
+                            }
+                        }
+                        if point.distance(endpoints[*other].2) <= MODEL_POINT_TOLERANCE {
                             neighbors[index].push(*other);
                             neighbors[*other].push(index);
                         }
@@ -209,6 +258,11 @@ pub(crate) fn endpoint_locus_candidates(
         let mut complete = true;
         for (position, left) in component.iter().enumerate() {
             for right in &component[position + 1..] {
+                if let Some(budget) = budget {
+                    if !budget.charge() {
+                        return None;
+                    }
+                }
                 let deviation = endpoints[*left].2.distance(endpoints[*right].2);
                 maximum_deviation = maximum_deviation.max(deviation);
                 complete &= deviation <= MODEL_POINT_TOLERANCE;
@@ -226,10 +280,13 @@ pub(crate) fn endpoint_locus_candidates(
             maximum_deviation,
         });
     }
-    candidates
+    Some(candidates)
 }
 
-fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec<usize>> {
+fn endpoint_match_graph(
+    occurrences: &[ZeroEntityOrientedOccurrence],
+    budget: Option<&WorkBudget<'_>>,
+) -> Option<Vec<Vec<usize>>> {
     let mut cells = HashMap::<[i64; 3], Vec<usize>>::new();
     for (index, occurrence) in occurrences.iter().enumerate() {
         for endpoint in occurrence.model_endpoints {
@@ -253,7 +310,15 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
                             cell[2].saturating_add(dz),
                         ];
                         if let Some(indices) = cells.get(&neighbor) {
-                            possible.extend(indices.iter().copied().filter(|other| *other > index));
+                            for other in indices.iter().copied().filter(|other| *other > index) {
+                                if possible.insert(other) {
+                                    if let Some(budget) = budget {
+                                        if !budget.charge() {
+                                            return None;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -272,7 +337,7 @@ fn endpoint_match_graph(occurrences: &[ZeroEntityOrientedOccurrence]) -> Vec<Vec
     for neighbors in &mut matches {
         neighbors.sort_unstable();
     }
-    matches
+    Some(matches)
 }
 
 fn selected_radial_matches(
@@ -412,6 +477,19 @@ mod tests {
             endpoint_pair_candidates(&occurrences)[0].support_record_ordinals,
             [1, 2]
         );
+    }
+
+    #[test]
+    fn bounded_endpoint_matching_refuses_exhausted_work() {
+        let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let occurrences = [
+            occurrence(10, 1, endpoints, Point3::new(0.5, 0.0, 0.0)),
+            occurrence(11, 2, endpoints, Point3::new(0.5, 0.0, 0.0)),
+        ];
+        let budget = WorkBudget::new(0);
+
+        assert!(endpoint_pair_candidates_with_budget(&occurrences, &budget).is_none());
+        assert!(budget.exhausted());
     }
 
     #[test]

@@ -18,7 +18,9 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 
-use crate::assemble::{annotate, link_payload_carriers, preserve_raw_payload, source_meta};
+use crate::assemble::{
+    annotate, link_payload_carriers, neutral_model_is_admissible, preserve_raw_payload, source_meta,
+};
 use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 
@@ -573,7 +575,7 @@ fn transfer_closed_wire_loops(
 }
 
 pub(crate) fn try_decode_zero_entity(
-    _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Option<FamilyOutput> {
     let surfaces = crate::families::zero_entity::records::zero_entity_surfaces(&scan.data);
@@ -749,16 +751,44 @@ pub(crate) fn try_decode_zero_entity(
         }
     }
 
-    let wire_counts = transfer_closed_wire_loops(
-        &mut ir,
-        &mut annotations,
-        &support_runs,
-        &support_curve_ids,
-        ownership_root.as_ref(),
-    );
+    let topology_counts = {
+        let mut candidate_ir = ir.clone();
+        let mut candidate_annotations = annotations.clone();
+        let topology_budget = ctx.work_budget(
+            crate::families::zero_entity::topology::MAX_ZERO_ENTITY_TOPOLOGY_OPERATIONS as u64,
+        );
+        let counts = crate::families::zero_entity::topology_transfer::transfer_closed_face_topology(
+            &mut candidate_ir,
+            &mut candidate_annotations,
+            &support_runs,
+            &surface_ids_by_position,
+            &support_curve_ids,
+            ownership_root.as_ref(),
+            &topology_budget,
+        );
+        match counts {
+            Some(counts) if neutral_model_is_admissible(&mut candidate_ir, &unknowns) => {
+                ir = candidate_ir;
+                annotations = candidate_annotations;
+                Some(counts)
+            }
+            _ => None,
+        }
+    };
+    let wire_counts = if topology_counts.is_some() {
+        WireTransferCounts::default()
+    } else {
+        transfer_closed_wire_loops(
+            &mut ir,
+            &mut annotations,
+            &support_runs,
+            &support_curve_ids,
+            ownership_root.as_ref(),
+        )
+    };
 
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
-    let coverage = BTreeMap::from([
+    let mut coverage = BTreeMap::from([
         (
             "transferred_zero_entity_support_curve_count".to_string(),
             transferred_support_curves,
@@ -804,7 +834,63 @@ pub(crate) fn try_decode_zero_entity(
             wire_counts.points,
         ),
     ]);
-    let topology_message = if wire_counts.loops == 0 {
+    if let Some(counts) = topology_counts {
+        coverage.extend([
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT
+                    .0
+                    .to_string(),
+                counts.bodies,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT
+                    .0
+                    .to_string(),
+                counts.faces,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT
+                    .0
+                    .to_string(),
+                counts.loops,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT
+                    .0
+                    .to_string(),
+                counts.coedges,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT
+                    .0
+                    .to_string(),
+                counts.edges,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT
+                    .0
+                    .to_string(),
+                counts.vertices,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT
+                    .0
+                    .to_string(),
+                counts.points,
+            ),
+            (
+                crate::coverage::TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT
+                    .0
+                    .to_string(),
+                counts.pcurves,
+            ),
+        ]);
+    }
+    let topology_message = if topology_counts.is_some() && ownership_root.is_some() {
+        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, p-curves, and a body/region/shell hierarchy bound to the complete native ownership root; source allocation identities and native physical-edge identity remain retained as native records."
+    } else if topology_counts.is_some() {
+        "Complete zero-entity radial support pairs and endpoint loci lower into connected neutral faces, loops, coedges, edges, vertices, and p-curves under a deterministic derived body/region/shell hierarchy; native ownership allocation and physical-edge identities remain retained as native records."
+    } else if wire_counts.loops == 0 {
         if ownership_root.is_some() {
             "Zero-entity loop members bind their face-local support occurrences and the terminal ownership root binds the complete face roster through one shell and body, but support-to-oriented-use, oriented-use-to-incidence, and physical endpoint bindings remain unresolved; no neutral topology was transferred."
         } else {
@@ -824,8 +910,16 @@ pub(crate) fn try_decode_zero_entity(
             coverage,
             transfer_ledger: cadmpeg_ir::report::TransferLedger::default(),
             losses: vec![LossNote {
-                code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
-                severity: Severity::Blocking,
+                code: if topology_counts.is_some() {
+                    cadmpeg_ir::report::LossKind::TopologyGaugeSubstituted
+                } else {
+                    cadmpeg_ir::report::LossKind::TopologyNotTransferred
+                },
+                severity: if topology_counts.is_some() {
+                    Severity::Warning
+                } else {
+                    Severity::Blocking
+                },
                 message: topology_message.to_string(),
                 provenance: None,
             }],

@@ -458,6 +458,22 @@ pub(crate) const TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_support_curve_count");
 pub(crate) const TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT: CoverageKey =
     CoverageKey("transferred_zero_entity_wire_vertex_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_body_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_coedge_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_edge_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_face_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_loop_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_point_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_pcurve_count");
+pub(crate) const TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT: CoverageKey =
+    CoverageKey("transferred_zero_entity_topology_vertex_count");
 pub(crate) const TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_class_21_pcurve_suffix_scalar_count");
 pub(crate) const TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT: CoverageKey =
@@ -779,6 +795,14 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_ZERO_ENTITY_WIRE_POINT_COUNT,
     TRANSFERRED_ZERO_ENTITY_SUPPORT_CURVE_COUNT,
     TRANSFERRED_ZERO_ENTITY_WIRE_VERTEX_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_BODY_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_COEDGE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_EDGE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_FACE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_LOOP_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_POINT_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_PCURVE_COUNT,
+    TRANSFERRED_ZERO_ENTITY_TOPOLOGY_VERTEX_COUNT,
     TYPED_OBJECT_STREAM_CLASS_21_PCURVE_SUFFIX_SCALAR_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_21_COUNT,
     TYPED_OBJECT_STREAM_EDGE_TERMINAL_CONTROL_2A_COUNT,

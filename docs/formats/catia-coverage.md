@@ -466,7 +466,19 @@ current scores require those matrices and representative fixtures.
   endpoint-pair candidate. The midpoint disambiguates repeated endpoint pairs;
   the candidate does not establish curve coincidence or a physical edge. Every
   in-range odd-lane typed reference retains its selected global record identity
-  atomically for the loop.
+  atomically for the loop. When every bound support occurrence belongs to one
+  radial pair and every pair endpoint belongs to one complete endpoint clique,
+  the decoder atomically lowers the closed relation set into one connected
+  neutral body, region, shell, face, loop, coedge, edge, vertex, point, and
+  pcurve graph. Edge orientation is solved from the bounded model-carrier
+  endpoints; each alternate face occurrence keeps its oriented use curve and
+  coedge sense. A complete terminal ownership root supplies the body and shell
+  identities. Without that root, the graph uses deterministic derived body,
+  region, and shell identities. Allocation namespaces and native physical-edge
+  identity remain native records. Any incomplete, ambiguous, or inadmissible
+  relation candidate retains the atomic wire fallback. A direct carrier that
+  cannot be evaluated or oriented remains a reachable unknown carrier; the
+  topology candidate commits only when the complete graph remains admissible.
   A closed loop transfers as an independent wire body when every member has a
   transferred model-space curve, every member has a lifted model-space endpoint
   pair, and the oriented endpoint tape closes within the format tolerance. The
