@@ -50,8 +50,10 @@ bounded endpoint inference, and copied opaque-record bytes charge the shared
 decode session. Each semantic pass charges the complete parsed source graph
 once: records, complex-entity leaves, aggregate members, and nested typed
 values. It also charges the neutral IR entity count already produced before
-the pass. This prevents a record-only allowance from hiding work proportional
-to aggregate depth or decoded output size.
+the pass. The pairwise point search used for implicit face planes reserves its
+complete upper bound before topology decoding. This prevents a record-only
+allowance from hiding work proportional to aggregate depth, decoded output
+size, or polygon cardinality.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,

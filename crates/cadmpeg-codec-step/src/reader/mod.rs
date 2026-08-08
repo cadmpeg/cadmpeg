@@ -124,6 +124,12 @@ fn decode_exchange_mode(
     charge_semantic_stage(ctx, semantic_input_work, &ir, "step_carrier_index")?;
     let carrier_index = index::CarrierIndex::from_ir(&ir);
     charge_semantic_stage(ctx, semantic_input_work, &ir, "step_topology_decode")?;
+    if let Some(ctx) = ctx {
+        ctx.charge_work(
+            implicit_face_plane_pair_work(exchange),
+            "step_implicit_face_plane",
+        )?;
+    }
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
     geometry::infer_edge_parameter_ranges(&mut ir, ctx)?;
     geometry::infer_pcurve_parameter_ranges(&mut ir, ctx)?;
@@ -548,6 +554,36 @@ fn reference_work_units(value: &Value) -> u64 {
         Value::Typed(_, value) => reference_work_units(value),
         _ => 0,
     }
+}
+
+/// Reserve the pairwise work used to find a plane for an implicit face.
+///
+/// The topology builder compares every distinct point pair when a face has no
+/// explicit surface. Charge the complete upper bound before topology decoding
+/// so a large polygon cannot consume an unbounded amount of work before the
+/// shared budget can refuse it.
+fn implicit_face_plane_pair_work(exchange: &Exchange) -> u64 {
+    exchange
+        .records
+        .values()
+        .filter_map(|record| {
+            record
+                .partials
+                .iter()
+                .find(|partial| partial.name == "POLY_LOOP")
+                .and_then(|partial| partial.parameters.get(1))
+                .and_then(|value| match value {
+                    Value::List(values) => Some(values.as_slice()),
+                    _ => None,
+                })
+                .map(|points| {
+                    let count = u64::try_from(points.len()).unwrap_or(u64::MAX);
+                    count
+                        .saturating_mul(count.saturating_sub(1))
+                        .saturating_div(2)
+                })
+        })
+        .fold(0, u64::saturating_add)
 }
 
 fn retain_unowned_pcurves(
@@ -977,5 +1013,13 @@ mod tests {
         let (nested_exchange, _) = crate::parse::parse(nested).expect("nested exchange");
 
         assert!(semantic_input_work(&nested_exchange) > semantic_input_work(&simple_exchange));
+    }
+
+    #[test]
+    fn implicit_face_plane_work_scales_with_point_pairs() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = crate::parse::parse(source).expect("polygon exchange");
+
+        assert_eq!(implicit_face_plane_pair_work(&exchange), 6);
     }
 }
