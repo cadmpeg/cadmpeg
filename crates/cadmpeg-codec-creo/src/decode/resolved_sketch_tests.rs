@@ -840,6 +840,81 @@ fn generated_curve_edges_require_unique_rows_and_materialized_producers() {
 }
 
 #[test]
+fn mixed_current_and_generated_edges_remain_native() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 10,
+            kind: crate::feature::AffectedIdKind::Edges,
+            ids: vec![45, 46],
+            offset: 0,
+        });
+    scan.curves.topology_rows.extend([
+        crate::curve::CurveTopologyRow {
+            id: 45,
+            type_byte: 8,
+            feature_id: 97,
+            directions: [1, 0xf6],
+            faces: [1, 2],
+            next_edges: [45, 45],
+            offset: 0,
+        },
+        crate::curve::CurveTopologyRow {
+            id: 46,
+            type_byte: 8,
+            feature_id: 97,
+            directions: [1, 0xf6],
+            faces: [1, 2],
+            next_edges: [46, 46],
+            offset: 1,
+        },
+    ]);
+    let mut ir = CadIr {
+        ir_version: "3".to_string(),
+        source: None,
+        units: cadmpeg_ir::units::Units::default(),
+        tolerances: cadmpeg_ir::units::Tolerances::default(),
+        model: cadmpeg_ir::document::Model::default(),
+        native: cadmpeg_ir::native::Native::default(),
+    };
+    ir.model.features.push(Feature {
+        id: IrFeatureId("creo:model:feature#97".to_string()),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: IrFeatureDefinition::Native {
+            kind: "producer".to_string(),
+            parameters: std::collections::BTreeMap::new(),
+            properties: std::collections::BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    ir.model.edges.push(cadmpeg_ir::topology::Edge {
+        id: EdgeId("creo:visibgeom:edge#45".to_string()),
+        curve: None,
+        start: cadmpeg_ir::ids::VertexId("test:start".to_string()),
+        end: cadmpeg_ir::ids::VertexId("test:end".to_string()),
+        param_range: None,
+        tolerance: None,
+    });
+
+    assert_eq!(
+        feature_edge_selection(&scan, &ir, 10),
+        Some(EdgeSelection::Native(
+            "creo:allfeatur:edgs_affected#10:45,46".to_string()
+        ))
+    );
+}
+
+#[test]
 fn geometry_generator_features_join_surface_and_curve_evidence() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

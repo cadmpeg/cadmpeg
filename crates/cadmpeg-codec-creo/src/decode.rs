@@ -16799,6 +16799,14 @@ fn feature_edge_selection(
             .all(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
     {
         Some(EdgeSelection::Resolved { edges, native })
+    } else if edges
+        .iter()
+        .any(|edge| ir.model.edges.iter().any(|candidate| candidate.id == *edge))
+    {
+        // A typed generated selection names one result namespace. A roster
+        // that mixes current B-rep edges with absent edges has no neutral
+        // mixed identity, so retain the exact native selection.
+        Some(EdgeSelection::Native(native))
     } else if let Some(edges) = generated_curve_edge_refs(
         ids,
         &scan.curves.topology_rows,
