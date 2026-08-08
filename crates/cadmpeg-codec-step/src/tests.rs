@@ -1325,6 +1325,36 @@ fn decode_reports_ambiguous_length_uncertainty() {
 }
 
 #[test]
+fn decode_scales_geometry_by_its_representation_context() {
+    let source = b"ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('per representation units'),'2;1');\nFILE_NAME('per-representation-units','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));\n#2=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);\n#3=(CONVERSION_BASED_UNIT('inch',#2) LENGTH_UNIT() NAMED_UNIT(*));\n#4=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));\n#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('metric','3D'));\n#6=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#3,#4)) REPRESENTATION_CONTEXT('inch','3D'));\n#7=CARTESIAN_POINT('metric point',(10.,0.,0.));\n#8=CARTESIAN_POINT('inch point',(1.,0.,0.));\n#9=SHAPE_REPRESENTATION('metric representation',(#7),#5);\n#10=SHAPE_REPRESENTATION('inch representation',(#8),#6);\nENDSEC;\nEND-ISO-10303-21;\n";
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode per-representation units");
+
+    let metric = result
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#7")
+        .expect("metric point");
+    let inch = result
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "step:data:point#8")
+        .expect("inch point");
+    assert!((metric.position.x - 10.0).abs() < 1e-12);
+    assert!((inch.position.x - 25.4).abs() < 1e-12);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == cadmpeg_ir::LossKind::GeometryNotTransferred }));
+}
+
+#[test]
 fn decode_builds_a_valid_connected_sheet_brep() {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 

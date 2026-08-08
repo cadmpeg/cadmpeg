@@ -36,6 +36,22 @@ pub(super) struct GeometryResult {
     pub transformation_operators: BTreeMap<u64, Transform>,
     pub length_scale: f64,
     pub plane_angle_scale: f64,
+    pub length_scales: BTreeMap<u64, f64>,
+}
+
+struct UnitScales {
+    length: BTreeMap<u64, f64>,
+    angle: BTreeMap<u64, f64>,
+}
+
+impl UnitScales {
+    fn length(&self, id: u64, fallback: f64) -> f64 {
+        self.length.get(&id).copied().unwrap_or(fallback)
+    }
+
+    fn angle(&self, id: u64, fallback: f64) -> f64 {
+        self.angle.get(&id).copied().unwrap_or(fallback)
+    }
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
@@ -52,6 +68,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         ));
         1.0
     });
+    let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
@@ -69,7 +86,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     for (id, record) in exchange.entities_any(&["CARTESIAN_POINT", "DIRECTION"]) {
         match entity_type(record, &["CARTESIAN_POINT", "DIRECTION"]) {
             Some("CARTESIAN_POINT") => {
-                if let Some(position) = named_coordinates(record, "CARTESIAN_POINT", 1, scale) {
+                let record_scale = unit_scales.length(id, scale);
+                if let Some(position) =
+                    named_coordinates(record, "CARTESIAN_POINT", 1, record_scale)
+                {
                     points.insert(id, position);
                     typed.insert(id);
                 } else if let Some(position) = named_coordinates2(record, "CARTESIAN_POINT", 1) {
@@ -154,11 +174,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }));
     for (id, record) in exchange.entities("VECTOR") {
         if record.partial("VECTOR").is_some() {
+            let record_scale = unit_scales.length(id, scale);
             let value = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(named_parameter(record, "VECTOR", 2).and_then(Value::number))
-                .map(|(direction, magnitude)| scale_vector(direction, magnitude * scale));
+                .map(|(direction, magnitude)| scale_vector(direction, magnitude * record_scale));
             let value2 = named_parameter(record, "VECTOR", 1)
                 .and_then(Value::reference)
                 .and_then(|direction| directions2.get(&direction).copied())
@@ -277,13 +298,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if record.partial("PCURVE").is_none() {
             continue;
         }
-        let Some(items) = named_parameter(record, "PCURVE", 2)
-            .and_then(Value::reference)
+        let representation_id = named_parameter(record, "PCURVE", 2).and_then(Value::reference);
+        let Some(items) = representation_id
             .and_then(|representation| exchange.records.get(&representation))
             .and_then(representation_items)
         else {
             continue;
         };
+        let pcurve_angle_scale = representation_id.map_or(angle_scale, |representation| {
+            unit_scales.angle(representation, angle_scale)
+        });
         let decoded = items
             .iter()
             .filter_map(|curve| {
@@ -294,7 +318,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     &vectors2,
                     &placements2,
                     &transformation_operators2,
-                    angle_scale,
+                    pcurve_angle_scale,
                     &mut warnings,
                     &mut BTreeSet::new(),
                     0,
@@ -342,6 +366,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if curve_type == "B_SPLINE_CURVE_WITH_KNOTS" && record.simple_name().is_none() {
             continue;
         }
+        let record_scale = unit_scales.length(id, scale);
         let geometry = match curve_type {
             "LINE" => named_parameter(record, "LINE", 1)
                 .and_then(Value::reference)
@@ -363,7 +388,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         center,
                         axis,
                         ref_direction,
-                        radius: radius * scale,
+                        radius: radius * record_scale,
                     },
                 ),
             "ELLIPSE" => named_parameter(record, "ELLIPSE", 1)
@@ -376,8 +401,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 })
                 .map(
                     |(((center, axis, reference_direction), first_radius), second_radius)| {
-                        let first_radius = first_radius * scale;
-                        let second_radius = second_radius * scale;
+                        let first_radius = first_radius * record_scale;
+                        let second_radius = second_radius * record_scale;
                         let (major_direction, major_radius, minor_radius) =
                             if first_radius >= second_radius {
                                 (reference_direction, first_radius, second_radius)
@@ -411,7 +436,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         vertex,
                         axis,
                         major_direction,
-                        focal_distance: focal_distance * scale,
+                        focal_distance: focal_distance * record_scale,
                     },
                 ),
             "HYPERBOLA" => named_parameter(record, "HYPERBOLA", 1)
@@ -428,8 +453,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                             center,
                             axis,
                             major_direction,
-                            major_radius: major_radius * scale,
-                            minor_radius: minor_radius * scale,
+                            major_radius: major_radius * record_scale,
+                            minor_radius: minor_radius * record_scale,
                         }
                     },
                 ),
@@ -575,13 +600,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             else {
                 continue;
             };
+            let record_scale = unit_scales.length(id, scale);
+            let record_angle_scale = unit_scales.angle(id, angle_scale);
             let linear_parameter_scale =
-                line_parameter_scale(exchange, basis_reference_step, scale, &mut losses);
+                line_parameter_scale(exchange, basis_reference_step, record_scale, &mut losses);
             let (start, end) = {
                 let mut trim_context = TrimParameterContext {
                     points: &points,
                     geometry: &geometry,
-                    angle_scale,
+                    angle_scale: record_angle_scale,
                     linear_parameter_scale,
                     tolerance: ir.tolerances.linear,
                     master_representation,
@@ -707,7 +734,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             curve: curve.clone(),
             definition: ProceduralCurveDefinition::SpatialOffset {
                 source,
-                distance: distance * scale,
+                distance: distance * unit_scales.length(id, scale),
                 reference_direction,
                 self_intersect,
             },
@@ -907,6 +934,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if surface_type == "B_SPLINE_SURFACE_WITH_KNOTS" && record.simple_name().is_none() {
             continue;
         }
+        let record_scale = unit_scales.length(id, scale);
+        let record_angle_scale = unit_scales.angle(id, angle_scale);
         let placement = named_parameter(record, surface_type, 1)
             .and_then(Value::reference)
             .and_then(|placement| placements.get(&placement).copied());
@@ -923,7 +952,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         origin,
                         axis,
                         ref_direction,
-                        radius: radius * scale,
+                        radius: radius * record_scale,
                     },
                 ),
             "CONICAL_SURFACE" => placement
@@ -935,9 +964,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         origin,
                         axis,
                         ref_direction,
-                        radius: radius * scale,
+                        radius: radius * record_scale,
                         ratio: 1.0,
-                        half_angle: half_angle * angle_scale,
+                        half_angle: half_angle * record_angle_scale,
                     }
                 }),
             "SPHERICAL_SURFACE" => placement
@@ -947,7 +976,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         center,
                         axis,
                         ref_direction,
-                        radius: radius * scale,
+                        radius: radius * record_scale,
                     },
                 ),
             "TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE" => placement
@@ -959,8 +988,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                             center,
                             axis,
                             ref_direction,
-                            major_radius: major_radius * scale,
-                            minor_radius: minor_radius * scale,
+                            major_radius: major_radius * record_scale,
+                            minor_radius: minor_radius * record_scale,
                         }
                     },
                 ),
@@ -1025,6 +1054,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             let Some(parameters) = entity_parameters(record, "RECTANGULAR_TRIMMED_SURFACE") else {
                 continue;
             };
+            let record_scale = unit_scales.length(id, scale);
+            let record_angle_scale = unit_scales.angle(id, angle_scale);
             let Some(support_step) = parameters.get(1).and_then(Value::reference) else {
                 continue;
             };
@@ -1066,7 +1097,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             else {
                 continue;
             };
-            let parameter_scales = surface_parameter_scales(&geometry, scale, angle_scale);
+            let parameter_scales =
+                surface_parameter_scales(&geometry, record_scale, record_angle_scale);
             for (range, parameter_scale) in parameter_ranges.iter_mut().zip(parameter_scales) {
                 range[0] *= parameter_scale;
                 range[1] *= parameter_scale;
@@ -1183,6 +1215,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             let Some(parameters) = entity_parameters(record, "OFFSET_SURFACE") else {
                 continue;
             };
+            let record_scale = unit_scales.length(id, scale);
             let support = parameters
                 .get(1)
                 .and_then(Value::reference)
@@ -1211,7 +1244,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 surface,
                 definition: ProceduralSurfaceDefinition::ParallelOffset {
                     support,
-                    distance: distance * scale,
+                    distance: distance * record_scale,
                     self_intersect,
                 },
                 cache_fit_tolerance: None,
@@ -1396,8 +1429,8 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         ir,
                         &surface.id,
                         &surface.geometry,
-                        scale,
-                        angle_scale,
+                        unit_scales.length(id, scale),
+                        unit_scales.angle(id, angle_scale),
                     ),
                 )
             })
@@ -1516,6 +1549,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         transformation_operators,
         length_scale: scale,
         plane_angle_scale: angle_scale,
+        length_scales: unit_scales.length,
     }
 }
 
@@ -2633,6 +2667,234 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Option<Vec<u64>> {
             .and_then(|partial| partial.parameters.iter().find_map(Value::list))?
     };
     Some(values.iter().filter_map(Value::reference).collect())
+}
+
+fn resolve_unit_scales(
+    exchange: &Exchange,
+    default_length: f64,
+    default_angle: f64,
+    losses: &mut Vec<LossNote>,
+) -> UnitScales {
+    let mut length_candidates = BTreeMap::<u64, Vec<f64>>::new();
+    let mut angle_candidates = BTreeMap::<u64, Vec<f64>>::new();
+    for (&representation_id, representation) in &exchange.records {
+        if !is_representation_record(representation) {
+            continue;
+        }
+        let Some(context_id) = representation_context(representation) else {
+            continue;
+        };
+        let (length, angle) = context_unit_scales(context_id, exchange);
+        if length.is_none() && angle.is_none() {
+            continue;
+        }
+        if let Some(length) = length {
+            length_candidates
+                .entry(representation_id)
+                .or_default()
+                .push(length);
+        }
+        if let Some(angle) = angle {
+            angle_candidates
+                .entry(representation_id)
+                .or_default()
+                .push(angle);
+        }
+        let Some(items) = representation_items(representation) else {
+            continue;
+        };
+        let mut members = BTreeSet::new();
+        for item in items {
+            collect_unit_scope_members(item, exchange, &mut members, &mut BTreeSet::new());
+        }
+        for member in members {
+            if let Some(length) = length {
+                length_candidates.entry(member).or_default().push(length);
+            }
+            if let Some(angle) = angle {
+                angle_candidates.entry(member).or_default().push(angle);
+            }
+        }
+    }
+    let length = finalize_unit_candidates(length_candidates, "length", losses);
+    let angle = finalize_unit_candidates(angle_candidates, "plane-angle", losses);
+    UnitScales {
+        length: length
+            .into_iter()
+            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_length)
+            .collect(),
+        angle: angle
+            .into_iter()
+            .filter(|(_, scale)| scale.is_finite() && *scale > 0.0 && *scale != default_angle)
+            .collect(),
+    }
+}
+
+fn finalize_unit_candidates(
+    candidates: BTreeMap<u64, Vec<f64>>,
+    dimension: &str,
+    losses: &mut Vec<LossNote>,
+) -> BTreeMap<u64, f64> {
+    let mut selected = BTreeMap::new();
+    let mut ambiguous = 0;
+    for (id, values) in candidates {
+        match unique_scale(&values) {
+            Some(scale) => {
+                selected.insert(id, scale);
+            }
+            None => ambiguous += 1,
+        }
+    }
+    if ambiguous > 0 {
+        losses.push(LossNote {
+            code: LossKind::GeometryNotTransferred,
+            severity: Severity::Warning,
+            message: format!(
+                "{ambiguous} geometry record(s) belong to representations with conflicting {dimension} units; source-order unit selection was not applied"
+            ),
+            provenance: None,
+        });
+    }
+    selected
+}
+
+fn unique_scale(values: &[f64]) -> Option<f64> {
+    let first = *values.first()?;
+    values
+        .iter()
+        .all(|value| same_scale(*value, first))
+        .then_some(first)
+}
+
+fn same_scale(left: f64, right: f64) -> bool {
+    let tolerance = 1.0e-12 * left.abs().max(right.abs()).max(1.0);
+    (left - right).abs() <= tolerance
+}
+
+fn is_representation_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+    })
+}
+
+fn representation_context(record: &RawRecord) -> Option<u64> {
+    record
+        .partials
+        .iter()
+        .filter(|partial| {
+            partial.name == "REPRESENTATION" || partial.name.ends_with("_REPRESENTATION")
+        })
+        .flat_map(|partial| partial.parameters.iter().rev())
+        .find_map(Value::reference)
+}
+
+fn context_unit_scales(id: u64, exchange: &Exchange) -> (Option<f64>, Option<f64>) {
+    let Some(context) = exchange.records.get(&id) else {
+        return (None, None);
+    };
+    let Some(units) = context
+        .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")
+        .and_then(|partial| partial.parameters.first())
+        .and_then(Value::list)
+    else {
+        return (None, None);
+    };
+    let length_values = units
+        .iter()
+        .filter_map(Value::reference)
+        .filter_map(|unit| unit_scale_mm(unit, exchange, &mut BTreeSet::new()))
+        .collect::<Vec<_>>();
+    let angle_values = units
+        .iter()
+        .filter_map(Value::reference)
+        .filter_map(|unit| unit_scale_radians(unit, exchange, &mut BTreeSet::new()))
+        .collect::<Vec<_>>();
+    let length = unique_scale(&length_values);
+    let angle = unique_scale(&angle_values);
+    (length, angle)
+}
+
+fn collect_unit_scope_members(
+    id: u64,
+    exchange: &Exchange,
+    members: &mut BTreeSet<u64>,
+    active: &mut BTreeSet<u64>,
+) {
+    if !active.insert(id) {
+        return;
+    }
+    let Some(record) = exchange.records.get(&id) else {
+        return;
+    };
+    if is_unit_record(record) || is_representation_context_record(record) {
+        return;
+    }
+    members.insert(id);
+    if record.partial("PCURVE").is_some() {
+        return;
+    }
+    let mut references = Vec::new();
+    for parameter in record
+        .partials
+        .iter()
+        .flat_map(|partial| &partial.parameters)
+    {
+        collect_references(parameter, &mut references);
+    }
+    if record.partial("MAPPED_ITEM").is_some() {
+        for reference in references {
+            if exchange.records.get(&reference).is_some_and(|record| {
+                record.partials.iter().any(|partial| {
+                    matches!(
+                        partial.name.as_str(),
+                        "CARTESIAN_TRANSFORMATION_OPERATOR_2D"
+                            | "CARTESIAN_TRANSFORMATION_OPERATOR_3D"
+                    )
+                })
+            }) {
+                collect_unit_scope_members(reference, exchange, members, active);
+            }
+        }
+        return;
+    }
+    for reference in references {
+        let Some(referenced) = exchange.records.get(&reference) else {
+            continue;
+        };
+        if is_representation_record(referenced)
+            || is_unit_record(referenced)
+            || is_representation_context_record(referenced)
+        {
+            continue;
+        }
+        collect_unit_scope_members(reference, exchange, members, active);
+    }
+}
+
+fn is_unit_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "LENGTH_UNIT"
+                | "PLANE_ANGLE_UNIT"
+                | "SOLID_ANGLE_UNIT"
+                | "NAMED_UNIT"
+                | "SI_UNIT"
+                | "CONVERSION_BASED_UNIT"
+        )
+    })
+}
+
+fn is_representation_context_record(record: &RawRecord) -> bool {
+    record.partials.iter().any(|partial| {
+        matches!(
+            partial.name.as_str(),
+            "REPRESENTATION_CONTEXT"
+                | "GEOMETRIC_REPRESENTATION_CONTEXT"
+                | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
+                | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
+        )
+    })
 }
 
 fn length_scale(exchange: &Exchange) -> Option<f64> {

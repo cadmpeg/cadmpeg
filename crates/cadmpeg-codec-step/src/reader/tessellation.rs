@@ -34,7 +34,12 @@ pub(super) fn decode(
             if !has_entity(record, "COORDINATES_LIST") {
                 return None;
             }
-            coordinate_rows(record, geometry.length_scale).map(|vertices| (id, vertices))
+            let scale = geometry
+                .length_scales
+                .get(&id)
+                .copied()
+                .unwrap_or(geometry.length_scale);
+            coordinate_rows(record, scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
     let mut typed = BTreeSet::new();
