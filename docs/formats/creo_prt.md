@@ -1575,8 +1575,10 @@ start and end loci horizontally aligned. The corresponding type-thirteen
 incidence makes those loci vertically aligned. These map to neutral
 horizontal- and vertical-loci constraints. Solver activity controls whether
 the alignment participates in the solved section; it does not change the
-stored endpoint roles. A nonzero sense or a non-arc entity does not satisfy
-either form.
+stored endpoint roles. In the affine section solver, an active type-twelve
+form equates the two endpoint `v` ordinates and an active type-thirteen form
+equates their `u` ordinates. A nonzero sense or a non-arc entity does not
+satisfy either form.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. The unary incidence establishes the referenced entity's line

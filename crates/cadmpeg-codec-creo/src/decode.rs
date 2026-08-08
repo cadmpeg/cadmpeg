@@ -11410,6 +11410,25 @@ fn section_skamp_same_coordinate_sources(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<([SectionPointSource; 2], usize)> {
+    if matches!(skamp.kind, 12 | 13) {
+        let [item] = skamp.items.as_slice() else {
+            return None;
+        };
+        (item.sense == 0 && section_skamp_is_arc(definition, item)).then_some(())?;
+        let endpoint = |sense| {
+            section_skamp_selected_point(
+                definition,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: item.entity_id,
+                    sense,
+                },
+            )
+        };
+        return Some((
+            [endpoint(2)?, endpoint(3)?],
+            section_skamp_same_coordinate_axis(skamp)?,
+        ));
+    }
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
@@ -11425,6 +11444,8 @@ fn section_skamp_same_coordinate_sources(
 
 fn section_skamp_same_coordinate_axis(skamp: &crate::feature::FeatureSkamp) -> Option<usize> {
     Some(match (skamp.kind, skamp.flags) {
+        (12, _) => 1,
+        (13, _) => 0,
         (15 | 17, 1) => 0,
         (15 | 17, 2) => 1,
         (30, _) => 1,

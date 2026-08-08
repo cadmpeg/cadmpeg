@@ -222,8 +222,10 @@ fixtures, claims above L1 remain unproven.
   fixed angle.
 - Unary type-twelve and type-thirteen incidences on a uniquely established arc
   transfer as horizontal and vertical alignment of the arc endpoint loci.
-  Solver activity controls constraint activity, not the stored arc role or
-  endpoint selection.
+  Active forms also add the corresponding endpoint-coordinate equality to the
+  affine solver; inactive forms retain the neutral constraint without adding
+  an equation. Solver activity controls constraint activity, not the stored
+  arc role or endpoint selection.
 - Two-locus type-fifteen incidences transfer the same flag-selected
   same-coordinate constraint as type seventeen. Disabled forms retain
   endpoint-selected loci on emitted solver-only carriers without requiring a

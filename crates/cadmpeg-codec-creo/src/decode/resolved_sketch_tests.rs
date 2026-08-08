@@ -10629,6 +10629,66 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             let expected = -std::f64::consts::FRAC_1_SQRT_2;
             (u - expected).abs() <= 1e-12 && (v - expected).abs() <= 1e-12
         }));
+    for (kind, expected_coordinate) in [(12, 1), (13, 0)] {
+        let mut arc_alignment_definition = midpoint_definition.clone();
+        arc_alignment_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points = vec![
+            crate::feature::FeatureSectionPoint {
+                point_id: 2,
+                u: Some(1.0),
+                v: Some(2.0),
+            },
+            crate::feature::FeatureSectionPoint {
+                point_id: 3,
+                u: if expected_coordinate == 0 {
+                    None
+                } else {
+                    Some(3.0)
+                },
+                v: if expected_coordinate == 1 {
+                    None
+                } else {
+                    Some(3.0)
+                },
+            },
+        ];
+        {
+            let alignment_skamps = &mut arc_alignment_definition
+                .relations
+                .as_mut()
+                .expect("relations")
+                .skamps;
+            alignment_skamps[0] = crate::feature::FeatureSkamp {
+                id: 12,
+                kind,
+                flags: 0,
+                status: 1,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                }],
+                offset: 84,
+            };
+        }
+        assert_eq!(
+            resolved_section_points(&arc_alignment_definition).get(&3),
+            Some(&[
+                if expected_coordinate == 0 { 1.0 } else { 3.0 },
+                if expected_coordinate == 1 { 2.0 } else { 3.0 },
+            ])
+        );
+        arc_alignment_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .status = 0;
+        let unresolved = resolved_section_points(&arc_alignment_definition);
+        assert!(!unresolved.contains_key(&3));
+    }
     midpoint_definition
         .variables
         .as_mut()
