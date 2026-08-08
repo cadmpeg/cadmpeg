@@ -358,14 +358,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the boundary to read the radius and the local system. `surface.rs` `decode_local_system_cylinder_frame` and `decode_zero_support_cylinder_origin_radius` accept the lowest offset whose scalar decodes positive and ends at the body end. The sibling function `decode_positional_cylinder_origin_radius` collects every such offset and requires exactly one.
 
-### GS-27. Named `srf_array` row discriminator defaults
-
-**Question.** What surface-row state does a `boundary_type` byte outside `00`, `01`, `06`, and `f6`, or an `orient` byte outside `01` and `f6`, encode?
-
-**Known.** `creo_prt.md` §3.1 defines the named-record row fields and the defined discriminator values.
-
-**Need.** We must know the states to classify the row. `surface.rs` `rows_with_boundaries` gives a named row `boundary_type` zero when the byte is absent or undefined, and `reversed` false when `orient` is absent or undefined. It publishes both as byte-backed fields. The positional branch of the same function rejects the row in these conditions.
-
 ### GS-28. Curve parameter-record suffix boundary
 
 **Question.** Which rule selects the body and suffix boundary of a curve parameter record when more than one four-reference suffix start is byte-valid?

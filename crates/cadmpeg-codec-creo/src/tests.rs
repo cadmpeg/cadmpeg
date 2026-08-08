@@ -1638,6 +1638,19 @@ fn scan_discovers_labeled_surface_namespace_row() {
 }
 
 #[test]
+fn scan_withholds_named_surface_row_without_valid_discriminators() {
+    for row in [
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04boundary_type\0\0next_geom_ptr\0\0"
+            .as_slice(),
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\0boundary_type\0\0next_geom_ptr\0\0",
+        b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x02next_geom_ptr\0\0",
+    ] {
+        let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", row.to_vec())]));
+        assert!(scan.surfaces.rows.is_empty());
+    }
+}
+
+#[test]
 fn scan_keeps_depdb_cross_section_surfaces_out_of_model_namespace() {
     let visible = b"srf_array\0\xf8\x01geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0".to_vec();
     let cross_section = b"Sld_Xsections\0\xe3\xe0\0xsec_geom\0\xe2srf_array\0\xf8\x01geom_id\0\x09geom_type\0\x24feat_id\0\x08orient\0\x01boundary_type\0\x06next_geom_ptr\0\0".to_vec();

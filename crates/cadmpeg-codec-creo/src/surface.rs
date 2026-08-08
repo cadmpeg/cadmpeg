@@ -1901,20 +1901,26 @@ fn rows_with_boundaries(payload: &[u8], boundary_types: &[u8]) -> Vec<SurfaceRow
             value(b"feat_id\0"),
             value(b"next_geom_ptr\0"),
         ) {
-            let reversed = find_in(payload, b"orient\0", start, end)
+            let Some(orientation) = find_in(payload, b"orient\0", start, end)
                 .and_then(|at| payload.get(at + b"orient\0".len()))
-                == Some(&0xf6);
-            let boundary_type = find_in(payload, b"boundary_type\0", start, end)
+                .copied()
+                .filter(|byte| matches!(byte, 0x01 | 0xf6))
+            else {
+                continue;
+            };
+            let Some(boundary_type) = find_in(payload, b"boundary_type\0", start, end)
                 .and_then(|at| payload.get(at + b"boundary_type\0".len()))
                 .copied()
                 .filter(|byte| BOUNDARY_TYPES.contains(byte))
-                .unwrap_or(0);
+            else {
+                continue;
+            };
             result.push(SurfaceRow {
                 id,
                 type_byte,
                 kind,
                 feature_id,
-                reversed,
+                reversed: orientation == 0xf6,
                 boundary_type,
                 next_surface,
                 offset: id_offset,

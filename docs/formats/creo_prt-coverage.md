@@ -75,6 +75,8 @@ fixtures, claims above L1 remain unproven.
 - Material base-body precedence uses unique section-transform and definition
   joins ordered by bounded definition-record offset; current operation-state
   offsets do not order material bodies.
+- Named surface rows require byte-backed `orient` and `boundary_type`
+  discriminators; absent or undefined values remain opaque.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
   namespaces independent; a complete numeric collision between them withholds
   the section frame.
