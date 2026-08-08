@@ -44,7 +44,7 @@ note = "Hexadecimal digits, most-significant nibble first. An empty payload uses
 area = "Exchange structure"
 reason = "N/A, text grammar. The exchange structure is an EBNF production over keyword-delimited sections. Nothing in it has a fixed byte position or width."
 section = "2"
-anchor = "exchange = \"ISO-10303-21;\" header anchor? reference? data+"
+anchor = "exchange = \"ISO-10303-21;\" header anchor? reference? data*"
 
 [[not_applicable]]
 area = "Tokens and values"

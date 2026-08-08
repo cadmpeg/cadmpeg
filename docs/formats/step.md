@@ -19,12 +19,13 @@ separate encodings.
 A clear-text exchange structure uses this outer grammar:
 
 ```text
-exchange = "ISO-10303-21;" header anchor? reference? data+
+exchange = "ISO-10303-21;" header anchor? reference? data*
            "END-ISO-10303-21;" signature*
 header   = "HEADER;" header_entity* "ENDSEC;"
 anchor   = "ANCHOR;" anchor_entry* "ENDSEC;"
 reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
+data_parameters = "(" string "," "(" string ")" ")"
 signature= "SIGNATURE;" base64 "ENDSEC;"
 anchor_entry    = resource "=" parameter ";"
 reference_entry = reference_name "=" resource ";"
@@ -34,8 +35,11 @@ reference_name  = resource | instance_name
 Outside string escape sequences, implementation levels with a major value
 below `4` interpret character bytes as ISO-8859-1. Edition 3 uses
 implementation levels `4;1`, `4;2`, and `4;3` and interprets direct character
-bytes as UTF-8. Every UTF-8 sequence uses the shortest form, encodes one
-Unicode scalar value, and excludes surrogate code points.
+bytes as UTF-8. `3;1` forbids ANCHOR, REFERENCE, SCHEMA_POPULATION, and
+SIGNATURE sections. `2;1` requires one unparameterized DATA section, one
+FILE_SCHEMA identifier, and no FILE_POPULATION, SECTION_LANGUAGE, or
+SECTION_CONTEXT header entity. Every UTF-8 sequence uses the shortest form,
+encodes one Unicode scalar value, and excludes surrogate code points.
 
 Whitespace consists of space, horizontal tab, carriage return, and line feed.
 The `/*` delimiter starts a comment, and `*/` ends it. Comment delimiters form
@@ -175,8 +179,11 @@ Each SIGNATURE section follows the exchange terminator. Its base64 content
 begins after `SIGNATURE;`, ends at its next `ENDSEC;`, and retains its complete
 byte range. Multiple signature sections remain in source order.
 
-DATA section parameters identify the governing schema and section population.
-All DATA sections share the instance-name namespace.
+DATA sections are optional in edition 3. One unnamed DATA section requires one
+FILE_SCHEMA identifier. If a DATA section has parameters, they contain its
+unique name and one governing schema name. Multiple DATA sections require
+parameters on every section. All DATA sections share the instance-name
+namespace.
 
 ## 8. Entity-layer invariants
 

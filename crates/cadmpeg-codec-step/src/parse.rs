@@ -313,6 +313,13 @@ struct Parser<'a> {
     first_omitted_entity_name_offset: Option<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImplementationLevel {
+    LegacyEdition1,
+    LegacyEdition2,
+    Edition3,
+}
+
 /// Return whether a simple geometry, topology, or representation carrier
 /// carries the inherited representation-item or representation `name` before
 /// its entity-specific attributes.
@@ -449,10 +456,19 @@ impl Parser<'_> {
         }
         self.name("ENDSEC")?;
         self.punct(&TokenKind::Semicolon)?;
-        if let Err(message) = validate_header(&header) {
+        let implementation_level = match validate_header(&header) {
+            Ok(level) => level,
+            Err(message) => return self.err(message),
+        };
+        if let Err(message) = validate_header_sections(implementation_level, &header) {
             return self.err(message);
         }
         let mut anchors = Vec::new();
+        if implementation_level == ImplementationLevel::LegacyEdition2
+            && (self.peek_name("ANCHOR") || self.peek_name("REFERENCE"))
+        {
+            return self.err("3;1 forbids ANCHOR and REFERENCE sections");
+        }
         if self.peek_name("ANCHOR") {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
@@ -502,9 +518,22 @@ impl Parser<'_> {
         let mut records = BTreeMap::new();
         while self.peek_name("DATA") {
             self.next_kind()?;
+            if implementation_level == ImplementationLevel::LegacyEdition1 && !data.is_empty() {
+                return self.err("2;1 requires one DATA section");
+            }
             let parameters = if self.peek(&TokenKind::LParen) {
-                self.parameters()?
+                if implementation_level == ImplementationLevel::LegacyEdition1 {
+                    return self.err("2;1 forbids DATA section parameters");
+                }
+                let parameters = self.parameters()?;
+                if !valid_data_parameters(&parameters) {
+                    return self.err("DATA section parameters must contain a name and one schema");
+                }
+                parameters
             } else {
+                if !data.is_empty() {
+                    return self.err("multiple DATA sections require section parameters");
+                }
                 Vec::new()
             };
             self.punct(&TokenKind::Semicolon)?;
@@ -524,12 +553,21 @@ impl Parser<'_> {
                 records: ids,
             });
         }
-        if data.is_empty() {
-            return self.err("exchange has no DATA section");
+        if implementation_level == ImplementationLevel::LegacyEdition1 && data.is_empty() {
+            return self.err("2;1 requires one DATA section");
+        }
+        if data.len() == 1 && data[0].parameters.is_empty() && schema_identifier_count(&header) != 1
+        {
+            return self.err("an unnamed DATA section requires one FILE_SCHEMA identifier");
         }
         self.name("END-ISO-10303-21")?;
         self.punct(&TokenKind::Semicolon)?;
         let mut signatures = Vec::new();
+        if implementation_level == ImplementationLevel::LegacyEdition2
+            && self.peek_name("SIGNATURE")
+        {
+            return self.err("3;1 forbids SIGNATURE sections");
+        }
         while self.peek_name("SIGNATURE") {
             let start = self.current_offset();
             self.next_kind()?;
@@ -821,7 +859,7 @@ impl Parser<'_> {
     }
 }
 
-fn validate_header(header: &[HeaderRecord]) -> Result<(), &'static str> {
+fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'static str> {
     const REQUIRED: [&str; 3] = ["FILE_DESCRIPTION", "FILE_NAME", "FILE_SCHEMA"];
     if header.len() < REQUIRED.len()
         || header
@@ -845,6 +883,15 @@ fn validate_header(header: &[HeaderRecord]) -> Result<(), &'static str> {
     {
         return Err("FILE_DESCRIPTION has invalid parameters");
     }
+    let implementation_level = match description.get(1) {
+        Some(Value::String(value)) => match value.as_slice() {
+            b"2;1" => ImplementationLevel::LegacyEdition1,
+            b"3;1" => ImplementationLevel::LegacyEdition2,
+            b"4;1" | b"4;2" | b"4;3" => ImplementationLevel::Edition3,
+            _ => return Err("FILE_DESCRIPTION has an unsupported implementation level"),
+        },
+        _ => return Err("FILE_DESCRIPTION has invalid parameters"),
+    };
 
     let file_name = &header[1].parameters;
     if file_name.len() != 7
@@ -875,7 +922,47 @@ fn validate_header(header: &[HeaderRecord]) -> Result<(), &'static str> {
     {
         return Err("FILE_SCHEMA has invalid or duplicate schema identifiers");
     }
-    Ok(())
+    if implementation_level == ImplementationLevel::LegacyEdition1 && identifiers.len() != 1 {
+        return Err("2;1 requires one FILE_SCHEMA identifier");
+    }
+    Ok(implementation_level)
+}
+
+fn validate_header_sections(
+    implementation_level: ImplementationLevel,
+    header: &[HeaderRecord],
+) -> Result<(), &'static str> {
+    let has = |name: &str| header.iter().any(|record| record.name == name);
+    match implementation_level {
+        ImplementationLevel::LegacyEdition1 if has("FILE_POPULATION") => {
+            Err("2;1 forbids FILE_POPULATION in HEADER")
+        }
+        ImplementationLevel::LegacyEdition1 if has("SECTION_LANGUAGE") => {
+            Err("2;1 forbids SECTION_LANGUAGE in HEADER")
+        }
+        ImplementationLevel::LegacyEdition1 if has("SECTION_CONTEXT") => {
+            Err("2;1 forbids SECTION_CONTEXT in HEADER")
+        }
+        ImplementationLevel::LegacyEdition2 if has("SCHEMA_POPULATION") => {
+            Err("3;1 forbids SCHEMA_POPULATION in HEADER")
+        }
+        _ => Ok(()),
+    }
+}
+
+fn schema_identifier_count(header: &[HeaderRecord]) -> usize {
+    match header[2].parameters.first() {
+        Some(Value::List(identifiers)) => identifiers.len(),
+        _ => 0,
+    }
+}
+
+fn valid_data_parameters(parameters: &[Value]) -> bool {
+    matches!(
+        parameters,
+        [Value::String(_), Value::List(schema)]
+            if schema.len() == 1 && matches!(schema.first(), Some(Value::String(_)))
+    )
 }
 
 fn is_string_list(value: Option<&Value>) -> bool {

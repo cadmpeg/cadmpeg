@@ -153,10 +153,81 @@ fn parser_enforces_the_part21_header_contract() {
 }
 
 #[test]
-fn parser_requires_at_least_one_data_section() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;";
-    let error = crate::parse::parse(source).expect_err("exchange without DATA");
-    assert!(error.to_string().contains("exchange has no DATA section"));
+fn parser_allows_an_empty_data_population_in_edition_three() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(source).expect("edition three permits no DATA section");
+}
+
+#[test]
+fn parser_enforces_legacy_implementation_level_restrictions() {
+    let cases = [
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "2;1 requires one FILE_SCHEMA identifier",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;END-ISO-10303-21;",
+            "2;1 requires one DATA section",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('section');#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "2;1 forbids DATA section parameters",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "3;1 forbids ANCHOR and REFERENCE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION(('all'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "3;1 forbids SCHEMA_POPULATION in HEADER",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==ENDSEC;",
+            "3;1 forbids SIGNATURE sections",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'1;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "FILE_DESCRIPTION has an unsupported implementation level",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid level");
+        assert!(
+            error.to_string().contains(message),
+            "expected {message:?}, got {error}"
+        );
+    }
+}
+
+#[test]
+fn parser_enforces_data_section_parameter_shape_and_multiplicity() {
+    let cases = [
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;DATA;#2=ITEM();ENDSEC;END-ISO-10303-21;",
+            "multiple DATA sections require section parameters",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA('section');#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "DATA section parameters must contain a name and one schema",
+        ),
+        (
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
+            "an unnamed DATA section requires one FILE_SCHEMA identifier",
+        ),
+    ];
+
+    for (source, message) in cases {
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid DATA section");
+        assert!(
+            error.to_string().contains(message),
+            "expected {message:?}, got {error}"
+        );
+    }
+
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242','AP214'));ENDSEC;DATA('section-1',('AP242'));#1=ITEM();ENDSEC;DATA('section-2',('AP214'));#2=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid named DATA sections");
+    assert_eq!(exchange.data.len(), 2);
 }
 
 #[test]
@@ -167,7 +238,7 @@ fn parser_bounds_exponential_anchor_expansion() {
             .expect("write anchor fixture");
     }
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
     );
     let error = crate::parse::parse(source.as_bytes()).unwrap_err();
     assert!(error.to_string().contains("expanded anchor value exceeds"));
@@ -185,7 +256,7 @@ fn parser_bounds_aggregate_anchor_materialization() {
         records
     });
     let source = format!(
-        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;{records}ENDSEC;END-ISO-10303-21;"
     );
     let error = crate::parse::parse(source.as_bytes()).unwrap_err();
     assert!(error.to_string().contains("expanded anchor"));
@@ -204,7 +275,7 @@ fn parser_rejects_duplicate_complex_partial_names() {
 
 #[test]
 fn parser_accepts_external_instance_references_in_edition_three() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<external>=#100;ENDSEC;REFERENCE;#100=<part.step#root>;ENDSEC;DATA;#1=ITEM(<external>);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("external reference");
 
     assert!(diagnostics.is_empty());
@@ -222,7 +293,7 @@ fn parser_accepts_external_instance_references_in_edition_three() {
 
 #[test]
 fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
-    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<line_name>='anchored line';ENDSEC;DATA;#1=CARTESIAN_POINT('',(0.,0.,0.));#2=DIRECTION('',(1.,0.,0.));#3=VECTOR('',#2,1.);#4=LINE(<line_name>,#1,#3);ENDSEC;END-ISO-10303-21;";
     let (exchange, diagnostics) = crate::parse::parse(source).expect("anchored line name");
 
     assert!(diagnostics
@@ -471,7 +542,7 @@ fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
 
     for (identifiers, expected_edition) in cases {
         let source = format!(
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA('section',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
         );
         let summary = StepCodec::default()
             .inspect(
