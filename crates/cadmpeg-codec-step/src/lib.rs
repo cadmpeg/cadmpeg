@@ -367,7 +367,10 @@ struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
     body_item_refs: HashMap<String, Vec<Ref>>,
+    product_step_refs: HashMap<String, Ref>,
+    occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
+    pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     unstyled_colors: usize,
     unwritten_geometry_carriers: BTreeSet<String>,
@@ -514,7 +517,10 @@ impl<'a> Builder<'a> {
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
+            product_step_refs: HashMap::new(),
+            occurrence_step_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
+            pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
             unwritten_geometry_carriers: BTreeSet::new(),
@@ -632,8 +638,8 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         self.emit_presentation(context);
-        self.emit_layers();
         self.emit_pmi(context);
+        self.emit_layers();
         self.note_unrepresented();
     }
 
@@ -972,13 +978,19 @@ impl<'a> Builder<'a> {
                     PresentationItem::Surface { surface } => {
                         self.surface_refs.get(surface.as_str()).copied()
                     }
+                    PresentationItem::Product { product } => {
+                        self.product_step_refs.get(product.as_str()).copied()
+                    }
+                    PresentationItem::Occurrence { occurrence } => {
+                        self.occurrence_step_refs.get(occurrence.as_str()).copied()
+                    }
+                    PresentationItem::Pmi { annotation } => {
+                        self.pmi_step_refs.get(annotation.as_str()).copied()
+                    }
                     PresentationItem::Point { point } => {
                         self.point_refs.get(point.as_str()).copied()
                     }
-                    PresentationItem::Product { .. }
-                    | PresentationItem::Occurrence { .. }
-                    | PresentationItem::Pmi { .. }
-                    | PresentationItem::Source { .. } => None,
+                    PresentationItem::Source { .. } => None,
                     PresentationItem::Tessellation { tessellation } => {
                         self.tessellation_step_refs.get(&tessellation).copied()
                     }
@@ -1176,6 +1188,8 @@ impl<'a> Builder<'a> {
                     string(name)
                 ),
             );
+            self.product_step_refs
+                .insert(product.id.0.clone(), product_ref);
             let formation = self.emitter.emit(
                 "PRODUCT_DEFINITION_FORMATION",
                 &format!("'','',{product_ref}"),
@@ -1290,6 +1304,8 @@ impl<'a> Builder<'a> {
                     string(occurrence_name)
                 ),
             );
+            self.occurrence_step_refs
+                .insert(occurrence.id.0.clone(), usage);
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
@@ -2946,6 +2962,9 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
+        }
+        for (annotation, reference) in annotation_refs {
+            self.pmi_step_refs.insert(annotation.0, reference);
         }
     }
 

@@ -795,7 +795,7 @@ fn modifier_text(
     }
 }
 
-fn is_presentation_annotation(name: &str) -> bool {
+pub(super) fn is_presentation_annotation(name: &str) -> bool {
     name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
         || matches!(
             name,

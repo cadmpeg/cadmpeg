@@ -676,7 +676,8 @@ fn presentation_item_one(
         (partial.name == "DATUM"
             || partial.name == "DATUM_SYSTEM"
             || partial.name.starts_with("DIMENSIONAL_")
-            || partial.name.ends_with("_TOLERANCE"))
+            || partial.name.ends_with("_TOLERANCE")
+            || super::pmi::is_presentation_annotation(&partial.name))
             && entity_ids
                 .pmi
                 .contains(&format!("step:presentation:pmi#{id}"))

@@ -9158,6 +9158,155 @@ fn point_presentation_layer_writes_the_cartesian_point_carrier() {
     assert!(text.contains("PRESENTATION_LAYER_ASSIGNMENT('point layer','standalone points',"));
 }
 
+#[test]
+fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
+    use cadmpeg_ir::ids::{LayerId, OccurrenceId, PmiId, ProductDefinitionId};
+    use cadmpeg_ir::pmi::{PmiAnnotation, PmiDefinition};
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+    use cadmpeg_ir::products::{Occurrence, OccurrenceParent, ProductDefinition};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    let parent_product = ProductDefinitionId("test:product#parent".into());
+    let child_product = ProductDefinitionId("test:product#child".into());
+    ir.model.product_definitions.extend([
+        ProductDefinition {
+            id: parent_product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Parent assembly".into()),
+            label: Some("Parent assembly".into()),
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: Vec::new(),
+            native_ref: None,
+        },
+        ProductDefinition {
+            id: child_product.clone(),
+            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
+            source_name: Some("Child part".into()),
+            label: Some("Child part".into()),
+            description: None,
+            part_number: None,
+            bom_properties: std::collections::BTreeMap::default(),
+            bodies: vec![body],
+            native_ref: None,
+        },
+    ]);
+    let root = OccurrenceId("test:occurrence#root".into());
+    let child = OccurrenceId("test:occurrence#child".into());
+    ir.model.occurrences.extend([
+        Occurrence {
+            id: root.clone(),
+            prototype: cadmpeg_ir::products::PrototypeReference::Local {
+                definition: parent_product.clone(),
+            },
+            parent: OccurrenceParent::Root,
+            ordinal: 0,
+            transform: Transform::identity(),
+            prototype_transform: Transform::identity(),
+            scale: [1.0; 3],
+            name: Some("Root assembly".into()),
+            linked_subelements: Vec::new(),
+            visible: None,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: None,
+        },
+        Occurrence {
+            id: child.clone(),
+            prototype: cadmpeg_ir::products::PrototypeReference::Local {
+                definition: child_product,
+            },
+            parent: OccurrenceParent::Occurrence { occurrence: root },
+            ordinal: 0,
+            transform: Transform {
+                rows: [
+                    [1.0, 0.0, 0.0, 25.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+            prototype_transform: Transform::identity(),
+            scale: [1.0; 3],
+            name: Some("Child occurrence".into()),
+            linked_subelements: Vec::new(),
+            visible: None,
+            element_component: None,
+            claim_child: None,
+            copy_on_change: None,
+            copy_on_change_source: None,
+            copy_on_change_group: None,
+            copy_on_change_touched: None,
+            link_transform: None,
+            native_ref: None,
+        },
+    ]);
+    let annotation = PmiId("test:pmi#note".into());
+    ir.model.pmi.push(PmiAnnotation {
+        id: annotation.clone(),
+        name: Some("inspection note".into()),
+        targets: Vec::new(),
+        definition: PmiDefinition::Presentation {
+            text: Some("inspect this assembly".into()),
+            placement: Some(Transform::identity()),
+            semantics: Vec::new(),
+        },
+    });
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#mixed".into()),
+        name: "mixed layer".into(),
+        description: None,
+        items: vec![
+            PresentationItem::Product {
+                product: parent_product,
+            },
+            PresentationItem::Occurrence { occurrence: child },
+            PresentationItem::Pmi { annotation },
+        ],
+    });
+
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write mixed presentation layer");
+    assert!(!report.losses.iter().any(|loss| {
+        loss.message
+            .contains("layer 'mixed layer' has 3 item(s) without a writable STEP carrier")
+    }));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode mixed presentation layer");
+    let layer = decoded
+        .ir
+        .model
+        .presentation_layers
+        .iter()
+        .find(|layer| layer.name == "mixed layer")
+        .expect("mixed presentation layer");
+    assert_eq!(layer.items.len(), 3);
+    assert!(matches!(layer.items[0], PresentationItem::Product { .. }));
+    assert!(matches!(
+        layer.items[1],
+        PresentationItem::Occurrence { .. }
+    ));
+    assert!(matches!(layer.items[2], PresentationItem::Pmi { .. }));
+}
+
 /// The soccer-ball case: a body carries a base color and one face overrides it.
 /// Every face must be styled (body color pushed down onto the faces that do not
 /// override it), and the overriding face must carry its own color.
