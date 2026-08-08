@@ -18462,10 +18462,14 @@ fn schema_feature_definition(
             }
             if let Some(plane) = placed_planes(scan).get(surface_id) {
                 let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+                let u_axis = placed_plane_surfaces(scan).get(surface_id).map_or_else(
+                    || cadmpeg_ir::geometry::derive_reference_direction(normal),
+                    |(_, u_axis, _)| Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                );
                 return IrFeatureDefinition::DatumPlane {
                     origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                     normal,
-                    u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+                    u_axis,
                 };
             }
             let surface_id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));

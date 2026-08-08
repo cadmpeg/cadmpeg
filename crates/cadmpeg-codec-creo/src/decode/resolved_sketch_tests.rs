@@ -3524,6 +3524,43 @@ fn datum_feature_uses_its_unique_transferred_plane_carrier() {
 }
 
 #[test]
+fn datum_feature_preserves_its_unique_transferred_plane_chart() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.surfaces.rows.push(crate::surface::SurfaceRow {
+        id: 6,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id: 5,
+        reversed: false,
+        boundary_type: 1,
+        next_surface: 0,
+        offset: 0,
+    });
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 6,
+        origin: [0.0, 1.0, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        u_axis: [0.0, 0.0, 1.0],
+        offset: 1,
+    });
+
+    assert_eq!(
+        schema_feature_definition(
+            &scan,
+            &CadIr::empty(Units::default()),
+            5,
+            923,
+            "Datum Plane",
+        ),
+        IrFeatureDefinition::DatumPlane {
+            origin: Point3::new(0.0, 1.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        }
+    );
+}
+
+#[test]
 fn datum_feature_uses_its_unique_complete_local_system() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.features
