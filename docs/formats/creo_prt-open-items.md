@@ -340,14 +340,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the rule to bound the scalar lane. `curve.rs` `parameter_records` accepts the first candidate, which its `4..=11` scan makes the shortest suffix and the longest body. The record is marked ambiguous and its geometry consumers drop it, so the wrong split reaches the native arena only. The sibling function `topology_suffix` rejects the same condition.
 
-### GS-29. `MdlRefInfo` positional row body extent
-
-**Question.** What bounds the body of an `ent_list(line3d)` or `ent_list(arc_z)` row?
-
-**Known.** `creo_prt.md` §8.5 states that exactly one seven-scalar run may satisfy the `line3d` endpoint and stored-length invariant, and that exactly one run may satisfy the `arc_z` circle invariant. The next row header or the block end bounds the row.
-
-**Need.** We must know the extent to apply the uniqueness rule to the complete row. `reference.rs` `line3d_lines` and `arc_z_circles` compute the true bound and then reduce it to 384 and 256 bytes. Neither constant comes from the format. A competing run outside the window makes the decoder report one candidate where the specification requires a withhold.
-
 ### GS-31. Positional conic local-system boundary
 
 **Question.** Which end offset bounds the twelve-slot local system of a positional conic row?

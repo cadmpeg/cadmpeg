@@ -218,6 +218,8 @@ fixtures, claims above L1 remain unproven.
 - Positional `entity(line)` rows require exactly one six-scalar endpoint suffix
   start that consumes the complete row body; competing starts withhold the
   line.
+- `line3d` and `arc_z` rows use their next validated row or list-block end as
+  the complete body bound; no fixed byte window truncates candidate geometry.
 - Type-zero and type-three coincidence incidences add point-coordinate
   equalities when their selected point rows are unique. This includes the
   two-sense-zero-point form of type three; contradictory components retain

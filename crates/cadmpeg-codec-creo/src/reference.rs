@@ -900,8 +900,7 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _, _)| *next_close)
-                .min(body_start.saturating_add(384));
+                .map_or(block_end, |(next_close, _, _)| *next_close);
             let Some((start, end, original_length)) =
                 line3d_fields(&payload[body_start..body_end], &cache)
             else {
@@ -1056,8 +1055,7 @@ pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _, _)| *next_close)
-                .min(body_start.saturating_add(256));
+                .map_or(block_end, |(next_close, _, _)| *next_close);
             let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache, entity_id)
             else {
                 continue;
@@ -1346,6 +1344,15 @@ mod tests {
         );
         assert_eq!(line.start, [0.0; 3]);
         assert_eq!(line.end, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn line3d_row_uses_its_complete_block_bound() {
+        let mut payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\0\0".to_vec();
+        payload.extend(std::iter::repeat_n(0, 385));
+        payload.extend_from_slice(b"\x0f\x0f\x0f\xe4\x0f\x0f\xe4");
+
+        assert_eq!(line3d_lines(&payload).len(), 1);
     }
 
     #[test]
