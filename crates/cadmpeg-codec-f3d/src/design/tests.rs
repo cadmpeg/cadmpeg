@@ -19716,6 +19716,49 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 }]
             )
     ));
+    let chord_only_parameters = [parameter(120, 121, "ChordLen", Some("in"), 0.25)];
+    let chord_only_owners = [owner(120, 121, 0)];
+    let chord_only_assignments = decode_fillet_radius_groups(
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &chord_only_owners,
+        &chord_only_parameters,
+    );
+    assert_eq!(chord_only_assignments.len(), 1);
+    assert_eq!(
+        chord_only_assignments[0].law,
+        crate::records::DesignFilletRadiusLaw::Chordal {
+            chord_length_parameter_record_index: 121,
+        }
+    );
+    assert_eq!(
+        chord_only_assignments[0].tangency_weight_parameter_record_index,
+        None
+    );
+    let (chord_only_features, _) = project_parameter_design(
+        &chord_only_parameters,
+        &chord_only_owners,
+        std::slice::from_ref(&scope),
+        &operand_groups[..1],
+        &chord_only_assignments,
+        &[],
+        &[],
+        &[],
+    );
+    assert!(matches!(
+        &chord_only_features[0].definition,
+        FeatureDefinition::Fillet { groups }
+            if matches!(
+                groups.as_slice(),
+                [cadmpeg_ir::features::FilletGroup {
+                    radius: cadmpeg_ir::features::RadiusSpec::Chordal {
+                        chord_length: cadmpeg_ir::features::Length(2.5),
+                    },
+                    tangency_weight: None,
+                    ..
+                }]
+            )
+    ));
     let asymmetric_parameters = [
         parameter(130, 131, "TangencyWeight", None, 1.0),
         parameter(140, 141, "EdgeOffset1", Some("mm"), 0.2),

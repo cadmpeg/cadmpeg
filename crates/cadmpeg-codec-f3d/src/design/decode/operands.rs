@@ -775,7 +775,11 @@ pub fn decode_fillet_radius_groups(
                 (parameter.source_kind == "ChordLen").then_some(parameter.record_index)
             })
             .collect::<Vec<_>>();
-        if weights.len() == 1 && owned_parameters.len() == 2 {
+        // TangencyWeight is optional for the chordal law; older records carry
+        // only the required ChordLen input.
+        if (weights.is_empty() && owned_parameters.len() == 1)
+            || (weights.len() == 1 && owned_parameters.len() == 2)
+        {
             let [chord_length] = chord_lengths.as_slice() else {
                 continue;
             };
@@ -788,7 +792,9 @@ pub fn decode_fillet_radius_groups(
                 law: DesignFilletRadiusLaw::Chordal {
                     chord_length_parameter_record_index: *chord_length,
                 },
-                tangency_weight_parameter_record_index: Some(weights[0].record_index),
+                tangency_weight_parameter_record_index: weights
+                    .first()
+                    .map(|parameter| parameter.record_index),
             });
             continue;
         }
