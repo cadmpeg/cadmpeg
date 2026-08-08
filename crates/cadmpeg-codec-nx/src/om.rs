@@ -827,7 +827,7 @@ pub struct OffsetStoreNamedPoint {
     pub values: [f64; 2],
     /// Exact shifted-binary64 encodings in scalar order.
     pub raw_values: [[u8; 8]; 2],
-    /// Scalar marker offsets in the concatenated two-block payload.
+    /// Scalar marker offsets in the concatenated payload.
     pub value_offsets: [usize; 2],
     /// Minimal number of consecutive blocks containing both scalar frames.
     pub block_count: usize,
@@ -836,20 +836,30 @@ pub struct OffsetStoreNamedPoint {
 /// Decode the minimal consecutive-block span beginning with a named two-scalar point.
 pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoint> {
     let mut bytes = Vec::new();
+    let mut candidate = None;
     for (block_ordinal, block) in blocks.iter().enumerate() {
+        // A later type-free name starts the next bounded data-block object.
+        if !bytes.is_empty()
+            && construction_payload_named_fields(block)
+                .first()
+                .is_some_and(|name| name.payload_leading)
+        {
+            return candidate;
+        }
         bytes.extend_from_slice(block);
         let names = construction_payload_named_fields(&bytes);
-        let [name] = names.as_slice() else {
-            return None;
-        };
+        let name = names.first()?;
         if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
+            return None;
+        }
+        if names.len() > 1 {
             return None;
         }
         let scalars = construction_payload_scalar_fields(&bytes);
         match scalars.as_slice() {
             [] | [_] => {}
             [first_scalar, second_scalar] => {
-                return Some(OffsetStoreNamedPoint {
+                candidate.get_or_insert_with(|| OffsetStoreNamedPoint {
                     name: name.value.to_string(),
                     values: [first_scalar.value, second_scalar.value],
                     raw_values: [first_scalar.raw_value, second_scalar.raw_value],
@@ -860,7 +870,7 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
             _ => return None,
         }
     }
-    None
+    candidate
 }
 
 fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {

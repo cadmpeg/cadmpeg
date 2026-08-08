@@ -257,6 +257,21 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
             .block_count,
         3
     );
+    let third = [
+        0x50, 0x59, 0x66, 0x58, 0x00, 0x30, 0x4c, 0x93, 0x33, 0x33, 0x33, 0x33, 0x07,
+    ];
+    assert!(super::offset_store_named_point(&[&first, &second, &third]).is_none());
+    let next_name = [
+        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00,
+    ];
+    assert!(super::offset_store_named_point(&[&first, &second, &next_name]).is_none());
+    let next_point = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'8', 0x00];
+    assert_eq!(
+        super::offset_store_named_point(&[&first, &second, &next_point])
+            .unwrap()
+            .block_count,
+        2
+    );
     let mut zero = first;
     zero[7] = b'0';
     assert!(super::offset_store_named_point(&[&zero, &second]).is_none());

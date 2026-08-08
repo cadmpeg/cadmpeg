@@ -600,14 +600,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field to admit the correct references. A marker-shaped word can also be ordinary field data, so a token scan alone cannot separate the two. The decoder resolves this with two invented numbers: it accepts the longest suffix that holds at least eight persistent handles and whose tokens cover at least nine tenths of the remaining bytes. A shorter reference run is dropped complete and reports no loss. Field bytes before a long run are admitted as references and reach the model with decoded values.
 
-### OM-36. Named payload interval terminator
-
-**Question.** What ends a named payload interval in an offset store?
-
-**Known.** `siemens_nx.md` §7.1 "A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point" defines the interval as ending exclusively at the next complete name field or at the reconstructed payload boundary, and rejects the typed point when an additional scalar occurs. `siemens_nx.md` §7.1 "A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00" defines the name field. Block boundaries do not delimit values or named-record boundaries.
-
-**Need.** We must know the terminator to apply the scalar-cardinality rule. The decoder adds one data block at a time and stops at the first accumulated span that holds exactly two scalars, so it never observes a third scalar in a later block. An interval that the format rejects then transfers as a typed point carrying the first two of its values.
-
 ### OM-37. OM registry and record-area terminators
 
 **Question.** What ends a member-field registry, and what bounds the search for a section record-area pointer?
