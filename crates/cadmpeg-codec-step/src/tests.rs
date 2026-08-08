@@ -208,10 +208,6 @@ fn parser_enforces_legacy_implementation_level_restrictions() {
             "2;1 forbids SIGNATURE sections",
         ),
         (
-            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
-            "2;1 forbids SCHEMA_POPULATION in HEADER",
-        ),
-        (
             "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;",
             "3;1 forbids ANCHOR and REFERENCE sections",
         ),
@@ -256,6 +252,50 @@ fn parser_accepts_historical_implementation_level_spellings() {
 fn parser_allows_multiple_schema_identifiers_at_legacy_level() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('CONFIG_CONTROL_DESIGN','GEOMETRIC_VALIDATION_PROPERTIES_MIM'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     crate::parse::parse(source).expect("2;1 permits multiple schema identifiers");
+}
+
+#[test]
+fn parser_validates_optional_header_entities_and_data_section_targets() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));FILE_POPULATION('AP242','INCLUDE_ALL_COMPATIBLE',('main'));SECTION_LANGUAGE('main','eng');SECTION_CONTEXT('main',('design'));!VENDOR(('metadata'));ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) = crate::parse::parse(source).expect("valid optional header entities");
+    assert_eq!(exchange.data[0].records, vec![1]);
+    assert_eq!(exchange.header[7].name, "!VENDOR");
+
+    let invalid = [
+        (
+            "SCHEMA_POPULATION((('part.step',$)));",
+            "SCHEMA_POPULATION has invalid parameters",
+        ),
+        (
+            "FILE_POPULATION('AP214','INCLUDE_ALL_COMPATIBLE',('main'));",
+            "FILE_POPULATION has invalid parameters",
+        ),
+        (
+            "SECTION_LANGUAGE('missing','eng');",
+            "header section reference names an unknown DATA section",
+        ),
+        (
+            "SECTION_LANGUAGE('main','english');",
+            "SECTION_LANGUAGE has invalid parameters",
+        ),
+        (
+            "!VENDOR(('metadata'));SECTION_CONTEXT('main',('design'));",
+            "built-in HEADER entities must precede user-defined entities",
+        ),
+    ];
+    for (extra, message) in invalid {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));{extra}ENDSEC;DATA('main',('AP242'));#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let error = crate::parse::parse(source.as_bytes()).expect_err("invalid header entity");
+        assert!(
+            error.to_string().contains(message),
+            "expected {message:?}, got {error}"
+        );
+    }
+
+    let legacy = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));SCHEMA_POPULATION((('part.step',$,$)));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(legacy).expect("2;1 permits SCHEMA_POPULATION");
 }
 
 #[test]
