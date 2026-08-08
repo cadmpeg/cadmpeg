@@ -992,18 +992,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Note.** `crates/cadmpeg-codec-sldprt/src/resolved_features/markers.rs:689` binds the same declaration and scalar with the opposite rule: the first scalar that follows the declaration, inside 128 bytes. The codec holds two incompatible adjacency rules for one binding. The constant `128` comes from `sldprt.md` §2 "An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That", which is the `moLPattern_c` rule for a different record family. Settle both sites together.
 
-### DI-42. Scalar header disambiguation
-
-**Question.** Which field selects the scalar header width?
-
-**Known.** `sldprt.md` §2 gives the 22-byte, 18-byte, and 14-byte scalar headers. It gives no discriminator between them.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/scalars.rs:79` tries four headers in order and takes the first that matches. The four constants in `mod.rs:14` are nested prefixes: the 14-byte header is a prefix of the 18-byte header, which is a prefix of the 22-byte padded header. Only the primary header has a discriminating byte. For the three zero-tailed forms the match is decided by which of the value's own leading bytes are zero, and the order takes the longest.
-
-The padded 22-byte header does not appear in `sldprt.md`.
-
-**Need.** We must know the discriminator. An f64 with a zero low half satisfies the next longer header, so the decoder reads the value four bytes late and emits a subnormal.
-
 ### DI-43. Extrusion form-code padding width
 
 **Question.** Which field gives the padding width before an extrusion class declaration?
