@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-43. Envelope of a whole-body construction operand
-
-**Question.** What bounds the byte span in which one whole-body construction operand's body recipe stands?
-
-**Known.** `f3d.md` §3.1 "A class-365 whole-body member" gives the member sequence and the record envelope from index `N` to `N + 4`. It gives no byte bound on the span.
-
-`unique_body_recipe` in `design/decode/operands.rs` requires exactly one recipe in the span, which is the correct exact-witness form, and then clamps the lower end of the span to 65,536 bytes below the envelope end. The clamp and the uniqueness gate oppose each other: a span longer than the clamp that holds two recipes gives one match inside the clamped window, the gate passes, and the operand binds to a recipe that is not the only candidate. Without the clamp the same span gives two matches and the operand withholds.
-
-**Need.** The bound is not in `f3d.md` or in `docs/layouts/f3d.toml`. A wrong recipe gives a `Combine` tool or an Extrude target-shape group a body it does not select. The real span bound settles the item; a buffer-derived bound removes the opposition.
-
 ### DR-44. Selection scope of an edge-treatment transition chain
 
 **Question.** Which feature families and which member counts may take the complete transition edge chain as one group's selection?
