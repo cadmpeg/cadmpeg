@@ -329,19 +329,9 @@ pub(crate) fn enrich_history_reference_planes(
                         && offset_plane_reference_frame_matches(*candidate, reference, 0.0)
                 })
                 .collect::<Vec<_>>();
-            let selected = select_reference_plane_frame_source(matching.iter().map(
-                |(source, candidate_index, _)| {
-                    (
-                        source.as_str(),
-                        candidate_index.1,
-                        principal_plane_with_siblings(
-                            &histories[candidate_index.0].features[candidate_index.1],
-                            &histories[candidate_index.0].features,
-                        )
-                        .is_some(),
-                    )
-                },
-            ));
+            let selected = select_reference_plane_frame_source(
+                matching.iter().map(|(source, _, _)| source.as_str()),
+            );
             if let Some(source) = selected {
                 sources.push(source);
             }
@@ -377,19 +367,9 @@ pub(crate) fn enrich_history_reference_planes(
                     && offset_plane_reference_frame_matches(*candidate, frame, distance)
             })
             .collect::<Vec<_>>();
-        if let Some(source) = select_reference_plane_frame_source(matching.iter().map(
-            |(source, candidate_index, _)| {
-                (
-                    source.as_str(),
-                    candidate_index.1,
-                    principal_plane_with_siblings(
-                        &histories[candidate_index.0].features[candidate_index.1],
-                        &histories[candidate_index.0].features,
-                    )
-                    .is_some(),
-                )
-            },
-        )) {
+        if let Some(source) = select_reference_plane_frame_source(
+            matching.iter().map(|(source, _, _)| source.as_str()),
+        ) {
             reference_candidates.entry(index).or_default().push(source);
         }
     }
@@ -470,30 +450,12 @@ pub(crate) fn enrich_history_reference_planes(
 }
 
 pub(super) fn select_reference_plane_frame_source<'a>(
-    candidates: impl Iterator<Item = (&'a str, usize, bool)>,
+    candidates: impl Iterator<Item = &'a str>,
 ) -> Option<String> {
-    let candidates = candidates.collect::<Vec<_>>();
-    let mut principals = candidates
-        .iter()
-        .filter(|(_, _, principal)| *principal)
-        .map(|(source, _, _)| *source)
-        .collect::<Vec<_>>();
-    principals.sort_unstable();
-    principals.dedup();
-    match principals.as_slice() {
-        [source] => return Some((*source).to_string()),
-        [] => {}
-        _ => return None,
-    }
-    let latest_index = candidates.iter().map(|(_, index, _)| index).max()?;
-    let mut latest = candidates
-        .iter()
-        .filter(|(_, index, _)| index == latest_index)
-        .map(|(source, _, _)| *source)
-        .collect::<Vec<_>>();
-    latest.sort_unstable();
-    latest.dedup();
-    let [source] = latest.as_slice() else {
+    let mut sources = candidates.collect::<Vec<_>>();
+    sources.sort_unstable();
+    sources.dedup();
+    let [source] = sources.as_slice() else {
         return None;
     };
     Some((*source).to_string())
@@ -1264,8 +1226,7 @@ pub(super) fn offset_plane_reference_source(
     const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let typed_sources = payload
         .windows(RECORD_LEN)
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
+        .filter_map(|bytes| {
             let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
             let signature = bytes.get(4..8)?;
             let selector = u32::from_le_bytes(bytes.get(10..14)?.try_into().ok()?);
@@ -1278,14 +1239,10 @@ pub(super) fn offset_plane_reference_source(
                 && bytes.get(18..22) == Some(&[0; 4])
                 && bytes.get(26..38) == Some(&[0; 12])
                 && bytes.get(38..46) == Some(TERMINATOR))
-            .then_some((offset, source))
+            .then_some(source)
         })
         .collect::<Vec<_>>();
-    let latest_offset = typed_sources.iter().map(|(offset, _)| *offset).max();
-    let mut sources = typed_sources
-        .into_iter()
-        .filter_map(|(offset, source)| (Some(offset) == latest_offset).then_some(source))
-        .collect::<Vec<_>>();
+    let mut sources = typed_sources;
     sources.extend(
         compact_offset_plane_source(payload)
             .filter(|source| Some(*source) != self_source && known_sources.contains(source)),

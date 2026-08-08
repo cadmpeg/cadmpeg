@@ -1018,24 +1018,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the position. A window bound also drops a valid vector that lies past it.
 
-### DI-47. Offset-plane frame source
-
-**Question.** Which datum is the source plane when more than one decoded datum frame is parallel to an offset plane at the absolute `D1` distance?
-
-**Known.** `sldprt.md` §2 "When exactly one line-distance operand identifies a profile line, the other operand identifies" states the rule: "Exactly one known non-self source across the compact and typed forms identifies the reference", and "Coincident or multiply matching frames do not identify a source."
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:472` returns a source in that case. It prefers a sole principal plane, then takes the candidate with the greatest feature index:
-
-```rust
-let latest_index = candidates.iter().map(|(_, index, _)| index).max()?;
-```
-
-The specification has no ordinal rule and no principal-plane preference. The downstream gate at `reference_geometry.rs:428` requires exactly one source, and this function has already reduced the set to one, so that gate cannot fire.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:1284` applies the same shape to repeated typed reference records and keeps the record at the greatest offset.
-
-**Need.** We must honour the stated rule and withhold. A datum that matches two parents must not be parented to either.
-
 ### DI-48. Offset-plane support face position
 
 **Question.** Where is the support plane of an offset datum plane?

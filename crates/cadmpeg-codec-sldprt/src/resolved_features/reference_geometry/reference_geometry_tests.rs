@@ -757,7 +757,7 @@ fn classed_offset_plane_source_requires_exact_length_delimited_type() {
 }
 
 #[test]
-fn typed_offset_plane_reference_uses_the_last_known_plane_target() {
+fn typed_offset_plane_reference_requires_one_known_plane_target() {
     let record = |source: u32, signature: [u8; 4], selector: u32| {
         let mut bytes = Vec::new();
         bytes.extend(source.to_le_bytes());
@@ -787,11 +787,17 @@ fn typed_offset_plane_reference_uses_the_last_known_plane_target() {
         None
     );
 
-    let mut ambiguous = principal;
+    let mut ambiguous = principal.clone();
     ambiguous.extend_from_slice(&feature);
     assert_eq!(
         offset_plane_reference_source(&ambiguous, &known, &known, None),
-        Some(225)
+        None
+    );
+    let mut repeated = principal.clone();
+    repeated.extend_from_slice(&principal);
+    assert_eq!(
+        offset_plane_reference_source(&repeated, &known, &known, None),
+        Some(3)
     );
     ambiguous[38] ^= 1;
     assert_eq!(
@@ -817,43 +823,33 @@ fn typed_offset_plane_reference_uses_the_last_known_plane_target() {
 }
 
 #[test]
-fn frame_only_offset_plane_reference_prefers_a_unique_principal() {
+fn frame_only_offset_plane_reference_requires_one_unique_source() {
     assert_eq!(
-        select_reference_plane_frame_source(
-            [
-                ("derived", 20, false),
-                ("principal", 80, true),
-                ("older", 10, false),
-            ]
-            .into_iter(),
-        ),
-        Some("principal".into())
+        select_reference_plane_frame_source(["derived", "principal", "older"].into_iter(),),
+        None
     );
     assert_eq!(
-        select_reference_plane_frame_source(
-            [("first", 80, true), ("second", 90, true)].into_iter(),
-        ),
+        select_reference_plane_frame_source(["same", "same"].into_iter()),
+        Some("same".into())
+    );
+    assert_eq!(
+        select_reference_plane_frame_source(["first", "second"].into_iter()),
         None
     );
 }
 
 #[test]
-fn frame_only_offset_plane_reference_uses_the_latest_matching_feature() {
+fn frame_only_offset_plane_reference_does_not_use_feature_order() {
     assert_eq!(
-        select_reference_plane_frame_source(
-            [
-                ("older", 10, false),
-                ("latest", 20, false),
-                ("latest", 20, false),
-            ]
-            .into_iter(),
-        ),
-        Some("latest".into())
+        select_reference_plane_frame_source(["older", "latest", "latest"].into_iter(),),
+        None
     );
     assert_eq!(
-        select_reference_plane_frame_source(
-            [("first", 20, false), ("second", 20, false)].into_iter(),
-        ),
+        select_reference_plane_frame_source(["source", "source"].into_iter()),
+        Some("source".into())
+    );
+    assert_eq!(
+        select_reference_plane_frame_source(["first", "second"].into_iter()),
         None
     );
 }
