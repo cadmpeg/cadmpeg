@@ -90,17 +90,16 @@ The u32 at `85 + S`, u32 at `115 + S`, byte at `119 + S`, and u32 at `121 + S` a
 
 ### DR-17. Extrude selection unknowns
 
-**Question.** We must find five answers:
+**Question.** We must find four answers:
 
 - what an identity that is absent from history denotes
 - which field separates two profile loops that meet at the same ordered persistent Sketch points
-- which field selects one of several closed spatial-Sketch profiles
 - what the context UUID names
 - what the optional slot of the fixed member tail holds
 
 **Known.** `f3d.md` §3.1 "A nested entity-selection member" states that an identity absent from the preceding state gives no candidate. `f3d.md` §3.1 "An Extrude selection resolves" gives a fallback chain that ends in native retention. `f3d.md` §3.1 "The first identity-wrapper record" gives the presence encoding of the optional slot. The marker is zero when the slot is absent and one when the slot is present.
 
-**Need.** Each unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
+**Need.** Each remaining unknown makes one Extrude selection fall back to native retention. The neutral model then has no selection.
 
 ### DR-18. Extrude extent arbitration
 
@@ -296,16 +295,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 **Known.** `exact_legacy_distance_extrude_prologue` in `design/decode/scopes.rs` reads one word at `operation + 4` and refuses the record when the value is not `2`. Under `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" that word is the travel direction and the value `2` is two sides. `DesignExtrudePrologue::extent` in `records.rs` returns a one-sided distance for this dialect without reading a field.
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
-
-### DR-41. Selection of one closed spatial-Sketch profile
-
-**Question.** Which field selects one of several closed spatial-Sketch profiles?
-
-**Known.** This question is the third of the five DR-17 lists. `f3d.md` §3.1 "An Extrude selection resolves" gives the fallback chain, and DR-17 states that each unknown makes the selection fall back to native retention.
-
-`spatial_polyline_profile_for_face` in `design/profile_select.rs` does not fall back. It sorts the inserted face's loop edge lengths, sorts each candidate profile's edge lengths, and accepts a profile whose sorted list agrees within `tolerance * (1 + max(|a|, |b|))`. A sorted multiset of edge lengths is not an identity. The inner map returns nothing for a boundary use whose entity is not a spatial line, so a profile that holds one arc or one NURBS segment never enters the comparison and the uniqueness gate cannot see it. The relative tolerance form is not in `f3d.md`.
-
-**Need.** A spatial sketch that holds an all-line profile and a mixed profile with equal loop lengths gives the all-line profile as the sole match, and the feature asserts a selection the file does not name. DR-17 promises native retention for this case. Either the edge-length rule is the format's rule, or the selection must withhold.
 
 ### DR-42. Clause ordinal of a rectangular sketch-relation
 
