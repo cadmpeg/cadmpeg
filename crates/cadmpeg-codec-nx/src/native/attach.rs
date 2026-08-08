@@ -1250,20 +1250,12 @@ fn attach_feature_operations(
             .or_default()
             .push((reference.body_object_index, body_use.data_block.clone()));
     }
-    let offset_store_body_references = body_data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
-    let body_references = body_references
-        .iter()
-        .filter(|reference| !offset_store_body_references.contains(reference.id.as_str()))
-        .map(|reference| {
-            (
-                reference.operation_label.as_str(),
-                reference.body_object_index,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let body_references = native_primary_body_references(
+        body_references,
+        body_data_block_uses,
+        input_blocks,
+        data_blocks,
+    );
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReferenceOccurrence>>::new();
     for reference in body_reference_occurrences {
@@ -3316,6 +3308,38 @@ fn native_result_body_identity(
         .or_else(|| {
             boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
         })
+}
+
+/// Return primary body fields that are proven to use the segment-object
+/// namespace. An operation with any resolved offset-store input selects that
+/// namespace before its primary body ordinal is resolved; missing or
+/// ambiguous offset-store body relations must not fall back to integer-equal
+/// segment aliases.
+fn native_primary_body_references<'a>(
+    references: &'a [crate::native::features::FeatureBodyReference],
+    data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
+    inputs: &[crate::native::features::FeatureInputBlock],
+    data_blocks: &[crate::native::om::DataBlock],
+) -> BTreeMap<&'a str, u32> {
+    let offset_store_references = data_block_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
+    let offset_store_operations =
+        crate::native::features::feature_input_store_operations(inputs, data_blocks);
+    references
+        .iter()
+        .filter(|reference| {
+            !offset_store_references.contains(reference.id.as_str())
+                && !offset_store_operations.contains(reference.operation_label.as_str())
+        })
+        .map(|reference| {
+            (
+                reference.operation_label.as_str(),
+                reference.body_object_index,
+            )
+        })
+        .collect()
 }
 
 fn attach_solved_sketch_points(
@@ -8043,6 +8067,117 @@ mod tests {
         );
         assert_eq!(super::feature_body_outputs(94, &bindings), vec![first]);
         assert!(super::feature_body_outputs(123, &bindings).is_empty());
+    }
+
+    #[test]
+    fn native_primary_body_references_exclude_unresolved_offset_store_namespaces() {
+        use crate::native::features::{
+            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureInputBlock,
+        };
+        use crate::native::om::{DataBlock, DataBlockRole};
+
+        let reference = |id: &str, operation_label: &str, body_object_index| FeatureBodyReference {
+            id: id.to_string(),
+            operation_label: operation_label.to_string(),
+            body_object_index,
+            raw_body_object_index: vec![body_object_index as u8],
+            source_offset: 0,
+        };
+        let references = [
+            reference("reference#segment", "operation#segment", 10),
+            reference("reference#exact", "operation#exact", 99),
+            reference("reference#missing", "operation#missing", 100),
+            reference("reference#ambiguous", "operation#ambiguous", 101),
+        ];
+        let input =
+            |id: &str, operation_label: &str, slot: u8, data_block: &str| FeatureInputBlock {
+                id: id.to_string(),
+                operation_label: operation_label.to_string(),
+                input_slot: slot,
+                object_index: u32::from(slot),
+                raw_object_index: vec![slot],
+                data_block: data_block.to_string(),
+                source_offset: 0,
+            };
+        let blocks = [
+            DataBlock {
+                id: "block#exact-input".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 3,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#missing-input".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 4,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#ambiguous-input-1".to_string(),
+                section_ordinal: 2,
+                block_ordinal: 5,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#ambiguous-input-2".to_string(),
+                section_ordinal: 3,
+                block_ordinal: 6,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 0,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+        ];
+        let data_block_uses = [FeatureBodyDataBlockUse {
+            id: "data-block-use#exact".to_string(),
+            feature_body_reference: references[1].id.clone(),
+            data_block: "block#exact-output".to_string(),
+        }];
+        let inputs = [
+            input("input#exact", "operation#exact", 0, "block#exact-input"),
+            input(
+                "input#missing",
+                "operation#missing",
+                0,
+                "block#missing-input",
+            ),
+            input(
+                "input#ambiguous-1",
+                "operation#ambiguous",
+                0,
+                "block#ambiguous-input-1",
+            ),
+            input(
+                "input#ambiguous-2",
+                "operation#ambiguous",
+                1,
+                "block#ambiguous-input-2",
+            ),
+        ];
+
+        let native =
+            super::native_primary_body_references(&references, &data_block_uses, &inputs, &blocks);
+        assert_eq!(native.get("operation#segment"), Some(&10));
+        assert!(!native.contains_key("operation#exact"));
+        assert!(!native.contains_key("operation#missing"));
+        assert!(!native.contains_key("operation#ambiguous"));
     }
 
     #[test]
