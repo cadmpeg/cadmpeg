@@ -630,14 +630,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field to select the base body. The comparison is the only gate between emitting a complete closed solid body and emitting none, in the revolution, extrusion, and circular-extrusion transfer paths.
 
-### SP-29. Section reference-plane orientation rows
-
-**Question.** Which reference-plane row supplies the `ref_type`, `seg_id`, and `flip_flag` that orient a section?
-
-**Known.** `creo_prt.md` §8.2 states that each reference-plane row replays its own `plane_id`, `ref_type`, `ext_ref_id`, `seg_id`, `sub_index`, and `flip_flag`.
-
-**Need.** We must know the row to apply the correct orientation sense. `feature/definitions.rs` `positional_section_3d` retains every `plane_id` but keeps the orientation fields of row zero alone. `placement.rs` then selects the orienting reference geometrically, as the unique referenced plane not parallel to the sketch plane, and applies row zero's `flip_flag` to it. When the selected row is not row zero, a missing negation mirrors the sketch and every surface swept from it.
-
 ### SP-32. `ActDatums` positional row acceptance
 
 **Question.** Which bytes identify a positional `<gid> 22` datum row, and what bounds a datum geometry identifier?

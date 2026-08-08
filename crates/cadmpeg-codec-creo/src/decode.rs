@@ -198,10 +198,21 @@ struct CreoSketchSection3d {
     sketch_plane_entity_id: Option<u32>,
     sketch_plane_flip: Option<bool>,
     reference_plane_entity_ids: Vec<u32>,
+    reference_plane_rows: Vec<CreoSketchReferencePlane>,
     reference_plane_datum_geometry_id: Option<u32>,
     orientation: CreoSketchSectionOrientation,
     dimension_ids: Vec<u32>,
     offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchReferencePlane {
+    plane_entity_id: u32,
+    reference_type: Option<u32>,
+    external_reference_id: Option<u32>,
+    segment_id: Option<u32>,
+    sub_index: Option<u32>,
+    reference_flip: Option<bool>,
 }
 
 #[derive(Serialize)]

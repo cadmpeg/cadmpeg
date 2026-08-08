@@ -3100,7 +3100,8 @@ The in-plane orientation is the unique referenced plane not parallel to the
 resolved sketch plane. Its normal projected into the sketch plane defines the
 section `u` axis, and the intersection of the two plane equations defines the
 section origin. Parallel support planes and non-plane references do not define
-the section axis.
+the section axis. The selected reference row supplies its own `ref_type`,
+`seg_id`, and `flip_flag`; fields from another row do not orient the section.
 
 A linear section frame is also complete when at least two distinct solved arc
 centers bind through same-feature class-200 entries to complete positional

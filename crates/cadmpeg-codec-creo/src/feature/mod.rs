@@ -28,10 +28,10 @@ pub use definitions::{
     FeatureRelationTriple, FeatureSavedArc, FeatureSavedCircle, FeatureSavedConic,
     FeatureSavedDummy, FeatureSavedEntity, FeatureSavedLine, FeatureSavedSection,
     FeatureSavedSpline, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
-    FeatureSegment, FeatureSegmentKind, FeatureSegmentTable, FeatureSkamp, FeatureSkampItem,
-    FeatureSolverTableHeader, FeatureTrimBucket, FeatureTrimEntity, FeatureTrimEntityTable,
-    FeatureTrimVertex, FeatureTrimVertexTable, FeatureVariableRow, FeatureVariableTable,
-    OutlinePhase, TrimEntityKind,
+    FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable,
+    FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader, FeatureTrimBucket, FeatureTrimEntity,
+    FeatureTrimEntityTable, FeatureTrimVertex, FeatureTrimVertexTable, FeatureVariableRow,
+    FeatureVariableTable, OutlinePhase, TrimEntityKind,
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,

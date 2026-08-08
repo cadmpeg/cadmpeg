@@ -1972,6 +1972,18 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     sketch_plane_entity_id: section.sketch_plane_entity_id,
                     sketch_plane_flip: section.sketch_plane_flip.map(binary_flag_value),
                     reference_plane_entity_ids: section.reference_plane_entity_ids.clone(),
+                    reference_plane_rows: section
+                        .reference_plane_rows
+                        .iter()
+                        .map(|row| CreoSketchReferencePlane {
+                            plane_entity_id: row.plane_entity_id,
+                            reference_type: row.reference_type,
+                            external_reference_id: row.external_reference_id,
+                            segment_id: row.segment_id,
+                            sub_index: row.sub_index,
+                            reference_flip: row.reference_flip.map(binary_flag_value),
+                        })
+                        .collect(),
                     reference_plane_datum_geometry_id: section.reference_plane_datum_geometry_id,
                     orientation: CreoSketchSectionOrientation {
                         section_flip: section.orientation.section_flip.map(binary_flag_value),

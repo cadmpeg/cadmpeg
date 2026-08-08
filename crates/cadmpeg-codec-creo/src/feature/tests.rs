@@ -618,6 +618,7 @@ fn binds_missing_definition_owner_from_unique_generated_datum_table() {
             sketch_plane_entity_id: Some(12),
             sketch_plane_flip: None,
             reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
             reference_plane_datum_geometry_id: None,
             orientation: FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -923,6 +924,7 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -951,6 +953,7 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -1025,6 +1028,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -1065,6 +1069,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         sketch_plane_entity_id: Some(249),
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -1854,11 +1859,30 @@ fn positional_gsec3d_decodes_placement_and_reference_rows() {
     assert_eq!(section.sketch_plane_entity_id, Some(513));
     assert_eq!(section.sketch_plane_flip, None);
     assert_eq!(section.reference_plane_entity_ids, vec![6, 7]);
+    assert_eq!(section.reference_plane_rows.len(), 2);
+    assert_eq!(section.reference_plane_rows[0].plane_entity_id, 6);
+    assert_eq!(section.reference_plane_rows[0].reference_type, Some(5));
+    assert_eq!(section.reference_plane_rows[0].external_reference_id, None);
+    assert_eq!(section.reference_plane_rows[0].segment_id, Some(3));
+    assert_eq!(section.reference_plane_rows[0].sub_index, None);
+    assert_eq!(
+        section.reference_plane_rows[0].reference_flip,
+        Some(BinaryFlag::Clear)
+    );
+    assert_eq!(section.reference_plane_rows[1].plane_entity_id, 7);
+    assert_eq!(section.reference_plane_rows[1].reference_type, Some(5));
+    assert_eq!(section.reference_plane_rows[1].external_reference_id, None);
+    assert_eq!(section.reference_plane_rows[1].segment_id, Some(4));
+    assert_eq!(section.reference_plane_rows[1].sub_index, None);
+    assert_eq!(
+        section.reference_plane_rows[1].reference_flip,
+        Some(BinaryFlag::Set)
+    );
     assert_eq!(section.reference_plane_datum_geometry_id, None);
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
-    assert_eq!(section.orientation.reference_type, Some(5));
-    assert_eq!(section.orientation.segment_id, Some(3));
-    assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    assert_eq!(section.orientation.reference_type, None);
+    assert_eq!(section.orientation.segment_id, None);
+    assert_eq!(section.orientation.reference_flip, None);
 }
 
 #[test]
@@ -1884,9 +1908,9 @@ fn positional_gsec3d_retains_placement_and_complete_reference_prefix() {
     assert_eq!(section.sketch_plane_entity_id, Some(513));
     assert_eq!(section.reference_plane_entity_ids, [6]);
     assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
-    assert_eq!(section.orientation.reference_type, Some(5));
-    assert_eq!(section.orientation.segment_id, Some(3));
-    assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    assert_eq!(section.orientation.reference_type, None);
+    assert_eq!(section.orientation.segment_id, None);
+    assert_eq!(section.orientation.reference_flip, None);
 }
 
 #[test]

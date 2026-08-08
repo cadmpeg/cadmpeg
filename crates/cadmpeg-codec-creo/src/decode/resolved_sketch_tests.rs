@@ -3369,6 +3369,7 @@ fn transformed_feature_definition_requires_unique_owner_and_exact_transform_owne
             sketch_plane_entity_id: None,
             sketch_plane_flip: None,
             reference_plane_entity_ids: Vec::new(),
+            reference_plane_rows: Vec::new(),
             reference_plane_datum_geometry_id: None,
             orientation: crate::feature::FeatureSectionOrientation::default(),
             dimension_ids: Vec::new(),
@@ -6020,6 +6021,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
         sketch_plane_entity_id: Some(30),
         sketch_plane_flip: Some(crate::feature::BinaryFlag::Clear),
         reference_plane_entity_ids: vec![29],
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: crate::feature::FeatureSectionOrientation {
             section_flip: Some(crate::feature::BinaryFlag::Set),

@@ -148,6 +148,9 @@ fixtures, claims above L1 remain unproven.
 - Named `gsec3d_ptr` fields stay inside the span through their first
   `p_saved_result` close, or the next `gsec3d_ptr`/definition boundary when the
   close is absent; nested `ref_planes` identifiers use their typed field.
+- Positional `gsec3d_ptr` reference rows retain all six row fields, and the
+  geometrically selected orientation plane supplies its own `ref_type`,
+  `seg_id`, and `flip_flag`.
 - Unique feature-owned class-200 materialized surfaces now emit feature-result
   topology face identities. Hole placement, thicken inputs, and knit inputs
   use generated face references only when those identities and their producer

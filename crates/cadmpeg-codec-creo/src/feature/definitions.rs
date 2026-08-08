@@ -682,6 +682,23 @@ pub struct FeatureSectionOrientation {
     pub reference_flip: Option<BinaryFlag>,
 }
 
+/// One positional gsec3d reference-plane row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSectionReferencePlane {
+    /// Row `plane_id` entity identifier.
+    pub plane_entity_id: u32,
+    /// Row `ref_type` discriminator.
+    pub reference_type: Option<u32>,
+    /// Row `ext_ref_id` identifier.
+    pub external_reference_id: Option<u32>,
+    /// Row `seg_id` identifier.
+    pub segment_id: Option<u32>,
+    /// Row `sub_index` value.
+    pub sub_index: Option<u32>,
+    /// Row `flip_flag`.
+    pub reference_flip: Option<BinaryFlag>,
+}
+
 /// Byte-backed gsec3d placement and ordering inputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSection3d {
@@ -691,9 +708,11 @@ pub struct FeatureSection3d {
     pub sketch_plane_flip: Option<BinaryFlag>,
     /// Entity references that orient the sketch plane.
     pub reference_plane_entity_ids: Vec<u32>,
+    /// Complete positional reference-plane rows in stored order.
+    pub reference_plane_rows: Vec<FeatureSectionReferencePlane>,
     /// Geometry identifier joining the reference plane to its datum surface.
     pub reference_plane_datum_geometry_id: Option<u32>,
-    /// Section-frame orientation reference fields.
+    /// Singleton named-record orientation fields.
     pub orientation: FeatureSectionOrientation,
     /// Stored dimension identifiers in section order.
     pub dimension_ids: Vec<u32>,
@@ -2995,6 +3014,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         .and_then(BinaryFlag::decode);
 
     let mut reference_plane_entity_ids = Vec::new();
+    let reference_plane_rows = Vec::new();
     let mut reference_plane_datum_geometry_id = None;
     if let Some(references) = find_bytes(payload, b"\xe0\x00ref_planes\0", section, placement_end) {
         let mut cursor = references + b"\xe0\x00ref_planes\0".len();
@@ -3054,6 +3074,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
         sketch_plane_entity_id,
         sketch_plane_flip,
         reference_plane_entity_ids,
+        reference_plane_rows,
         reference_plane_datum_geometry_id,
         orientation,
         dimension_ids,
@@ -3083,6 +3104,7 @@ pub(crate) fn positional_section_3d(
         sketch_plane_entity_id: None,
         sketch_plane_flip: None,
         reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
         reference_plane_datum_geometry_id: None,
         orientation: FeatureSectionOrientation::default(),
         dimension_ids: Vec::new(),
@@ -3142,6 +3164,7 @@ pub(crate) fn positional_section_3d(
     cursor = next;
 
     let row_count = usize::try_from(reference_count).unwrap_or(usize::MAX);
+    let mut reference_plane_rows = Vec::new();
     let mut separator = vec![0xf2, psb::token::ENTITY_REF];
     separator.extend_from_slice(&table_reference);
     separator.push(0xe2);
@@ -3155,7 +3178,7 @@ pub(crate) fn positional_section_3d(
             break;
         }
         cursor = next;
-        let (_, next) = segment_int(payload, cursor);
+        let (external_reference_id, next) = segment_int(payload, cursor);
         if next <= cursor {
             break;
         }
@@ -3165,7 +3188,7 @@ pub(crate) fn positional_section_3d(
             break;
         }
         cursor = next;
-        let (_, next) = segment_int(payload, cursor);
+        let (sub_index, next) = segment_int(payload, cursor);
         if next <= cursor {
             break;
         }
@@ -3176,12 +3199,15 @@ pub(crate) fn positional_section_3d(
             break;
         }
         cursor = next;
+        reference_plane_rows.push(FeatureSectionReferencePlane {
+            plane_entity_id: plane_id,
+            reference_type,
+            external_reference_id,
+            segment_id,
+            sub_index,
+            reference_flip,
+        });
         result.reference_plane_entity_ids.push(plane_id);
-        if row == 0 {
-            result.orientation.reference_type = reference_type;
-            result.orientation.segment_id = segment_id;
-            result.orientation.reference_flip = reference_flip;
-        }
         if row + 1 < row_count {
             let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
                 break;
@@ -3189,6 +3215,7 @@ pub(crate) fn positional_section_3d(
             cursor = separator_at + separator.len();
         }
     }
+    result.reference_plane_rows = reference_plane_rows;
     Some(result)
 }
 
