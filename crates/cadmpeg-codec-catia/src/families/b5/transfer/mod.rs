@@ -20,8 +20,9 @@ use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::graph::{
-    face_loop_owner_counts, loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph,
-    B5OffsetSurface, B5SupportedSurface, B5Surface,
+    bounded_occurrence_range, edge_pcurve_parameters, face_loop_owner_counts, loop_chain_closes,
+    B5ExtrusionDirectrix, B5ExtrusionSurface, B5Graph, B5OffsetSurface, B5SupportedSurface,
+    B5Surface,
 };
 
 mod edges;
@@ -32,8 +33,7 @@ mod vertices;
 
 use edges::{
     b5_supports_agree, b5_supports_follow_curve, b5_supports_follow_edge, b5_vertex_point,
-    bounded_occurrence_range, curve_cache_has_ordered_knots, edge_pcurve_parameters,
-    merge_curve_plan, orient_b5_supports_to_edge,
+    curve_cache_has_ordered_knots, merge_curve_plan, orient_b5_supports_to_edge,
 };
 use faces::{orient_loop_members, ownership_plan};
 use pcurves::{
@@ -1143,14 +1143,14 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::super::graph::{
-        loop_chain_closes, B5ExtrusionDirectrix, B5ExtrusionSurface, B5Face, B5Graph, B5Loop,
-        B5LoopMetadata, B5OffsetSurface, B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile,
-        B5SphereGreatCirclePcurve, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
+        bounded_occurrence_range, edge_pcurve_parameters, loop_chain_closes, B5ExtrusionDirectrix,
+        B5ExtrusionSurface, B5Face, B5Graph, B5Loop, B5LoopMetadata, B5OffsetSurface,
+        B5OpaquePcurve, B5ParameterIncidence, B5Pcurve, B5Profile, B5SphereGreatCirclePcurve,
+        B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
     };
     use super::edges::{
-        b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
-        curve_cache_has_ordered_knots, edge_pcurve_parameters, merge_curve_plan, ordered_subrange,
-        orient_b5_supports_to_edge,
+        b5_edge_support_definition, b5_supports_follow_edge, curve_cache_has_ordered_knots,
+        merge_curve_plan, ordered_subrange, orient_b5_supports_to_edge,
     };
     use super::faces::{orient_loop_members, ownership_plan};
     use super::pcurves::{

@@ -14,10 +14,11 @@ use cadmpeg_ir::math::{Point2, Vector3};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use super::super::graph::{
-    evaluate_pcurve, B5Graph, B5Pcurve, B5SphereGreatCirclePcurve, B5Surface,
+    edge_pcurve_parameters, evaluate_pcurve, B5Graph, B5Pcurve, B5SphereGreatCirclePcurve,
+    B5Surface,
 };
 use super::super::vecmath::{add, cross, scale};
-use super::edges::{edge_pcurve_parameters, ordered_subrange};
+use super::edges::ordered_subrange;
 use super::{
     annotate, distance, dot, expand_knots, point3, subtract, unit, vector, CurvePlan, HelixPlan,
     TransferPlan, POINT_TOLERANCE,
