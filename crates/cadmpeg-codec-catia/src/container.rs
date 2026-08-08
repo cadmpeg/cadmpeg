@@ -413,7 +413,7 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
         return Some(preamble);
     }
 
-    segments
+    let candidates = segments
         .iter()
         .filter(|segment| segment.range.start >= directory_length)
         .filter_map(|segment| {
@@ -424,44 +424,111 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
                 segment.range.clone(),
             ))
         })
-        .max_by_key(|(count, preferred, _)| (*count, *preferred))
-        .map(|(_, _, range)| range)
+        .collect::<Vec<_>>();
+    let best_count = candidates.iter().map(|(count, _, _)| *count).max()?;
+    let mut best = candidates
+        .into_iter()
+        .filter(|(count, _, _)| *count == best_count)
+        .collect::<Vec<_>>();
+    let preferred = best.iter().any(|(_, preferred, _)| *preferred);
+    if preferred {
+        best.retain(|(_, preferred, _)| *preferred);
+    }
+    (best.len() == 1).then(|| best.pop().expect("one candidate remains").2)
 }
 
 fn count_e5_records(data: &[u8]) -> usize {
-    let mut count = 0;
-    let mut position = 0;
-    while position + 13 <= data.len() {
-        let Some(relative) = data[position..]
+    e5_record_spans(data).len()
+}
+
+/// Return the longest declared-stride E5 walk in a bounded byte region.
+///
+/// A stream may place the unframed `05 08 01` coordinate roster between E5
+/// records. No other gap is part of the walk: accepting arbitrary bytes here
+/// would turn an incidental marker into a record and could select the wrong
+/// family before the route decoder sees the data.
+pub(crate) fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
+    let mut best = Vec::new();
+    let mut search = 0;
+    while search < data.len() {
+        let Some(relative) = data[search..]
             .windows(E5_MARKER.len())
             .position(|bytes| bytes == E5_MARKER)
         else {
             break;
         };
-        let record = position + relative;
-        let Some(size) = data
-            .get(record + 5..record + 7)
-            .map(|bytes| usize::from(u16::from_le_bytes([bytes[0], bytes[1]])))
-        else {
+        let start = search + relative;
+        let (walk, consumed) = e5_record_walk(data, start);
+        if walk.len() > best.len() {
+            best = walk;
+        }
+        search = consumed.max(start.saturating_add(1));
+    }
+    best
+}
+
+fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {
+    let mut walk = Vec::new();
+    let mut position = start;
+    let mut consumed = start;
+    while let Some(end) = e5_record_end(data, position) {
+        walk.push(position..end);
+        position = end;
+        consumed = end;
+
+        if e5_marker_at(data, position) {
+            continue;
+        }
+        let Some(next) = skip_e5_vertex_rows(data, position) else {
             break;
         };
-        let Some(end) = record.checked_add(size + 13) else {
-            break;
-        };
-        if end > data.len() {
+        consumed = next;
+        if !e5_marker_at(data, next) {
             break;
         }
-        count += 1;
-        position = end;
+        position = next;
     }
-    count
+    (walk, consumed)
+}
+
+fn e5_record_end(data: &[u8], position: usize) -> Option<usize> {
+    if !e5_marker_at(data, position) {
+        return None;
+    }
+    let header = data.get(position..position.checked_add(7)?)?;
+    let size = usize::from(u16::from_le_bytes([header[5], header[6]]));
+    let end = position.checked_add(size.checked_add(13)?)?;
+    (end <= data.len()).then_some(end)
+}
+
+fn skip_e5_vertex_rows(data: &[u8], mut position: usize) -> Option<usize> {
+    let start = position;
+    while vertex_row_at(data, position) {
+        position = position.checked_add(15)?;
+    }
+    (position != start).then_some(position)
+}
+
+fn e5_marker_at(data: &[u8], position: usize) -> bool {
+    let Some(end) = position.checked_add(E5_MARKER.len()) else {
+        return false;
+    };
+    data.get(position..end) == Some(E5_MARKER.as_slice())
+}
+
+fn vertex_row_at(data: &[u8], position: usize) -> bool {
+    let Some(row_end) = position.checked_add(15) else {
+        return false;
+    };
+    data.get(position..row_end)
+        .is_some_and(|row| row[..3] == [0x05, 0x08, 0x01])
 }
 
 /// Standard-nested BREP-spine markers used for variant identification.
 const EDGE_DELIMITER: &[u8; 8] = &[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
-const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
+pub(crate) const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -1245,6 +1312,31 @@ mod tests {
     };
     use crate::variant::Variant;
 
+    fn append_e5_test_record(bytes: &mut Vec<u8>, id: u32) {
+        append_e5_test_record_with_payload(bytes, id, &[]);
+    }
+
+    fn append_e5_test_record_with_payload(bytes: &mut Vec<u8>, id: u32, payload: &[u8]) {
+        bytes.extend_from_slice(super::E5_MARKER);
+        bytes.extend_from_slice(&[0xfe, 0x00]);
+        bytes.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+        bytes.extend_from_slice(&[0x00, 0x00]);
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(payload);
+    }
+
+    fn outer_with_preamble(body: &[u8]) -> Vec<u8> {
+        let directory_length = 32usize;
+        let directory_offset = 512usize;
+        let mut bytes = vec![0u8; directory_length];
+        bytes[..super::OUTER_MAGIC.len()].copy_from_slice(super::OUTER_MAGIC);
+        bytes[8..12].copy_from_slice(&(directory_offset as u32).to_be_bytes());
+        bytes[12..16].copy_from_slice(&(directory_length as u32).to_be_bytes());
+        bytes.extend_from_slice(body);
+        bytes.resize(directory_offset + directory_length, 0);
+        bytes
+    }
+
     #[test]
     fn coherent_e5_stream_overrides_nested_fbb_markers() {
         let inner = InnerDir {
@@ -1260,6 +1352,51 @@ mod tests {
             identify_variant(Some(&inner), Some(&[]), &census, true),
             Variant::E5Stream
         );
+    }
+
+    #[test]
+    fn e5_stream_requires_declared_stride_or_coordinate_rows_between_records() {
+        let mut body = Vec::new();
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+            body.push(0x7f);
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+
+        let mut body = Vec::new();
+        for id in 0..10 {
+            append_e5_test_record(&mut body, id);
+            if id != 9 {
+                body.extend_from_slice(&[0x05, 0x08, 0x01]);
+                body.extend_from_slice(&[0; 12]);
+            }
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_some());
+    }
+
+    #[test]
+    fn e5_stream_ignores_markers_inside_framed_payloads() {
+        let mut false_record = Vec::new();
+        append_e5_test_record(&mut false_record, 100);
+        let mut body = Vec::new();
+        append_e5_test_record_with_payload(&mut body, 0, &false_record);
+        for id in 1..9 {
+            append_e5_test_record(&mut body, id);
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn equal_unpreferred_e5_segment_walks_are_ambiguous() {
+        let mut body = Vec::new();
+        for segment in 0..2 {
+            body.extend_from_slice(super::FINJPL_MARKER);
+            body.extend_from_slice(&0x0000_0080u32.to_be_bytes());
+            for id in 0..10 {
+                append_e5_test_record(&mut body, segment * 10 + id);
+            }
+        }
+        assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
     }
 
     #[test]
