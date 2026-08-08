@@ -3497,36 +3497,7 @@ fn section_linear_distance_coordinate(
     if equal_v == Some(true) && equal_u != Some(true) {
         return Some(0);
     }
-    let incident_fixed_coordinates = [first, second]
-        .into_iter()
-        .filter_map(|point_id| {
-            let coordinates = table
-                .rows
-                .iter()
-                .filter(|segment| {
-                    segment.point_ids.contains(&point_id)
-                        && table.external_id_count(segment.external_id) == 1
-                        && segment.kind == crate::feature::FeatureSegmentKind::Line
-                })
-                .filter_map(|segment| {
-                    section_line_entity_fixed_coordinate(definition, segment.external_id)
-                })
-                .collect::<BTreeSet<_>>();
-            let coordinates = coordinates.into_iter().collect::<Vec<_>>();
-            let [coordinate] = coordinates.as_slice() else {
-                return None;
-            };
-            Some(*coordinate)
-        })
-        .collect::<Vec<_>>();
-    let [first_fixed, second_fixed] = incident_fixed_coordinates.as_slice() else {
-        return None;
-    };
-    if first_fixed == second_fixed {
-        Some(1usize.checked_sub(*first_fixed)?)
-    } else {
-        None
-    }
+    None
 }
 
 pub(crate) fn resolved_section_points(

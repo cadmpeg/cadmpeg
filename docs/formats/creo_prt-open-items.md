@@ -680,14 +680,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bytes to give the line its endpoints. `decode.rs` `saved_section_missing_line_geometry` takes the two unmated endpoints of the other evaluated entities, which assumes the profile is closed and that the missing line closes it. No byte of the missing line is read. An open profile with a dangling line gives a chord between the two free ends, and that geometry seeds trim-vertex coordinates and generated side surfaces.
 
-### SP-35. Type-0 distance axis without a spanning segment
-
-**Question.** Which field selects the measurement axis of a signed type-0 linear-distance relation when no spanning segment and no equal-coordinate pair selects it?
-
-**Known.** `creo_prt.md` §5 defines two selectors: a spanning segment's unique orientation component, and equal `u` for a vertical distance or equal `v` for a horizontal distance.
-
-**Need.** We must know the selector to solve the section variable. `decode.rs` `section_linear_distance_coordinate` falls back to the orientation of the lines incident to each operand point, and accepts the axis when both points give one agreeing orientation. It does not require the two points to lie on one line, so a width dimension between two parallel walls is solved as a distance along the walls.
-
 ### SP-36. Generated cap reversal polarity
 
 **Question.** Which field gives the reversal state of the start cap of a generated rectilinear sweep?

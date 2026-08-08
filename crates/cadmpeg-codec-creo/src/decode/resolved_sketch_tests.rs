@@ -38,6 +38,74 @@ fn equal_distance_chamfer_setback_uses_nearest_forward_parallel_support() {
 }
 
 #[test]
+fn signed_distance_without_a_spanning_line_requires_equal_endpoint_coordinate() {
+    let line = |external_id, point_ids| crate::feature::FeatureSegment {
+        kind: crate::feature::FeatureSegmentKind::Line,
+        directions: [None; 3],
+        point_ids,
+        center_id: None,
+        arc_orientation: None,
+        vertical_horizontal: Some(0),
+        radius_ref: None,
+        radius2_ref: None,
+        external_id,
+        body: Vec::new(),
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: None,
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 2,
+            has_elided_prototype: false,
+            entity_ref: None,
+            rows: vec![line(10, [1, 3]), line(11, [2, 4])],
+            circle_rows: Vec::new(),
+            point_rows: Vec::new(),
+            centered_line_rows: Vec::new(),
+            reference_line_rows: Vec::new(),
+            bounded_curve_rows: Vec::new(),
+            conic_rows: Vec::new(),
+            opaque_rows: Vec::new(),
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+    let segments = definition
+        .segments
+        .as_ref()
+        .expect("segments")
+        .rows
+        .iter()
+        .collect::<Vec<_>>();
+    let coordinates = BTreeMap::from([(1, [Some(0.0), Some(1.0)]), (2, [Some(2.0), Some(3.0)])]);
+
+    assert_eq!(
+        section_linear_distance_coordinate(
+            &definition,
+            &segments,
+            1,
+            2,
+            &coordinates,
+            &[],
+            &BTreeSet::new(),
+        ),
+        None
+    );
+}
+
+#[test]
 fn chamfer_requires_every_affected_support_plane_to_be_placed() {
     let mut scan = crate::container::scan_bytes(Vec::new());
     scan.surfaces.rows.push(crate::surface::SurfaceRow {
