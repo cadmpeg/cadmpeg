@@ -7266,11 +7266,13 @@ fn emit_topology(
             continue;
         };
         let end = vertices.get(&end_fields.vertex).cloned().or_else(|| {
-            (end_fin == fin.xmt
-                && fin_fields.vertex == 1
-                && end_fields.vertex == 1
-                && fin_fields.forward == fin.xmt
-                && fin_fields.backward == fin.xmt)
+            // A partnered closed FIN repeats the null vertex and closes its own
+            // forward/backward links. Its endpoint is the same analytic point
+            // as the current FIN's synthesized start, even when `end_fin` is a
+            // distinct radial partner record.
+            (end_fields.vertex == 1
+                && end_fields.forward == end_fin
+                && end_fields.backward == end_fin)
                 .then(|| start.clone())
         });
         let Some(end) = end else {
