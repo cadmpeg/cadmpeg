@@ -611,6 +611,21 @@ fn topology_accepts_fixed_record_envelope_escape() {
 }
 
 #[test]
+fn topology_prefers_escaped_body_shape_over_direct_extended_xmt() {
+    let mut stream = topology_partition_stream();
+    let shell = stream
+        .windows(4)
+        .position(|window| window == [0, 13, 0, 3])
+        .expect("shell record");
+    stream.insert(shell + 2, 0xff);
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(graph.get(13, 3).map(|node| node.pos), Some(shell));
+    assert_eq!(graph.body_shape_shells().len(), 1);
+    assert_eq!(graph.body_shape_face_count(), 1);
+}
+
+#[test]
 fn topology_iterates_each_record_family_in_physical_order() {
     let mut stream = Vec::new();
     for (xmt, x) in [(77, 0.01), (3, 0.02)] {
