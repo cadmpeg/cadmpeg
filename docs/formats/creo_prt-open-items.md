@@ -342,14 +342,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the condition to apply prototype `local_sys`, radius, and spline fields to the correct surface row. A wrong selection gives one surface the geometry of a different surface of the same family. The per-row uniqueness filter rejects two prototypes that select one row; it does not reject two prototypes that each select a different wrong row.
 
-### GS-26. Positional cylinder terminal radius boundary
-
-**Question.** Which token boundary separates the twelve-slot `local_sys` from the terminal radius in a positional cylinder body?
-
-**Known.** `creo_prt.md` §3.2 states that the body holds exactly one complete twelve-slot positional `local_sys` and ends with one positive scalar radius. It gives no marker for the radius token start.
-
-**Need.** We must know the boundary to read the radius and the local system. `surface.rs` `decode_local_system_cylinder_frame` and `decode_zero_support_cylinder_origin_radius` accept the lowest offset whose scalar decodes positive and ends at the body end. The sibling function `decode_positional_cylinder_origin_radius` collects every such offset and requires exactly one.
-
 ### GS-28. Curve parameter-record suffix boundary
 
 **Question.** Which rule selects the body and suffix boundary of a curve parameter record when more than one four-reference suffix start is byte-valid?

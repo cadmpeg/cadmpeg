@@ -396,6 +396,8 @@ length and the first corner's three coordinates, then the second corner's first
 two coordinates in the positional surface-row scalar lane. An opaque third
 coordinate follows that prefix. The body then contains exactly one complete
 twelve-slot positional `local_sys` and ends with one positive scalar radius.
+The terminal radius has exactly one byte-valid positive scalar start that
+consumes the body remainder; zero or multiple starts leave the body unresolved.
 For an X- or Y-axis carrier, exactly one stored corner-coordinate difference
 equals the positive axial length and the other stored difference equals twice
 the radius. Slots 9 through 11 of the local system contain the model-space

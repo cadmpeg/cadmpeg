@@ -3700,11 +3700,7 @@ fn decode_local_system_cylinder_frame(
         *value = decoded;
         cursor = next;
     }
-    let radius_start = (cursor..body.len()).find(|start| {
-        scalar::decode(body, *start)
-            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
-    })?;
-    let (radius, _) = scalar::decode(body, radius_start)?;
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, cursor)?;
     let frames = (cursor..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_plane_local_system_slots(
@@ -4249,19 +4245,11 @@ fn decode_local_system_suffix_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    let radius_starts = (1..body.len())
-        .filter_map(|start| {
-            let (radius, end) = scalar::decode(body, start)?;
-            (end == body.len() && radius.is_finite() && radius > 0.0).then_some((start, radius))
-        })
-        .collect::<Vec<_>>();
-    let [(radius_start, radius)] = radius_starts.as_slice() else {
-        return None;
-    };
-    let frames = (0..*radius_start)
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, 1)?;
+    let frames = (0..radius_start)
         .filter_map(|start| {
             scalar::decode_positional_cylinder_local_system_slots(
-                body.get(start..*radius_start)?,
+                body.get(start..radius_start)?,
                 cache,
             )
         })
@@ -4285,7 +4273,7 @@ fn decode_local_system_suffix_cylinder_frame(
     let [slots] = frames.as_slice() else {
         return None;
     };
-    cylinder_frame_from_local_system(slots, *radius)
+    cylinder_frame_from_local_system(slots, radius)
 }
 
 fn decode_compound_local_system_cylinder_frame(
@@ -4366,11 +4354,7 @@ fn decode_zero_support_cylinder_origin_radius(
     zero_support: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<([f64; 3], f64)> {
-    let radius_start = (start..body.len()).find(|candidate| {
-        scalar::decode(body, *candidate)
-            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
-    })?;
-    let (radius, _) = scalar::decode(body, radius_start)?;
+    let (radius_start, radius) = unique_terminal_positive_scalar(body, start)?;
     let origins = (start + zero_support.len()..radius_start)
         .filter_map(|origin_start| {
             (body.get(origin_start - zero_support.len()..origin_start) == Some(zero_support)).then(
@@ -4382,6 +4366,19 @@ fn decode_zero_support_cylinder_origin_radius(
         return None;
     };
     Some((*origin, radius))
+}
+
+fn unique_terminal_positive_scalar(body: &[u8], start: usize) -> Option<(usize, f64)> {
+    let candidates = (start..body.len())
+        .filter_map(|offset| {
+            let (value, end) = scalar::decode(body, offset)?;
+            (end == body.len() && value.is_finite() && value > 0.0).then_some((offset, value))
+        })
+        .collect::<Vec<_>>();
+    let [(offset, value)] = candidates.as_slice() else {
+        return None;
+    };
+    Some((*offset, *value))
 }
 
 fn decode_positional_cylinder_origin(
@@ -6916,12 +6913,28 @@ mod tests {
             &scalar::ScalarCache::default()
         )
         .is_none());
+        let mut ambiguous_terminal = body[..body.len() - 3].to_vec();
+        ambiguous_terminal.extend_from_slice(&[0x46, 0, 0, 0, 0, 0, 0, 0xe4]);
+        assert!(decode_local_system_suffix_cylinder_frame(
+            &ambiguous_terminal,
+            &scalar::ScalarCache::default()
+        )
+        .is_none());
         let mut nonorthogonal = body;
         nonorthogonal[68..71].copy_from_slice(&[41, 227, 51]);
         assert!(
             decode_positional_cylinder_frame(&nonorthogonal, &scalar::ScalarCache::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn terminal_positive_scalar_requires_a_unique_boundary() {
+        let unique = [0x46, 0, 0, 0, 0, 0, 0, 0];
+        assert_eq!(unique_terminal_positive_scalar(&unique, 0), Some((0, 2.0)));
+
+        let ambiguous = [0x46, 0, 0, 0, 0, 0x2f, 0x10, 0];
+        assert!(unique_terminal_positive_scalar(&ambiguous, 0).is_none());
     }
 
     #[test]

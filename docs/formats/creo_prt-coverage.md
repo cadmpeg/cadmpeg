@@ -80,6 +80,8 @@ fixtures, claims above L1 remain unproven.
 - Eight-slot type-24 terminal frames require mutually exclusive
   single-diameter and square-radial invariants; a collision withholds the
   carrier.
+- Positional cylinder terminal radii require one positive scalar start that
+  consumes the body remainder; overlapping starts withhold the carrier.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
   namespaces independent; a complete numeric collision between them withholds
   the section frame.
