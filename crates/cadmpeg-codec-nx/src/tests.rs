@@ -1518,8 +1518,9 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     let construction = ProceduralCurveId("synthetic:boundary-intersection".into());
     ir.model.curves.push(Curve {
         id: curve.clone(),
-        geometry: CurveGeometry::Procedural {
-            construction: construction.clone(),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
         },
         source_object: None,
     });
@@ -1586,7 +1587,10 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     else {
         unreachable!()
     };
-    assert_eq!(ir.model.procedural_curves[0].cache_fit_tolerance, None);
+    assert_eq!(
+        ir.model.procedural_curves[0].cache_fit_tolerance,
+        Some(1.0e-8)
+    );
     assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
     assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
     for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
@@ -1624,30 +1628,6 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
                 < 1.0e-8
         );
     }
-    let ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
-        ..
-    } = &mut ir.model.procedural_curves[0].definition
-    else {
-        unreachable!()
-    };
-    parameterization.pcurves[1] = PcurveGeometry::Line {
-        origin: Point2::new(0.0, 1.0),
-        direction: Point2::new(1.0, 0.0),
-    };
-    assert!(cadmpeg_ir::eval::model_curve_point_by_id(
-        &cadmpeg_ir::index::ModelIndex::new(&ir),
-        &ir.model.procedural_curves[0].curve,
-        0.5,
-    )
-    .is_none());
-    assert!(cadmpeg_ir::eval::model_curve_parameter_near_point(
-        &ir,
-        &ir.model.procedural_curves[0].curve,
-        Point3::new(5.0, 0.0, 0.0),
-        0.5,
-    )
-    .is_none());
 }
 
 #[test]
@@ -7610,7 +7590,7 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
 }
 
 #[test]
-fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
+fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -7631,29 +7611,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact plane intersection evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact plane intersection inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     let edge = result
         .ir
         .model
@@ -7661,12 +7624,12 @@ fn terminal_plane_intersection_establishes_exact_bidirectional_charts() {
         .iter()
         .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
         .expect("carrying edge");
-    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
-fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
+fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -7689,35 +7652,12 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert!(parameterization.pcurves.iter().any(|pcurve| {
-        matches!(
-            pcurve,
-            PcurveGeometry::Line { direction, .. }
-                if direction.u == 0.0 && direction.v != 0.0
-        )
-    }));
-    for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact generator evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact generator inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 
     let second_point = stream
@@ -7737,7 +7677,7 @@ fn terminal_cylinder_generator_establishes_exact_bidirectional_charts() {
 }
 
 #[test]
-fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
+fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
     let intersection = stream
         .windows(4)
@@ -7764,34 +7704,17 @@ fn terminal_cone_generator_establishes_exact_bidirectional_charts() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let procedural = &result.ir.model.procedural_curves[0];
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-        parameterization: Some(parameterization),
+        parameterization: None,
         ..
     } = &procedural.definition
     else {
-        panic!("charted tolerant intersection");
+        panic!("unresolved tolerant intersection");
     };
-    assert_eq!(parameterization.parameter_range, [0.0, 1.0]);
-    for parameter in [0.0, 0.5, 1.0] {
-        let point = cadmpeg_ir::eval::model_curve_point_by_id(
-            &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-            &procedural.curve,
-            parameter,
-        )
-        .expect("exact cone generator evaluates");
-        let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-            &result.ir,
-            &procedural.curve,
-            point,
-            parameter,
-        )
-        .expect("exact cone generator inverts");
-        assert!((inverse - parameter).abs() < 1.0e-10);
-    }
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
-fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
+fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolved() {
     let terminal_stream = || {
         let mut stream = charted_intersection_with_edge_endpoint_witnesses_stream();
         let intersection = stream
@@ -7825,59 +7748,28 @@ fn terminal_sphere_and_torus_meridians_establish_exact_bidirectional_charts() {
     for (family, record) in [("sphere", sphere), ("torus", torus)] {
         let mut stream = terminal_stream();
         stream.extend(record);
-        let mut result = NxCodec
+        let result = NxCodec
             .decode(
                 &mut Cursor::new(prt_with_partition(&stream)),
                 &DecodeOptions::default(),
             )
             .unwrap();
-        if family == "torus" {
-            let ProceduralCurveDefinition::TolerantIntersection {
-                parameterization: Some(parameterization),
-                ..
-            } = &mut result.ir.model.procedural_curves[0].definition
-            else {
-                panic!("exact torus meridian");
-            };
-            for pcurve in &mut parameterization.pcurves {
-                if let PcurveGeometry::Line { origin, direction } = pcurve {
-                    if direction.u == 0.0 && direction.v != 0.0 {
-                        origin.v += std::f64::consts::TAU;
-                    }
-                }
-            }
-        }
         let procedural = &result.ir.model.procedural_curves[0];
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::TolerantIntersection {
-            parameterization: Some(parameterization),
+            parameterization: None,
             ..
         } = &procedural.definition
         else {
-            panic!("exact {family} meridian");
+            panic!("unresolved {family} meridian");
         };
-        assert!(parameterization.pcurves.iter().any(|pcurve| {
-            matches!(
-                pcurve,
-                PcurveGeometry::Line { direction, .. }
-                    if direction.u == 0.0 && direction.v != 0.0
-            )
-        }));
-        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-            let point = cadmpeg_ir::eval::model_curve_point_by_id(
-                &cadmpeg_ir::index::ModelIndex::new(&result.ir),
-                &procedural.curve,
-                parameter,
-            )
-            .unwrap_or_else(|| panic!("{family} meridian evaluates"));
-            let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point(
-                &result.ir,
-                &procedural.curve,
-                point,
-                parameter,
-            )
-            .unwrap_or_else(|| panic!("{family} meridian inverts at {parameter}"));
-            assert!((inverse - parameter).abs() < 1.0e-8);
-        }
+        let edge = result
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.curve.as_ref() == Some(&procedural.curve))
+            .expect("carrying edge");
+        assert_eq!(edge.param_range, None);
         assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
     }
 }

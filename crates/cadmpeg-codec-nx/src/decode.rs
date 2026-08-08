@@ -8715,13 +8715,17 @@ fn exact_boundary_pcurve(
             && direction.v.is_finite()
             && (direction.u != 0.0 || direction.v != 0.0))
             .then_some(())?;
-        return Some(PcurveGeometry::Line {
+        let candidate = PcurveGeometry::Line {
             origin: Point2::new(
                 first.u - direction.u * range[0],
                 first.v - direction.v * range[0],
             ),
             direction,
-        });
+        };
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     if matches!(
         &carrier.geometry,
@@ -8754,7 +8758,10 @@ fn exact_boundary_pcurve(
                 return None;
             }
         }
-        return Some(candidate);
+        return exact_boundary_pcurve_matches_carrier(
+            ir, curve, surface, &candidate, range, tolerance,
+        )
+        .then_some(candidate);
     }
     let SurfaceGeometry::Nurbs(nurbs) = &carrier.geometry else {
         return None;
@@ -8775,47 +8782,113 @@ fn exact_boundary_pcurve(
             return None;
         }
     }
-    let axes = [
-        ([parameters[0].u, parameters[1].u], domain.0),
-        ([parameters[0].v, parameters[1].v], domain.1),
-    ];
+    let axes = [domain.0, domain.1];
     let candidates = axes
         .into_iter()
         .enumerate()
-        .filter_map(|(constant_axis, (values, axis_domain))| {
-            let scale = (axis_domain[1] - axis_domain[0]).abs().max(1.0);
-            let parameter_tolerance = 1.0e-8 * scale;
-            let boundary = axis_domain.into_iter().find(|boundary| {
-                values
-                    .iter()
-                    .all(|value| (*value - *boundary).abs() <= parameter_tolerance)
-            })?;
-            let varying = if constant_axis == 0 {
-                [parameters[0].v, parameters[1].v]
-            } else {
-                [parameters[0].u, parameters[1].u]
-            };
-            ((varying[1] - varying[0]).abs() > parameter_tolerance).then(|| {
-                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
-                let (origin, direction) = if constant_axis == 0 {
-                    (
-                        Point2::new(boundary, varying[0] - delta * range[0]),
-                        Point2::new(0.0, delta),
-                    )
+        .flat_map(|(constant_axis, axis_domain)| {
+            axis_domain.into_iter().filter_map(move |boundary| {
+                let varying = if constant_axis == 0 {
+                    [parameters[0].v, parameters[1].v]
                 } else {
-                    (
-                        Point2::new(varying[0] - delta * range[0], boundary),
-                        Point2::new(delta, 0.0),
-                    )
+                    [parameters[0].u, parameters[1].u]
                 };
-                PcurveGeometry::Line { origin, direction }
+                let delta = (varying[1] - varying[0]) / (range[1] - range[0]);
+                (delta.is_finite() && delta != 0.0).then(|| {
+                    let (origin, direction) = if constant_axis == 0 {
+                        (
+                            Point2::new(boundary, varying[0] - delta * range[0]),
+                            Point2::new(0.0, delta),
+                        )
+                    } else {
+                        (
+                            Point2::new(varying[0] - delta * range[0], boundary),
+                            Point2::new(delta, 0.0),
+                        )
+                    };
+                    PcurveGeometry::Line { origin, direction }
+                })
             })
+        })
+        .filter(|candidate| {
+            exact_boundary_pcurve_matches_carrier(ir, curve, surface, candidate, range, tolerance)
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
         return None;
     };
     Some(candidate.clone())
+}
+
+fn exact_boundary_pcurve_matches_carrier(
+    ir: &CadIr,
+    curve: &CurveId,
+    surface: &SurfaceId,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    tolerance: f64,
+) -> bool {
+    let Some(carrier) = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)
+    else {
+        return false;
+    };
+    let Some(curve_breaks) = exact_boundary_curve_breaks(&carrier.geometry, range) else {
+        return false;
+    };
+    let Some(surface_breaks) = boundary_curve_affine_breaks(ir, surface, pcurve, range) else {
+        return false;
+    };
+    let mut breaks = curve_breaks;
+    breaks.extend(surface_breaks);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    breaks.into_iter().all(|parameter| {
+        let Some(uv) = pcurve_uv(pcurve, parameter) else {
+            return false;
+        };
+        let Some(expected) = decoded_surface_point(ir, surface, uv.u, uv.v) else {
+            return false;
+        };
+        let Some(actual) = model_curve_point(ir, curve, parameter) else {
+            return false;
+        };
+        let error = point_distance(expected, actual);
+        error.is_finite() && error <= tolerance
+    })
+}
+
+fn exact_boundary_curve_breaks(geometry: &CurveGeometry, range: [f64; 2]) -> Option<Vec<f64>> {
+    let mut breaks = match geometry {
+        CurveGeometry::Line { .. } => range.to_vec(),
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 1
+                && !nurbs.periodic
+                && !nurbs.weights.as_ref().is_some_and(|weights| {
+                    weights
+                        .windows(2)
+                        .any(|pair| pair[0].to_bits() != pair[1].to_bits())
+                }) =>
+        {
+            let degree = usize::try_from(nurbs.degree).ok()?;
+            let count = nurbs.control_points.len();
+            if degree > count {
+                return None;
+            }
+            nurbs.knots.get(degree..=count)?.to_vec()
+        }
+        _ => return None,
+    };
+    breaks.retain(|parameter| {
+        parameter.is_finite() && *parameter >= range[0] && *parameter <= range[1]
+    });
+    breaks.extend(range);
+    breaks.sort_by(f64::total_cmp);
+    breaks.dedup_by(|first, second| first.to_bits() == second.to_bits());
+    Some(breaks)
 }
 
 fn exact_analytic_isocurve_pcurve(
@@ -12635,6 +12708,96 @@ mod tests {
                     });
             assert!((inverse - parameter).abs() < 1.0e-10);
         }
+    }
+
+    #[test]
+    fn boundary_pcurve_requires_an_affine_carrier_witness() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:bowed-boundary-curve".into());
+        let surface = SurfaceId("nx:test:boundary-plane".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Nurbs(NurbsCurve {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(5.0, 5.0, 0.0),
+                    Point3::new(10.0, 0.0, 0.0),
+                ],
+                weights: None,
+                periodic: false,
+            }),
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+
+        assert!(super::exact_boundary_pcurve(
+            &ir,
+            &curve,
+            &surface,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            [0.0, 1.0],
+            1.0e-8,
+        )
+        .is_none());
+
+        ir.model.curves[0].geometry = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(10.0, 0.0, 0.0),
+        };
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { .. })
+        ));
+    }
+
+    #[test]
+    fn boundary_pcurve_accepts_a_certified_affine_nurbs_boundary() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let curve = CurveId("nx:test:affine-nurbs-boundary-curve".into());
+        let surface = SurfaceId("nx:test:affine-nurbs-boundary-surface".into());
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(3.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: affine_nurbs_surface(0.0),
+            source_object: None,
+        });
+
+        assert!(matches!(
+            super::exact_boundary_pcurve(
+                &ir,
+                &curve,
+                &surface,
+                [Point3::new(0.0, 0.0, 0.0), Point3::new(3.0, 0.0, 0.0)],
+                [0.0, 1.0],
+                1.0e-8,
+            ),
+            Some(PcurveGeometry::Line { origin, direction })
+                if origin.v == 0.0 && direction.u == 1.0 && direction.v == 0.0
+        ));
     }
 
     fn affine_nurbs_surface(z: f64) -> SurfaceGeometry {

@@ -224,7 +224,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the witness to construct the boundary pcurve from the file. Endpoint inversion alone fixes only the two ends, so the interior of the interval carries no evidence, and a straight parameter-space chart on a plane asserts a straight model-space edge.
 
-**Note.** The decoder completes this case in `exact_boundary_pcurve` (`crates/cadmpeg-codec-nx/src/decode.rs`). The plane and quadric branches invert the two EDGE vertices, accept them when they map back inside the EDGE tolerance, and interpolate between them. The 3D carrier reference that the function receives is used only for the analytic-isocurve attempt, so no branch compares the interior of the interval against the carrier. The NURBS branch selects a constant-parameter boundary with an uncited `1.0e-8` relative threshold.
 
 ### PS-27. Unresolved EDGE end vertex
 
