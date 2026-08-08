@@ -640,14 +640,6 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the relation to assign material and appearance state to neutral faces.
 
-### AM-11. JT 9 high-degree lane count
-
-**Question.** What field gives the number of high-degree face-attribute-mask lanes in a JT 9 topologically compressed representation?
-
-**Known.** `siemens_nx.md` §2.3 "The JT 9 topologically compressed representation begins with Int32 Compressed Data Packet Mk. 2" defines the fixed prefix packets, the split packets, the vertex-record header agreement test, and the rule that exactly one lane count must satisfy it. It states that one or more high-degree lanes occur. It gives no count field and no maximum.
-
-**Need.** We must know the field to frame the packet sequence directly. The decoder tries lane counts from one to sixty-four and keeps the unique count that satisfies the agreement test. Sixty-four is not a format bound. A representation that carries more lanes matches no count, and the decoder then drops the topology, vertex-record, and coordinate-array data and every mesh derived from them.
-
 ## 4. Test evidence
 
 ### TE-01. Equal topology goldens
