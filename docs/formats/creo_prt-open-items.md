@@ -348,14 +348,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the extent to apply the uniqueness rule to the complete row. `reference.rs` `line3d_lines` and `arc_z_circles` compute the true bound and then reduce it to 384 and 256 bytes. Neither constant comes from the format. A competing run outside the window makes the decoder report one candidate where the specification requires a withhold.
 
-### GS-30. `entity(line)` six-scalar suffix start
-
-**Question.** Which byte offset begins the six-scalar endpoint suffix of an `entity(line)` row?
-
-**Known.** `creo_prt.md` §8.5 states that a positional row defines a line only when exactly six finite scalars consume the complete suffix. It states no uniqueness rule for the start offset, where it states one for `line3d` and `arc_z`.
-
-**Need.** We must know the start to read the endpoints. `reference.rs` `scalar_suffix` accepts the lowest qualifying offset. A qualifying run that begins inside the row header gives three header-derived coordinates, and the record carries no entity identifier for a cross-check.
-
 ### GS-31. Positional conic local-system boundary
 
 **Question.** Which end offset bounds the twelve-slot local system of a positional conic row?

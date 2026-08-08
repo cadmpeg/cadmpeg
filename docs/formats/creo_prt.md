@@ -3701,8 +3701,10 @@ row ends at the following named entity record. The row prefix and display
 attributes precede this six-slot suffix. The suffix uses the section-local
 scalar cache and the signed coordinate DICT lane. `18` immediately before a
 complete coordinate token is a standalone zero slot. A positional row defines
-a line only when exactly six finite scalars consume the complete suffix. The two
-endpoint positions are model coordinates in the active principal length unit.
+a line only when exactly six finite scalars consume the complete suffix and
+exactly one byte offset starts that suffix. Zero or multiple qualifying starts
+leave the row unresolved. The two endpoint positions are model coordinates in
+the active principal length unit.
 
 An `ent_list(line3d)` positional row repeats its canonical entity identifier
 on both sides of `e3`, followed by its compact type and `e2` body opener. The

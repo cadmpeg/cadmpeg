@@ -269,18 +269,25 @@ fn arc_z_coordinate(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(
 }
 
 fn scalar_suffix(row: &[u8], count: usize, cache: &ScalarCache) -> Option<Vec<f64>> {
-    (0..row.len())
-        .filter_map(|start| {
+    let mut candidate = None;
+    for start in 0..row.len() {
+        let Some(values) = (|| {
             let mut cursor = crate::psb::Cursor::at(row, start);
             let mut values = Vec::with_capacity(count);
             while values.len() < count {
                 values.push(cursor.take_with(|data, pos| coordinate(data, pos, cache))?);
             }
             (cursor.pos() == row.len() && values.iter().all(|value| value.is_finite()))
-                .then_some((start, values))
-        })
-        .min_by_key(|(start, _)| *start)
-        .map(|(_, values)| values)
+                .then_some(values)
+        })() else {
+            continue;
+        };
+        if candidate.is_some() {
+            return None;
+        }
+        candidate = Some(values);
+    }
+    candidate
 }
 
 fn find_in(data: &[u8], needle: &[u8], start: usize, end: usize) -> Option<usize> {
@@ -1310,6 +1317,16 @@ mod tests {
             \x18\x93\x27\x14\x0f\x41\xcd\xf1\x8c\x3e\x32\xfb\x7f\x13\x0b\
             \xe0\x00entity(text)\0";
         assert_eq!(lines(payload).len(), 1);
+    }
+
+    #[test]
+    fn scalar_suffix_withholds_competing_start_offsets() {
+        let first_only = [0x46, 0, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&first_only, 6, &ScalarCache::from_section(&first_only)).is_some());
+        let second_only = [0, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&second_only, 6, &ScalarCache::from_section(&second_only)).is_some());
+        let body = [0x46, 0x2c, 0, 0, 0, 0, 0, 0, 0xe4, 0xe4, 0xe4, 0xe4, 0xe4];
+        assert!(scalar_suffix(&body, 6, &ScalarCache::from_section(&body)).is_none());
     }
 
     #[test]
