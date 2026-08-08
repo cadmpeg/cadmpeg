@@ -23260,6 +23260,11 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     assembly_bytes[637..641].copy_from_slice(&3_u32.to_le_bytes());
     assembly_bytes[641..644].copy_from_slice(b"259");
     assembly_bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
+    assembly_bytes[362..366].copy_from_slice(&2_u32.to_le_bytes());
+    for (at, target) in [(366, 64_u32), (377, 67_u32)] {
+        assembly_bytes[at] = 1;
+        assembly_bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+    }
     scope.frame_length = 637;
     scope.paired_byte_offset = 637;
     scope.paired_class_tag = "259".into();
@@ -23508,6 +23513,35 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     )
     .is_some_and(|alignment| alignment.operand_frames.is_some()));
 
+    let write_path_reference = |bytes: &mut [u8], at: usize, target: u32| {
+        bytes[at] = 1;
+        bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+    };
+    let push_path_locator = |bytes: &mut Vec<u8>, locator_index: u32, wrapper_index: u32| {
+        let mut locator = vec![0; 190];
+        locator[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        locator[4..7].copy_from_slice(b"304");
+        locator[7..11].copy_from_slice(&locator_index.to_le_bytes());
+        write_path_reference(&mut locator, 21, locator_index + 100);
+        for ordinal in 0..16 {
+            let value = if ordinal % 5 == 0 { 1.0_f64 } else { 0.0 };
+            locator[33 + ordinal * 8..41 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
+        }
+        write_path_reference(&mut locator, 162, scope_record_index);
+        write_path_reference(&mut locator, 173, wrapper_index);
+        locator[184..188].copy_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&locator);
+    };
+    let push_path_wrapper = |bytes: &mut Vec<u8>, wrapper_index: u32, path_record_index: u32| {
+        let mut wrapper = vec![0; 37];
+        wrapper[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        wrapper[4..7].copy_from_slice(b"382");
+        wrapper[7..11].copy_from_slice(&wrapper_index.to_le_bytes());
+        wrapper[21] = 1;
+        wrapper[22..26].copy_from_slice(&1_u32.to_le_bytes());
+        write_path_reference(&mut wrapper, 26, path_record_index);
+        bytes.extend_from_slice(&wrapper);
+    };
     let push_path = |bytes: &mut Vec<u8>, record_index: u32, guids: &[&str]| {
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(b"329");
@@ -23548,6 +23582,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         "dddddddd-dddd-dddd-dddd-dddddddddddd",
     ];
     let mut identity_path_bytes = assembly_bytes.clone();
+    push_path_locator(&mut identity_path_bytes, 64, 66);
     let first_identity_path_at = identity_path_bytes.len();
     push_identity_path(
         &mut identity_path_bytes,
@@ -23558,6 +23593,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         ],
         &identities,
     );
+    push_path_wrapper(&mut identity_path_bytes, 66, 65);
+    push_path_locator(&mut identity_path_bytes, 67, 69);
     let second_identity_path_at = identity_path_bytes.len();
     push_identity_path(
         &mut identity_path_bytes,
@@ -23565,6 +23602,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         &["33333333-3333-3333-3333-333333333333"],
         &identities,
     );
+    push_path_wrapper(&mut identity_path_bytes, 69, 68);
     identity_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     identity_path_bytes.extend_from_slice(b"396");
     identity_path_bytes.extend_from_slice(&70_u32.to_le_bytes());
@@ -23594,6 +23632,8 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         .iter()
         .all(|path| path.class_tag == "386"));
 
+    let first_locator_at = assembly_bytes.len();
+    push_path_locator(&mut assembly_bytes, 64, 66);
     push_path(
         &mut assembly_bytes,
         65,
@@ -23602,11 +23642,14 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             "22222222-2222-2222-2222-222222222222",
         ],
     );
+    push_path_wrapper(&mut assembly_bytes, 66, 65);
+    push_path_locator(&mut assembly_bytes, 67, 69);
     push_path(
         &mut assembly_bytes,
         68,
         &["33333333-3333-3333-3333-333333333333"],
     );
+    push_path_wrapper(&mut assembly_bytes, 69, 68);
     assembly_bytes.extend_from_slice(&3_u32.to_le_bytes());
     assembly_bytes.extend_from_slice(b"396");
     assembly_bytes.extend_from_slice(&70_u32.to_le_bytes());
@@ -23618,8 +23661,16 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     )
     .and_then(|alignment| alignment.operand_paths)
     .expect("exact assembly occurrence paths");
+    assert_eq!(paths[0].link.locator_record_index, 64);
+    assert_eq!(paths[0].link.wrapper_record_index, 66);
+    assert_eq!(paths[0].link.locator_reference_offset, 367);
+    assert_eq!(paths[0].link.locator_scope_reference_offset, 811);
+    assert_eq!(paths[0].link.wrapper_reference_offset, 822);
+    assert_eq!(paths[0].link.path_reference_offset, 1_042);
     assert_eq!(
-        paths.map(|path| (path.record_index, path.occurrence_guids)),
+        paths
+            .each_ref()
+            .map(|path| { (path.record_index, path.occurrence_guids.clone()) }),
         [
             (
                 65,
@@ -23631,6 +23682,63 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             (68, vec!["33333333-3333-3333-3333-333333333333".into()],),
         ]
     );
+    let mut reversed_path_assignment = assembly_bytes.clone();
+    reversed_path_assignment[367..371].copy_from_slice(&67_u32.to_le_bytes());
+    reversed_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
+    let reversed_paths = exact_assembly_alignment(
+        &reversed_path_assignment,
+        &IndexedRecordOffsets::build(&reversed_path_assignment),
+        &scope,
+        &rectangular_owners,
+    )
+    .and_then(|alignment| alignment.operand_paths)
+    .expect("scope locator order assigns paths to operand frames");
+    assert_eq!(reversed_paths.map(|path| path.record_index), [68, 65]);
+
+    let mut duplicate_path_assignment = assembly_bytes.clone();
+    duplicate_path_assignment[378..382].copy_from_slice(&64_u32.to_le_bytes());
+    assert!(exact_assembly_alignment(
+        &duplicate_path_assignment,
+        &IndexedRecordOffsets::build(&duplicate_path_assignment),
+        &scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
+
+    for locator_zero_at in [first_locator_at + 32, first_locator_at + 161] {
+        let mut invalid_locator = assembly_bytes.clone();
+        invalid_locator[locator_zero_at] = 1;
+        assert!(exact_assembly_alignment(
+            &invalid_locator,
+            &IndexedRecordOffsets::build(&invalid_locator),
+            &scope,
+            &rectangular_owners,
+        )
+        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    }
+    let first_wrapper_at =
+        usize::try_from(paths[0].link.wrapper_byte_offset).expect("wrapper offset fits usize");
+    for (relative_offset, value) in [(21, 0), (22, 2), (26, 0)] {
+        let mut invalid_wrapper = assembly_bytes.clone();
+        invalid_wrapper[first_wrapper_at + relative_offset] = value;
+        assert!(exact_assembly_alignment(
+            &invalid_wrapper,
+            &IndexedRecordOffsets::build(&invalid_wrapper),
+            &scope,
+            &rectangular_owners,
+        )
+        .is_some_and(|alignment| alignment.operand_paths.is_none()));
+    }
+    let first_wrapper_end = first_wrapper_at + 37;
+    let mut extended_wrapper = assembly_bytes.clone();
+    extended_wrapper.insert(first_wrapper_end, 0);
+    assert!(exact_assembly_alignment(
+        &extended_wrapper,
+        &IndexedRecordOffsets::build(&extended_wrapper),
+        &scope,
+        &rectangular_owners,
+    )
+    .is_some_and(|alignment| alignment.operand_paths.is_none()));
 
     let push_class_294_path =
         |bytes: &mut Vec<u8>, record_index: u32, occurrence: &str, identities: &[&str; 4]| {
@@ -23660,18 +23768,22 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         "dddddddd-dddd-dddd-dddd-dddddddddddd",
     ];
     let mut class_294_path_bytes = assembly_bytes[..648].to_vec();
+    push_path_locator(&mut class_294_path_bytes, 64, 66);
     push_class_294_path(
         &mut class_294_path_bytes,
         65,
         "11111111-1111-1111-1111-111111111111",
         &class_294_identities,
     );
+    push_path_wrapper(&mut class_294_path_bytes, 66, 65);
+    push_path_locator(&mut class_294_path_bytes, 67, 69);
     push_class_294_path(
         &mut class_294_path_bytes,
         68,
         "22222222-2222-2222-2222-222222222222",
         &class_294_identities,
     );
+    push_path_wrapper(&mut class_294_path_bytes, 69, 68);
     class_294_path_bytes.extend_from_slice(&3_u32.to_le_bytes());
     class_294_path_bytes.extend_from_slice(b"396");
     class_294_path_bytes.extend_from_slice(&70_u32.to_le_bytes());

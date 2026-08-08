@@ -1411,10 +1411,38 @@ impl DesignAssemblyAxialSelectorIdentity {
     }
 }
 
+/// Exact reference chain from an assembly scope to one occurrence-path record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblyOperandPathLink {
+    /// Byte offset of the locator-record index in the assembly scope.
+    pub locator_reference_offset: u64,
+    /// Locator-record index named by the assembly scope.
+    pub locator_record_index: u32,
+    /// Dynamic indexed-record class carrying the locator.
+    pub locator_class_tag: String,
+    /// Byte offset of the locator's indexed header.
+    pub locator_byte_offset: u64,
+    /// Byte offset of the assembly-scope backlink in the locator.
+    pub locator_scope_reference_offset: u64,
+    /// Wrapper-record index named by the locator.
+    pub wrapper_record_index: u32,
+    /// Byte offset of the wrapper-record index in the locator.
+    pub wrapper_reference_offset: u64,
+    /// Dynamic indexed-record class carrying the wrapper.
+    pub wrapper_class_tag: String,
+    /// Byte offset of the wrapper's indexed header.
+    pub wrapper_byte_offset: u64,
+    /// Byte offset of the path-record index in the wrapper.
+    pub path_reference_offset: u64,
+}
+
 /// Counted occurrence path qualifying one assembly operand construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignAssemblyOperandPath {
+    /// Exact ordered scope-to-locator-to-wrapper reference chain.
+    pub link: DesignAssemblyOperandPathLink,
     /// Path-record index.
     pub record_index: u32,
     /// Indexed-record class carrying this path.

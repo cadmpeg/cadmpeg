@@ -31,6 +31,22 @@ pub(crate) const fn alignment_lane_bounds(
     }
 }
 
+/// Return the scope-relative marker offsets of the two ordered operand-path
+/// locator references carried by a non-axial assembly frame.
+pub(crate) const fn operand_path_locator_offsets(frame_length: u64) -> Option<[usize; 2]> {
+    match frame_length {
+        627 | 637 | 692 => Some([366, 377]),
+        633 | 732 => Some([362, 373]),
+        _ => None,
+    }
+}
+
+/// Fixed byte length of an assembly operand-path locator record.
+pub(crate) const OPERAND_PATH_LOCATOR_LENGTH: usize = 190;
+
+/// Fixed byte length of an assembly operand-path wrapper record.
+pub(crate) const OPERAND_PATH_WRAPPER_LENGTH: usize = 37;
+
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
     scopes: &[DesignParameterScope],
@@ -344,6 +360,25 @@ mod tests {
                 super::alignment_lane_bounds(frame_length, owner_count),
                 None
             );
+        }
+    }
+
+    #[test]
+    fn operand_path_locator_offsets_follow_the_frame_layout() {
+        for frame_length in [627, 637, 692] {
+            assert_eq!(
+                super::operand_path_locator_offsets(frame_length),
+                Some([366, 377])
+            );
+        }
+        for frame_length in [633, 732] {
+            assert_eq!(
+                super::operand_path_locator_offsets(frame_length),
+                Some([362, 373])
+            );
+        }
+        for frame_length in [604, 705, 772] {
+            assert_eq!(super::operand_path_locator_offsets(frame_length), None);
         }
     }
 

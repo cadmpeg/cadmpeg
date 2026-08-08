@@ -37,6 +37,51 @@ fn valid_design_guid(value: &str) -> bool {
         })
 }
 
+fn valid_assembly_operand_path_link(
+    scope: &records::DesignParameterScope,
+    path: &records::DesignAssemblyOperandPath,
+    locator_marker_offset: usize,
+) -> bool {
+    let link = &path.link;
+    let Ok(locator_marker_offset) = u64::try_from(locator_marker_offset) else {
+        return false;
+    };
+    let Some(locator_reference_offset) = scope
+        .byte_offset
+        .checked_add(locator_marker_offset)
+        .and_then(|offset| offset.checked_add(1))
+    else {
+        return false;
+    };
+    let Ok(locator_length) = u64::try_from(design::assembly::OPERAND_PATH_LOCATOR_LENGTH) else {
+        return false;
+    };
+    let Some(path_byte_offset) = link.locator_byte_offset.checked_add(locator_length) else {
+        return false;
+    };
+    let Some(locator_scope_reference_offset) = link.locator_byte_offset.checked_add(163) else {
+        return false;
+    };
+    let Some(wrapper_reference_offset) = link.locator_byte_offset.checked_add(174) else {
+        return false;
+    };
+    let Some(path_reference_offset) = link.wrapper_byte_offset.checked_add(27) else {
+        return false;
+    };
+    let class_tags_are_dynamic = [&link.locator_class_tag, &link.wrapper_class_tag]
+        .into_iter()
+        .all(|tag| tag.len() == 3 && tag.bytes().all(|byte| byte.is_ascii_digit()));
+    class_tags_are_dynamic
+        && link.locator_reference_offset == locator_reference_offset
+        && link.locator_record_index.checked_add(1) == Some(path.record_index)
+        && link.locator_record_index.checked_add(2) == Some(link.wrapper_record_index)
+        && path.byte_offset == path_byte_offset
+        && link.locator_scope_reference_offset == locator_scope_reference_offset
+        && link.wrapper_reference_offset == wrapper_reference_offset
+        && link.wrapper_byte_offset > path.byte_offset
+        && link.path_reference_offset == path_reference_offset
+}
+
 fn valid_sketch_profile_region_selection(
     profile: &records::DesignSketchProfileOperand,
     selection: &records::DesignSketchProfileRegionSelection,
@@ -1439,18 +1484,28 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     // An axial form can retain its frames before both exact
                     // pathless target joins resolve.
                     (Some(_), None, None) => axial_frames,
-                    (Some(frames), Some(paths), None) => {
-                        let (first_delta, second_delta) = if scope.frame_length == 732 {
-                            (39, 36)
-                        } else {
-                            (5, 2)
-                        };
+                    (Some(_), Some(paths), None) => {
+                        let locator_offsets =
+                            design::assembly::operand_path_locator_offsets(scope.frame_length);
+                        let first_start = paths[0].link.locator_byte_offset;
+                        let second_start = paths[1].link.locator_byte_offset;
+                        let wrapper_length =
+                            u64::try_from(design::assembly::OPERAND_PATH_WRAPPER_LENGTH).ok();
+                        let envelope_ends = paths.each_ref().map(|path| {
+                            wrapper_length.and_then(|length| {
+                                path.link.wrapper_byte_offset.checked_add(length)
+                            })
+                        });
                         !axial_frames
-                            && paths[0].record_index.checked_add(first_delta)
-                                == Some(frames[0].reference_record_index)
-                            && paths[1].record_index.checked_add(second_delta)
-                                == Some(frames[0].reference_record_index)
-                            && paths[0].byte_offset < paths[1].byte_offset
+                            && locator_offsets.is_some_and(|offsets| {
+                                paths.iter().zip(offsets).all(|(path, offset)| {
+                                    valid_assembly_operand_path_link(scope, path, offset)
+                                })
+                            })
+                            && paths[0].link.locator_record_index
+                                != paths[1].link.locator_record_index
+                            && matches!(envelope_ends, [Some(first_end), Some(second_end)]
+                                if !(first_start < second_end && second_start < first_end))
                             && paths.iter().all(|path| {
                                 !path.occurrence_guids.is_empty()
                                     && path.occurrence_guids.len()
