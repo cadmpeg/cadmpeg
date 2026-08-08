@@ -500,14 +500,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the state to separate the two cases. Without it, a part whose lineage evidence is missing transfers every emitted body as a current body instead of reporting the selection as unresolved.
 
-### OM-34. OM registry schema-role precedence
-
-**Question.** Which schema role does a linked OM registry take when it declares more than one role marker?
-
-**Known.** `siemens_nx.md` §2 "Linked OM registries define their schema role by exact declarations:" names `UGS::Solid::Topol` for the model store, `UGS::FEATURE_RECORD` for feature history, `UGS::EXP_expression` for expressions, and `UGS::OM::SaveAuditTrail` for audit data when no preceding specialized marker applies. It orders the audit-data marker against the others. It does not order the first three against each other.
-
-**Need.** We must know the precedence, or the rule that makes the first three markers mutually exclusive. The decoder tests them in a fixed order and takes the first present marker without testing the others. The role selects which sections the feature-history extractors walk, so a registry that carries two markers can supply operation labels, body references, and lineage from a store that is not feature history.
-
 ### OM-37. Final field declaration in a pointerless OM section
 
 **Question.** What terminates the final member-field declaration in a section without a unique valid record-area pointer?

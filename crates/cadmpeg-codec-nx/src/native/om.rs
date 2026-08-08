@@ -20,6 +20,8 @@ pub enum OmSchemaRole {
     Expressions,
     /// Audit model declaring `UGS::OM::SaveAuditTrail`.
     AuditTrail,
+    /// More than one defined role marker occurs in the registry.
+    Ambiguous,
     /// No role marker from the defined families occurs in the registry.
     Other,
 }

@@ -151,8 +151,9 @@ section relative to the compressed stream wrappers in the same segment index.
 Linked OM registries define their schema role by exact declarations:
 `UGS::Solid::Topol` marks the model store, `UGS::FEATURE_RECORD` marks feature
 history, `UGS::EXP_expression` marks expressions, and
-`UGS::OM::SaveAuditTrail` marks audit data when no preceding specialized marker
-applies.
+`UGS::OM::SaveAuditTrail` marks audit data. Exactly one marker assigns its role.
+No marker assigns `other`. More than one marker assigns `ambiguous`; no
+role-specific extractor consumes that section.
 
 A size-framed OM section can identify its internal record area with a
 section-relative little-endian pointer after its type registry. The pointer is

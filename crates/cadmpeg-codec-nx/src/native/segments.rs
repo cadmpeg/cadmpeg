@@ -498,16 +498,19 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
                     .iter()
                     .any(|definition| definition.name == name)
             };
-            let role = if has("UGS::FEATURE_RECORD") {
-                OmSchemaRole::FeatureHistory
-            } else if has("UGS::EXP_expression") {
-                OmSchemaRole::Expressions
-            } else if has("UGS::Solid::Topol") {
-                OmSchemaRole::Model
-            } else if has("UGS::OM::SaveAuditTrail") {
-                OmSchemaRole::AuditTrail
-            } else {
-                OmSchemaRole::Other
+            let roles = [
+                ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
+                ("UGS::EXP_expression", OmSchemaRole::Expressions),
+                ("UGS::Solid::Topol", OmSchemaRole::Model),
+                ("UGS::OM::SaveAuditTrail", OmSchemaRole::AuditTrail),
+            ]
+            .into_iter()
+            .filter_map(|(name, role)| has(name).then_some(role))
+            .collect::<Vec<_>>();
+            let role = match roles.as_slice() {
+                [] => OmSchemaRole::Other,
+                [role] => *role,
+                _ => OmSchemaRole::Ambiguous,
             };
             (section.offset, role)
         })
@@ -796,6 +799,43 @@ mod tests {
                 links[0].source_offset + u64::from(expected_separator)
             );
         }
+    }
+
+    #[test]
+    fn decode_marks_multi_role_om_registry_ambiguous() {
+        let mut section = size_framed_om_section();
+        let insertion = section
+            .windows(b"m_target".len())
+            .position(|window| window == b"m_target")
+            .expect("field declaration");
+        let role = b"UGS::EXP_expression";
+        let mut declaration = Vec::with_capacity(role.len() + 2);
+        declaration.push((role.len() + 1) as u8);
+        declaration.extend_from_slice(role);
+        declaration.push(0xa1);
+        section.splice(insertion..insertion, declaration);
+        let payload_len = u32::try_from(section.len() - 16).expect("synthetic OM section length");
+        section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+
+        let mut payload = Vec::new();
+        for word in [32u32, 9, 11, 1, 1, 24] {
+            payload.extend_from_slice(&word.to_le_bytes());
+        }
+        payload.resize(32, 0);
+        payload.extend_from_slice(&section);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("required invariant");
+        let links = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::SegmentOmLink>("segment_om_links")
+            .expect("required invariant");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].schema_role, OmSchemaRole::Ambiguous);
     }
 
     #[test]
