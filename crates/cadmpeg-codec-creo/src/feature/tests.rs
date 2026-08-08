@@ -573,6 +573,13 @@ fn positional_round_replay_uses_final_explicit_arrays_before_row_suffix() {
 }
 
 #[test]
+fn positional_round_replay_rejects_explicit_arrays_without_compound_close_start() {
+    let row = unanchored_replay_row(1, 40, None, &[0x00, 0xf8, 2, 10, 11, 0xf8, 2, 20, 21]);
+
+    assert!(replay_affected_ids(&[row]).is_empty());
+}
+
+#[test]
 fn positional_round_replay_accepts_null_row_tail() {
     let mut row = unanchored_replay_row(
         1,

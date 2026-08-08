@@ -646,16 +646,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bounds to bind `plane_id`, `plane_flip`, and the nested reference fields. `feature/definitions.rs` `section_3d` searches forward from the record header through windows of 260, 400, and 48 bytes. None of the three constants comes from the format. A definition holding two `gsec3d_ptr` records, where the first omits a null field, takes the second record's value for the first record, and a record longer than its window loses the field.
 
-### SP-31. Unanchored replay pair boundary
-
-**Question.** Which bytes bound the `geoms_affected` and `edgs_affected` pair of an unanchored class-913 or class-914 replay row?
-
-**Known.** `creo_prt.md` §6 states that the unanchored pair begins immediately after a compound close and that its two stateful extents must consume the bytes up to the row suffix.
-
-**Conflict.** The specification requires the pair to consume the bytes to the suffix. `feature/rows.rs` `explicit_replay_pair_before_suffix` accepts the last two arrays before the suffix that parse as counted identifier arrays. It tests neither the compound-close start nor the consume-to-suffix extent, and its caller returns that pair before the rule-conforming scan runs.
-
-**Need.** We must know the boundary to apply the round or chamfer to the correct edge set. A row that carries a third counted array before the pair reads the pair shifted by one, and the wrong arrays propagate to the next row through the stateful extent inheritance.
-
 ### SP-32. `ActDatums` positional row acceptance
 
 **Question.** Which bytes identify a positional `<gid> 22` datum row, and what bounds a datum geometry identifier?

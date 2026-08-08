@@ -914,6 +914,14 @@ fn explicit_replay_pair_before_suffix(
     let [.., geometry, edges] = arrays.as_slice() else {
         return None;
     };
+    let pair_prefix = match arrays.len() {
+        2 => geometry.0 > 0 && row.body[geometry.0 - 1] == psb::token::COMPOUND_CLOSE,
+        _ => {
+            let preceding = &arrays[arrays.len() - 3];
+            replay_array_separator(&row.body[preceding.2..geometry.0])
+        }
+    };
+    pair_prefix.then_some(())?;
     replay_array_separator(&row.body[geometry.2..edges.0]).then_some(())?;
     replay_array_trailer(&row.body[edges.2..suffix]).then_some(())?;
     Some((
@@ -922,7 +930,7 @@ fn explicit_replay_pair_before_suffix(
             edge_ids: edges.1.clone(),
             geometry_extent: ReplayExtentSource::Explicit,
             edge_extent: ReplayExtentSource::Explicit,
-            consumed: edges.2 - geometry.0,
+            consumed: suffix - geometry.0,
         },
         geometry.0,
     ))
