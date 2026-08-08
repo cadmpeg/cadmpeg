@@ -13,12 +13,50 @@ use cadmpeg_ir::SourceObjectAssociation;
 use crate::parse::{Exchange, RawRecord, Value};
 
 use super::geometry::GeometryResult;
+use super::index::CarrierIndex;
 use super::topology::TopologyResult;
 
 pub(super) struct TessellationResult {
     pub typed_records: BTreeSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
+}
+
+/// Keep the exact support surface of a complex tessellated face reachable.
+///
+/// `COMPLEX_TRIANGULATED_FACE` carries both the tessellated triangles and an
+/// optional exact surface support. The IR stores the mesh and exact carriers
+/// in separate arenas, so the support has no topology edge to reach it. A
+/// source association records the tessellated face as the native owner until
+/// the IR grows an explicit mesh-to-support relation.
+pub(super) fn associate_complex_face_supports(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    index: &CarrierIndex,
+) {
+    for (&face_id, record) in exchange
+        .records
+        .iter()
+        .filter(|(_, record)| record.simple_name() == Some("COMPLEX_TRIANGULATED_FACE"))
+    {
+        let Some(surface_id) = record.parameter(4).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
+            continue;
+        };
+        ir.model.surfaces[surface_index]
+            .source_object
+            .get_or_insert_with(|| SourceObjectAssociation {
+                format: "step".into(),
+                object_id: format!("#{face_id}"),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            });
+    }
 }
 
 pub(super) fn decode(

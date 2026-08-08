@@ -3828,6 +3828,48 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
 }
 
 #[test]
+fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),$,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),#79,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#79=PLANE('exact support',#34);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complex tessellated support");
+
+    let support = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "step:data:surface#79")
+        .expect("exact support surface");
+    assert_eq!(
+        support
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#7")
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::report::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:surface#79")
+    }));
+}
+
+#[test]
 fn decode_transfers_ap242_semantic_pmi() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition, PmiQuantity};
 
