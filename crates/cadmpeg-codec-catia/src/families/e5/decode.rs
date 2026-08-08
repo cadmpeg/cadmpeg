@@ -503,9 +503,6 @@ pub(crate) fn solve_e5_plane_frame(
             candidates.push((normal, u_axis));
         }
     }
-    if candidates.len() == 1 {
-        return Some(candidates[0]);
-    }
     let canonical: Vec<_> = candidates
         .into_iter()
         .filter(|(_, u_axis)| {
