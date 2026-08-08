@@ -2043,6 +2043,56 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
 }
 
 #[test]
+fn equation_table_replays_direct_and_counted_rows() {
+    let payload = b"eqtn_arr\0\xf2\xf8\x04\xf7\x80\x9f\xfb\xe2\
+            \xe0\x01id\0\x00\
+            \xe0\x05fcn_id\0\x02\
+            \xe0\x08arg_arr\0\xf8\x02\x2f\x08\
+            \xe0\x01aux_data\0\xf6\
+            \xf1\xf7\x80\x9f\xe2\
+            \x01\x04\x11\x12\xf6\xe2\
+            \x02\x05\xf8\x04\x13\xe4\xe5\xf6\xe2\
+            \x03\x06\xf8\x02\xf6\x14\xf6\xe2\
+            \xe0\x02scale\0\x99\x88"
+        .to_vec();
+
+    let table = equation_table(&payload, 0, payload.len()).expect("eqtn_arr table");
+
+    assert_eq!(table.declared_count, 4);
+    assert_eq!(table.entity_ref, Some(159));
+    assert_eq!(table.offset, 0);
+    assert_eq!(table.rows.len(), 3);
+    assert!(table.prototype_body.starts_with(b"\xe0\x01id\0"));
+    assert!(table.prototype_body.ends_with(b"\xf1\xf7\x80\x9f\xe2"));
+
+    assert_eq!(table.rows[0].equation_id, 1);
+    assert_eq!(table.rows[0].function_id, 4);
+    assert_eq!(table.rows[0].explicit_argument_count, None);
+    assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
+    assert_eq!(table.rows[0].arguments_body, [0x11, 0x12]);
+    assert_eq!(table.rows[0].auxiliary_body, [0xf6]);
+    assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6, 0xe2]);
+
+    assert_eq!(table.rows[1].equation_id, 2);
+    assert_eq!(table.rows[1].function_id, 5);
+    assert_eq!(table.rows[1].explicit_argument_count, Some(4));
+    assert_eq!(
+        table.rows[1].arguments,
+        [Some(19), Some(1), Some(0), Some(0)]
+    );
+    assert_eq!(table.rows[1].arguments_body, [0x13, 0xe4, 0xe5]);
+    assert_eq!(table.rows[1].auxiliary_body, [0xf6]);
+    assert!(table.rows[1].body.ends_with(&[0xf6, 0xe2]));
+
+    assert_eq!(table.rows[2].equation_id, 3);
+    assert_eq!(table.rows[2].function_id, 6);
+    assert_eq!(table.rows[2].explicit_argument_count, Some(2));
+    assert_eq!(table.rows[2].arguments, [None, Some(20)]);
+    assert_eq!(table.rows[2].arguments_body, [0xf6, 0x14]);
+    assert_eq!(table.rows[2].auxiliary_body, [0xf6]);
+}
+
+#[test]
 fn positional_relation_table_replays_rows_after_its_prototype() {
     let payload = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
             prototype\xf1\xf7\x64\xe2\

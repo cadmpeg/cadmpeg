@@ -20,6 +20,7 @@ pub(super) struct CreoSketchRecord {
     pub(super) section_points: Vec<CreoSketchSectionPoint>,
     pub(super) solved_external_ids: Vec<u32>,
     pub(super) variables: Vec<CreoSketchVariable>,
+    pub(super) equations: Vec<CreoSketchEquation>,
     pub(super) segments: Vec<CreoSketchSegment>,
     pub(super) circle_segments: Vec<CreoSketchCircleSegment>,
     pub(super) point_segments: Vec<CreoSketchPointSegment>,
@@ -2033,6 +2034,20 @@ pub(super) fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     })
                     .collect()
             },
+            equations: crate::feature::equation_table(&definition.body, 0, definition.body.len())
+                .into_iter()
+                .flat_map(|table| table.rows)
+                .map(|equation| CreoSketchEquation {
+                    equation_id: equation.equation_id,
+                    function_id: equation.function_id,
+                    explicit_argument_count: equation.explicit_argument_count,
+                    arguments: equation.arguments,
+                    arguments_body: equation.arguments_body,
+                    auxiliary_body: equation.auxiliary_body,
+                    body: equation.body,
+                    offset: equation.offset,
+                })
+                .collect(),
             segments: definition
                 .segments
                 .iter()

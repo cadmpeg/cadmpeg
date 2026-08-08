@@ -15,6 +15,7 @@ mod rows;
 #[cfg(test)]
 mod tests;
 
+pub use definitions::equation_table;
 pub(crate) use definitions::saved_entity_offset;
 pub use definitions::{
     bind_definition_owners, bind_depdb_section_owners, bind_replay_definition_owners,
@@ -22,16 +23,17 @@ pub use definitions::{
     depdb_section_definition, placement_instructions, positional_replay_definitions, BinaryFlag,
     DimensionUnit, FeatureBoundedCurveSegment, FeatureCenteredLineSegment, FeatureCircleSegment,
     FeatureConicSegment, FeatureDefinition, FeatureDimension, FeatureDimensionReference,
-    FeatureDimensionReferenceTable, FeatureDimensionTable, FeatureOpaqueSegment, FeatureOrderRow,
-    FeatureOrderTable, FeatureOutline, FeatureParameterFrame, FeatureParameterFrameKind,
-    FeaturePlacementInstruction, FeaturePointSegment, FeatureReferenceLineSegment, FeatureRelation,
-    FeatureRelationTable, FeatureRelationTriple, FeatureSavedArc, FeatureSavedCircle,
-    FeatureSavedConic, FeatureSavedDummy, FeatureSavedEntity, FeatureSavedLine,
-    FeatureSavedSection, FeatureSavedSpline, FeatureSection3d, FeatureSectionOrientation,
-    FeatureSectionPoint, FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentKind,
-    FeatureSegmentTable, FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader,
-    FeatureTrimBucket, FeatureTrimEntity, FeatureTrimEntityTable, FeatureTrimVertex,
-    FeatureTrimVertexTable, FeatureVariableRow, FeatureVariableTable, OutlinePhase, TrimEntityKind,
+    FeatureDimensionReferenceTable, FeatureDimensionTable, FeatureEquation, FeatureEquationTable,
+    FeatureOpaqueSegment, FeatureOrderRow, FeatureOrderTable, FeatureOutline,
+    FeatureParameterFrame, FeatureParameterFrameKind, FeaturePlacementInstruction,
+    FeaturePointSegment, FeatureReferenceLineSegment, FeatureRelation, FeatureRelationTable,
+    FeatureRelationTriple, FeatureSavedArc, FeatureSavedCircle, FeatureSavedConic,
+    FeatureSavedDummy, FeatureSavedEntity, FeatureSavedLine, FeatureSavedSection,
+    FeatureSavedSpline, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
+    FeatureSectionReferencePlane, FeatureSegment, FeatureSegmentKind, FeatureSegmentTable,
+    FeatureSkamp, FeatureSkampItem, FeatureSolverTableHeader, FeatureTrimBucket, FeatureTrimEntity,
+    FeatureTrimEntityTable, FeatureTrimVertex, FeatureTrimVertexTable, FeatureVariableRow,
+    FeatureVariableTable, OutlinePhase, TrimEntityKind,
 };
 pub use entity::{
     entity_graph, entity_tables, FeatureEntity, FeatureEntityReference, FeatureEntityTable,

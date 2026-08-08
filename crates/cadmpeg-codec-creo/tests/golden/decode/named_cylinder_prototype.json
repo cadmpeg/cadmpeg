@@ -647,6 +647,8 @@
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
+      "decoded_feature_equation_count": 0,
+      "decoded_feature_equation_table_count": 0,
       "decoded_feature_geometry_table_count": 0,
       "decoded_feature_loop_history_entry_count": 0,
       "decoded_feature_loop_restore_direction_count": 0,

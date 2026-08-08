@@ -207,6 +207,45 @@ impl FeatureVariableTable {
     }
 }
 
+/// One positional solver-equation row from `eqtn_arr`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureEquation {
+    /// Equation identifier from the first positional field.
+    pub equation_id: u32,
+    /// Solver function identifier from the second positional field.
+    pub function_id: u32,
+    /// Explicit argument-slot count, when the row uses the counted form.
+    pub explicit_argument_count: Option<u32>,
+    /// Argument slots in stored order. Expansion markers occupy their
+    /// documented number of slots; `None` is the native null slot.
+    pub arguments: Vec<Option<u32>>,
+    /// Exact encoded argument body between the argument-count marker and the
+    /// auxiliary marker.
+    pub arguments_body: Vec<u8>,
+    /// Exact encoded auxiliary field body.
+    pub auxiliary_body: Vec<u8>,
+    /// Exact row bytes, including the `e2` row terminator when present.
+    pub body: Vec<u8>,
+    /// Byte offset of the row in the original stream.
+    pub offset: usize,
+}
+
+/// Solver-equation table from one feature definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureEquationTable {
+    /// Count declared by the `f8` opener. Its relationship to replay rows is
+    /// retained without assuming whether it includes the prototype.
+    pub declared_count: u32,
+    /// Entity-table reference following the opener, when present.
+    pub entity_ref: Option<u32>,
+    /// Exact named prototype body, including its row-class reference.
+    pub prototype_body: Vec<u8>,
+    /// Positional equation rows in stored order.
+    pub rows: Vec<FeatureEquation>,
+    /// Byte offset of the `eqtn_arr` label in the original stream.
+    pub offset: usize,
+}
+
 /// Defined positional segment family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureSegmentKind {
@@ -1566,6 +1605,15 @@ fn next_solver_int(payload: &[u8], offset: &mut usize) -> Option<u32> {
     next_segment_int(payload, offset)
 }
 
+fn next_bounded_compact_int(payload: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let head = *payload.get(offset)?;
+    if (0x80..=0xbf).contains(&head) {
+        payload.get(offset + 1)?;
+    }
+    let (value, next) = psb::compact_int(payload, offset);
+    (next > offset).then_some((value, next))
+}
+
 fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Option<u32>, ()> {
     if payload.get(*offset) == Some(&0xf6) {
         *offset += 1;
@@ -1600,6 +1648,168 @@ fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<Vec
         }
     }
     Some(values)
+}
+
+fn equation_argument_slots(payload: &[u8], offset: &mut usize) -> Option<Vec<Option<u32>>> {
+    match *payload.get(*offset)? {
+        0xe4 => {
+            *offset += 1;
+            Some(vec![Some(1)])
+        }
+        0xe5 => {
+            *offset += 1;
+            Some(vec![Some(0), Some(0)])
+        }
+        0xe6 => {
+            *offset += 1;
+            Some(vec![Some(0), Some(0), Some(0)])
+        }
+        0xf6 => {
+            *offset += 1;
+            Some(vec![None])
+        }
+        _ => Some(vec![Some(next_solver_int(payload, offset)?)]),
+    }
+}
+
+fn equation_arguments(
+    payload: &[u8],
+    offset: &mut usize,
+    end: usize,
+    explicit_count: Option<usize>,
+) -> Option<Vec<Option<u32>>> {
+    let mut arguments = Vec::new();
+    while match explicit_count {
+        Some(count) => arguments.len() < count,
+        None => *offset < end && payload.get(*offset) != Some(&0xf6),
+    } {
+        let before = *offset;
+        let slots = equation_argument_slots(payload, offset)?;
+        if *offset <= before
+            || *offset > end
+            || explicit_count.is_some_and(|count| arguments.len() + slots.len() > count)
+        {
+            return None;
+        }
+        arguments.extend(slots);
+    }
+    explicit_count
+        .is_none_or(|count| arguments.len() == count)
+        .then_some(arguments)
+}
+
+/// Decode the structurally framed `eqtn_arr` solver table in one bounded
+/// feature definition.
+pub fn equation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureEquationTable> {
+    if start > end || end > payload.len() {
+        return None;
+    }
+    let table = find_bytes(payload, b"eqtn_arr\0", start, end)?;
+    let mut cursor = table + b"eqtn_arr\0".len();
+    if payload.get(cursor) == Some(&0xf2) {
+        cursor += 1;
+    }
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (declared_count, after_count) = next_bounded_compact_int(payload, cursor + 1)?;
+    cursor = after_count;
+    let entity_ref = if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+        let (entity_ref, next) = psb::reference_id(payload, cursor + 1).ok()?;
+        cursor = next;
+        Some(entity_ref)
+    } else {
+        None
+    };
+    if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
+        return None;
+    }
+    cursor += 2;
+
+    let rows_end = [
+        b"\xe0\x02scale\0".as_slice(),
+        b"\xe0\x02scales\0",
+        b"\xe0\x02guesses\0",
+    ]
+    .into_iter()
+    .filter_map(|label| find_bytes(payload, label, cursor, end))
+    .min()
+    .unwrap_or(end);
+    let prototype_start = cursor;
+    let prototype_reference = find_bytes(
+        payload,
+        &[0xf1, psb::token::ENTITY_REF],
+        prototype_start,
+        rows_end,
+    )?;
+    let (_, after_prototype_reference) =
+        psb::reference_id(payload, prototype_reference + 2).ok()?;
+    let prototype_end = (payload.get(after_prototype_reference) == Some(&0xe2))
+        .then_some(after_prototype_reference + 1)?;
+    let prototype_body = payload[prototype_start..prototype_end].to_vec();
+    cursor = prototype_end;
+
+    let mut rows = Vec::new();
+    while cursor < rows_end {
+        let row_start = cursor;
+        let Some(equation_id) = next_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let Some(function_id) = next_solver_int(payload, &mut cursor) else {
+            break;
+        };
+        let explicit_argument_count = if payload.get(cursor) == Some(&psb::token::ARRAY_OPEN) {
+            let (count, next) = next_bounded_compact_int(payload, cursor + 1)?;
+            cursor = next;
+            Some(count)
+        } else {
+            None
+        };
+        let arguments_start = cursor;
+        let explicit_argument_count_usize = match explicit_argument_count {
+            Some(count) => Some(usize::try_from(count).ok()?),
+            None => None,
+        };
+        let Some(arguments) = equation_arguments(
+            payload,
+            &mut cursor,
+            rows_end,
+            explicit_argument_count_usize,
+        ) else {
+            break;
+        };
+        let arguments_body_end = cursor;
+        let auxiliary_start = cursor;
+        if payload.get(cursor) != Some(&0xf6) {
+            break;
+        }
+        cursor += 1;
+        let auxiliary_body = payload[auxiliary_start..cursor].to_vec();
+        let row_end = if payload.get(cursor) == Some(&0xe2) {
+            cursor += 1;
+            cursor
+        } else if cursor == rows_end {
+            cursor
+        } else {
+            break;
+        };
+        rows.push(FeatureEquation {
+            equation_id,
+            function_id,
+            explicit_argument_count,
+            arguments,
+            arguments_body: payload[arguments_start..arguments_body_end].to_vec(),
+            auxiliary_body,
+            body: payload[row_start..row_end].to_vec(),
+            offset: row_start,
+        });
+    }
+
+    Some(FeatureEquationTable {
+        declared_count,
+        entity_ref,
+        prototype_body,
+        rows,
+        offset: table,
+    })
 }
 
 /// Decode instantiated placement-instruction rows from one bounded feature

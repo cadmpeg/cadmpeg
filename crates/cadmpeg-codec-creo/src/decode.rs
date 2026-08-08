@@ -338,6 +338,18 @@ struct CreoSketchVariable {
 }
 
 #[derive(Serialize)]
+struct CreoSketchEquation {
+    equation_id: u32,
+    function_id: u32,
+    explicit_argument_count: Option<u32>,
+    arguments: Vec<Option<u32>>,
+    arguments_body: Vec<u8>,
+    auxiliary_body: Vec<u8>,
+    body: Vec<u8>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoSketchSegment {
     external_id: u32,
     kind: &'static str,
@@ -1904,6 +1916,7 @@ fn transfer_curve_expression_features(
 
 fn feature_definition_has_sketch_design(definition: &crate::feature::FeatureDefinition) -> bool {
     definition.variables.is_some()
+        || crate::feature::equation_table(&definition.body, 0, definition.body.len()).is_some()
         || definition.segments.is_some()
         || definition.trim_entities.is_some()
         || definition.trim_vertices.is_some()
@@ -1932,6 +1945,18 @@ fn sketch_table_headers(
     if let Some(table) = &definition.variables {
         push(
             "variables",
+            Some(table.declared_count),
+            table.entity_ref,
+            None,
+            Vec::new(),
+            table.rows.len(),
+            table.offset,
+        );
+    }
+    if let Some(table) = crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    {
+        push(
+            "equations",
             Some(table.declared_count),
             table.entity_ref,
             None,
@@ -33924,6 +33949,27 @@ fn source_meta(scan: &ContainerScan) -> (SourceMeta, BTreeMap<String, usize>) {
             .iter()
             .filter_map(|definition| definition.relations.as_ref())
             .map(|relations| relations.rows.len())
+            .sum::<usize>(),
+    );
+    coverage.insert(
+        "decoded_feature_equation_table_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter(|definition| {
+                crate::feature::equation_table(&definition.body, 0, definition.body.len()).is_some()
+            })
+            .count(),
+    );
+    coverage.insert(
+        "decoded_feature_equation_count".to_string(),
+        scan.features
+            .definitions
+            .iter()
+            .filter_map(|definition| {
+                crate::feature::equation_table(&definition.body, 0, definition.body.len())
+            })
+            .map(|equations| equations.rows.len())
             .sum::<usize>(),
     );
     coverage.insert(
