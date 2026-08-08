@@ -620,16 +620,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** This grammar does not reach every feature. Many feature identifiers that carry a current operation state get no `AllFeatur` row, and a part can yield no row at all while its operation states name many features. One part uses one header constant for nearly every row, so the constant looks like a property of the writing generation rather than of the feature family. Both observations say the accepted set is a subset of the real row-start forms, so this item ranks above every other row-scoped item: each unreached row is a feature whose generated-entity tables and affected geometry are absent, not wrong.
 
-### SP-28. Material feature precedence
-
-**Question.** Which field orders two material features for the base-body selection?
-
-**Known.** `creo_prt.md` §6 "For a linear section sweep, generated plane carriers" states that the first resolved section sweep in feature-definition order forms the base body. `creo_prt.md` §6 states that state ordinals are local to one feature identifier and increase in byte order from zero. The specification gives no byte order across features.
-
-**Conflict.** The specification gives feature-definition order. `decode.rs` `feature_is_first_material_operation` compares the `state_offset` of current operation records. `container.rs` `feature_operations` collects those records from the `MdlStatus` and `DEPDB_DATA` sections and adds each section's base offset, so two features can carry offsets from two different sections. The comparison then measures the order of the sections, not the order of the features.
-
-**Need.** We must know the field to select the base body. The comparison is the only gate between emitting a complete closed solid body and emitting none, in the revolution, extrusion, and circular-extrusion transfer paths.
-
 ### SP-33. Datum outline held-axis selection
 
 **Question.** Which axis holds the plane equation when a named datum outline has multiple paired standalone-zero coordinates?

@@ -6651,6 +6651,30 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
 }
 
 #[test]
+fn material_base_body_uses_bounded_definition_order() {
+    assert!(first_material_feature_by_definition_order(
+        10,
+        &[(10, 100), (20, 200)]
+    ));
+    assert!(!first_material_feature_by_definition_order(
+        20,
+        &[(10, 100), (20, 200)]
+    ));
+    assert!(!first_material_feature_by_definition_order(
+        10,
+        &[(10, 100), (10, 100), (20, 200)]
+    ));
+    assert!(!first_material_feature_by_definition_order(
+        10,
+        &[(10, 100), (20, 100)]
+    ));
+    assert!(!first_material_feature_by_definition_order(
+        10,
+        &[(20, 200)]
+    ));
+}
+
+#[test]
 fn intersects_evaluated_section_carriers() {
     let horizontal = SketchGeometry::Line {
         start: cadmpeg_ir::math::Point2::new(-2.0, 1.0),

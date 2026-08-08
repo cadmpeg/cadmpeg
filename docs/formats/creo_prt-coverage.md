@@ -72,6 +72,9 @@ fixtures, claims above L1 remain unproven.
   `plane_flip`/section-`flip` parity for cap polarity; Boolean operation does not
   select the sweep direction, and missing section or cap evidence remains
   unresolved.
+- Material base-body precedence uses unique section-transform and definition
+  joins ordered by bounded definition-record offset; current operation-state
+  offsets do not order material bodies.
 - Plane placement keeps `ActDatums` datum-geometry and model-surface
   namespaces independent; a complete numeric collision between them withholds
   the section frame.

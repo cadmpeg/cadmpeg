@@ -10045,30 +10045,67 @@ fn current_additive_feature_recipe(
     (recipe.effect() == crate::feature::FeatureRecipeEffect::Protrude).then(|| recipe.kind())
 }
 
-fn feature_is_first_material_operation(scan: &ContainerScan, feature_id: u32) -> bool {
-    let Some(target) = current_feature_operation(&scan.features.operations, feature_id) else {
+fn first_material_feature_by_definition_order(
+    target_feature_id: u32,
+    material_definition_offsets: &[(u32, usize)],
+) -> bool {
+    let mut offsets = BTreeMap::new();
+    for &(feature_id, offset) in material_definition_offsets {
+        if offsets.insert(feature_id, offset).is_some() {
+            return false;
+        }
+    }
+    let Some(target_offset) = offsets.get(&target_feature_id).copied() else {
         return false;
     };
-    scan.features
+    offsets
+        .into_iter()
+        .filter(|(feature_id, _)| *feature_id != target_feature_id)
+        .all(|(_, offset)| offset > target_offset)
+}
+
+fn feature_is_first_material_operation(scan: &ContainerScan, feature_id: u32) -> bool {
+    let candidate_feature_ids = scan
+        .features
         .operations
         .iter()
         .map(|operation| operation.feature_id)
         .collect::<BTreeSet<_>>()
-        .into_iter()
-        .filter(|candidate| *candidate != feature_id)
-        .filter_map(|candidate| {
-            let operation = current_feature_operation(&scan.features.operations, candidate)?;
-            let recipe_is_material = operation.recipe.is_some_and(|recipe| {
-                matches!(
-                    recipe.effect(),
-                    crate::feature::FeatureRecipeEffect::Protrude
-                        | crate::feature::FeatureRecipeEffect::Cut
-                )
-            });
-            (recipe_is_material || matches!(feature_schema_class(scan, candidate), Some(916 | 917)))
-                .then_some(operation)
-        })
-        .all(|operation| operation.state_offset > target.state_offset)
+        .into_iter();
+    let mut material_definition_offsets = Vec::new();
+    for candidate in candidate_feature_ids {
+        let Some(operation) = current_feature_operation(&scan.features.operations, candidate)
+        else {
+            continue;
+        };
+        let recipe_is_material = operation.recipe.is_some_and(|recipe| {
+            matches!(
+                recipe.effect(),
+                crate::feature::FeatureRecipeEffect::Protrude
+                    | crate::feature::FeatureRecipeEffect::Cut
+            )
+        });
+        if !recipe_is_material && !matches!(feature_schema_class(scan, candidate), Some(916 | 917))
+        {
+            continue;
+        }
+        let transforms = scan
+            .features
+            .section_transforms
+            .iter()
+            .filter(|transform| transform.feature_id == Some(candidate))
+            .collect::<Vec<_>>();
+        let [transform] = transforms.as_slice() else {
+            return false;
+        };
+        let Some(definition) =
+            unique_feature_definition_for_transform(&scan.features.definitions, transform)
+        else {
+            return false;
+        };
+        material_definition_offsets.push((candidate, definition.offset));
+    }
+    first_material_feature_by_definition_order(feature_id, &material_definition_offsets)
 }
 
 fn current_feature_recipe(
