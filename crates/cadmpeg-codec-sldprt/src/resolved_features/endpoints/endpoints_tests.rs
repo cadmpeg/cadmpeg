@@ -816,6 +816,112 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
 }
 
 #[test]
+fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
+    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+    payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+    payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..60].copy_from_slice(&[2, 0, 3, 0]);
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[84..].copy_from_slice(SKETCH_MARKER);
+
+    let marker = |id: &str, offset, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind: SketchInputKind::Point,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = SketchInputEntity {
+        kind: SketchInputKind::LineOrCircle,
+        coordinates_m: None,
+        ..marker("curve", 0, None)
+    };
+    let first = marker("first", 100, Some([0.0, 0.0]));
+    let second = marker("second", 200, Some([1.0, 0.0]));
+    let third = marker("third", 300, Some([2.0, 0.0]));
+    let markers = [&curve, &first, &second, &third];
+
+    assert_eq!(
+        compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+            .map(|pair| [pair[0].id.as_str(), pair[1].id.as_str()]),
+        Some(["first", "second"])
+    );
+    assert_eq!(
+        compact_complete_marker_roster_pair(&payload, &curve, &markers, false)
+            .map(|pair| [pair[0].id.as_str(), pair[1].id.as_str()]),
+        Some(["second", "third"])
+    );
+    assert!(super::compact_complete_marker_roster_endpoints(&payload, &curve, &markers).is_empty());
+}
+
+#[test]
+fn current_referenced_compact_roster_rejects_conflicting_fallbacks() {
+    let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
+    payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x04, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&4u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].fill(0);
+    payload[76..80].copy_from_slice(&13u32.to_le_bytes());
+    payload[80..84].copy_from_slice(&7u32.to_le_bytes());
+    payload[84..].copy_from_slice(SKETCH_MARKER);
+
+    let marker = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = marker("curve", 0, SketchInputKind::Arc, None);
+    let first = marker("first", 10, SketchInputKind::Point, Some([1.0, 0.0]));
+    let relation = marker(
+        "relation",
+        20,
+        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        None,
+    );
+    let second = marker("second", 30, SketchInputKind::Point, Some([0.0, 1.0]));
+    let third = marker("third", 40, SketchInputKind::Point, Some([2.0, 0.0]));
+    let fourth = marker("fourth", 50, SketchInputKind::Point, Some([0.0, 2.0]));
+    let fifth = marker("fifth", 60, SketchInputKind::Point, Some([3.0, 0.0]));
+    let markers = [&curve, &first, &relation, &second, &third, &fourth, &fifth];
+
+    assert!(current_referenced_compact_curve_uses_marker_roster(
+        &payload, 0
+    ));
+    assert!(coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers).is_empty());
+}
+
+#[test]
 fn current_compact_curve_falls_back_to_raw_object_indices() {
     let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -1812,7 +1918,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
             &hybrid_markers,
             [&hybrid_entities[3], &hybrid_entities[2]],
         ),
-        Some([0.0, 0.0])
+        None
     );
     hybrid_entities[0].coordinates_m = Some([4.0, 4.0]);
     hybrid_entities[1].coordinates_m = Some([0.0, 0.0]);
@@ -5971,6 +6077,60 @@ fn extended_compact_104_arc_uses_geometry_roster_for_center_index() {
     assert_eq!(
         coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
         Some([0.0, 0.0])
+    );
+}
+
+#[test]
+fn coordinate_roster_arc_center_requires_matching_indexed_endpoints() {
+    let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+    payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[5..13].fill(0xff);
+    payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+    payload[23..31].copy_from_slice(&[0x05, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00]);
+    payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+    payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[56..58].copy_from_slice(&2u16.to_le_bytes());
+    payload[58..60].copy_from_slice(&3u16.to_le_bytes());
+    payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+    payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+    payload[76..78].copy_from_slice(&3u16.to_le_bytes());
+    for relative in (78..94).step_by(4) {
+        payload[relative..relative + 4].copy_from_slice(&(-2i32).to_le_bytes());
+    }
+    payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+
+    let entity = |id: &str, offset, kind, coordinates_m| SketchInputEntity {
+        id: id.into(),
+        parent: "lane".into(),
+        feature_ref: Some("feature".into()),
+        ordinal: 0,
+        offset,
+        object_index: None,
+        local_id: None,
+        kind,
+        state_value: Some(1.0),
+        coordinates_m,
+        links: Vec::new(),
+        link_selector: None,
+    };
+    let curve = entity("curve", 0, SketchInputKind::Arc, None);
+    let relation = entity(
+        "relation",
+        1,
+        SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        Some([9.0, 9.0]),
+    );
+    let start = entity("start", 10, SketchInputKind::Point, Some([1.0, 0.0]));
+    let end = entity("end", 20, SketchInputKind::Point, Some([0.0, 1.0]));
+    let center = entity("center", 30, SketchInputKind::Point, Some([0.0, 0.0]));
+    let distractor = entity("distractor", 40, SketchInputKind::Point, Some([4.0, 4.0]));
+    let markers = [&curve, &relation, &start, &end, &center, &distractor];
+
+    assert_eq!(
+        coordinate_roster_arc_center(&payload, &curve, &markers, [&start, &end]),
+        None
     );
 }
 

@@ -858,32 +858,6 @@ There is no unresolved branch for code `11` and no loss. A joining form-`11` obj
 
 **Need.** We must know the discriminator to parse the reference without choosing a width from geometric plausibility.
 
-### DI-34. Endpoint index base and roster
-
-**Question.** Which field selects the index base and the roster for the endpoint fields of a compact indexed curve record?
-
-**Known.** `sldprt.md` §2 "The current, compact legacy, and extended marker prefixes have a solved curve or arc with role u16 `1` at marker +27 that uses a compact indexed record." gives the endpoint fields at marker +56 and +58 for several record widths. The same paragraph gives an ordered rule for the extended-prefix widths:
-
-> An extended-prefix 84-byte, 104-byte, or terminal 102-byte profile-locus record first adds one to each endpoint index and resolves the resulting point object indices. If that pair does not resolve, each raw field is a direct point object identifier ... If that pair also does not resolve, both fields are direct ordinals in the complete feature-local sketch-marker roster in marker order.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:1196` implements that shape. It reads the same two u16 fields under a second roster and a second index base and takes whichever resolves:
-
-```rust
-resolve(complete_entity_roster, one_based)
-    .or_else(|| { ... .then(|| resolve(false, false)).flatten() })
-    .unwrap_or_default()
-```
-
-A stored field has one interpretation. `sldprt.md` §2 contains nine sentences of the form "if that pair does not resolve", each of which gives an order of attempts and not a discriminator.
-
-**Need.** We must know the field that selects the base and the roster. A first interpretation that resolves two markers that are not the endpoints gives a line between two unrelated points, and the later tiers never run.
-
-**Note.** Two more sites repeat the retry against a roster the specification does not name.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:1266` tries the one-based and then the zero-based base, and indexes the **complete** roster under both. `sldprt.md` §2 gives the zero-based tier a different roster: "zero-based ordinals in the feature-owned coordinate-bearing point roster". The two rosters differ by every non-coordinate marker before the point run, so the zero-based tier addresses shifted positions.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs:2026` tries a kind-filtered roster and then the complete roster for the arc centre, and accepts the first result that is equidistant. `sldprt.md` §2 names one roster for that cascade, the complete coordinate roster, which `sldprt.md` §2 defines as including relation markers with coordinates. The kind-filtered roster tried first is not in the specification.
-
 ## 6. Write-path evidence
 
 ### EV-01. Unpinned edit validators

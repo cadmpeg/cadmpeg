@@ -1194,18 +1194,34 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         else {
             return None;
         };
-        (first.id != second.id).then_some(vec![first, second])
+        (first.id != second.id).then_some([first, second])
     };
-    resolve(complete_entity_roster, one_based)
-        .or_else(|| {
-            (current_complete_roster
-                && matches!(marker_native_code(payload, offset), Some(1 | 2))
-                && compact_indexed_curve_record_end(payload, offset)
-                    == Some(CompactIndexedCurveRecordEnd::Marker84))
-            .then(|| resolve(false, false))
-            .flatten()
-        })
-        .unwrap_or_default()
+    let fallback = (current_complete_roster
+        && matches!(marker_native_code(payload, offset), Some(1 | 2))
+        && compact_indexed_curve_record_end(payload, offset)
+            == Some(CompactIndexedCurveRecordEnd::Marker84))
+    .then(|| resolve(false, false))
+    .flatten();
+    let candidates = distinct_marker_pairs([resolve(complete_entity_roster, one_based), fallback]);
+    let [endpoints] = candidates.as_slice() else {
+        return Vec::new();
+    };
+    endpoints.to_vec()
+}
+
+fn distinct_marker_pairs<'a>(
+    candidates: impl IntoIterator<Item = Option<[&'a SketchInputEntity; 2]>>,
+) -> Vec<[&'a SketchInputEntity; 2]> {
+    let mut distinct: Vec<[&'a SketchInputEntity; 2]> = Vec::new();
+    for candidate in candidates.into_iter().flatten() {
+        if !distinct
+            .iter()
+            .any(|existing| existing[0].id == candidate[0].id && existing[1].id == candidate[1].id)
+        {
+            distinct.push(candidate);
+        }
+    }
+    distinct
 }
 
 fn compact_complete_marker_roster_pair<'a>(
@@ -1271,12 +1287,12 @@ fn compact_complete_marker_roster_endpoints<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    [true, false]
-        .into_iter()
-        .find_map(|one_based| {
-            let [first, second] =
-                compact_complete_marker_roster_pair(payload, curve, markers, one_based)?;
-            if [first, second].iter().all(|marker| {
+    let candidates = distinct_marker_pairs([true, false].into_iter().map(|one_based| {
+        let [first, second] =
+            compact_complete_marker_roster_pair(payload, curve, markers, one_based)?;
+        [first, second]
+            .iter()
+            .all(|marker| {
                 marker.coordinates_m.is_some()
                     && matches!(
                         marker.kind,
@@ -1285,13 +1301,13 @@ fn compact_complete_marker_roster_endpoints<'a>(
                             | SketchInputKind::LineOrCircle
                             | SketchInputKind::Arc
                     )
-            }) {
-                Some(vec![first, second])
-            } else {
-                None
-            }
-        })
-        .unwrap_or_default()
+            })
+            .then_some([first, second])
+    }));
+    let [endpoints] = candidates.as_slice() else {
+        return Vec::new();
+    };
+    endpoints.to_vec()
 }
 
 fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
@@ -2057,6 +2073,10 @@ pub(super) fn coordinate_roster_arc_center(
             || (resolved_endpoints[0].id == roster_endpoints[1].id
                 && resolved_endpoints[1].id == roster_endpoints[0].id)
     };
+    let same_center = |left: [f64; 2], right: [f64; 2]| {
+        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
+    };
+    let mut roster_centers = Vec::new();
     for coordinates in [roster(false), roster(true)] {
         let (Some(first_marker), Some(second_marker)) =
             (coordinates.get(first_index), coordinates.get(second_index))
@@ -2069,22 +2089,20 @@ pub(super) fn coordinate_roster_arc_center(
                 .and_then(|marker| marker.coordinates_m)
                 .filter(|center| equidistant(*center))
             {
-                return Some(center);
+                if !roster_centers
+                    .iter()
+                    .any(|candidate| same_center(*candidate, center))
+                {
+                    roster_centers.push(center);
+                }
             }
         }
     }
-    let mut complete_roster = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
-        .collect::<Vec<_>>();
-    complete_roster.sort_unstable_by_key(|marker| marker.offset);
-    if let Some(center) = complete_roster
-        .get(center_index)
-        .and_then(|marker| marker.coordinates_m)
-        .filter(|center| equidistant(*center))
-    {
-        return Some(center);
+    if let [center] = roster_centers.as_slice() {
+        return Some(*center);
+    }
+    if !roster_centers.is_empty() {
+        return None;
     }
     let mut centers = markers
         .iter()
@@ -5309,15 +5327,15 @@ pub(super) fn relation_reference_curve_record(
             }
         }
     }
-    [false, true].into_iter().any(|one_based| {
-        let Some([first, second]) =
+    let candidates =
+        distinct_marker_pairs([false, true].into_iter().map(|one_based| {
             compact_complete_marker_roster_pair(payload, curve, markers, one_based)
-        else {
-            return false;
-        };
-        matches!(first.kind, SketchInputKind::Relation(_))
-            || matches!(second.kind, SketchInputKind::Relation(_))
-    })
+        }));
+    let [[first, second]] = candidates.as_slice() else {
+        return false;
+    };
+    matches!(first.kind, SketchInputKind::Relation(_))
+        || matches!(second.kind, SketchInputKind::Relation(_))
 }
 
 fn legacy_compact_selected_axis_body(payload: &[u8], offset: usize) -> bool {
