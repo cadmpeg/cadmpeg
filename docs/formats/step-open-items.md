@@ -46,7 +46,11 @@ decode operation.
 
 **Current control.** Parser tokens, records, parameters, semantic passes,
 bounded endpoint inference, and copied opaque-record bytes charge the shared
-decode session.
+decode session. Each semantic pass charges the complete parsed source graph
+once: records, complex-entity leaves, aggregate members, and nested typed
+values. It also charges the neutral IR entity count already produced before
+the pass. This prevents a record-only allowance from hiding work proportional
+to aggregate depth or decoded output size.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,

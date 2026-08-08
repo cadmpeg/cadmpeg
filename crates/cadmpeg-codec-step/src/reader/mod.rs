@@ -116,34 +116,65 @@ fn decode_exchange_mode(
         ));
     }
 
-    charge_semantic_stage(ctx, exchange, "step_geometry_decode")?;
+    let semantic_input_work = semantic_input_work(exchange);
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_geometry_decode")?;
     let mut geometry = geometry::decode(exchange, &mut ir);
-    charge_semantic_stage(ctx, exchange, "step_dependency_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_dependency_decode")?;
     let dependencies = dependencies::decode(exchange);
-    charge_semantic_stage(ctx, exchange, "step_carrier_index")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_carrier_index")?;
     let carrier_index = index::CarrierIndex::from_ir(&ir);
-    charge_semantic_stage(ctx, exchange, "step_topology_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_topology_decode")?;
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
     geometry::infer_edge_parameter_ranges(&mut ir, ctx)?;
     geometry::infer_pcurve_parameter_ranges(&mut ir, ctx)?;
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_topology_association")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_topology_association")?;
     geometry::associate_topology_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
-    charge_semantic_stage(ctx, exchange, "step_replica_association")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_replica_association")?;
     geometry::associate_replica_bases(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_surface_curve_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_surface_curve_association",
+    )?;
     geometry::associate_surface_curve_bases(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_styled_item_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_styled_item_association",
+    )?;
     geometry::associate_styled_item_carriers(exchange, &mut ir, &carrier_index, &owned_carriers);
-    charge_semantic_stage(ctx, exchange, "step_curve_bounded_surface_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_curve_bounded_surface_association",
+    )?;
     geometry::associate_curve_bounded_surface_boundaries(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_pcurve_association")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_pcurve_association")?;
     geometry::associate_pcurve_supports(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_annotation_plane_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_annotation_plane_association",
+    )?;
     geometry::associate_annotation_plane_supports(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_tessellation_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_tessellation_association",
+    )?;
     tessellation::associate_complex_face_supports(exchange, &mut ir, &carrier_index);
-    charge_semantic_stage(ctx, exchange, "step_geometric_set_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_geometric_set_association",
+    )?;
     geometry::associate_free_geometric_set_members(
         exchange,
         &mut ir,
@@ -151,7 +182,12 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
-    charge_semantic_stage(ctx, exchange, "step_representation_association")?;
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_representation_association",
+    )?;
     geometry::associate_free_representation_members(
         exchange,
         &mut ir,
@@ -159,15 +195,15 @@ fn decode_exchange_mode(
         &owned_carriers,
         &mut geometry.losses,
     );
-    charge_semantic_stage(ctx, exchange, "step_product_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_product_decode")?;
     let product = product::decode(exchange, &geometry, &topology, &mut ir);
-    charge_semantic_stage(ctx, exchange, "step_tessellation_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_tessellation_decode")?;
     let tessellation = tessellation::decode(exchange, &geometry, &topology, &mut ir);
-    charge_semantic_stage(ctx, exchange, "step_pmi_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_pmi_decode")?;
     let pmi = pmi::decode(exchange, &geometry, &mut ir);
-    charge_semantic_stage(ctx, exchange, "step_presentation_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_presentation_decode")?;
     let presentation = presentation::decode(exchange, &topology, &mut ir);
-    charge_semantic_stage(ctx, exchange, "step_validation_decode")?;
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_validation_decode")?;
     let validation = validation::decode(exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
@@ -249,6 +285,7 @@ fn decode_exchange_mode(
     typed_records.extend(dependencies.typed_records);
     typed_records.extend(validation.typed_records);
     let mut post_decode_warnings = Vec::new();
+    charge_semantic_stage(ctx, semantic_input_work, &ir, "step_pcurve_retention")?;
     retain_unowned_pcurves(
         exchange,
         &mut ir,
@@ -264,6 +301,12 @@ fn decode_exchange_mode(
             provenance: None,
         }));
 
+    charge_semantic_stage(
+        ctx,
+        semantic_input_work,
+        &ir,
+        "step_opaque_record_retention",
+    )?;
     let opaque_offsets = if retain_opaque {
         BTreeSet::new()
     } else {
@@ -302,6 +345,15 @@ fn decode_exchange_mode(
                     "step_opaque_record",
                     None,
                 )?;
+            }
+            if let Some(ctx) = ctx {
+                let reference_count = record
+                    .partials
+                    .iter()
+                    .flat_map(|partial| partial.parameters.iter())
+                    .map(reference_work_units)
+                    .fold(0, u64::saturating_add);
+                ctx.charge_collection_items(reference_count, "step_opaque_record_links")?;
             }
             let bytes = input[record.span.clone()].to_vec();
             let mut links = BTreeSet::new();
@@ -344,7 +396,18 @@ fn decode_exchange_mode(
             *counts.entry(kind).or_default() += 1;
         }
     }
-    let accounting = byte_accounting(input, exchange, &typed_records);
+    let accounting = {
+        if let Some(ctx) = ctx {
+            ctx.charge_work(
+                u64::try_from(input.len()).unwrap_or(u64::MAX),
+                "step_byte_accounting",
+            )?;
+        }
+        let _reservation = ctx
+            .map(|ctx| ctx.reserve_scoped(input.len() as u64, "step_byte_accounting", None))
+            .transpose()?;
+        byte_accounting(input, exchange, &typed_records)
+    };
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -383,6 +446,12 @@ fn decode_exchange_mode(
             message: format!("preserved {count} {name} instance(s) as named opaque STEP records"),
             provenance: None,
         }));
+    if let Some(ctx) = ctx {
+        ctx.charge_entities(
+            u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX),
+            "step_admit_ir_entities",
+        )?;
+    }
     Ok((
         DecodeResult::new(ir, report, source_fidelity),
         opaque_offsets,
@@ -391,11 +460,94 @@ fn decode_exchange_mode(
 
 fn charge_semantic_stage(
     ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
-    exchange: &Exchange,
+    input_work: u64,
+    ir: &CadIr,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    let units = u64::try_from(exchange.records.len()).unwrap_or(u64::MAX);
+    let output_work = u64::try_from(ir.model.entity_count()).unwrap_or(u64::MAX);
+    let units = input_work.saturating_add(output_work);
     ctx.map_or(Ok(()), |ctx| ctx.charge_work(units, operation))
+}
+
+/// Count the source graph nodes that each semantic pass may inspect.
+///
+/// A record count alone does not account for complex-entity leaves, aggregate
+/// members, or nested typed values. The parser already materializes these
+/// nodes, so charging one unit for each node gives every semantic pass a
+/// stable input-proportional allowance without guessing from byte length.
+fn semantic_input_work(exchange: &Exchange) -> u64 {
+    let records = exchange.records.values().map(|record| {
+        1_u64.saturating_add(
+            record
+                .partials
+                .iter()
+                .map(|partial| {
+                    1_u64.saturating_add(
+                        partial
+                            .parameters
+                            .iter()
+                            .map(value_work_units)
+                            .fold(0, u64::saturating_add),
+                    )
+                })
+                .fold(0, u64::saturating_add),
+        )
+    });
+    let headers = exchange.header.iter().map(|record| {
+        1_u64.saturating_add(
+            record
+                .parameters
+                .iter()
+                .map(value_work_units)
+                .fold(0, u64::saturating_add),
+        )
+    });
+    let anchors = exchange
+        .anchors
+        .iter()
+        .map(|anchor| 1_u64.saturating_add(value_work_units(&anchor.value)));
+    let data = exchange.data.iter().map(|section| {
+        1_u64
+            .saturating_add(
+                section
+                    .parameters
+                    .iter()
+                    .map(value_work_units)
+                    .fold(0, u64::saturating_add),
+            )
+            .saturating_add(u64::try_from(section.records.len()).unwrap_or(u64::MAX))
+    });
+    let references = u64::try_from(exchange.references.len()).unwrap_or(u64::MAX);
+    records
+        .chain(headers)
+        .chain(anchors)
+        .chain(data)
+        .fold(references, u64::saturating_add)
+}
+
+fn value_work_units(value: &Value) -> u64 {
+    match value {
+        Value::List(values) => 1_u64.saturating_add(
+            values
+                .iter()
+                .map(value_work_units)
+                .fold(0, u64::saturating_add),
+        ),
+        Value::Typed(_, value) => 1_u64.saturating_add(value_work_units(value)),
+        _ => 1,
+    }
+}
+
+fn reference_work_units(value: &Value) -> u64 {
+    match value {
+        Value::Reference(_) => 1,
+        Value::List(values) => values
+            .iter()
+            .map(reference_work_units)
+            .fold(0, u64::saturating_add),
+        Value::Typed(_, value) => reference_work_units(value),
+        _ => 0,
+    }
 }
 
 fn retain_unowned_pcurves(
@@ -815,5 +967,15 @@ mod tests {
                 && loss.severity == Severity::Error
                 && loss.message.contains("1 byte(s) unclassified")
         }));
+    }
+
+    #[test]
+    fn semantic_work_counts_nested_source_graph_nodes() {
+        let simple = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+        let nested = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM(((1,2),TYPE((3,4))));ENDSEC;END-ISO-10303-21;";
+        let (simple_exchange, _) = crate::parse::parse(simple).expect("simple exchange");
+        let (nested_exchange, _) = crate::parse::parse(nested).expect("nested exchange");
+
+        assert!(semantic_input_work(&nested_exchange) > semantic_input_work(&simple_exchange));
     }
 }
