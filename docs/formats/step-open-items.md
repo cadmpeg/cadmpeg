@@ -653,28 +653,14 @@ signature sections.
 
 ### EL-05. Schema identifier interpretation
 
-**Question.** Which `FILE_SCHEMA` identifier governs decoding, and how does an
-identifier select an application protocol and edition?
-
-**Known.** `step.md` §6 "Schema identifiers select the application protocol
-and edition." gives no identifier syntax and no edition mapping. The decoder
-takes the first `FILE_SCHEMA` header record
-(`crates/cadmpeg-codec-step/src/lib.rs:4438-4441`,
-`crates/cadmpeg-codec-step/src/reader/mod.rs:701-711`), joins every listed
-identifier into one string, and infers the AP242 edition by substring-testing
-the object-identifier digits `442 4`, `442 3`, and `442 1`
-(`lib.rs:4469-4477`). The same asserted edition-to-revision mapping writes the
-identifiers of exported files (`lib.rs:136-166`). The header is not checked
-for record order, arity, or duplicates, and `DataSection::parameters` is
-parsed and never read.
-
-**Need.** A revision outside the asserted three reports `edition
-unspecified`; a file that lists an AP242 module beside an AP214 primary
-identifier reports AP242. A second `FILE_SCHEMA` record, a missing one, or a
-per-section `DATA('...')` declaration is dropped with no diagnostic, and a
-schema outside AP203, AP214, and AP242 decodes by entity name with no
-unrecognized-schema loss. We must know the identifier grammar and the
-governing-schema rule.
+**Resolved.** `FILE_SCHEMA` contains one or more unique string identifiers.
+The first identifier governs the application protocol and edition. An
+identifier is a schema name with an optional brace-delimited object identifier
+whose components are space-separated unsigned integers. The decoder selects
+AP242 edition 1, 2, or 3 only for the exact long-form name and exact object
+identifiers `1 0 10303 442 1 1 4`, `1 0 10303 442 3 1 4`, and
+`1 0 10303 442 4 1 4`. Other AP242 object identifiers report an unspecified
+edition. Later identifiers remain metadata and do not change the selection.
 
 ### EL-06. Omitted entity name repair and anchor order
 

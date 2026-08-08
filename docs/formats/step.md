@@ -141,8 +141,23 @@ level. The major value in `implementation_level` selects the direct string
 repertoire: `4` selects UTF-8 and earlier levels select ISO-8859-1.
 `FILE_NAME` supplies name, timestamp, authors, organizations,
 preprocessor version, originating system, and authorization. `FILE_SCHEMA`
-supplies one or more schema identifiers. Schema identifiers select the
-application protocol and edition. ASCII case differences compare equal.
+supplies one or more unique string identifiers. The first identifier governs
+the application protocol and edition; later identifiers do not override it.
+An identifier is a schema name with an optional brace-delimited object
+identifier containing space-separated unsigned components. The supported
+identifiers are:
+
+| Identifier | Protocol and edition |
+| --- | --- |
+| `CONFIG_CONTROL_DESIGN` | AP203 edition 1 |
+| `AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }` | AP203 edition 2 |
+| `AUTOMOTIVE_DESIGN` or `AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }` | AP214 |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }` | AP242 edition 1 |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }` | AP242 edition 2 |
+| `AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }` | AP242 edition 3 |
+
+An AP242 identifier with another object identifier has an unspecified edition.
+ASCII case differences compare equal.
 
 ## 7. Edition 3 sections
 

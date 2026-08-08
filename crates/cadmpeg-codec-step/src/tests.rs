@@ -449,6 +449,48 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
 }
 
 #[test]
+fn codec_uses_the_first_schema_identifier_for_exact_edition_selection() {
+    let cases = [
+        (
+            "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }','AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }'",
+            "edition 1",
+        ),
+        (
+            "'AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 14 1 4 }'",
+            "edition unspecified",
+        ),
+        (
+            "'OTHER_SCHEMA { 1 0 10303 442 4 1 4 }'",
+            "edition unspecified",
+        ),
+        (
+            "'ap242_managed_model_based_3d_engineering_mim_lf { 1 0 10303 442 4 1 4 }'",
+            "edition 3",
+        ),
+    ];
+
+    for (identifiers, expected_edition) in cases {
+        let source = format!(
+            "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(({identifiers}));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;"
+        );
+        let summary = StepCodec::default()
+            .inspect(
+                &mut Cursor::new(source.as_bytes()),
+                &InspectOptions::default(),
+            )
+            .expect("inspect schema identifiers");
+        assert!(
+            summary
+                .notes
+                .iter()
+                .any(|note| note.ends_with(expected_edition)),
+            "expected {expected_edition} in {:?}",
+            summary.notes
+        );
+    }
+}
+
+#[test]
 fn codec_detection_matches_part21_trivia_and_keyword_rules() {
     let source = b"/* preamble */\n  iso-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;ENDSEC;END-ISO-10303-21;";
     let codec = StepCodec::default();

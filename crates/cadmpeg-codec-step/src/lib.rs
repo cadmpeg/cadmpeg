@@ -166,6 +166,20 @@ impl StepSchema {
         }
     }
 
+    fn ap242_edition(identifier: &str) -> Option<&'static str> {
+        const NAME: &str = "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF";
+        let (name, oid) = split_schema_identifier(identifier)?;
+        if !name.eq_ignore_ascii_case(NAME) {
+            return None;
+        }
+        match oid.as_deref() {
+            Some([1, 0, 10303, 442, 1, 1, 4]) => Some("edition 1"),
+            Some([1, 0, 10303, 442, 3, 1, 4]) => Some("edition 2"),
+            Some([1, 0, 10303, 442, 4, 1, 4]) => Some("edition 3"),
+            _ => None,
+        }
+    }
+
     const fn supports_tessellation(self) -> bool {
         matches!(
             self,
@@ -211,6 +225,22 @@ impl StepSchema {
             ),
         }
     }
+}
+
+fn split_schema_identifier(identifier: &str) -> Option<(&str, Option<Vec<u64>>)> {
+    let identifier = identifier.trim();
+    let Some(open) = identifier.rfind('{') else {
+        return Some((identifier, None));
+    };
+    if !identifier.ends_with('}') || identifier[..open].trim().is_empty() {
+        return None;
+    }
+    let oid = identifier[open + 1..identifier.len() - 1]
+        .split_whitespace()
+        .map(str::parse)
+        .collect::<Result<Vec<u64>, _>>()
+        .ok()?;
+    (!oid.is_empty()).then(|| (identifier[..open].trim_end(), Some(oid)))
 }
 
 /// Failure returned while streaming STEP output.
@@ -4440,46 +4470,16 @@ impl Codec for StepCodec {
                 attributes: BTreeMap::default(),
             });
         }
-        let schema = exchange
-            .header
-            .iter()
-            .find(|record| record.name == "FILE_SCHEMA")
-            .map_or_else(
-                || "unspecified".into(),
-                |record| {
-                    fn strings(value: &parse::Value, out: &mut Vec<String>) {
-                        match value {
-                            parse::Value::String(bytes) => {
-                                if let Ok(value) = strings::decode(bytes) {
-                                    out.push(value);
-                                }
-                            }
-                            parse::Value::List(values) => {
-                                for value in values {
-                                    strings(value, out);
-                                }
-                            }
-                            parse::Value::Typed(_, value) => strings(value, out),
-                            _ => {}
-                        }
-                    }
-                    let mut names = Vec::new();
-                    record
-                        .parameters
-                        .iter()
-                        .for_each(|value| strings(value, &mut names));
-                    names.join(",")
-                },
-            );
-        let edition = if schema.contains("442 4") {
-            "edition 3"
-        } else if schema.contains("442 3") {
-            "edition 2"
-        } else if schema.contains("442 1") {
-            "edition 1"
+        let identifiers = reader::schema_identifiers(&exchange);
+        let schema = if identifiers.is_empty() {
+            "unspecified".into()
         } else {
-            "edition unspecified"
+            identifiers.join(",")
         };
+        let edition = identifiers
+            .first()
+            .and_then(|identifier| StepSchema::ap242_edition(identifier))
+            .unwrap_or("edition unspecified");
         let mut notes = vec![format!("schema {schema}; {edition}")];
         notes.extend(diagnostics.into_iter().map(|diagnostic| diagnostic.message));
         Ok(ContainerSummary {
