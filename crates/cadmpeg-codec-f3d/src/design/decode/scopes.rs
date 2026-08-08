@@ -5174,7 +5174,7 @@ fn exact_extrude_prologue(
     reference_count_at: usize,
     reference_members: &[u32],
 ) -> Option<DesignExtrudePrologue> {
-    exact_current_extrude_prologue(bytes, start)
+    exact_current_extrude_prologue(bytes, start, reference_members)
         .or_else(|| {
             exact_legacy_shifted_extrude_prologue(
                 bytes,
@@ -5250,41 +5250,56 @@ fn exact_legacy_distance_extrude_prologue(
     })
 }
 
-fn exact_current_extrude_prologue(bytes: &[u8], start: usize) -> Option<DesignExtrudePrologue> {
+fn exact_current_extrude_prologue(
+    bytes: &[u8],
+    start: usize,
+    reference_members: &[u32],
+) -> Option<DesignExtrudePrologue> {
     let direct_offset = start.checked_add(28)?;
     let reference = if bytes.get(start.checked_add(25)?) == Some(&1) {
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = u32_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
-        let candidates = [start.checked_add(37)?, start.checked_add(38)?]
-            .into_iter()
-            .filter(|operation_offset| {
-                bytes
-                    .get(prefix_tail..*operation_offset)
-                    .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
-                    && matches!(u32_at(bytes, *operation_offset), Some(1..=4))
-                    && matches!(
-                        (
-                            u32_at(bytes, operation_offset.saturating_add(4)),
-                            u32_at(bytes, operation_offset.saturating_add(8))
-                        ),
-                        (Some(1), Some(1 | 2)) | (Some(2), Some(0)) | (Some(3), Some(2))
-                    )
-                    && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
-                    && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
-                    && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
-            })
-            .collect::<Vec<_>>();
-        let [operation_offset] = candidates.as_slice() else {
+        let candidates = [
+            (start.checked_add(37)?, None),
+            (start.checked_add(38)?, None),
+            (start.checked_add(38)?, Some(start.checked_add(37)?)),
+        ]
+        .into_iter()
+        .filter(|(operation_offset, marker_offset)| {
+            let padding_end = marker_offset.unwrap_or(*operation_offset);
+            bytes
+                .get(prefix_tail..padding_end)
+                .is_some_and(|padding| padding.iter().all(|byte| *byte == 0))
+                && marker_offset.is_none_or(|offset| bytes.get(offset) == Some(&1))
+                && reference_members.contains(&record_index)
+                && matches!(u32_at(bytes, *operation_offset), Some(1..=4))
+                && matches!(
+                    (
+                        u32_at(bytes, operation_offset.saturating_add(4)),
+                        u32_at(bytes, operation_offset.saturating_add(8))
+                    ),
+                    (Some(1), Some(1 | 2)) | (Some(2), Some(0)) | (Some(3), Some(2))
+                )
+                && matches!(bytes.get(operation_offset.saturating_add(12)), Some(0 | 1))
+                && matches!(bytes.get(operation_offset.saturating_add(13)), Some(0 | 1))
+                && matches!(bytes.get(operation_offset.saturating_add(14)), Some(0..=2))
+        })
+        .collect::<Vec<_>>();
+        let [(operation_offset, operation_marker_offset)] = candidates.as_slice() else {
             return None;
         };
-        let trailing_zero_count = u8::try_from(operation_offset.checked_sub(prefix_tail)?).ok()?;
+        let padding_end = operation_marker_offset.unwrap_or(*operation_offset);
+        let trailing_zero_count = u8::try_from(padding_end.checked_sub(prefix_tail)?).ok()?;
         Some((
             *operation_offset,
             DesignExtrudePrologueReference {
                 record_index,
                 record_index_offset: reference_record_index_offset as u64,
                 trailing_zero_count,
+                operation_prefix_marker: operation_marker_offset.map(|_| 1),
+                operation_prefix_marker_offset: operation_marker_offset
+                    .and_then(|offset| u64::try_from(offset).ok()),
             },
         ))
     } else {

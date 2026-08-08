@@ -1440,13 +1440,24 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     reference.map_or(
                         operation_offset == scope.byte_offset.saturating_add(28),
                         |reference| {
+                            let padding_end = reference
+                                .record_index_offset
+                                .saturating_add(4)
+                                .saturating_add(u64::from(reference.trailing_zero_count));
+                            let marker_valid = match (
+                                reference.operation_prefix_marker,
+                                reference.operation_prefix_marker_offset,
+                            ) {
+                                (None, None) => operation_offset == padding_end,
+                                (Some(1), Some(marker_offset)) => {
+                                    marker_offset == padding_end
+                                        && operation_offset == marker_offset.saturating_add(1)
+                                }
+                                _ => false,
+                            };
                             reference.record_index_offset == scope.byte_offset.saturating_add(26)
                                 && matches!(reference.trailing_zero_count, 7 | 8)
-                                && operation_offset
-                                    == reference
-                                        .record_index_offset
-                                        .saturating_add(4)
-                                        .saturating_add(u64::from(reference.trailing_zero_count))
+                                && marker_valid
                                 && scope.reference_members.contains(&reference.record_index)
                         },
                     ) && matches!(

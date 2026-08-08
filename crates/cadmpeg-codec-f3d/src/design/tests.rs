@@ -6944,6 +6944,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                  structural_constant: u8,
                  start: u8,
                  reference_padding: Option<usize>,
+                 reference_marker: bool,
                  legacy_side_extents: Option<((u32, u32), bool)>,
                  legacy_reference_count_offset: Option<usize>| {
         let mut bytes = Vec::new();
@@ -6961,6 +6962,10 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         } else {
             28
         };
+        if reference_marker {
+            assert_eq!(reference_padding, Some(8));
+            bytes[operation_offset - 1] = 1;
+        }
         bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
         bytes[operation_offset + 4..operation_offset + 8].copy_from_slice(&extent.0.to_le_bytes());
         bytes[operation_offset + 8..operation_offset + 12].copy_from_slice(&extent.1.to_le_bytes());
@@ -7027,7 +7032,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         parse_parameter_scope(&bytes, &IndexedRecordOffsets::build(&bytes), &header).unwrap()
     };
 
-    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, None, None);
+    let direct = scope("Extrude", 1, (1, 2), 0, 1, 0, None, false, None, None);
     assert_eq!(
         direct.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
@@ -7045,7 +7050,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 42,
         })
     );
-    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), None, None);
+    let referenced = scope("Extrude", 3, (2, 0), 0, 1, 1, Some(8), false, None, None);
     assert_eq!(
         referenced.extrude_prologue,
         Some(DesignExtrudePrologue::ReferenceAware {
@@ -7053,6 +7058,8 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
                 record_index: 77,
                 record_index_offset: 26,
                 trailing_zero_count: 8,
+                operation_prefix_marker: None,
+                operation_prefix_marker_offset: None,
             }),
             operation: DesignExtrudeOperation::Intersect,
             operation_offset: 38,
@@ -7067,7 +7074,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             start_offset: 52,
         })
     );
-    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), None, None);
+    let compact_reference = scope("Extrude", 2, (1, 2), 0, 1, 2, Some(7), false, None, None);
     let Some(DesignExtrudePrologue::ReferenceAware {
         reference: Some(reference),
         operation_offset,
@@ -7079,7 +7086,20 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
     assert_eq!(reference.trailing_zero_count, 7);
     assert_eq!(operation_offset, 37);
 
-    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, None, None);
+    let marked_reference = scope("Extrude", 1, (1, 2), 0, 1, 0, Some(8), true, None, None);
+    let Some(DesignExtrudePrologue::ReferenceAware {
+        reference: Some(reference),
+        operation_offset,
+        ..
+    }) = marked_reference.extrude_prologue
+    else {
+        panic!("marked indexed-reference Extrude prologue");
+    };
+    assert_eq!(reference.operation_prefix_marker, Some(1));
+    assert_eq!(reference.operation_prefix_marker_offset, Some(37));
+    assert_eq!(operation_offset, 38);
+
+    let to_face = scope("Extrusion", 2, (1, 1), 1, 1, 2, None, false, None, None);
     assert_eq!(to_face.kind, "Extrusion");
     let Some(prologue) = to_face.extrude_prologue else {
         panic!("to-face Extrude prologue");
@@ -7096,6 +7116,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((1, 0), false)),
         None,
     );
@@ -7113,6 +7134,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((1, 0), true)),
         None,
     );
@@ -7137,6 +7159,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((1, 1), false)),
         None,
     );
@@ -7155,6 +7178,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((4, 0), false)),
         None,
     );
@@ -7172,6 +7196,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((2, 0), true)),
         None,
     );
@@ -7198,6 +7223,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             1,
             0,
             None,
+            false,
             Some(((2, 0), false)),
             Some(reference_count_offset),
         );
@@ -7219,6 +7245,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((4, 4), true)),
         Some(294),
     );
@@ -7239,12 +7266,13 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         1,
         0,
         None,
+        false,
         Some(((0, 0), false)),
         None,
     );
     assert_eq!(invalid_absent_first_side.extrude_prologue, None);
 
-    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, None, None);
+    let unrecognized = scope("Extrude", 2, (3, 0), 0, 1, 0, None, false, None, None);
     assert_eq!(unrecognized.kind, "Extrude");
     assert_eq!(unrecognized.extrude_prologue, None);
     assert_eq!(
@@ -7256,6 +7284,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             1,
             0,
             None,
+            false,
             Some(((1, 0), false)),
             None,
         )
@@ -7270,6 +7299,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
         0,
         0,
         None,
+        false,
         Some(((1, 0), false)),
         None,
     )
@@ -7285,6 +7315,7 @@ fn extrude_scope_discriminators_follow_optional_indexed_reference() {
             1,
             3,
             None,
+            false,
             Some(((1, 0), false)),
             None,
         )

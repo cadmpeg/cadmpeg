@@ -618,8 +618,14 @@ pub struct DesignExtrudePrologueReference {
     pub record_index: u32,
     /// Byte offset of `record_index`.
     pub record_index_offset: u64,
-    /// Number of zero bytes between `record_index` and the operation.
+    /// Number of zero bytes between `record_index` and the operation or its marker.
     pub trailing_zero_count: u8,
+    /// Optional marker byte between the zero run and the operation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_prefix_marker: Option<u8>,
+    /// Byte offset of `operation_prefix_marker` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operation_prefix_marker_offset: Option<u64>,
 }
 
 /// Fixed fields preceding an Extrude parameter scope's reference table.
