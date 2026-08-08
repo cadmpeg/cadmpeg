@@ -729,6 +729,15 @@ fn compact_body_path_requires_type_three_vector() {
     payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
 
+    payload[second + 20..second + 30].copy_from_slice(&[0; 10]);
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+    assert_eq!(
+        compact_body_component_path_at(&payload, marker).map(|components| components.len()),
+        Some(2)
+    );
+    payload[second + 24] = 1;
+    assert_eq!(compact_body_path_at(&payload, marker), None);
+
     payload[4] = 2;
     assert_eq!(compact_body_path_at(&payload, marker), None);
 }
@@ -748,4 +757,17 @@ fn compact_combine_operation_is_name_length_relative() {
     );
     payload[operation - 1] = 1;
     assert_eq!(compact_combine_operation_at(&payload, offset), None);
+
+    let offset = 11;
+    let mut tokenized = vec![0; 180];
+    tokenized[offset..offset + 5].copy_from_slice(&[0xe3, 0x85, 0xff, 0xfe, 0xff]);
+    tokenized[offset + 5] = 8;
+    let operation = offset + 117 + 16;
+    tokenized[operation + 4..operation + 10].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(
+        compact_combine_operation_at(&tokenized, offset),
+        Some("Join")
+    );
+    tokenized[operation + 9] = 0;
+    assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }

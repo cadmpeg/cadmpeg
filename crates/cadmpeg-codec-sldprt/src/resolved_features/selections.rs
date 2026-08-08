@@ -1727,22 +1727,6 @@ fn compact_sparse_component_path(
     parse(payload, cursor, count, &mut HashSet::new())
 }
 
-pub(super) fn compact_heterogeneous_edge_path(
-    payload: &[u8],
-    cursor: usize,
-    count: usize,
-) -> Option<(Vec<u32>, usize)> {
-    compact_heterogeneous_component_path(payload, cursor, count).and_then(|(entries, end)| {
-        Some((
-            entries
-                .into_iter()
-                .map(|entry| entry.local_id)
-                .collect::<Option<Vec<_>>>()?,
-            end,
-        ))
-    })
-}
-
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
     let end = cursor.checked_add(count.checked_mul(2)?)?;
     let ids = payload

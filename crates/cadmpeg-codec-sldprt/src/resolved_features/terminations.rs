@@ -7,9 +7,9 @@ use super::parameters::value_only_scalar_offset;
 use super::scalars::feature_object_name;
 use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
-    compact_heterogeneous_edge_path, compact_profile_general_curve_ref_at,
-    component_profile_source_at, component_reference_curve_path_at,
-    declared_general_curve_profile_prefix, COMPACT_EDGE_VECTOR_MARKER,
+    compact_profile_general_curve_ref_at, component_profile_source_at,
+    component_reference_curve_path_at, declared_general_curve_profile_prefix,
+    COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
@@ -486,20 +486,30 @@ pub(super) fn compact_combine_operation_at(
     payload: &[u8],
     name_offset: usize,
 ) -> Option<&'static str> {
-    if payload.get(name_offset..name_offset + 5)? != [0x04, 0x80, 0xff, 0xfe, 0xff] {
+    let name_prefix = payload.get(name_offset..name_offset.checked_add(5)?)?;
+    let name_token = u16::from_le_bytes(name_prefix[..2].try_into().ok()?);
+    if name_token & 0x8000 == 0 || name_token == u16::MAX || name_prefix[2..] != [0xff, 0xfe, 0xff]
+    {
         return None;
     }
-    let name_units = usize::from(*payload.get(name_offset + 5)?);
-    let operation = name_offset.checked_add(117 + name_units.checked_mul(2)?)?;
+    let name_units = usize::from(*payload.get(name_offset.checked_add(5)?)?);
+    let operation = name_offset.checked_add(117usize.checked_add(name_units.checked_mul(2)?)?)?;
+    let operation_end = operation.checked_add(4)?;
+    let standard_tail = payload
+        .get(operation_end..operation_end.checked_add(10)?)
+        .is_some_and(|tail| tail == [0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]);
+    let alternate_tail = payload
+        .get(operation_end..operation_end.checked_add(6)?)
+        .is_some_and(|tail| tail == [0, 0, 0xff, 0xff, 0xff, 0xff]);
     if payload
         .get(operation - 12..operation)?
         .iter()
         .any(|byte| *byte != 0)
-        || payload.get(operation + 4..operation + 14)? != [0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]
+        || !(standard_tail || alternate_tail)
     {
         return None;
     }
-    match u32::from_le_bytes(payload.get(operation..operation + 4)?.try_into().ok()?) {
+    match u32::from_le_bytes(payload.get(operation..operation_end)?.try_into().ok()?) {
         0 => Some("Join"),
         1 => Some("Cut"),
         2 => Some("Intersect"),
@@ -805,15 +815,12 @@ pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<
     if count == 0 {
         return None;
     }
-    compact_heterogeneous_edge_path(payload, marker + 18, count)
-        .map(|(ids, _)| ids)
-        .or_else(|| {
-            let (ids, end) = (count > 1)
-                .then(|| compact_heterogeneous_edge_path(payload, marker + 18, count - 1))
-                .flatten()?;
-            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
-                .then_some(ids)
-        })
+    compact_body_component_entries_at(payload, marker + 18, count).and_then(|components| {
+        components
+            .into_iter()
+            .map(|component| component.local_id)
+            .collect()
+    })
 }
 
 pub(super) fn compact_body_component_path_at(
@@ -832,15 +839,30 @@ pub(super) fn compact_body_component_path_at(
     ))
     .ok()
     .filter(|count| *count != 0)?;
-    compact_heterogeneous_component_path(payload, marker + 18, count)
+    compact_body_component_entries_at(payload, marker + 18, count)
+}
+
+fn compact_body_component_entries_at(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if count == 0 {
+        return None;
+    }
+    compact_heterogeneous_component_path(payload, cursor, count)
         .map(|(components, _)| components)
         .or_else(|| {
             let (components, end) = (count > 1)
-                .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
+                .then(|| compact_heterogeneous_component_path(payload, cursor, count - 1))
                 .flatten()?;
-            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
-                .then_some(components)
+            compact_body_null_slot_at(payload, end).then_some(components)
         })
+}
+
+fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
+    payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+        || payload.get(end..end + 10) == Some(&[0; 10])
 }
 
 pub(crate) fn project_compact_combine_paths(
