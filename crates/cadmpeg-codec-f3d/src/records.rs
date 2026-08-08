@@ -1166,7 +1166,7 @@ pub enum DesignCircularPatternAxis {
         origin: [f64; 3],
         /// Byte offset of the first origin coordinate.
         origin_offset: u64,
-        /// Unit axis direction.
+        /// Unit axis direction derived from the serialized displacement.
         direction: [f64; 3],
         /// Byte offset of the first direction coordinate.
         direction_offset: u64,

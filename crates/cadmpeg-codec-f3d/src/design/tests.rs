@@ -21895,6 +21895,33 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
         })
     );
 
+    for (offset, value) in [0.0_f64, 0.0, 2.0].into_iter().enumerate() {
+        bytes[axis_start + 49 + offset * 8..axis_start + 57 + offset * 8]
+            .copy_from_slice(&value.to_le_bytes());
+    }
+    let normalized = exact_circular_pattern_construction_with_owners(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &[],
+    )
+    .expect("non-unit axis displacement is normalized");
+    let crate::records::DesignCircularPatternAxis::Inline { direction, .. } = normalized.axis
+    else {
+        panic!("inline axis expected");
+    };
+    assert_eq!(direction, [0.0, 0.0, 1.0]);
+
+    let mut zero_displacement = bytes.clone();
+    zero_displacement[axis_start + 49..axis_start + 73].fill(0);
+    assert!(exact_circular_pattern_construction_with_owners(
+        &zero_displacement,
+        &IndexedRecordOffsets::build(&zero_displacement),
+        &scope,
+        &[],
+    )
+    .is_none());
+
     bytes[count_start + 4] = b'x';
     bytes[angle_start + 4] = b'x';
     let owner = |record_index, local_ordinal, evaluated_value, evaluated_value_offset| {
@@ -21951,7 +21978,7 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
     );
     bytes[axis_start + 89..axis_start + 93].copy_from_slice(&9_u32.to_le_bytes());
 
-    bytes[axis_start + 57..axis_start + 65].copy_from_slice(&1.0_f64.to_le_bytes());
+    bytes[axis_start + 57..axis_start + 65].copy_from_slice(&f64::NAN.to_le_bytes());
     assert_eq!(
         exact_circular_pattern_construction_with_owners(
             &bytes,

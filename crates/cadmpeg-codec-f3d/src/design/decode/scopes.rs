@@ -2134,17 +2134,24 @@ fn exact_circular_pattern_axis(
         return None;
     }
     let origin: [f64; 3] = f64s_at(bytes, start + 25, 3)?.try_into().ok()?;
-    let direction: [f64; 3] = f64s_at(bytes, start + 49, 3)?.try_into().ok()?;
-    let direction_norm = direction
-        .iter()
-        .map(|component| component * component)
-        .sum::<f64>();
+    let displacement: [f64; 3] = f64s_at(bytes, start + 49, 3)?.try_into().ok()?;
+    let displacement_length = displacement[0]
+        .hypot(displacement[1])
+        .hypot(displacement[2]);
     if origin.iter().any(|coordinate| !coordinate.is_finite())
-        || direction.iter().any(|coordinate| !coordinate.is_finite())
-        || (direction_norm - 1.0).abs() > 1.0e-12
+        || displacement
+            .iter()
+            .any(|coordinate| !coordinate.is_finite())
+        || !displacement_length.is_finite()
+        || displacement_length <= f64::EPSILON
     {
         return None;
     }
+    let direction = if (displacement_length - 1.0).abs() <= 1.0e-12 {
+        displacement
+    } else {
+        displacement.map(|component| component / displacement_length)
+    };
     Some((origin, direction))
 }
 
