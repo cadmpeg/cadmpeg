@@ -1189,6 +1189,12 @@ fn parse_role_selectors(
             if name_selector == 0 || data.get(page_offset) != Some(&0xe3) {
                 return None;
             }
+            // A declared one-byte text field owns its following FE terminator.
+            // Do not reinterpret that same byte as an unresolved role selector
+            // merely because E3 follows it (DI-25).
+            if length_closed_text(data, payload + 1, value_length, end).is_some() {
+                return None;
+            }
             let selector_low = *data.get(low_offset)?;
             if role_offset.checked_add(3)? > end
                 || text_value_allow_empty(data.get(payload.checked_add(1)?..role_offset)?).is_none()
@@ -1903,6 +1909,28 @@ mod tests {
         assert_eq!(run.relations[1].expression, "#1_ + #2_");
         assert_eq!(run.relations[1].body_selector, None);
         assert_eq!(run.relations[1].parameter_selector, None);
+    }
+
+    #[test]
+    fn text_terminator_precedes_an_e3_shaped_unresolved_role() {
+        let mut bytes = Vec::new();
+        identity(&mut bytes, 1);
+        bytes.extend_from_slice(TEXT_OPEN);
+        bytes.extend_from_slice(&[2, b'x', 0xfe, 0xe3, 0x17]);
+        identity(&mut bytes, 2);
+        bytes.extend_from_slice(CATALOG_OPEN);
+
+        let run = &parse_runs(&bytes)[0];
+        assert_eq!(run.text_fields.len(), 1);
+        assert_eq!(
+            run.text_fields[0].encoding,
+            super::LegacyTextEncoding::U8InclusiveLength
+        );
+        assert_eq!(run.text_fields[0].value, "x");
+        assert!(!run
+            .role_selectors
+            .iter()
+            .any(|role| { matches!(role.name, super::LegacyRoleName::Selector(0xfe)) }));
     }
 
     #[test]
