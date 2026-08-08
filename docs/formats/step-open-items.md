@@ -213,6 +213,41 @@ complete solid and reports the failed STEP carrier.
 **Need.** We need measured loss rates and an IR design before changing the
 atomic-solid invariant.
 
+### TP-06. Implicit face-plane orientation
+
+**Question.** Which winding rule defines the normal, origin, and u-axis of an
+implicit face plane, and how does it compose with `ORIENTED_FACE` bound
+reversal?
+
+**Known.** `step.md` §8 "A base `FACE` without an explicit surface derives an
+implicit plane" gives the current rule. The decoder selects the first
+`FACE_OUTER_BOUND` in source order, takes the first ring point as the plane
+origin, takes the first non-degenerate ring edge as the u-axis, and derives
+the normal from the signed polygon area.
+
+**Need.** An `EDGE_LOOP` is a cycle. ISO 10303-42 does not give its coedge
+list a distinguished first element, so a rotation of that list is a
+semantics-preserving re-serialization. The current rule maps two such
+serializations to different plane origins and different u-axes, and therefore
+to different surface parameterizations for the same face. We need an
+origin and u-axis rule that is invariant under ring rotation, or a decision
+that the derived parameterization is not a stable identity.
+
+**Note.** This item was closed by `261edaa69` and is reopened. The closure
+wrote the rule into `step.md` §8 and closed the item as documented. Writing a
+selection rule down does not settle it. Three parts remain open:
+
+- The origin and u-axis are ring-rotation dependent, as above
+  (`crates/cadmpeg-codec-step/src/reader/topology.rs:3044`, `:3069`).
+- `implicit_face_plane` does not test the ring for planarity. Newell's method
+  returns a well-formed normal for a non-planar ring, so a non-planar boundary
+  produces a fabricated plane that no boundary point lies on, with no loss
+  (`topology.rs:3056-3067`).
+- The construction fabricates a surface that the format does not carry. ISO
+  10303-42 gives `face` no surface attribute. `step.md` states the opposite
+  policy for curves: "the decoder does not fabricate a curve carrier." We need
+  a decision on why the two carrier kinds differ.
+
 ### TP-07. Pcurve recursion and normalization
 
 **Question.** What normalization and recursion guard rules apply to cyclic
@@ -223,3 +258,659 @@ carriers remain opaque.
 
 **Need.** We need fixtures for cycle handling, 2D line normalization, and
 complex `PCURVE` support before extending the typed domain.
+
+### TP-08. Face-bound partial dispatch
+
+**Question.** Which partial supplies the `bound` and `orientation` attributes
+of a complex instance that carries both a `FACE_BOUND` and a
+`FACE_OUTER_BOUND` partial?
+
+**Known.** `has_type` matches a partial name exactly and does not walk the
+EXPRESS subtype hierarchy
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:4633`). Two sites choose
+the governing partial in opposite orders. The shell reader tries `FACE_BOUND`
+first (`topology.rs:2205`). The implicit-plane reader tries `FACE_OUTER_BOUND`
+first (`topology.rs:2978`). `FACE_OUTER_BOUND` adds no attributes to
+`FACE_BOUND`, so the second site reads attribute 1 of an empty partial and
+returns no loop.
+
+**Need.** A face bound that is written as a complex instance decodes in the
+shell reader and fails in the implicit-plane reader, so a base `FACE` with
+such a bound silently gets no implicit plane. We need one dispatch rule for
+attribute-less subtypes. The `most_specific` doc comment (`topology.rs:4637`)
+states subtype-first as the convention, but subtype-first is wrong when the
+subtype adds no attributes, and `most_specific` is used for both classifying
+the governing subtype and locating attributes. Those two jobs need opposite
+orders.
+
+## 7. Units and measures
+
+### UM-01. Unit context selection
+
+**Question.** Which `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the length and
+plane-angle scale for a value, when an exchange structure contains more than
+one context?
+
+**Known.** `step.md` §8 "Length values convert to millimetres." gives the
+target units. `step.md` §8 "Representation uncertainty is a linear tolerance
+measured in the representation's length unit." states a per-representation
+model. The decoder resolves one document-global scale instead. It takes the
+context that `BTreeMap` iteration reaches first, which is the context with the
+lowest instance name, and does not compare the other contexts. When that
+context lists no length unit, it adopts any `LENGTH_UNIT` record anywhere in
+the file (`crates/cadmpeg-codec-step/src/reader/geometry.rs:2635-2661`).
+`plane_angle_scale` uses the same rule (`geometry.rs:2663-2689`). The scale
+applies to every point, radius, and extent, and passes into `pmi`,
+`tessellation`, `topology`, and `validation`.
+
+**Need.** An assembly whose imported component declares an inch context and
+whose top level declares a millimetre context scales every coordinate in the
+file by the lower-numbered context. No loss is recorded, because the
+`unresolved_unit_loss` path fires only when resolution returns nothing, never
+when it resolves to the wrong context. We must know which context governs a
+value to bind a scale per representation.
+
+### UM-02. Representation uncertainty selection
+
+**Question.** Which `UNCERTAINTY_MEASURE_WITH_UNIT` of a
+`GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` is the linear tolerance, when the
+context lists more than one?
+
+**Known.** `step.md` §8 "Representation uncertainty is a linear tolerance
+measured in the representation's length unit." states the kind of the value
+but not which measure carries it. The decoder takes the first reference in the
+first uncertainty context and does not read the measure's `name`
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:2805-2821`). The writer
+emits `distance_accuracy_value` (`crates/cadmpeg-codec-step/src/lib.rs:1437`),
+so the convention is known to the project and unused by the reader.
+
+**Need.** When the first listed measure carries an angular unit, `unit_scale_mm`
+returns nothing, the whole function aborts, and `ir.tolerances.linear` keeps
+its default with no warning and no loss. That tolerance feeds Cartesian trim
+resolution and pcurve scoring, so trim selects resolve differently than the
+file states. We must know the selection rule to read the declared tolerance.
+
+### UM-03. SI prefix on plane-angle units
+
+**Question.** Does an SI prefix apply to a plane-angle `SI_UNIT`?
+
+**Known.** `step.md` §8 "SI prefixes apply before conversion-based-unit
+factors." states the rule without restriction to a unit kind.
+
+**Conflict.** `unit_scale_radians_inner` reads only parameter 1, the unit name,
+and returns 1.0 for `RADIAN`
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:2713-2714`). It never reads
+parameter 0, the prefix. The length path reads the prefix and applies
+`si_prefix` (`geometry.rs:2753-2760`). `SI_UNIT(.MILLI.,.RADIAN.)` therefore
+resolves to 1.0 instead of 1e-3, and every conical half-angle, conic trim
+parameter, and angular pcurve axis is 1000 times too large. No warning is
+emitted, because the unit resolves. No test uses a prefixed radian. The
+decoder disagrees with `step.md` §8 and needs a decision.
+
+## 8. Parameter charts and unit repair
+
+### PC-01. Angular parameter unit repair
+
+**Question.** May a pcurve parameter axis use a plane-angle unit other than
+the unit the representation context declares?
+
+**Known.** `step.md` §8 "Length values convert to millimetres." and `step.md`
+§8 "A cylinder or cone uses plane-angle scale for `u`" bind the axis to the
+declared unit. The decoder does not hold to that binding. It builds a
+candidate set of the declared scale and the degree or radian alternative,
+maps each candidate through the owning surface, and scores each by the
+distance from the mapped surface point to the edge endpoint
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:1742-1820`). It accepts
+the alternative when the best score is at most 1.0 tolerance, the declared
+score is more than 10.0 tolerances, and the declared score is more than 100
+times the best. The same rule exists for revolution surfaces
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:3446-3463`).
+
+**Need.** The thresholds 1.0, 10.0, and 100.0 have no source. Only the
+endpoint parameters are observed; the curve interior is never sampled, and a
+coedge with more than one pcurve contributes one endpoint per pcurve. A
+pcurve that is correct under the declared unit but whose edge fails the fit
+for an unrelated reason can therefore be rescaled by π/180 across its whole
+domain. The result is a free-text warning, not a `LossNote`, so it does not
+appear in the decode report losses. We must know whether producers emit
+degree-valued pcurve axes, and under which declaration, before a numeric fit
+may override a declared unit.
+
+### PC-02. Synthesized pcurve chart
+
+**Question.** May the decoder replace a pcurve's parameterization with an
+affine map that it derives from the edge endpoints?
+
+**Known.** `step.md` §8 states the opposite twice: "A pcurve on either surface
+maps into the same U/V parameterization as its owning surface" and "A pcurve
+carrier that cannot preserve its native parameterization under an anisotropic
+surface-unit map remains opaque." The decoder instead inverts the surface at
+the edge's two vertex points, builds a per-axis affine map from the pcurve
+domain endpoints onto those surface parameters, and accepts the variant with
+the best endpoint score
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:3218-3322`). The score is
+the larger of the two endpoint distances (`topology.rs:3841`). The 33-sample
+locus comparison is used only to break ties between source candidates, never
+to check a synthesized chart against the source curve.
+
+**Need.** When a pcurve's two domain endpoints share one axis value, the
+degenerate branch sets that axis scale to 0.0 and its offset to the endpoint
+value (`topology.rs:3306-3313`), so the axis becomes constant and a bowed
+curve collapses to an isoparametric line. Both endpoints still fit, so the
+variant is selected and written back. No loss is recorded. We must know
+whether producers parameterize a bounded edge locally, as the code comment
+asserts, before the decoder may synthesize a chart rather than stay opaque.
+
+### PC-03. Surface chart remap from the pcurve population
+
+**Question.** May the aggregate coordinate bounds of the pcurves on a surface
+define that surface's source chart?
+
+**Known.** For a procedural surface the decoder collects the coordinate bounds
+of every pcurve on it, selects the isoparametric pcurve with the largest
+varying span whose other axis is constant within 1e-12 relative
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:3571-3592`), and builds a
+linear rescale from that span onto the surface domain, together with a
+direction-reversing variant (`topology.rs:3535-3569`). Both are offered to
+the endpoint score.
+
+**Need.** The rule assumes the observed pcurves span the whole source chart
+and that the source-to-surface map is linear. A face trimmed so that no
+pcurve spans the full directrix yields a short span and stretches every
+pcurve on the surface. A non-uniformly parameterized NURBS directrix does not
+map linearly from the producer's parameterization to the knot parameter, so
+the endpoints fit and every interior point is wrong. Nothing detects either
+case and no loss is recorded. We must know the real source parameterization
+rule for procedural surfaces.
+
+### PC-04. Chart write-back to the shared pcurve
+
+**Question.** Which coedge owns the parameterization of a pcurve that several
+edges reference?
+
+**Known.** `select_associated_pcurve` runs for each coedge with that coedge's
+vertex points and overwrites the pcurve arena entry with the variant
+calibrated to those points
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:3806-3817`). There is no
+guard against a previous write.
+
+**Need.** Two `EDGE_CURVE` records on one `SURFACE_CURVE`, or a `SUBEDGE` that
+inherits its parent's pcurve, calibrate the same arena entry in turn. The
+first coedge stores a `parameter_range` measured in the chart that the second
+coedge then replaces, so the stored range no longer refers to the stored
+geometry. We must know whether a pcurve chart is a property of the carrier or
+of the occurrence.
+
+### PC-05. Periodic trim interval
+
+**Question.** Does a trim interval on a closed curve or surface wrap across
+the parameter seam?
+
+**Known.** `step.md` §8 "Its local U and V domains are `0..abs(u2-u1)` and
+`0..abs(v2-v1)`." states an unwrapped rule for
+`RECTANGULAR_TRIMMED_SURFACE`. `step.md` §8 "Its local parameter domain is
+the directed trim interval measured from the first select" states the same
+for `TRIMMED_CURVE`.
+
+**Conflict.** The decoder adds one period to the endpoint before that
+subtraction, on axes it finds periodic
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:1074-1086`, `:2847-2871`,
+`:3739-3763`). For a cylinder trimmed at `u1 = 5.0`, `u2 = 1.0` with a
+positive sense, the decoder gives the domain `0..(1.0 + 2π − 5.0)` and
+`step.md` gives `0..4.0`. The two select complementary patches of the
+cylinder. The wrap is justified only by code comments. One of the two is
+wrong and the item needs a decision.
+
+### PC-06. Default placement reference direction
+
+**Question.** Which reference direction applies to an `AXIS2_PLACEMENT_3D`
+whose `ref_direction` is omitted?
+
+**Known.** ISO 10303-42 `first_proj_axis` selects `(1,0,0)`, or `(0,1,0)` when
+the axis is parallel to X, and projects it onto the plane normal to the axis.
+`step.md` §8 "`CARTESIAN_TRANSFORMATION_OPERATOR_3D` stores a required local
+origin and optional axis1, axis2, axis3, and scale attributes." states that
+rule for the transformation operator, and `base_axis_3d` implements it
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:4301-4315`). The
+specification states no rule for the placement, and the placement uses a
+different function: `derive_reference_direction`
+(`crates/cadmpeg-ir/src/geometry.rs:332-355`, called at
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:213`, `:216`). That function
+projects the global basis vector **least** aligned with the axis, and its doc
+comment describes a stable direction rather than a format rule.
+
+**Need.** The two rules agree only for a coordinate-aligned axis. For an axis
+of `(0.6, 0.8, 0)` the standard gives `(0.8, -0.6, 0)` and the decoder gives
+`(0, 0, 1)`. The reference direction is the parameter origin of every circle,
+ellipse, and conic on the placement, so every `.PARAMETER.` trim on such a
+carrier resolves against a different chart, and every surface built on the
+placement gets a different u-origin. Every fixture that omits
+`ref_direction` uses an axis of `(0,0,1)`, where the two rules coincide, so no
+test separates them. We must confirm the placement default, and decide whether
+one shared helper may serve both a stability role and a format rule. The same
+helper supplies defaults in the catia, creo, iges, and asm codecs.
+
+### PC-07. Ellipse semi-axis canonicalization
+
+**Question.** May the decoder reorder an `ELLIPSE` semi-axis pair?
+
+**Known.** ISO 10303-42 parameterizes an ellipse as
+`center + semi_axis_1·cos(u)·x + semi_axis_2·sin(u)·y`, with `x` the
+placement reference direction, and does not require `semi_axis_1` to be the
+longer one. When `semi_axis_1` is shorter, the decoder swaps the two radii and
+rotates the major direction to `cross(axis, reference_direction)`
+(`crates/cadmpeg-codec-step/src/reader/geometry.rs:381-393`).
+
+**Need.** The swap is the substitution `v = u − π/2`, and no compensating
+phase shift is applied to trims on that curve. A `TRIMMED_CURVE` with
+`.PARAMETER.` selects states its parameters in the source parameterization, so
+a trim on a swapped-axis ellipse selects the wrong arc. No fixture combines a
+swapped-axis ellipse with a parameter trim, so the reparameterization is never
+observed. We must decide whether the IR ellipse carries the source
+parameterization or a canonical one, and where the phase shift belongs.
+
+## 9. Body and root identity
+
+### BR-01. Topology root identity
+
+**Question.** Do two topology root records of different kinds that resolve to
+the same shell set denote one body or two?
+
+**Known.** `RootKey` holds only the resolved base shells and their
+orientations (`crates/cadmpeg-codec-step/src/reader/topology.rs:1789-1791`).
+The root record's own entity type is not part of the key, and `BodyKind`
+derives from that type (`topology.rs:2023`). Root records are visited in
+ascending instance-name order, so the first root builds the body and every
+later root with the same shell set is aliased onto it
+(`topology.rs:377-401`). `step.md` §8 "Reused source topology roots reuse
+their committed body identity." addresses one root reached through several
+representations, not two distinct root records.
+
+**Need.** A `CLOSED_SHELL` may be referenced by both a `MANIFOLD_SOLID_BREP`
+and a `SHELL_BASED_SURFACE_MODEL`. The solid is then emitted as a sheet body,
+or the sheet as a solid, according to which record carries the lower instance
+name. Swapping the two instance names swaps the resulting body kind. No loss
+is recorded. We must know whether shell sharing between root kinds is valid,
+and which root governs the body kind if it is.
+
+### BR-02. Outer and void shell roles
+
+**Question.** How does a region record which of its shells is the outer
+boundary?
+
+**Known.** The STEP rule is unambiguous: `BREP_WITH_VOIDS` attribute 1 is the
+outer shell and attribute 2 the voids. The reader discards that knowledge and
+keeps the role only as position in `region.shells`
+(`crates/cadmpeg-codec-step/src/reader/topology.rs:2618-2644`). The writer
+recovers it with `split_first`
+(`crates/cadmpeg-codec-step/src/lib.rs:1534`). `cadmpeg_ir` documents the
+field as "typically one outer, plus voids".
+
+**Need.** Connected-component splitting appends each component of a shell in
+place, so an outer shell that decodes into two components inserts an extra
+entry ahead of the genuine voids. The writer then exports a piece of the
+outer boundary as a reversed void, and moves every void one position later.
+No loss is recorded for the role change. We must decide whether the IR
+carries an explicit outer-shell role or whether the reader must preserve the
+positional contract across component splitting.
+
+## 10. Product structure and assembly
+
+### PS-01. Placement binding for repeated child uses
+
+**Question.** Which `MAPPED_ITEM` placement belongs to which
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when one parent uses one child definition
+more than once?
+
+**Known.** `step.md` §8 "Repeated child uses without an occurrence-specific
+shape representation remain ambiguous and report the unresolved placement."
+settles this as unresolvable.
+
+**Conflict.** `infer_parent_representation_placements` resolves it by order
+(`crates/cadmpeg-codec-step/src/reader/product.rs:712-811`). It sorts the
+parent's usages by record byte offset, collects the parent representation's
+mapped children in `items` list order, and zips the two sequences. The guard
+at `product.rs:799-802` compares the child-definition sequences, which is
+vacuously true when every usage names the same child definition — the exact
+case the specification calls ambiguous. Reordering the two root `items`
+references, with no other change, swaps the two occurrences' transforms and
+reports no loss. Neither ISO 10303-44 nor `step.md` makes
+`REPRESENTATION.items` order or record byte order significant.
+
+**Note.** The code was added by `907246f70` on 2026-08-08. That commit
+touched only `product.rs` and `tests.rs`; it did not update `step.md` or this
+ledger, and its commit body is empty. Its test uses two distinct child
+definitions, so it does not reach the repeated-child path. The item needs a
+decision on which of the two documents is correct.
+
+### PS-02. Transform direction of `ITEM_DEFINED_TRANSFORMATION`
+
+**Question.** Which of `transform_item_1` and `transform_item_2` is expressed
+in the component frame?
+
+**Known.** `step.md` §8 "The two items of an `ITEM_DEFINED_TRANSFORMATION`
+belong to the two representations connected by its representation
+relationship." states the correspondence but not the direction. The decoder
+assumes item 1 is the component and item 2 the assembly, and never reads the
+`REPRESENTATION_RELATIONSHIP` `rep_1` and `rep_2` operands
+(`crates/cadmpeg-codec-step/src/reader/product.rs:863-892`). The child's
+representation set is available at `product.rs:593` and is not consulted.
+
+**Need.** Swapping only the relationship endpoints in a fixture leaves the
+child at the same place, where the correspondence rule requires the inverse.
+The assumption matches the usual assembly-structure convention, so conforming
+files decode correctly, but nothing detects a file that orders its endpoints
+the other way and the error is a full mirror of the placement. We must know
+whether the direction is fixed by the attribute position or by the
+relationship endpoints.
+
+### PS-03. Repeated mapped placements of one representation
+
+**Question.** How many bodies does one shape representation that is mapped at
+several placements produce?
+
+**Known.** `step.md` §8 "Mapped representations and context-dependent
+relationships that identify one placement apply that placement once."
+addresses the single-placement case only. `apply_body_placements` iterates
+`MAPPED_ITEM` records in ascending instance-name order and assigns
+`body.transform`, replacing any previous value
+(`crates/cadmpeg-codec-step/src/reader/product.rs:439-472`).
+
+**Need.** One representation mapped twice, without product structure, yields
+one body at the placement of the higher-numbered mapped item. The other
+placement is discarded with no warning and no loss. We must know whether
+repeated mapped items denote instances, and how the IR represents them.
+
+### PS-04. Product and product-definition identity
+
+**Question.** Does one CADIR product definition correspond to a STEP `PRODUCT`
+or to a `PRODUCT_DEFINITION`?
+
+**Known.** The decoder mints part identity from the `PRODUCT` instance and
+emits one IR product definition per `PRODUCT`
+(`crates/cadmpeg-codec-step/src/reader/product.rs:93-180`, `:941-943`), while
+it mints root occurrences per `PRODUCT_DEFINITION` and treats any definition
+that no usage names as a root (`product.rs:217-251`).
+
+**Need.** A product with two definitions is emitted once as a part and twice
+as an occurrence: once inside the assembly and once as a root instance at the
+origin. `shape_bindings` merges both definitions' bodies into the one part
+(`product.rs:481-515`), and `definition_descriptions` keeps only the
+lowest-numbered definition's description (`product.rs:87`). No loss is
+recorded for any of the three. Two assumptions are stacked: that a product
+has one meaningful definition, and that "named by no usage" means "assembly
+root". We must know the identity rule before either is relied on.
+
+### PS-05. Mapped-item scope for occurrence placement
+
+**Question.** Must a `MAPPED_ITEM` that supplies an occurrence placement
+belong to the parent's own representation?
+
+**Known.** The fallback collects every `MAPPED_ITEM` in the exchange
+structure and accepts one when the child definition has exactly one usage and
+exactly one candidate placement
+(`crates/cadmpeg-codec-step/src/reader/product.rs:666-708`). Containment in
+the parent representation is never checked. The accepted transform is written
+as the occurrence transform and composes down the occurrence tree.
+
+**Need.** A leaf whose representation is mapped only in the root
+representation supplies an absolute placement that is then consumed as a
+parent-relative one, so the leaf lands at the sum of the two transforms. The
+candidate is accepted because it is the only one, not because it was shown to
+belong to the parent. We must know the scoping rule for a mapped item that
+identifies an occurrence placement.
+
+### PS-06. Validation representation item count
+
+**Question.** How many measure items may one geometric-validation
+representation carry?
+
+**Known.** `step.md` §8 "Geometric validation properties read area, volume,
+and centroid values through inherited `REPRESENTATION`,
+`MEASURE_REPRESENTATION_ITEM`, and `MEASURE_WITH_UNIT` partials" states the
+partial chain and not the item count. The decoder reads item 0 of the
+representation only
+(`crates/cadmpeg-codec-step/src/reader/validation.rs:45-61`).
+
+**Need.** A representation that lists an area item and a volume item reports
+the first and drops the second with no diagnostic. The unsupported-value
+warning at `validation.rs:126-129` cannot fire for the dropped item, because
+that branch needs the first item to fail. We must know whether a validation
+representation may carry more than one property.
+
+## 11. Annotation, presentation, and tessellation
+
+### AP-01. Datum identification for a complex datum
+
+**Question.** Which partial supplies the `identification` attribute of a
+complex `DATUM` instance?
+
+**Known.** `RecordExt::parameters` returns the parameters of the first partial
+only (`crates/cadmpeg-codec-step/src/reader/pmi.rs:1274-1279`). The datum
+reader scans those parameters for the identification text and substitutes the
+synthetic string `#<id>` when it finds none (`pmi.rs:59-73`). Part 21 orders
+complex partials alphabetically, and the parser enforces that order.
+
+**Need.** For `(COMMON_DATUM() DATUM('A') DATUM_FEATURE() SHAPE_ASPECT(...))`
+the first partial is `COMMON_DATUM`, which has no attributes, so the datum
+letter is replaced by an invented value and no loss is recorded. The same
+reader uses a partial-aware lookup for the datum name two lines later. We
+must know which partial governs each inherited attribute of a complex shape
+aspect.
+
+### AP-02. Dimension nominal value selection
+
+**Question.** Which measure of a dimensional characteristic is the nominal
+value?
+
+**Known.** `step.md` §8 "A complex dimension uses its dimensional partial for
+its kind and all inherited partials for its name, targets, and characteristic
+value." does not say which value when there are several. The decoder collects
+every reachable measure in traversal order and takes the first
+(`crates/cadmpeg-codec-step/src/reader/pmi.rs:196-199`, `:1053-1084`). It
+never reads the measure item's `name`, although the writer emits
+`nominal value` and the project's own fixture carries it.
+
+**Need.** A dimension expressed as limits carries `lower limit` and
+`upper limit` items and no nominal item. The lower limit becomes the nominal
+and the upper limit is dropped with no loss, so a 12.0/12.2 bore reports as
+nominal 12.0 with no deviations. We must know the naming or ordering rule
+that identifies the nominal value.
+
+### AP-03. Geometric tolerance kind selection
+
+**Question.** Which partial of a complex geometric tolerance names its kind?
+
+**Known.** The decoder takes the first partial other than `GEOMETRIC_TOLERANCE`
+whose name maps to a kind (`crates/cadmpeg-codec-step/src/reader/pmi.rs:340-356`),
+and the kind table admits any name that ends in `_TOLERANCE`
+(`pmi.rs:1008-1031`). Part 21 orders complex partials alphabetically, so the
+first matching partial is not the leaf type.
+
+**Need.** A tolerance whose mixin partial also ends in `_TOLERANCE` and sorts
+before the leaf is classified by the mixin, so the leaf kind is lost and the
+writer drops the tolerance on export. The exclusion list holds only
+`GEOMETRIC_TOLERANCE`, and it matches the mixins this project's own writer
+emits. We must know the leaf-type rule rather than a name-suffix test.
+
+### AP-04. Annotation text completeness
+
+**Question.** Which text carriers form the text of one annotation?
+
+**Known.** `step.md` §8 "A presentation graph search types only the text
+carrier it consumes" states the typing rule. The decoder returns the first
+`TEXT_LITERAL` that a depth-first walk of the reachable graph reaches and
+records nothing about the others
+(`crates/cadmpeg-codec-step/src/reader/pmi.rs:822-853`).
+
+**Need.** A feature control frame or a toleranced callout carries its symbol,
+value, and datum letters as separate literals. The IR keeps one and drops the
+rest, and which one survives depends on the producer's serialization order of
+the callout contents. A multi-literal callout is indistinguishable from a
+single-literal one in the output. We must know the composition rule for a
+multi-compartment annotation.
+
+### AP-05. Style precedence for independent styled items
+
+**Question.** Which style applies when two `STYLED_ITEM` records target one
+item and neither overrides the other?
+
+**Known.** `step.md` §8 "An overriding style takes precedence for its
+occurrence." settles the override case, and the decoder implements it. For
+equal override depth the sort is stable over ascending instance-name order,
+and the colour is assigned unconditionally, so the last styled item wins
+(`crates/cadmpeg-codec-step/src/reader/presentation.rs:193-333`).
+
+**Need.** A part with a design-view presentation and a second presentation for
+another view carries two styled items on one face. The face colour follows
+the higher instance name. The IR keeps both appearance bindings, so the
+ambiguity survives there, but the scalar face colour that consumers read does
+not, and no conflict is reported. We must know which presentation context
+governs a colour.
+
+### AP-06. Surface style side selection
+
+**Question.** Which side of a surface does a `SURFACE_STYLE_USAGE` colour, and
+which style applies to the visible side?
+
+**Known.** The decoder returns the first colour it reaches in the style
+aggregate (`crates/cadmpeg-codec-step/src/reader/presentation.rs:231-241`,
+`:911-926`). The `side` enumeration of `SURFACE_STYLE_USAGE` is read nowhere
+in the crate. A Part 21 aggregate of this kind is a set and has no order.
+
+**Need.** An assignment that carries `.POSITIVE.` and `.NEGATIVE.` usages
+resolves to whichever appears first in the serialized set, so the decoded
+colour is the back-face colour whenever the producer writes it first. The
+`StyleDomain` filter already blocks curve colours from reaching a face, so
+the residual exposure is side selection and fill against rendering. We must
+know the side rule before a set position may select a colour.
+
+### AP-07. Triangle strip winding
+
+**Question.** Which winding rule applies to the triangles of a
+`TRIANGLE_STRIP`?
+
+**Known.** `step.md` §8 "Triangle, strip, and fan indices address local
+points." gives the index meaning and no winding rule. The decoder alternates
+the first two indices on odd triangles
+(`crates/cadmpeg-codec-step/src/reader/tessellation.rs:419-427`).
+
+**Need.** The alternation matches the common strip convention, and the test
+that covers it asserts the decoder's own output rather than a rule. If the
+AP242 rule instead takes each consecutive triple in order, every odd triangle
+of every strip faces inward. We must confirm the rule from the standard.
+
+## 12. Envelope, lexis, and schema selection
+
+### EL-01. Character encoding selection
+
+**Question.** How does a reader determine whether an exchange structure
+encodes its character bytes as ISO-8859-1 or as UTF-8?
+
+**Known.** `step.md` §2 "Outside string escape sequences, editions 1 and 2
+interpret character bytes as ISO-8859-1. Edition 3 also accepts UTF-8."
+states that both apply.
+
+**Conflict.** The decoder implements the first sentence only. Every direct
+string byte becomes `char::from(byte)`, which is the ISO-8859-1 mapping
+(`crates/cadmpeg-codec-step/src/strings.rs:50-55`, `:70-73`). Nothing reads
+the implementation level or the schema edition, and no code path tries UTF-8
+on string bytes. An edition-3 file with UTF-8 names decodes to mojibake, and
+`decode_text` records no loss because the function does not fail. The same
+byte class gets a different encoding elsewhere: the resource token is strict
+UTF-8 (`crates/cadmpeg-codec-step/src/lex.rs:378`) and `FILE_SCHEMA` uses
+`from_utf8_lossy` (`crates/cadmpeg-codec-step/src/reader/mod.rs:744`). The
+item needs the edition-selection rule.
+
+### EL-02. Exchange-structure detection
+
+**Question.** Which byte sequence identifies a clear-text exchange structure?
+
+**Known.** `step.md` §2 gives the outer grammar and applies whitespace and
+comments at token boundaries. `step.md` §3 "ignore ASCII case. Canonical
+spelling uses uppercase." makes keywords case-insensitive, and the lexer
+implements that.
+
+**Conflict.** `detect` requires the exact bytes `ISO-10303-21;` at offset 0
+(`crates/cadmpeg-codec-step/src/lib.rs:4309-4317`), and `decode_impl`
+re-applies it (`lib.rs:4326-4328`, `:4495-4497`). A file that begins
+`iso-10303-21;`, or that carries a leading comment, a leading blank line, or
+a byte-order mark, is refused with `WrongFormat`, although `parse::parse`
+accepts all of them. Because `decode_impl` repeats the check, `--input-format
+step` cannot override it. The detector and the parser implement different
+rules for one grammar and the item needs a decision.
+
+### EL-03. Enumeration name characters
+
+**Question.** Which characters may an enumeration name contain?
+
+**Known.** `step.md` §3 gives `enumeration = "." standard_name "."` and
+`standard_name = letter (letter | digit | "_" | "-")*`.
+
+**Conflict.** `Lexer::enumeration` accepts only alphanumerics and `_`
+(`crates/cadmpeg-codec-step/src/lex.rs:272-289`), while `Lexer::name` in the
+same file accepts `-` for the same production (`lex.rs:184-192`). An
+enumeration containing a hyphen fails to lex, and the whole exchange
+structure is rejected as malformed rather than the one record. No test covers
+the character class. The item needs a decision.
+
+### EL-04. Signature section boundary
+
+**Question.** Which `ENDSEC` terminates a SIGNATURE section?
+
+**Known.** `step.md` §7 places the section end at the next `ENDSEC;`.
+
+**Conflict.** The lexer locates `END-ISO-10303-21` first and then takes the
+**last** `ENDSEC` before it (`crates/cadmpeg-codec-step/src/lex.rs:111-124`).
+Both markers are matched as raw substrings, not as tokens. SG-01 and SG-03
+record that the payload grammar is unknown, so nothing forbids a payload from
+containing either literal. A payload containing `END-ISO-10303-21` makes the
+file unparseable; a payload containing `ENDSEC` gives a section span that
+holds bytes the specification places outside it. The fixture payload contains
+neither, so no test distinguishes the two rules. The item needs a decision.
+
+### EL-05. Schema identifier interpretation
+
+**Question.** Which `FILE_SCHEMA` identifier governs decoding, and how does an
+identifier select an application protocol and edition?
+
+**Known.** `step.md` §6 "Schema identifiers select the application protocol
+and edition." gives no identifier syntax and no edition mapping. The decoder
+takes the first `FILE_SCHEMA` header record
+(`crates/cadmpeg-codec-step/src/lib.rs:4438-4441`,
+`crates/cadmpeg-codec-step/src/reader/mod.rs:701-711`), joins every listed
+identifier into one string, and infers the AP242 edition by substring-testing
+the object-identifier digits `442 4`, `442 3`, and `442 1`
+(`lib.rs:4469-4477`). The same asserted edition-to-revision mapping writes the
+identifiers of exported files (`lib.rs:136-166`). The header is not checked
+for record order, arity, or duplicates, and `DataSection::parameters` is
+parsed and never read.
+
+**Need.** A revision outside the asserted three reports `edition
+unspecified`; a file that lists an AP242 module beside an AP214 primary
+identifier reports AP242. A second `FILE_SCHEMA` record, a missing one, or a
+per-section `DATA('...')` declaration is dropped with no diagnostic, and a
+schema outside AP203, AP214, and AP242 decodes by entity name with no
+unrecognized-schema loss. We must know the identifier grammar and the
+governing-schema rule.
+
+### EL-06. Omitted entity name repair and anchor order
+
+**Question.** Which entity names carry an inherited leading `name` attribute,
+and when may a reader insert one that the source omits?
+
+**Known.** The parser holds a table of about 100 entity names and inserts an
+empty name when a single-partial record of one of those names has a first
+parameter that is neither a string nor omitted
+(`crates/cadmpeg-codec-step/src/parse.rs:323-435`, `:671-675`). The repair
+has its own diagnostic, produces a `NoncanonicalSourceSyntax` loss with byte
+provenance, and is rejected by strict decode. `step.md` states no attribute
+layout for these entities and this ledger has no item for the repair.
+
+**Need.** The repair runs while records are built, and anchor substitution
+runs later, in `exchange()` (`parse.rs:548-575`). A record whose first
+attribute is an anchor reference therefore looks like an omitted name, so the
+parser inserts an empty string, shifts every parameter by one, and reports a
+deviation that the source does not contain. `step.md` §7 requires anchors to
+resolve before schema decoding. We must know the attribute layouts that the
+table asserts, and the repair must run after anchor resolution.
