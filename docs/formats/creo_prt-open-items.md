@@ -340,14 +340,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the rule to bound the scalar lane. `curve.rs` `parameter_records` accepts the first candidate, which its `4..=11` scan makes the shortest suffix and the longest body. The record is marked ambiguous and its geometry consumers drop it, so the wrong split reaches the native arena only. The sibling function `topology_suffix` rejects the same condition.
 
-### GS-31. Positional conic local-system boundary
-
-**Question.** Which end offset bounds the twelve-slot local system of a positional conic row?
-
-**Known.** `creo_prt.md` §8.5 states that a complete row consumes all twelve local-system slots before its trailing compound record. For the named conic row it requires the unique image that follows a complete twelve-slot frame.
-
-**Need.** We must know the boundary to build the conic frame. `reference.rs` `positional_conic_body` accepts the shortest end offset that yields twelve slots. The sibling function `named_conic_local_system` tracks a competing frame and rejects the row when two boundaries both give a complete frame.
-
 ### GS-32. `tab_cyl` chart intercept magnitude
 
 **Question.** Which field gives the first-axis intercept of a tabulated-cylinder directrix chart?

@@ -640,6 +640,27 @@ fn conic_parameter(
     coordinate(body, offset, cache).map(|(value, next)| (Some(value), next))
 }
 
+fn positional_conic_local_system(
+    body: &[u8],
+    local_start: usize,
+    cache: &ScalarCache,
+) -> Option<(usize, [f64; 12])> {
+    const MAX_FRAME_BYTES: usize = 12 * 9;
+    let first_end = local_start.checked_add(1)?;
+    let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
+    let candidates = (first_end..=last_end)
+        .filter_map(|end| {
+            let tail = body.get(end..)?;
+            (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
+            conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
+        })
+        .collect::<Vec<_>>();
+    let [(local_end, local_system)] = candidates.as_slice() else {
+        return None;
+    };
+    Some((*local_end, *local_system))
+}
+
 fn positional_conic_body(
     body: &[u8],
     entity_id: u32,
@@ -666,11 +687,7 @@ fn positional_conic_body(
     let (coefficient_1, next) = coordinate(body, cursor, cache)?;
     cursor = next;
     let (coefficient_2, local_start) = coordinate(body, cursor, cache)?;
-    let (local_end, local_system) = (local_start + 1..=body.len()).find_map(|end| {
-        conic_local_system(&body[local_start..end], cache).map(|frame| (end, frame))
-    })?;
-    let tail = body.get(local_end..)?;
-    (tail.is_empty() || tail.first() == Some(&0xe2)).then_some(())?;
+    let (local_end, local_system) = positional_conic_local_system(body, local_start, cache)?;
     endpoints
         .iter()
         .flatten()
@@ -1227,6 +1244,22 @@ mod tests {
         assert_eq!(conic.parameter_end, Some(std::f64::consts::PI));
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
         assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
+    }
+
+    #[test]
+    fn positional_conic_local_system_requires_its_compound_boundary() {
+        let frame = [0x0f; 12];
+        let mut body = frame.to_vec();
+        body.push(0xe2);
+        body.extend([0x2c, 0xf7, 0x10, 0xe3]);
+
+        assert_eq!(
+            positional_conic_local_system(&body, 0, &ScalarCache::default()),
+            Some((12, [0.0; 12]))
+        );
+
+        body[12] = 0xff;
+        assert!(positional_conic_local_system(&body, 0, &ScalarCache::default()).is_none());
     }
 
     #[test]

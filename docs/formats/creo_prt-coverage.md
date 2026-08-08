@@ -233,6 +233,9 @@ fixtures, claims above L1 remain unproven.
   line.
 - `line3d` and `arc_z` rows use their next validated row or list-block end as
   the complete body bound; no fixed byte window truncates candidate geometry.
+- Positional `MdlRefInfo` conics require exactly one complete twelve-slot
+  local-system prefix immediately before the trailing compound record;
+  incomplete or competing frame boundaries remain unresolved.
 - Type-zero and type-three coincidence incidences add point-coordinate
   equalities when their selected point rows are unique. This includes the
   two-sense-zero-point form of type three; contradictory components retain

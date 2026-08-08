@@ -3790,8 +3790,9 @@ of the preceding `e3`, then stores `<id> <type> e2`. Its body begins
 `t0`, `t1`, `c1`, `c2`, and the twelve local-system slots in that order. The
 compact `11` `t1` form stores `t0 + pi` while leaving the following coefficient
 and local-system positions aligned. Decoded endpoints, parameters, and
-coefficients are finite. A complete row consumes all twelve local-system slots
-before its trailing compound record.
+coefficients are finite. Exactly one complete twelve-slot local-system prefix
+must be immediately followed by the trailing compound record. Zero or multiple
+qualifying prefixes leave the positional conic unresolved.
 
 A type-30 conic record defines a complete ellipse carrier without interpreting
 its parameter tokens when the first two local-system triples are finite
