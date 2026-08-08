@@ -86,6 +86,7 @@ impl DesignFeatureTransfer {
             &exact_feature_owners,
             &self.feature_ids,
         );
+        assign_document_parameter_ordinals(ir);
         normalize_parameter_names(ir);
         assign_native_operation_parameter_values(ir, &exact_feature_owners);
     }
@@ -182,6 +183,34 @@ fn assign_feature_parameter_ordinals(
         }
     }
 
+    for parameter in &mut ir.model.parameters {
+        if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
+            parameter.ordinal = *ordinal;
+        }
+    }
+}
+
+/// Normalize the document scope after feature ownership is known.
+///
+/// Formula transfer assigns a source-order ordinal before ownership can be
+/// established. Feature-owned parameters receive a feature-local ordinal
+/// above; document parameters must receive their own contiguous scope instead
+/// of retaining gaps left by those feature parameters.
+fn assign_document_parameter_ordinals(ir: &mut CadIr) {
+    let mut parameters = ir
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.is_none())
+        .map(|parameter| (parameter.ordinal, parameter.id.clone()))
+        .collect::<Vec<_>>();
+    parameters.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
+
+    let parameter_ordinals = parameters
+        .into_iter()
+        .enumerate()
+        .filter_map(|(ordinal, (_, parameter))| Some((parameter, u32::try_from(ordinal).ok()?)))
+        .collect::<HashMap<_, _>>();
     for parameter in &mut ir.model.parameters {
         if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
             parameter.ordinal = *ordinal;
@@ -1743,6 +1772,9 @@ mod tests {
         ir.model
             .parameters
             .push(parameter("early-parameter", "early-parameter-entity"));
+        let mut document_parameter = parameter("document-parameter", "document-parameter-entity");
+        document_parameter.ordinal = 2;
+        ir.model.parameters.push(document_parameter);
 
         let transfer = transfer_design_features(&mut ir, &native, None);
         transfer.assign_parameter_owners(&mut ir, &native);
@@ -1768,6 +1800,7 @@ mod tests {
                     Some(FeatureId::from("operation-object:feature")),
                     0,
                 ),
+                (ParameterId("document-parameter".to_string()), None, 0,),
             ]
         );
         let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
