@@ -286,6 +286,7 @@ pub(crate) fn attach(
     attach_feature_operations(
         ir,
         &model.features,
+        &model.om.data_blocks,
         &model.om.expressions,
         &model.segments.segment_body_bindings,
         annotations,
@@ -1013,6 +1014,7 @@ fn attach_initial_segment_bodies(
 fn attach_feature_operations(
     ir: &mut CadIr,
     features: &crate::native::model::FeatureRecords,
+    data_blocks: &[crate::native::om::DataBlock],
     expressions: &[crate::native::om::Expression],
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
@@ -1206,6 +1208,30 @@ fn attach_feature_operations(
                 ambiguous_offset_store_bodies.insert(key);
             }
             std::collections::btree_map::Entry::Occupied(_) => {}
+        }
+    }
+    for (section_key, boolean_blocks) in
+        boolean_offset_store_body_blocks(booleans.values().copied(), data_blocks)
+    {
+        let blocks = offset_store_body_blocks_by_section
+            .entry(section_key.clone())
+            .or_default();
+        for (object_index, data_block) in boolean_blocks {
+            if ambiguous_offset_store_bodies.contains(&(section_key.clone(), object_index)) {
+                continue;
+            }
+            match blocks.entry(object_index) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(data_block);
+                }
+                std::collections::btree_map::Entry::Occupied(entry)
+                    if entry.get() != &data_block =>
+                {
+                    entry.remove();
+                    ambiguous_offset_store_bodies.insert((section_key.clone(), object_index));
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {}
+            }
         }
     }
     let body_writer_references_by_operation = body_references
@@ -5783,15 +5809,72 @@ fn unique_simple_hole_template(
     crate::native::features::parse_simple_hole_template(candidate)
 }
 
-/// Resolve a complete object-index selection only when every alias root owns one
-/// decoded body image. Retain the complete feature-input-local identities when
-/// current topology cannot represent a consumed historical body. An offset-store
-/// selection uses the exact data-block identities from its feature-history
-/// section, but never crosses into the segment-body identity namespace.
+/// Resolve every Boolean participant to one unique offset-store block only when
+/// all target and tool indices resolve in one store. The relation is scoped to
+/// the feature-history section that owns the Boolean operation.
+fn boolean_offset_store_body_blocks<'a>(
+    operations: impl IntoIterator<Item = &'a crate::native::features::FeatureBooleanOperation>,
+    data_blocks: &[crate::native::om::DataBlock],
+) -> BTreeMap<String, BTreeMap<u32, String>> {
+    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&crate::native::om::DataBlock>>::new();
+    for block in data_blocks {
+        blocks_by_ordinal
+            .entry(block.block_ordinal)
+            .or_default()
+            .push(block);
+    }
+    let mut body_blocks_by_section = BTreeMap::<String, BTreeMap<u32, String>>::new();
+    for operation in operations {
+        let Some((section_key, _)) = operation.operation_label.rsplit_once('-') else {
+            continue;
+        };
+        let participants = std::iter::once(operation.target_object_index)
+            .chain(operation.tool_object_indices.iter().copied())
+            .collect::<Vec<_>>();
+        let resolved = participants
+            .iter()
+            .map(|object_index| {
+                let matches = blocks_by_ordinal.get(object_index)?;
+                let [block] = matches.as_slice() else {
+                    return None;
+                };
+                Some(*block)
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(resolved) = resolved else {
+            continue;
+        };
+        let Some(section_ordinal) = resolved.first().map(|block| block.section_ordinal) else {
+            continue;
+        };
+        if resolved
+            .iter()
+            .any(|block| block.section_ordinal != section_ordinal)
+        {
+            continue;
+        }
+        let body_blocks = body_blocks_by_section
+            .entry(section_key.to_string())
+            .or_default();
+        for (object_index, block) in participants.into_iter().zip(resolved) {
+            body_blocks.insert(object_index, block.id.clone());
+        }
+    }
+    body_blocks_by_section
+}
+
+/// Identity namespace used to prove that two Boolean selections are disjoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FeatureBodyIdentity {
     Segment(u32),
     OffsetStore(String),
+}
+
+fn offset_store_identity(data_block: &str) -> Option<&str> {
+    data_block
+        .strip_prefix("nx:om-data-blocks-")
+        .and_then(|data_block| data_block.split_once(":block#"))
+        .map(|(store, _)| store)
 }
 
 struct FeatureBodySelection {
@@ -5799,6 +5882,11 @@ struct FeatureBodySelection {
     identity_keys: Option<Vec<FeatureBodyIdentity>>,
 }
 
+/// Resolve a complete object-index selection only when every alias root owns one
+/// decoded body image. Retain the complete feature-input-local identities when
+/// current topology cannot represent a consumed historical body. An offset-store
+/// selection uses the exact data-block identities from its feature-history
+/// section, but never crosses into the segment-body identity namespace.
 fn feature_body_selection(
     object_indices: &[u32],
     body_alias_roots: &BTreeMap<u32, u32>,
@@ -5855,6 +5943,20 @@ fn feature_body_selection_with_offset_blocks(
         }
     }
     if !roots.is_empty() && !offset_blocks.is_empty() {
+        return FeatureBodySelection {
+            selection: BodySelection::Native(native),
+            identity_keys: None,
+        };
+    }
+    let offset_store = offset_blocks
+        .first()
+        .and_then(|block| offset_store_identity(block));
+    if !offset_blocks.is_empty()
+        && (offset_store.is_none()
+            || offset_blocks
+                .iter()
+                .any(|block| offset_store_identity(block) != offset_store))
+    {
         return FeatureBodySelection {
             selection: BodySelection::Native(native),
             identity_keys: None,
@@ -5958,18 +6060,17 @@ fn atomic_disjoint_body_selections(
 ) -> (BodySelection, BodySelection) {
     let complete = left.identity_keys.as_ref().is_some_and(|left| {
         right.identity_keys.as_ref().is_some_and(|right| {
-            let same_namespace = left.first().zip(right.first()).is_none_or(|(left, right)| {
-                matches!(
-                    (left, right),
-                    (
-                        FeatureBodyIdentity::Segment(_),
-                        FeatureBodyIdentity::Segment(_)
-                    ) | (
-                        FeatureBodyIdentity::OffsetStore(_),
-                        FeatureBodyIdentity::OffsetStore(_)
-                    )
-                )
-            });
+            let same_namespace =
+                left.first()
+                    .zip(right.first())
+                    .is_none_or(|(left, right)| match (left, right) {
+                        (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
+                        (
+                            FeatureBodyIdentity::OffsetStore(left),
+                            FeatureBodyIdentity::OffsetStore(right),
+                        ) => offset_store_identity(left) == offset_store_identity(right),
+                        _ => false,
+                    });
             same_namespace && !left.iter().any(|key| right.contains(key))
         })
     });
@@ -8112,6 +8213,54 @@ mod tests {
     }
 
     #[test]
+    fn nx_boolean_offset_store_body_blocks_require_one_unique_store() {
+        use crate::native::features::FeatureBooleanKind;
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use std::collections::BTreeMap;
+
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#offset-store".to_string(),
+            operation_label: "nx:feature-history:operation-label#section-7".to_string(),
+            kind: FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402, 403],
+            raw_tool_object_indices: vec![Vec::new(), Vec::new()],
+            tool_source_offsets: vec![1, 2],
+            source_offset: 0,
+        };
+        let block = |section_ordinal, block_ordinal| DataBlock {
+            id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
+            section_ordinal,
+            block_ordinal,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        };
+        let same_store = vec![block(3, 401), block(3, 402), block(3, 403)];
+        assert_eq!(
+            super::boolean_offset_store_body_blocks(std::iter::once(&operation), &same_store),
+            BTreeMap::from([(
+                "nx:feature-history:operation-label#section".to_string(),
+                BTreeMap::from([
+                    (401, "nx:om-data-blocks-3:block#401".to_string()),
+                    (402, "nx:om-data-blocks-3:block#402".to_string()),
+                    (403, "nx:om-data-blocks-3:block#403".to_string()),
+                ])
+            )])
+        );
+        let mixed_store = vec![block(3, 401), block(4, 402), block(4, 403)];
+        assert!(
+            super::boolean_offset_store_body_blocks(std::iter::once(&operation), &mixed_store)
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn nx_boolean_does_not_mix_segment_and_offset_store_identity_namespaces() {
         use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
         use cadmpeg_ir::ids::BodyId;
@@ -8162,6 +8311,38 @@ mod tests {
                 target: BodySelection::Native("nx:om-object-index#94".to_string()),
                 tools: BodySelection::Native("nx:om-object-indices#122".to_string()),
                 op: BooleanOp::Cut,
+                keep_tools: false,
+            }
+        );
+
+        let mixed_store_blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-4:block#402".to_string()),
+            (403, "nx:om-data-blocks-4:block#403".to_string()),
+        ]);
+        let mixed_store_operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#mixed-stores".to_string(),
+            operation_label: "operation#mixed-stores".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target_object_index: 401,
+            raw_target_object_index: Vec::new(),
+            target_source_offset: 0,
+            tool_object_indices: vec![402, 403],
+            raw_tool_object_indices: vec![Vec::new(), Vec::new()],
+            tool_source_offsets: vec![1, 2],
+            source_offset: 0,
+        };
+        assert_eq!(
+            super::boolean_feature_definition(
+                &mixed_store_operation,
+                &BTreeMap::new(),
+                Some(&mixed_store_blocks),
+                &BTreeMap::new(),
+            ),
+            FeatureDefinition::Combine {
+                target: BodySelection::Native("nx:om-object-index#401".to_string()),
+                tools: BodySelection::Native("nx:om-object-indices#402,403".to_string()),
+                op: BooleanOp::Join,
                 keep_tools: false,
             }
         );

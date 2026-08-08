@@ -198,6 +198,14 @@ retains its exact object-index token and offset. The target list contains exactl
 one reference. The tool list contains at least one reference and preserves tool
 order.
 
+When a Boolean target and every ordered tool index each address exactly one block
+ordinal in one offset-only store, the participant fields resolve to those exact
+feature-local data-block identities. The target and tool lists must resolve in the
+same store. A missing ordinal, duplicate ordinal across stores, or a cross-store
+participant leaves the offset-store selection unresolved. This relation is
+independent of a primary-body field and does not bind an offset-store block to a
+segment body image.
+
 Each of these labels projects as a neutral combine with join, cut, or intersect
 semantics respectively. A complete Boolean header supplies the target and
 ordered tool selections. Target and tool selections retain input-local body
