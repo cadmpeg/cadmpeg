@@ -438,7 +438,9 @@ definitions, each view receives a distinct deterministic identity suffixed by
 its definition instance. Shape bodies and definition descriptions bind to
 their own view; they are not merged. Each definition not named as a usage
 receives one root occurrence, and every usage occurrence references the
-specific child definition view.
+specific child definition view. When a presentation layer references the
+source `PRODUCT`, the reader emits all of that product's definition views in
+definition-instance order.
 
 ### PS-05. Mapped-item scope for occurrence placement
 
