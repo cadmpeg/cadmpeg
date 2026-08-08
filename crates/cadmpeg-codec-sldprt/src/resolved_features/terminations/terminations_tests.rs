@@ -9,9 +9,11 @@ use super::{
     compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
     compact_extrusion_through_next_at, compact_extrusion_to_face_at,
     compact_extrusion_to_vertex_at, compact_single_face_reference_path_at,
-    compact_single_face_reference_record_at, legacy_single_face_reference_path_at,
-    CompactPointReferenceKind,
+    compact_single_face_reference_record_at, enrich_history_combine_selections,
+    legacy_single_face_reference_path_at, CompactPointReferenceKind,
 };
+use crate::records::{Feature, FeatureHistory, FeatureInputLane, FeatureInputName};
+use std::collections::BTreeMap;
 
 #[test]
 fn compact_extrusion_through_all_requires_the_complete_end_spec() {
@@ -740,6 +742,111 @@ fn compact_body_path_requires_type_three_vector() {
 
     payload[4] = 2;
     assert_eq!(compact_body_path_at(&payload, marker), None);
+}
+
+#[test]
+fn compact_body_path_accepts_anonymous_mixed_entries() {
+    let marker = 12;
+    let mut payload = vec![0; marker + 18];
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    payload[4..8].copy_from_slice(&[0, 3, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+
+    payload.extend_from_slice(&0x803eu16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&2u32.to_le_bytes());
+    payload.extend_from_slice(&[5, 0, 0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 50, 0, 0, 0, 0xf9, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&[0, 0, 0, 0]);
+    payload.extend_from_slice(&0x8263u16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&[0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a]);
+    payload.extend_from_slice(&3u32.to_le_bytes());
+
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+
+    payload[..4].copy_from_slice(&4u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 10]);
+    assert_eq!(compact_body_path_at(&payload, marker), Some(vec![2, 1, 3]));
+    let last = payload.len() - 1;
+    payload[last] = 1;
+    assert_eq!(compact_body_path_at(&payload, marker), None);
+}
+
+#[test]
+fn enrich_combine_uses_outermost_body_paths() {
+    let mut payload = vec![0; 420];
+    for (marker, local_id) in [(100usize, 1u32), (200, 2), (300, 3)] {
+        payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[0, 3, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[marker + 16..marker + 18].copy_from_slice(&[0, 0]);
+        payload[marker + 18..marker + 20].copy_from_slice(&0x8032u16.to_le_bytes());
+        payload[marker + 22..marker + 34].copy_from_slice(&[1; 12]);
+        payload[marker + 34..marker + 38].copy_from_slice(&local_id.to_le_bytes());
+    }
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "combine".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("119".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Combine".into(),
+            kind: "Combine".into(),
+            input_class: Some("moCombineBodies_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "combine-name".into(),
+            parent: "lane#35".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(119),
+            value: "Combine".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }];
+
+    enrich_history_combine_selections(&mut histories, &lanes);
+
+    let properties = &histories[0].features[0].properties;
+    assert_eq!(
+        properties.get("Target"),
+        Some(&"sldprt:feature-input:body-path:35:100".to_string())
+    );
+    assert_eq!(
+        properties.get("Tools"),
+        Some(&"sldprt:feature-input:body-path:35:300".to_string())
+    );
 }
 
 #[test]

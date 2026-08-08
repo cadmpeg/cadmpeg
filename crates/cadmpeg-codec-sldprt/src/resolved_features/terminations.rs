@@ -7,9 +7,9 @@ use super::parameters::value_only_scalar_offset;
 use super::scalars::feature_object_name;
 use super::selections::{
     compact_general_curve_ref_at, compact_heterogeneous_component_path,
-    compact_profile_general_curve_ref_at, component_profile_source_at,
-    component_reference_curve_path_at, declared_general_curve_profile_prefix,
-    COMPACT_EDGE_VECTOR_MARKER,
+    compact_mixed_component_path, compact_profile_general_curve_ref_at,
+    component_profile_source_at, component_reference_curve_path_at,
+    declared_general_curve_profile_prefix, COMPACT_EDGE_VECTOR_MARKER,
 };
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputComponentPathEntry, FeatureInputLane};
@@ -432,19 +432,22 @@ pub(crate) fn enrich_history_combine_selections(
                     compact_body_path_at(&lane.native_payload, marker).map(|_| marker)
                 })
                 .collect::<Vec<_>>();
-            let selection = if let [target, tools] = paths.as_slice() {
-                let operation = compact_combine_operation_at(&lane.native_payload, start);
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key);
-                Some((
-                    format!("sldprt:feature-input:body-path:{lane_key}:{target}"),
-                    format!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
-                    operation.map(str::to_string),
-                ))
-            } else {
-                None
+            // A Combine object can carry auxiliary type-3 vectors between its two
+            // operand paths; the outermost recognized paths are the operands.
+            let selection = match (paths.first(), paths.last()) {
+                (Some(&target), Some(&tools)) if target != tools => {
+                    let operation = compact_combine_operation_at(&lane.native_payload, start);
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    Some((
+                        format!("sldprt:feature-input:body-path:{lane_key}:{target}"),
+                        format!("sldprt:feature-input:body-path:{lane_key}:{tools}"),
+                        operation.map(str::to_string),
+                    ))
+                }
+                _ => None,
             };
             selections
                 .entry(feature_id.clone())
@@ -850,14 +853,20 @@ fn compact_body_component_entries_at(
     if count == 0 {
         return None;
     }
-    compact_heterogeneous_component_path(payload, cursor, count)
-        .map(|(components, _)| components)
-        .or_else(|| {
-            let (components, end) = (count > 1)
-                .then(|| compact_heterogeneous_component_path(payload, cursor, count - 1))
-                .flatten()?;
-            compact_body_null_slot_at(payload, end).then_some(components)
-        })
+    let mixed = |count| {
+        let (components, end) = compact_mixed_component_path(payload, cursor, count, true)?;
+        components
+            .iter()
+            .any(|component| component.instance.is_none())
+            .then_some((components, end))
+    };
+    let parse = |count| {
+        compact_heterogeneous_component_path(payload, cursor, count).or_else(|| mixed(count))
+    };
+    parse(count).map(|(components, _)| components).or_else(|| {
+        let (components, end) = (count > 1).then(|| parse(count - 1)).flatten()?;
+        compact_body_null_slot_at(payload, end).then_some(components)
+    })
 }
 
 fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {

@@ -1277,6 +1277,7 @@ fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
         (3u32, &[][..]),
         (4, &[1, 0, 0, 0, 0, 0, 0, 0][..]),
         (5, &[1, 0, 0, 0, 0, 0, 0, 0, 0, 0][..]),
+        (4, &[5, 0, 0, 0][..]),
     ] {
         let mut mixed = vec![0; marker];
         mixed[..4].copy_from_slice(&count.to_le_bytes());
