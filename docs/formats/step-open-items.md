@@ -228,14 +228,16 @@ plane.
 
 ### TP-07. Pcurve recursion and normalization
 
-**Question.** What normalization and recursion guard rules apply to cyclic
-2D curve definitions, 2D `LINE` carriers, and complex `PCURVE` entities?
-
-**Known.** Supported 2D carriers decode as typed pcurves. Unsupported or cyclic
-carriers remain opaque.
-
-**Need.** We need fixtures for cycle handling, 2D line normalization, and
-complex `PCURVE` support before extending the typed domain.
+**Resolved.** A `PCURVE` definition must resolve to exactly one item in its
+`DEFINITIONAL_REPRESENTATION`. The reader decodes 2D line, analytic conic,
+polyline, NURBS, trimmed, offset, and affine-replica carriers. A 2D line
+uses its referenced point and vector directly; its coordinates are then
+converted once into the owning surface chart. A recursive carrier returns no
+typed geometry when an active record repeats or the graph reaches depth 256;
+the active set is released on every return path. Unsupported composite or
+otherwise unrecognized 2D carriers remain named opaque records and are not
+attached to a coedge. Topology that needs such a carrier records a
+machine-readable pcurve omission loss.
 
 ### TP-08. Face-bound partial dispatch
 
@@ -299,30 +301,13 @@ the parser-level `MILLI` and omitted-prefix regression cases in
 
 ### PC-01. Angular parameter unit repair
 
-**Question.** May a pcurve parameter axis use a plane-angle unit other than
-the unit the representation context declares?
-
-**Known.** `step.md` §8 "Length values convert to millimetres." and `step.md`
-§8 "A cylinder or cone uses plane-angle scale for `u`" bind the axis to the
-declared unit. The decoder does not hold to that binding. It builds a
-candidate set of the declared scale and the degree or radian alternative,
-maps each candidate through the owning surface, and scores each by the
-distance from the mapped surface point to the edge endpoint
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:1742-1820`). It accepts
-the alternative when the best score is at most 1.0 tolerance, the declared
-score is more than 10.0 tolerances, and the declared score is more than 100
-times the best. The same rule exists for revolution surfaces
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3446-3463`).
-
-**Need.** The thresholds 1.0, 10.0, and 100.0 have no source. Only the
-endpoint parameters are observed; the curve interior is never sampled, and a
-coedge with more than one pcurve contributes one endpoint per pcurve. A
-pcurve that is correct under the declared unit but whose edge fails the fit
-for an unrelated reason can therefore be rescaled by π/180 across its whole
-domain. The result is a free-text warning, not a `LossNote`, so it does not
-appear in the decode report losses. We must know whether producers emit
-degree-valued pcurve axes, and under which declaration, before a numeric fit
-may override a declared unit.
+**Resolved.** A pcurve has no independent angular unit. Its coordinates use
+the parameterization of its owning surface after the representation and
+record-specific unit scales have been applied. The reader does not generate
+degree/radian alternatives or rescale an angular axis from endpoint evidence.
+If the declared coordinates do not form a usable topological carrier, the
+coedge remains without a pcurve and the machine-readable topology loss records
+that omission.
 
 ### PC-02. Synthesized pcurve chart
 
@@ -340,25 +325,13 @@ the pcurve remains opaque rather than losing its locus. Coordinate bounds use
 
 ### PC-03. Surface chart remap from the pcurve population
 
-**Question.** May the aggregate coordinate bounds of the pcurves on a surface
-define that surface's source chart?
-
-**Known.** For a procedural surface the decoder collects the coordinate bounds
-of every pcurve on it, selects the isoparametric pcurve with the largest
-varying span whose other axis is constant within 1e-12 relative
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3571-3592`), and builds a
-linear rescale from that span onto the surface domain, together with a
-direction-reversing variant (`topology.rs:3535-3569`). Both are offered to
-the endpoint score.
-
-**Need.** The rule assumes the observed pcurves span the whole source chart
-and that the source-to-surface map is linear. A face trimmed so that no
-pcurve spans the full directrix yields a short span and stretches every
-pcurve on the surface. A non-uniformly parameterized NURBS directrix does not
-map linearly from the producer's parameterization to the knot parameter, so
-the endpoints fit and every interior point is wrong. Nothing detects either
-case and no loss is recorded. We must know the real source parameterization
-rule for procedural surfaces.
+**Resolved.** A pcurve uses the parameterization of its owning surface. The
+surface population does not define or modify that chart. A linear extrusion
+inherits the directrix parameter as `u`; a revolution inherits the directrix
+parameter as `v` and uses the surface angle as `u`. A non-linear directrix
+therefore keeps its native parameterization. The reader does not infer a
+surface-wide affine map from trimmed pcurves. A bounded procedural pcurve may
+still receive a use-scoped endpoint calibration under PC-02.
 
 ### PC-04. Chart write-back to the shared pcurve
 
@@ -378,23 +351,13 @@ STEP record as opaque data.
 
 ### PC-05. Periodic trim interval
 
-**Question.** Does a trim interval on a closed curve or surface wrap across
-the parameter seam?
-
-**Known.** `step.md` §8 "Its local U and V domains are `0..abs(u2-u1)` and
-`0..abs(v2-v1)`." states an unwrapped rule for
-`RECTANGULAR_TRIMMED_SURFACE`. `step.md` §8 "Its local parameter domain is
-the directed trim interval measured from the first select" states the same
-for `TRIMMED_CURVE`.
-
-**Conflict.** The decoder adds one period to the endpoint before that
-subtraction, on axes it finds periodic
-(`crates/cadmpeg-codec-step/src/reader/geometry.rs:1074-1086`, `:2847-2871`,
-`:3739-3763`). For a cylinder trimmed at `u1 = 5.0`, `u2 = 1.0` with a
-positive sense, the decoder gives the domain `0..(1.0 + 2π − 5.0)` and
-`step.md` gives `0..4.0`. The two select complementary patches of the
-cylinder. The wrap is justified only by code comments. One of the two is
-wrong and the item needs a decision.
+**Resolved.** A cyclic trim follows the directed parameter branch. For a
+forward sense, if the second select is below the first, add one basis period
+to the second select. For a reversed sense, if the first select is below the
+second, add one basis period to the first select. The stored local domain is
+the absolute directed span after that adjustment. Non-cyclic trims use the
+stored selects without adjustment. The same rule applies independently to
+the U and V axes of `RECTANGULAR_TRIMMED_SURFACE`.
 
 ### PC-06. Default placement reference direction
 
@@ -481,23 +444,14 @@ this rule.
 
 ### PS-04. Product and product-definition identity
 
-**Question.** Does one CADIR product definition correspond to a STEP `PRODUCT`
-or to a `PRODUCT_DEFINITION`?
-
-**Known.** The decoder mints part identity from the `PRODUCT` instance and
-emits one IR product definition per `PRODUCT`
-(`crates/cadmpeg-codec-step/src/reader/product.rs:93-180`, `:941-943`), while
-it mints root occurrences per `PRODUCT_DEFINITION` and treats any definition
-that no usage names as a root (`product.rs:217-251`).
-
-**Need.** A product with two definitions is emitted once as a part and twice
-as an occurrence: once inside the assembly and once as a root instance at the
-origin. `shape_bindings` merges both definitions' bodies into the one part
-(`product.rs:481-515`), and `definition_descriptions` keeps only the
-lowest-numbered definition's description (`product.rs:87`). No loss is
-recorded for any of the three. Two assumptions are stacked: that a product
-has one meaningful definition, and that "named by no usage" means "assembly
-root". We must know the identity rule before either is relied on.
+**Resolved.** A CADIR product definition represents one STEP
+`PRODUCT_DEFINITION` view. A product with one definition keeps the historical
+`step:product:product#<product>` identity. When one `PRODUCT` has multiple
+definitions, each view receives a distinct deterministic identity suffixed by
+its definition instance. Shape bodies and definition descriptions bind to
+their own view; they are not merged. Each definition not named as a usage
+receives one root occurrence, and every usage occurrence references the
+specific child definition view.
 
 ### PS-05. Mapped-item scope for occurrence placement
 
@@ -569,21 +523,12 @@ serialization order.
 
 ### AP-05. Style precedence for independent styled items
 
-**Question.** Which style applies when two `STYLED_ITEM` records target one
-item and neither overrides the other?
-
-**Known.** `step.md` §8 "An overriding style takes precedence for its
-occurrence." settles the override case, and the decoder implements it. For
-equal override depth the sort is stable over ascending instance-name order,
-and the colour is assigned unconditionally, so the last styled item wins
-(`crates/cadmpeg-codec-step/src/reader/presentation.rs:193-333`).
-
-**Need.** A part with a design-view presentation and a second presentation for
-another view carries two styled items on one face. The face colour follows
-the higher instance name. The IR keeps both appearance bindings, so the
-ambiguity survives there, but the scalar face colour that consumers read does
-not, and no conflict is reported. We must know which presentation context
-governs a colour.
+**Resolved.** Override chains remove their overridden base styles. Independent
+effective styles all remain appearance bindings. The reader sets a neutral
+face or body scalar color only when those styles produce one distinct color;
+duplicate colors collapse to that value. Conflicting colors leave the scalar
+unset and emit a `MetadataNotTransferred` loss naming every contributing
+styled item. Source instance order never selects a scalar color.
 
 ### AP-06. Surface style side selection
 

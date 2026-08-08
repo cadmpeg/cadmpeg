@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
@@ -2188,8 +2188,19 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
         .find(|pcurve| pcurve.id == used_id)
         .expect("calibrated linear-extrusion pcurve");
     assert!(matches!(
-        used.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Transformed { .. }
+        &used.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Transformed {
+            basis,
+            transform,
+        } if matches!(
+            basis.as_ref(),
+            cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+                degree: 1,
+                control_points,
+                ..
+        } if control_points == &[Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)]
+        ) && (transform.rows[0][0] - 10.0).abs() < 1.0e-12
+            && transform.rows[1][1].abs() < 1.0e-12
     ));
     assert!(!decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
@@ -3709,7 +3720,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
 }
 
 #[test]
-fn degree_valued_cylindrical_pcurve_is_normalized_before_topology_selection() {
+fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
         .replace(
@@ -3739,33 +3750,13 @@ fn degree_valued_cylindrical_pcurve_is_normalized_before_topology_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode degree-valued cylindrical pcurve");
 
-    let used_id = decoded
+    assert!(decoded
         .ir
         .model
         .coedges
         .iter()
-        .flat_map(|coedge| coedge.pcurves.iter())
-        .next()
-        .expect("normalized cylindrical pcurve use")
-        .pcurve
-        .clone();
-    assert!(used_id.as_str().starts_with("step:data:pcurve#56-use-"));
-    let pcurve = decoded
-        .ir
-        .model
-        .pcurves
-        .iter()
-        .find(|pcurve| pcurve.id == used_id)
-        .expect("normalized cylindrical pcurve");
-    assert!(matches!(
-        pcurve.geometry,
-        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
-            if (origin.u - std::f64::consts::PI).abs() < 1.0e-12
-                && origin.v.abs() < 1.0e-12
-                && direction.u.abs() < 1.0e-12
-                && (direction.v - 10.0).abs() < 1.0e-12
-    ));
-    assert!(!decoded.report.losses.iter().any(|loss| {
+        .all(|coedge| coedge.pcurves.is_empty()));
+    assert!(decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
             && loss.message.contains("curve #57")
             && loss.message.contains("no pcurve")
@@ -5394,6 +5385,55 @@ fn product_descriptions_transfer_from_product_and_definition() {
             .as_deref(),
         Some("Round-tripped description")
     );
+}
+
+#[test]
+fn product_definition_views_keep_distinct_prototypes_and_metadata() {
+    use cadmpeg_ir::products::PrototypeReference;
+
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','Product description',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('v1','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('design view','Design view description',#4,#5);
+#7=PRODUCT_DEFINITION_FORMATION('v2','',#3);
+#8=PRODUCT_DEFINITION('manufacturing view','Manufacturing view description',#7,#5);",
+    );
+
+    assert_eq!(result.ir.model.product_definitions.len(), 2);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .map(|definition| definition.description.as_deref())
+            .collect::<Vec<_>>(),
+        [
+            Some("Design view description"),
+            Some("Manufacturing view description")
+        ]
+    );
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    let prototypes = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .filter_map(|occurrence| match &occurrence.prototype {
+            PrototypeReference::Local { definition } => Some(definition.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(prototypes.len(), 2);
+    assert_ne!(prototypes[0], prototypes[1]);
+    assert!(prototypes
+        .iter()
+        .all(|id| id.as_str().contains("-definition-")));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -8433,6 +8473,52 @@ fn overriding_style_suppresses_the_base_binding() {
 }
 
 #[test]
+fn independent_face_styles_keep_bindings_without_source_order_scalar_color() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#68=STYLED_ITEM('',(#66),#19);",
+            "#68=STYLED_ITEM('',(#66),#19);\n#69=COLOUR_RGB('independent blue',0.,0.,1.);\n#70=FILL_AREA_STYLE_COLOUR('',#69);\n#71=FILL_AREA_STYLE('',(#70));\n#72=SURFACE_STYLE_FILL_AREA(#71);\n#73=SURFACE_SIDE_STYLE('',(#72));\n#74=SURFACE_STYLE_USAGE(.BOTH.,#73);\n#75=PRESENTATION_STYLE_ASSIGNMENT((#74));\n#76=STYLED_ITEM('',(#75),#29);",
+        );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode independent face styles");
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "step:data:face#29")
+        .expect("styled face");
+    assert!(face.color.is_none());
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    &binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Face(face)
+                        if face.as_str() == "step:data:face#29"
+                )
+            })
+            .count(),
+        2
+    );
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::MetadataNotTransferred
+            && loss.message.contains("#47")
+            && loss.message.contains("#76")
+            && loss.message.contains("scalar color omitted")
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn presentation_records_retain_non_color_geometry_owners() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -9345,6 +9431,38 @@ fn trimmed_curve_opposed_sense_retains_the_periodic_branch() {
         .expect("write opposed-sense trimmed curve");
     let text = String::from_utf8(output).expect("STEP output is UTF-8");
     assert!(text.contains(".F.,.PARAMETER."));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn trimmed_curve_forward_sense_wraps_a_closed_basis() {
+    let result = decode_inline(
+        "#20=CARTESIAN_POINT('',(0.,0.,0.));
+#21=DIRECTION('',(0.,0.,1.));
+#22=DIRECTION('',(1.,0.,0.));
+#23=AXIS2_PLACEMENT_3D('',#20,#21,#22);
+#24=CIRCLE('',#23,1.);
+#40=TRIMMED_CURVE('',#24,(PARAMETER_VALUE(5.)),(PARAMETER_VALUE(1.)),.T.,.PARAMETER.);
+#41=GEOMETRIC_CURVE_SET('',(#40));
+#42=SHAPE_REPRESENTATION('',(#41),$);",
+    );
+    let parameter_range = result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(|curve| match &curve.definition {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range, ..
+            } if curve.id.as_str() == "step:construction:trimmed_curve#40" => {
+                Some(*parameter_range)
+            }
+            _ => None,
+        })
+        .expect("forward trimmed curve");
+    assert!((parameter_range[0] - 5.0).abs() < 1.0e-12);
+    assert!((parameter_range[1] - (1.0 + std::f64::consts::TAU)).abs() < 1.0e-12);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

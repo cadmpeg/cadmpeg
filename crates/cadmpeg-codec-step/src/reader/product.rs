@@ -64,7 +64,7 @@ pub(super) fn decode(
         let Some(parameters) = product_definition_parameters(record) else {
             continue;
         };
-        let Some(product) = parameters
+        let Some(_) = parameters
             .get(2)
             .and_then(ValueExt::reference)
             .and_then(|formation| formations.get(&formation).copied())
@@ -84,12 +84,18 @@ pub(super) fn decode(
             continue;
         };
         if !description.is_empty() {
-            definition_descriptions
-                .entry(product)
-                .or_insert(description);
+            definition_descriptions.entry(id).or_insert(description);
         }
     }
     let shape_bindings = shape_bindings(exchange, &definitions, topology);
+    let definition_counts =
+        definitions
+            .values()
+            .fold(BTreeMap::<u64, usize>::new(), |mut counts, product| {
+                *counts.entry(*product).or_default() += 1;
+                counts
+            });
+    let mut definition_prototypes = BTreeMap::<u64, ProductDefinitionId>::new();
 
     for (step_id, record) in exchange.entities("PRODUCT") {
         let Some(parameters) = record
@@ -124,7 +130,7 @@ pub(super) fn decode(
                 )
             })
             .filter(|name| !name.is_empty());
-        let description = parameters
+        let product_description = parameters
             .get(2)
             .and_then(|value| {
                 decode_text(
@@ -136,50 +142,85 @@ pub(super) fn decode(
                     LossKind::MetadataNotTransferred,
                 )
             })
-            .filter(|description| !description.is_empty())
-            .or_else(|| definition_descriptions.get(&step_id).cloned());
-        let has_shape_binding = shape_bindings.contains_key(&step_id);
-        let mut bodies = shape_bindings.get(&step_id).cloned().unwrap_or_default();
-        let missing = bodies
+            .filter(|description| !description.is_empty());
+        let product_definitions = definitions
             .iter()
-            .filter(|body| {
-                !ir.model
+            .filter_map(|(&definition, &product)| (product == step_id).then_some(definition))
+            .collect::<Vec<_>>();
+        let definition_count = definition_counts.get(&step_id).copied().unwrap_or(0);
+        let definition_iter = if product_definitions.is_empty() {
+            vec![None]
+        } else {
+            product_definitions.into_iter().map(Some).collect()
+        };
+        for definition in definition_iter {
+            let product_definition_id = definition.map_or_else(
+                || product_ir_id(step_id),
+                |definition| {
+                    let id = product_definition_ir_id(step_id, definition, definition_count);
+                    definition_prototypes.insert(definition, id.clone());
+                    id
+                },
+            );
+            let definition_description =
+                definition.and_then(|definition| definition_descriptions.get(&definition).cloned());
+            let description = if definition_count <= 1 {
+                product_description.clone().or(definition_description)
+            } else {
+                definition_description.or_else(|| product_description.clone())
+            };
+            let has_shape_binding =
+                definition.is_some_and(|definition| shape_bindings.contains_key(&definition));
+            let mut bodies = definition
+                .and_then(|definition| shape_bindings.get(&definition).cloned())
+                .unwrap_or_default();
+            let missing = bodies
+                .iter()
+                .filter(|body| {
+                    !ir.model
+                        .bodies
+                        .iter()
+                        .any(|candidate| candidate.id == **body)
+                })
+                .map(|body| body.0.clone())
+                .collect::<Vec<_>>();
+            bodies.retain(|body| {
+                ir.model
                     .bodies
                     .iter()
-                    .any(|candidate| candidate.id == **body)
-            })
-            .map(|body| body.0.clone())
-            .collect::<Vec<_>>();
-        bodies.retain(|body| {
-            ir.model
-                .bodies
-                .iter()
-                .any(|candidate| candidate.id == *body)
-        });
-        bodies.sort();
-        bodies.dedup();
-        if !missing.is_empty() {
-            warnings.push(format!(
-                "PRODUCT #{step_id} omitted uncommitted shape body reference(s): {}",
-                missing.join(", ")
-            ));
+                    .any(|candidate| candidate.id == *body)
+            });
+            bodies.sort();
+            bodies.dedup();
+            let owner = definition.map_or_else(
+                || format!("PRODUCT #{step_id}"),
+                |definition| format!("PRODUCT_DEFINITION #{definition}"),
+            );
+            if !missing.is_empty() {
+                warnings.push(format!(
+                    "{owner} omitted uncommitted shape body reference(s): {}",
+                    missing.join(", ")
+                ));
+            }
+            if has_shape_binding && bodies.is_empty() {
+                warnings.push(format!(
+                    "{owner} has a shape representation with no committed topology body"
+                ));
+            }
+            ir.model.product_definitions.push(ProductDefinition {
+                id: product_definition_id,
+                kind: ProductDefinitionKind::Part,
+                source_name: name.clone(),
+                label: name.clone(),
+                description,
+                part_number: Some(product_id.clone()),
+                bom_properties: BTreeMap::new(),
+                bodies,
+                native_ref: Some(
+                    definition.map_or_else(|| format!("#{step_id}"), |id| format!("#{id}")),
+                ),
+            });
         }
-        if has_shape_binding && bodies.is_empty() {
-            warnings.push(format!(
-                "PRODUCT #{step_id} has a shape representation with no committed topology body"
-            ));
-        }
-        ir.model.product_definitions.push(ProductDefinition {
-            id: product_ir_id(step_id),
-            kind: ProductDefinitionKind::Part,
-            source_name: name.clone(),
-            label: name,
-            description,
-            part_number: Some(product_id),
-            bom_properties: BTreeMap::new(),
-            bodies,
-            native_ref: Some(format!("#{step_id}")),
-        });
         typed.insert(step_id);
     }
     typed.extend(formations.keys().copied());
@@ -215,19 +256,24 @@ pub(super) fn decode(
         .values()
         .map(|usage| usage.child_definition)
         .collect::<BTreeSet<_>>();
-    let mut definition_occurrences = BTreeMap::<u64, Vec<OccurrenceId>>::new();
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     let mut pending_occurrences = VecDeque::new();
     let mut root_ordinal = 0_u32;
-    for (&definition, &product) in &definitions {
+    for &definition in definitions.keys() {
         if child_definitions.contains(&definition) {
             continue;
         }
+        let Some(prototype) = definition_prototypes.get(&definition).cloned() else {
+            warnings.push(format!(
+                "PRODUCT_DEFINITION #{definition} has no local product prototype"
+            ));
+            continue;
+        };
         let id = OccurrenceId(format!("step:product:occurrence#definition-{definition}"));
         ir.model.occurrences.push(Occurrence {
             id: id.clone(),
             prototype: PrototypeReference::Local {
-                definition: product_ir_id(product),
+                definition: prototype,
             },
             parent: OccurrenceParent::Root,
             ordinal: root_ordinal,
@@ -247,10 +293,6 @@ pub(super) fn decode(
             native_ref: None,
         });
         root_ordinal = root_ordinal.saturating_add(1);
-        definition_occurrences
-            .entry(definition)
-            .or_default()
-            .push(id.clone());
         occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
         pending_occurrences.push_back((definition, id));
     }
@@ -273,7 +315,8 @@ pub(super) fn decode(
             .flatten()
         {
             let usage = &usages[&usage_id];
-            let Some(&product) = definitions.get(&usage.child_definition) else {
+            let Some(prototype) = definition_prototypes.get(&usage.child_definition).cloned()
+            else {
                 warnings.push(format!(
                     "NAUO #{usage_id} references an unresolved child definition"
                 ));
@@ -326,7 +369,7 @@ pub(super) fn decode(
             ir.model.occurrences.push(Occurrence {
                 id: id.clone(),
                 prototype: PrototypeReference::Local {
-                    definition: product_ir_id(product),
+                    definition: prototype,
                 },
                 parent: OccurrenceParent::Occurrence {
                     occurrence: parent.clone(),
@@ -351,10 +394,6 @@ pub(super) fn decode(
             let mut path = parent_path;
             path.insert(usage.child_definition);
             occurrence_paths.insert(id.clone(), path);
-            definition_occurrences
-                .entry(usage.child_definition)
-                .or_default()
-                .push(id.clone());
             pending_occurrences.push_back((usage.child_definition, id));
             typed.insert(usage_id);
         }
@@ -547,7 +586,7 @@ fn shape_bindings(
         .values()
         .filter(|record| record.partial("SHAPE_DEFINITION_REPRESENTATION").is_some())
     {
-        if let Some((product, bodies)) = shape_binding(
+        if let Some((definition, bodies)) = shape_binding(
             record,
             exchange,
             &pds,
@@ -555,7 +594,7 @@ fn shape_bindings(
             topology,
             &mut representation_cache,
         ) {
-            result.entry(product).or_default().extend(bodies);
+            result.entry(definition).or_default().extend(bodies);
         }
     }
     result
@@ -573,7 +612,7 @@ fn shape_binding(
         &named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 0)
             .and_then(ValueExt::reference)?,
     )?;
-    let product = *definitions.get(&definition)?;
+    definitions.get(&definition)?;
     let representation = named_parameter(record, "SHAPE_DEFINITION_REPRESENTATION", 1)
         .and_then(ValueExt::reference)?;
     let bodies = super::topology::representation_bodies(
@@ -584,7 +623,7 @@ fn shape_binding(
         &mut BTreeSet::new(),
         0,
     );
-    Some((product, bodies))
+    Some((definition, bodies))
 }
 
 fn definition_representations(
@@ -1069,6 +1108,20 @@ fn basis(z: Vector3, x: Vector3) -> [[f64; 3]; 3] {
 }
 fn product_ir_id(id: u64) -> ProductDefinitionId {
     ProductDefinitionId(format!("step:product:product#{id}"))
+}
+
+fn product_definition_ir_id(
+    product: u64,
+    definition: u64,
+    definition_count: usize,
+) -> ProductDefinitionId {
+    if definition_count == 1 {
+        product_ir_id(product)
+    } else {
+        ProductDefinitionId(format!(
+            "step:product:product#{product}-definition-{definition}"
+        ))
+    }
 }
 
 fn product_definition_formation_parameters(record: &RawRecord) -> Option<&[Value]> {

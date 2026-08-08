@@ -322,8 +322,11 @@ phase is inherited by curve replicas, trims, and spatial offsets.
 `TRIMMED_CURVE` stores trim selects as parameter values, Cartesian points, or
 both. Cartesian selects on lines, circles, and ellipses resolve through the
 basis curve's parameterization. Its local parameter domain is the directed
-trim interval measured from the first select; the stored sense maps local
-parameters in the increasing or decreasing parent direction. A
+trim interval measured from the first select. On a cyclic basis, a forward
+trim increases the second select by one period when it is below the first;
+a reversed trim increases the first select by one period when it is below the
+second. The stored sense maps local parameters in the increasing or decreasing
+parent direction. A
 `CURVE_REPLICA` retains the complete parent relation, including a trim, and
 inherits the parent's parameter range and parameterization; its transformation
 changes model-space location and dimensions only. Deferred curve dependencies
@@ -342,7 +345,9 @@ has a general curve role.
 endpoint pairs, and both parameter-direction senses as a surface subset. Its
 local U and V domains are `0..abs(u2-u1)` and `0..abs(v2-v1)`. A local parameter
 maps to `u1 + s` or `u1 - s`, and to `v1 + t` or `v1 - t`, according to the
-stored senses. A `SURFACE_REPLICA` retains the complete parent relation,
+stored senses. On a cyclic basis axis, apply the same directed-branch period
+adjustment to the second endpoint before computing the absolute span. A
+`SURFACE_REPLICA` retains the complete parent relation,
 including a rectangular or curve-bounded surface; its transformation changes
 model-space location and dimensions while preserving the parent parameter
 domain. Deferred surface dependencies resolve by graph fixpoint, including
@@ -352,12 +357,18 @@ values are available.
 `SURFACE_OF_LINEAR_EXTRUSION` uses the directrix parameter as U and the stored
 vector as the V-direction displacement. `SURFACE_OF_REVOLUTION` uses the axis
 placement origin and direction as its rotation axis, the directrix parameter as
-V, and the plane angle in radians as U. A pcurve on either surface maps into
-the same U/V parameterization as its owning surface. Endpoint-derived
+V, and the plane angle in radians as U. A pcurve on either surface uses that
+same U/V parameterization. The pcurve population does not redefine the chart:
+trimmed pcurves cannot establish a surface-wide scale or direction, and a
+non-linear directrix keeps its native parameterization. Endpoint-derived
 calibration of a bounded procedural pcurve is accepted only when every source
 coordinate that the affine map collapses is constant across the pcurve's
 declared parameter interval. Otherwise the pcurve remains opaque and the
 decoder does not replace its native parameterization.
+
+A pcurve has no separate angular-unit override. The reader does not choose a
+degree or radian interpretation from endpoint fit; an angular coordinate that
+fails the owning surface chart remains an unusable pcurve carrier.
 
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and
@@ -423,6 +434,10 @@ definitional representation transfers one exact 2D line, circle, ellipse,
 parabola, hyperbola, polyline, NURBS, trimmed curve, offset curve, or curve
 replica. A 2D `CURVE_REPLICA` retains its parent pcurve and parameterization;
 its 2D affine operator maps the parent coordinates to the replica coordinates.
+The definitional representation supplies exactly one 2D item. Active-record
+cycles and graphs at depth 256 or greater remain opaque; the recursion guard
+releases its active record on every return path. An unrecognized composite 2D
+carrier remains opaque rather than becoming an approximate pcurve.
 An unsupported 2D representation stays opaque and remains detached from the
 coedge. When a source curve has multiple pcurve candidates on its owning
 surface, the decoder maps each candidate through that surface and selects it
@@ -463,6 +478,7 @@ topology-transfer loss. Omitted outer shells, void shells, and outer bounds
 are errors. Other omitted topology relations are warnings. The strict
 unsupported policy rejects output when any topology-transfer loss exists.
 
+Each CADIR product definition represents one `PRODUCT_DEFINITION` view.
 Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 `SHAPE_DEFINITION_REPRESENTATION`. Every body-producing representation,
 including `ADVANCED_BREP_REPRESENTATION` and
@@ -536,7 +552,10 @@ For `SURFACE_STYLE_USAGE`, `.BOTH.` takes precedence over `.POSITIVE.`, and
 `.POSITIVE.` takes precedence over `.NEGATIVE.` when one neutral color must be
 selected from a style set. An overriding style takes precedence for its
 occurrence. A style on a geometric set applies to each member. Empty and NULL
-style assignments leave appearance unchanged. A direct `STYLED_ITEM` or
+style assignments leave appearance unchanged. Independent effective styles on
+one face or body retain every appearance binding. The neutral scalar color is
+set only when those styles produce one distinct color; conflicting colors
+leave it unset and produce a metadata loss. A direct `STYLED_ITEM` or
 `OVER_RIDING_STYLED_ITEM` still owns its curve, point, or surface target when
 the assignment has no resolvable colour. An `ANNOTATION_PLANE` owns each
 referenced surface carrier. A native presentation carrier without a neutral

@@ -4,9 +4,7 @@
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::{
-    nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point, pcurve_uv, surface_point,
-};
+use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
     CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, NurbsCurve,
     NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
@@ -17,9 +15,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
-use cadmpeg_ir::topology::{PcurveUse, Point};
+use cadmpeg_ir::topology::Point;
 use cadmpeg_ir::transform::{Transform, Transform2};
-use cadmpeg_ir::units::COINCIDENCE_TOLERANCE;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -1582,338 +1579,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         plane_angle_scale: angle_scale,
         length_scales: unit_scales.length,
         plane_angle_scales: unit_scales.angle,
-    }
-}
-
-/// Repair angular pcurve coordinates when a source writes degrees while its
-/// declared plane-angle unit is radians.
-///
-/// A pcurve has no independent unit declaration. The surface parameterization
-/// and the topological edge endpoints provide the only unambiguous check. Keep
-/// the declared unit when it fits; use the degree/radian alternative only when
-/// it brings every observed endpoint within the normal coincidence allowance.
-pub(super) fn repair_angular_pcurve_units(
-    ir: &mut CadIr,
-    plane_angle_scale: f64,
-    warnings: &mut Vec<String>,
-) {
-    let observations = {
-        let surfaces = ir
-            .model
-            .surfaces
-            .iter()
-            .map(|surface| (surface.id.0.as_str(), &surface.geometry))
-            .collect::<HashMap<_, _>>();
-        let faces = ir
-            .model
-            .faces
-            .iter()
-            .map(|face| (face.id.0.as_str(), face))
-            .collect::<HashMap<_, _>>();
-        let loops = ir
-            .model
-            .loops
-            .iter()
-            .map(|loop_| (loop_.id.0.as_str(), loop_))
-            .collect::<HashMap<_, _>>();
-        let edges = ir
-            .model
-            .edges
-            .iter()
-            .map(|edge| (edge.id.0.as_str(), edge))
-            .collect::<HashMap<_, _>>();
-        let vertices = ir
-            .model
-            .vertices
-            .iter()
-            .map(|vertex| (vertex.id.0.as_str(), vertex))
-            .collect::<HashMap<_, _>>();
-        let points = ir
-            .model
-            .points
-            .iter()
-            .map(|point| (point.id.0.as_str(), point.position))
-            .collect::<HashMap<_, _>>();
-        let pcurves = ir
-            .model
-            .pcurves
-            .iter()
-            .map(|pcurve| (pcurve.id.0.as_str(), pcurve))
-            .collect::<HashMap<_, _>>();
-        let mut observations = HashMap::<String, Vec<AngularPcurveObservation>>::new();
-
-        for coedge in &ir.model.coedges {
-            let Some(loop_) = loops.get(coedge.owner_loop.0.as_str()) else {
-                continue;
-            };
-            let Some(face) = faces.get(loop_.face.0.as_str()) else {
-                continue;
-            };
-            let Some(surface) = surfaces.get(face.surface.0.as_str()) else {
-                continue;
-            };
-            if angular_parameter_axes(surface).is_none() {
-                continue;
-            }
-            let Some(edge) = edges.get(coedge.edge.0.as_str()) else {
-                continue;
-            };
-            let Some(start) = vertices
-                .get(edge.start.0.as_str())
-                .and_then(|vertex| points.get(vertex.point.0.as_str()))
-                .copied()
-            else {
-                continue;
-            };
-            let Some(end) = vertices
-                .get(edge.end.0.as_str())
-                .and_then(|vertex| points.get(vertex.point.0.as_str()))
-                .copied()
-            else {
-                continue;
-            };
-            let first_tolerance = edge
-                .tolerance
-                .into_iter()
-                .chain(
-                    vertices
-                        .get(edge.start.0.as_str())
-                        .and_then(|vertex| vertex.tolerance),
-                )
-                .chain(face.tolerance)
-                .chain(std::iter::once(ir.tolerances.linear))
-                .fold(COINCIDENCE_TOLERANCE, f64::max);
-            let last_tolerance = edge
-                .tolerance
-                .into_iter()
-                .chain(
-                    vertices
-                        .get(edge.end.0.as_str())
-                        .and_then(|vertex| vertex.tolerance),
-                )
-                .chain(face.tolerance)
-                .chain(std::iter::once(ir.tolerances.linear))
-                .fold(COINCIDENCE_TOLERANCE, f64::max);
-
-            let Some(first_use) = coedge.pcurves.first() else {
-                continue;
-            };
-            let Some(last_use) = coedge.pcurves.last() else {
-                continue;
-            };
-            let Some(first_pcurve) = pcurves.get(first_use.pcurve.0.as_str()) else {
-                continue;
-            };
-            let Some(last_pcurve) = pcurves.get(last_use.pcurve.0.as_str()) else {
-                continue;
-            };
-            let Some(first_range) = pcurve_use_parameter_range(first_pcurve, first_use) else {
-                continue;
-            };
-            let Some(last_range) = pcurve_use_parameter_range(last_pcurve, last_use) else {
-                continue;
-            };
-
-            if coedge.pcurves.len() == 1 {
-                observations
-                    .entry(first_use.pcurve.0.clone())
-                    .or_default()
-                    .extend([
-                        AngularPcurveObservation {
-                            surface: (*surface).clone(),
-                            parameter: first_range[0],
-                            target: start,
-                            tolerance: first_tolerance,
-                        },
-                        AngularPcurveObservation {
-                            surface: (*surface).clone(),
-                            parameter: first_range[1],
-                            target: end,
-                            tolerance: last_tolerance,
-                        },
-                    ]);
-            } else {
-                observations
-                    .entry(first_use.pcurve.0.clone())
-                    .or_default()
-                    .push(AngularPcurveObservation {
-                        surface: (*surface).clone(),
-                        parameter: first_range[0],
-                        target: start,
-                        tolerance: first_tolerance,
-                    });
-                observations
-                    .entry(last_use.pcurve.0.clone())
-                    .or_default()
-                    .push(AngularPcurveObservation {
-                        surface: (*surface).clone(),
-                        parameter: last_range[1],
-                        target: end,
-                        tolerance: last_tolerance,
-                    });
-            }
-        }
-        observations
-    };
-
-    let repairs = observations
-        .iter()
-        .filter_map(|(id, observations)| {
-            let pcurve = ir.model.pcurves.iter().find(|pcurve| pcurve.id.0 == *id)?;
-            let candidates =
-                angular_parameter_candidates(&observations.first()?.surface, plane_angle_scale)?;
-            let scales =
-                choose_angular_parameter_repair(&pcurve.geometry, observations, &candidates)?;
-            Some((id.clone(), scales))
-        })
-        .collect::<HashMap<_, _>>();
-
-    let mut repaired = 0;
-    for pcurve in &mut ir.model.pcurves {
-        let Some(scales) = repairs.get(&pcurve.id.0) else {
-            continue;
-        };
-        if scale_pcurve_geometry(&mut pcurve.geometry, *scales) {
-            repaired += 1;
-        }
-    }
-    if repaired > 0 {
-        warnings.push(format!(
-            "normalized {repaired} angular pcurve(s) to match their surface parameter units using edge endpoints"
-        ));
-    }
-}
-
-#[derive(Debug, Clone)]
-struct AngularPcurveObservation {
-    surface: SurfaceGeometry,
-    parameter: f64,
-    target: Point3,
-    tolerance: f64,
-}
-
-fn angular_parameter_axes(geometry: &SurfaceGeometry) -> Option<[bool; 2]> {
-    match geometry {
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => Some([true, false]),
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => Some([true, true]),
-        SurfaceGeometry::Transformed { basis, .. } => angular_parameter_axes(basis),
-        SurfaceGeometry::Plane { .. }
-        | SurfaceGeometry::Nurbs { .. }
-        | SurfaceGeometry::Procedural { .. }
-        | SurfaceGeometry::Polygonal { .. }
-        | SurfaceGeometry::Unknown { .. } => None,
-    }
-}
-
-pub(super) fn angular_parameter_candidates(
-    geometry: &SurfaceGeometry,
-    plane_angle_scale: f64,
-) -> Option<Vec<[f64; 2]>> {
-    let axes = angular_parameter_axes(geometry)?;
-    let current = if plane_angle_scale.is_finite() && plane_angle_scale > 0.0 {
-        plane_angle_scale
-    } else {
-        1.0
-    };
-    let alternate = if (current - 1.0).abs() <= 1.0e-12 {
-        std::f64::consts::PI / 180.0
-    } else {
-        1.0
-    };
-    let alternate_ratio = alternate / current;
-    if !alternate_ratio.is_finite() || alternate_ratio <= 0.0 {
-        return None;
-    }
-
-    let u_factors = if axes[0] && (alternate_ratio - 1.0).abs() > 1.0e-12 {
-        vec![1.0, alternate_ratio]
-    } else {
-        vec![1.0]
-    };
-    let v_factors = if axes[1] && (alternate_ratio - 1.0).abs() > 1.0e-12 {
-        vec![1.0, alternate_ratio]
-    } else {
-        vec![1.0]
-    };
-    let mut candidates = Vec::with_capacity(u_factors.len() * v_factors.len());
-    for u in u_factors {
-        for v in &v_factors {
-            candidates.push([u, *v]);
-        }
-    }
-    Some(candidates)
-}
-
-fn choose_angular_parameter_repair(
-    geometry: &PcurveGeometry,
-    observations: &[AngularPcurveObservation],
-    candidates: &[[f64; 2]],
-) -> Option<[f64; 2]> {
-    let mut scores = vec![0.0; candidates.len()];
-    for (index, scales) in candidates.iter().enumerate() {
-        let mut scaled = geometry.clone();
-        if !scale_pcurve_geometry(&mut scaled, *scales) {
-            scores[index] = f64::INFINITY;
-            continue;
-        }
-        for observation in observations {
-            let Some(uv) = pcurve_uv(&scaled, observation.parameter) else {
-                scores[index] = f64::INFINITY;
-                break;
-            };
-            let Some(mapped) = surface_point(&observation.surface, uv.u, uv.v) else {
-                scores[index] = f64::INFINITY;
-                break;
-            };
-            let tolerance = observation.tolerance.max(COINCIDENCE_TOLERANCE);
-            let normalized = mapped.distance(observation.target) / tolerance;
-            if !normalized.is_finite() {
-                scores[index] = f64::INFINITY;
-                break;
-            }
-            scores[index] = scores[index].max(normalized);
-        }
-    }
-
-    let current = scores.first().copied()?;
-    let (best_index, &best) = scores
-        .iter()
-        .enumerate()
-        .min_by(|(_, left), (_, right)| left.total_cmp(right))?;
-    if best_index == 0 || !best.is_finite() || best > 1.0 || current <= 10.0 {
-        return None;
-    }
-    (current > best * 100.0).then(|| candidates[best_index])
-}
-
-fn pcurve_use_parameter_range(pcurve: &Pcurve, pcurve_use: &PcurveUse) -> Option<[f64; 2]> {
-    pcurve_use
-        .parameter_range
-        .or(pcurve.parameter_range)
-        .or_else(|| pcurve_parameter_domain(&pcurve.geometry))
-}
-
-fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
-    match geometry {
-        PcurveGeometry::Nurbs { knots, .. } | PcurveGeometry::PolarNurbs { knots, .. } => {
-            let start = knots.first().copied()?;
-            let end = knots.last().copied()?;
-            (start.is_finite() && end.is_finite() && start != end).then_some([start, end])
-        }
-        PcurveGeometry::Trimmed {
-            parameter_range, ..
-        } => Some(*parameter_range),
-        PcurveGeometry::Offset { basis, .. } => pcurve_parameter_domain(basis),
-        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
-        PcurveGeometry::Line { .. }
-        | PcurveGeometry::Circle { .. }
-        | PcurveGeometry::Ellipse { .. }
-        | PcurveGeometry::Harmonic { .. }
-        | PcurveGeometry::Parabola { .. }
-        | PcurveGeometry::Hyperbola { .. }
-        | PcurveGeometry::Hyperbolic { .. }
-        | PcurveGeometry::PolarHarmonic { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => None,
     }
 }
 
@@ -5049,48 +4714,6 @@ mod tests {
     }
 
     #[test]
-    fn angular_pcurve_repair_requires_topological_endpoint_evidence() {
-        let surface = SurfaceGeometry::Cylinder {
-            origin: Point3::new(0.0, 0.0, 0.0),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            ref_direction: Vector3::new(1.0, 0.0, 0.0),
-            radius: 2.0,
-        };
-        let degree_geometry = PcurveGeometry::Line {
-            origin: Point2::new(180.0, 0.0),
-            direction: Point2::new(0.0, 5.0),
-        };
-        let observations = [
-            AngularPcurveObservation {
-                surface: surface.clone(),
-                parameter: 0.0,
-                target: surface_point(&surface, std::f64::consts::PI, 0.0).unwrap(),
-                tolerance: COINCIDENCE_TOLERANCE,
-            },
-            AngularPcurveObservation {
-                surface: surface.clone(),
-                parameter: 1.0,
-                target: surface_point(&surface, std::f64::consts::PI, 5.0).unwrap(),
-                tolerance: COINCIDENCE_TOLERANCE,
-            },
-        ];
-        let candidates = angular_parameter_candidates(&surface, 1.0).unwrap();
-        assert_eq!(
-            choose_angular_parameter_repair(&degree_geometry, &observations, &candidates),
-            Some([std::f64::consts::PI / 180.0, 1.0])
-        );
-
-        let radians = PcurveGeometry::Line {
-            origin: Point2::new(std::f64::consts::PI, 0.0),
-            direction: Point2::new(0.0, 5.0),
-        };
-        assert_eq!(
-            choose_angular_parameter_repair(&radians, &observations, &candidates),
-            None
-        );
-    }
-
-    #[test]
     fn every_iso_si_prefix_resolves_to_its_exact_factor() {
         let expected = [
             ("EXA", 1e18),
@@ -5140,6 +4763,8 @@ ENDSEC;END-ISO-10303-21;",
 #3=LINE('',#4,#5);\
 #4=UNKNOWN_POINT();\
 #5=UNKNOWN_VECTOR();\
+#6=CURVE_REPLICA('',#6,#7);\
+#7=UNKNOWN_OPERATOR();\
 ENDSEC;END-ISO-10303-21;",
         )
         .expect("parse recursive failure graph");
@@ -5152,6 +4777,20 @@ ENDSEC;END-ISO-10303-21;",
         let mut warnings = Vec::new();
         assert!(decode_pcurve_geometry(
             3,
+            &exchange,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            1.0,
+            &mut warnings,
+            &mut active,
+            0,
+        )
+        .is_none());
+        assert!(active.is_empty());
+        assert!(decode_pcurve_geometry(
+            6,
             &exchange,
             &BTreeMap::new(),
             &BTreeMap::new(),

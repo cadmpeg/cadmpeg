@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -10,7 +10,7 @@ use cadmpeg_ir::ids::{
     ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
-use cadmpeg_ir::report::{LossKind, LossNote};
+use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::Color;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -203,6 +203,7 @@ pub(super) fn decode(
         .collect::<BTreeSet<_>>();
     styles
         .sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new(), 0).unwrap_or(u32::MAX));
+    let mut scalar_color_candidates = HashMap::<AppearanceTarget, Vec<(u64, Color)>>::new();
     for style_id in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -304,15 +305,11 @@ pub(super) fn decode(
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
                 match &target {
-                    AppearanceTarget::Face(face) => {
-                        if let Some(&index) = face_indices.get(&face.0) {
-                            ir.model.faces[index].color = Some(color);
-                        }
-                    }
-                    AppearanceTarget::Body(body) => {
-                        if let Some(&index) = body_indices.get(&body.0) {
-                            ir.model.bodies[index].color = Some(color);
-                        }
+                    AppearanceTarget::Face(_) | AppearanceTarget::Body(_) => {
+                        scalar_color_candidates
+                            .entry(target.clone())
+                            .or_default()
+                            .push((style_id, color));
                     }
                     _ => {}
                 }
@@ -332,6 +329,44 @@ pub(super) fn decode(
         }
         typed.extend(color_cache.keys().map(|(id, _)| *id));
         typed.insert(color_id);
+    }
+    for (target, candidates) in scalar_color_candidates {
+        let mut colors = Vec::new();
+        for (_, color) in &candidates {
+            if !colors.contains(color) {
+                colors.push(*color);
+            }
+        }
+        if let [color] = colors.as_slice() {
+            match target {
+                AppearanceTarget::Face(face) => {
+                    if let Some(&index) = face_indices.get(&face.0) {
+                        ir.model.faces[index].color = Some(*color);
+                    }
+                }
+                AppearanceTarget::Body(body) => {
+                    if let Some(&index) = body_indices.get(&body.0) {
+                        ir.model.bodies[index].color = Some(*color);
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            let style_ids = candidates
+                .iter()
+                .map(|(style_id, _)| format!("#{style_id}"))
+                .collect::<Vec<_>>();
+            losses.push(LossNote {
+                code: LossKind::MetadataNotTransferred,
+                severity: Severity::Warning,
+                message: format!(
+                    "independent styled items {} assign conflicting scalar colors to {:?}; scalar color omitted and appearance bindings retain every assignment",
+                    style_ids.join(", "),
+                    target,
+                ),
+                provenance: None,
+            });
+        }
     }
     PresentationResult {
         typed_records: typed,
