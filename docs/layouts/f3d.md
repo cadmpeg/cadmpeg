@@ -517,32 +517,48 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 38 B
 
-Offsets are relative to the primary Thread indexed header. The three LP-UTF16 strings begin at offset 38 and are outside this fixed prefix.
+Direct-prefix offsets are relative to the primary Thread indexed header. The three LP-UTF16 fields begin at offset 38 and are outside this fixed prefix.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both forms begin three LP-UTF16 strings at offset 38 |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the fixed f64 value `60.0` is at offset 21 |
-| 29 | 5 | `standard_marker` | `bytes[5]` | little | spec | bytes 29 through 33 are `01 02 00 00 00` |
-| 34 | 4 | `standard_prefix_tail` | `bytes[4]` | little | spec | bytes 34 through 37 are `36 00 67 00` |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The direct prefix stores ten zero bytes at offsets 11 through 20 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 21 |
+| 29 | 5 | `standard_marker` | `bytes[5]` | little | spec | the standard form marker is `01 02 00 00 00` |
+| 34 | 4 | `standard_prefix_tail` | `bytes[4]` | little | spec | its form token is `36 00 67 00` |
 
 ## `thread_compact_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 38 B
 
-The compact prefix has the same fixed width as the standard prefix and starts the same three LP-UTF16 strings at offset 38.
+The direct compact prefix has the same fixed width as the direct standard prefix and starts the same three LP-UTF16 fields at offset 38.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact envelope has primary class `426`, paired class `266` |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the same header, zero run, and f64 value |
-| 29 | 5 | `compact_marker` | `bytes[5]` | little | spec | It stores `00 02 00 00 00` at bytes 29 through 33 |
-| 34 | 4 | `compact_prefix_tail` | `bytes[4]` | little | spec | `36 00 48 00` at bytes 34 through 37 |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The direct prefix stores ten zero bytes at offsets 11 through 20 |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 21 |
+| 29 | 5 | `compact_marker` | `bytes[5]` | little | spec | The compact form marker is `00 02 00 00 00` |
+| 34 | 4 | `compact_prefix_tail` | `bytes[4]` | little | spec | its form token is `36 00 48 00` |
 
 Unstated regions:
 
 - `11..21` (10 B): The compact form retains the common zero run and fixed scalar before its discriminator bytes.
+
+## `thread_owner_marked_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the primary Thread indexed header. The three LP-UTF16 fields begin at offset 42 and are outside this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner-marked prefix stores nine zero bytes at offsets 11 through 19 |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `owner_marker` | `u32` | little | spec | u32 `1` at offset 20 |
+| 24 | 1 | `separator` | `u8` | little | spec | one zero byte at offset 24 |
+| 25 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 25 |
+| 33 | 5 | `form_marker` | `bytes[5]` | little | spec | Its form marker starts at offset 33 |
+| 38 | 4 | `form_token` | `bytes[4]` | little | spec | its form token starts at offset 38 |
 
 ## `thread_standard_construction_tail`
 
@@ -568,7 +584,7 @@ Offsets are relative to the first byte after the third LP-UTF16 string.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | or `01 02 00 00 00` in the compact form |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | `01 02 00 00 00` in the compact form |
 | 38 | 4 | `compact_trailer` | `bytes[4]` | little | spec | the compact trailer is `00 00 00 01` |
 
 Unstated regions:
