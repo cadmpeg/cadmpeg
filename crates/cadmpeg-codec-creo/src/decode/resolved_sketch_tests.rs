@@ -5073,6 +5073,87 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
 }
 
 #[test]
+fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    for (id, kind) in [
+        (11, crate::surface::SurfaceKind::Cylinder),
+        (12, crate::surface::SurfaceKind::TorusOrSphere),
+        (13, crate::surface::SurfaceKind::Cylinder),
+    ] {
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id,
+            type_byte: if kind == crate::surface::SurfaceKind::TorusOrSphere {
+                0x26
+            } else {
+                0x24
+            },
+            kind,
+            feature_id: 5,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: id as usize,
+        });
+    }
+    scan.features
+        .affected_ids
+        .push(crate::feature::FeatureAffectedIds {
+            feature_id: 5,
+            kind: crate::feature::AffectedIdKind::Geometry,
+            ids: vec![1, 2, 3, 4],
+            offset: 0,
+        });
+
+    let mut ir = CadIr::empty(Units::default());
+    for (id, radius) in [(11, 15.0), (13, 1.0)] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            },
+            source_object: None,
+        });
+    }
+    for (id, origin, normal) in [
+        (1, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+        (2, [0.0, 5.0, 0.0], [0.0, 1.0, 0.0]),
+        (3, [-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        (4, [-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+    ] {
+        ir.model.surfaces.push(Surface {
+            id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        });
+    }
+
+    assert_eq!(round_placed_cylinder_radii(&scan, &ir, 5), [15.0, 1.0]);
+    assert_eq!(round_support_radius(&scan, &ir, 5), Some(0.5));
+    assert_eq!(round_constant_radius(&scan, &ir, 5), None);
+    assert!(matches!(
+        schema_feature_definition(&scan, &ir, 5, 913, "Round"),
+        IrFeatureDefinition::Fillet {
+            groups,
+        } if matches!(
+            groups.as_slice(),
+            [cadmpeg_ir::features::FilletGroup {
+                radius: RadiusSpec::Unresolved {
+                    form: Some(RadiusForm::Variable),
+                },
+                ..
+            }]
+        )
+    ));
+}
+
+#[test]
 fn opposite_reference_caps_select_one_round_envelope_axis() {
     let circle = |entity_id, axis, start, end| crate::reference::ReferenceCircle {
         entity_id,

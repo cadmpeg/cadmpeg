@@ -17358,6 +17358,12 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         }
     }
     let cylinder_radii = round_placed_cylinder_radii(scan, ir, feature_id);
+    if differing_positive_lengths(&cylinder_radii) {
+        // Independent placed cylinder samples remain decisive when an
+        // unresolved toroidal sibling prevents the complete mixed-family
+        // witness from being assembled.
+        return None;
+    }
     if cylinder_radii.len() == cylinder_rows.len()
         && cylinder_rows.len()
             == scan
@@ -17367,12 +17373,6 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
                 .filter(|row| row.feature_id == feature_id)
                 .count()
     {
-        // A complete placed-cylinder set is an independent radius witness.
-        // Its unequal positive radii identify a variable-radius round and
-        // must not be hidden by a constant support-plane fallback.
-        if differing_positive_lengths(&cylinder_radii) {
-            return None;
-        }
         return unique_positive_length(&cylinder_radii);
     }
     round_support_radius(scan, ir, feature_id)
