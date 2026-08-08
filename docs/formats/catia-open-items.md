@@ -528,14 +528,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-40. Support-carrier family precedence
-
-**Question.** Which relation selects the support carrier of a consolidated side when carriers of more than one analytic family satisfy their own witness?
-
-**Known.** `catia.md` §6.3 "Class-`23` and class-`24` scalar edge definitions have payload" gives a uniqueness rule inside each family, for example "Multiple matching torus charts leave the support unresolved". It gives no rule across families. `consolidated::records` collects every independently matching analytic-family candidate and withholds the binding unless exactly one global candidate remains. A repeated identity-bearing circle family also withholds the binding.
-
-**Need.** Each witness is that both lifted pcurve endpoints land within `2e-3` mm of a `05 08 01` row, with the UV pair inside the candidate's stored parameter box. A cylinder and a torus can both satisfy that. The bound carrier gives the block's shared 3D loci, so every endpoint match and pcurve after it comes from that carrier. The native cross-family precedence remains unknown, so the decoder must withhold rather than select by implementation order.
-
 ### SN-42. Consolidated record census by marker
 
 **Question.** Where does the consolidated A/B record cluster start, so that a frame walk can enumerate it?
