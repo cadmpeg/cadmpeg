@@ -66,6 +66,11 @@ pub(crate) enum CoordinateRootClosure {
     Exhausted,
 }
 
+enum PointAssignmentOutcome {
+    Complete(Vec<HashMap<usize, usize>>),
+    Exhausted,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeshCandidateAmbiguity {
     CoordinateRootClosure,
@@ -1351,6 +1356,7 @@ impl MeshQuotient {
         component_search_budget: Option<usize>,
     ) -> CoordinateRootClosure {
         let ambiguous = Cell::new(false);
+        let exhausted = Cell::new(false);
         let result = self.close_coordinate_roots_with_incidence(
             point_count,
             edge_candidates,
@@ -1358,15 +1364,22 @@ impl MeshQuotient {
             budget,
             component_search_budget,
             &ambiguous,
+            &exhausted,
         );
         match result {
             Some(assignment) => CoordinateRootClosure::Solved(assignment),
-            None if budget.is_some_and(WorkBudget::exhausted) => CoordinateRootClosure::Exhausted,
+            None if exhausted.get() || budget.is_some_and(WorkBudget::exhausted) => {
+                CoordinateRootClosure::Exhausted
+            }
             None if ambiguous.get() => CoordinateRootClosure::Ambiguous,
             None => CoordinateRootClosure::Rejected,
         }
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Coordinate-root closure receives independent topology arenas and monotonic result flags."
+    )]
     fn close_coordinate_roots_with_incidence(
         &mut self,
         point_count: usize,
@@ -1375,6 +1388,7 @@ impl MeshQuotient {
         budget: Option<&WorkBudget<'_>>,
         component_search_budget: Option<usize>,
         ambiguous: &Cell<bool>,
+        exhausted: &Cell<bool>,
     ) -> Option<HashMap<usize, usize>> {
         const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
@@ -2280,7 +2294,11 @@ impl MeshQuotient {
                             })
                     },
                 );
-                if incidence_closed
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    *exhausted = true;
+                }
+                if !*exhausted
+                    && incidence_closed
                     && boundaries_close
                     && component_points.iter().all(|point| point_uses[*point] > 0)
                 {
@@ -2383,15 +2401,17 @@ impl MeshQuotient {
             return None;
         }
         if roots.len() == point_count && incidence.is_none() {
-            let mut assignments =
-                self.point_assignments_with_budget(point_count, edge_candidates, 2, budget);
-            return match assignments.len() {
-                1 => Some(assignments.remove(0)),
-                length if length > 1 => {
-                    ambiguous.set(true);
-                    None
-                }
-                _ => None,
+            return match self.point_assignments_with_budget(point_count, edge_candidates, 2, budget)
+            {
+                PointAssignmentOutcome::Complete(mut assignments) => match assignments.len() {
+                    1 => Some(assignments.remove(0)),
+                    length if length > 1 => {
+                        ambiguous.set(true);
+                        None
+                    }
+                    _ => None,
+                },
+                PointAssignmentOutcome::Exhausted => None,
             };
         }
         let root_indices = roots
@@ -2557,6 +2577,9 @@ impl MeshQuotient {
                 Some(face_edges)
             });
             if incidence.is_some() && face_edges.is_none() {
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    exhausted.set(true);
+                }
                 return None;
             }
             let closed_faces = face_incidence_counts.as_ref().map(|counts| {
@@ -2586,6 +2609,9 @@ impl MeshQuotient {
                 edge_candidates,
                 budget,
             ) {
+                if budget.is_some_and(WorkBudget::exhausted) {
+                    exhausted.set(true);
+                }
                 return None;
             }
             let mut arc_domains = local_domains.clone();
@@ -2602,11 +2628,15 @@ impl MeshQuotient {
                 if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
                     let work = budget.remaining() - arc_budget.remaining();
                     if !budget.charge_by(work) {
+                        exhausted.set(true);
                         return None;
                     }
                 }
                 local_domains = arc_domains;
-            } else if arc_budget.as_ref().is_none_or(|budget| !budget.exhausted()) {
+            } else {
+                if arc_budget.as_ref().is_some_and(WorkBudget::exhausted) {
+                    exhausted.set(true);
+                }
                 return None;
             }
             if local_domains
@@ -3282,9 +3312,12 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> Option<HashMap<usize, usize>> {
-        let mut solutions =
-            self.point_assignments_with_budget(point_count, edge_candidates, 2, budget);
-        (solutions.len() == 1).then(|| solutions.remove(0))
+        match self.point_assignments_with_budget(point_count, edge_candidates, 2, budget) {
+            PointAssignmentOutcome::Complete(mut solutions) => {
+                (solutions.len() == 1).then(|| solutions.remove(0))
+            }
+            PointAssignmentOutcome::Exhausted => None,
+        }
     }
 
     pub(crate) fn point_assignment_exists(
@@ -3293,9 +3326,10 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&WorkBudget<'_>>,
     ) -> bool {
-        !self
-            .point_assignments_with_budget(point_count, edge_candidates, 1, budget)
-            .is_empty()
+        matches!(
+            self.point_assignments_with_budget(point_count, edge_candidates, 1, budget),
+            PointAssignmentOutcome::Complete(solutions) if !solutions.is_empty()
+        )
     }
 
     fn point_assignments_with_budget(
@@ -3304,7 +3338,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
         budget: Option<&WorkBudget<'_>>,
-    ) -> Vec<HashMap<usize, usize>> {
+    ) -> PointAssignmentOutcome {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
         fn remaining_domains_match(values: &[(usize, Vec<usize>)], point_count: usize) -> bool {
@@ -3514,7 +3548,7 @@ impl MeshQuotient {
             }
         }
         if roots.len() != point_count {
-            return Vec::new();
+            return PointAssignmentOutcome::Complete(Vec::new());
         }
         let domains = roots
             .iter()
@@ -3536,7 +3570,7 @@ impl MeshQuotient {
             })
             .collect::<Option<Vec<_>>>()
         else {
-            return Vec::new();
+            return PointAssignmentOutcome::Complete(Vec::new());
         };
         let mut root_edges = vec![Vec::new(); roots.len()];
         for (edge_index, edge) in edge_roots.iter().enumerate() {
@@ -3570,10 +3604,16 @@ impl MeshQuotient {
             solution_limit,
             budget,
         );
-        solutions
-            .into_iter()
-            .map(|solution| roots.iter().copied().zip(solution).collect())
-            .collect()
+        if budget.is_some_and(WorkBudget::exhausted) {
+            PointAssignmentOutcome::Exhausted
+        } else {
+            PointAssignmentOutcome::Complete(
+                solutions
+                    .into_iter()
+                    .map(|solution| roots.iter().copied().zip(solution).collect())
+                    .collect(),
+            )
+        }
     }
 }
 
@@ -7007,6 +7047,78 @@ fn coordinate_root_closure_distinguishes_symmetric_assignments() {
     let outcome = quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, None);
 
     assert_eq!(outcome, CoordinateRootClosure::Ambiguous);
+}
+
+#[test]
+fn coordinate_root_closure_rejects_a_single_prefix_after_budget_refusal() {
+    let mut quotient = MeshQuotient {
+        union: UnionFind::new(2),
+        domains: vec![
+            Arc::new(HashSet::from([0, 1])),
+            Arc::new(HashSet::from([0, 1])),
+        ],
+        members: vec![vec![0], vec![1]],
+    };
+    let budget = WorkBudget::new(2);
+
+    assert_eq!(
+        quotient.coordinate_root_closure_outcome(2, &[vec![[0, 1]]], None, Some(&budget),),
+        CoordinateRootClosure::Exhausted
+    );
+    assert!(budget.exhausted());
+}
+
+#[test]
+fn coordinate_root_closure_rejects_a_refused_incidence_check() {
+    let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+    let edge_faces = [[0, 1], [0, 1]];
+    let assignment = |edge| MeshBoundaryEdgeCandidate {
+        edge,
+        start: 0,
+        end: 0,
+        reversed: None,
+    };
+    let boundary = MeshFaceBoundaryAssignment {
+        boundaries: vec![vec![assignment(0), assignment(1)]],
+    };
+    let boundary_domains = vec![
+        MeshFaceBoundaryDomain::Ordered(vec![boundary.clone()]),
+        MeshFaceBoundaryDomain::Ordered(vec![boundary]),
+    ];
+    let make_quotient = || {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: (0..4)
+                .map(|node| Arc::new(HashSet::from([usize::from(node % 2 != 0)])))
+                .collect(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(0, 2).expect("shared left endpoint");
+        quotient.merge(1, 3).expect("shared right endpoint");
+        quotient
+    };
+    let refused_budget = WorkBudget::new(40);
+    assert_eq!(
+        make_quotient().coordinate_root_closure_outcome(
+            2,
+            &edge_candidates,
+            Some((&edge_faces, &boundary_domains)),
+            Some(&refused_budget),
+        ),
+        CoordinateRootClosure::Exhausted
+    );
+    assert!(refused_budget.exhausted());
+    let complete_budget = WorkBudget::new(41);
+    assert!(matches!(
+        make_quotient().coordinate_root_closure_outcome(
+            2,
+            &edge_candidates,
+            Some((&edge_faces, &boundary_domains)),
+            Some(&complete_budget),
+        ),
+        CoordinateRootClosure::Solved(_)
+    ));
+    assert!(!complete_budget.exhausted());
 }
 
 #[test]

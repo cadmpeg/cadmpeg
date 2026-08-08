@@ -1952,7 +1952,7 @@ fn incidence_selection_validates_only_its_affected_faces() {
     };
     let budget = WorkBudget::new(1_000);
     let propagation_budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
-    let search = crate::solve::incidence::IncidenceComponentSearch {
+    let mut search = crate::solve::incidence::IncidenceComponentSearch {
         choices: &choices,
         explicit_point_supports: None,
         point_support_edges: None,
@@ -2852,33 +2852,86 @@ fn compact_face_quotient_states_accumulate_across_calls() {
     let conflicting = domain(true);
     let initial = vec![(quotient.clone(), HashSet::new())];
 
-    let first_states = crate::solve::incidence::advance_compact_boundary_domains(
-        [&first],
+    let crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(first_states) =
+        crate::solve::incidence::advance_compact_boundary_domains(
+            [&first],
+            &choices,
+            &assignment,
+            None,
+            initial.clone(),
+            &budget,
+        )
+    else {
+        panic!("first face quotient");
+    };
+    assert!(matches!(
+        crate::solve::incidence::advance_compact_boundary_domains(
+            [&conflicting],
+            &choices,
+            &assignment,
+            None,
+            initial,
+            &budget,
+        ),
+        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Complete(_)
+    ));
+    assert!(matches!(
+        crate::solve::incidence::advance_compact_boundary_domains(
+            [&conflicting],
+            &choices,
+            &assignment,
+            None,
+            first_states,
+            &budget,
+        ),
+        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Rejected
+    ));
+}
+
+#[test]
+fn compact_face_quotient_state_cap_is_exhausted() {
+    const EDGE_COUNT: usize = 14;
+    let choices = vec![Vec::new(); EDGE_COUNT];
+    let quotient = MeshQuotient {
+        union: UnionFind::new(EDGE_COUNT * 2),
+        domains: (0..EDGE_COUNT * 2)
+            .map(|node| {
+                Arc::new(if node % 2 == 0 {
+                    HashSet::from([0, 1])
+                } else {
+                    HashSet::from([1, 2])
+                })
+            })
+            .collect(),
+        members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
+    };
+    let boundary = (0..EDGE_COUNT)
+        .map(|edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 0,
+            reversed: None,
+        })
+        .collect();
+    let domain = MeshFaceBoundaryDomain::Ordered(vec![MeshFaceBoundaryAssignment {
+        boundaries: vec![boundary],
+    }]);
+    let assignment = (0..EDGE_COUNT).map(|_| Some([1, 1])).collect::<Vec<_>>();
+    let budget = WorkBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+
+    let outcome = crate::solve::incidence::advance_compact_boundary_domains(
+        [&domain],
         &choices,
         &assignment,
         None,
-        initial.clone(),
+        vec![(quotient, HashSet::new())],
         &budget,
-    )
-    .expect("first face quotient");
-    assert!(crate::solve::incidence::advance_compact_boundary_domains(
-        [&conflicting],
-        &choices,
-        &assignment,
-        None,
-        initial,
-        &budget,
-    )
-    .is_some());
-    assert!(crate::solve::incidence::advance_compact_boundary_domains(
-        [&conflicting],
-        &choices,
-        &assignment,
-        None,
-        first_states,
-        &budget,
-    )
-    .is_none());
+    );
+    assert!(matches!(
+        outcome,
+        crate::solve::incidence::CompactBoundaryAdvanceOutcome::Exhausted
+    ));
+    assert!(!budget.exhausted());
 }
 
 #[test]

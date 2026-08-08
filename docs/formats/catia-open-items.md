@@ -562,22 +562,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A refusal then removes a candidate face from the domain. Two candidate faces become one, and `missing_edge::unique_duplicate_face_assignment` accepts the survivor as the unique answer. A refusal must withhold, as the sibling budget in the same file does. We must know the field to bind the second face without a search.
 
-### SN-35. Boundary quotient state cap
-
-**Question.** What bounds the number of ordered-boundary quotient states of one face?
-
-**Known.** `catia.md` §5.4 "Each physical port initially admits every coordinate row" gives the validity rule for a quotient. It gives no state cap. `incidence::advance_compact_boundary_domains` stops at 4096 states and leaves the loop, so the input states after the stop contribute no successors. The result is a prefix-selected subset. The caller tests only `budget.exhausted()`, which the cap does not set, so a truncated result is used as a complete one.
-
-**Need.** A pruned branch can hold the true assignment. The solver then reports a second assignment as unique instead of reporting ambiguity. Every other bound in this file returns the unpruned domains or sets the exhausted flag. We must know the bound, or the cap must set the flag.
-
-### SN-36. Coordinate-root closure under a refused budget
-
-**Question.** How does the coordinate-root closure prove that the bijective coordinate assignment is unique when its work budget is refused?
-
-**Known.** `catia.md` §5.4 "Each physical port initially admits every coordinate row" gives "one bijective coordinate assignment modulo rows storing the same exact coordinate". `mesh_quotient::point_assignments_with_budget` stops enumerating on a refused charge and returns the assignments it found. `mesh_quotient::close_coordinate_roots` reports `Solved` when that list holds one assignment. The per-component walk also drops a complete assignment on a refused charge without setting its exhausted flag. Only the `None` result consults `budget.exhausted()`, so a truncation on the last leaf or the last component reports `Solved`.
-
-**Need.** `Solved` and `Exhausted` are different outcomes. `Exhausted` becomes `StandardTopologyFailure::TopologySearchExhausted`; `Solved` is emitted as the topology. We must report the refusal to keep the uniqueness rule.
-
 ### SN-37. Same-class edge row interchange
 
 **Question.** Which rows may exchange their endpoint pairs without changing the transferred body?

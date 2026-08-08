@@ -1422,6 +1422,12 @@ pub(crate) fn labeled_assignment_endpoint_cycles_viable(
     })
 }
 
+pub(crate) enum CompactBoundaryAdvanceOutcome {
+    Complete(Vec<MeshQuotientGaugeState>),
+    Rejected,
+    Exhausted,
+}
+
 pub(crate) fn advance_compact_boundary_domains<'a>(
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
@@ -1429,7 +1435,7 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
     selected: Option<(usize, [usize; 2])>,
     mut states: Vec<MeshQuotientGaugeState>,
     budget: &WorkBudget<'_>,
-) -> Option<Vec<MeshQuotientGaugeState>> {
+) -> CompactBoundaryAdvanceOutcome {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -1472,8 +1478,11 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
         let alternatives = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments.clone(),
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let [cycle] = incidence_cycles(edges, &points)
-                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())?;
+                let Some([cycle]) = incidence_cycles(edges, &points)
+                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
+                else {
+                    return CompactBoundaryAdvanceOutcome::Rejected;
+                };
                 vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![cycle
                         .into_iter()
@@ -1487,14 +1496,16 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                 }]
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                let materialized = deferred_boundary_assignment(domain, &points)?;
+                let Some(materialized) = deferred_boundary_assignment(domain, &points) else {
+                    return CompactBoundaryAdvanceOutcome::Rejected;
+                };
                 vec![materialized]
             }
         };
         ordered.push(alternatives);
     }
     if ordered.is_empty() {
-        return Some(states);
+        return CompactBoundaryAdvanceOutcome::Complete(states);
     }
     let candidates = assignment
         .iter()
@@ -1538,12 +1549,15 @@ pub(crate) fn advance_compact_boundary_domains<'a>(
                 break;
             }
         }
-        if next.is_empty() || budget.exhausted() {
-            return None;
+        if next.len() == MAX_QUOTIENT_STATES || budget.exhausted() {
+            return CompactBoundaryAdvanceOutcome::Exhausted;
+        }
+        if next.is_empty() {
+            return CompactBoundaryAdvanceOutcome::Rejected;
         }
         states = next;
     }
-    Some(states)
+    CompactBoundaryAdvanceOutcome::Complete(states)
 }
 
 #[cfg(test)]
@@ -1555,15 +1569,17 @@ pub(crate) fn compact_boundary_domains_jointly_viable<'a>(
     quotient: &MeshQuotient,
     budget: &WorkBudget<'_>,
 ) -> bool {
-    advance_compact_boundary_domains(
-        domains,
-        choices,
-        assignment,
-        selected,
-        vec![(quotient.clone(), HashSet::new())],
-        budget,
+    matches!(
+        advance_compact_boundary_domains(
+            domains,
+            choices,
+            assignment,
+            selected,
+            vec![(quotient.clone(), HashSet::new())],
+            budget,
+        ),
+        CompactBoundaryAdvanceOutcome::Complete(_)
     )
-    .is_some()
 }
 
 impl IncidenceComponentSearch<'_, '_> {
@@ -2168,7 +2184,7 @@ impl IncidenceComponentSearch<'_, '_> {
     }
 
     fn advance_ordered_faces(
-        &self,
+        &mut self,
         faces: impl IntoIterator<Item = usize>,
         quotient_states: Vec<MeshQuotientGaugeState>,
     ) -> Option<Vec<MeshQuotientGaugeState>> {
@@ -2205,25 +2221,29 @@ impl IncidenceComponentSearch<'_, '_> {
         if quotient_states.is_empty() {
             Some(quotient_states)
         } else {
-            let fallback = quotient_states.clone();
-            let advanced = advance_compact_boundary_domains(
+            match advance_compact_boundary_domains(
                 faces.iter().filter_map(|face| mesh_assignments.get(*face)),
                 self.choices,
                 &self.assignment,
                 None,
                 quotient_states,
                 self.boundary_propagation_budget,
-            );
-            if self.boundary_propagation_budget.exhausted() {
-                Some(fallback)
-            } else {
-                advanced
+            ) {
+                CompactBoundaryAdvanceOutcome::Complete(states) => Some(states),
+                CompactBoundaryAdvanceOutcome::Rejected => None,
+                CompactBoundaryAdvanceOutcome::Exhausted => {
+                    self.exhausted = true;
+                    None
+                }
             }
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn ordered_faces_feasible(&self, faces: impl IntoIterator<Item = usize>) -> bool {
+    pub(crate) fn ordered_faces_feasible(
+        &mut self,
+        faces: impl IntoIterator<Item = usize>,
+    ) -> bool {
         let states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
             vec![(quotient.clone(), HashSet::new())]
         });
