@@ -352,7 +352,11 @@ records use the parameters of their `PRODUCT` partial.
 A shape representation contains at least one representation item. The two
 items of an `ITEM_DEFINED_TRANSFORMATION` belong to the two representations
 connected by its representation relationship. An occurrence placement belongs
-to its defining relationship and representation context.
+to its defining relationship and representation context. A
+`SHAPE_REPRESENTATION_RELATIONSHIP` connects its two shape-representation
+endpoints for body reachability. In a complex instance, the endpoint attributes
+come from the inherited `REPRESENTATION_RELATIONSHIP` partial when the subtype
+partial has no parameters.
 
 Exact and tessellated representations of one product remain linked when their
 source item has one exact body owner. A missing or ambiguous owner detaches the
