@@ -20,11 +20,11 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, ExtrudeExtent,
     ExtrudeSide, ExtrudeStart, FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, FeatureSourceContent, FeatureTreeNodeRole, GeneratedEdgeRef,
-    GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef,
-    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity, Termination,
-    ThickenSide, VertexSelection,
+    FeatureId as IrFeatureId, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
+    GeneratedEdgeRef, GeneratedFaceRef, HoleBottom, HoleForm, HoleKind, Length, ParameterId,
+    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    RevolutionAxis, RevolutionConstruction, RevolveExtent, SurfaceBoundary, SurfaceContinuity,
+    Termination, ThickenSide, VertexSelection,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -33,9 +33,9 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
-    ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId, ShellId, SurfaceId,
-    UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, FeatureResultTopologyId, LoopId, OccurrenceId,
+    PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, ProductDefinitionId, RegionId,
+    ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::products::{
@@ -16401,10 +16401,11 @@ fn reconcile_feature_links(
         .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
         .filter(|dependency| emitted.contains(dependency))
         .filter(|dependency| *dependency != feature.id);
+        let generated_dependencies = feature_generated_dependencies(&feature.definition);
         feature.dependencies = reconciled_dependencies(
             &feature.id,
             &feature.dependencies,
-            native_dependencies,
+            native_dependencies.chain(generated_dependencies),
             &emitted,
         );
         if feature.parent.is_none() {
@@ -16435,6 +16436,32 @@ fn reconcile_feature_links(
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = ordinal as u64;
     }
+}
+
+fn feature_generated_dependencies(definition: &IrFeatureDefinition) -> Vec<IrFeatureId> {
+    let selections = match definition {
+        IrFeatureDefinition::Hole {
+            face: Some(face), ..
+        }
+        | IrFeatureDefinition::Thicken { faces: face, .. }
+        | IrFeatureDefinition::KnitSurface { faces: face, .. } => vec![face],
+        _ => Vec::new(),
+    };
+    selections
+        .into_iter()
+        .flat_map(|selection| match selection {
+            FaceSelection::Generated { faces, .. } => faces
+                .iter()
+                .map(|face| face.feature.clone())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
 }
 
 fn reconciled_dependencies(
@@ -17593,11 +17620,16 @@ fn knit_surface_feature_definition(
                 .iter()
                 .map(|feature| feature.id.clone())
                 .collect::<BTreeSet<_>>();
+            let result_surface_ids = feature_result_surface_ids_by_feature(
+                &scan.features.entity_tables,
+                &scan.surfaces.rows,
+            );
             let generated =
                 knit_operand_surface_ids(scan, feature_id, &quilt_ids).and_then(|surface_ids| {
                     generated_surface_face_refs(
                         &surface_ids,
                         &scan.surfaces.rows,
+                        &result_surface_ids,
                         &available_features,
                     )
                 });
@@ -17755,9 +17787,78 @@ fn thicken_plane_offset(
     Some((magnitude, side))
 }
 
+/// Return the materialized surface identities that one feature can expose as
+/// faces in its regenerated result.
+///
+/// A class-200 generated entry is a result-face identity only when the entry
+/// is a materialized surface, that surface row is unique, and the row names
+/// the same owning feature. Duplicate entries or malformed materialized rows
+/// invalidate the complete result state for that feature.
+fn feature_result_surface_ids(
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Option<Vec<u32>> {
+    let mut surface_ids = Vec::new();
+    let mut seen = BTreeSet::new();
+    for table in tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+    {
+        for entry in table.entries.iter().filter(|entry| entry.class_id == 200) {
+            if !table.surface_ids.contains(&entry.entity_id) {
+                continue;
+            }
+            let row = crate::surface::unique_surface_row(rows, entry.entity_id)?;
+            if row.feature_id != feature_id || !seen.insert(entry.entity_id) {
+                return None;
+            }
+            surface_ids.push(entry.entity_id);
+        }
+    }
+    (!surface_ids.is_empty()).then_some(surface_ids)
+}
+
+fn feature_result_surface_ids_by_feature(
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> BTreeMap<u32, Vec<u32>> {
+    tables
+        .iter()
+        .filter_map(|table| table.feature_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|feature_id| {
+            feature_result_surface_ids(tables, rows, feature_id)
+                .map(|surface_ids| (feature_id, surface_ids))
+        })
+        .collect()
+}
+
+fn feature_result_topology(
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+) -> Option<FeatureResultTopology> {
+    let surface_ids = feature_result_surface_ids(tables, rows, feature_id)?;
+    Some(FeatureResultTopology {
+        id: FeatureResultTopologyId(format!("creo:model:feature-result-topology#{feature_id}")),
+        output_of: IrFeatureId(format!("creo:model:feature#{feature_id}")),
+        bodies: Vec::new(),
+        faces: surface_ids
+            .into_iter()
+            .map(|surface_id| format!("surface#{surface_id}"))
+            .collect(),
+        edges: Vec::new(),
+        vertices: Vec::new(),
+        native_ref: None,
+    })
+}
+
 fn generated_surface_face_refs(
     source_ids: &[u32],
     rows: &[crate::surface::SurfaceRow],
+    result_surface_ids: &BTreeMap<u32, Vec<u32>>,
     available_features: &BTreeSet<IrFeatureId>,
 ) -> Option<Vec<GeneratedFaceRef>> {
     source_ids
@@ -17765,14 +17866,40 @@ fn generated_surface_face_refs(
         .map(|surface_id| {
             let row = crate::surface::unique_surface_row(rows, *surface_id)?;
             let feature = IrFeatureId(format!("creo:model:feature#{}", row.feature_id));
-            available_features
-                .contains(&feature)
-                .then_some(GeneratedFaceRef {
-                    feature,
-                    local_id: format!("surface#{surface_id}"),
-                })
+            (available_features.contains(&feature)
+                && result_surface_ids
+                    .get(&row.feature_id)
+                    .is_some_and(|ids| ids.contains(surface_id)))
+            .then_some(GeneratedFaceRef {
+                feature,
+                local_id: format!("surface#{surface_id}"),
+            })
         })
         .collect()
+}
+
+fn emit_feature_result_topologies(scan: &ContainerScan, ir: &mut CadIr) -> usize {
+    let mut emitted = 0;
+    for feature in &ir.model.features {
+        let Some(feature_id) = feature
+            .id
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(state) = feature_result_topology(
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+            feature_id,
+        ) else {
+            continue;
+        };
+        ir.model.feature_result_topologies.push(state);
+        emitted += 1;
+    }
+    emitted
 }
 
 fn thicken_feature_definition(
@@ -17798,6 +17925,10 @@ fn thicken_feature_definition(
                 .iter()
                 .map(|feature| feature.id.clone())
                 .collect::<BTreeSet<_>>();
+            let result_surface_ids = feature_result_surface_ids_by_feature(
+                &scan.features.entity_tables,
+                &scan.surfaces.rows,
+            );
             let native = format!(
                 "creo:allfeatur:thicken_source_surfaces#{feature_id}:{}",
                 source_ids
@@ -17815,9 +17946,12 @@ fn thicken_feature_definition(
                 .all(|face| ir.model.faces.iter().any(|candidate| candidate.id == *face))
             {
                 FaceSelection::Resolved { faces, native }
-            } else if let Some(faces) =
-                generated_surface_face_refs(&source_ids, &scan.surfaces.rows, &available_features)
-            {
+            } else if let Some(faces) = generated_surface_face_refs(
+                &source_ids,
+                &scan.surfaces.rows,
+                &result_surface_ids,
+                &available_features,
+            ) {
                 FaceSelection::Generated { faces, native }
             } else {
                 FaceSelection::Native(native)
@@ -17898,6 +18032,16 @@ fn schema_feature_definition(
         let solved = simple_hole_geometry(scan, feature_id)
             .or_else(|| compact_simple_hole_geometry(scan, feature_id));
         let simple_form = solved.is_some() || compact_cylinder_id.is_some();
+        let result_surface_ids = feature_result_surface_ids_by_feature(
+            &scan.features.entity_tables,
+            &scan.surfaces.rows,
+        );
+        let available_features = ir
+            .model
+            .features
+            .iter()
+            .map(|feature| feature.id.clone())
+            .collect::<BTreeSet<_>>();
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
@@ -17906,6 +18050,13 @@ fn schema_feature_definition(
                     faces: vec![face],
                     native,
                 }
+            } else if let Some(faces) = generated_surface_face_refs(
+                &[surface_id],
+                &scan.surfaces.rows,
+                &result_surface_ids,
+                &available_features,
+            ) {
+                FaceSelection::Generated { faces, native }
             } else {
                 FaceSelection::Native(native)
             }
@@ -30644,6 +30795,7 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     }
     link_feature_sketch_history(scan, &mut ir);
     reconcile_feature_links(scan, &mut ir, &prototype_feature_dependencies);
+    let feature_result_topology_count = emit_feature_result_topologies(scan, &mut ir);
     let (transferred_feature_dimension_count, dimension_parameters) =
         transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let transferred_curve_expression_parameter_count =
@@ -30866,7 +31018,13 @@ fn build_ir(scan: &ContainerScan) -> Result<BuiltIr, CodecError> {
     close_sketch_constraint_parameter_references(&mut ir);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
     emit_geometry_arenas(scan, &mut ir, &mut annotations)?;
-    collect_feature_coverage(scan, &ir, geometry_generator_feature_count, &mut coverage);
+    collect_feature_coverage(
+        scan,
+        &ir,
+        geometry_generator_feature_count,
+        feature_result_topology_count,
+        &mut coverage,
+    );
     Ok(BuiltIr {
         ir,
         annotations: annotations.build(),
@@ -31586,6 +31744,7 @@ fn collect_feature_coverage(
     scan: &ContainerScan,
     ir: &CadIr,
     geometry_generator_feature_count: usize,
+    feature_result_topology_count: usize,
     coverage: &mut BTreeMap<String, usize>,
 ) {
     let native_feature_count = ir
@@ -32032,6 +32191,10 @@ fn collect_feature_coverage(
     coverage.insert(
         "transferred_feature_count".to_string(),
         ir.model.features.len(),
+    );
+    coverage.insert(
+        "transferred_feature_result_topology_count".to_string(),
+        feature_result_topology_count,
     );
     coverage.insert(
         "transferred_typed_feature_count".to_string(),

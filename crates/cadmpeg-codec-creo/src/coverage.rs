@@ -124,6 +124,8 @@ pub(crate) const TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT: CoverageKey =
 pub(crate) const TRANSFERRED_EXTRUDE_FEATURE_COUNT: CoverageKey =
     CoverageKey("transferred_extrude_feature_count");
 pub(crate) const TRANSFERRED_FEATURE_COUNT: CoverageKey = CoverageKey("transferred_feature_count");
+pub(crate) const TRANSFERRED_FEATURE_RESULT_TOPOLOGY_COUNT: CoverageKey =
+    CoverageKey("transferred_feature_result_topology_count");
 pub(crate) const TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT: CoverageKey =
     CoverageKey("transferred_feature_dimension_parameter_count");
 pub(crate) const TRANSFERRED_FILLET_FEATURE_COUNT: CoverageKey =
@@ -334,6 +336,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     TRANSFERRED_EXPLICITLY_UNRESOLVED_FEATURE_COUNT,
     TRANSFERRED_EXTRUDE_FEATURE_COUNT,
     TRANSFERRED_FEATURE_COUNT,
+    TRANSFERRED_FEATURE_RESULT_TOPOLOGY_COUNT,
     TRANSFERRED_FEATURE_DIMENSION_PARAMETER_COUNT,
     TRANSFERRED_FILLET_FEATURE_COUNT,
     TRANSFERRED_FIRST_INSTANCE_PROTOTYPE_SURFACE_COUNT,

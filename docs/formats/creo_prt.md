@@ -2784,6 +2784,14 @@ feature depends on that generating feature. A self-reference does not add a
 history dependency. Competing generating owners leave the dependency
 unresolved.
 
+For each feature, a regenerated-result face identity is declared only when an
+owned class-200 entry is a materialized surface, that identifier has exactly
+one surface row, and the row's `feat_id` is the owning feature. The result
+state names that face as `surface#<geom_id>`. Duplicate entries, missing rows,
+and rows owned by another feature do not declare a result state. A generated
+face selection is valid only when its producer feature and `surface#<geom_id>`
+identity occur in that producer's result state.
+
 `edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
 and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
 declared compact count and the entity-class identifier following its `f7`

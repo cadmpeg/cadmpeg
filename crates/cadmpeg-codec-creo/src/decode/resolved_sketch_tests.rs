@@ -575,9 +575,10 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         IrFeatureId("creo:model:feature#97".to_string()),
         IrFeatureId("creo:model:feature#144".to_string()),
     ]);
+    let result_surface_ids = BTreeMap::from([(97, vec![98]), (144, vec![145])]);
 
     assert_eq!(
-        generated_surface_face_refs(&[98, 145], &rows, &producers),
+        generated_surface_face_refs(&[98, 145], &rows, &result_surface_ids, &producers),
         Some(vec![
             GeneratedFaceRef {
                 feature: IrFeatureId("creo:model:feature#97".to_string()),
@@ -590,13 +591,91 @@ fn generated_surface_faces_require_unique_rows_and_materialized_producers() {
         ])
     );
     assert_eq!(
-        generated_surface_face_refs(&[98], &[row(98, 97), row(98, 97)], &producers),
+        generated_surface_face_refs(
+            &[98],
+            &[row(98, 97), row(98, 97)],
+            &result_surface_ids,
+            &producers,
+        ),
         None
     );
     assert_eq!(
-        generated_surface_face_refs(&[98], &rows, &BTreeSet::new()),
+        generated_surface_face_refs(&[98], &rows, &result_surface_ids, &BTreeSet::new()),
         None
     );
+}
+
+#[test]
+fn feature_result_faces_require_owned_materialized_class_200_entries() {
+    let row = |id, feature_id| crate::surface::SurfaceRow {
+        id,
+        type_byte: 0x22,
+        kind: crate::surface::SurfaceKind::Plane,
+        feature_id,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: 0,
+    };
+    let entry = |entity_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id: 200,
+        source_entity_id: Some(source_entity_id),
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: false,
+        offset: 0,
+        end_offset: 0,
+    };
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(97),
+        table_class_id: 29,
+        entry_ids: vec![98, 145],
+        entries: vec![entry(98, 1), entry(145, 2)],
+        surface_ids: vec![98, 145],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    let rows = [row(98, 97), row(145, 97)];
+    assert_eq!(
+        feature_result_surface_ids(std::slice::from_ref(&table), &rows, 97),
+        Some(vec![98, 145])
+    );
+    assert_eq!(
+        feature_result_topology(std::slice::from_ref(&table), &rows, 97)
+            .expect("complete result topology")
+            .faces,
+        vec!["surface#98", "surface#145"]
+    );
+
+    let mut duplicate = table.clone();
+    duplicate.entry_ids.push(98);
+    duplicate.entries.push(entry(98, 1));
+    duplicate.surface_ids.push(98);
+    assert!(feature_result_surface_ids(&[duplicate], &rows, 97).is_none());
+
+    let mut missing = table;
+    missing.entry_ids[1] = 146;
+    missing.entries[1] = entry(146, 2);
+    missing.surface_ids[1] = 146;
+    assert!(feature_result_surface_ids(&[missing], &rows, 97).is_none());
+}
+
+#[test]
+fn generated_face_dependencies_follow_the_producer_feature() {
+    let producer = IrFeatureId("creo:model:feature#97".to_string());
+    let definition = IrFeatureDefinition::Thicken {
+        faces: FaceSelection::Generated {
+            faces: vec![GeneratedFaceRef {
+                feature: producer.clone(),
+                local_id: "surface#98".to_string(),
+            }],
+            native: "creo:allfeatur:thicken#9".to_string(),
+        },
+        thickness: None,
+        side: None,
+    };
+    assert_eq!(feature_generated_dependencies(&definition), vec![producer]);
 }
 
 #[test]

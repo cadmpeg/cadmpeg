@@ -134,6 +134,11 @@ fixtures, claims above L1 remain unproven.
   identities when neutral semantics remain incomplete. A class-100 generated
   entity reference adds a history dependency when that entity has exactly one
   preceding feature-generated class-200 producer.
+- Unique feature-owned class-200 materialized surfaces now emit feature-result
+  topology face identities. Hole placement, thicken inputs, and knit inputs
+  use generated face references only when those identities and their producer
+  dependencies are declared; ambiguous, rowless, or foreign-owned surfaces
+  remain native selections.
 - Feature-local pre-rollback, post-rollback, and post-regeneration outlines
   retain each of their six exact scalar bodies independently of numeric decode.
 - Bare `Body`, `Körper`, and `Surface` operation states without a recipe,
