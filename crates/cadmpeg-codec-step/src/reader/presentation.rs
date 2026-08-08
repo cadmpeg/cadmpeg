@@ -923,16 +923,19 @@ enum StyleDomain {
 }
 
 fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
-    match exchange.records.get(&id).and_then(RecordExt::simple_name) {
-        Some(name)
-            if name.contains("FACE")
-                || name.contains("SURFACE")
-                || name.contains("SOLID")
-                || name.contains("SHELL") =>
-        {
-            StyleDomain::Surface
-        }
-        _ => StyleDomain::Any,
+    let Some(record) = exchange.records.get(&id) else {
+        return StyleDomain::Any;
+    };
+    if record.partials.iter().any(|partial| {
+        let name = partial.name.as_str();
+        name.contains("FACE")
+            || name.contains("SURFACE")
+            || name.contains("SOLID")
+            || name.contains("SHELL")
+    }) {
+        StyleDomain::Surface
+    } else {
+        StyleDomain::Any
     }
 }
 

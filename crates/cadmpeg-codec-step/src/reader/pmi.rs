@@ -75,7 +75,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
+            shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
                     value,
                     &mut losses,
@@ -123,7 +123,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameter(0).and_then(|value| {
+            shape_aspect_parameter(record, 0).and_then(|value| {
                 decode_text(
                     value,
                     &mut losses,
@@ -949,6 +949,18 @@ fn named_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Optio
         .iter()
         .find(|partial| partial.name == name)
         .and_then(|partial| partial.parameters.get(index))
+}
+
+fn shape_aspect_parameter(record: &RawRecord, index: usize) -> Option<&Value> {
+    if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "SHAPE_ASPECT")
+    {
+        partial.parameters.get(index)
+    } else {
+        record.parameter(index)
+    }
 }
 
 fn is_measure_record(record: &RawRecord) -> bool {

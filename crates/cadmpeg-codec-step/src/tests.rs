@@ -6220,6 +6220,29 @@ fn complex_colour_rgb_inherits_name_and_components() {
 }
 
 #[test]
+fn complex_surface_targets_use_surface_style_domain() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('red',1.,0.,0.);
+#2=COLOUR_RGB('blue',0.,0.,1.);
+#3=CURVE_STYLE('',#1,$,$);
+#4=SURFACE_STYLE_RENDERING(#2,$,$,$,$,$);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#3,#4));
+#6=STYLED_ITEM('',(#5),#7);
+#7=(ADVANCED_FACE() FACE_SURFACE());",
+    );
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        })
+    );
+}
+
+#[test]
 fn null_style_branch_does_not_suppress_a_sibling_color() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
@@ -7524,6 +7547,33 @@ fn presentation_reader_resolves_complex_datum_reference_inheritance() {
         .losses
         .iter()
         .all(|loss| { !loss.message.contains("DATUM_REFERENCE_COMPARTMENT #20") }));
+}
+
+#[test]
+fn complex_datum_names_use_the_inherited_shape_aspect_name() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=(DATUM('A') SHAPE_ASPECT('datum name','',#5,.F.));
+#8=(DATUM_SYSTEM((#20)) SHAPE_ASPECT('system name','',#5,.F.));
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,#7,());
+#99=UNRESOLVED_PRODUCT();",
+    );
+    let names = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .filter(|annotation| {
+            matches!(
+                annotation.definition,
+                PmiDefinition::Datum { .. } | PmiDefinition::DatumSystem { .. }
+            )
+        })
+        .map(|annotation| annotation.name.as_deref())
+        .collect::<Vec<_>>();
+    assert_eq!(names, [Some("datum name"), Some("system name")]);
 }
 
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
