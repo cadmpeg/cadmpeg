@@ -382,14 +382,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve the namespace to bind other consolidated curve and support records.
 
-### SN-13. Standard `0x60` local tag binding
-
-**Question.** How does a standard `0x60` row local allocation tag bind to its native edge record when no edge node has the same curve identity?
-
-**Known.** `catia.md` §5.5 `edge_support_row` defines exact identity binding and the endpoint-incidence fallback.
-
-**Need.** We must know the remaining binding to transfer the native edge carrier.
-
 ### SN-14. Multiple FBB face groups
 
 **Question.** Which fields assign standard-path faces and edges to topology components when the file has multiple separate FBB face groups?

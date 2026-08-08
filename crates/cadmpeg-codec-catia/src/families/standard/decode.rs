@@ -3266,6 +3266,18 @@ fn attach_standard_topology(
     let allocation_endpoint_pairs = vertex_roster
         .as_ref()
         .map(|roster| standard_successor_endpoint_pairs(&supports, roster, &endpoint_candidates));
+    let native_support_ids = native_edge_supports.keys().copied().collect::<HashSet<_>>();
+    let native_support_edge_ids = standard_native_support_edge_ids(
+        &supports,
+        &native_edges,
+        &native_support_ids,
+        vertex_roster.as_deref(),
+        &endpoint_candidates,
+    );
+    let native_supports_by_row = native_support_edge_ids
+        .iter()
+        .map(|edge| edge.and_then(|edge| native_edge_supports.get(&edge).cloned()))
+        .collect::<Vec<_>>();
     let Ok(native_endpoint_evidence) = merge_native_endpoint_evidence(
         graph_endpoint_pairs.as_deref(),
         roster_endpoint_pairs.as_deref(),
@@ -3309,9 +3321,10 @@ fn attach_standard_topology(
         }
     }
     if let Some(options) = &mut endpoint_options {
-        for (edge, support) in supports.iter().enumerate() {
-            let Some(pair) = native_edge_supports
-                .get(&support.tag)
+        for edge in 0..supports.len() {
+            let Some(pair) = native_supports_by_row
+                .get(edge)
+                .and_then(Option::as_ref)
                 .and_then(|native| {
                     standard_native_support_endpoint_pair(
                         native,
@@ -3917,7 +3930,7 @@ fn attach_standard_topology(
         &edge_vertices,
         &point_assignment,
         &topology,
-        native_edge_supports,
+        &native_supports_by_row,
         &resolved_limit_curve_bindings,
         limit_curves,
     );
@@ -4050,7 +4063,7 @@ fn emit_standard_topology(
     edge_vertices: &[[usize; 2]],
     point_assignment: &[usize],
     topology: &crate::families::standard::topology::StandardTopology,
-    native_edge_supports: &HashMap<u32, StandardEdgeSupport>,
+    native_edge_supports: &[Option<StandardEdgeSupport>],
     limit_curve_bindings: &[Option<StandardLimitCurveBinding>],
     limit_curves: &[NurbsCurve],
 ) {
@@ -4059,15 +4072,18 @@ fn emit_standard_topology(
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
-        let native_support = native_edge_supports.get(&support.tag).filter(|native| {
-            standard_native_support_endpoint_pair(
-                native,
-                &ir.model.points,
-                &[start_point, end_point],
-                Some([start_point, end_point]),
-            )
-            .is_some()
-        });
+        let native_support = native_edge_supports
+            .get(edge_index)
+            .and_then(Option::as_ref)
+            .filter(|native| {
+                standard_native_support_endpoint_pair(
+                    native,
+                    &ir.model.points,
+                    &[start_point, end_point],
+                    Some([start_point, end_point]),
+                )
+                .is_some()
+            });
         let (curve, param_range) = build_standard_edge_curve(
             ir,
             annotations,
@@ -5211,6 +5227,100 @@ pub(crate) fn standard_native_graph_endpoint_pairs(
             })
             .collect(),
     )
+}
+
+/// Resolve native two-sided edge carriers for standard rows. An exact native
+/// edge identity wins. Without that identity, endpoint-roster incidence may
+/// bind a carrier only when it leaves one unused native edge identity; a
+/// repeated endpoint pair remains unresolved because it does not select a
+/// physical carrier.
+pub(crate) fn standard_native_support_edge_ids(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    native_support_ids: &HashSet<u32>,
+    vertex_roster: Option<&[u32]>,
+    endpoint_candidates: &[Vec<usize>],
+) -> Vec<Option<u32>> {
+    if supports.len() != endpoint_candidates.len() {
+        return vec![None; supports.len()];
+    }
+
+    let exact_edge_ids = supports
+        .iter()
+        .filter_map(|support| {
+            (native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag))
+                .then_some(support.tag)
+        })
+        .collect::<HashSet<_>>();
+    let mut exact_row_counts = HashMap::<u32, usize>::new();
+    for support in supports {
+        if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag) {
+            *exact_row_counts.entry(support.tag).or_default() += 1;
+        }
+    }
+
+    let mut bindings = supports
+        .iter()
+        .map(|support| {
+            (native_support_ids.contains(&support.tag)
+                && exact_row_counts.get(&support.tag) == Some(&1))
+            .then_some(support.tag)
+        })
+        .collect::<Vec<_>>();
+    let mut fallback_candidates = vec![Vec::<u32>::new(); supports.len()];
+
+    if let Some(vertex_roster) = vertex_roster {
+        let point_by_identity = vertex_roster
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(point, identity)| (identity, point))
+            .collect::<HashMap<_, _>>();
+        for (row, (support, candidates)) in supports.iter().zip(endpoint_candidates).enumerate() {
+            if native_edges.contains_key(&support.tag) || native_support_ids.contains(&support.tag)
+            {
+                continue;
+            }
+            for (&edge, [start_identity, end_identity]) in native_edges {
+                if exact_edge_ids.contains(&edge) || !native_support_ids.contains(&edge) {
+                    continue;
+                }
+                let Some(&start) = point_by_identity.get(start_identity) else {
+                    continue;
+                };
+                let Some(&end) = point_by_identity.get(end_identity) else {
+                    continue;
+                };
+                if candidates.contains(&start) && candidates.contains(&end) {
+                    fallback_candidates[row].push(edge);
+                }
+            }
+        }
+    }
+
+    let mut used = exact_edge_ids;
+    loop {
+        let mut changed = false;
+        for row in 0..bindings.len() {
+            if bindings[row].is_some() {
+                continue;
+            }
+            let available = fallback_candidates[row]
+                .iter()
+                .copied()
+                .filter(|edge| !used.contains(edge))
+                .collect::<Vec<_>>();
+            if let [edge] = available.as_slice() {
+                bindings[row] = Some(*edge);
+                used.insert(*edge);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    bindings
 }
 
 /// Return the sole distinct unordered native pair contained in a geometric
@@ -8910,7 +9020,7 @@ mod route_tests {
                 &[[0, 1]],
                 &[0, 1],
                 &topology,
-                &HashMap::new(),
+                &[None],
                 &[None],
                 &[],
             );

@@ -5115,6 +5115,64 @@ fn unbound_native_edge_pair_must_be_unique_in_the_geometric_domain() {
 }
 
 #[test]
+fn native_edge_carrier_binding_uses_unique_unused_endpoint_identity() {
+    use crate::families::standard::decode::standard_native_support_edge_ids;
+    use crate::families::standard::records::{StandardCurveGeometry, StandardCurveSupport};
+
+    let supports = [
+        StandardCurveSupport {
+            pos: 0,
+            tag: 70,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Line,
+        },
+        StandardCurveSupport {
+            pos: 1,
+            tag: 900,
+            faces: [0, 0],
+            geometry: StandardCurveGeometry::Line,
+        },
+    ];
+    let native_edges = BTreeMap::from([(70, [10, 11]), (71, [12, 13])]);
+    let native_support_ids = HashSet::from([70, 71]);
+    let vertex_roster = [10, 11, 12, 13];
+    assert_eq!(
+        standard_native_support_edge_ids(
+            &supports,
+            &native_edges,
+            &native_support_ids,
+            Some(&vertex_roster),
+            &[vec![0, 1], vec![2, 3]],
+        ),
+        vec![Some(70), Some(71)]
+    );
+
+    let ambiguous_edges = BTreeMap::from([(71, [10, 11]), (72, [10, 11])]);
+    let ambiguous_support_ids = HashSet::from([71, 72]);
+    assert_eq!(
+        standard_native_support_edge_ids(
+            &supports[1..],
+            &ambiguous_edges,
+            &ambiguous_support_ids,
+            Some(&vertex_roster),
+            &[vec![0, 1]],
+        ),
+        vec![None]
+    );
+
+    assert_eq!(
+        standard_native_support_edge_ids(
+            &supports[1..],
+            &BTreeMap::new(),
+            &HashSet::from([900]),
+            None,
+            &[vec![2, 3]],
+        ),
+        vec![Some(900)]
+    );
+}
+
+#[test]
 fn endpoint_port_propagation_requires_a_point_bijection() {
     assert_eq!(
         propagate_edge_port_points(&[[10, 11]], &[Some([0, 1])]),
