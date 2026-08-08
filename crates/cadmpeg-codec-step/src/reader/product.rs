@@ -710,18 +710,6 @@ fn occurrence_placements(
         &definition_representations,
         &mut result,
     );
-    let mut placements_by_representation = BTreeMap::<u64, Vec<Transform>>::new();
-    for (_, record) in exchange.entities("MAPPED_ITEM") {
-        let Some((mapped_representation, transform)) =
-            mapped_item_placement(record, exchange, geometry)
-        else {
-            continue;
-        };
-        placements_by_representation
-            .entry(mapped_representation)
-            .or_default()
-            .push(transform);
-    }
     let mut usage_counts = BTreeMap::<u64, usize>::new();
     for usage in usages.values() {
         *usage_counts.entry(usage.child_definition).or_default() += 1;
@@ -734,16 +722,37 @@ fn occurrence_placements(
         else {
             continue;
         };
-        let placements = child_representations
-            .iter()
-            .flat_map(|representation| {
-                placements_by_representation
-                    .get(representation)
-                    .into_iter()
-                    .flatten()
-                    .copied()
-            })
-            .collect::<Vec<_>>();
+        let Some(parent_representations) = definition_representations.get(&usage.parent_definition)
+        else {
+            continue;
+        };
+        let mut placements = Vec::new();
+        for &parent_representation in parent_representations {
+            let Some(record) = exchange.records.get(&parent_representation) else {
+                continue;
+            };
+            let Some(items) = representation_items(record) else {
+                continue;
+            };
+            for item_id in items {
+                let Some(item) = exchange.records.get(&item_id) else {
+                    continue;
+                };
+                if item.partial("MAPPED_ITEM").is_none() {
+                    continue;
+                }
+                let Some((mapped_representation, transform)) =
+                    mapped_item_placement(item, exchange, geometry)
+                else {
+                    continue;
+                };
+                if child_representations.contains(&mapped_representation)
+                    && !placements.contains(&transform)
+                {
+                    placements.push(transform);
+                }
+            }
+        }
         let matching_usages = usage_counts[&usage.child_definition];
         if matching_usages == 1 && placements.len() == 1 {
             result.insert(usage_id, placements[0]);

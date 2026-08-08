@@ -525,19 +525,13 @@ root". We must know the identity rule before either is relied on.
 **Question.** Must a `MAPPED_ITEM` that supplies an occurrence placement
 belong to the parent's own representation?
 
-**Known.** The fallback collects every `MAPPED_ITEM` in the exchange
-structure and accepts one when the child definition has exactly one usage and
-exactly one candidate placement
-(`crates/cadmpeg-codec-step/src/reader/product.rs:666-708`). Containment in
-the parent representation is never checked. The accepted transform is written
-as the occurrence transform and composes down the occurrence tree.
-
-**Need.** A leaf whose representation is mapped only in the root
-representation supplies an absolute placement that is then consumed as a
-parent-relative one, so the leaf lands at the sum of the two transforms. The
-candidate is accepted because it is the only one, not because it was shown to
-belong to the parent. We must know the scoping rule for a mapped item that
-identifies an occurrence placement.
+**Resolved.** An inferred occurrence placement must be a mapped item directly
+listed by a representation of the occurrence's parent definition. The reader
+ignores mapped items listed by unrelated representations. If no scoped mapping
+remains, the occurrence keeps identity placement and reports
+`AssemblyPlacementsNotTransferred`. Occurrence-owned shape representations and
+the complete parent-representation sequence inference are evaluated before
+this fallback.
 
 ### PS-06. Validation representation item count
 

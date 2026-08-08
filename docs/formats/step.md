@@ -377,6 +377,10 @@ transform is the target transform composed with the inverse mapping-origin
 transform. Reused source topology roots of the same root type and shell
 orientation reuse their committed body identity. Distinct topology roots
 retain their governing root type, even when they share shell carriers.
+An inferred occurrence placement uses only a mapped item directly listed by a
+representation of the parent definition. A mapped item listed by an unrelated
+representation does not place the occurrence and produces an assembly-placement
+loss.
 Several standalone mapped items may share one body only when they resolve to
 one transform. Conflicting standalone placements leave the body unplaced and
 report an assembly-placement loss; occurrence-owned mappings remain
