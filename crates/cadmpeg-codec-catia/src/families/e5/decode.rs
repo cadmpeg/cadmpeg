@@ -3381,7 +3381,7 @@ mod route_tests {
     }
 
     #[test]
-    fn e5_plane_solver_uses_known_normal_for_roundoff_rank_one_uv() {
+    fn e5_plane_solver_uses_known_normal_and_canonical_sign_for_rank_one_uv() {
         let tiny = 1e-15;
         let mut edges = BTreeMap::new();
         let mut pcurves = BTreeMap::new();
@@ -3439,10 +3439,10 @@ mod route_tests {
             vertex_refs: vec![10, 11, 12, 13],
         };
         let points = vec![
-            Point3::new(-20.0, 0.0, 0.0),
             Point3::new(20.0, 0.0, 0.0),
-            Point3::new(-7.5, 0.0, 0.0),
+            Point3::new(-20.0, 0.0, 0.0),
             Point3::new(7.5, 0.0, 0.0),
+            Point3::new(-7.5, 0.0, 0.0),
         ];
         let (normal, u_axis) = super::solve_e5_plane_frame(
             100,
@@ -3453,7 +3453,7 @@ mod route_tests {
         )
         .expect("rank-one plane frame");
         assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - 1e-12);
-        assert!(u_axis.norm().is_finite());
+        assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-12);
     }
 
     #[test]

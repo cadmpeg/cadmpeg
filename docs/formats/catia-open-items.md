@@ -722,16 +722,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the fields to orient the cap when its boundary is a digon.
 
-### E5-04. Rank-deficient plane frame
-
-**Question.** Which field selects the in-plane frame of a rank-deficient E5 plane when the endpoint set determines only one axis line?
-
-**Known.** `catia.md` §9 "The complete plane frame follows from its occurrence-pcurve endpoint UV values" gives the least-squares solve for a full-rank endpoint set, and gives the known plane normal as the source of the perpendicular axis for a rank-one diameter set. It then gives "Simultaneous reversal of both in-plane axes is fixed by requiring the first nonzero component of `u_axis` to be positive." That sentence is a canonicalization, not a field.
-
-**Need.** The in-plane frame is the chart of every pcurve on the face. Simultaneous reversal keeps the normal and reflects every UV point through the origin. We must know the field to select the frame that the file used.
-
-**Note.** This item was removed by a tree that changed no code and added the canonicalization sentence to `catia-coverage.md`. The sentence is not what the decoder does: `e5::decode::solve_e5_plane_frame` returns a lone surviving candidate whatever its sign, and applies the positivity filter only to break a tie between two surviving frames. The tie is exactly the state in which the endpoint data does not determine the frame, so the convention answers the question rather than decoding it. `catia.md` §9 states the rule without that condition, so the specification and the decoder also disagree.
-
 ### E5-05. Root orientation signs
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
