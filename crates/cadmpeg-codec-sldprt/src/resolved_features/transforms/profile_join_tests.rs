@@ -16,8 +16,8 @@ use super::{
     project_relation_solved_line_geometry, project_relation_solved_point_geometry,
     relation_constraint_is_inactive, relation_operand_loci, relation_operand_marker,
     relation_owner_markers, relation_parameter_by_display_name, resolve_connected_marker_arcs,
-    resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
-    single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
+    resolved_marker_locus, select_marker_transforms_by_frame, single_marker_line_entity,
+    sketch_frame_marker_transform, type_display_relation_parameters,
     typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
     typed_relation_definition, unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
     unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
@@ -2376,26 +2376,14 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
 }
 
 #[test]
-fn curve_operand_rejects_a_point_qualified_geometry_alias() {
+fn line_operand_rejects_a_circular_geometry_alias() {
     let sketch = SketchId("sketch".into());
-    let point_id = SketchEntityId("point".into());
     let line_id = SketchEntityId("line".into());
     let circle_id = SketchEntityId("circle".into());
     let entities = vec![
         SketchEntity {
-            id: point_id.clone(),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: None,
-            geometry_ref: Some("curve-marker".into()),
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Point {
-                position: Point2::new(0.5, 0.0),
-            },
-        },
-        SketchEntity {
             id: line_id.clone(),
-            sketch,
+            sketch: sketch.clone(),
             construction: false,
             native_ref: Some("line-marker".into()),
             geometry_ref: None,
@@ -2419,7 +2407,6 @@ fn curve_operand_rejects_a_point_qualified_geometry_alias() {
         },
     ];
     let loci = HashMap::from([
-        ("curve-marker".into(), vec![SketchLocus::Entity(point_id)]),
         (
             "line-marker".into(),
             vec![SketchLocus::Entity(line_id.clone())],
@@ -2431,20 +2418,12 @@ fn curve_operand_rejects_a_point_qualified_geometry_alias() {
     ]);
 
     assert_eq!(
-        single_marker_curve_entity("curve-marker", &HashMap::new(), &loci, &entities),
-        None
-    );
-    assert_eq!(
-        single_marker_curve_entity("line-marker", &HashMap::new(), &loci, &entities),
-        Some(line_id)
-    );
-    assert_eq!(
         single_marker_line_entity("circle-marker", &HashMap::new(), &loci, &entities),
         None
     );
     assert_eq!(
-        single_marker_curve_entity("circle-marker", &HashMap::new(), &loci, &entities),
-        Some(circle_id)
+        single_marker_line_entity("line-marker", &HashMap::new(), &loci, &entities),
+        Some(line_id)
     );
 }
 

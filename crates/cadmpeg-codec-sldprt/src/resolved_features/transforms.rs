@@ -38,15 +38,14 @@ use super::relation_loci::{
     doubled_profile_distance_loci, marker_accepts_locus, marker_point_locus,
     profile_loci_by_marker, qualified_point_marker_key, relation_constraint_is_inactive,
     relation_operand_loci, relation_operand_marker, resolved_marker_locus,
-    single_marker_curve_entity, single_marker_line_entity, typed_relation_definition,
-    unique_linked_endpoint_locus, unique_profile_axis_distance_locus,
-    unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
-    unique_profile_distance_locus, unique_profile_line_angle_entity,
-    unique_profile_line_angle_pair, unique_profile_line_distance_entity,
-    unique_profile_line_distance_pair, unique_profile_line_point_locus,
-    unique_profile_point_line_entity, unique_profile_point_line_pair,
-    unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
-    unique_repaired_profile_point_line_pair,
+    single_marker_line_entity, typed_relation_definition, unique_linked_endpoint_locus,
+    unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
+    unique_profile_distance_loci_pair, unique_profile_distance_locus,
+    unique_profile_line_angle_entity, unique_profile_line_angle_pair,
+    unique_profile_line_distance_entity, unique_profile_line_distance_pair,
+    unique_profile_line_point_locus, unique_profile_point_line_entity,
+    unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
+    unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
 };
 #[cfg(test)]
 use super::relation_records::{bind_circle_dimension_centers, bind_detached_relation_drivers};

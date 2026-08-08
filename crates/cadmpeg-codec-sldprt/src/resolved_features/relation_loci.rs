@@ -726,7 +726,7 @@ pub(super) fn typed_relation_definition(
                                 if sketch_entities.is_empty() {
                                     single_marker_entity(marker, markers_by_id, loci_by_marker)
                                 } else {
-                                    single_marker_curve_entity(
+                                    single_marker_circular_entity(
                                         marker,
                                         markers_by_id,
                                         loci_by_marker,
@@ -1699,7 +1699,7 @@ fn single_marker_entity(
     Some(entity.clone())
 }
 
-pub(super) fn single_marker_curve_entity(
+fn single_marker_circular_entity(
     marker_id: &str,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
@@ -1714,9 +1714,7 @@ pub(super) fn single_marker_curve_entity(
                 .is_some_and(|entity| {
                     matches!(
                         entity.geometry,
-                        SketchGeometry::Line { .. }
-                            | SketchGeometry::Circle { .. }
-                            | SketchGeometry::Arc { .. }
+                        SketchGeometry::Circle { .. } | SketchGeometry::Arc { .. }
                     )
                 })
         })
