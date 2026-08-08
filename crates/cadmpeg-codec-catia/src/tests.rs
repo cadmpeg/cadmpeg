@@ -11348,8 +11348,9 @@ fn native_load_rejects_dangling_cross_arena_links() {
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
     let mut linked_alias = surface_alias_stream();
     linked_alias[15] = 1;
-    let mut linked_bytes = graph;
-    linked_bytes.extend(linked_alias);
+    let mut linked_stream = graph;
+    linked_stream.extend(linked_alias);
+    let (linked_bytes, _) = outer_container_catpart(&linked_stream);
     let mut omitted_alias_links = crate::native::CatiaNative::decode(&linked_bytes);
     assert!(omitted_alias_links.alias_rows[0].object_graph.is_some());
     omitted_alias_links.alias_rows[0].object_graph = None;
@@ -20415,7 +20416,7 @@ fn native_namespace_retains_surface_alias_core() {
 }
 
 #[test]
-fn native_alias_f1_resolves_primary_object_record() {
+fn native_alias_f1_without_part_container_remains_unbound() {
     let graph = object_graph_stream();
     let mut alias = surface_alias_stream();
     alias[13..16].copy_from_slice(&[3, 0, 2]);
@@ -20426,16 +20427,9 @@ fn native_alias_f1_resolves_primary_object_record() {
     let [row] = native.alias_rows.as_slice() else {
         panic!("one alias row")
     };
-    assert_eq!(
-        row.object_graph.as_deref(),
-        Some("catia:outer:object-graph#0000000000")
-    );
-    assert_eq!(
-        row.object_record.as_deref(),
-        Some("catia:outer:object-record#0000000028")
-    );
-    let record = &native.object_graphs[0].records[1];
-    assert_eq!(row.design_object, record.design_object);
+    assert!(row.object_graph.is_none());
+    assert!(row.object_record.is_none());
+    assert!(row.design_object.is_none());
 
     let mut invalid = native;
     invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
@@ -20447,6 +20441,41 @@ fn native_alias_f1_resolves_primary_object_record() {
         crate::native::CatiaNative::load(&namespace),
         Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
     ));
+}
+
+#[test]
+fn native_alias_f1_resolves_record_in_declared_part_container() {
+    let mut stream = object_graph_stream();
+    let mut alias = surface_alias_stream();
+    alias[13..16].copy_from_slice(&[3, 0, 2]);
+    stream.extend(alias);
+    let (bytes, _) = outer_container_catpart(&stream);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [row] = native.alias_rows.as_slice() else {
+        panic!("one alias row")
+    };
+    let graph = native
+        .object_graphs
+        .iter()
+        .find(|graph| {
+            graph
+                .outer_container
+                .as_ref()
+                .is_some_and(|container| container.class_name == "CATPrtCont")
+        })
+        .expect("declared part-container graph");
+    let record = &graph.records[1];
+    assert_eq!(row.object_graph.as_deref(), Some(graph.id.as_str()));
+    assert_eq!(row.object_record.as_deref(), Some(record.id.as_str()));
+    assert_eq!(row.design_object, record.design_object);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store alias linked to declared part container");
+    crate::native::CatiaNative::load(&namespace)
+        .expect("load alias linked to declared part container");
 }
 
 #[test]

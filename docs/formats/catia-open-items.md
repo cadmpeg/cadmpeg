@@ -58,16 +58,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The name selects the BREP streams (CR-04) and names the stream in the container report. An empty or wrong name makes `container::identify_variant` report `Variant::InnerNoDirectory` for a file that has a directory. We must know the offset to read a name that is not the longest run in that window.
 
-### CR-06. Alias row graph binding without a part container
-
-**Question.** Which object graph does the `f1[2]` ordinal of an outer alias row index when the file declares no outer container?
-
-**Known.** `catia.md` §7.5 "The low 24 bits of `tag` are the persistent roster tag" gives "`f1[2]` is a one-based `7C09` ordinal in the unique object graph physically contained by the declared `CATPrtCont` stream", and gives the negative case: "A missing or multiply matching part-container graph, ordinal zero, and values beyond that graph's record population carry no object-record or design-object link."
-
-**Need.** The binding publishes `object_graph`, `object_record`, and `design_object` on every alias row. We must know the graph to bind a row in a file with no outer container declaration, or the rows must carry no link.
-
-**Conflict.** `native` selects the graph with the most records when the outer container declarations are empty, and requires only that the maximum is unique. A file with no declaration has a missing part-container graph, so the specification requires no link and the decoder supplies one. The specification names no record-count rule. The fallback predates the specification sentence that excludes it: the tree that added the `CATPrtCont` path kept the record-count rule below it.
-
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics

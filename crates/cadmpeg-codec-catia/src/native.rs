@@ -9607,21 +9607,11 @@ fn validate_native_links(
             }
         }
     }
-    let declared_containers = graphs.iter().any(|graph| graph.outer_container.is_some());
-    let maximum_records = graphs
-        .iter()
-        .map(|graph| graph.records.len())
-        .max()
-        .unwrap_or(0);
     let mut primary_graphs = graphs.iter().filter(|graph| {
-        if declared_containers {
-            graph
-                .outer_container
-                .as_ref()
-                .is_some_and(|container| container.class_name == "CATPrtCont")
-        } else {
-            graph.records.len() == maximum_records
-        }
+        graph
+            .outer_container
+            .as_ref()
+            .is_some_and(|container| container.class_name == "CATPrtCont")
     });
     let primary_graph = match (primary_graphs.next(), primary_graphs.next()) {
         (Some(graph), None) => Some(graph),
@@ -9931,19 +9921,7 @@ impl CatiaNative {
                 _ => None,
             }
         };
-        let fragment_primary_graph = outer_container_declarations.is_empty().then(|| {
-            let maximum_records = object_graphs
-                .iter()
-                .map(|graph| graph.records.len())
-                .max()
-                .unwrap_or(0);
-            let mut graphs = object_graphs
-                .iter()
-                .filter(|graph| graph.records.len() == maximum_records);
-            let graph = graphs.next()?;
-            graphs.next().is_none().then_some(graph)
-        });
-        if let Some(graph) = part_graph.or(fragment_primary_graph.flatten()) {
+        if let Some(graph) = part_graph {
             for row in &mut alias_rows {
                 let Some(index) = usize::from(row.entity_record_ordinal).checked_sub(1) else {
                     continue;
