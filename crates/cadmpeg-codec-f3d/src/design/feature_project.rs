@@ -561,11 +561,8 @@ pub fn project_parameter_design_with_edge_identities(
                         }
                     },
                 ),
-                Some(DesignFeatureFamily::Thread) => scope
-                    .thread_construction
-                    .as_ref()
-                    .filter(|construction| construction.profile == "ISO Metric profile")
-                    .map_or_else(
+                Some(DesignFeatureFamily::Thread) => {
+                    scope.thread_construction.as_ref().map_or_else(
                         || FeatureDefinition::Native {
                             kind: scope.kind.clone(),
                             parameters: parameters
@@ -608,7 +605,8 @@ pub fn project_parameter_design_with_edge_identities(
                                 extent,
                             }
                         },
-                    ),
+                    )
+                }
                 Some(DesignFeatureFamily::SheetMetalEdgeFlange) => {
                     project_edge_flange(scope, inputs).unwrap_or_else(|| {
                         FeatureDefinition::Native {

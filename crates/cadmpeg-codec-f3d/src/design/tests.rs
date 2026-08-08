@@ -39,8 +39,8 @@ use crate::design::decode::scopes::{
     exact_path_feature_construction, exact_rectangular_pattern_construction,
     exact_ruled_surface_operation, exact_scale_operation, exact_solid_primitive,
     exact_surface_extend_operation, exact_surface_offset_operation, exact_surface_stitch_operation,
-    exact_work_axis_construction, exact_work_plane_frame, exact_work_point_position,
-    parse_parameter_scope, parse_thread_payload,
+    exact_thread_construction, exact_work_axis_construction, exact_work_plane_frame,
+    exact_work_point_position, parse_parameter_scope, parse_thread_payload,
 };
 use crate::design::decode::sketch::{
     bind_sketch_graph, decode_constraint_kinds, decode_pattern_definition, identity_matrix,
@@ -632,6 +632,19 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         result_fields: vec![[0; 6]],
     });
 
+    let mut thread = DesignParameterScope::empty(&format!("{stream}:scope#thread"), "Thread", 70);
+    thread.thread_construction = Some(DesignThreadConstruction {
+        designation: "M3.5x0.6".into(),
+        nominal_size: 3.5,
+        profile: "GB Metric profile".into(),
+        major_diameter: 0.35995,
+        minor_diameter: 0.293,
+        pitch: 0.06,
+        pitch_diameter: 0.3166,
+        face_group_record_index: 701,
+    });
+    thread.reference_members = vec![701];
+
     let scopes = vec![
         base_flange,
         remove_body,
@@ -639,6 +652,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         copy_paste,
         copy_paste_bodies,
         base_feature,
+        thread,
     ];
     let groups = vec![
         group(10, 0, 100, &[101], 0x0000_0041_0000_0000),
@@ -720,6 +734,14 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("Base Feature"),
         FeatureDefinition::BaseFeature {
             bodies: BodySelection::Native(scopes[5].id.clone()),
+        }
+    );
+    assert_eq!(
+        definition("Thread"),
+        FeatureDefinition::CosmeticThread {
+            face: FaceSelection::Unresolved,
+            diameter: Some(Length(3.5)),
+            extent: None,
         }
     );
 }
@@ -6897,6 +6919,47 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             face_group_record_index: 988,
         })
     );
+}
+
+#[test]
+fn thread_scope_decodes_compact_preamble_and_localized_profile() {
+    let mut bytes = vec![0; 160];
+    let mut payload = Vec::new();
+    lp_utf16(&mut payload, "M3.5x0.6");
+    lp_utf16(&mut payload, "3.5");
+    lp_utf16(&mut payload, "GB Metric profile");
+    bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
+    bytes[29..34].copy_from_slice(&[0, 2, 0, 0, 0]);
+    bytes[34..38].copy_from_slice(&[0x36, 0, 0x48, 0]);
+    bytes[38..38 + payload.len()].copy_from_slice(&payload);
+    let after_profile = 38 + payload.len();
+    assert_eq!(after_profile, 106);
+    bytes[after_profile..after_profile + 5].copy_from_slice(&[1, 2, 0, 0, 0]);
+    bytes[after_profile + 5..after_profile + 13].copy_from_slice(&0.35995f64.to_le_bytes());
+    bytes[after_profile + 13..after_profile + 21].copy_from_slice(&0.293f64.to_le_bytes());
+    bytes[after_profile + 21] = 0;
+    bytes[after_profile + 22..after_profile + 30].copy_from_slice(&0.06f64.to_le_bytes());
+    bytes[after_profile + 30..after_profile + 38].copy_from_slice(&0.3166f64.to_le_bytes());
+    bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
+
+    let expected = DesignThreadConstruction {
+        designation: "M3.5x0.6".into(),
+        nominal_size: 3.5,
+        profile: "GB Metric profile".into(),
+        major_diameter: 0.35995,
+        minor_diameter: 0.293,
+        pitch: 0.06,
+        pitch_diameter: 0.3166,
+        face_group_record_index: 988,
+    };
+    assert_eq!(parse_thread_payload(&bytes, 0, 988), Some(expected.clone()));
+
+    let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
+    scope.class_tag = "426".into();
+    scope.frame_length = 405;
+    scope.reference_members = vec![988, 989];
+    scope.paired_class_tag = "266".into();
+    assert_eq!(exact_thread_construction(&bytes, &scope), Some(expected));
 }
 
 #[test]

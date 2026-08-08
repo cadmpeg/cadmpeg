@@ -1085,6 +1085,174 @@ type = "bytes[8]"
 source = "spec"
 anchor = "eight zero bytes at offsets 196 through 203"
 
+[[record]]
+name = "thread_standard_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The standard envelope has four ordered references and a 449-byte primary frame paired with class `258`"
+size = 38
+note = "Offsets are relative to the primary Thread indexed header. The three LP-UTF16 strings begin at offset 38 and are outside this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Both forms begin three LP-UTF16 strings at offset 38"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "fixed_scalar"
+offset = 21
+type = "f64"
+source = "spec"
+anchor = "the fixed f64 value `60.0` is at offset 21"
+
+[[record.field]]
+name = "standard_marker"
+offset = 29
+type = "bytes[5]"
+source = "spec"
+anchor = "bytes 29 through 33 are `01 02 00 00 00`"
+
+[[record.field]]
+name = "standard_prefix_tail"
+offset = 34
+type = "bytes[4]"
+source = "spec"
+anchor = "bytes 34 through 37 are `36 00 67 00`"
+
+[[record]]
+name = "thread_compact_scope_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The compact envelope has primary class `426`, paired class `266`"
+size = 38
+note = "The compact prefix has the same fixed width as the standard prefix and starts the same three LP-UTF16 strings at offset 38."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The compact envelope has primary class `426`, paired class `266`"
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "The compact form retains the common zero run and fixed scalar before its discriminator bytes."
+
+[[record.field]]
+name = "fixed_scalar"
+offset = 21
+type = "f64"
+source = "spec"
+anchor = "the same header, zero run, and f64 value"
+
+[[record.field]]
+name = "compact_marker"
+offset = 29
+type = "bytes[5]"
+source = "spec"
+anchor = "It stores `00 02 00 00 00` at bytes 29 through 33"
+
+[[record.field]]
+name = "compact_prefix_tail"
+offset = 34
+type = "bytes[4]"
+source = "spec"
+anchor = "`36 00 48 00` at bytes 34 through 37"
+
+[[record]]
+name = "thread_standard_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "After the third string, the five-byte construction marker is `00 01 00 00 00` in the standard form"
+size = 40
+note = "Offsets are relative to the first byte after the third LP-UTF16 string."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "the five-byte construction marker is `00 01 00 00 00`"
+
+[[record.field]]
+name = "major_diameter"
+offset = 5
+type = "f64"
+source = "spec"
+anchor = "Major diameter is at marker-relative offset 5"
+
+[[record.field]]
+name = "minor_diameter"
+offset = 13
+type = "f64"
+source = "spec"
+anchor = "minor diameter at 13"
+
+[[record.field]]
+name = "pitch_marker"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "the pitch marker at 21"
+
+[[record.field]]
+name = "pitch"
+offset = 22
+type = "f64"
+source = "spec"
+anchor = "pitch at 22"
+
+[[record.field]]
+name = "pitch_diameter"
+offset = 30
+type = "f64"
+source = "spec"
+anchor = "pitch diameter at 30"
+
+[[record.field]]
+name = "standard_trailer"
+offset = 38
+type = "bytes[2]"
+source = "spec"
+anchor = "The standard trailer at relative offset 38 is `00 01`"
+
+[[record]]
+name = "thread_compact_construction_tail"
+kind = "byte"
+section = "3.1"
+anchor = "or `01 02 00 00 00` in the compact form"
+size = 42
+note = "Offsets are relative to the first byte after the third LP-UTF16 string."
+
+[[record.field]]
+name = "construction_marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "or `01 02 00 00 00` in the compact form"
+
+[[record.gap]]
+offset = 5
+size = 33
+note = "The compact scalar lanes use the same offsets as the standard construction tail."
+
+[[record.field]]
+name = "compact_trailer"
+offset = 38
+type = "bytes[4]"
+source = "spec"
+anchor = "the compact trailer is `00 00 00 01`"
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]

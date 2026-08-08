@@ -375,6 +375,68 @@ Unstated regions:
 - `0..139` (139 B): The preceding shifted prologue and profile-normal envelope are outside this tail.
 - `150..166` (16 B): Sixteen zero bytes separate the first parameter reference from the first-side extent.
 
+## `thread_standard_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+Offsets are relative to the primary Thread indexed header. The three LP-UTF16 strings begin at offset 38 and are outside this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Both forms begin three LP-UTF16 strings at offset 38 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Bytes 11 through 20 are zero |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the fixed f64 value `60.0` is at offset 21 |
+| 29 | 5 | `standard_marker` | `bytes[5]` | little | spec | bytes 29 through 33 are `01 02 00 00 00` |
+| 34 | 4 | `standard_prefix_tail` | `bytes[4]` | little | spec | bytes 34 through 37 are `36 00 67 00` |
+
+## `thread_compact_scope_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 38 B
+
+The compact prefix has the same fixed width as the standard prefix and starts the same three LP-UTF16 strings at offset 38.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact envelope has primary class `426`, paired class `266` |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the same header, zero run, and f64 value |
+| 29 | 5 | `compact_marker` | `bytes[5]` | little | spec | It stores `00 02 00 00 00` at bytes 29 through 33 |
+| 34 | 4 | `compact_prefix_tail` | `bytes[4]` | little | spec | `36 00 48 00` at bytes 34 through 37 |
+
+Unstated regions:
+
+- `11..21` (10 B): The compact form retains the common zero run and fixed scalar before its discriminator bytes.
+
+## `thread_standard_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | the five-byte construction marker is `00 01 00 00 00` |
+| 5 | 8 | `major_diameter` | `f64` | little | spec | Major diameter is at marker-relative offset 5 |
+| 13 | 8 | `minor_diameter` | `f64` | little | spec | minor diameter at 13 |
+| 21 | 1 | `pitch_marker` | `u8` | little | spec | the pitch marker at 21 |
+| 22 | 8 | `pitch` | `f64` | little | spec | pitch at 22 |
+| 30 | 8 | `pitch_diameter` | `f64` | little | spec | pitch diameter at 30 |
+| 38 | 2 | `standard_trailer` | `bytes[2]` | little | spec | The standard trailer at relative offset 38 is `00 01` |
+
+## `thread_compact_construction_tail`
+
+Spec §3.1 · layout: byte offsets · size: 42 B
+
+Offsets are relative to the first byte after the third LP-UTF16 string.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `construction_marker` | `bytes[5]` | little | spec | or `01 02 00 00 00` in the compact form |
+| 38 | 4 | `compact_trailer` | `bytes[4]` | little | spec | the compact trailer is `00 00 00 01` |
+
+Unstated regions:
+
+- `5..38` (33 B): The compact scalar lanes use the same offsets as the standard construction tail.
+
 ## `edge_flange_fixed_operation_section`
 
 Spec §3.1 · layout: byte offsets · size: 79 B

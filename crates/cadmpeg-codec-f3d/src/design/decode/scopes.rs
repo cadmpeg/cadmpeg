@@ -189,15 +189,24 @@ pub(crate) fn exact_thread_construction(
     scope: &DesignParameterScope,
 ) -> Option<DesignThreadConstruction> {
     let start = usize::try_from(scope.byte_offset).ok()?;
-    if scope.kind != "Thread"
-        || scope.frame_length != 449
-        || scope.paired_class_tag != "258"
-        || scope.reference_members.len() != 4
-        || bytes.get(start + 11..start + 21)? != [0; 10]
-        || f64_at(bytes, start + 21)?.to_bits() != 60.0f64.to_bits()
-        || bytes.get(start + 29..start + 34)? != [1, 2, 0, 0, 0]
-        || bytes.get(start + 34..start + 38)? != [0x36, 0, 0x67, 0]
-    {
+    if scope.kind != "Thread" {
+        return None;
+    }
+    let standard = scope.paired_class_tag == "258"
+        && scope.frame_length == 449
+        && scope.reference_members.len() == 4
+        && bytes.get(start + 11..start + 21)? == [0; 10]
+        && f64_at(bytes, start + 21)?.to_bits() == 60.0f64.to_bits()
+        && bytes.get(start + 29..start + 34)? == [1, 2, 0, 0, 0]
+        && bytes.get(start + 34..start + 38)? == [0x36, 0, 0x67, 0];
+    let compact = scope.class_tag == "426"
+        && scope.paired_class_tag == "266"
+        && scope.reference_members.len() >= 2
+        && bytes.get(start + 11..start + 21)? == [0; 10]
+        && f64_at(bytes, start + 21)?.to_bits() == 60.0f64.to_bits()
+        && bytes.get(start + 29..start + 34)? == [0, 2, 0, 0, 0]
+        && bytes.get(start + 34..start + 38)? == [0x36, 0, 0x48, 0];
+    if !standard && !compact {
         return None;
     }
     parse_thread_payload(bytes, start, scope.reference_members[0])
@@ -211,15 +220,20 @@ pub(crate) fn parse_thread_payload(
     let (designation, after_designation) = lp_utf16_bounded(bytes, start + 38, 1..=128)?;
     let (nominal, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
     let (profile, after_profile) = lp_utf16_bounded(bytes, after_nominal, 1..=256)?;
-    if after_profile != start + 108 || bytes.get(start + 108..start + 113)? != [0, 1, 0, 0, 0] {
-        return None;
-    }
+    let compact = match bytes.get(after_profile..after_profile + 5)? {
+        [0, 1, 0, 0, 0] => false,
+        [1, 2, 0, 0, 0] => true,
+        _ => return None,
+    };
     let nominal_size = nominal.parse::<f64>().ok()?;
-    let major_diameter = f64_at(bytes, start + 113)?;
-    let minor_diameter = f64_at(bytes, start + 121)?;
-    let pitch = (bytes.get(start + 129) == Some(&1)).then(|| f64_at(bytes, start + 130))??;
-    let pitch_diameter = f64_at(bytes, start + 138)?;
-    if bytes.get(start + 146..start + 148)? != [0, 1]
+    let major_diameter = f64_at(bytes, after_profile + 5)?;
+    let minor_diameter = f64_at(bytes, after_profile + 13)?;
+    let pitch_marker = u8::from(!compact);
+    let pitch = (bytes.get(after_profile + 21) == Some(&pitch_marker))
+        .then(|| f64_at(bytes, after_profile + 22))??;
+    let pitch_diameter = f64_at(bytes, after_profile + 30)?;
+    let trailer: &[u8] = if compact { &[0, 0, 0, 1] } else { &[0, 1] };
+    if bytes.get(after_profile + 38..after_profile + 38 + trailer.len())? != trailer
         || ![
             nominal_size,
             major_diameter,
