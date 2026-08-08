@@ -367,6 +367,7 @@ struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     body_shape_refs: HashMap<String, Ref>,
     body_item_refs: HashMap<String, Vec<Ref>>,
+    body_step_item_refs: HashMap<String, Vec<Ref>>,
     product_step_refs: HashMap<String, Ref>,
     occurrence_step_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
@@ -517,6 +518,7 @@ impl<'a> Builder<'a> {
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             body_item_refs: HashMap::new(),
+            body_step_item_refs: HashMap::new(),
             product_step_refs: HashMap::new(),
             occurrence_step_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
@@ -829,9 +831,17 @@ impl<'a> Builder<'a> {
             if styled_bodies.contains(body_id) {
                 continue;
             }
-            let Some(target) = self.body_shape_refs.get(*body_id).copied() else {
+            let mut targets = self
+                .body_item_refs
+                .get(*body_id)
+                .cloned()
+                .unwrap_or_default();
+            if targets.is_empty() {
+                targets.extend(self.body_shape_refs.get(*body_id).copied());
+            }
+            if targets.is_empty() {
                 continue;
-            };
+            }
             if let Some(binding_id) = spec.binding_id {
                 self.written_appearance_bindings
                     .insert(binding_id.to_string());
@@ -849,10 +859,10 @@ impl<'a> Builder<'a> {
             } else {
                 self.surface_style(spec.color, name, &mut style_refs)
             };
-            styled.push(
+            styled.extend(targets.into_iter().map(|target| {
                 self.emitter
-                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
-            );
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}"))
+            }));
             styled_bodies.insert(body_id);
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -993,44 +1003,85 @@ impl<'a> Builder<'a> {
             let mut assigned = Vec::new();
             let mut unsupported = 0usize;
             for item in layer.items {
-                let reference = match item {
-                    PresentationItem::Body { body } => {
-                        self.body_shape_refs.get(body.as_str()).copied()
-                    }
-                    PresentationItem::Face { face } => {
-                        self.face_step_refs.get(face.as_str()).copied()
-                    }
-                    PresentationItem::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
-                    PresentationItem::Vertex { vertex } => {
-                        self.vertex_refs.get(vertex.as_str()).copied()
-                    }
-                    PresentationItem::Curve { curve } => {
-                        self.curve_refs.get(curve.as_str()).copied()
-                    }
-                    PresentationItem::Surface { surface } => {
-                        self.surface_refs.get(surface.as_str()).copied()
-                    }
-                    PresentationItem::Product { product } => {
-                        self.product_step_refs.get(product.as_str()).copied()
-                    }
-                    PresentationItem::Occurrence { occurrence } => {
-                        self.occurrence_step_refs.get(occurrence.as_str()).copied()
-                    }
-                    PresentationItem::Pmi { annotation } => {
-                        self.pmi_step_refs.get(annotation.as_str()).copied()
-                    }
-                    PresentationItem::Point { point } => {
-                        self.point_refs.get(point.as_str()).copied()
-                    }
-                    PresentationItem::Source { .. } => None,
-                    PresentationItem::Tessellation { tessellation } => {
-                        self.tessellation_step_refs.get(&tessellation).copied()
-                    }
+                let references = match item {
+                    PresentationItem::Body { body } => self
+                        .body_item_refs
+                        .get(body.as_str())
+                        .cloned()
+                        .filter(|references| !references.is_empty())
+                        .or_else(|| {
+                            self.body_shape_refs
+                                .get(body.as_str())
+                                .copied()
+                                .map(|reference| vec![reference])
+                        })
+                        .unwrap_or_default(),
+                    PresentationItem::Face { face } => self
+                        .face_step_refs
+                        .get(face.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Edge { edge } => self
+                        .edge_refs
+                        .get(edge.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Vertex { vertex } => self
+                        .vertex_refs
+                        .get(vertex.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Curve { curve } => self
+                        .curve_refs
+                        .get(curve.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Surface { surface } => self
+                        .surface_refs
+                        .get(surface.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Product { product } => self
+                        .product_step_refs
+                        .get(product.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Occurrence { occurrence } => self
+                        .occurrence_step_refs
+                        .get(occurrence.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Pmi { annotation } => self
+                        .pmi_step_refs
+                        .get(annotation.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Point { point } => self
+                        .point_refs
+                        .get(point.as_str())
+                        .copied()
+                        .into_iter()
+                        .collect(),
+                    PresentationItem::Source { .. } => Vec::new(),
+                    PresentationItem::Tessellation { tessellation } => self
+                        .tessellation_step_refs
+                        .get(&tessellation)
+                        .copied()
+                        .into_iter()
+                        .collect(),
                 };
-                if let Some(reference) = reference {
-                    assigned.push(reference);
-                } else {
+                if references.is_empty() {
                     unsupported += 1;
+                } else {
+                    assigned.extend(references);
                 }
             }
             if unsupported > 0 {
@@ -1443,6 +1494,10 @@ impl<'a> Builder<'a> {
                         .entry(region.body.0.clone())
                         .or_default()
                         .push(shape_item);
+                    self.body_step_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(item);
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
@@ -1512,6 +1567,10 @@ impl<'a> Builder<'a> {
                 .entry(region.body.0.clone())
                 .or_default()
                 .push(shape_item);
+            self.body_step_item_refs
+                .entry(region.body.0.clone())
+                .or_default()
+                .push(item);
             self.body_step_refs
                 .entry(region.body.0.clone())
                 .or_insert(if closed { item } else { outer });
@@ -1592,6 +1651,12 @@ impl<'a> Builder<'a> {
         for body in &self.ir.model.bodies {
             if body.visible != Some(false) {
                 continue;
+            }
+            if let Some(references) = self.body_step_item_refs.get(body.id.as_str()) {
+                if !references.is_empty() {
+                    hidden.extend(references.iter().copied());
+                    continue;
+                }
             }
             if let Some(reference) = self.body_step_refs.get(body.id.as_str()).copied() {
                 hidden.push(reference);

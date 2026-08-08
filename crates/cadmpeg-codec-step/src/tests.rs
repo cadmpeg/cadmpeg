@@ -7283,6 +7283,69 @@ fn every_region_of_a_body_is_retained_as_a_shape_item() {
 }
 
 #[test]
+fn body_layers_and_visibility_cover_every_region_shape_item() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    let mut region = ir.model.regions[0].clone();
+    region.id.0 = "zzzz:test:region#second".into();
+    ir.model.bodies[0].regions.push(region.id.clone());
+    ir.model.regions.push(region);
+    ir.model.bodies[0].visible = Some(false);
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId("test:layer#body".into()),
+        name: "all body regions".into(),
+        description: None,
+        items: vec![PresentationItem::Body { body }],
+    });
+
+    let mut bytes = Vec::new();
+    write_step(&ir, &mut bytes, &StepWriteOptions::default()).expect("write body presentation");
+    let (exchange, diagnostics) = crate::parse::parse(&bytes).expect("parse body presentation");
+    assert!(diagnostics.is_empty());
+    let layer = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "PRESENTATION_LAYER_ASSIGNMENT")
+        })
+        .expect("body presentation layer");
+    let layer_partial = layer
+        .partials
+        .iter()
+        .find(|partial| partial.name == "PRESENTATION_LAYER_ASSIGNMENT")
+        .unwrap();
+    let crate::parse::Value::List(layer_items) = &layer_partial.parameters[2] else {
+        panic!("layer items are not an aggregate")
+    };
+    assert_eq!(layer_items.len(), 2);
+    let visibility = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .iter()
+                .any(|partial| partial.name == "INVISIBILITY")
+        })
+        .expect("body invisibility");
+    let visibility_partial = visibility
+        .partials
+        .iter()
+        .find(|partial| partial.name == "INVISIBILITY")
+        .unwrap();
+    let crate::parse::Value::List(hidden_items) = &visibility_partial.parameters[0] else {
+        panic!("visibility items are not an aggregate")
+    };
+    assert_eq!(hidden_items.len(), 2);
+}
+
+#[test]
 fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     use cadmpeg_ir::ids::PmiId;
     use cadmpeg_ir::pmi::{DimensionKind, GeometricToleranceKind, PmiDefinition};
