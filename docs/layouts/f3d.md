@@ -10,7 +10,8 @@ Table source: `docs/layouts/f3d.toml`.
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
-`SplitFace` prefix, the grouped recipe-reference prefix, and the sheet-metal
+`SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
+operation prologues and cross-document selector, and the sheet-metal
 `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
 in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
@@ -42,6 +43,91 @@ Offsets are relative to the recipe prefix. Five variable-length counted operand 
 | 0 | 10 | `zero_run_10` | `bytes[10]` | little | spec | stores ten zero bytes |
 | 10 | 4 | `constant_one` | `u32` | little | spec | `u32 1` |
 | 14 | 4 | `group_count` | `u32` | little | spec | `u32 5`, and exactly five groups |
+
+## `combine_standard_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Offsets are relative to the primary indexed scope header. The variable scope body follows this fixed prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `operation` | `u32` | little | spec | the Boolean operation u32 at offset 20 |
+| 24 | 1 | `zero_flag` | `u8` | little | spec | zero at byte 24 |
+| 25 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 25 |
+| 26 | 7 | `zero_run_7` | `bytes[7]` | little | spec | seven zero bytes at offsets 26 through 32 |
+
+## `combine_compact_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Offsets are relative to the class-387 primary indexed scope header. The variable scope body follows this fixed prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
+| 21 | 4 | `operation` | `u32` | little | spec | the operation at offset 21 |
+| 25 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 25 |
+| 26 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes |
+| 29 | 2 | `reference_form` | `bytes[2]` | little | spec | `01 00` |
+| 31 | 4 | `constant_one` | `u32` | little | spec | u32 one at offset 31 |
+| 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
+| 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
+| 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field |
+
+## `combine_extended_reference_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 46 B
+
+Offsets are relative to the class-329 primary indexed scope header. The variable scope body follows this fixed prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 18 | `zero_run_18` | `bytes[18]` | little | spec | eighteen zero bytes at offsets 11 through 28 |
+| 29 | 1 | `form_marker` | `u8` | little | spec | byte one at offset 29 |
+| 30 | 1 | `keep_tools` | `u8` | little | spec | the keep-tools Boolean at offset 30 |
+| 31 | 4 | `operation` | `u32` | little | spec | the operation at offset 31 |
+| 35 | 1 | `reference_marker` | `u8` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
+| 36 | 8 | `reference_value` | `u64` | little | spec | a marked nonzero same-segment u64 reference at offset 35 |
+| 44 | 2 | `reference_tail` | `bytes[2]` | little | spec | a two-byte zero trailing field |
+
+## `combine_external_selector_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 40 B
+
+Offsets are relative to the tool body-selection header. The variable LP-UTF16 selector asset GUID starts at offset 40.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | followed by fourteen zero bytes |
+| 25 | 1 | `nested_reference_marker` | `u8` | little | spec | a same-segment reference to `N+3` |
+| 26 | 8 | `nested_record_index` | `u64` | little | spec | a same-segment reference to `N+3` |
+| 34 | 2 | `nested_reference_tail` | `bytes[2]` | little | spec | a same-segment reference to `N+3` |
+| 36 | 4 | `constant_one` | `u32` | little | spec | a same-segment reference to `N+3`, u32 one |
+
+## `combine_external_selector_tail`
+
+Spec §3.1 · layout: byte offsets · size: 62 B
+
+Offsets are relative to the first byte after the cross-document reference. The same-index paired header starts at offset 62.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `constant_nine` | `u32` | little | spec | The selector tail is u32 `9` |
+| 4 | 2 | `constant_two` | `u16` | little | spec | u16 `2` |
+| 6 | 8 | `tail_value_0` | `u64` | little | spec | a retained u64 value |
+| 14 | 4 | `constant_forty_eight` | `u32` | little | spec | u32 `48` |
+| 18 | 8 | `tail_value_1` | `u64` | little | spec | a second retained u64 value |
+| 26 | 11 | `nested_two_reference` | `bytes[11]` | little | spec | a same-segment reference to `N+2` |
+| 37 | 2 | `zero_run_2` | `bytes[2]` | little | spec | two zero bytes |
+| 39 | 11 | `nested_one_reference` | `bytes[11]` | little | spec | a same-segment reference to `N+1` |
+| 50 | 1 | `zero_flag` | `u8` | little | spec | one zero byte |
+| 51 | 11 | `scope_reference` | `bytes[11]` | little | spec | a same-segment reference to the owning scope |
 
 ## `indexed_companion_record_prefix`
 

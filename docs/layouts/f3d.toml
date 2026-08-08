@@ -9,7 +9,8 @@ note = """
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
-`SplitFace` prefix, the grouped recipe-reference prefix, and the sheet-metal
+`SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
+operation prologues and cross-document selector, and the sheet-metal
 `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
 in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
@@ -79,6 +80,326 @@ offset = 14
 type = "u32"
 source = "spec"
 anchor = "`u32 5`, and exactly five groups"
+
+[[record]]
+name = "combine_standard_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The standard prologue stores nine zero bytes at offsets 11 through 19"
+size = 33
+note = "Offsets are relative to the primary indexed scope header. The variable scope body follows this fixed prologue."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "operation"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the Boolean operation u32 at offset 20"
+
+[[record.field]]
+name = "zero_flag"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "zero at byte 24"
+
+[[record.field]]
+name = "keep_tools"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the keep-tools Boolean at offset 25"
+
+[[record.field]]
+name = "zero_run_7"
+offset = 26
+type = "bytes[7]"
+source = "spec"
+anchor = "seven zero bytes at offsets 26 through 32"
+
+[[record]]
+name = "combine_compact_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its compact prologue stores ten zero bytes at offsets 11 through 20"
+size = 46
+note = "Offsets are relative to the class-387 primary indexed scope header. The variable scope body follows this fixed prologue."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes at offsets 11 through 20"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "the operation at offset 21"
+
+[[record.field]]
+name = "keep_tools"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the keep-tools Boolean at offset 25"
+
+[[record.field]]
+name = "zero_run_3"
+offset = 26
+type = "bytes[3]"
+source = "spec"
+anchor = "three zero bytes"
+
+[[record.field]]
+name = "reference_form"
+offset = 29
+type = "bytes[2]"
+source = "spec"
+anchor = "`01 00`"
+
+[[record.field]]
+name = "constant_one"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "u32 one at offset 31"
+
+[[record.field]]
+name = "reference_marker"
+offset = 35
+type = "u8"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35"
+
+[[record.field]]
+name = "reference_value"
+offset = 36
+type = "u64"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35"
+
+[[record.field]]
+name = "reference_tail"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "a two-byte zero trailing field"
+
+[[record]]
+name = "combine_extended_reference_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its extended-reference prologue stores eighteen zero bytes at offsets 11 through 28"
+size = 46
+note = "Offsets are relative to the class-329 primary indexed scope header. The variable scope body follows this fixed prologue."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_18"
+offset = 11
+type = "bytes[18]"
+source = "spec"
+anchor = "eighteen zero bytes at offsets 11 through 28"
+
+[[record.field]]
+name = "form_marker"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "byte one at offset 29"
+
+[[record.field]]
+name = "keep_tools"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "the keep-tools Boolean at offset 30"
+
+[[record.field]]
+name = "operation"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "the operation at offset 31"
+
+[[record.field]]
+name = "reference_marker"
+offset = 35
+type = "u8"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35"
+
+[[record.field]]
+name = "reference_value"
+offset = 36
+type = "u64"
+source = "spec"
+anchor = "a marked nonzero same-segment u64 reference at offset 35"
+
+[[record.field]]
+name = "reference_tail"
+offset = 44
+type = "bytes[2]"
+source = "spec"
+anchor = "a two-byte zero trailing field"
+
+[[record]]
+name = "combine_external_selector_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "Its indexed header is followed by fourteen zero bytes, a same-segment reference to `N+3`, u32 one"
+size = 40
+note = "Offsets are relative to the tool body-selection header. The variable LP-UTF16 selector asset GUID starts at offset 40."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "followed by fourteen zero bytes"
+
+[[record.field]]
+name = "nested_reference_marker"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "a same-segment reference to `N+3`"
+
+[[record.field]]
+name = "nested_record_index"
+offset = 26
+type = "u64"
+source = "spec"
+anchor = "a same-segment reference to `N+3`"
+
+[[record.field]]
+name = "nested_reference_tail"
+offset = 34
+type = "bytes[2]"
+source = "spec"
+anchor = "a same-segment reference to `N+3`"
+
+[[record.field]]
+name = "constant_one"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "a same-segment reference to `N+3`, u32 one"
+
+[[record]]
+name = "combine_external_selector_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The selector tail is u32 `9`, u16 `2`, a retained u64 value, u32 `48`, a second retained u64 value"
+size = 62
+note = "Offsets are relative to the first byte after the cross-document reference. The same-index paired header starts at offset 62."
+
+[[record.field]]
+name = "constant_nine"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The selector tail is u32 `9`"
+
+[[record.field]]
+name = "constant_two"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "u16 `2`"
+
+[[record.field]]
+name = "tail_value_0"
+offset = 6
+type = "u64"
+source = "spec"
+anchor = "a retained u64 value"
+
+[[record.field]]
+name = "constant_forty_eight"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "u32 `48`"
+
+[[record.field]]
+name = "tail_value_1"
+offset = 18
+type = "u64"
+source = "spec"
+anchor = "a second retained u64 value"
+
+[[record.field]]
+name = "nested_two_reference"
+offset = 26
+type = "bytes[11]"
+source = "spec"
+anchor = "a same-segment reference to `N+2`"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 37
+type = "bytes[2]"
+source = "spec"
+anchor = "two zero bytes"
+
+[[record.field]]
+name = "nested_one_reference"
+offset = 39
+type = "bytes[11]"
+source = "spec"
+anchor = "a same-segment reference to `N+1`"
+
+[[record.field]]
+name = "zero_flag"
+offset = 50
+type = "u8"
+source = "spec"
+anchor = "one zero byte"
+
+[[record.field]]
+name = "scope_reference"
+offset = 51
+type = "bytes[11]"
+source = "spec"
+anchor = "a same-segment reference to the owning scope"
 
 [[record]]
 name = "indexed_companion_record_prefix"

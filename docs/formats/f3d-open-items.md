@@ -521,6 +521,14 @@ The decoder does not use the documented structure either. `decode_design_assignm
 
 **Need.** A spline group of three or more members carries an order the specification calls unrelated, and its last entry is not the spline. A consumer that reads the last entry as the spline curve, or that rebuilds the control polygon from adjacent pairs, gets the wrong entity.
 
+### DR-61. u64 values in a cross-document `Combine` selector tail
+
+**Question.** What do the two u64 values around the fixed `u32 48` in a cross-document `Combine` body-selector tail mean?
+
+**Known.** `f3d.md` §3.1 "A tool body-selection record" gives the complete selector grammar and the independent occurrence, external-body, segment, asset, link, property, and version fields. The first u64 follows u32 `9` and u16 `2`. The second follows u32 `48`. The two values are retained in source order and can differ between selectors that share the same owning scope.
+
+**Need.** Their meanings determine whether they participate in persistent body identity and how a writer derives them from a cross-document body selection.
+
 ## 2. External references
 
 ### XR-01. `neutronData` with a different GUID
