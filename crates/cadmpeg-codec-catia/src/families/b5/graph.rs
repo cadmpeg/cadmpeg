@@ -1853,33 +1853,61 @@ fn incidence_vertex_coordinates(
         .filter_map(|vertex| {
             let incidence = vertex_incidence_links.get(&vertex)?.incidence;
             let incidence_records = counted_references(by_id.get(&incidence)?, 0x05)?;
-            let point = incidence_records.into_iter().find_map(|incidence_record| {
-                let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
-                incidence
-                    .curves
-                    .into_iter()
-                    .zip(incidence.parameters)
-                    .find_map(|(pcurve_id, parameter)| {
-                        if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
-                            let uv = evaluate_pcurve(pcurve, parameter)?;
-                            return lift_pcurve_endpoints(
-                                geometry.surfaces.get(&pcurve.surface)?,
-                                geometry.profiles,
-                                &[uv, uv],
-                            )
-                            .map(|points| points[0]);
-                        }
-                        let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
-                        sphere_great_circle_point(
-                            opaque.sphere_great_circle.as_ref()?,
-                            geometry.surfaces.get(&opaque.surface)?,
-                            parameter,
-                        )
-                    })
-            })?;
-            Some((vertex, point))
+            let points = incidence_records
+                .into_iter()
+                .map(|incidence_record| {
+                    let incidence = parameter_incidence(by_id.get(&incidence_record)?)?;
+                    let points = incidence
+                        .curves
+                        .into_iter()
+                        .zip(incidence.parameters)
+                        .map(|(pcurve_id, parameter)| {
+                            lift_parameter_incidence(pcurve_id, parameter, geometry)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    (!points.is_empty()).then_some(points)
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+            let point = *points.first()?;
+            let tolerance_squared = INCIDENCE_TOLERANCE * INCIDENCE_TOLERANCE;
+            points
+                .iter()
+                .all(|candidate| distance_squared(*candidate, point) <= tolerance_squared)
+                .then_some((vertex, point))
         })
         .collect()
+}
+
+/// Evaluate one class-`06` curve/parameter pair at its native parameter
+/// domain. A vertex roster is valid only when every pair evaluates, so one
+/// unsupported, malformed, or out-of-domain member withholds the identity
+/// coordinate instead of allowing an earlier member to win.
+fn lift_parameter_incidence(
+    pcurve_id: u32,
+    parameter: f64,
+    geometry: &B5PcurveContext<'_>,
+) -> Option<[f64; 3]> {
+    if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
+        let domain = pcurve_parameter_domain(pcurve)?;
+        (parameter.is_finite() && parameter >= domain[0] && parameter <= domain[1]).then_some(())?;
+        let uv = evaluate_pcurve(pcurve, parameter)?;
+        let point = lift_pcurve_endpoints(
+            geometry.surfaces.get(&pcurve.surface)?,
+            geometry.profiles,
+            &[uv, uv],
+        )?[0];
+        return point.into_iter().all(f64::is_finite).then_some(point);
+    }
+    let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
+    let point = sphere_great_circle_point(
+        opaque.sphere_great_circle.as_ref()?,
+        geometry.surfaces.get(&opaque.surface)?,
+        parameter,
+    )?;
+    point.into_iter().all(f64::is_finite).then_some(point)
 }
 
 fn parse_vertex_incidence_link(record: &B5Record) -> Option<B5VertexIncidenceLink> {
@@ -2453,6 +2481,8 @@ fn pcurve_endpoints(
     ])
 }
 
+/// CATIA's object-stream on-carrier incidence tolerance, in millimetres.
+const INCIDENCE_TOLERANCE: f64 = 1e-3;
 const POINT_TOLERANCE: f64 = 1.5e-3;
 
 fn point_cell(point: [f64; 3]) -> [i64; 3] {
@@ -6053,19 +6083,26 @@ mod tests {
         let mut incidence_payload = vec![0x81, 0x82, 0x81];
         incidence_payload.extend_from_slice(&parameter.to_le_bytes());
         incidence_payload.push(0x01);
-        let records = [
+        let mut records = [
             B5Record {
                 offset: 0,
                 family: 0xb5,
                 class: 0x05,
                 object_id: 20,
-                payload: vec![0x81, 0x9e],
+                payload: vec![0x82, 0x9e, 0x9f],
             },
             B5Record {
                 offset: 1,
                 family: 0xb5,
                 class: 0x06,
                 object_id: 30,
+                payload: incidence_payload.clone(),
+            },
+            B5Record {
+                offset: 2,
+                family: 0xb5,
+                class: 0x06,
+                object_id: 31,
                 payload: incidence_payload,
             },
         ];
@@ -6085,7 +6122,7 @@ mod tests {
             edge_parameter_incidences: &edge_parameter_incidences,
             parameter_incidences: &parameter_incidences,
         };
-        assert_eq!(counted_references(&records[0], 0x05), Some(vec![30]));
+        assert_eq!(counted_references(&records[0], 0x05), Some(vec![30, 31]));
         let incidence = parameter_incidence(&records[1]).expect("parameter incidence");
         assert_eq!(incidence.curves, [2]);
         assert_eq!(incidence.parameters, [parameter]);
@@ -6124,6 +6161,48 @@ mod tests {
                 [0.0, 5.0, 0.0]
             ) < 1e-24
         );
+
+        drop(by_id);
+        records[2].payload[3..11].copy_from_slice(&0.0f64.to_le_bytes());
+        let conflicting_by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect::<HashMap<_, _>>();
+        let conflicting = incidence_vertex_coordinates(
+            &BTreeMap::from([(40, [10, 11])]),
+            &BTreeMap::from([(
+                10,
+                B5VertexIncidenceLink {
+                    object_id: 10,
+                    incidence: 20,
+                    terminal_control: 0x00,
+                },
+            )]),
+            &conflicting_by_id,
+            &geometry,
+        );
+        assert!(conflicting.is_empty());
+
+        drop(conflicting_by_id);
+        records[2].payload[3..11].copy_from_slice(&(parameter + 1.0).to_le_bytes());
+        let out_of_domain_by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect::<HashMap<_, _>>();
+        let out_of_domain = incidence_vertex_coordinates(
+            &BTreeMap::from([(40, [10, 11])]),
+            &BTreeMap::from([(
+                10,
+                B5VertexIncidenceLink {
+                    object_id: 10,
+                    incidence: 20,
+                    terminal_control: 0x00,
+                },
+            )]),
+            &out_of_domain_by_id,
+            &geometry,
+        );
+        assert!(out_of_domain.is_empty());
     }
 
     #[test]

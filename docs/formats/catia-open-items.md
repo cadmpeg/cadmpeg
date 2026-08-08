@@ -638,14 +638,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it. That binding is the subject of OS-21.
 
-### OS-16. Vertex coordinate from parameter incidences
-
-**Question.** Which class-`06` parameter incidence gives the coordinate of a logical vertex, and which domain bounds its parameter?
-
-**Known.** `catia.md` §6.7 "**Object-stream topology:**" gives "References to typed pcurves evaluate at their paired parameter and lift through the pcurve support to the vertex locus", and gives every class-`05` roster entry as an incidence at the same vertex. `graph::incidence_vertex_coordinates` keeps the first pair that gives a finite lift and does not evaluate the others. It applies no parameter domain bound, and `bspline_span` extrapolates outside the knot domain instead of refusing.
-
-**Need.** The result replaces the coordinate that the `05 08 01` rows give, and it bypasses the magnitude test of the row path. The sibling `graph::edge_pcurve_parameter_values` requires every incidence to agree, and `graph::pcurve_endpoints` bounds the parameter to the pcurve domain. We must know the incidence and the domain rule to keep the correct coordinate.
-
 ### OS-17. Lifted endpoint order against the `5d` vertices
 
 **Question.** Which field gives the order of an edge's two lifted endpoints against its two `5d` vertices?
