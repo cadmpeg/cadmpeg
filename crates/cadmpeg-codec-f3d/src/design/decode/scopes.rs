@@ -3539,6 +3539,19 @@ pub(crate) fn exact_path_feature_construction(
         }
         DesignFeatureFamily::Loft
             if scope.class_tag.len() == 3
+                && bytes.get(start + 11..start + 21) == Some(&[0; 10])
+                && bytes.get(start + 21..start + 25) == Some(&[1; 4])
+                && bytes.get(start + 29) == Some(&0)
+                && u32_at(bytes, start + 30) == Some(u32::MAX)
+                && bytes.get(start + 34..start + 45) == Some(&[0; 11]) =>
+        {
+            Some(DesignPathFeatureConstruction::Loft {
+                operation: operation(start + 25)?,
+                operation_offset: u64::try_from(start + 25).ok()?,
+            })
+        }
+        DesignFeatureFamily::Loft
+            if scope.class_tag.len() == 3
                 && parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
         {
             Some(DesignPathFeatureConstruction::Loft {
@@ -6315,14 +6328,15 @@ mod mirror_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        exact_coil_placement, exact_hole_construction, exact_pattern_identity_wrapper,
-        exact_work_point_position, parse_parameter_scope, HOLE_POINT_DATA_TYPE_GUID,
-        POINT_DATA_TYPE_GUID,
+        exact_coil_placement, exact_hole_construction, exact_path_feature_construction,
+        exact_pattern_identity_wrapper, exact_work_point_position, parse_parameter_scope,
+        HOLE_POINT_DATA_TYPE_GUID, POINT_DATA_TYPE_GUID,
     };
     use crate::design::decode::sketch::IndexedRecordOffsets;
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSelection,
-        DesignParameterScope, DesignRecordHeader,
+        DesignExtrudeOperation, DesignParameterScope, DesignPathFeatureConstruction,
+        DesignRecordHeader,
     };
     use std::collections::HashMap;
 
@@ -6338,6 +6352,51 @@ mod tests {
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(&class_tag);
         bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    #[test]
+    fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() {
+        for class_tag in ["301", "449"] {
+            let mut bytes = Vec::new();
+            let class_tag_bytes = class_tag
+                .as_bytes()
+                .try_into()
+                .expect("three-byte class tag");
+            indexed_header(&mut bytes, class_tag_bytes, 20);
+            bytes.resize(64, 0);
+            bytes[21..25].fill(1);
+            bytes[25..29].copy_from_slice(&1u32.to_le_bytes());
+            bytes[30..34].fill(0xff);
+
+            let mut scope = DesignParameterScope::empty("generated:loft#20", "Loft", 20);
+            scope.class_tag = class_tag.into();
+            scope.frame_length = 64;
+            let construction = exact_path_feature_construction(
+                &bytes,
+                &IndexedRecordOffsets::build(&bytes),
+                &scope,
+                &[],
+            )
+            .expect("compact Loft operation");
+            assert_eq!(
+                construction,
+                DesignPathFeatureConstruction::Loft {
+                    operation: DesignExtrudeOperation::Join,
+                    operation_offset: 25,
+                }
+            );
+
+            bytes[24] = 0;
+            assert_eq!(
+                exact_path_feature_construction(
+                    &bytes,
+                    &IndexedRecordOffsets::build(&bytes),
+                    &scope,
+                    &[],
+                ),
+                None
+            );
+        }
     }
 
     fn compact_coil_placement_fixture(

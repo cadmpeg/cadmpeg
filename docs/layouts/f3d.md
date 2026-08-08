@@ -8,8 +8,9 @@ Source of truth: [`docs/formats/f3d.md`](../../docs/formats/f3d.md).
 Table source: `docs/layouts/f3d.toml`.
 
 Covers the fixed Design-segment headers, the named solid-primitive prologue,
-the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, and the
-class-418 `SplitFace` prefix and sheet-metal `EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
+the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
+compact `Loft` prefix, the class-418 `SplitFace` prefix, and the sheet-metal
+`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated in
 `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
 are listed under "Not tabulated".
 
@@ -58,6 +59,22 @@ Offsets are relative to the primary indexed scope header. The ordered parameter-
 | 20 | 4 | `operation` | `u32` | little | spec | the result-operation u32 is at primary-header offset 20 |
 | 24 | 1 | `zero_flag` | `u8` | little | spec | byte 24 is zero |
 | 25 | 1 | `form_marker` | `u8` | little | spec | byte 25 is `0x01` |
+
+## `compact_loft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+Offsets are relative to the primary indexed header. The variable scope body follows this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after its indexed header |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | has ten zero bytes after its indexed header |
+| 21 | 4 | `one_run_4` | `bytes[4]` | little | spec | four bytes of value `1` |
+| 25 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at primary-header offset 25 |
+| 29 | 1 | `zero_flag` | `u8` | little | spec | Byte 29 is zero |
+| 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
+| 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
 ## `base_feature_result_body_prefix`
 
