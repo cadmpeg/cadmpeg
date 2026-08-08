@@ -240,6 +240,39 @@ fn feature_parent_chain_is_acyclic(
     true
 }
 
+/// Derive one neutral history identity from a canonical CATIA native identity.
+///
+/// Native identities use the form `<format>:<scope>:<kind>#<key>`. Neutral
+/// history identities keep the same format and scope and replace only the
+/// source kind. Synthetic unit fixtures may use short IDs, for which the
+/// legacy suffix form remains deterministic.
+pub(crate) fn neutral_history_id(native_id: &str, kind: &str) -> String {
+    let Some((namespace, key)) = native_id.rsplit_once('#') else {
+        return format!("{native_id}:{kind}");
+    };
+    let mut components = namespace.split(':');
+    let Some(format) = components.next() else {
+        return format!("{native_id}:{kind}");
+    };
+    let Some(scope) = components.next() else {
+        return format!("{native_id}:{kind}");
+    };
+    let Some(source_kind) = components.next() else {
+        return format!("{native_id}:{kind}");
+    };
+    if format.is_empty()
+        || scope.is_empty()
+        || source_kind.is_empty()
+        || components.next().is_some()
+        || key.is_empty()
+        || key.contains(':')
+        || kind.is_empty()
+    {
+        return format!("{native_id}:{kind}");
+    }
+    format!("{format}:{scope}:{kind}#{key}")
+}
+
 /// Resolve one unique transferred feature on a complete structural owner chain.
 ///
 /// An immediate field group is not always the semantic feature object. CATIA
@@ -326,7 +359,7 @@ fn transfer_principal_plane(
     candidate: PrincipalPlaneCandidate<'_>,
 ) {
     let object = candidate.object;
-    let feature_id = FeatureId(format!("{}:feature", object.id));
+    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,
@@ -359,8 +392,8 @@ fn transfer_sketch(
     object: &CatiaDesignObject,
     owner_record: &CatiaObjectRecord,
 ) {
-    let sketch_id = SketchId(format!("{}:sketch", object.id));
-    let feature_id = FeatureId(format!("{}:feature", object.id));
+    let sketch_id = SketchId(neutral_history_id(&object.id, "sketch"));
+    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: None,
@@ -436,7 +469,7 @@ fn transfer_native_operation(
 ) {
     let object = candidate.object;
     let kind = candidate.kind.to_string();
-    let feature_id = FeatureId(format!("{}:feature", object.id));
+    let feature_id = FeatureId(neutral_history_id(&object.id, "feature"));
     ir.model.features.push(Feature {
         id: feature_id.clone(),
         ordinal: object.first_field_byte_offset,

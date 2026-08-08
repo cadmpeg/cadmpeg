@@ -234,8 +234,16 @@ current scores require those matrices and representative fixtures.
   retained separately with their source object and paired source entity.
   Coverage partitions payload and storage occurrences, classified and
   unclassified source entities, and ranges with zero, one, or multiple total
-  incoming occurrences. An incoming occurrence and design-field containment do
+  incoming occurrences. An incoming occurrence and design-field containment alone do
   not establish constraint identity, ownership, operands, or sketch incidence.
+  A complete range transfers as one opaque sketch constraint only when exactly
+  one total incoming incidence selects it, the source incidence resolves to the
+  same graph's paired entity and object record, and that source object's
+  complete owner chain reaches one transferred Sketch before another
+  transferred feature. The source object record is retained as one unresolved
+  native operand. The transfer assigns no neutral sketch entity, locus,
+  parameter, driving state, or dimensional role; exact selector, framing,
+  evaluation, and opcode-offset properties remain available on the constraint.
   Exact `Configuration` records retain the first reference's payload-relative
   byte offset, selected value-schema ordinal, entry, and name, and retain the
   second reference as an independently resolved, terminal-null, or unresolved

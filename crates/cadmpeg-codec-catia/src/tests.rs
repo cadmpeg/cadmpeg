@@ -9754,10 +9754,9 @@ fn exact_sketch_owner_declaration_transfers_identity_without_geometry() {
     );
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(format!(
-            "{}:feature",
-            native.design_objects[0].id
-        )))
+        Some(cadmpeg_ir::features::FeatureId(
+            crate::design_feature::neutral_history_id(&native.design_objects[0].id, "feature"),
+        ))
     );
     assert_eq!(
         transfer.sketch_owner_records,
@@ -9906,9 +9905,9 @@ fn parameter_owner_follows_one_exact_child_design_object() {
     assert_eq!(ir.model.features.len(), 1);
     assert_eq!(
         ir.model.parameters[0].owner,
-        Some(cadmpeg_ir::features::FeatureId(format!(
-            "{feature_id}:feature"
-        )))
+        Some(cadmpeg_ir::features::FeatureId(
+            crate::design_feature::neutral_history_id(&feature_id, "feature"),
+        ))
     );
 }
 

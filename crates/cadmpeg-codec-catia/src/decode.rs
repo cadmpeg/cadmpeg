@@ -28,6 +28,7 @@ use crate::entity_table;
 use crate::families;
 use crate::formula;
 use crate::native::{CatiaNative, CatiaObjectGraph};
+use crate::sketch;
 
 fn configuration_row_chain_coverage(native: &CatiaNative) -> (usize, usize) {
     (
@@ -104,6 +105,12 @@ fn finish_decode(
         .collect::<HashSet<_>>();
     let design_feature_transfer =
         design_feature::transfer_design_features(&mut ir, &native, modeling_graph_scope.as_ref());
+    sketch::transfer_constraint_ranges(
+        &mut ir,
+        &native,
+        &design_feature_transfer,
+        modeling_graph_scope.as_ref(),
+    );
     let formula_transfer = formula::transfer_parameters(
         &mut ir,
         &native,
