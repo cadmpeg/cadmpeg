@@ -1395,6 +1395,88 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .contains(&(native_stream, operation.opposite_angle_record_index))
             }
         };
+        let thread_link = match (
+            scope.thread_construction.as_ref(),
+            design::design_feature_family(&scope.kind),
+        ) {
+            (None, _) => true,
+            (Some(_), family) if family != Some(design::DesignFeatureFamily::Thread) => false,
+            (Some(construction), _) => {
+                let compact = scope.class_tag == "426"
+                    && scope.paired_class_tag == "266"
+                    && scope.reference_members.len() >= 2
+                    && scope.reference_members.len().is_multiple_of(2);
+                let standard = scope.paired_class_tag == "258"
+                    && scope.frame_length == 449
+                    && scope.reference_members.len() == 4;
+                let expected_groups = if compact {
+                    scope
+                        .reference_members
+                        .iter()
+                        .step_by(2)
+                        .copied()
+                        .collect::<Vec<_>>()
+                } else if standard {
+                    vec![scope.reference_members[0]]
+                } else {
+                    Vec::new()
+                };
+                !expected_groups.is_empty()
+                    && construction.face_group_record_indices == expected_groups
+                    && !construction.designation.is_empty()
+                    && !construction.profile.is_empty()
+                    && [
+                        construction.nominal_size,
+                        construction.major_diameter,
+                        construction.minor_diameter,
+                        construction.pitch,
+                        construction.pitch_diameter,
+                    ]
+                    .into_iter()
+                    .all(|value| value.is_finite() && value > 0.0)
+                    && construction.minor_diameter < construction.pitch_diameter
+                    && construction.pitch_diameter < construction.major_diameter
+                    && construction
+                        .face_group_record_indices
+                        .iter()
+                        .enumerate()
+                        .all(|(group_ordinal, record_index)| {
+                            let compact_member = if compact {
+                                let reference_ordinal = group_ordinal.saturating_mul(2);
+                                let Some(member_record_index) = scope
+                                    .reference_members
+                                    .get(reference_ordinal.saturating_add(1))
+                                else {
+                                    return false;
+                                };
+                                let Ok(scope_reference_ordinal) = u32::try_from(reference_ordinal)
+                                else {
+                                    return false;
+                                };
+                                Some((scope_reference_ordinal, *member_record_index))
+                            } else {
+                                None
+                            };
+                            let mut groups = native
+                                .design_construction_operand_groups
+                                .iter()
+                                .filter(|group| {
+                                    design_stream(&group.id) == native_stream
+                                        && group.scope_record_index == scope.record_index
+                                        && group.record_index == *record_index
+                                        && group.role == 0x0000_0010_0000_0000
+                                        && compact_member.is_none_or(
+                                            |(scope_reference_ordinal, member_record_index)| {
+                                                group.scope_reference_ordinal
+                                                    == scope_reference_ordinal
+                                                    && group.members == [member_record_index]
+                                            },
+                                        )
+                                });
+                            groups.next().is_some() && groups.next().is_none()
+                        })
+            }
+        };
         let joint_origin_link = match (
             scope.joint_origin_transform,
             scope.joint_origin_transform_offset,
@@ -1777,6 +1859,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && component_insert_link
             && copy_paste_component_link
             && draft_link
+            && thread_link
             && joint_origin_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
@@ -2309,7 +2392,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 .thread_construction
                                 .as_ref()
                                 .is_some_and(|construction| {
-                                    construction.face_group_record_index == group.record_index
+                                    construction
+                                        .face_group_record_indices
+                                        .contains(&group.record_index)
                                 })
                     }
                     Some(design::DesignFeatureFamily::SheetMetalEdgeFlange) => {
@@ -4557,8 +4642,9 @@ fn validate_face_operands<'a>(
                                         group.role == 0x0000_0010_0000_0000
                                             && scope.thread_construction.as_ref().is_some_and(
                                                 |construction| {
-                                                    construction.face_group_record_index
-                                                        == group.record_index
+                                                    construction
+                                                        .face_group_record_indices
+                                                        .contains(&group.record_index)
                                                 },
                                             )
                                     }) && operand.recipe_kind

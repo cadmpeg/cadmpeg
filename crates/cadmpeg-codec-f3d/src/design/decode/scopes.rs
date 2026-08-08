@@ -202,6 +202,7 @@ pub(crate) fn exact_thread_construction(
     let compact = scope.class_tag == "426"
         && scope.paired_class_tag == "266"
         && scope.reference_members.len() >= 2
+        && scope.reference_members.len().is_multiple_of(2)
         && bytes.get(start + 11..start + 21)? == [0; 10]
         && f64_at(bytes, start + 21)?.to_bits() == 60.0f64.to_bits()
         && bytes.get(start + 29..start + 34)? == [0, 2, 0, 0, 0]
@@ -209,13 +210,18 @@ pub(crate) fn exact_thread_construction(
     if !standard && !compact {
         return None;
     }
-    parse_thread_payload(bytes, start, scope.reference_members[0])
+    let face_group_record_indices = if compact {
+        scope.reference_members.iter().step_by(2).copied().collect()
+    } else {
+        vec![scope.reference_members[0]]
+    };
+    parse_thread_payload(bytes, start, face_group_record_indices)
 }
 
 pub(crate) fn parse_thread_payload(
     bytes: &[u8],
     start: usize,
-    face_group_record_index: u32,
+    face_group_record_indices: Vec<u32>,
 ) -> Option<DesignThreadConstruction> {
     let (designation, after_designation) = lp_utf16_bounded(bytes, start + 38, 1..=128)?;
     let (nominal, after_nominal) = lp_utf16_bounded(bytes, after_designation, 1..=64)?;
@@ -255,7 +261,7 @@ pub(crate) fn parse_thread_payload(
         minor_diameter,
         pitch,
         pitch_diameter,
-        face_group_record_index,
+        face_group_record_indices,
     })
 }
 

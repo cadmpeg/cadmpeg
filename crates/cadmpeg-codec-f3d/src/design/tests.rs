@@ -642,9 +642,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
-        face_group_record_index: 701,
+        face_group_record_indices: vec![701, 703],
     });
-    thread.reference_members = vec![701];
+    thread.reference_members = vec![701, 702, 703, 704];
 
     let scopes = vec![
         base_flange,
@@ -659,6 +659,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(10, 0, 100, &[101], 0x0000_0041_0000_0000),
         group(20, 0, 200, &[201], 0x0000_0004_0000_0000),
         group(30, 0, 300, &[301], 0x0000_0005_0000_0000),
+        group(70, 0, 701, &[702], 0x0000_0010_0000_0000),
+        group(70, 2, 703, &[704], 0x0000_0010_0000_0000),
     ];
     let placement = DesignSketchPlacement {
         id: format!("{stream}:placement#7"),
@@ -740,7 +742,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert_eq!(
         definition("Thread"),
         FeatureDefinition::CosmeticThread {
-            face: FaceSelection::Unresolved,
+            face: FaceSelection::Native(scopes[6].id.clone()),
             diameter: Some(Length(3.5)),
             extent: None,
         }
@@ -6909,7 +6911,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     bytes[146..148].copy_from_slice(&[0, 1]);
 
     assert_eq!(
-        parse_thread_payload(&bytes, 0, 988),
+        parse_thread_payload(&bytes, 0, vec![988]),
         Some(DesignThreadConstruction {
             designation: "M30x3.5".into(),
             nominal_size: 30.0,
@@ -6918,7 +6920,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
             minor_diameter: 2.5732,
             pitch: 0.35,
             pitch_diameter: 2.7568,
-            face_group_record_index: 988,
+            face_group_record_indices: vec![988],
         })
     );
 }
@@ -6952,16 +6954,27 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
         minor_diameter: 0.293,
         pitch: 0.06,
         pitch_diameter: 0.3166,
-        face_group_record_index: 988,
+        face_group_record_indices: vec![988],
     };
-    assert_eq!(parse_thread_payload(&bytes, 0, 988), Some(expected.clone()));
+    assert_eq!(
+        parse_thread_payload(&bytes, 0, vec![988]),
+        Some(expected.clone())
+    );
 
     let mut scope = DesignParameterScope::empty("f3d:scope#compact-thread", "Thread", 987);
     scope.class_tag = "426".into();
     scope.frame_length = 405;
-    scope.reference_members = vec![988, 989];
+    scope.reference_members = vec![988, 989, 992, 993];
     scope.paired_class_tag = "266".into();
-    assert_eq!(exact_thread_construction(&bytes, &scope), Some(expected));
+    let mut plural_expected = expected;
+    plural_expected.face_group_record_indices.push(992);
+    assert_eq!(
+        exact_thread_construction(&bytes, &scope),
+        Some(plural_expected)
+    );
+
+    scope.reference_members.push(994);
+    assert_eq!(exact_thread_construction(&bytes, &scope), None);
 }
 
 #[test]

@@ -574,23 +574,12 @@ pub fn project_parameter_design_with_edge_identities(
                             properties: native_scope_properties(scope, native_scope),
                         },
                         |construction| {
-                            let group = construction_groups.iter().find(|group| {
-                                native_stream(&group.id) == Some(native_scope)
-                                    && group.scope_record_index == scope.record_index
-                                    && group.record_index == construction.face_group_record_index
-                            });
-                            let face = group
-                                .and_then(|group| {
-                                    resolved_historical_face_group(scope, group, face_operands)
-                                })
-                                .or_else(|| {
-                                    group.map(|group| {
-                                        cadmpeg_ir::features::FaceSelection::Native(
-                                            group.id.clone(),
-                                        )
-                                    })
-                                })
-                                .unwrap_or(cadmpeg_ir::features::FaceSelection::Unresolved);
+                            let face = project_thread_face_selection(
+                                scope,
+                                &construction.face_group_record_indices,
+                                construction_groups,
+                                face_operands,
+                            );
                             let extent = parameters
                                 .iter()
                                 .find(|(ordinal, _)| *ordinal == 1)
@@ -1551,6 +1540,75 @@ fn project_fillet_arm(
                 },
             }
         }
+    }
+}
+
+fn project_thread_face_selection(
+    scope: &DesignParameterScope,
+    face_group_record_indices: &[u32],
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> cadmpeg_ir::features::FaceSelection {
+    use cadmpeg_ir::features::FaceSelection;
+
+    let Some(stream) = native_stream(&scope.id) else {
+        return FaceSelection::Unresolved;
+    };
+    if face_group_record_indices.is_empty() {
+        return FaceSelection::Unresolved;
+    }
+    let mut ordered_groups = Vec::with_capacity(face_group_record_indices.len());
+    for record_index in face_group_record_indices {
+        let mut matching = groups.iter().filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.record_index == *record_index
+                && group.role == ROLE_0X10
+        });
+        let Some(group) = matching.next() else {
+            return FaceSelection::Unresolved;
+        };
+        if matching.next().is_some() {
+            return FaceSelection::Unresolved;
+        }
+        ordered_groups.push(group);
+    }
+    let native = if let [group] = ordered_groups.as_slice() {
+        group.id.clone()
+    } else {
+        scope.id.clone()
+    };
+    let mut state = None;
+    let mut faces = Vec::new();
+    for group in ordered_groups {
+        let Some(FaceSelection::Historical {
+            state: group_state,
+            faces: group_faces,
+            ..
+        }) = resolved_historical_face_group(scope, group, face_operands)
+        else {
+            return FaceSelection::Native(native);
+        };
+        if state
+            .as_ref()
+            .is_some_and(|expected| expected != &group_state)
+        {
+            return FaceSelection::Native(native);
+        }
+        state.get_or_insert(group_state);
+        for face in group_faces {
+            if !faces.contains(&face) {
+                faces.push(face);
+            }
+        }
+    }
+    let Some(state) = state else {
+        return FaceSelection::Native(native);
+    };
+    FaceSelection::Historical {
+        state,
+        faces,
+        native,
     }
 }
 

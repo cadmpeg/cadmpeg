@@ -1559,8 +1559,8 @@ pub struct DesignThreadConstruction {
     pub pitch: f64,
     /// Pitch diameter in Design length units.
     pub pitch_diameter: f64,
-    /// Counted face-selection group referenced by the scope.
-    pub face_group_record_index: u32,
+    /// Ordered counted face-selection groups referenced by the scope.
+    pub face_group_record_indices: Vec<u32>,
 }
 
 /// Exact signed-angle lanes carried by a `Draft` scope.
