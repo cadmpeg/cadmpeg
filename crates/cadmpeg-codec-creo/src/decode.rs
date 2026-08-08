@@ -16157,19 +16157,52 @@ fn feature_entity_dependencies(
     tables: &[crate::feature::FeatureEntityTable],
     feature_id: u32,
 ) -> Vec<u32> {
-    class_100_operand_producers(feature_id, tables)
-        .map(|operands| {
-            operands.into_iter().map(|(_, producer)| producer).fold(
-                Vec::new(),
-                |mut dependencies, dependency| {
-                    if !dependencies.contains(&dependency) {
-                        dependencies.push(dependency);
+    let mut dependencies = Vec::new();
+    for (table_index, table) in tables.iter().enumerate() {
+        if table.feature_id != Some(feature_id) || table.table_class_id != 100 {
+            continue;
+        }
+        for (entry_index, entry) in table.entries.iter().enumerate() {
+            let consumer_position = (table.offset, entry.offset, table_index, entry_index);
+            let producers = tables
+                .iter()
+                .enumerate()
+                .flat_map(|(producer_table_index, producer_table)| {
+                    let Some(producer_feature_id) = producer_table.feature_id else {
+                        return Vec::new();
+                    };
+                    if producer_feature_id == feature_id {
+                        return Vec::new();
                     }
-                    dependencies
-                },
-            )
-        })
-        .unwrap_or_default()
+                    producer_table
+                        .entries
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(producer_entry_index, producer_entry)| {
+                            let producer_position = (
+                                producer_table.offset,
+                                producer_entry.offset,
+                                producer_table_index,
+                                producer_entry_index,
+                            );
+                            (producer_position < consumer_position
+                                && producer_entry.class_id == 200
+                                && producer_entry.entity_id == entry.entity_id
+                                && producer_entry.source_entity_id.is_some())
+                            .then_some(producer_feature_id)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            let [producer] = producers.as_slice() else {
+                continue;
+            };
+            if !dependencies.contains(producer) {
+                dependencies.push(*producer);
+            }
+        }
+    }
+    dependencies
 }
 
 fn feature_entity_producers(

@@ -426,6 +426,27 @@ fn class_100_entity_reference_depends_on_its_unique_generator() {
         &[],
     )
     .is_empty());
+    let second_producer = table(176, 67, vec![entry(193, 200, Some(176))]);
+    let mixed_consumer = table(
+        419,
+        100,
+        vec![
+            entry(192, 98, None),
+            entry(193, 98, None),
+            entry(194, 98, None),
+        ],
+    );
+    assert_eq!(
+        feature_entity_dependencies(
+            &[producer.clone(), second_producer, mixed_consumer.clone()],
+            419,
+        ),
+        [175, 176]
+    );
+    assert_eq!(
+        knit_class_100_operand_entity_ids(419, &[producer.clone(), mixed_consumer]),
+        None
+    );
     let missing = table(417, 100, vec![entry(193, 98, None)]);
     assert_eq!(knit_class_100_operand_entity_ids(417, &[missing]), None);
     let duplicate = table(418, 100, vec![entry(192, 98, None), entry(192, 98, None)]);
