@@ -445,8 +445,10 @@ are ambiguous and do not supply one. Complex measure records referenced by a
 characteristic representation remain typed measure carriers.
 Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
-`MEASURE_WITH_UNIT` partials. Every referenced area, volume, or centroid item
-is evaluated; derived-unit factors scale area and volume by their dimensions.
+`MEASURE_WITH_UNIT` partials. Direct `AREA_UNIT` and `VOLUME_UNIT` subtypes and
+their inherited `DERIVED_UNIT_ELEMENT` factors are typed. Every referenced
+area, volume, or centroid item is evaluated; derived-unit factors scale area
+and volume by their dimensions.
 Geometric tolerances select their kind from the exact geometric-tolerance
 leaf partial, not from an inherited or modifier partial. They read their name
 and magnitude from the `GEOMETRIC_TOLERANCE` partial when the tolerance is

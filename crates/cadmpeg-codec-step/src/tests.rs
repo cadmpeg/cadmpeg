@@ -6275,6 +6275,45 @@ fn complex_validation_measure_carrier_is_decoded() {
 }
 
 #[test]
+fn direct_area_and_volume_unit_subtypes_scale_validation_measures() {
+    let source =
+        String::from_utf8(include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace("#44=DERIVED_UNIT((#55));", "#44=AREA_UNIT((#55));")
+            .replace("#53=DERIVED_UNIT((#56));", "#53=VOLUME_UNIT((#56));");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode direct validation unit subtypes");
+
+    assert!(result.report.notes.iter().any(|note| {
+        note == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"
+    }));
+    assert!(result.report.notes.iter().any(|note| {
+        note == "geometric validation volume open sheet volume: expected 0, tessellation approximation 0"
+    }));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("unit scale did not resolve") }));
+    let unknowns = result
+        .ir
+        .native
+        .namespace("step")
+        .expect("STEP native namespace")
+        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .expect("STEP unknown records");
+    for id in [44, 53, 55, 56] {
+        assert!(
+            !unknowns
+                .iter()
+                .any(|record| record.id.0.ends_with(&format!("#{id}"))),
+            "validation unit carrier #{id} was not typed"
+        );
+    }
+}
+
+#[test]
 fn validation_representation_decodes_all_measure_items() {
     let source =
         String::from_utf8(include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec())

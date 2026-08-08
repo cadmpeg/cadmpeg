@@ -243,22 +243,18 @@ fn measure_scale(
 ) -> f64 {
     measure_unit(record)
         .and_then(|unit| exchange.records.get(&unit))
-        .and_then(|unit| {
-            let derived = unit.partial("DERIVED_UNIT")?;
-            derived
-                .parameters
-                .first()?
-                .list()?
-                .iter()
-                .try_fold(1.0, |scale, element| {
-                    let element = exchange.records.get(&element.reference()?)?;
-                    let element = element.partial("DERIVED_UNIT_ELEMENT")?;
-                    let base = element.parameters.first()?.reference()?;
-                    let exponent = element.parameters.get(1)?.number()?;
-                    let base =
-                        super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
-                    Some(scale * base.powf(exponent))
-                })
+        .and_then(derived_unit_elements)
+        .and_then(ValueExt::list)
+        .and_then(|elements| {
+            elements.iter().try_fold(1.0, |scale, element| {
+                let element = exchange.records.get(&element.reference()?)?;
+                let element = element.partial("DERIVED_UNIT_ELEMENT")?;
+                let base = element.parameters.first()?.reference()?;
+                let exponent = element.parameters.get(1)?.number()?;
+                let base =
+                    super::geometry::unit_scale_mm(base, exchange, &mut BTreeSet::new())?;
+                Some(scale * base.powf(exponent))
+            })
         })
         .unwrap_or_else(|| {
             losses.push(LossNote {
@@ -303,22 +299,23 @@ fn measure_unit(record: &RawRecord) -> Option<u64> {
         })
 }
 
+fn derived_unit_elements(record: &RawRecord) -> Option<&Value> {
+    record
+        .partial("DERIVED_UNIT")
+        .or_else(|| record.partial("AREA_UNIT"))
+        .or_else(|| record.partial("VOLUME_UNIT"))
+        .and_then(|partial| partial.parameters.first())
+}
+
 fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
     typed.insert(id);
     let Some(record) = exchange.records.get(&id) else {
         return;
     };
-    let Some(derived) = record.partial("DERIVED_UNIT") else {
+    let Some(elements) = derived_unit_elements(record).and_then(ValueExt::list) else {
         return;
     };
-    for element in derived
-        .parameters
-        .first()
-        .and_then(ValueExt::list)
-        .into_iter()
-        .flatten()
-        .filter_map(ValueExt::reference)
-    {
+    for element in elements.iter().filter_map(ValueExt::reference) {
         typed.insert(element);
         if let Some(base) = exchange
             .records
