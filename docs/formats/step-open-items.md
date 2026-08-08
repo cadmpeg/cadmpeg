@@ -31,7 +31,9 @@ search and certified interval search have fixed bounds. Deferred curve and
 surface constructors resolve through dependency worklists instead of rescanning
 the full population for every chain level. Periodic endpoint sweeps reduce
 through `rem_euclid` instead of adding one period per turn. The decode session
-charges the worst-case range-inference allowance before the pass.
+charges the worst-case range-inference allowance before the pass. A synthesized
+16-point implicit-face regression refuses the 120 pair comparisons at the
+`step_implicit_face_plane` operation before the pair search starts.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic
@@ -53,7 +55,9 @@ values. It also charges the neutral IR entity count already produced before
 the pass. The pairwise point search used for implicit face planes reserves its
 complete upper bound before topology decoding. This prevents a record-only
 allowance from hiding work proportional to aggregate depth, decoded output
-size, or polygon cardinality.
+size, or polygon cardinality. Pcurve consistency omission indexes coedges once,
+so retaining or omitting many failed optional pcurves is linear in the decoded
+coedge population.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
@@ -74,7 +78,13 @@ deviation remains an error. The STEP reader applies this same contract before
 final retention: an optional pcurve that fails the surface-to-edge endpoint
 contract is omitted from the neutral coedge, retained with its complete source
 closure, and reported as `PcurveOmitted`. The STEP face-bound rule is retained
-as a source validity diagnostic.
+as a source validity diagnostic. In the current 4,173-file admitted sweep,
+4,054 syntactically valid files decoded, with no decode or validation timeout
+and no unclassified source bytes. The sweep produced 308 `PcurveOmitted`
+losses and no remaining pcurve consistency findings. The remaining 3,697
+validation errors are classified as source-invalid topology: 3,693 faces have
+more than one explicit outer bound, and four source `OPEN_SHELL` records have
+disconnected face components. The decoder retains those records and findings.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
 artifact. Classify each failure as a source-invalid case with a retained

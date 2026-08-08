@@ -485,15 +485,18 @@ fn charge_semantic_stage(
 /// closure as opaque data after this neutral omission.
 fn omit_inconsistent_pcurves(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     let mismatches = cadmpeg_ir::validate::pcurve_surface_endpoint_mismatches(ir);
+    let coedge_indices = ir
+        .model
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.0.clone(), index))
+        .collect::<BTreeMap<_, _>>();
     for mismatch in mismatches {
-        let Some(coedge) = ir
-            .model
-            .coedges
-            .iter_mut()
-            .find(|coedge| coedge.id.0 == mismatch.coedge)
-        else {
+        let Some(&coedge_index) = coedge_indices.get(mismatch.coedge.as_str()) else {
             continue;
         };
+        let coedge = &mut ir.model.coedges[coedge_index];
         let count = coedge.pcurves.len();
         if count == 0 {
             continue;

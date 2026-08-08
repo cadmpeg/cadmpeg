@@ -173,6 +173,49 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
 }
 
 #[test]
+fn implicit_face_plane_work_is_refused_before_pair_search_runs() {
+    let point_references = (2..=17)
+        .map(|id| format!("#{id}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let point_records = (2..=17).fold(String::new(), |mut records, id| {
+        writeln!(records, "#{id}=CARTESIAN_POINT('',({id}.,0.,0.));").expect("write point fixture");
+        records
+    });
+    let source = format!(
+        "ISO-10303-21;HEADER;ENDSEC;DATA;#1=POLY_LOOP('',({point_references}));{point_records}ENDSEC;END-ISO-10303-21;"
+    );
+    let mut pair_limit = None;
+    for max_work_units in 1..=16_384 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_work_units = max_work_units;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            source.as_bytes(),
+            &arena,
+            &policy,
+        )
+        .expect("root fits the test policy");
+        let error = crate::reader::decode(source.as_bytes(), DecodeOptions::default(), &ctx)
+            .expect_err("a bounded pair search must be refused at some budget");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_implicit_face_plane" {
+            assert_eq!(limit.additional, 120);
+            assert!(limit.used <= limit.limit);
+            pair_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = pair_limit.expect("pairwise face-plane work must have a stable budget gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
+}
+
+#[test]
 fn parser_rejects_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("duplicate partial names must fail");
