@@ -3440,12 +3440,7 @@ fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
 
 fn first_projected_axis(axis: Vector3) -> Option<Vector3> {
     let axis = normalize(axis)?;
-    let basis = if axis.x.abs() == 1.0 && axis.y == 0.0 && axis.z == 0.0 {
-        Vector3::new(0.0, 1.0, 0.0)
-    } else {
-        Vector3::new(1.0, 0.0, 0.0)
-    };
-    project_axis(basis, axis)
+    project_axis(default_reference_axis(axis), axis)
 }
 
 fn curve_parameter_at_point(
@@ -4680,14 +4675,20 @@ fn base_axis_3d(
     axis3: Option<Vector3>,
 ) -> Option<[Vector3; 3]> {
     let z_axis = normalize(axis3.unwrap_or(Vector3::new(0.0, 0.0, 1.0)))?;
-    let default_x = if (z_axis.x == 1.0 || z_axis.x == -1.0) && z_axis.y == 0.0 && z_axis.z == 0.0 {
-        Vector3::new(0.0, 1.0, 0.0)
-    } else {
-        Vector3::new(1.0, 0.0, 0.0)
-    };
+    let default_x = default_reference_axis(z_axis);
     let x_axis = project_axis(axis1.unwrap_or(default_x), z_axis)?;
     let y_axis = second_project_axis(z_axis, x_axis, axis2.unwrap_or(Vector3::new(0.0, 1.0, 0.0)))?;
     Some([x_axis, y_axis, z_axis])
+}
+
+const AXIS_PARALLEL_TOLERANCE: f64 = 1.0e-12;
+
+fn default_reference_axis(axis: Vector3) -> Vector3 {
+    if axis.x.abs() >= 1.0 - AXIS_PARALLEL_TOLERANCE {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(1.0, 0.0, 0.0)
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

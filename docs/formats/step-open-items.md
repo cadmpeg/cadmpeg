@@ -400,9 +400,9 @@ wrong and the item needs a decision.
 
 **Resolved.** An omitted or parallel `AXIS2_PLACEMENT_3D.ref_direction` uses
 the projection of global +X onto the plane normal to the axis. When the axis
-is parallel to X, it uses global +Y before projection. The STEP reader applies
-this rule locally, so a neutral stability helper cannot change STEP chart
-semantics.
+is within `1e-12` of parallel to X, it uses global +Y before projection. The
+STEP reader applies this rule locally, so a neutral stability helper cannot
+change STEP chart semantics.
 
 ### PC-07. Ellipse semi-axis canonicalization
 

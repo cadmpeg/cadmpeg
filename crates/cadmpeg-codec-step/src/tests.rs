@@ -9051,6 +9051,41 @@ fn omitted_placement_reference_uses_the_first_projected_axis() {
 }
 
 #[test]
+fn near_parallel_omitted_reference_uses_a_stable_projected_axis() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#2)) REPRESENTATION_CONTEXT('model','3D'));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(-1.,0.0000000612905015206,0.0000000692801624183));
+#12=AXIS2_PLACEMENT_3D('',#10,#11,$);
+#13=CIRCLE('',#12,2.);
+#14=GEOMETRIC_CURVE_SET('',(#13));
+#15=SHAPE_REPRESENTATION('',(#14),#3);",
+    );
+    let circle = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#13")
+        .expect("circle");
+    let CurveGeometry::Circle {
+        axis,
+        ref_direction,
+        ..
+    } = circle.geometry
+    else {
+        panic!("decoded carrier is not a circle");
+    };
+    let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
+    assert!(ref_direction.y > 0.999_999_999);
+    assert!(dot.abs() < 1.0e-12);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn parallel_axis_reference_direction_is_reported_and_inferred() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
