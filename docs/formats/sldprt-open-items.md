@@ -261,25 +261,6 @@ The writer therefore cannot emit any surface the decoder would misread, while th
 
 **Need.** We must read the counts and degrees from their stored offsets. The search selects a wrong shape whenever more than one solution exists, and the surface is then built with the wrong grid and the wrong rational dimension.
 
-### GC-14. `00 7e` descriptor reference position
-
-**Question.** At which offset does a `00 7e` surface descriptor store its five array references?
-
-**Known.** `sldprt.md` §7.1 "Stream-scope" states that the final five references are `[control_grid, u_mult, v_mult, u_knot, v_knot]`, so the position is fixed relative to the record end.
-
-`crates/cadmpeg-codec-sldprt/src/brep/spline.rs:400` does not use a fixed position. It slides a five-reference window across 22 two-byte positions and stops at the first window where all five references resolve to arrays of the correct type:
-
-```rust
-for at in (p + 2..(p + 96).min(bytes.len().saturating_sub(9))).step_by(2) {
-    ...
-    if arrays.f64s.contains_key(&refs[0]) && arrays.u16s.contains_key(&refs[1]) ... { out.insert(attr, [...]); break; }
-}
-```
-
-Attribute identifiers are small dense stream-local u16 values, so an earlier field can hold values that resolve. The scan takes the first window and does not compare it with a later one. `patch_nurbs_surface` at `spline.rs:295` reuses the same table on the write path.
-
-**Need.** We must know the fixed position. A descriptor whose leading fields resolve must not supply the arrays.
-
 ### GC-15. Prefixed-triple record framing
 
 **Question.** Which field states that a coedge or edge-use record uses the prefixed deltas triple form?

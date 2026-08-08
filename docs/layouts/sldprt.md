@@ -296,6 +296,22 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/brep.rs` — The parser's f64 count for tag `00 36` matches the spec table.
 
+## `bspline_surface_descriptor`
+
+Spec §7.2 · layout: byte offsets · size: 24 B
+
+Body-relative after the two-byte tag and optional marker. The six fixed cells occupy +2..+13; the terminal array references occupy +14..+23.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | descriptor attribute |
+| 2 | 12 | `fixed_fields` | `u16[6]` | big | spec | fixed cells carry the control and knot counts, degrees, and rational dimension |
+| 14 | 10 | `array_refs` | `u16[5]` | big | spec | five terminal u16 BE refs |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder reads the terminal array roster at the fixed descriptor offset.
+
 ## `bspline_array_header`
 
 Spec §7.2 · layout: byte offsets · size: 6 B

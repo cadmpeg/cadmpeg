@@ -24,6 +24,10 @@ struct CurveDescriptor {
     knot_attr: u16,
 }
 
+// After the optional marker and descriptor attribute, a 00 7e descriptor has
+// six fixed u16 cells before its five terminal array references.
+const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 14;
+
 fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     if bytes.get(off..off + 2) != Some(&[0x00, tag]) {
         return None;
@@ -386,7 +390,7 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
 
 fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
     let mut out = HashMap::new();
-    for off in 0..bytes.len().saturating_sub(16) {
+    for off in 0..bytes.len().saturating_sub(1) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7e]) {
             continue;
         }
@@ -397,22 +401,22 @@ fn surface_refs(bytes: &[u8], arrays: &Arrays) -> HashMap<u16, [u16; 5]> {
         let Some(attr) = u16_be(bytes, p) else {
             continue;
         };
-        for at in (p + 2..(p + 96).min(bytes.len().saturating_sub(9))).step_by(2) {
-            let Some(refs) = (0..5)
-                .map(|i| u16_be(bytes, at + i * 2))
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            if arrays.f64s.contains_key(&refs[0])
-                && arrays.u16s.contains_key(&refs[1])
-                && arrays.u16s.contains_key(&refs[2])
-                && arrays.f64s.contains_key(&refs[3])
-                && arrays.f64s.contains_key(&refs[4])
-            {
-                out.insert(attr, [refs[0], refs[1], refs[2], refs[3], refs[4]]);
-                break;
-            }
+        let Some(refs_at) = p.checked_add(SURFACE_DESCRIPTOR_REFS_OFFSET) else {
+            continue;
+        };
+        let Some(refs) = (0..5)
+            .map(|i| refs_at.checked_add(i * 2).and_then(|at| u16_be(bytes, at)))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if arrays.f64s.contains_key(&refs[0])
+            && arrays.u16s.contains_key(&refs[1])
+            && arrays.u16s.contains_key(&refs[2])
+            && arrays.f64s.contains_key(&refs[3])
+            && arrays.f64s.contains_key(&refs[4])
+        {
+            out.insert(attr, [refs[0], refs[1], refs[2], refs[3], refs[4]]);
         }
     }
     out

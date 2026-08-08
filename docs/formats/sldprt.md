@@ -998,7 +998,7 @@ Compact records omit trim intervals, loop membership, edge orientation, and vert
 
 ### 7.2 B-spline and list carriers
 
-A bridge's `refs[4]` can point to a `00 7c` **surface-use wrapper** (a first-class carrier for list/NURBS surfaces) instead of a compact analytic surface. Ownership check: `00 7c.refs[1] == owning 00 0e bridge attr`. The wrapper's `child0` → `00 7e` **surface descriptor** (control/knot counts at fixed u16 BE offsets; final five refs = `[control_grid, u_mult, v_mult, u_knot, v_knot]`); `child1` → `00 7d` **scale node** (for a curved surface, a diagonal parameter-space scale; both `1.0` = identity).
+A bridge's `refs[4]` can point to a `00 7c` **surface-use wrapper** (a first-class carrier for list/NURBS surfaces) instead of a compact analytic surface. Ownership check: `00 7c.refs[1] == owning 00 0e bridge attr`. The wrapper's `child0` → `00 7e` **surface descriptor**. After the optional marker and descriptor attribute, the descriptor has six fixed u16 BE cells at offsets `+2..+13`; its five terminal u16 BE refs begin at `+14` and are `[control_grid, u_mult, v_mult, u_knot, v_knot]`. The descriptor's fixed cells carry the control and knot counts, degrees, and rational dimension. `child1` → `00 7d` **scale node** (for a curved surface, a diagonal parameter-space scale; both `1.0` = identity).
 
 B-spline **array records** are reached by attr reference, not inline:
 

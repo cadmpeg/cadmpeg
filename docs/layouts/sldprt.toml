@@ -748,6 +748,41 @@ note = "The parser's f64 count for tag `00 36` matches the spec table."
 # --- §7.2 B-spline array records -------------------------------------------
 
 [[record]]
+name = "bspline_surface_descriptor"
+kind = "byte"
+section = "7.2"
+anchor = "six fixed u16 BE cells"
+size = 24
+endianness = "big"
+note = "Body-relative after the two-byte tag and optional marker. The six fixed cells occupy +2..+13; the terminal array references occupy +14..+23."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "descriptor attribute"
+
+[[record.field]]
+name = "fixed_fields"
+offset = 2
+type = "u16[6]"
+source = "spec"
+anchor = "fixed cells carry the control and knot counts, degrees, and rational dimension"
+
+[[record.field]]
+name = "array_refs"
+offset = 14
+type = "u16[5]"
+source = "spec"
+anchor = "five terminal u16 BE refs"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
+contains = "const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 14;"
+note = "The decoder reads the terminal array roster at the fixed descriptor offset."
+
+[[record]]
 name = "bspline_array_header"
 kind = "byte"
 section = "7.2"

@@ -7530,6 +7530,46 @@ fn faces_decode_nurbs_surface() {
 }
 
 #[test]
+fn surface_descriptor_uses_terminal_array_references() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut bytes = nurbs_surface_carrier(180, 181, 10);
+    let descriptor = bytes
+        .windows(2)
+        .position(|window| window == [0x00, 0x7e])
+        .expect("surface descriptor");
+
+    // Make the fixed descriptor fields look like a complete, typed roster.
+    // A sliding-window decoder would bind this decoy roster instead of the
+    // terminal references that belong to the descriptor.
+    for (index, reference) in [190u16, 191, 192, 193, 194].into_iter().enumerate() {
+        let at = descriptor + 4 + index * 2;
+        bytes[at..at + 2].copy_from_slice(&reference.to_be_bytes());
+    }
+    bytes.extend(f64_array(
+        0x2d,
+        190,
+        &[
+            10.0, 0.0, 0.0, 10.0, 1.0, 0.0, 11.0, 0.0, 0.0, 11.0, 1.0, 0.0,
+        ],
+    ));
+    bytes.extend(u16_array(191, &[2, 2]));
+    bytes.extend(u16_array(192, &[2, 2]));
+    bytes.extend(f64_array(0x80, 193, &[0.0, 1.0]));
+    bytes.extend(f64_array(0x80, 194, &[0.0, 1.0]));
+
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        .remove(&180)
+        .expect("surface carrier");
+    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(surface)) = carrier.geometry
+    else {
+        panic!("expected NURBS surface");
+    };
+    assert_eq!(surface.control_points[0].x, 0.0);
+    assert_eq!(surface.control_points[3].z, 500.0);
+}
+
+#[test]
 fn faces_decode_markerless_nurbs_surface_arrays() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
