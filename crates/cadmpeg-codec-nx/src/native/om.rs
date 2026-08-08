@@ -18,11 +18,11 @@ pub enum OmSchemaRole {
     FeatureHistory,
     /// Expression model declaring `UGS::EXP_expression`.
     Expressions,
-    /// Audit model declaring `UGS::OM::SaveAuditTrail`.
+    /// Audit model declaring only `UGS::OM::SaveAuditTrail`.
     AuditTrail,
-    /// More than one defined role marker occurs in the registry.
+    /// More than one specialized role marker occurs in the registry.
     Ambiguous,
-    /// No role marker from the defined families occurs in the registry.
+    /// No specialized or audit role marker occurs in the registry.
     Other,
 }
 

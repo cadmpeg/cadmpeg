@@ -12,6 +12,35 @@ use crate::native::features::{
 };
 use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
 
+/// Classify the semantic role of one linked OM registry.
+///
+/// `UGS::OM::SaveAuditTrail` is a common class declaration carried by the
+/// specialized model registries. It identifies an audit-only registry only
+/// when no specialized marker is present. Multiple specialized markers are
+/// unresolved because no role-specific extractor can select one safely.
+fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
+    let has = |name| {
+        section
+            .types
+            .iter()
+            .any(|definition| definition.name == name)
+    };
+    let specialized_roles = [
+        ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
+        ("UGS::EXP_expression", OmSchemaRole::Expressions),
+        ("UGS::Solid::Topol", OmSchemaRole::Model),
+    ]
+    .into_iter()
+    .filter_map(|(name, role)| has(name).then_some(role))
+    .collect::<Vec<_>>();
+    match specialized_roles.as_slice() {
+        [role] => *role,
+        [] if has("UGS::OM::SaveAuditTrail") => OmSchemaRole::AuditTrail,
+        [] => OmSchemaRole::Other,
+        _ => OmSchemaRole::Ambiguous,
+    }
+}
+
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentIndexRow {
@@ -491,29 +520,7 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
         .om_sections()
         .into_iter()
         .filter(|(candidate, _)| candidate.name == entry.name)
-        .map(|(_, section)| {
-            let has = |name| {
-                section
-                    .types
-                    .iter()
-                    .any(|definition| definition.name == name)
-            };
-            let roles = [
-                ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
-                ("UGS::EXP_expression", OmSchemaRole::Expressions),
-                ("UGS::Solid::Topol", OmSchemaRole::Model),
-                ("UGS::OM::SaveAuditTrail", OmSchemaRole::AuditTrail),
-            ]
-            .into_iter()
-            .filter_map(|(name, role)| has(name).then_some(role))
-            .collect::<Vec<_>>();
-            let role = match roles.as_slice() {
-                [] => OmSchemaRole::Other,
-                [role] => *role,
-                _ => OmSchemaRole::Ambiguous,
-            };
-            (section.offset, role)
-        })
+        .map(|(_, section)| (section.offset, classify_om_schema_role(&section)))
         .collect::<std::collections::BTreeMap<_, _>>();
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows.into_iter().enumerate() {
@@ -836,6 +843,43 @@ mod tests {
             .expect("required invariant");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].schema_role, OmSchemaRole::Ambiguous);
+    }
+
+    #[test]
+    fn decode_uses_specialized_role_when_registry_also_declares_audit_class() {
+        let mut section = size_framed_om_section();
+        let insertion = section
+            .windows(b"m_target".len())
+            .position(|window| window == b"m_target")
+            .expect("field declaration");
+        let audit = b"UGS::OM::SaveAuditTrail";
+        let mut declaration = Vec::with_capacity(audit.len() + 2);
+        declaration.push((audit.len() + 1) as u8);
+        declaration.extend_from_slice(audit);
+        declaration.push(0xa1);
+        section.splice(insertion..insertion, declaration);
+        let payload_len = u32::try_from(section.len() - 16).expect("synthetic OM section length");
+        section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+
+        let mut payload = Vec::new();
+        for word in [32u32, 9, 11, 1, 1, 24] {
+            payload.extend_from_slice(&word.to_le_bytes());
+        }
+        payload.resize(32, 0);
+        payload.extend_from_slice(&section);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("required invariant");
+        let links = result
+            .ir
+            .native
+            .namespace("nx")
+            .expect("NX namespace")
+            .arena_as::<super::SegmentOmLink>("segment_om_links")
+            .expect("required invariant");
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].schema_role, OmSchemaRole::FeatureHistory);
     }
 
     #[test]
