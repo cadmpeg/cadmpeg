@@ -4372,7 +4372,10 @@ pub struct SketchPatternDirection {
     pub count_parameter: u32,
     /// Unit direction vector in sketch coordinates.
     pub direction: [f64; 3],
-    /// Evaluated adjacent-instance spacing along this direction, in source units.
+    /// Evaluated source distance along this direction, in source units. The
+    /// owning relation form determines whether it is adjacent spacing or a
+    /// seed-to-final span; projection resolves that distinction from the
+    /// complete instance geometry.
     pub evaluated_distance: f64,
     /// Record index of the distance parameter value record.
     pub distance_parameter: u32,

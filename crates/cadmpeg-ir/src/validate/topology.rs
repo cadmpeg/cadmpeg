@@ -1854,6 +1854,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             for parameter in directions.iter().flat_map(|direction| {
                 [
                     direction.spacing_parameter.as_ref(),
+                    direction.span_parameter.as_ref(),
                     direction.count_parameter.as_ref(),
                 ]
                 .into_iter()

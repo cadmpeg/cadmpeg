@@ -1629,6 +1629,7 @@ pub(crate) fn constraint_parameters(
             .flat_map(|direction| {
                 [
                     direction.spacing_parameter.as_ref(),
+                    direction.span_parameter.as_ref(),
                     direction.count_parameter.as_ref(),
                 ]
                 .into_iter()

@@ -236,6 +236,20 @@ pub fn project_sketch_constraints(
     constraints
 }
 
+#[derive(Clone, Copy)]
+enum RectangularPatternDistance {
+    Adjacent,
+    Span,
+}
+
+struct RectangularPatternSourceDirection {
+    direction: [f64; 2],
+    count: u32,
+    distance: f64,
+    distance_parameter: Option<cadmpeg_ir::features::ParameterId>,
+    count_parameter: Option<cadmpeg_ir::features::ParameterId>,
+}
+
 pub(crate) fn exact_rectangular_pattern(
     relation: &SketchRelation,
     scope: &str,
@@ -243,9 +257,7 @@ pub(crate) fn exact_rectangular_pattern(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use crate::records::SketchPatternDefinition;
-    use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchPatternDirection, SketchPatternInstance,
-    };
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
     if relation.unknown_constraint_bits != 0
         || relation.constraint_kinds != [SketchConstraintKind::RectangularPattern]
@@ -256,7 +268,7 @@ pub(crate) fn exact_rectangular_pattern(
     let SketchPatternDefinition::Rectangular { directions } = relation.pattern.as_ref()? else {
         return None;
     };
-    let directions = directions
+    let source = directions
         .iter()
         .map(|direction| {
             if direction.direction[2].abs() > 1.0e-9 {
@@ -266,7 +278,7 @@ pub(crate) fn exact_rectangular_pattern(
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.count_parameter)
             });
-            let spacing_parameter = parameters.iter().find(|parameter| {
+            let distance_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.distance_parameter)
             });
@@ -276,36 +288,106 @@ pub(crate) fn exact_rectangular_pattern(
             {
                 return None;
             }
-            let spacing = cadmpeg_ir::features::Length(direction.evaluated_distance * 10.0);
-            if !spacing.0.is_finite()
-                || spacing.0 < 0.0
-                || spacing_parameter.is_some_and(|parameter| {
-                    design_length(parameter).is_none_or(|value| !scalar_close(value.0, spacing.0))
+            let distance = direction.evaluated_distance * 10.0;
+            if !distance.is_finite()
+                || distance < 0.0
+                || (count == 1 && !scalar_close(distance, 0.0))
+                || distance_parameter.is_some_and(|parameter| {
+                    design_length(parameter).is_none_or(|value| !scalar_close(value.0, distance))
                 })
             {
                 return None;
             }
-            Some(SketchPatternDirection {
+            Some(RectangularPatternSourceDirection {
                 direction: [direction.direction[0], direction.direction[1]],
-                spacing,
                 count,
-                spacing_parameter: spacing_parameter.map(neutral_parameter_id),
+                distance,
+                distance_parameter: distance_parameter.map(neutral_parameter_id),
                 count_parameter: count_parameter.map(neutral_parameter_id),
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let directions: [SketchPatternDirection; 2] = directions.try_into().ok()?;
-    if directions.iter().any(|direction| {
-        let length = direction.direction[0].hypot(direction.direction[1]);
-        !scalar_close(length, 1.0)
-    }) {
+    let source: [RectangularPatternSourceDirection; 2] = source.try_into().ok()?;
+    if source
+        .iter()
+        .any(|direction| !scalar_close(direction.direction[0].hypot(direction.direction[1]), 1.0))
+    {
         return None;
     }
-    let dot = directions[0].direction[0] * directions[1].direction[0]
-        + directions[0].direction[1] * directions[1].direction[1];
+    let dot = source[0].direction[0] * source[1].direction[0]
+        + source[0].direction[1] * source[1].direction[1];
     if dot.abs() > 1.0e-9 {
         return None;
     }
+    let instance_count = usize::try_from(source[0].count)
+        .ok()?
+        .checked_mul(usize::try_from(source[1].count).ok()?)?;
+    if instance_count == 0 || !entities.len().is_multiple_of(instance_count) {
+        return None;
+    }
+
+    let resolved = [
+        RectangularPatternDistance::Adjacent,
+        RectangularPatternDistance::Span,
+    ]
+    .into_iter()
+    .filter_map(|distance_kind| {
+        let directions = rectangular_pattern_directions(&source, distance_kind)?;
+        let instances = exact_rectangular_pattern_instances(&directions, entities)?;
+        Some((directions, instances))
+    })
+    .collect::<Vec<_>>();
+    let [(directions, instances)] = resolved.as_slice() else {
+        return None;
+    };
+    Some(Definition::RectangularPattern {
+        directions: directions.clone(),
+        instances: instances.clone(),
+    })
+}
+
+fn rectangular_pattern_directions(
+    source: &[RectangularPatternSourceDirection; 2],
+    distance_kind: RectangularPatternDistance,
+) -> Option<[cadmpeg_ir::sketches::SketchPatternDirection; 2]> {
+    source
+        .iter()
+        .map(|source| {
+            let spacing = match distance_kind {
+                RectangularPatternDistance::Adjacent => source.distance,
+                RectangularPatternDistance::Span => {
+                    if source.count > 1 {
+                        source.distance / f64::from(source.count - 1)
+                    } else {
+                        0.0
+                    }
+                }
+            };
+            if !spacing.is_finite() || spacing < 0.0 {
+                return None;
+            }
+            let (spacing_parameter, span_parameter) = match distance_kind {
+                RectangularPatternDistance::Adjacent => (source.distance_parameter.clone(), None),
+                RectangularPatternDistance::Span => (None, source.distance_parameter.clone()),
+            };
+            Some(cadmpeg_ir::sketches::SketchPatternDirection {
+                direction: source.direction,
+                spacing: cadmpeg_ir::features::Length(spacing),
+                count: source.count,
+                spacing_parameter,
+                span_parameter,
+                count_parameter: source.count_parameter.clone(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
+
+fn exact_rectangular_pattern_instances(
+    directions: &[cadmpeg_ir::sketches::SketchPatternDirection; 2],
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<Vec<cadmpeg_ir::sketches::SketchPatternInstance>> {
     let instance_count = usize::try_from(directions[0].count)
         .ok()?
         .checked_mul(usize::try_from(directions[1].count).ok()?)?;
@@ -348,18 +430,12 @@ pub(crate) fn exact_rectangular_pattern(
         if !occupied.insert(*indices) {
             return None;
         }
-        instances.push(SketchPatternInstance {
+        instances.push(cadmpeg_ir::sketches::SketchPatternInstance {
             indices: *indices,
             entities: instance.iter().map(|entity| entity.id.clone()).collect(),
         });
     }
-    if instances.first().map(|instance| instance.indices) != Some([0, 0]) {
-        return None;
-    }
-    Some(Definition::RectangularPattern {
-        directions,
-        instances,
-    })
+    (instances.first().map(|instance| instance.indices) == Some([0, 0])).then_some(instances)
 }
 
 pub(crate) fn exact_text_relation(
@@ -887,9 +963,8 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn rectangular_pattern_uses_adjacent_spacing_scalars() {
-        let entity = |id: &str, u| cadmpeg_ir::sketches::SketchEntity {
+    fn point_entity(id: &str, u: f64) -> cadmpeg_ir::sketches::SketchEntity {
+        cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
             construction: false,
@@ -899,11 +974,14 @@ mod tests {
             geometry: SketchGeometry::Point {
                 position: Point2::new(u, 4.0),
             },
-        };
-        let seed = entity("generated:point#seed", 2.0);
-        let second = entity("generated:point#second", 17.0);
-        let third = entity("generated:point#third", 32.0);
-        let relation = SketchRelation {
+        }
+    }
+
+    fn rectangular_point_relation(
+        evaluated_distance: f64,
+        auxiliary_references: Vec<u32>,
+    ) -> SketchRelation {
+        SketchRelation {
             id: "f3d:native:sketch-relation#rectangular".into(),
             record_index: 10,
             class_tag: "300".into(),
@@ -911,7 +989,7 @@ mod tests {
             state_offset: 0,
             owner_reference: 1,
             owner_entity_id: "0_1".into(),
-            auxiliary_references: vec![20, 21, 22, 23],
+            auxiliary_references,
             auxiliary_reference_offsets: Vec::new(),
             members: vec![1, 2, 3],
             resolved_members: Vec::new(),
@@ -929,7 +1007,7 @@ mod tests {
                         distance_parameter: 21,
                         evaluated_count: 3,
                         direction: [1.0, 0.0, 0.0],
-                        evaluated_distance: 1.5,
+                        evaluated_distance,
                     },
                     crate::records::SketchPatternDirection {
                         count_parameter: 22,
@@ -944,7 +1022,15 @@ mod tests {
             resolved_return_members: Vec::new(),
             return_member_offsets: Vec::new(),
             raw_bytes: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn rectangular_pattern_uses_adjacent_spacing_scalars() {
+        let seed = point_entity("generated:point#seed", 2.0);
+        let second = point_entity("generated:point#second", 17.0);
+        let third = point_entity("generated:point#third", 32.0);
+        let relation = rectangular_point_relation(1.5, vec![100, 101, 20, 21, 22, 23]);
         let Some(SketchConstraintDefinition::RectangularPattern {
             directions,
             instances,
@@ -955,6 +1041,7 @@ mod tests {
         assert_eq!(directions[0].spacing.0, 15.0);
         assert_eq!(directions[1].spacing.0, 0.0);
         assert_eq!(directions[0].spacing_parameter, None);
+        assert_eq!(directions[0].span_parameter, None);
         assert_eq!(directions[0].count_parameter, None);
         assert_eq!(
             instances
@@ -963,6 +1050,50 @@ mod tests {
                 .collect::<Vec<_>>(),
             [[0, 0], [1, 0], [2, 0]]
         );
+    }
+
+    #[test]
+    fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
+        let seed = point_entity("generated:point#seed", 2.0);
+        let second = point_entity("generated:point#second", 17.0);
+        let third = point_entity("generated:point#third", 32.0);
+        let relation = rectangular_point_relation(3.0, vec![20, 21, 22, 23]);
+        let parameter = |record_index: u32, value: f64| crate::records::DesignParameter {
+            id: format!("native:design-parameter#{record_index}"),
+            byte_offset: 0,
+            class_tag: "373".into(),
+            record_index,
+            family_discriminator: Some(6),
+            family_discriminator_offset: Some(0),
+            source_ordinal: 0,
+            owner_record_index: Some(record_index),
+            expression: value.to_string(),
+            expression_offset: 0,
+            source_kind: "R-Pattern1-distance".into(),
+            source_kind_offset: 0,
+            kind: crate::records::DesignParameterKind::Feature,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: format!("d{record_index}"),
+            name_offset: 0,
+            evaluated_value: value,
+            evaluated_value_offset: 0,
+        };
+        let parameters = [
+            parameter(20, 3.0),
+            parameter(21, 3.0),
+            parameter(22, 1.0),
+            parameter(23, 0.0),
+        ];
+        let Some(SketchConstraintDefinition::RectangularPattern { directions, .. }) =
+            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third])
+        else {
+            panic!("total-span rectangular pattern did not resolve");
+        };
+        assert_eq!(directions[0].spacing.0, 15.0);
+        assert_eq!(directions[0].spacing_parameter, None);
+        assert!(directions[0].span_parameter.is_some());
+        assert!(directions[0].count_parameter.is_some());
     }
 
     #[test]
