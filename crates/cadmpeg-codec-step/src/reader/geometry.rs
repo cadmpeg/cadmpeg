@@ -142,6 +142,11 @@ fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Optio
         return None;
     }
     let normalized_start = lower + (start - lower).rem_euclid(period);
+    let normalized_start = if (normalized_start - upper).abs() <= tolerance {
+        lower
+    } else {
+        normalized_start
+    };
     Some([normalized_start, normalized_start + sweep.min(period)])
 }
 
@@ -3585,5 +3590,19 @@ mod tests {
             Value::Typed("PARAMETER_VALUE".into(), Box::new(Value::Real(0.25))),
         ]);
         assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    }
+
+    #[test]
+    fn periodic_edge_range_normalizes_the_upper_domain_endpoint() {
+        let geometry = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let tau = std::f64::consts::TAU;
+        let [start, end] = edge_parameter_range(&geometry, tau, tau + 0.5).expect("edge range");
+        assert!(start.abs() < 1.0e-12);
+        assert!((end - 0.5).abs() < 1.0e-12);
     }
 }
