@@ -593,20 +593,11 @@ governs a colour.
 
 ### AP-06. Surface style side selection
 
-**Question.** Which side of a surface does a `SURFACE_STYLE_USAGE` colour, and
-which style applies to the visible side?
-
-**Known.** The decoder returns the first colour it reaches in the style
-aggregate (`crates/cadmpeg-codec-step/src/reader/presentation.rs:231-241`,
-`:911-926`). The `side` enumeration of `SURFACE_STYLE_USAGE` is read nowhere
-in the crate. A Part 21 aggregate of this kind is a set and has no order.
-
-**Need.** An assignment that carries `.POSITIVE.` and `.NEGATIVE.` usages
-resolves to whichever appears first in the serialized set, so the decoded
-colour is the back-face colour whenever the producer writes it first. The
-`StyleDomain` filter already blocks curve colours from reaching a face, so
-the residual exposure is side selection and fill against rendering. We must
-know the side rule before a set position may select a colour.
+**Resolved.** `SURFACE_STYLE_USAGE` applies its style to the side named by its
+`side` enumeration: `.POSITIVE.` is the surface-normal side, `.NEGATIVE.` is
+the opposite side, and `.BOTH.` applies to both sides. CADIR stores one neutral
+surface color, so the reader selects `.BOTH.` before `.POSITIVE.` before
+`.NEGATIVE.` independently of aggregate serialization order.
 
 ### AP-07. Triangle strip winding
 

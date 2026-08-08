@@ -256,7 +256,7 @@ pub(super) fn decode(
                 })
             })?
         });
-        let Some((color_id, color, name)) = color else {
+        let Some((_, color_id, color, name)) = color else {
             let mut visited = BTreeSet::new();
             if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
                 warnings.push(format!(
@@ -784,7 +784,7 @@ fn style_depth(
     result
 }
 
-type CachedColor = Option<(u64, Color, Option<String>)>;
+type CachedColor = Option<(u8, u64, Color, Option<String>)>;
 
 fn find_color(
     id: u64,
@@ -794,7 +794,7 @@ fn find_color(
     cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
     losses: &mut Vec<LossNote>,
     depth: usize,
-) -> Option<(u64, Color, Option<String>)> {
+) -> CachedColor {
     if depth >= 256 {
         return None;
     }
@@ -806,6 +806,11 @@ fn find_color(
     }
     let result = (|| {
         let record = exchange.records.get(&id)?;
+        let side_rank = if domain == StyleDomain::Surface {
+            surface_side_rank(record)
+        } else {
+            0
+        };
         let name = record.simple_name().or_else(|| {
             record.partials.iter().find_map(|partial| {
                 matches!(
@@ -873,6 +878,7 @@ fn find_color(
                         .and_then(|partial| partial.parameters.first())
                 };
                 Some((
+                    side_rank,
                     id,
                     Color {
                         r: r as f32,
@@ -910,15 +916,17 @@ fn find_color(
                     "predefined colour name",
                     LossKind::AttributesNotTransferred,
                 )?;
-                predefined(&name).map(|color| (id, color, Some(name)))
+                predefined(&name).map(|color| (side_rank, id, color, Some(name)))
             }
-            _ => record
-                .partials
-                .iter()
-                .flat_map(|partial| partial.parameters.iter())
-                .flat_map(references)
-                .find_map(|reference| {
-                    find_color(
+            _ => {
+                let mut best = None;
+                for reference in record
+                    .partials
+                    .iter()
+                    .flat_map(|partial| partial.parameters.iter())
+                    .flat_map(references)
+                {
+                    let Some(mut candidate) = find_color(
                         reference,
                         exchange,
                         domain,
@@ -926,13 +934,41 @@ fn find_color(
                         cache,
                         losses,
                         depth + 1,
-                    )
-                }),
+                    ) else {
+                        continue;
+                    };
+                    candidate.0 = candidate.0.max(side_rank);
+                    if best
+                        .as_ref()
+                        .is_none_or(|current: &(u8, u64, Color, Option<String>)| {
+                            candidate.0 > current.0
+                        })
+                    {
+                        best = Some(candidate);
+                    }
+                }
+                best
+            }
         }
     })();
     active.remove(&id);
     cache.insert((id, domain), result.clone());
     result
+}
+
+fn surface_side_rank(record: &RawRecord) -> u8 {
+    record
+        .partials
+        .iter()
+        .find(|partial| partial.name == "SURFACE_STYLE_USAGE")
+        .and_then(|partial| partial.parameters.first())
+        .and_then(ValueExt::enumeration)
+        .map_or(0, |side| match side {
+            "BOTH" => 3,
+            "POSITIVE" => 2,
+            "NEGATIVE" => 1,
+            _ => 0,
+        })
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1063,6 +1099,7 @@ trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn number(&self) -> Option<f64>;
     fn list(&self) -> Option<&[Value]>;
+    fn enumeration(&self) -> Option<&str>;
 }
 impl ValueExt for Value {
     fn reference(&self) -> Option<u64> {
@@ -1082,6 +1119,13 @@ impl ValueExt for Value {
     fn list(&self) -> Option<&[Value]> {
         if let Value::List(values) = self {
             Some(values)
+        } else {
+            None
+        }
+    }
+    fn enumeration(&self) -> Option<&str> {
+        if let Value::Enumeration(value) = self {
+            Some(value)
         } else {
             None
         }
@@ -1114,7 +1158,7 @@ ENDSEC;END-ISO-10303-21;",
             0,
         )
         .expect("surface color");
-        assert_eq!(color.1.r, 1.0);
-        assert_eq!(color.1.b, 0.0);
+        assert_eq!(color.2.r, 1.0);
+        assert_eq!(color.2.b, 0.0);
     }
 }

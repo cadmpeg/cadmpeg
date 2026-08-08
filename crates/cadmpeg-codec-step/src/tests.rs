@@ -7739,6 +7739,33 @@ fn complex_surface_targets_use_surface_style_domain() {
 }
 
 #[test]
+fn surface_style_usage_prefers_positive_side_over_set_order() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('negative',1.,0.,0.);
+#2=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
+#3=SURFACE_SIDE_STYLE('',(#2));
+#4=SURFACE_STYLE_USAGE(.NEGATIVE.,#3);
+#5=COLOUR_RGB('positive',0.,1.,0.);
+#6=SURFACE_STYLE_RENDERING(#5,$,$,$,$,$);
+#7=SURFACE_SIDE_STYLE('',(#6));
+#8=SURFACE_STYLE_USAGE(.POSITIVE.,#7);
+#9=PRESENTATION_STYLE_ASSIGNMENT((#4,#8));
+#10=STYLED_ITEM('',(#9),#11);
+#11=(ADVANCED_FACE() FACE_SURFACE());",
+    );
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        })
+    );
+}
+
+#[test]
 fn curve_targets_use_curve_style_domain() {
     let result = decode_inline(
         "#1=COLOUR_RGB('surface',1.,0.,0.);
