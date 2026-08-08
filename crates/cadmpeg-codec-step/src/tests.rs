@@ -6742,6 +6742,80 @@ fn complex_geometric_tolerance_reads_its_inherited_magnitude() {
 }
 
 #[test]
+fn complex_geometric_tolerance_uses_the_leaf_not_a_tolerance_mixin() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+        "#12=(FAKE_TOLERANCE() FLATNESS_TOLERANCE() GEOMETRIC_TOLERANCE('surface flatness','',#11,#6));",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode complex geometric tolerance with mixin");
+    let tolerance = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
+        .expect("complex flatness tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Flatness,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn coaxiality_tolerance_decodes_and_writes_as_a_native_leaf() {
+    use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
+
+    let source =
+        String::from_utf8(include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#12=FLATNESS_TOLERANCE('surface flatness','',#11,#6,#8);",
+                "#12=COAXIALITY_TOLERANCE('coaxiality','',#11,#6,#8);",
+            );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode coaxiality tolerance");
+    let tolerance = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("coaxiality"))
+        .expect("coaxiality tolerance");
+    assert!(matches!(
+        tolerance.definition,
+        PmiDefinition::GeometricTolerance {
+            tolerance: GeometricToleranceKind::Coaxiality,
+            ..
+        }
+    ));
+    let mut output = Vec::new();
+    write_step(
+        &result.ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write coaxiality tolerance");
+    assert!(String::from_utf8(output)
+        .expect("STEP output is UTF-8")
+        .contains("COAXIALITY_TOLERANCE"));
+}
+
+#[test]
 fn complex_geometric_tolerance_links_its_inherited_datum_system() {
     use cadmpeg_ir::pmi::{GeometricToleranceKind, PmiDefinition};
 

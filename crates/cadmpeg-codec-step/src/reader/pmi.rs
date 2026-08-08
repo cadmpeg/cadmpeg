@@ -995,6 +995,7 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "FLATNESS_TOLERANCE" => Kind::Flatness,
         "ROUNDNESS_TOLERANCE" => Kind::Roundness,
         "CYLINDRICITY_TOLERANCE" => Kind::Cylindricity,
+        "COAXIALITY_TOLERANCE" => Kind::Coaxiality,
         "LINE_PROFILE_TOLERANCE" => Kind::LineProfile,
         "SURFACE_PROFILE_TOLERANCE" => Kind::SurfaceProfile,
         "ANGULARITY_TOLERANCE" => Kind::Angularity,
@@ -1006,9 +1007,6 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
         "CIRCULAR_RUNOUT_TOLERANCE" => Kind::CircularRunout,
         "TOTAL_RUNOUT_TOLERANCE" => Kind::TotalRunout,
         "GEOMETRIC_TOLERANCE" => Kind::Other("geometric_tolerance".into()),
-        name if name.ends_with("_TOLERANCE") && name != "PLUS_MINUS_TOLERANCE" => {
-            Kind::Other(name.to_ascii_lowercase())
-        }
         _ => return None,
     })
 }

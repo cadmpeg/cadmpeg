@@ -106,6 +106,8 @@ pub enum GeometricToleranceKind {
     Roundness,
     /// Cylindricity.
     Cylindricity,
+    /// Coaxiality.
+    Coaxiality,
     /// Profile of a line.
     LineProfile,
     /// Profile of a surface.

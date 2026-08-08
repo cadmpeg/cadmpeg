@@ -2982,6 +2982,7 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::Flatness => "FLATNESS_TOLERANCE",
                         GeometricToleranceKind::Roundness => "ROUNDNESS_TOLERANCE",
                         GeometricToleranceKind::Cylindricity => "CYLINDRICITY_TOLERANCE",
+                        GeometricToleranceKind::Coaxiality => "COAXIALITY_TOLERANCE",
                         GeometricToleranceKind::LineProfile => "LINE_PROFILE_TOLERANCE",
                         GeometricToleranceKind::SurfaceProfile => "SURFACE_PROFILE_TOLERANCE",
                         GeometricToleranceKind::Angularity => "ANGULARITY_TOLERANCE",

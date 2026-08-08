@@ -440,8 +440,10 @@ Geometric validation properties read area, volume, and centroid values through
 inherited `REPRESENTATION`, `MEASURE_REPRESENTATION_ITEM`, and
 `MEASURE_WITH_UNIT` partials. Every referenced area, volume, or centroid item
 is evaluated; derived-unit factors scale area and volume by their dimensions.
-Geometric tolerances read their name and magnitude from the
-`GEOMETRIC_TOLERANCE` partial when the tolerance is complex. The
+Geometric tolerances select their kind from the exact geometric-tolerance
+leaf partial, not from an inherited or modifier partial. They read their name
+and magnitude from the `GEOMETRIC_TOLERANCE` partial when the tolerance is
+complex. The
 `GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE` partial supplies the datum-system
 link and does not add a shape-aspect target. The defined-unit and
 defined-area-unit partials retain their unit sizes and area shape; modifier

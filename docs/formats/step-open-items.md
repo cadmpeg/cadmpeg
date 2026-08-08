@@ -564,19 +564,12 @@ warning, and do not select a source-order value.
 
 ### AP-03. Geometric tolerance kind selection
 
-**Question.** Which partial of a complex geometric tolerance names its kind?
-
-**Known.** The decoder takes the first partial other than `GEOMETRIC_TOLERANCE`
-whose name maps to a kind (`crates/cadmpeg-codec-step/src/reader/pmi.rs:340-356`),
-and the kind table admits any name that ends in `_TOLERANCE`
-(`pmi.rs:1008-1031`). Part 21 orders complex partials alphabetically, so the
-first matching partial is not the leaf type.
-
-**Need.** A tolerance whose mixin partial also ends in `_TOLERANCE` and sorts
-before the leaf is classified by the mixin, so the leaf kind is lost and the
-writer drops the tolerance on export. The exclusion list holds only
-`GEOMETRIC_TOLERANCE`, and it matches the mixins this project's own writer
-emits. We must know the leaf-type rule rather than a name-suffix test.
+**Resolved.** A complex geometric tolerance takes its kind from the exact
+geometric-tolerance leaf partial. Inherited base and modifier partials do not
+select the kind. The reader uses the same exact leaf table for direct and
+complex instances, so a non-leaf name that ends in `_TOLERANCE` remains an
+opaque source record instead of changing the leaf kind. The writer emits each
+supported leaf entity by its corresponding IR kind.
 
 ### AP-04. Annotation text completeness
 
