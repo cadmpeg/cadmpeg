@@ -429,7 +429,6 @@ pub(super) fn emit_faces(
         annotations
             .derived(&face_id, "shell")
             .derived(&face_id, "surface")
-            .derived(&face_id, "sense")
             .derived(&face_id, "loops");
         ir.model.faces.push(Face {
             id: face_id.clone(),

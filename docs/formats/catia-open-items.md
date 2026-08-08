@@ -538,7 +538,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the sign to orient the neutral face.
 
-**Note.** `b5::transfer::faces` writes `Sense::Forward` for every object-stream face and marks the `sense` field `derived`. That exactness state means a value computed from byte-exact inputs. There are no inputs. The entity-level state is `Inferred`, and the field-level state overrides it, so a consumer that reads the exactness table to find conventions does not see this one. The transfer loss note does name the gauge.
+**Note.** `b5::transfer::faces` writes `Sense::Forward` for every object-stream face and leaves the `sense` field at the face entity's `Inferred` exactness. The sign remains unresolved; the transfer loss note names the gauge.
 
 ### OS-04. Object-stream body kind
 
