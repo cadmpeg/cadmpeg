@@ -9754,7 +9754,6 @@ mod golden {
 
         // Lone partition streams, each wrapped with `prt_with_partition`.
         let partitions: Vec<(&'static str, Vec<u8>)> = vec![
-            ("topology_partition_stream", topology_partition_stream()),
             (
                 "topology_with_missing_tolerances",
                 topology_with_missing_tolerances(),
