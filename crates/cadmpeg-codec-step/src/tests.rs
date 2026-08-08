@@ -4801,8 +4801,9 @@ fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode duplicate outer bounds");
     assert!(decoded.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::TopologyGaugeSubstituted
+        loss.code == cadmpeg_ir::LossKind::DecodeDiagnostic
             && loss.message.contains("FACE_OUTER_BOUND")
+            && loss.message.contains("violates the STEP face-bound rule")
     }));
 }
 

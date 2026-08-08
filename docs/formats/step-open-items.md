@@ -61,7 +61,9 @@ not yet prove that every omitted semantic construct has one stable loss.
 artifact. Classify each failure as a source-invalid case with a retained
 diagnostic or fix the decoder. Reconcile typed records, named opaque records,
 unclassified bytes, and loss notes. Require zero unexplained validation errors
-and zero unclassified source bytes.
+and zero unclassified source bytes. The STEP face-bound rule is settled: more
+than one explicit `FACE_OUTER_BOUND` is source-invalid and must remain a
+validation finding, not be repaired by reclassification.
 
 ### L9-04. Native write and re-decode proof
 
@@ -278,18 +280,7 @@ length unit. Angular and mixed parameter axes require surface-specific rules.
 **Need.** We need the surface-axis table before scaling non-planar pcurve
 coordinates.
 
-### TP-04. Multiple outer loops
-
-**Question.** Can one STEP face contain multiple `FACE_OUTER_BOUND` loops, and
-if so, how should CADIR represent them?
-
-**Known.** The current topology model commits one ordered loop collection and
-requires one outer boundary for the usual face representation.
-
-**Need.** We need a valid construction and an IR representation decision for
-multiple disjoint outer regions.
-
-### TP-05. Partial solid and tolerant point carriers
+### TP-04. Partial solid and tolerant point carriers
 
 **Question.** Should CADIR gain a tolerant point carrier or a partial-solid
 representation for a solid with one missing mandatory vertex point?
@@ -300,7 +291,7 @@ complete solid and reports the failed STEP carrier.
 **Need.** We need measured loss rates and an IR design before changing the
 atomic-solid invariant.
 
-### TP-06. Implicit face-plane orientation
+### TP-05. Implicit face-plane orientation
 
 **Question.** Which winding rule defines the normal of an implicit face plane,
 and how does it compose with `ORIENTED_FACE` bound reversal?
@@ -311,7 +302,7 @@ composes explicit face and bound orientation.
 **Need.** We need a winding-based rule that uses the outer loop only and a
 degeneracy threshold for nearly collinear points.
 
-### TP-07. Pcurve recursion and normalization
+### TP-06. Pcurve recursion and normalization
 
 **Question.** What normalization and recursion guard rules apply to cyclic
 2D curve definitions, 2D `LINE` carriers, and complex `PCURVE` entities?

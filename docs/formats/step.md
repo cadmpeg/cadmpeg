@@ -223,6 +223,12 @@ the solid-root transaction rejects it. A geometric set with surface members
 forms a sheet carrier. Curve-only and point-only sets remain standalone
 geometry.
 
+The `bounds` aggregate of a `FACE` contains at most one `FACE_OUTER_BOUND`.
+The applicable surface-face subtype requires its outer bound. All remaining
+bounds are `FACE_BOUND` inner bounds. A source with more than one explicit
+outer bound violates the schema rule. The decoder retains the explicit roles
+for diagnostics and validation does not reclassify them.
+
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`
 definitional representation transfers one exact 2D line, circle, ellipse,

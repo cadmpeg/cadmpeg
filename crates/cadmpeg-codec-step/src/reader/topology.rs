@@ -2223,10 +2223,10 @@ fn build_one(
             let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
             if outer_count > 1 {
                 losses.push(LossNote {
-                    code: LossKind::TopologyGaugeSubstituted,
+                    code: LossKind::DecodeDiagnostic,
                     severity: Severity::Warning,
                     message: format!(
-                        "face #{face_step} has {outer_count} FACE_OUTER_BOUND loops; retaining all explicit outer roles"
+                        "face #{face_step} violates the STEP face-bound rule with {outer_count} FACE_OUTER_BOUND loops; retaining all explicit roles for diagnostics"
                     ),
                     provenance: None,
                 });
