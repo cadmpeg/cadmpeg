@@ -4593,6 +4593,25 @@ fn writer_round_trips_edge_based_wire_bodies() {
 }
 
 #[test]
+fn writer_emits_both_carriers_for_mixed_general_bodies() {
+    let mut ir = unit_cube();
+    let edge = ir.model.edges[0].id.clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
+    ir.model.shells[0].wire_edges = vec![edge];
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("write mixed general body");
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("wire region")
+    }));
+    let text = String::from_utf8(output).expect("mixed general STEP is UTF-8");
+    assert!(text.contains("SHELL_BASED_SURFACE_MODEL"));
+    assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL"));
+}
+
+#[test]
 fn writer_round_trips_standalone_points_and_curves() {
     let mut ir = unit_cube();
     ir.model.curves.truncate(1);

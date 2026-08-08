@@ -1483,7 +1483,20 @@ impl<'a> Builder<'a> {
                 .bodies
                 .get(region.body.as_str())
                 .map_or(BodyKind::General, |body| body.kind);
-            if body_kind == BodyKind::Wire {
+            let has_surface_topology = region.shells.iter().any(|shell_id| {
+                self.shells
+                    .get(shell_id.as_str())
+                    .is_some_and(|shell| !shell.faces.is_empty())
+            });
+            let has_wire_topology = region.shells.iter().any(|shell_id| {
+                self.shells.get(shell_id.as_str()).is_some_and(|shell| {
+                    !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty()
+                })
+            });
+            let mixed_wire = body_kind == BodyKind::General && has_wire_topology;
+            if body_kind == BodyKind::Wire
+                || (body_kind == BodyKind::General && !has_surface_topology)
+            {
                 if let Some(item) = self.emit_wire_region(region) {
                     let shape_item = self.place_body_item(&region.body, item, context);
                     items.push(shape_item);
@@ -1574,6 +1587,28 @@ impl<'a> Builder<'a> {
             self.body_step_refs
                 .entry(region.body.0.clone())
                 .or_insert(if closed { item } else { outer });
+            if mixed_wire {
+                if let Some(item) = self.emit_wire_region(region) {
+                    let shape_item = self.place_body_item(&region.body, item, context);
+                    items.push(shape_item);
+                    self.body_shape_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(shape_item);
+                    self.body_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(shape_item);
+                    self.body_step_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(item);
+                    self.body_step_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(item);
+                } else {
+                    self.empty_wire_regions.insert(region.id.0.clone());
+                }
+            }
         }
         items
     }
