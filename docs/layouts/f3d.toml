@@ -10,10 +10,11 @@ Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
-operation prologues and cross-document selector, and the sheet-metal
-`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
-in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
-are listed under "Not tabulated".
+operation prologues and cross-document selector, the pathless axial `Assemble`
+carrier and selector prefixes, and the sheet-metal `EdgeFlange` fixed operation
+section (§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+Container and manifest layers are text grammars and are listed under "Not
+tabulated".
 """
 
 # --- §3.1 Design-segment fixed headers -------------------------------------
@@ -51,6 +52,171 @@ anchor = "then `u32 record_index`"
 path = "docs/formats/f3d.md"
 contains = "Its eleven-byte indexed header"
 note = "The 11-byte total is stated independently in the companion-record paragraph of the same section."
+
+[[record]]
+name = "assembly_axial_construction_carrier"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The fixed span from the primary header through the paired header is 391 bytes."
+size = 391
+note = "Offsets are relative to the construction carrier's primary indexed header. The uninterpreted gaps retain bytes outside the settled transform and axis-reference fields."
+
+[[record.field]]
+name = "primary_indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The fixed span from the primary header through the paired header is 391 bytes."
+
+[[record.gap]]
+offset = 11
+size = 37
+note = "The construction payload before the rigid transform is not assigned."
+
+[[record.field]]
+name = "operand_transform"
+offset = 48
+type = "f64[16]"
+source = "spec"
+anchor = "The carrier's row-major rigid transform starts at offset 48"
+
+[[record.gap]]
+offset = 176
+size = 16
+note = "The bytes between the transform and first axis reference are not assigned."
+
+[[record.field]]
+name = "first_axis_record_reference"
+offset = 192
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked same-segment axis-record references start at offsets 192 and 208."
+
+[[record.gap]]
+offset = 203
+size = 5
+note = "Five bytes separate the two axis references."
+
+[[record.field]]
+name = "second_axis_record_reference"
+offset = 208
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked same-segment axis-record references start at offsets 192 and 208."
+
+[[record.gap]]
+offset = 219
+size = 161
+note = "The remaining construction payload before the paired header is not assigned."
+
+[[record.field]]
+name = "paired_indexed_header"
+offset = 380
+type = "bytes[11]"
+source = "spec"
+anchor = "The carrier's paired indexed header starts at offset 380"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let construction_transform_at = start.checked_add(48)?;"
+note = "The parser reads and compares the construction transform at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "exact_same_segment_record_reference(bytes, start.checked_add(192)?)?"
+note = "The parser reads the first axis reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "exact_same_segment_record_reference(bytes, start.checked_add(208)?)?"
+note = "The parser reads the second axis reference at the tabulated offset."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "let paired_at = start.checked_add(380)?;"
+note = "The parser requires the paired construction header at the tabulated offset."
+
+[[record]]
+name = "assembly_axial_selector_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "An axial selector primary record has a 37-byte fixed prefix"
+size = 37
+note = "Offsets are relative to the selector record's primary indexed header. The two variable LP-UTF16 selector GUIDs follow this prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "its eleven-byte indexed header, eleven zero bytes"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 11
+type = "bytes[11]"
+source = "spec"
+anchor = "its eleven-byte indexed header, eleven zero bytes"
+
+[[record.field]]
+name = "nested_record_reference"
+offset = 22
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked same-segment reference to the selector-record index plus three"
+
+[[record.field]]
+name = "constant_one"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "and u32 value 1. Two 36-code-unit LP-UTF16 GUIDs follow"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "selector_at.checked_add(11)?..selector_at.checked_add(22)?"
+note = "The parser checks the fixed selector zero run."
+
+[[record]]
+name = "assembly_axial_role_prefix"
+kind = "byte"
+section = "Assembly operands"
+anchor = "The occurrence-role record at selector-record index plus five starts with"
+size = 29
+note = "Offsets are relative to the role record's indexed header. The 36-code-unit UTF-16 role payload follows this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "starts with its eleven-byte indexed header, ten zero bytes"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "starts with its eleven-byte indexed header, ten zero bytes"
+
+[[record.field]]
+name = "constant_one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "ten zero bytes, u32 value 1"
+
+[[record.field]]
+name = "role_code_unit_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
+contains = "u32_at(bytes, role_at.checked_add(21)?)? != 1"
+note = "The parser checks the fixed role-record discriminator."
 
 [[record]]
 name = "grouped_recipe_reference_prefix"

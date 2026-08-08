@@ -251,18 +251,6 @@ Documents exist with two unplaced ordinal-one carriers whose component GUIDs are
 
 **Need.** The reading decides whether the component GUID or the component-record reference is the component definition's identity. If several records may describe one definition, the validator claim is too strong and the neutral component identity must come from the GUID alone. If not, one of the two carriers belongs to a second definition and the GUID is not an identity. Nothing yet separates the two readings, so the validator keeps the stronger claim and reports the second carrier.
 
-### DR-33. Joined occurrences of 705- and 772-byte `Assemble` scopes
-
-**Question.** What names the two joined component occurrences of a 705- or 772-byte `Assemble` scope?
-
-**Known.** `f3d.md` §3.1 "An `Assemble` scope stores two operand frames" gives the form's two operand references, its two rigid connector transforms, and its axial owner lanes. `f3d.md` §3.1 "Except in the 705- and 772-byte forms" states that these forms store no occurrence-path records. The decoder reads both connector transforms and the alignment angle and offset, and the validator accepts the form with frames and no paths.
-
-The 705-byte form has the same axial connector offsets, no occurrence-path records, and six owner lanes: four placement lanes followed by `alignAngle` and `alignOffset`. The decoder reads its connector frames and scalar alignment values, and the validator accepts the pathless form. Its first frame reference names a construction carrier and its second frame reference may name a `JointOrigin` scope, but neither frame carries a component occurrence identity. `f3d.md` §3.1 "Except in the 705- and 772-byte forms" states that both forms omit occurrence paths.
-
-A neutral assembly joint needs one occurrence per operand. Every other form supplies it from the first occurrence GUID of the operand's path record. This form has no path record, so each operand is identified only by the marked reference the frame stores, which names a construction record after the scope's paired header.
-
-**Need.** The projector needs one occurrence identity per operand. Without it the feature stays a native node although its two connector frames and its alignment values are complete. Emitting a joint whose operands are empty would assert a join between unnamed bodies, so the operand identity has to come from the construction record the frame reference names, and that record's members are not resolved.
-
 ### DR-34. Sketch-curve geometry-family discriminator
 
 **Question.** Which stored field selects the geometry family of a sketch-curve record?
@@ -323,7 +311,7 @@ The check `scope.reference_members.ends_with(&owner_record_indices)` holds the c
 
 **Question.** Which stored reference locates the two occurrence-path records of an `Assemble` scope, and what assigns each path to one operand frame?
 
-**Known.** `f3d.md` §3.1 "Except in the 705- and 772-byte forms" gives the path record indices as five and two below the construction index in a four-owner scope, and 39 and 36 below it in an eight-owner scope. The same paragraph states that "The two path records qualify the two operand transforms in order".
+**Known.** `f3d.md` §3.1 "The 705- and 772-byte forms store no occurrence paths" gives the path record indices as five and two below the construction index in a four-owner scope, and 39 and 36 below it in an eight-owner scope. The same paragraph states that "The two path records qualify the two operand transforms in order".
 
 Both rules are positional. No stored reference in the scope names either path record, and no field in either path record names the operand frame it qualifies. `exact_assembly_operand_paths` in `design/decode/scopes.rs` keys the two deltas on `scope.frame_length == 732` rather than on the owner count the specification names; `exact_assembly_alignment` accepts owner counts four, six, eight, and ten across the frame lengths 627, 633, 637, 692, and 732, so the two keys are not equal.
 

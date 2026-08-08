@@ -11,10 +11,11 @@ Covers the fixed Design-segment headers, the named solid-primitive prologue,
 the compact and ten-reference `CoilPrimitive` prologues and matrix blocks, the
 compact `Loft` prefix and nested profile-region frames, the class-418
 `SplitFace` prefix, the grouped recipe-reference prefix, the three `Combine`
-operation prologues and cross-document selector, and the sheet-metal
-`EdgeFlange` fixed operation section (§3.1). ASM stream records are tabulated
-in `docs/layouts/asm.toml`. Container and manifest layers are text grammars and
-are listed under "Not tabulated".
+operation prologues and cross-document selector, the pathless axial `Assemble`
+carrier and selector prefixes, and the sheet-metal `EdgeFlange` fixed operation
+section (§3.1). ASM stream records are tabulated in `docs/layouts/asm.toml`.
+Container and manifest layers are text grammars and are listed under "Not
+tabulated".
 
 ## `indexed_design_record_header`
 
@@ -31,6 +32,68 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 Cross-checked against code:
 
 - `docs/formats/f3d.md` — The 11-byte total is stated independently in the companion-record paragraph of the same section.
+
+## `assembly_axial_construction_carrier`
+
+Spec §Assembly operands · layout: byte offsets · size: 391 B
+
+Offsets are relative to the construction carrier's primary indexed header. The uninterpreted gaps retain bytes outside the settled transform and axis-reference fields.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `primary_indexed_header` | `bytes[11]` | little | spec | The fixed span from the primary header through the paired header is 391 bytes. |
+| 48 | 128 | `operand_transform` | `f64[16]` | little | spec | The carrier's row-major rigid transform starts at offset 48 |
+| 192 | 11 | `first_axis_record_reference` | `bytes[11]` | little | spec | Marked same-segment axis-record references start at offsets 192 and 208. |
+| 208 | 11 | `second_axis_record_reference` | `bytes[11]` | little | spec | Marked same-segment axis-record references start at offsets 192 and 208. |
+| 380 | 11 | `paired_indexed_header` | `bytes[11]` | little | spec | The carrier's paired indexed header starts at offset 380 |
+
+Unstated regions:
+
+- `11..48` (37 B): The construction payload before the rigid transform is not assigned.
+- `176..192` (16 B): The bytes between the transform and first axis reference are not assigned.
+- `203..208` (5 B): Five bytes separate the two axis references.
+- `219..380` (161 B): The remaining construction payload before the paired header is not assigned.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser reads and compares the construction transform at the tabulated offset.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser reads the first axis reference at the tabulated offset.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser reads the second axis reference at the tabulated offset.
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser requires the paired construction header at the tabulated offset.
+
+## `assembly_axial_selector_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 37 B
+
+Offsets are relative to the selector record's primary indexed header. The two variable LP-UTF16 selector GUIDs follow this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | its eleven-byte indexed header, eleven zero bytes |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | its eleven-byte indexed header, eleven zero bytes |
+| 22 | 11 | `nested_record_reference` | `bytes[11]` | little | spec | a marked same-segment reference to the selector-record index plus three |
+| 33 | 4 | `constant_one` | `u32` | little | spec | and u32 value 1. Two 36-code-unit LP-UTF16 GUIDs follow |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser checks the fixed selector zero run.
+
+## `assembly_axial_role_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 29 B
+
+Offsets are relative to the role record's indexed header. The 36-code-unit UTF-16 role payload follows this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | starts with its eleven-byte indexed header, ten zero bytes |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | starts with its eleven-byte indexed header, ten zero bytes |
+| 21 | 4 | `constant_one` | `u32` | little | spec | ten zero bytes, u32 value 1 |
+| 25 | 4 | `role_code_unit_count` | `u32` | little | spec | the u32 code-unit count of a 36-code-unit LP-UTF16 role GUID |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs` — The parser checks the fixed role-record discriminator.
 
 ## `grouped_recipe_reference_prefix`
 
