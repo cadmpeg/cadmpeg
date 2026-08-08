@@ -3393,6 +3393,25 @@ pub(crate) fn resolved_section_coordinates(
                 .filter_map(move |(coordinate, value)| Some(((point, coordinate), value?)))
         })
         .collect();
+    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    let arc_midpoint_constraints = active_complete_section_skamps(definition)
+        .filter_map(|skamp| {
+            section_skamp_arc_midpoint_source(definition, skamp, &solved_coordinates)
+        })
+        .filter_map(|(point, midpoint)| match point {
+            SectionPointSource::Point(point_id) if !ambiguous_point_ids.contains(&point_id) => {
+                Some((point_id, midpoint))
+            }
+            SectionPointSource::Point(_) | SectionPointSource::Value(_) => None,
+        })
+        .collect::<Vec<_>>();
+    for &(point_id, midpoint) in &arc_midpoint_constraints {
+        for (coordinate, value) in midpoint.into_iter().enumerate() {
+            equations.push(SectionCoordinateEquation::point_value(
+                point_id, coordinate, value,
+            ));
+        }
+    }
     solve_section_coordinate_equations(&equations, &stored_coordinates)
 }
 
@@ -11673,6 +11692,116 @@ fn section_skamp_line_midpoint_sources(
         return None;
     };
     Some(*candidate)
+}
+
+fn section_skamp_arc_midpoint_source(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> Option<(SectionPointSource, [f64; 2])> {
+    let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    let candidates = [(first, second), (second, first)]
+        .into_iter()
+        .filter_map(|(target, point)| {
+            (target.sense == 0 && section_skamp_is_arc(definition, target)).then_some(())?;
+            Some((
+                section_skamp_selected_point(definition, point)?,
+                section_skamp_arc_midpoint(definition, target, coordinates)?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+fn section_skamp_arc_midpoint(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> Option<[f64; 2]> {
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
+        if segment.kind != crate::feature::FeatureSegmentKind::Arc
+            || segment.arc_orientation != Some(0)
+        {
+            return None;
+        }
+        let center = complete_section_coordinate(coordinates, segment.center_id?)?;
+        let first = complete_section_coordinate(coordinates, segment.point_ids[0])?;
+        let second = complete_section_coordinate(coordinates, segment.point_ids[1])?;
+        return oriented_arc_midpoint(center, first, second, None);
+    }
+    let crate::feature::FeatureSavedEntity::Arc(arc) =
+        section_saved_entity(definition, item.entity_id)?
+    else {
+        return None;
+    };
+    saved_arc_midpoint(arc)
+}
+
+fn complete_section_coordinate(
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    point_id: u32,
+) -> Option<[f64; 2]> {
+    let [Some(u), Some(v)] = coordinates.get(&point_id).copied()? else {
+        return None;
+    };
+    Some([u, v])
+}
+
+fn saved_arc_midpoint(arc: &crate::feature::FeatureSavedArc) -> Option<[f64; 2]> {
+    let [Some(center_u), Some(center_v), _] = arc.center else {
+        return None;
+    };
+    let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] = arc.endpoints
+    else {
+        return None;
+    };
+    oriented_arc_midpoint(
+        [center_u, center_v],
+        [first_u, first_v],
+        [second_u, second_v],
+        arc.radius,
+    )
+}
+
+fn oriented_arc_midpoint(
+    center: [f64; 2],
+    first: [f64; 2],
+    second: [f64; 2],
+    stored_radius: Option<f64>,
+) -> Option<[f64; 2]> {
+    let first_offset = [first[0] - center[0], first[1] - center[1]];
+    let second_offset = [second[0] - center[0], second[1] - center[1]];
+    let first_radius = first_offset[0].hypot(first_offset[1]);
+    let second_radius = second_offset[0].hypot(second_offset[1]);
+    let radius = stored_radius.unwrap_or(first_radius);
+    let scale = radius.max(first_radius).max(second_radius).max(1.0);
+    if !center
+        .into_iter()
+        .chain(first)
+        .chain(second)
+        .chain([first_radius, second_radius, radius])
+        .all(f64::is_finite)
+        || radius <= 1e-12
+        || (first_radius - second_radius).abs() > 1e-9 * scale
+        || (radius - first_radius).abs() > 1e-9 * scale
+    {
+        return None;
+    }
+    let start = second_offset[1].atan2(second_offset[0]);
+    let mut end = first_offset[1].atan2(first_offset[0]);
+    while end <= start {
+        end += std::f64::consts::TAU;
+    }
+    let angle = f64::midpoint(start, end);
+    Some([
+        center[0] + radius * angle.cos(),
+        center[1] + radius * angle.sin(),
+    ])
 }
 
 fn section_skamp_active(status: u32) -> bool {

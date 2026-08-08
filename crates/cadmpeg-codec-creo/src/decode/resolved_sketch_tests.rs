@@ -10563,6 +10563,72 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         resolved_section_points(&midpoint_definition),
         BTreeMap::from([(1, [0.0, 0.0]), (2, [4.0, 2.0]), (4, [2.0, 1.0])])
     );
+    let mut arc_midpoint_definition = midpoint_definition.clone();
+    arc_midpoint_definition
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points = vec![
+        crate::feature::FeatureSectionPoint {
+            point_id: 2,
+            u: Some(1.0),
+            v: Some(0.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 3,
+            u: Some(0.0),
+            v: Some(1.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 4,
+            u: Some(0.0),
+            v: Some(0.0),
+        },
+        crate::feature::FeatureSectionPoint {
+            point_id: 8,
+            u: None,
+            v: None,
+        },
+    ];
+    arc_midpoint_definition
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows
+        .iter_mut()
+        .find(|segment| segment.external_id == 13)
+        .expect("arc")
+        .arc_orientation = Some(0);
+    arc_midpoint_definition
+        .segments
+        .as_mut()
+        .expect("segments")
+        .rows
+        .iter_mut()
+        .find(|segment| segment.external_id == 14)
+        .expect("point")
+        .point_ids = [8, 8];
+    let midpoint_skamps = &mut arc_midpoint_definition
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps;
+    midpoint_skamps[0].items = vec![
+        crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 0,
+        },
+        crate::feature::FeatureSkampItem {
+            entity_id: 14,
+            sense: 0,
+        },
+    ];
+    assert!(resolved_section_points(&arc_midpoint_definition)
+        .get(&8)
+        .is_some_and(|[u, v]| {
+            let expected = -std::f64::consts::FRAC_1_SQRT_2;
+            (u - expected).abs() <= 1e-12 && (v - expected).abs() <= 1e-12
+        }));
     midpoint_definition
         .variables
         .as_mut()
