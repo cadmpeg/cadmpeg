@@ -47,6 +47,7 @@ fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
     assert_eq!(decode(b"\\PG\\\\S\\A").unwrap(), "Α");
     assert_eq!(decode(b"\\PH\\\\S\\`").unwrap(), "א");
     assert_eq!(decode(b"\\PI\\\\S\\P").unwrap(), "Ğ");
+    assert_eq!(decode(b"line\\N\\text\\F\\tail").unwrap(), "linetexttail");
     assert_eq!(decode_utf8(b"caf\xC3\xA9").unwrap(), "café");
     assert_eq!(
         decode_utf8(b"caf\xC3\xA9\\X2\\03A9\\X0\\").unwrap(),
@@ -95,8 +96,64 @@ fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
             data: vec![0x7e],
         })
     );
+    assert_eq!(
+        lex(b"\"0\\N\\A\"").unwrap()[0].kind,
+        TokenKind::Binary(BinaryValue {
+            bit_len: 4,
+            data: vec![0xa0],
+        })
+    );
     for invalid in [b"\"\"".as_slice(), b"\"4FF\"", b"\"17F\"", b"\"3A7\""] {
         assert!(lex(invalid).is_err(), "accepted {invalid:?}");
+    }
+}
+
+#[test]
+fn lexer_ignores_controls_inside_tokens_and_print_controls_between_tokens() {
+    use crate::lex::{lex, TokenKind};
+
+    assert_eq!(
+        lex(b"END-ISO-\n10303-21;").unwrap()[0].kind,
+        TokenKind::Name("END-ISO-10303-21".into())
+    );
+    assert_eq!(lex(b"#\r\n001").unwrap()[0].kind, TokenKind::Instance(1));
+    assert_eq!(lex(b"1\n.5").unwrap()[0].kind, TokenKind::Real(1.5));
+
+    let tokens = lex(b"1\\N\\2").expect("print control separator");
+    assert_eq!(tokens.len(), 2);
+    assert!(matches!(tokens[0].kind, TokenKind::Integer(1)));
+    assert!(matches!(tokens[1].kind, TokenKind::Integer(2)));
+    let error = lex(b"<a\\N\\b>").expect_err("resource print control");
+    assert!(error.message.contains("resource"));
+}
+
+#[test]
+fn lexer_rejects_strings_that_exceed_the_stored_length_limit() {
+    let mut source = Vec::with_capacity(32_770);
+    source.push(b'\'');
+    source.extend(std::iter::repeat_n(b'x', 32_768));
+    source.push(b'\'');
+    let error = crate::lex::lex(&source).expect_err("oversized string");
+    assert!(error.message.contains("maximum stored length"));
+}
+
+#[test]
+fn parser_allows_print_controls_only_outside_anchor_and_reference_sections() {
+    let source = b"ISO-10303-\n21;\\N\\HEADER;FILE_DESCRIPTION(('te\\N\\st'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#\n1=ITEM();ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(source).expect("print controls outside restricted sections");
+
+    for section in [
+        b"ANCHOR;\\N\\<a>=1;ENDSEC;".as_slice(),
+        b"REFERENCE;\\N\\#1=<a>;ENDSEC;".as_slice(),
+    ] {
+        let source = [
+            b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;".as_slice(),
+            section,
+            b"END-ISO-10303-21;".as_slice(),
+        ]
+        .concat();
+        let error = crate::parse::parse(&source).expect_err("restricted print control");
+        assert!(error.to_string().contains("print control directive"));
     }
 }
 
@@ -946,6 +1003,13 @@ fn parser_retains_multiple_signature_sections_after_exchange_terminator() {
     assert!(source[exchange.signatures[1].clone()]
         .windows(8)
         .any(|bytes| bytes == b"ZWZnaA=="));
+}
+
+#[test]
+fn parser_ignores_controls_inside_signature_terminators() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('signature'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;SIGNATURE;YWJjZA==\nEN\nDSEC;";
+    let (exchange, _) = crate::parse::parse(source).expect("split signature terminator");
+    assert_eq!(exchange.signatures.len(), 1);
 }
 
 #[test]

@@ -519,6 +519,7 @@ impl Parser<'_> {
             });
         }
         if self.peek_name("ANCHOR") {
+            self.lexer.set_allow_print_controls(false);
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
@@ -551,6 +552,7 @@ impl Parser<'_> {
                 anchors.push(AnchorEntry { name, value, tags });
             }
             self.next_kind()?;
+            self.lexer.set_allow_print_controls(true);
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut reference_entries = Vec::new();
@@ -558,6 +560,7 @@ impl Parser<'_> {
         let mut external_value_reference_ids = BTreeSet::new();
         let mut reference_names = BTreeSet::new();
         if self.peek_name("REFERENCE") {
+            self.lexer.set_allow_print_controls(false);
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
@@ -593,6 +596,7 @@ impl Parser<'_> {
                 reference_entries.push(ReferenceEntry { name, uri });
             }
             self.next_kind()?;
+            self.lexer.set_allow_print_controls(true);
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut data: Vec<DataSection> = Vec::new();

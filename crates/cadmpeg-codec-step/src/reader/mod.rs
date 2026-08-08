@@ -697,9 +697,12 @@ fn claim_trivia(input: &[u8], range: std::ops::Range<usize>, classes: &mut [Byte
     while at < end {
         if classes[at] != ByteClass::Unclassified {
             at += 1;
-        } else if input[at].is_ascii_whitespace() {
+        } else if input[at].is_ascii_control() || input[at] == b' ' {
             classes[at] = ByteClass::Structural;
             at += 1;
+        } else if input[at..end].starts_with(b"\\N\\") || input[at..end].starts_with(b"\\F\\") {
+            claim_range(classes, &(at..at + 3), ByteClass::Structural);
+            at += 3;
         } else if input[at..end].starts_with(b"/*") {
             let Some(relative_end) = input[at + 2..end]
                 .windows(2)
@@ -820,7 +823,7 @@ mod tests {
         let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
         let (exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
         let mut extended = input.to_vec();
-        extended.push(0x01);
+        extended.push(0xc3);
 
         let accounting = byte_accounting(&extended, &exchange, &BTreeSet::new());
 

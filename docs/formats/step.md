@@ -52,11 +52,14 @@ sections, value instances, EXPRESS constants, and resource values. Every
 UTF-8 sequence uses the shortest form, encodes one Unicode scalar value, and
 excludes surrogate code points.
 
-Whitespace consists of space, horizontal tab, carriage return, and line feed.
-The `/*` delimiter starts a comment, and `*/` ends it. Comment delimiters form
-non-nesting pairs.
-The lexer applies whitespace and comments at token boundaries. String and
-binary literals consume their contents as literal data.
+Space, the explicit `\N\` and `\F\` print-control directives, and comments
+separate tokens. The `/*` delimiter starts a comment, and `*/` ends it.
+Comment delimiters form non-nesting pairs. ASCII control octets are ignored
+when processing the exchange structure, including when they occur inside a
+token. The print-control directives are ignored in effective string and
+binary contents and are forbidden in resources, ANCHOR sections, and
+REFERENCE sections. String and binary literals retain the other source bytes
+needed for escape decoding.
 
 Byte accounting assigns each consumed byte to structural syntax, whitespace,
 comments, a typed record, or an opaque record. An unclassified byte raises a
@@ -112,8 +115,7 @@ digit count minus the indicator. The empty bit sequence is written `"0"`.
 
 Comma, equals sign, parentheses, braces, colon, and semicolon are individual
 punctuation tokens. A resource token contains a UTF-8 byte sequence between
-`<` and `>`. The sequence excludes `>`. Line breaks have the same separator
-role as other whitespace.
+`<` and `>`. The sequence excludes `>` and print-control directives.
 
 ## 4. Strings
 
@@ -132,6 +134,9 @@ pair combines into one scalar value. An isolated surrogate is invalid. The
 form `\X4\hhhhhhhh...\X0\` encodes eight-hex-digit Unicode scalar values.
 Hexadecimal digits ignore case. Direct ASCII, `\X2\`, and `\X4\` forms denote
 the same scalar values where their repertoires overlap.
+The print-control directives `\N\` and `\F\` do not contribute to effective
+string contents. A string occupies at most 32,769 source octets, including
+its opening and closing apostrophes.
 
 ## 5. Values and records
 

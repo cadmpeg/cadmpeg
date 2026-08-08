@@ -42,6 +42,12 @@ fn decode_with_direct_encoding(
                 output.push('\'');
                 at += 2;
             }
+            b'\\'
+                if matches!(input.get(at + 1), Some(b'N' | b'F'))
+                    && input.get(at + 2) == Some(&b'\\') =>
+            {
+                at += 3;
+            }
             b'\\' if input.get(at + 1) == Some(&b'\\') => {
                 output.push('\\');
                 at += 2;
@@ -84,6 +90,7 @@ fn decode_with_direct_encoding(
                 _ => return error(at, "invalid X escape"),
             },
             b'\'' => return error(at, "unpaired apostrophe"),
+            byte if byte.is_ascii_control() => at += 1,
             b'\\' => return error(at, "unknown reverse-solidus escape"),
             _ => {
                 let start = at;
