@@ -52,7 +52,7 @@ pub(crate) fn parse_consolidated_pcurve(
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
-    if degree != 5 || !(2..=4096).contains(&count) {
+    if degree != 5 || count < 2 {
         return None;
     }
     let extrapolation_sites = match *data.get(at)? {
@@ -70,6 +70,10 @@ pub(crate) fn parse_consolidated_pcurve(
         }
         _ => return None,
     };
+    let knot_bytes = count.checked_mul(8)?;
+    if at.checked_add(knot_bytes.checked_add(20)?)? > end {
+        return None;
+    }
     let read = |at: &mut usize| -> Option<Vec<f64>> {
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
@@ -82,8 +86,14 @@ pub(crate) fn parse_consolidated_pcurve(
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
         return None;
     }
-    at += 1;
-    data.get(..at)?;
+    at = at.checked_add(1)?;
+    if at > end {
+        return None;
+    }
+    let remaining_array_bytes = count.checked_mul(8)?.checked_mul(6)?;
+    if at.checked_add(remaining_array_bytes.checked_add(18)?)? > end {
+        return None;
+    }
     let u = read(&mut at)?;
     let v = read(&mut at)?;
     let du = read(&mut at)?;

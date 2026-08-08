@@ -702,19 +702,30 @@ fn parse_a5_guide_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5Guide
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=4096).contains(&count)
+        || count < 2
         || !(1..=9).contains(&degree)
     {
         return None;
     }
     at = consume_array_marker(data, at)?;
+    let block_bytes = count.checked_mul(48)?;
+    let known_bytes = count
+        .checked_mul(8)?
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(48)?;
+    if at.checked_add(known_bytes)? > frame.end {
+        return None;
+    }
     let knots = f64_values(data, &mut at, count, frame.end)?;
     if knots.iter().any(|knot| !knot.is_finite()) || knots.windows(2).any(|pair| pair[0] >= pair[1])
     {
         return None;
     }
-    let block_bytes = count.checked_mul(48)?;
-    if at.checked_add(3 * block_bytes)?.checked_add(48)? != frame.end {
+    if at
+        .checked_add(block_bytes.checked_mul(3)?)?
+        .checked_add(48)?
+        != frame.end
+    {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 6]>> {
@@ -930,10 +941,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     let mut at = payload;
     let count = usize::try_from(compact_int(data, &mut at)?).ok()?;
     let degree = compact_int(data, &mut at)?;
-    if usize::try_from(compact_int(data, &mut at)?).ok()? != count
-        || !(2..=4096).contains(&count)
-        || degree != 5
-    {
+    if usize::try_from(compact_int(data, &mut at)?).ok()? != count || count < 2 || degree != 5 {
         return None;
     }
     match data.get(at..at + 2) {
@@ -941,16 +949,18 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
         Some([0x08, 0x09 | 0x05]) => at += 2,
         _ => return None,
     }
+    let knot_bytes = count.checked_mul(8)?;
+    let block_bytes = count.checked_mul(80)?;
+    let known_bytes = knot_bytes.checked_add(block_bytes.checked_mul(3)?)?;
+    if at.checked_add(known_bytes)? > end {
+        return None;
+    }
     let mut knots = Vec::with_capacity(count);
     for _ in 0..count {
         knots.push(f64_le(data, at)?);
         at += 8;
     }
     if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
-        return None;
-    }
-    let block_bytes = count.checked_mul(80)?;
-    if at.checked_add(block_bytes.checked_mul(3)?)? > end {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {

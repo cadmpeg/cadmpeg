@@ -582,6 +582,22 @@ pub(crate) fn le_f64(v: f64) -> [u8; 8] {
     v.to_le_bytes()
 }
 
+fn compact_uint_bytes(value: u32) -> Vec<u8> {
+    if value <= 63 {
+        return vec![u8::try_from(value * 4 + 1).expect("single-byte compact integer")];
+    }
+    let width = if u16::try_from(value).is_ok() {
+        2
+    } else if value <= 0x00ff_ffff {
+        3
+    } else {
+        4
+    };
+    let mut bytes = vec![u8::try_from(width * 4).expect("compact integer width")];
+    bytes.extend_from_slice(&value.to_le_bytes()[..width]);
+    bytes
+}
+
 /// A `MainDataStream` physical payload: two FBB spine rows, two empty standard
 /// edge tables, and a counted table of three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
@@ -1155,6 +1171,39 @@ pub(crate) fn a8_pcurve_stream() -> Vec<u8> {
 
 pub(crate) fn a5_pcurve_stream() -> Vec<u8> {
     a5_pcurve_stream_with_uv([0.0, 1.0], [0.0, 1.0])
+}
+
+pub(crate) fn a5_pcurve_stream_with_count(count: u32) -> Vec<u8> {
+    assert!(count >= 2);
+    let mut payload = vec![0x08, 0x34, 0x12, 21];
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.extend_from_slice(&[0x08, 9]);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(2);
+    for array in 0..4 {
+        for _ in 0..count {
+            let value = if array == 2 { 1.0 } else { 0.0 };
+            payload.extend_from_slice(&le_f64(value));
+        }
+    }
+    payload.push(0x05);
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    for _ in 0..count {
+        payload.extend_from_slice(&le_f64(0.0));
+    }
+    payload.extend_from_slice(&le_f64(0.0));
+    payload.extend_from_slice(&le_f64(f64::from(count - 1)));
+    payload.push(0x07);
+    let mut record = vec![0xa5, 0x03, 0x20];
+    record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    record.push(0x05);
+    record.extend_from_slice(&payload);
+    record
 }
 
 pub(crate) fn a6_pcurve_stream() -> Vec<u8> {
@@ -3370,39 +3419,37 @@ pub(crate) fn a5_rational_surface_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_freeform_curve_stream() -> Vec<u8> {
-    let mut payload = vec![9, 21, 9, 0x0c];
-    for value in [0.0f64, 1.0] {
-        payload.extend_from_slice(&le_f64(value));
+    a5_freeform_curve_stream_with_count(2)
+}
+
+pub(crate) fn a5_freeform_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(count);
+    payload.push(21);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
     }
-    let sites = [
-        [
-            1.0f64,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-        [
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            2.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            std::f64::consts::FRAC_PI_2,
-        ],
-    ];
     for block in 0..3 {
-        for site in sites {
-            for value in if block == 0 { site } else { [0.0; 10] } {
+        for site in 0..count {
+            let radius = if site == 0 { 1.0 } else { 2.0 };
+            let values = if block == 0 {
+                [
+                    radius,
+                    0.0,
+                    0.0,
+                    0.0,
+                    radius,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    std::f64::consts::FRAC_PI_2,
+                ]
+            } else {
+                [0.0; 10]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }
@@ -3424,16 +3471,29 @@ pub(crate) fn a6_freeform_curve_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_guide_curve_stream() -> Vec<u8> {
-    let mut payload = vec![9, 21, 9, 0x0c];
-    payload.extend_from_slice(&le_f64(0.0));
-    payload.extend_from_slice(&le_f64(1.0));
-    let positions = [
-        [0.0f64, 0.0, 0.0, 1.0, 0.0, 0.0],
-        [2.0, 3.0, 4.0, 2.0, 4.0, 4.0],
-    ];
+    a5_guide_curve_stream_with_count(2)
+}
+
+pub(crate) fn a5_guide_curve_stream_with_count(count: u32) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(count);
+    payload.push(21);
+    payload.extend_from_slice(&compact_uint_bytes(count));
+    payload.push(0x0c);
+    for site in 0..count {
+        payload.extend_from_slice(&le_f64(f64::from(site)));
+    }
     for block in 0..3 {
-        for site in positions {
-            for value in if block == 0 { site } else { [0.0; 6] } {
+        for site in 0..count {
+            let values = if block == 0 {
+                if site == 0 {
+                    [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+                } else {
+                    [2.0, 3.0, 4.0, 2.0, 4.0, 4.0]
+                }
+            } else {
+                [0.0; 6]
+            };
+            for value in values {
                 payload.extend_from_slice(&le_f64(value));
             }
         }
