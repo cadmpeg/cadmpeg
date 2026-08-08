@@ -356,16 +356,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the coding to reconstruct and write the cached curve.
 
-### SN-10. Logical vertex to `05 08 01` allocation
-
-**Question.** Which byte relation assigns each logical vertex component to a `05 08 01` allocation row?
-
-**Known.** `catia.md` §5.4 "Standard `u16be` edge rows are handle sequences" defines the logical-corner quotient and physical endpoint ports independently of coordinate-row allocation.
-
-**Need.** We must know the allocation relation for byte-faithful writing.
-
-**Conflict.** `catia.md` §5.4.1 states an answer for one body class: "Regular-motif bodies serialize vertex allocation as a walk over the ordered trim packets", with four fixed column permutations. This item states that the relation is unknown. One of the two documents is wrong. The specification gives no byte-level derivation for the four permutations, and the two validity tests it states — the first-occurrence population equals the vertex-table count, and every circle row with exactly two on-circle vertex rows maps to that pair — are the two output tests that `missing_edge::motif_port_points` and `standard::fbb::parse_standard_motif` apply. A permuted emission order satisfies both tests. On a body with no circle rows the second test is vacuous, because `circle_anchors` is `None` for a `Line` or `Bspline` row and the caller accepts `None`.
-
 ### SN-11. Standard 3D spline cache
 
 **Question.** How does the separate standard 3D spline cache encode its poles and knots?

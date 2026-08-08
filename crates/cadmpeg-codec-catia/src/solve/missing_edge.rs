@@ -2904,9 +2904,10 @@ pub(crate) fn motif_port_points(
             at += 2;
             continue;
         }
-        at += 1;
+        return None;
     }
-    (seen.len() == vertex_count
+    (at == trims.len()
+        && seen.len() == vertex_count
         && seen.values().copied().collect::<HashSet<_>>().len() == vertex_count)
         .then_some(seen)
 }

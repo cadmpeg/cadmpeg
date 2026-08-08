@@ -487,6 +487,12 @@ fn allocation_program_replays_seed_tooth_and_transition() {
 }
 
 #[test]
+fn allocation_program_rejects_an_unconsumed_trim_packet() {
+    let trims = [trim(0x4a, [0, 1, 2, 3]), trim(0x41, [4, 5, 6, 7])];
+    assert!(motif_port_points(&trims, 4).is_none());
+}
+
+#[test]
 fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
     let rows: Vec<_> = (0..6)
         .map(|edge| EdgeRow {
