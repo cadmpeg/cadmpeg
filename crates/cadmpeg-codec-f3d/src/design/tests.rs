@@ -31,9 +31,10 @@ use crate::design::decode::parameters::{
     parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::decode::scopes::{
-    bind_joint_origin_frames_from_assemblies, exact_assembly_alignment,
-    exact_base_feature_construction, exact_circular_pattern_construction_with_owners,
-    exact_combine_operation, exact_component_insert_construction, exact_direct_face_operation,
+    bind_axial_assembly_operand_targets, bind_joint_origin_frames_from_assemblies,
+    exact_assembly_alignment, exact_base_feature_construction,
+    exact_circular_pattern_construction_with_owners, exact_combine_operation,
+    exact_component_insert_construction, exact_direct_face_operation,
     exact_draft_operation_with_owners, exact_fixed_chamfer_parameters,
     exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_joint_origin_frame,
     exact_path_feature_construction, exact_rectangular_pattern_construction,
@@ -113,21 +114,22 @@ use crate::ids::{
 use crate::ids::{neutral_feature_id_parts, neutral_parameter_id_parts};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
+    ConstructionRecipe, ConstructionRecipeKind, DesignAssemblyAlignment,
+    DesignAssemblyAxialOperandTarget, DesignAssemblyOperandFrame, DesignBaseFeatureConstruction,
     DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
     DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
     DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
-    DesignCombineOperation, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
-    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
-    DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
-    DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand, DesignFaceRecipeNode,
-    DesignFaceRecipeStructure, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
-    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
-    DesignHoleConstruction, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignCombineOperation, DesignComponentInsertConstruction, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
+    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
+    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
+    DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -23682,6 +23684,330 @@ fn pattern_constructions_require_exact_scalar_and_operand_frames() {
             &rectangular_owners
         ),
         None
+    );
+}
+
+fn append_axial_test_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    bytes.extend_from_slice(class_tag);
+    bytes.extend_from_slice(&record_index.to_le_bytes());
+}
+
+fn append_axial_test_utf16(bytes: &mut Vec<u8>, value: &str) {
+    bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
+    bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
+}
+
+fn append_axial_test_reference(bytes: &mut Vec<u8>, target: u64) {
+    bytes.push(1);
+    bytes.extend_from_slice(&target.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+}
+
+fn write_axial_test_reference(bytes: &mut [u8], at: usize, target: u64) {
+    bytes[at] = 1;
+    bytes[at + 1..at + 9].copy_from_slice(&target.to_le_bytes());
+    bytes[at + 9..at + 11].fill(0);
+}
+
+fn append_axial_test_selector(
+    bytes: &mut Vec<u8>,
+    axis_record_index: u32,
+    occurrence_reference: u64,
+    external_object_reference: u64,
+    role: &str,
+    versioned: bool,
+) -> u32 {
+    const ASSET: &str = "11111111-1111-1111-1111-111111111111";
+    const CONTEXT: &str = "22222222-2222-2222-2222-222222222222";
+    const PROPERTY: &str = "33333333-3333-3333-3333-333333333333";
+
+    append_axial_test_header(bytes, b"316", axis_record_index);
+    append_axial_test_header(bytes, b"261", axis_record_index);
+    let selector_record_index = axis_record_index + 3;
+    append_axial_test_header(bytes, b"277", selector_record_index);
+    bytes.extend_from_slice(&[0; 11]);
+    append_axial_test_reference(bytes, u64::from(selector_record_index + 3));
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    append_axial_test_utf16(bytes, ASSET);
+    append_axial_test_utf16(bytes, CONTEXT);
+    for value in [2_u32, 0, 1] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    append_axial_test_reference(bytes, occurrence_reference);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&external_object_reference.to_le_bytes());
+    bytes.push(1);
+    bytes.extend_from_slice(&7_u32.to_le_bytes());
+    append_axial_test_utf16(bytes, ASSET);
+    bytes.push(0);
+    append_axial_test_utf16(bytes, "component-link");
+    bytes.push(u8::from(versioned));
+    if versioned {
+        append_axial_test_utf16(bytes, PROPERTY);
+        append_axial_test_utf16(bytes, "urn:test:version:2");
+    }
+    append_axial_test_header(bytes, b"261", selector_record_index);
+    append_axial_test_header(bytes, b"298", selector_record_index + 5);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    append_axial_test_utf16(bytes, role);
+    selector_record_index
+}
+
+fn append_axial_test_component_operand(
+    bytes: &mut Vec<u8>,
+    construction_record_index: u32,
+    axis_record_indices: [u32; 2],
+    transform: [[f64; 4]; 4],
+    external_object_reference: u64,
+    role: &str,
+    versioned: bool,
+) -> Vec<u32> {
+    let first_selector = append_axial_test_selector(
+        bytes,
+        axis_record_indices[0],
+        10_001,
+        external_object_reference,
+        role,
+        versioned,
+    );
+    let second_selector = append_axial_test_selector(
+        bytes,
+        axis_record_indices[1],
+        10_002,
+        external_object_reference,
+        role,
+        versioned,
+    );
+    let construction_at = bytes.len();
+    append_axial_test_header(bytes, b"305", construction_record_index);
+    bytes.resize(construction_at + 380, 0);
+    for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+        let at = construction_at + 48 + ordinal * 8;
+        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    write_axial_test_reference(
+        bytes,
+        construction_at + 192,
+        u64::from(axis_record_indices[0]),
+    );
+    write_axial_test_reference(
+        bytes,
+        construction_at + 208,
+        u64::from(axis_record_indices[1]),
+    );
+    append_axial_test_header(bytes, b"261", construction_record_index);
+    vec![
+        axis_record_indices[0],
+        first_selector,
+        axis_record_indices[1],
+        second_selector,
+        construction_record_index,
+    ]
+}
+
+fn axial_test_alignment(transforms: [[[f64; 4]; 4]; 2]) -> DesignAssemblyAlignment {
+    DesignAssemblyAlignment {
+        angle: 0.0,
+        offset: [0.0; 3],
+        owner_record_indices: vec![90, 91],
+        value_offsets: vec![1, 2],
+        operand_frames: Some([
+            DesignAssemblyOperandFrame {
+                reference_record_index: 70,
+                reference_offset: 1,
+                transform: transforms[0],
+                transform_offset: 2,
+            },
+            DesignAssemblyOperandFrame {
+                reference_record_index: 80,
+                reference_offset: 3,
+                transform: transforms[1],
+                transform_offset: 4,
+            },
+        ]),
+        operand_paths: None,
+        axial_operand_targets: None,
+        joint_origin_scope_record_index: None,
+    }
+}
+
+fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        &format!("f3d:Design/BulkStream.dat:component-insert#{record_index}"),
+        "Component Insert",
+        record_index,
+    );
+    scope.component_insert_construction = Some(DesignComponentInsertConstruction {
+        relation_record_index: record_index + 1,
+        carrier_record_index: record_index + 2,
+        occurrence_identity: None,
+        neutron_role: role.into(),
+        neutron_role_offset: 0,
+        transform: identity_matrix(),
+        transform_offset: 0,
+        carrier_transform_offset: 0,
+    });
+    scope
+}
+
+#[test]
+fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
+    let first_transform = identity_matrix();
+    let mut second_transform = identity_matrix();
+    second_transform[2][3] = 4.25;
+    let first_role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    let second_role = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+    let mut bytes = Vec::new();
+    let first_members = append_axial_test_component_operand(
+        &mut bytes,
+        70,
+        [10, 30],
+        first_transform,
+        7_001,
+        first_role,
+        false,
+    );
+    let second_members = append_axial_test_component_operand(
+        &mut bytes,
+        80,
+        [100, 120],
+        second_transform,
+        8_001,
+        second_role,
+        true,
+    );
+    let mut assembly =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:assembly#500", "Assemble", 500);
+    assembly.frame_length = 772;
+    assembly.reference_members = first_members
+        .into_iter()
+        .chain(second_members)
+        .chain([90, 91])
+        .collect();
+    assembly.assembly_alignment = Some(axial_test_alignment([first_transform, second_transform]));
+    let mut scopes = vec![
+        assembly,
+        axial_test_component_scope(200, first_role),
+        axial_test_component_scope(300, second_role),
+    ];
+    let unresolved_scopes = scopes.clone();
+
+    bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
+    let targets = scopes[0]
+        .assembly_alignment
+        .as_ref()
+        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .expect("two exact pathless assembly targets");
+    let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+        component_insert_scope_record_index,
+        construction_byte_offset,
+        construction_transform_offset,
+        axis_record_index_offsets,
+        construction_paired_byte_offset,
+        selectors,
+        ..
+    } = &targets[0]
+    else {
+        panic!("first operand must select a component insertion");
+    };
+    assert_eq!(*component_insert_scope_record_index, 200);
+    assert_eq!(
+        *construction_transform_offset,
+        construction_byte_offset + 48
+    );
+    assert_eq!(axis_record_index_offsets[0], construction_byte_offset + 193);
+    assert_eq!(axis_record_index_offsets[1], construction_byte_offset + 209);
+    assert_eq!(
+        *construction_paired_byte_offset,
+        construction_byte_offset + 380
+    );
+    assert_eq!(selectors[0].axis_paired_class_tag, "261");
+    assert_eq!(selectors[0].selector_paired_class_tag, "261");
+    assert_eq!(selectors[0].occurrence_reference, 10_001);
+    assert_eq!(selectors[1].occurrence_reference, 10_002);
+    assert_eq!(selectors[0].external_object_reference, 7_001);
+    assert!(selectors[0].external_version_urn.is_none());
+    let DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+        component_insert_scope_record_index,
+        selectors: versioned_selectors,
+        ..
+    } = &targets[1]
+    else {
+        panic!("second operand must select a component insertion");
+    };
+    assert_eq!(*component_insert_scope_record_index, 300);
+    assert!(versioned_selectors[0].external_property_key.is_some());
+    assert_eq!(
+        versioned_selectors[0].external_version_urn.as_deref(),
+        Some("urn:test:version:2")
+    );
+
+    let mut mismatched = bytes.clone();
+    let mismatch_at =
+        usize::try_from(selectors[1].external_object_reference_offset).expect("test offset");
+    mismatched[mismatch_at..mismatch_at + 8].copy_from_slice(&7_002_u64.to_le_bytes());
+    let mut mismatched_scopes = unresolved_scopes;
+    bind_axial_assembly_operand_targets(
+        &mismatched,
+        &IndexedRecordOffsets::build(&mismatched),
+        &mut mismatched_scopes,
+    );
+    assert!(mismatched_scopes[0]
+        .assembly_alignment
+        .as_ref()
+        .is_some_and(|alignment| alignment.axial_operand_targets.is_none()));
+}
+
+#[test]
+fn axial_assembly_selector_binds_a_document_root_joint_origin() {
+    let first_transform = identity_matrix();
+    let mut second_transform = identity_matrix();
+    second_transform[1][3] = 2.5;
+    let role = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+    let mut bytes = Vec::new();
+    let members = append_axial_test_component_operand(
+        &mut bytes,
+        70,
+        [10, 30],
+        first_transform,
+        7_001,
+        role,
+        false,
+    );
+    let mut assembly =
+        DesignParameterScope::empty("f3d:Design/BulkStream.dat:assembly#500", "Assemble", 500);
+    assembly.frame_length = 705;
+    assembly.reference_members = members.into_iter().chain([90, 91]).collect();
+    assembly.assembly_alignment = Some(axial_test_alignment([first_transform, second_transform]));
+    let mut origin = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:joint-origin#80",
+        "JointOrigin",
+        80,
+    );
+    origin.joint_origin_transform = Some(second_transform);
+    let mut scopes = vec![assembly, axial_test_component_scope(200, role), origin];
+
+    bind_axial_assembly_operand_targets(&bytes, &IndexedRecordOffsets::build(&bytes), &mut scopes);
+    let targets = scopes[0]
+        .assembly_alignment
+        .as_ref()
+        .and_then(|alignment| alignment.axial_operand_targets.as_ref())
+        .expect("component and root assembly targets");
+    assert!(matches!(
+        &targets[0],
+        DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+            component_insert_scope_record_index: 200,
+            ..
+        }
+    ));
+    assert_eq!(
+        targets[1],
+        DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+            scope_record_index: 80
+        }
     );
 }
 

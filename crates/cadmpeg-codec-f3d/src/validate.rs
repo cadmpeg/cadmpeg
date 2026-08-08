@@ -106,6 +106,278 @@ fn valid_sketch_profile_region_selection(
     cursor.checked_add(5) == Some(selection.companion_byte_offset)
 }
 
+fn valid_dynamic_class_tag(class_tag: &str) -> bool {
+    class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn design_header_matches(
+    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    stream: &str,
+    record_index: u32,
+    class_tag: &str,
+    byte_offset: u64,
+) -> bool {
+    records_by_index
+        .get(&(stream, record_index))
+        .is_some_and(|header| header.class_tag == class_tag && header.byte_offset == byte_offset)
+}
+
+fn valid_axial_selector_identity(
+    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    stream: &str,
+    scope: &records::DesignParameterScope,
+    selector: &records::DesignAssemblyAxialSelectorIdentity,
+    limit: u64,
+) -> bool {
+    let utf16_len = |value: &str| u64::try_from(value.encode_utf16().count()).ok();
+    let utf16_end =
+        |offset: u64, value: &str| utf16_len(value)?.checked_mul(2)?.checked_add(offset);
+    let Some(selector_asset_end) = utf16_end(
+        selector.selector_asset_id_offset,
+        &selector.selector_asset_id,
+    ) else {
+        return false;
+    };
+    let Some(selector_context_end) = utf16_end(
+        selector.selector_context_id_offset,
+        &selector.selector_context_id,
+    ) else {
+        return false;
+    };
+    let Some(external_asset_end) = utf16_end(
+        selector.external_asset_id_offset,
+        &selector.external_asset_id,
+    ) else {
+        return false;
+    };
+    let Some(external_link_end) = utf16_end(
+        selector.external_link_name_offset,
+        &selector.external_link_name,
+    ) else {
+        return false;
+    };
+    let Some(external_link_len) = utf16_len(&selector.external_link_name) else {
+        return false;
+    };
+    let external_end = match (
+        selector.external_property_key.as_deref(),
+        selector.external_property_key_offset,
+        selector.external_version_urn.as_deref(),
+        selector.external_version_urn_offset,
+    ) {
+        (None, None, None, None) => external_link_end.checked_add(1),
+        (
+            Some(property_key),
+            Some(property_key_offset),
+            Some(version_urn),
+            Some(version_urn_offset),
+        ) => {
+            let version_len = utf16_len(version_urn);
+            if external_link_end.checked_add(5) != Some(property_key_offset)
+                || !crate::bytes::is_guid_relaxed(property_key)
+                || !version_len.is_some_and(|length| (1..=256).contains(&length))
+                || utf16_end(property_key_offset, property_key).and_then(|end| end.checked_add(4))
+                    != Some(version_urn_offset)
+            {
+                None
+            } else {
+                utf16_end(version_urn_offset, version_urn)
+            }
+        }
+        _ => None,
+    };
+    let Some(external_end) = external_end else {
+        return false;
+    };
+    let Some(occurrence_role_end) =
+        utf16_end(selector.occurrence_role_offset, &selector.occurrence_role)
+    else {
+        return false;
+    };
+    let selector_pair_is_referenced = scope
+        .reference_members
+        .windows(2)
+        .filter(|members| *members == [selector.axis_record_index, selector.selector_record_index])
+        .count()
+        == 1;
+    let selector_records_are_unique = [selector.axis_record_index, selector.selector_record_index]
+        .iter()
+        .all(|record_index| {
+            scope
+                .reference_members
+                .iter()
+                .filter(|member| *member == record_index)
+                .count()
+                == 1
+        });
+
+    valid_dynamic_class_tag(&selector.axis_class_tag)
+        && valid_dynamic_class_tag(&selector.axis_paired_class_tag)
+        && valid_dynamic_class_tag(&selector.selector_class_tag)
+        && valid_dynamic_class_tag(&selector.selector_paired_class_tag)
+        && valid_dynamic_class_tag(&selector.role_class_tag)
+        && design_header_matches(
+            records_by_index,
+            stream,
+            selector.axis_record_index,
+            &selector.axis_class_tag,
+            selector.axis_byte_offset,
+        )
+        && design_header_matches(
+            records_by_index,
+            stream,
+            selector.selector_record_index,
+            &selector.selector_class_tag,
+            selector.selector_byte_offset,
+        )
+        && selector.axis_record_index.checked_add(3) == Some(selector.selector_record_index)
+        && selector.selector_record_index.checked_add(3) == Some(selector.nested_record_index)
+        && selector.selector_record_index.checked_add(5) == Some(selector.role_record_index)
+        && selector.axis_byte_offset < selector.axis_paired_byte_offset
+        && selector.axis_paired_byte_offset < selector.selector_byte_offset
+        && selector.selector_byte_offset < selector.selector_paired_byte_offset
+        && external_end <= selector.selector_paired_byte_offset
+        && selector.selector_paired_byte_offset < selector.role_byte_offset
+        && occurrence_role_end <= limit
+        && selector.selector_byte_offset.checked_add(23)
+            == Some(selector.nested_record_index_offset)
+        && selector.selector_byte_offset.checked_add(41) == Some(selector.selector_asset_id_offset)
+        && selector_asset_end.checked_add(4) == Some(selector.selector_context_id_offset)
+        && selector_context_end.checked_add(13) == Some(selector.occurrence_reference_offset)
+        && selector.occurrence_reference_offset.checked_add(15)
+            == Some(selector.external_object_reference_offset)
+        && selector.external_object_reference_offset.checked_add(9)
+            == Some(selector.external_segment_offset)
+        && selector.external_segment_offset.checked_add(8)
+            == Some(selector.external_asset_id_offset)
+        && external_asset_end.checked_add(5) == Some(selector.external_link_name_offset)
+        && selector.role_byte_offset.checked_add(29) == Some(selector.occurrence_role_offset)
+        && crate::bytes::is_guid_relaxed(&selector.selector_asset_id)
+        && crate::bytes::is_guid_relaxed(&selector.selector_context_id)
+        && crate::bytes::is_guid_relaxed(&selector.external_asset_id)
+        && selector
+            .external_asset_id
+            .eq_ignore_ascii_case(&selector.selector_asset_id)
+        && selector.occurrence_reference != 0
+        && selector.external_object_reference != 0
+        && (1..=256).contains(&external_link_len)
+        && crate::bytes::is_guid_relaxed(&selector.occurrence_role)
+        && selector_pair_is_referenced
+        && selector_records_are_unique
+}
+
+fn valid_axial_assembly_targets(
+    native: &native::F3dNative,
+    records_by_index: &HashMap<(&str, u32), &records::DesignRecordHeader>,
+    stream: &str,
+    scope: &records::DesignParameterScope,
+    frames: &[records::DesignAssemblyOperandFrame; 2],
+    targets: &[records::DesignAssemblyAxialOperandTarget; 2],
+) -> bool {
+    targets
+        .iter()
+        .zip(frames)
+        .all(|(target, frame)| match target {
+            records::DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                component_insert_scope_record_index,
+                construction_record_index,
+                construction_class_tag,
+                construction_byte_offset,
+                construction_transform_offset,
+                axis_record_index_offsets,
+                construction_paired_class_tag,
+                construction_paired_byte_offset,
+                selectors,
+            } => {
+                let selectors_ordered = selectors[0].axis_byte_offset
+                    < selectors[0].selector_byte_offset
+                    && selectors[0].selector_byte_offset < selectors[0].role_byte_offset
+                    && selectors[0].role_byte_offset < selectors[1].axis_byte_offset
+                    && selectors[1].axis_byte_offset < selectors[1].selector_byte_offset
+                    && selectors[1].selector_byte_offset < selectors[1].role_byte_offset
+                    && selectors[1].role_byte_offset < *construction_byte_offset;
+                let component_scopes = native
+                    .design_parameter_scopes
+                    .iter()
+                    .filter(|target_scope| {
+                        design_stream(&target_scope.id) == stream
+                            && target_scope.kind == "Component Insert"
+                            && target_scope.record_index == *component_insert_scope_record_index
+                            && target_scope
+                                .component_insert_construction
+                                .as_ref()
+                                .is_some_and(|construction| {
+                                    construction
+                                        .neutron_role
+                                        .eq_ignore_ascii_case(&selectors[0].occurrence_role)
+                                })
+                    })
+                    .count();
+                frame.reference_record_index == *construction_record_index
+                    && scope
+                        .reference_members
+                        .iter()
+                        .filter(|record_index| **record_index == *construction_record_index)
+                        .count()
+                        == 1
+                    && *construction_byte_offset > scope.paired_byte_offset
+                    && construction_byte_offset.checked_add(48)
+                        == Some(*construction_transform_offset)
+                    && construction_byte_offset.checked_add(193)
+                        == Some(axis_record_index_offsets[0])
+                    && construction_byte_offset.checked_add(209)
+                        == Some(axis_record_index_offsets[1])
+                    && construction_byte_offset.checked_add(380)
+                        == Some(*construction_paired_byte_offset)
+                    && valid_dynamic_class_tag(construction_class_tag)
+                    && valid_dynamic_class_tag(construction_paired_class_tag)
+                    && design_header_matches(
+                        records_by_index,
+                        stream,
+                        *construction_record_index,
+                        construction_class_tag,
+                        *construction_byte_offset,
+                    )
+                    && selectors_ordered
+                    && valid_axial_selector_identity(
+                        records_by_index,
+                        stream,
+                        scope,
+                        &selectors[0],
+                        selectors[1].axis_byte_offset,
+                    )
+                    && valid_axial_selector_identity(
+                        records_by_index,
+                        stream,
+                        scope,
+                        &selectors[1],
+                        *construction_byte_offset,
+                    )
+                    && selectors[0].selects_same_object(&selectors[1])
+                    && selectors[0]
+                        .occurrence_role
+                        .eq_ignore_ascii_case(&selectors[1].occurrence_role)
+                    && component_scopes == 1
+            }
+            records::DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+                scope_record_index,
+            } => {
+                frame.reference_record_index == *scope_record_index
+                    && native
+                        .design_parameter_scopes
+                        .iter()
+                        .filter(|target_scope| {
+                            design_stream(&target_scope.id) == stream
+                                && target_scope.kind == "JointOrigin"
+                                && target_scope.record_index == *scope_record_index
+                                && target_scope.joint_origin_transform == Some(frame.transform)
+                        })
+                        .count()
+                        == 1
+            }
+        })
+}
+
 use std::collections::{HashMap, HashSet};
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -1154,15 +1426,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                     .contains_key(&(native_stream, frame.reference_record_index))
                         })
                 });
-                let operand_paths_link = match (
+                let operand_qualifiers_link = match (
                     alignment.operand_frames.as_ref(),
                     alignment.operand_paths.as_ref(),
+                    alignment.axial_operand_targets.as_ref(),
                 ) {
-                    (None, None) => true,
-                    // The axial forms store exact connector frames but no
-                    // occurrence-path records that qualify them.
-                    (Some(_), None) => axial_frames,
-                    (Some(frames), Some(paths)) => {
+                    (None, None, None) => true,
+                    // An axial form can retain its frames before both exact
+                    // pathless target joins resolve.
+                    (Some(_), None, None) => axial_frames,
+                    (Some(frames), Some(paths), None) => {
                         let (first_delta, second_delta) = if scope.frame_length == 732 {
                             (39, 36)
                         } else {
@@ -1224,6 +1497,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                         }))
                             })
                     }
+                    (Some(frames), None, Some(targets)) => {
+                        axial_frames
+                            && valid_axial_assembly_targets(
+                                native,
+                                records_by_index,
+                                native_stream,
+                                scope,
+                                frames,
+                                targets,
+                            )
+                    }
                     _ => false,
                 };
                 let joint_origin_envelope_link = alignment
@@ -1231,6 +1515,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     .is_none_or(|record_index| {
                         alignment.operand_frames.is_none()
                             && alignment.operand_paths.is_none()
+                            && alignment.axial_operand_targets.is_none()
                             && scope.class_tag == "276"
                             && scope.paired_class_tag == "258"
                             && scope.frame_length == 604
@@ -1246,7 +1531,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(design::DesignFeatureFamily::Assemble)
                     && values.iter().all(|value| value.is_finite())
                     && operand_frames_link
-                    && operand_paths_link
+                    && operand_qualifiers_link
                     && joint_origin_envelope_link
                     && scope
                         .reference_members

@@ -1260,9 +1260,155 @@ pub struct DesignAssemblyAlignment {
     /// Exact occurrence paths qualifying the two operand constructions.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand_paths: Option<[DesignAssemblyOperandPath; 2]>,
+    /// Exact pathless operand targets carried by an axial assembly scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axial_operand_targets: Option<[DesignAssemblyAxialOperandTarget; 2]>,
     /// `JointOrigin` scope whose datum frame is carried by this scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub joint_origin_scope_record_index: Option<u32>,
+}
+
+/// One pathless operand target carried by a 705- or 772-byte assembly scope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignAssemblyAxialOperandTarget {
+    /// Connector object selected inside a placed `Component Insert` occurrence.
+    ComponentInsertOccurrence {
+        /// `Component Insert` scope whose placement has the selected occurrence role.
+        component_insert_scope_record_index: u32,
+        /// Construction carrier referenced by the operand frame.
+        construction_record_index: u32,
+        /// Dynamic class of the construction carrier's primary record.
+        construction_class_tag: String,
+        /// Byte offset of the construction carrier's primary indexed header.
+        construction_byte_offset: u64,
+        /// Byte offset of the construction carrier's transform.
+        construction_transform_offset: u64,
+        /// Byte offsets of the two axis-record indices in the construction carrier.
+        axis_record_index_offsets: [u64; 2],
+        /// Dynamic class of the construction carrier's paired record.
+        construction_paired_class_tag: String,
+        /// Byte offset of the construction carrier's paired indexed header.
+        construction_paired_byte_offset: u64,
+        /// Two axis selectors that identify the same connector object.
+        selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
+    },
+    /// Datum connector owned directly by the current document root.
+    DocumentRootJointOrigin {
+        /// Referenced `JointOrigin` feature scope.
+        scope_record_index: u32,
+    },
+}
+
+/// Persistent connector identity carried by one axial assembly selector.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignAssemblyAxialSelectorIdentity {
+    /// Axis record named by the operand construction carrier.
+    pub axis_record_index: u32,
+    /// Dynamic class of the axis record's primary indexed header.
+    pub axis_class_tag: String,
+    /// Byte offset of the axis record's primary indexed header.
+    pub axis_byte_offset: u64,
+    /// Dynamic class of the axis record's paired indexed header.
+    pub axis_paired_class_tag: String,
+    /// Byte offset of the axis record's paired indexed header.
+    pub axis_paired_byte_offset: u64,
+    /// Selector record three indices after the axis record.
+    pub selector_record_index: u32,
+    /// Dynamic class of the selector record's primary indexed header.
+    pub selector_class_tag: String,
+    /// Byte offset of the selector record's primary indexed header.
+    pub selector_byte_offset: u64,
+    /// Dynamic class of the selector record's paired indexed header.
+    pub selector_paired_class_tag: String,
+    /// Byte offset of the selector record's paired indexed header.
+    pub selector_paired_byte_offset: u64,
+    /// Nested record named by the selector prefix.
+    pub nested_record_index: u32,
+    /// Byte offset of `nested_record_index`.
+    pub nested_record_index_offset: u64,
+    /// Asset GUID of the enclosing selector.
+    pub selector_asset_id: String,
+    /// Byte offset of `selector_asset_id`.
+    pub selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing selector.
+    pub selector_context_id: String,
+    /// Byte offset of `selector_context_id`.
+    pub selector_context_id_offset: u64,
+    /// Axis-specific same-segment occurrence reference.
+    pub occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    pub occurrence_reference_offset: u64,
+    /// Entity reference of the selected object in the referenced document.
+    pub external_object_reference: u64,
+    /// Byte offset of `external_object_reference`.
+    pub external_object_reference_offset: u64,
+    /// Segment carried by the cross-document object reference.
+    pub external_segment: u32,
+    /// Byte offset of `external_segment`.
+    pub external_segment_offset: u64,
+    /// Asset GUID carried by the cross-document object reference.
+    pub external_asset_id: String,
+    /// Byte offset of `external_asset_id`.
+    pub external_asset_id_offset: u64,
+    /// Link name carried by the cross-document object reference.
+    pub external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    pub external_link_name_offset: u64,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key: Option<String>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn_offset: Option<u64>,
+    /// Embedded record that carries the selected occurrence role.
+    pub role_record_index: u32,
+    /// Dynamic class of the occurrence-role record.
+    pub role_class_tag: String,
+    /// Byte offset of the occurrence-role record's indexed header.
+    pub role_byte_offset: u64,
+    /// Occurrence-role GUID joining this selector to a component insertion.
+    pub occurrence_role: String,
+    /// Byte offset of `occurrence_role`.
+    pub occurrence_role_offset: u64,
+}
+
+impl DesignAssemblyAxialSelectorIdentity {
+    /// Report whether two axis selectors carry the same persistent connector identity.
+    pub(crate) fn selects_same_object(&self, other: &Self) -> bool {
+        fn same_optional_guid(first: Option<&str>, second: Option<&str>) -> bool {
+            match (first, second) {
+                (Some(first), Some(second)) => first.eq_ignore_ascii_case(second),
+                (None, None) => true,
+                _ => false,
+            }
+        }
+
+        self.selector_asset_id
+            .eq_ignore_ascii_case(&other.selector_asset_id)
+            && self
+                .selector_context_id
+                .eq_ignore_ascii_case(&other.selector_context_id)
+            && self.external_object_reference == other.external_object_reference
+            && self.external_segment == other.external_segment
+            && self
+                .external_asset_id
+                .eq_ignore_ascii_case(&other.external_asset_id)
+            && self.external_link_name == other.external_link_name
+            && same_optional_guid(
+                self.external_property_key.as_deref(),
+                other.external_property_key.as_deref(),
+            )
+            && self.external_version_urn == other.external_version_urn
+    }
 }
 
 /// Counted occurrence path qualifying one assembly operand construction.

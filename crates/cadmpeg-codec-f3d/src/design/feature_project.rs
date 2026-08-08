@@ -199,7 +199,9 @@ pub fn project_parameter_design_with_edge_identities(
                     .assembly_alignment
                     .as_ref()
                     .filter(|alignment| {
-                        alignment.operand_frames.is_some() && alignment.operand_paths.is_some()
+                        alignment.operand_frames.is_some()
+                            && (alignment.operand_paths.is_some()
+                                ^ alignment.axial_operand_targets.is_some())
                     })
                     .map_or_else(
                         || FeatureDefinition::Native {

@@ -13,10 +13,11 @@ use crate::design::decode::sketch::{
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
-    ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyOperandFrame,
-    DesignAssemblyOperandPath, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
-    DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
-    DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
+    ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyAxialOperandTarget,
+    DesignAssemblyAxialSelectorIdentity, DesignAssemblyOperandFrame, DesignAssemblyOperandPath,
+    DesignBaseFeatureConstruction, DesignBaseFlangeOperation, DesignBendPosition,
+    DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
     DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
@@ -179,6 +180,7 @@ pub fn decode_parameter_scopes(
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
+        bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..]);
     }
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
@@ -378,6 +380,400 @@ pub(crate) fn bind_joint_origin_frames_from_assemblies(
             alignment.joint_origin_scope_record_index = Some(joint_origin_record_index);
         }
     }
+}
+
+/// Bind the pathless axial assembly selectors after every scope in the Design
+/// stream has decoded its own construction.
+pub(crate) fn bind_axial_assembly_operand_targets(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scopes: &mut [DesignParameterScope],
+) {
+    let bindings = scopes
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, scope)| {
+            if !matches!(scope.frame_length, 705 | 772) {
+                return None;
+            }
+            let alignment = scope.assembly_alignment.as_ref()?;
+            if alignment.operand_paths.is_some() || alignment.axial_operand_targets.is_some() {
+                return None;
+            }
+            let frames = alignment.operand_frames.as_ref()?;
+            let first =
+                exact_assembly_axial_operand_target(bytes, records, scope, &frames[0], scopes)?;
+            let second =
+                exact_assembly_axial_operand_target(bytes, records, scope, &frames[1], scopes)?;
+            Some((ordinal, [first, second]))
+        })
+        .collect::<Vec<_>>();
+
+    for (ordinal, targets) in bindings {
+        if let Some(alignment) = scopes[ordinal].assembly_alignment.as_mut() {
+            alignment.axial_operand_targets = Some(targets);
+        }
+    }
+}
+
+struct AxialComponentOperand {
+    construction_record_index: u32,
+    construction_class_tag: String,
+    construction_byte_offset: u64,
+    construction_transform_offset: u64,
+    axis_record_index_offsets: [u64; 2],
+    construction_paired_class_tag: String,
+    construction_paired_byte_offset: u64,
+    selectors: Box<[DesignAssemblyAxialSelectorIdentity; 2]>,
+}
+
+struct ExactIndexedRecordPair {
+    record_index: u32,
+    class_tag: String,
+    byte_offset: usize,
+    paired_class_tag: String,
+    paired_byte_offset: usize,
+}
+
+fn exact_assembly_axial_operand_target(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    assembly: &DesignParameterScope,
+    frame: &DesignAssemblyOperandFrame,
+    scopes: &[DesignParameterScope],
+) -> Option<DesignAssemblyAxialOperandTarget> {
+    let component = exact_assembly_axial_component_operand(bytes, records, assembly, frame)
+        .and_then(|component| {
+            let role = &component.selectors[0].occurrence_role;
+            let mut matches =
+                scopes.iter().filter(|scope| {
+                    scope.kind == "Component Insert"
+                        && scope.component_insert_construction.as_ref().is_some_and(
+                            |construction| construction.neutron_role.eq_ignore_ascii_case(role),
+                        )
+                });
+            let component_insert = matches.next()?;
+            if matches.next().is_some() {
+                return None;
+            }
+            Some(
+                DesignAssemblyAxialOperandTarget::ComponentInsertOccurrence {
+                    component_insert_scope_record_index: component_insert.record_index,
+                    construction_record_index: component.construction_record_index,
+                    construction_class_tag: component.construction_class_tag,
+                    construction_byte_offset: component.construction_byte_offset,
+                    construction_transform_offset: component.construction_transform_offset,
+                    axis_record_index_offsets: component.axis_record_index_offsets,
+                    construction_paired_class_tag: component.construction_paired_class_tag,
+                    construction_paired_byte_offset: component.construction_paired_byte_offset,
+                    selectors: component.selectors,
+                },
+            )
+        });
+    let mut origins = scopes.iter().filter(|scope| {
+        scope.kind == "JointOrigin"
+            && scope.record_index == frame.reference_record_index
+            && scope.joint_origin_transform == Some(frame.transform)
+    });
+    let root = match (origins.next(), origins.next()) {
+        (Some(origin), None) => Some(DesignAssemblyAxialOperandTarget::DocumentRootJointOrigin {
+            scope_record_index: origin.record_index,
+        }),
+        _ => None,
+    };
+    match (component, root) {
+        (Some(target), None) | (None, Some(target)) => Some(target),
+        _ => None,
+    }
+}
+
+fn exact_assembly_axial_component_operand(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    frame: &DesignAssemblyOperandFrame,
+) -> Option<AxialComponentOperand> {
+    if !matches!(scope.frame_length, 705 | 772)
+        || scope
+            .reference_members
+            .iter()
+            .filter(|record_index| **record_index == frame.reference_record_index)
+            .count()
+            != 1
+    {
+        return None;
+    }
+    let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
+    let mut candidates = records
+        .offsets(frame.reference_record_index)
+        .iter()
+        .copied()
+        .filter(|start| *start >= search_start)
+        .filter_map(|start| {
+            exact_assembly_axial_component_operand_at(bytes, records, scope, frame, start)
+        });
+    let candidate = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    Some(candidate)
+}
+
+fn exact_assembly_axial_component_operand_at(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    frame: &DesignAssemblyOperandFrame,
+    start: usize,
+) -> Option<AxialComponentOperand> {
+    let construction_class_tag =
+        exact_indexed_header_at(bytes, start, frame.reference_record_index)?;
+    let paired_at = start.checked_add(380)?;
+    let construction_paired_class_tag =
+        exact_indexed_header_at(bytes, paired_at, frame.reference_record_index)?;
+    let construction_transform_at = start.checked_add(48)?;
+    if rigid_transform_at(bytes, construction_transform_at)? != frame.transform {
+        return None;
+    }
+    let (first_axis_record_index, first_axis_record_index_offset) =
+        exact_same_segment_record_reference(bytes, start.checked_add(192)?)?;
+    let (second_axis_record_index, second_axis_record_index_offset) =
+        exact_same_segment_record_reference(bytes, start.checked_add(208)?)?;
+    if first_axis_record_index == second_axis_record_index {
+        return None;
+    }
+    let first_selector_record_index = first_axis_record_index.checked_add(3)?;
+    let second_selector_record_index = second_axis_record_index.checked_add(3)?;
+    for pair in [
+        [first_axis_record_index, first_selector_record_index],
+        [second_axis_record_index, second_selector_record_index],
+    ] {
+        if scope
+            .reference_members
+            .windows(2)
+            .filter(|members| *members == pair)
+            .count()
+            != 1
+            || pair.iter().any(|record_index| {
+                scope
+                    .reference_members
+                    .iter()
+                    .filter(|member| *member == record_index)
+                    .count()
+                    != 1
+            })
+        {
+            return None;
+        }
+    }
+    let search_start = usize::try_from(scope.paired_byte_offset).ok()?;
+    let first_axis = exact_paired_indexed_record_between(
+        bytes,
+        records,
+        first_axis_record_index,
+        search_start,
+        start,
+    )?;
+    let second_axis = exact_paired_indexed_record_between(
+        bytes,
+        records,
+        second_axis_record_index,
+        search_start,
+        start,
+    )?;
+    if first_axis.byte_offset >= second_axis.byte_offset {
+        return None;
+    }
+    let second_axis_at = second_axis.byte_offset;
+    let first = exact_assembly_axial_selector(bytes, records, first_axis, second_axis_at)?;
+    let second = exact_assembly_axial_selector(bytes, records, second_axis, start)?;
+    if !first.selects_same_object(&second)
+        || !first
+            .occurrence_role
+            .eq_ignore_ascii_case(&second.occurrence_role)
+    {
+        return None;
+    }
+    Some(AxialComponentOperand {
+        construction_record_index: frame.reference_record_index,
+        construction_class_tag,
+        construction_byte_offset: u64::try_from(start).ok()?,
+        construction_transform_offset: u64::try_from(construction_transform_at).ok()?,
+        axis_record_index_offsets: [
+            first_axis_record_index_offset,
+            second_axis_record_index_offset,
+        ],
+        construction_paired_class_tag,
+        construction_paired_byte_offset: u64::try_from(paired_at).ok()?,
+        selectors: Box::new([first, second]),
+    })
+}
+
+fn exact_assembly_axial_selector(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    axis: ExactIndexedRecordPair,
+    limit: usize,
+) -> Option<DesignAssemblyAxialSelectorIdentity> {
+    let axis_record_index = axis.record_index;
+    let selector_record_index = axis_record_index.checked_add(3)?;
+    let selector_offsets = records
+        .offsets(selector_record_index)
+        .iter()
+        .copied()
+        .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit)
+        .collect::<Vec<_>>();
+    let [selector_at, selector_paired_at] = selector_offsets.as_slice() else {
+        return None;
+    };
+    let selector_at = *selector_at;
+    let selector_paired_at = *selector_paired_at;
+    let selector_class_tag = exact_indexed_header_at(bytes, selector_at, selector_record_index)?;
+    let selector_paired_class_tag =
+        exact_indexed_header_at(bytes, selector_paired_at, selector_record_index)?;
+    if bytes.get(selector_at.checked_add(11)?..selector_at.checked_add(22)?)? != [0; 11] {
+        return None;
+    }
+    let mut cursor = selector_at.checked_add(22)?;
+    let nested_record_index_offset = cursor.checked_add(1)?;
+    let (nested_record_index, _) = exact_same_segment_record_reference(bytes, cursor)?;
+    cursor = cursor.checked_add(11)?;
+    if nested_record_index != selector_record_index.checked_add(3)? || u32_at(bytes, cursor)? != 1 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let selector_asset_at = cursor;
+    let (selector_asset_id, after_selector_asset_id) =
+        lp_utf16_bounded(bytes, selector_asset_at, 36..=36)?;
+    let selector_context_at = after_selector_asset_id;
+    let (selector_context_id, after_selector_context_id) =
+        lp_utf16_bounded(bytes, selector_context_at, 36..=36)?;
+    if !is_guid_relaxed(&selector_asset_id)
+        || !is_guid_relaxed(&selector_context_id)
+        || u32_at(bytes, after_selector_context_id)? != 2
+        || u32_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
+        || u32_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
+    {
+        return None;
+    }
+    cursor = after_selector_context_id.checked_add(12)?;
+    let occurrence_reference_offset = cursor.checked_add(1)?;
+    let occurrence = take_reference(bytes, &mut cursor)?;
+    let occurrence_reference = occurrence.target?;
+    if occurrence_reference == 0
+        || occurrence.segment.is_some()
+        || occurrence.link_name.is_some()
+        || u32_at(bytes, cursor)? != 1
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let external = take_external_reference_identity(bytes, &mut cursor)?;
+    if !external.asset_id.eq_ignore_ascii_case(&selector_asset_id) || cursor > selector_paired_at {
+        return None;
+    }
+
+    let role_record_index = selector_record_index.checked_add(5)?;
+    let role_offsets = records
+        .offsets(role_record_index)
+        .iter()
+        .copied()
+        .filter(|offset| *offset > selector_paired_at && *offset < limit)
+        .collect::<Vec<_>>();
+    let [role_at] = role_offsets.as_slice() else {
+        return None;
+    };
+    let role_at = *role_at;
+    let role_class_tag = exact_indexed_header_at(bytes, role_at, role_record_index)?;
+    if bytes.get(role_at.checked_add(11)?..role_at.checked_add(21)?)? != [0; 10]
+        || u32_at(bytes, role_at.checked_add(21)?)? != 1
+    {
+        return None;
+    }
+    let occurrence_role_at = role_at.checked_add(25)?;
+    let (occurrence_role, after_occurrence_role) =
+        lp_utf16_bounded(bytes, occurrence_role_at, 36..=36)?;
+    if !is_guid_relaxed(&occurrence_role) || after_occurrence_role > limit {
+        return None;
+    }
+
+    Some(DesignAssemblyAxialSelectorIdentity {
+        axis_record_index,
+        axis_class_tag: axis.class_tag,
+        axis_byte_offset: u64::try_from(axis.byte_offset).ok()?,
+        axis_paired_class_tag: axis.paired_class_tag,
+        axis_paired_byte_offset: u64::try_from(axis.paired_byte_offset).ok()?,
+        selector_record_index,
+        selector_class_tag,
+        selector_byte_offset: u64::try_from(selector_at).ok()?,
+        selector_paired_class_tag,
+        selector_paired_byte_offset: u64::try_from(selector_paired_at).ok()?,
+        nested_record_index,
+        nested_record_index_offset: u64::try_from(nested_record_index_offset).ok()?,
+        selector_asset_id,
+        selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
+        selector_context_id,
+        selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?).ok()?,
+        occurrence_reference,
+        occurrence_reference_offset: u64::try_from(occurrence_reference_offset).ok()?,
+        external_object_reference: external.target,
+        external_object_reference_offset: external.target_offset,
+        external_segment: external.segment,
+        external_segment_offset: external.segment_offset,
+        external_asset_id: external.asset_id,
+        external_asset_id_offset: external.asset_id_offset,
+        external_link_name: external.link_name,
+        external_link_name_offset: external.link_name_offset,
+        external_property_key: external.property_key,
+        external_property_key_offset: external.property_key_offset,
+        external_version_urn: external.version_urn,
+        external_version_urn_offset: external.version_urn_offset,
+        role_record_index,
+        role_class_tag,
+        role_byte_offset: u64::try_from(role_at).ok()?,
+        occurrence_role,
+        occurrence_role_offset: u64::try_from(occurrence_role_at.checked_add(4)?).ok()?,
+    })
+}
+
+fn exact_paired_indexed_record_between(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    record_index: u32,
+    start: usize,
+    end: usize,
+) -> Option<ExactIndexedRecordPair> {
+    let offsets = records
+        .offsets(record_index)
+        .iter()
+        .copied()
+        .filter(|offset| *offset >= start && *offset < end)
+        .collect::<Vec<_>>();
+    let [primary_at, paired_at] = offsets.as_slice() else {
+        return None;
+    };
+    let class_tag = exact_indexed_header_at(bytes, *primary_at, record_index)?;
+    let paired_class_tag = exact_indexed_header_at(bytes, *paired_at, record_index)?;
+    Some(ExactIndexedRecordPair {
+        record_index,
+        class_tag,
+        byte_offset: *primary_at,
+        paired_class_tag,
+        paired_byte_offset: *paired_at,
+    })
+}
+
+fn exact_indexed_header_at(bytes: &[u8], start: usize, record_index: u32) -> Option<String> {
+    let (class_tag, after_tag) = lp_ascii_filtered(bytes, start, 3..=3, u8::is_ascii_digit)?;
+    (u32_at(bytes, after_tag)? == record_index).then_some(class_tag)
+}
+
+fn exact_same_segment_record_reference(bytes: &[u8], at: usize) -> Option<(u32, u64)> {
+    let mut cursor = at;
+    let reference = take_reference(bytes, &mut cursor)?;
+    let target = u32::try_from(reference.target?).ok()?;
+    (cursor == at.checked_add(11)? && reference.segment.is_none() && reference.link_name.is_none())
+        .then_some((target, u64::try_from(at.checked_add(1)?).ok()?))
 }
 
 fn exact_single_joint_origin_frame(
@@ -787,6 +1183,7 @@ pub(crate) fn exact_assembly_alignment(
         value_offsets,
         operand_frames: None,
         operand_paths: None,
+        axial_operand_targets: None,
         joint_origin_scope_record_index: None,
     };
     alignment.operand_frames = exact_assembly_operand_frames(bytes, scope);
@@ -4334,7 +4731,7 @@ pub(crate) fn exact_combine_operation(
     })
 }
 
-struct CombineExternalReference {
+struct ExternalReferenceIdentity {
     target: u64,
     target_offset: u64,
     segment: u32,
@@ -4349,10 +4746,10 @@ struct CombineExternalReference {
     version_urn_offset: Option<u64>,
 }
 
-fn take_combine_external_reference(
+fn take_external_reference_identity(
     bytes: &[u8],
     cursor: &mut usize,
-) -> Option<CombineExternalReference> {
+) -> Option<ExternalReferenceIdentity> {
     if bytes.get(*cursor) != Some(&1) {
         return None;
     }
@@ -4393,7 +4790,7 @@ fn take_combine_external_reference(
             _ => return None,
         };
     *cursor = end;
-    Some(CombineExternalReference {
+    Some(ExternalReferenceIdentity {
         target,
         target_offset: u64::try_from(target_at).ok()?,
         segment,
@@ -4455,7 +4852,7 @@ fn exact_combine_external_body_identity(
         return None;
     }
     cursor = cursor.checked_add(4)?;
-    let external = take_combine_external_reference(bytes, &mut cursor)?;
+    let external = take_external_reference_identity(bytes, &mut cursor)?;
     if external.asset_id != selector_asset_id
         || u32_at(bytes, cursor)? != 9
         || u16_at(bytes, cursor.checked_add(4)?)? != 2

@@ -1878,6 +1878,7 @@ fn finish_model_decode<'a>(
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
+        &ir.model.features,
     );
     report_design_projection_gaps(&mut report, &ir, &native);
     native.store(ir.native.namespace_mut("f3d"))?;
@@ -2399,6 +2400,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     ir.model.assembly_joints = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
+        &ir.model.features,
     );
     let mut report = build_container_report(&scan, false);
     reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);

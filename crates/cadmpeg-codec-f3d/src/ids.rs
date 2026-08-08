@@ -15,7 +15,8 @@
 //! rather than a single reshaped one.
 
 use crate::records::{
-    DesignCombineExternalBodyIdentity, DesignParameter, DesignParameterScope, DesignSketchPlacement,
+    DesignAssemblyAxialSelectorIdentity, DesignCombineExternalBodyIdentity, DesignParameter,
+    DesignParameterScope, DesignSketchPlacement,
 };
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
@@ -267,6 +268,46 @@ pub(crate) fn neutral_combine_external_body_id(
         selector_context,
         identity.occurrence_reference,
         identity.external_body_reference,
+        identity.external_segment,
+        external_asset.len(),
+        external_asset,
+        link_name.len(),
+        link_name,
+        u8::from(identity.external_property_key.is_some()),
+        property_key.len(),
+        property_key,
+        u8::from(identity.external_version_urn.is_some()),
+        version_urn.len(),
+        version_urn,
+    )
+}
+
+/// Feature-input-local connector key for one pathless axial assembly selector.
+pub(crate) fn neutral_assembly_axial_object_id(
+    identity: &DesignAssemblyAxialSelectorIdentity,
+) -> String {
+    let selector_asset = identity_key_component(&identity.selector_asset_id.to_ascii_lowercase());
+    let selector_context =
+        identity_key_component(&identity.selector_context_id.to_ascii_lowercase());
+    let external_asset = identity_key_component(&identity.external_asset_id.to_ascii_lowercase());
+    let link_name = identity_key_component(&identity.external_link_name);
+    let property_key = identity
+        .external_property_key
+        .as_deref()
+        .map(|value| identity_key_component(&value.to_ascii_lowercase()))
+        .unwrap_or_default();
+    let version_urn = identity
+        .external_version_urn
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    format!(
+        "f3d:feature-input:connector#assembly-axial:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.external_object_reference,
         identity.external_segment,
         external_asset.len(),
         external_asset,

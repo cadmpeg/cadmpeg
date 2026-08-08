@@ -74,6 +74,7 @@ pub(crate) fn validate_assembly_projection(
     let projected = crate::design::assembly::project_assembly_joints(
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
+        &target.model.features,
     );
     if target.model.assembly_joints != projected {
         return Err(CodecError::NotImplemented(
