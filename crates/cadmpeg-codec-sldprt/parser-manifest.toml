@@ -110,15 +110,15 @@ reason = "slot_count bounds allocation to <=9, so no amplification, but reads ar
 path = "src/brep/spline.rs"
 status = "legacy"
 category = "count-framed"
-hostile_reads = "control_count and u_count*v_count products drive Vec::with_capacity"
+hostile_reads = "curve control_count and stored surface u_pole_count*v_pole_count products drive Vec::with_capacity"
 count_sites = [
-  "Vec::with_capacity(control_count):324",
-  "Vec::with_capacity(u_count*v_count):483",
+  "Vec::with_capacity(control_count):521",
+  "Vec::with_capacity(u_count*v_count):695",
   "interleave buffer:195",
 ]
-declared_count_sites = ["descriptor.control_count", "infer_surface_shape -> u_count,v_count"]
+declared_count_sites = ["curve descriptor.control_count", "surface descriptor.u_count/v_count"]
 req_mirrors = "absent"
-bounded_count = "control_count is guarded (control.len() == control_count*dimension) before the curve alloc; u_count*v_count is already floored: infer_surface_shape (spline.rs:427) only returns a shape when u_count.checked_mul(v_count) == Some(poles) where poles = control.len()/dimension, so with_capacity(u_count*v_count):483 == poles, bounded by the materialized control array and overflow-safe via checked_mul"
+bounded_count = "curve control_count is guarded (control.len() == control_count*dimension) before the curve alloc; surface u_count*v_count is checked-multiplied from stored descriptor fields before with_capacity, then control.len() must equal the checked pole product times the stored vertex dimension"
 read_counted = "poles iterated via chunks_exact over an already-materialized control array"
 grow_vec = "points/weights accumulators use Vec::new/push; grow_vec candidates"
 alloc_unfloored = "n/a"
@@ -131,7 +131,7 @@ window_egress = [
 ]
 deterministic = true
 deny_disallowed_methods = false
-reason = "Both allocations are already floored with present primitives: the curve alloc is length-guarded and the u_count*v_count product equals control-derived poles via infer_surface_shape's checked_mul==poles gate (no attacker amplification). Graduation to migrated is blocked only on threading the array pass through a View so poles/weights become View::counted+read_counted reads with req_* on committed descriptor fields, plus grow_vec accumulators. Blocked on missing View/grow_vec API (shared_request 3), NOT on a missing count floor."
+reason = "Both allocations are floored with present primitives: the curve alloc is length-guarded and the surface alloc is checked-multiplied from committed descriptor counts before the exact control-array guard (no attacker amplification). Graduation to migrated is blocked only on threading the array pass through a View so poles/weights become View::counted+read_counted reads with req_* on committed descriptor fields, plus grow_vec accumulators. Blocked on missing View/grow_vec API (shared_request 3), NOT on a missing count floor."
 
 [[module]]
 path = "src/pmi.rs"

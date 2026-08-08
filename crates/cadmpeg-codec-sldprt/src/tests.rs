@@ -327,6 +327,7 @@ fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> 
 }
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+const DIRTY_TERMINAL_KNOT: [u8; 8] = 0x7ff8_0000_0000_0001u64.to_be_bytes();
 
 fn be16(b: &mut Vec<u8>, v: u16) {
     b.extend_from_slice(&v.to_be_bytes());
@@ -730,6 +731,36 @@ fn rational_linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) 
 }
 
 fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u16) -> Vec<u8> {
+    nurbs_surface_carrier_with_v_knot_storage(
+        wrapper_attr,
+        descriptor_attr,
+        bridge_attr,
+        &[2, 2],
+        &[0.0, 1.0],
+    )
+}
+
+fn nurbs_surface_carrier_with_terminal_knot_slot(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    bridge_attr: u16,
+) -> Vec<u8> {
+    nurbs_surface_carrier_with_v_knot_storage(
+        wrapper_attr,
+        descriptor_attr,
+        bridge_attr,
+        &[2, 2, 0],
+        &[0.0, 1.0, f64::from_bits(0x7ff8_0000_0000_0001)],
+    )
+}
+
+fn nurbs_surface_carrier_with_v_knot_storage(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    bridge_attr: u16,
+    v_multiplicities: &[u16],
+    v_unique_knots: &[f64],
+) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let u_mult_attr = descriptor_attr + 2;
     let v_mult_attr = descriptor_attr + 3;
@@ -746,7 +777,18 @@ fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u
     be16(&mut b, 0);
     b.extend_from_slice(&[0x00, 0x7e]);
     be16(&mut b, descriptor_attr);
-    b.extend_from_slice(&[0u8; 12]);
+    b.extend_from_slice(&[0, 0]);
+    be16(&mut b, 1);
+    be16(&mut b, 1);
+    be32(&mut b, 2);
+    be32(&mut b, 2);
+    b.extend_from_slice(&[1, 1]);
+    be32(&mut b, 2);
+    be32(&mut b, 2);
+    b.push(0);
+    b.extend_from_slice(&[0, 0]);
+    b.push(0x0c);
+    be16(&mut b, 3);
     for reference in [
         control_attr,
         u_mult_attr,
@@ -762,9 +804,9 @@ fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u
         &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
     ));
     b.extend(u16_array(u_mult_attr, &[2, 2]));
-    b.extend(u16_array(v_mult_attr, &[2, 2]));
+    b.extend(u16_array(v_mult_attr, v_multiplicities));
     b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
-    b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
+    b.extend(f64_array(0x80, v_knot_attr, v_unique_knots));
     b
 }
 
@@ -774,6 +816,12 @@ fn rational_nurbs_surface_carrier(
     bridge_attr: u16,
 ) -> Vec<u8> {
     let mut bytes = nurbs_surface_carrier(wrapper_attr, descriptor_attr, bridge_attr);
+    let descriptor = bytes
+        .windows(2)
+        .position(|window| window == [0x00, 0x7e])
+        .unwrap();
+    bytes[descriptor + 28] = 1;
+    bytes[descriptor + 32..descriptor + 34].copy_from_slice(&4u16.to_be_bytes());
     let control = bytes
         .windows(3)
         .position(|window| window == [0x00, 0x2d, 0x2b])
@@ -7530,6 +7578,13 @@ fn faces_decode_nurbs_surface() {
 }
 
 #[test]
+fn surface_rejects_nonzero_terminal_multiplicity() {
+    let bytes =
+        nurbs_surface_carrier_with_v_knot_storage(180, 181, 10, &[2, 2, 1], &[0.0, 1.0, 2.0]);
+    assert!(!crate::brep::spline::scan_surface_carriers(&bytes).contains_key(&180));
+}
+
+#[test]
 fn surface_descriptor_uses_terminal_array_references() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -7539,11 +7594,11 @@ fn surface_descriptor_uses_terminal_array_references() {
         .position(|window| window == [0x00, 0x7e])
         .expect("surface descriptor");
 
-    // Make the fixed descriptor fields look like a complete, typed roster.
-    // A sliding-window decoder would bind this decoy roster instead of the
-    // terminal references that belong to the descriptor.
+    // Replace only the five terminal references. The complete fixed fields
+    // remain valid, so a parser that uses any earlier descriptor window must
+    // fail to recover this carrier.
     for (index, reference) in [190u16, 191, 192, 193, 194].into_iter().enumerate() {
-        let at = descriptor + 4 + index * 2;
+        let at = descriptor + 34 + index * 2;
         bytes[at..at + 2].copy_from_slice(&reference.to_be_bytes());
     }
     bytes.extend(f64_array(
@@ -7565,8 +7620,8 @@ fn surface_descriptor_uses_terminal_array_references() {
     else {
         panic!("expected NURBS surface");
     };
-    assert_eq!(surface.control_points[0].x, 0.0);
-    assert_eq!(surface.control_points[3].z, 500.0);
+    assert_eq!(surface.control_points[0].x, 10_000.0);
+    assert_eq!(surface.control_points[3].y, 1_000.0);
 }
 
 #[test]
@@ -7655,7 +7710,7 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
     body[edge + 24..edge + 26].copy_from_slice(&170u16.to_be_bytes());
     body.extend(nurbs_curve_carrier(170, 171));
-    body.extend(nurbs_surface_carrier(180, 181, 10));
+    body.extend(nurbs_surface_carrier_with_terminal_knot_slot(180, 181, 10));
     body.extend(bridge(210, 220, 999));
     body.extend(loop_head(220, 230, 210));
     body.extend(coedge(230, 220, 231, 250, 0, 240, false));
@@ -7709,6 +7764,13 @@ fn native_patch_edits_nurbs_carriers_beside_untyped_surfaces() {
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
         .unwrap();
+    assert!(crate::container::scan_bytes(&encoded)
+        .blocks
+        .iter()
+        .flat_map(|block| block.ps_streams.iter())
+        .any(|stream| stream
+            .windows(DIRTY_TERMINAL_KNOT.len())
+            .any(|window| { window == DIRTY_TERMINAL_KNOT })));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();

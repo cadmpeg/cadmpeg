@@ -2488,11 +2488,20 @@ fn write_nurbs_surface(
             "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
         ));
     }
-    if !(1..=8).contains(&nurbs.u_degree) || !(1..=8).contains(&nurbs.v_degree) {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} degrees ({}, {}) exceed the inferable native range 1..=8",
-            nurbs.u_degree, nurbs.v_degree
-        )));
+    let u_degree = u16::try_from(nurbs.u_degree).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
+        ))
+    })?;
+    let v_degree = u16::try_from(nurbs.v_degree).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v degree exceeds the native u16 field"
+        ))
+    })?;
+    if u_degree == 0 || v_degree == 0 {
+        return Err(CodecError::Malformed(
+            "NURBS surface degree must be positive".into(),
+        ));
     }
     let u_count = usize::try_from(nurbs.u_count).map_err(|_| {
         CodecError::NotImplemented(format!(
@@ -2514,26 +2523,60 @@ fn write_nurbs_surface(
             "invalid NURBS surface pole count".into(),
         ));
     }
+    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
+    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
+    if u_count <= usize::from(u_degree) || v_count <= usize::from(v_degree) {
+        return Err(CodecError::Malformed(
+            "NURBS surface pole count must exceed its degree".into(),
+        ));
+    }
+    let expected_u_knots = u_count
+        .checked_add(usize::from(u_degree))
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| CodecError::Malformed("NURBS surface u knot count overflow".into()))?;
+    let expected_v_knots = v_count
+        .checked_add(usize::from(v_degree))
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| CodecError::Malformed("NURBS surface v knot count overflow".into()))?;
+    if nurbs.u_knots.len() != expected_u_knots || nurbs.v_knots.len() != expected_v_knots {
+        return Err(CodecError::Malformed(
+            "NURBS surface knot vector length does not match its stored shape".into(),
+        ));
+    }
+    if !nurbs
+        .u_knots
+        .iter()
+        .chain(&nurbs.v_knots)
+        .all(|value| value.is_finite())
+        || !nurbs
+            .u_knots
+            .windows(2)
+            .all(|window| window[0] <= window[1])
+        || !nurbs
+            .v_knots
+            .windows(2)
+            .all(|window| window[0] <= window[1])
+    {
+        return Err(CodecError::Malformed(
+            "NURBS surface knot vectors must be finite and nondecreasing".into(),
+        ));
+    }
     let poles = homogeneous_poles(
         &nurbs.control_points,
         nurbs.weights.as_deref(),
         length_scale,
     )?;
-    let (u_unique, u_mult) = unique_knots(&nurbs.u_knots, entity)?;
-    let (v_unique, v_mult) = unique_knots(&nurbs.v_knots, entity)?;
-    let intended_shape = (
-        u_count,
-        v_count,
-        nurbs.u_degree,
-        nurbs.v_degree,
-        if nurbs.weights.is_some() { 4 } else { 3 },
-    );
-    let inferred_shape = crate::brep::infer_surface_shape(poles.len(), &u_mult, &v_mult);
-    if inferred_shape != Some(intended_shape) {
-        return Err(CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} shape {intended_shape:?} would decode as {inferred_shape:?}"
-        )));
-    }
+    let dimension = if nurbs.weights.is_some() { 4 } else { 3 };
+    let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
+        ))
+    })?;
+    let v_knot_count = u32::try_from(v_unique.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS surface {entity} v distinct knot count exceeds the native u32 field"
+        ))
+    })?;
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let u_multiplicity = take_attr(next)?;
@@ -2549,7 +2592,18 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0; 12]);
+    out.extend_from_slice(&[0, 0]);
+    be16(out, u_degree);
+    be16(out, v_degree);
+    be32(out, nurbs.u_count);
+    be32(out, nurbs.v_count);
+    out.extend_from_slice(&[1, 1]);
+    be32(out, u_knot_count);
+    be32(out, v_knot_count);
+    out.push(u8::from(nurbs.weights.is_some()));
+    out.extend_from_slice(&[0, 0]);
+    out.push(0x0c);
+    be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
@@ -2862,10 +2916,11 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::*;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
     use cadmpeg_ir::math::Point3;
 
     #[test]
-    fn rejects_surface_degrees_that_cannot_be_inferred_on_decode() {
+    fn writes_surface_degree_from_stored_descriptor() {
         let surface = NurbsSurface {
             u_degree: 9,
             v_degree: 1,
@@ -2879,26 +2934,30 @@ mod nurbs_write_tests {
             v_periodic: false,
         };
 
-        let error = write_nurbs_surface(
-            &mut Vec::new(),
+        let mut bytes = Vec::new();
+        write_nurbs_surface(
+            &mut bytes,
             2,
             &surface,
             &mut 3,
             0.001,
             "test:surface#high-degree",
         )
-        .expect_err("expected error");
-
-        assert!(matches!(
-            error,
-            CodecError::NotImplemented(message)
-                if message.contains("test:surface#high-degree")
-                    && message.contains("inferable native range 1..=8")
-        ));
+        .expect("stored degree is representable");
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+            .remove(&2)
+            .expect("surface carrier");
+        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
+            carrier.geometry
+        else {
+            panic!("expected NURBS surface");
+        };
+        assert_eq!((decoded.u_degree, decoded.v_degree), (9, 1));
+        assert_eq!((decoded.u_count, decoded.v_count), (10, 2));
     }
 
     #[test]
-    fn rejects_surface_shape_that_would_decode_differently() {
+    fn writes_surface_shape_from_stored_counts() {
         let surface = NurbsSurface {
             u_degree: 2,
             v_degree: 1,
@@ -2912,24 +2971,32 @@ mod nurbs_write_tests {
             v_periodic: false,
         };
 
-        let error = write_nurbs_surface(
-            &mut Vec::new(),
+        let mut bytes = Vec::new();
+        write_nurbs_surface(
+            &mut bytes,
             2,
             &surface,
             &mut 3,
             0.001,
             "test:surface#ambiguous-shape",
         )
-        .expect_err("expected error");
-
-        assert!(
-            matches!(
-                &error,
-                CodecError::NotImplemented(message)
-                    if message.contains("test:surface#ambiguous-shape")
-                        && message.contains("would decode as Some((3, 3, 2, 2, 4))")
+        .expect("stored counts disambiguate the surface");
+        let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+            .remove(&2)
+            .expect("surface carrier");
+        let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(decoded)) =
+            carrier.geometry
+        else {
+            panic!("expected NURBS surface");
+        };
+        assert_eq!(
+            (
+                decoded.u_count,
+                decoded.v_count,
+                decoded.u_degree,
+                decoded.v_degree
             ),
-            "{error:?}"
+            (3, 4, 2, 1)
         );
     }
 

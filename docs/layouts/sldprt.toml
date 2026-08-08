@@ -751,10 +751,10 @@ note = "The parser's f64 count for tag `00 36` matches the spec table."
 name = "bspline_surface_descriptor"
 kind = "byte"
 section = "7.2"
-anchor = "six fixed u16 BE cells"
-size = 24
+anchor = "descriptor body is 42 bytes"
+size = 42
 endianness = "big"
-note = "Body-relative after the two-byte tag and optional marker. The six fixed cells occupy +2..+13; the terminal array references occupy +14..+23."
+note = "Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have one physical entry beyond its distinct-knot count when the matching final multiplicity is zero; that f64 slot is ignored."
 
 [[record.field]]
 name = "attr"
@@ -764,22 +764,120 @@ source = "spec"
 anchor = "descriptor attribute"
 
 [[record.field]]
-name = "fixed_fields"
+name = "u_periodic"
 offset = 2
-type = "u16[6]"
+type = "u8"
 source = "spec"
-anchor = "fixed cells carry the control and knot counts, degrees, and rational dimension"
+anchor = "`u_periodic` logical byte"
+
+[[record.field]]
+name = "v_periodic"
+offset = 3
+type = "u8"
+source = "spec"
+anchor = "`v_periodic` logical byte"
+
+[[record.field]]
+name = "u_degree"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "u_degree"
+
+[[record.field]]
+name = "v_degree"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "v_degree"
+
+[[record.field]]
+name = "u_pole_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u_pole_count"
+
+[[record.field]]
+name = "v_pole_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "v_pole_count"
+
+[[record.field]]
+name = "u_knot_type"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "u_knot_type"
+
+[[record.field]]
+name = "v_knot_type"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "v_knot_type"
+
+[[record.field]]
+name = "u_distinct_knot_count"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "u_distinct_knot_count"
+
+[[record.field]]
+name = "v_distinct_knot_count"
+offset = 22
+type = "u32"
+source = "spec"
+anchor = "v_distinct_knot_count"
+
+[[record.field]]
+name = "rational"
+offset = 26
+type = "u8"
+source = "spec"
+anchor = "`rational` logical byte"
+
+[[record.field]]
+name = "u_closed"
+offset = 27
+type = "u8"
+source = "spec"
+anchor = "`u_closed` logical byte"
+
+[[record.field]]
+name = "v_closed"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "`v_closed` logical byte"
+
+[[record.field]]
+name = "surface_form"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "surface_form"
+
+[[record.field]]
+name = "vertex_dim"
+offset = 30
+type = "u16"
+source = "spec"
+anchor = "vertex_dim"
 
 [[record.field]]
 name = "array_refs"
-offset = 14
+offset = 32
 type = "u16[5]"
 source = "spec"
-anchor = "five terminal u16 BE refs"
+anchor = "terminal u16 BE refs"
 
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
-contains = "const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 14;"
+contains = "const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 32;"
 note = "The decoder reads the terminal array roster at the fixed descriptor offset."
 
 [[record]]
@@ -789,7 +887,7 @@ section = "7.2"
 anchor = "00 2d marker [ff?] value_count u32 BE attr u16 BE f64[value_count] BE ; poles / homogeneous control grid"
 size = 6
 endianness = "big"
-note = "Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6."
+note = "Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include one physical entry beyond the descriptor count when its matching final multiplicity is zero; the extra f64 slot is ignored."
 
 [[record.field]]
 name = "count"

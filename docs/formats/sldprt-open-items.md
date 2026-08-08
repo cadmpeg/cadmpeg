@@ -227,40 +227,6 @@ The decoder does not test that one parameter only is inside the limit. `derive_c
 
 **Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
 
-### GC-13. B-spline surface shape
-
-**Question.** Where does the `00 7e` surface descriptor store the pole counts, the degrees, and the rational dimension?
-
-**Known.** `sldprt.md` §7.1 "Stream-scope" states that the `00 7e` surface descriptor holds "control/knot counts at fixed u16 BE offsets". The curve path reads its equivalents at fixed offsets from `00 88`: `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:97` takes the degree, control count, and dimension directly.
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/brep/spline.rs:422` does not read those offsets. It searches for the first shape whose arithmetic fits:
-
-```rust
-for dimension in [4usize, 3] {
-    ...
-    for u_degree in 1..=8usize {
-        ...
-        for v_degree in 1..=8usize {
-            ...
-            if u_count > 0 && v_count > 0 && u_count.checked_mul(v_count) == Some(poles) {
-```
-
-The equation `u_count * v_count == poles` with `u_count = u_sum - u_degree - 1` has many solutions. The checks that follow in `scan_surface_carriers` at `spline.rs:518` and `:529` compare the pole and knot counts against values this function derived from the same inputs, so they always hold.
-
-The write path already treats the inference as unsafe. `crates/cadmpeg-codec-sldprt/src/writer.rs:2525` computes the intended shape, runs `infer_surface_shape`, and refuses when the two differ:
-
-```rust
-if inferred_shape != Some(intended_shape) {
-    return Err(CodecError::NotImplemented(format!(
-        "SLDPRT NURBS surface {entity} shape {intended_shape:?} would decode as {inferred_shape:?}"
-    )));
-}
-```
-
-The writer therefore cannot emit any surface the decoder would misread, while the decoder accepts the first fit with no loss.
-
-**Need.** We must read the counts and degrees from their stored offsets. The search selects a wrong shape whenever more than one solution exists, and the surface is then built with the wrong grid and the wrong rational dimension.
-
 ### GC-15. Prefixed-triple record framing
 
 **Question.** Which field states that a coedge or edge-use record uses the prefixed deltas triple form?

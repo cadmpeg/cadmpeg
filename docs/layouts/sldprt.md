@@ -298,15 +298,29 @@ Cross-checked against code:
 
 ## `bspline_surface_descriptor`
 
-Spec §7.2 · layout: byte offsets · size: 24 B
+Spec §7.2 · layout: byte offsets · size: 42 B
 
-Body-relative after the two-byte tag and optional marker. The six fixed cells occupy +2..+13; the terminal array references occupy +14..+23.
+Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have one physical entry beyond its distinct-knot count when the matching final multiplicity is zero; that f64 slot is ignored.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `attr` | `u16` | big | spec | descriptor attribute |
-| 2 | 12 | `fixed_fields` | `u16[6]` | big | spec | fixed cells carry the control and knot counts, degrees, and rational dimension |
-| 14 | 10 | `array_refs` | `u16[5]` | big | spec | five terminal u16 BE refs |
+| 2 | 1 | `u_periodic` | `u8` | big | spec | `u_periodic` logical byte |
+| 3 | 1 | `v_periodic` | `u8` | big | spec | `v_periodic` logical byte |
+| 4 | 2 | `u_degree` | `u16` | big | spec | u_degree |
+| 6 | 2 | `v_degree` | `u16` | big | spec | v_degree |
+| 8 | 4 | `u_pole_count` | `u32` | big | spec | u_pole_count |
+| 12 | 4 | `v_pole_count` | `u32` | big | spec | v_pole_count |
+| 16 | 1 | `u_knot_type` | `u8` | big | spec | u_knot_type |
+| 17 | 1 | `v_knot_type` | `u8` | big | spec | v_knot_type |
+| 18 | 4 | `u_distinct_knot_count` | `u32` | big | spec | u_distinct_knot_count |
+| 22 | 4 | `v_distinct_knot_count` | `u32` | big | spec | v_distinct_knot_count |
+| 26 | 1 | `rational` | `u8` | big | spec | `rational` logical byte |
+| 27 | 1 | `u_closed` | `u8` | big | spec | `u_closed` logical byte |
+| 28 | 1 | `v_closed` | `u8` | big | spec | `v_closed` logical byte |
+| 29 | 1 | `surface_form` | `u8` | big | spec | surface_form |
+| 30 | 2 | `vertex_dim` | `u16` | big | spec | vertex_dim |
+| 32 | 10 | `array_refs` | `u16[5]` | big | spec | terminal u16 BE refs |
 
 Cross-checked against code:
 
@@ -316,7 +330,7 @@ Cross-checked against code:
 
 Spec §7.2 · layout: byte offsets · size: 6 B
 
-Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6.
+Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include one physical entry beyond the descriptor count when its matching final multiplicity is zero; the extra f64 slot is ignored.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
