@@ -1844,6 +1844,28 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     rows_with_boundaries(payload, BOUNDARY_TYPES)
 }
 
+/// Discover rows and their containing frame bounds from complete counted
+/// `srf_array` frames.
+pub(crate) fn counted_row_bounds(payload: &[u8]) -> Vec<(SurfaceRow, usize)> {
+    let frames = surface_array_frames(payload);
+    if frames.is_empty() {
+        return Vec::new();
+    }
+    let candidates = rows(payload);
+    let mut result = Vec::new();
+    for frame in frames {
+        let selected = candidates
+            .iter()
+            .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            .collect::<Vec<_>>();
+        if selected.len() == frame.count {
+            result.extend(selected.into_iter().cloned().map(|row| (row, frame.end)));
+        }
+    }
+    result.sort_by_key(|(row, _)| row.offset);
+    result
+}
+
 /// Discover rows from a DEPDB `Sld_Xsections` surface namespace.
 /// Named prototype rows use boundary type `00`; positional replays use `06`.
 #[must_use]

@@ -630,16 +630,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field to select the base body. The comparison is the only gate between emitting a complete closed solid body and emitting none, in the revolution, extrusion, and circular-extrusion transfer paths.
 
-### SP-32. `ActDatums` positional row acceptance
-
-**Question.** Which bytes identify a positional `<gid> 22` datum row, and what bounds a datum geometry identifier?
-
-**Known.** `creo_prt.md` §6 "`ActDatums` stores datum-plane geometry" states that `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records, and that each section holds one named datum row and can hold positional `<gid> 22 ...` rows.
-
-**Need.** We must know the acceptance rule to enumerate every datum plane. `datum.rs` `planes` scans the complete section, not the `srf_array` region, and accepts any offset whose identifier byte is nonzero and at most `0x40`, whose next byte is `22`, and whose bytes at `+3` and `+4` are in two local value sets. The `0x40` cap and both value sets come from no specification or layout table.
-
-**Note.** The `0x40` cap has large headroom against the datum identifiers that standard datum planes use, so the cap is not the part of this item to answer first. The unanchored scan is: the function accepts a row anywhere in the section, and reads the identifier and the owning feature identifier as raw bytes at fixed offsets from the match.
-
 ### SP-33. Datum outline held-axis selection
 
 **Question.** Which axis holds the plane equation when a named datum outline has multiple paired standalone-zero coordinates?

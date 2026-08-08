@@ -2871,6 +2871,14 @@ plane.
 
 `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For positional datum rows, `outline` stores two diagonal corners. Exactly one corresponding coordinate pair must compare equal; that pair supplies the positive plane normal and equation `x_k = p0[k]`. Zero or multiple equal pairs leave the positional plane unresolved. Datum names do not define their geometric orientation.
 
+Within the counted `ActDatums` `srf_array` frame, a positional datum row uses
+the complete compact-integer `geom_id` and `feat_id` fields, `geom_type = 22`,
+an orientation byte, `boundary_type = 01`, and `next_geom_ptr = 0`. The frame
+count bounds the rows; bytes outside the frame do not start datum rows. The
+row body contains four environment scalar slots followed by the six outline
+corner slots and ends before the next validated row or the containing frame
+boundary.
+
 The datum surface row's `feat_id` is the owning modeling feature identifier.
 The row's `geom_id` remains the separate datum-geometry identifier used by
 `gsec3d` plane references.

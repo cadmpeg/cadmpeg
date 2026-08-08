@@ -2,6 +2,7 @@
 //! Standard model-space datum planes stored in `ActDatums`.
 
 use crate::scalar;
+use crate::surface::{SurfaceKind, SurfaceRow};
 
 /// An axis-aligned model-space datum plane.
 ///
@@ -22,7 +23,7 @@ pub struct DatumPlane {
     pub offset: f64,
     /// The row's two `outline` corner points, in model-space XYZ.
     pub corners: [[Option<f64>; 3]; 2],
-    /// Byte offset of the row's `outline` field in the original stream.
+    /// Byte offset of the row's `geom_id` field in the original stream.
     pub offset_in_payload: usize,
 }
 
@@ -30,53 +31,64 @@ pub struct DatumPlane {
 ///
 /// This promotion applies only to model-space `ActDatums` outlines.
 pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
-    let mut result = Vec::new();
-    for offset in 0..payload.len().saturating_sub(6) {
-        let id = payload[offset];
-        if id == 0 || id > 0x40 || payload.get(offset + 1) != Some(&0x22) {
-            continue;
-        }
-        if !matches!(payload.get(offset + 3), Some(0x01 | 0xf6)) {
-            continue;
-        }
-        if !matches!(payload.get(offset + 4), Some(0 | 1 | 6 | 0xf6)) {
-            continue;
-        }
-        let Some(values) = datum_slots(payload, offset + 6, 10) else {
-            continue;
-        };
-        let outline = &values[4..];
-        let equal = [
-            slot_equal(&outline[0], &outline[3]),
-            slot_equal(&outline[1], &outline[4]),
-            slot_equal(&outline[2], &outline[5]),
-        ];
-        let held = equal
-            .iter()
-            .enumerate()
-            .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
-            .collect::<Vec<_>>();
-        let [axis] = held.as_slice() else {
-            continue;
-        };
-        let Some(plane_offset) = outline[*axis].value else {
-            continue;
-        };
-        let mut normal = [0.0; 3];
-        normal[*axis] = 1.0;
-        result.push(DatumPlane {
-            id: id as u32,
-            feature_id: payload[offset + 2] as u32,
-            normal,
-            offset: plane_offset,
-            corners: [
-                [outline[0].value, outline[1].value, outline[2].value],
-                [outline[3].value, outline[4].value, outline[5].value],
-            ],
-            offset_in_payload: offset,
-        });
+    let rows = crate::surface::counted_row_bounds(payload);
+    rows.iter()
+        .enumerate()
+        .filter(|(_, (row, _))| {
+            row.id != 0
+                && row.kind == SurfaceKind::Plane
+                && row.boundary_type == 0x01
+                && row.next_surface == 0
+        })
+        .filter_map(|(index, (row, frame_end))| {
+            let row_end = rows
+                .get(index + 1)
+                .map_or(*frame_end, |(next, _)| (*frame_end).min(next.offset));
+            positional_plane(payload, row, row_end)
+        })
+        .collect()
+}
+
+fn positional_plane(payload: &[u8], row: &SurfaceRow, row_end: usize) -> Option<DatumPlane> {
+    let id_start = row.offset;
+    if payload.get(id_start).copied()? > 0xbf {
+        return None;
     }
-    result
+    let (_, after_id) = crate::psb::compact_int(payload, id_start);
+    if payload.get(after_id) != Some(&0x22) {
+        return None;
+    }
+    let (_, after_feature) = crate::psb::compact_int(payload, after_id + 1);
+    let body_start = crate::psb::compact_int(payload, after_feature + 2).1;
+    let values = datum_slots(payload, body_start, 10, row_end)?;
+    let outline = &values[4..];
+    let equal = [
+        slot_equal(&outline[0], &outline[3]),
+        slot_equal(&outline[1], &outline[4]),
+        slot_equal(&outline[2], &outline[5]),
+    ];
+    let held = equal
+        .iter()
+        .enumerate()
+        .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
+        .collect::<Vec<_>>();
+    let [axis] = held.as_slice() else {
+        return None;
+    };
+    let plane_offset = outline[*axis].value?;
+    let mut normal = [0.0; 3];
+    normal[*axis] = 1.0;
+    Some(DatumPlane {
+        id: row.id,
+        feature_id: row.feature_id,
+        normal,
+        offset: plane_offset,
+        corners: [
+            [outline[0].value, outline[1].value, outline[2].value],
+            [outline[3].value, outline[4].value, outline[5].value],
+        ],
+        offset_in_payload: id_start,
+    })
 }
 
 /// Decode a named datum from its matching outline coordinates.
@@ -240,16 +252,20 @@ fn decode_datum_slot(data: &[u8], offset: usize) -> Option<(Option<f64>, usize)>
     }
 }
 
-fn datum_slots(data: &[u8], offset: usize, count: usize) -> Option<Vec<DatumSlot>> {
+fn datum_slots(data: &[u8], offset: usize, count: usize, end: usize) -> Option<Vec<DatumSlot>> {
     let mut slots = Vec::with_capacity(count);
-    let mut cursor = crate::psb::Cursor::at(data, offset);
+    let mut cursor = offset;
     while slots.len() < count {
-        let start = cursor.pos();
-        let value = cursor.take_with(decode_datum_slot)?;
+        let start = cursor;
+        let (value, next) = decode_datum_slot(data, cursor)?;
+        if next > end {
+            return None;
+        }
         slots.push(DatumSlot {
             value,
-            token: data.get(start..cursor.pos())?.to_vec(),
+            token: data.get(start..next)?.to_vec(),
         });
+        cursor = next;
     }
     Some(slots)
 }
@@ -276,7 +292,8 @@ mod tests {
     }
     #[test]
     fn decodes_constant_outline_coordinate_as_a_model_plane() {
-        let mut data = vec![4, 0x22, 1, 1, 0, 0];
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 1, 1, 1, 0]);
         data.extend([0x0f; 4]);
         data.extend(ieee8(2.0));
         data.push(0x0f);
@@ -295,14 +312,15 @@ mod tests {
                     [Some(2.0), Some(0.0), Some(3.0)],
                     [Some(-2.0), Some(0.0), Some(-3.0)]
                 ],
-                offset_in_payload: 0
+                offset_in_payload: 12
             }]
         );
     }
 
     #[test]
     fn withholds_positional_outline_with_multiple_held_coordinates() {
-        let mut data = vec![4, 0x22, 1, 1, 0, 0];
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 1, 1, 1, 0]);
         data.extend([0x0f; 4]);
         data.extend(ieee8(2.0));
         data.extend(ieee8(3.0));
@@ -344,7 +362,8 @@ mod tests {
     fn positional_outline_preserves_opaque_seven_byte_slots() {
         let a5 = [0xa5, 1, 2, 3, 4, 5, 6];
         let nine_f = [0x9f, 7, 8, 9, 10, 11, 12];
-        let mut data = vec![4, 0x22, 3, 1, 1, 0];
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 3, 1, 1, 0]);
         data.extend(a5);
         data.extend(ieee8(2.0));
         data.extend(nine_f);
@@ -358,6 +377,95 @@ mod tests {
 
         assert_eq!(planes(&data)[0].normal, [0.0, 1.0, 0.0]);
         assert_eq!(planes(&data)[0].offset, 0.0);
+    }
+
+    #[test]
+    fn ignores_plane_shaped_bytes_outside_a_counted_surface_array() {
+        let mut data = vec![4, 0x22, 1, 1, 1, 0];
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.push(0x0f);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(-2.0));
+        data.push(0x0f);
+        data.extend(ieee8(-3.0));
+
+        assert!(planes(&data).is_empty());
+    }
+
+    #[test]
+    fn decodes_compact_width_datum_row_identifiers() {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([0x80, 0x80, 0x22, 0x81, 0x01, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.push(0x0f);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(-2.0));
+        data.push(0x0f);
+        data.extend(ieee8(-3.0));
+
+        let decoded = planes(&data);
+        assert_eq!(decoded.len(), 1);
+        let plane = &decoded[0];
+        assert_eq!(plane.id, 128);
+        assert_eq!(plane.feature_id, 257);
+    }
+
+    #[test]
+    fn bounds_a_datum_outline_at_the_next_validated_row() {
+        let mut data = b"srf_array\0\xf8\x02".to_vec();
+        data.extend([4, 0x22, 1, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend([8, 0x22, 2, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.push(0x0f);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(-2.0));
+        data.push(0x0f);
+        data.extend(ieee8(-3.0));
+
+        let decoded = planes(&data);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id, 8);
+        assert_eq!(decoded[0].feature_id, 2);
+    }
+
+    #[test]
+    fn bounds_a_datum_outline_at_the_end_of_its_surface_array_frame() {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 1, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(b"srf_array\0\xf8\x01");
+        data.extend([8, 0x22, 2, 1, 1, 0]);
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.push(0x0f);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(-2.0));
+        data.push(0x0f);
+        data.extend(ieee8(-3.0));
+
+        let decoded = planes(&data);
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id, 8);
+        assert_eq!(decoded[0].feature_id, 2);
+    }
+
+    #[test]
+    fn rejects_linked_plane_row_as_a_datum() {
+        let mut data = b"srf_array\0\xf8\x01".to_vec();
+        data.extend([4, 0x22, 1, 1, 1, 7]);
+        data.extend([0x0f; 4]);
+        data.extend(ieee8(2.0));
+        data.push(0x0f);
+        data.extend(ieee8(3.0));
+        data.extend(ieee8(-2.0));
+        data.push(0x0f);
+        data.extend(ieee8(-3.0));
+
+        assert!(planes(&data).is_empty());
     }
 
     #[test]

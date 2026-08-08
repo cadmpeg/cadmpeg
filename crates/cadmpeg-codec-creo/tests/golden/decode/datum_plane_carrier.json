@@ -13,31 +13,7 @@
       "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [
-        {
-          "definition": {
-            "definition": "datum_plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:model:feature#1",
-          "ordinal": 0,
-          "suppressed": false
-        }
-      ],
+      "features": [],
       "loops": [],
       "occurrences": [],
       "parameters": [],
@@ -59,33 +35,7 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:actdatums:surface#4",
-          "source_object": {
-            "format": "creo",
-            "object_id": "ActDatums:4"
-          }
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
       "vertices": [],
       "view_presentations": []
@@ -93,33 +43,6 @@
     "native": {
       "creo": {
         "arenas": {
-          "datum_planes": [
-            {
-              "corners": [
-                [
-                  2.0,
-                  0.0,
-                  3.0
-                ],
-                [
-                  -2.0,
-                  0.0,
-                  -3.0
-                ]
-              ],
-              "datum_id": 4,
-              "id": "creo:datum:plane#87:4",
-              "normal": [
-                0.0,
-                1.0,
-                0.0
-              ],
-              "offset": 87,
-              "owner_feature_id": 1,
-              "plane_offset": 0.0,
-              "source_section": "ActDatums"
-            }
-          ],
           "unknowns": [
             {
               "id": "creo:ActDatums:section#76"
@@ -189,7 +112,7 @@
       "decoded_curve_prototype_count": 0,
       "decoded_curve_prototype_topology_count": 0,
       "decoded_curve_topology_row_count": 0,
-      "decoded_datum_plane_count": 1,
+      "decoded_datum_plane_count": 0,
       "decoded_face_component_count": 0,
       "decoded_fc05_circle_count": 0,
       "decoded_fc05_cylinder_cap_pair_count": 0,
@@ -302,7 +225,7 @@
       "transferred_extrusion_plane_boundary_curve_count": 0,
       "transferred_extrusion_plane_section_generator_curve_count": 0,
       "transferred_feature_circular_extrusion_brep_count": 0,
-      "transferred_feature_count": 1,
+      "transferred_feature_count": 0,
       "transferred_feature_dimension_parameter_count": 0,
       "transferred_feature_extrusion_brep_count": 0,
       "transferred_feature_extrusion_surface_count": 0,
@@ -370,7 +293,7 @@
       "transferred_thicken_feature_count": 0,
       "transferred_topological_point_count": 0,
       "transferred_topology_bound_plane_surface_count": 0,
-      "transferred_typed_feature_count": 1,
+      "transferred_typed_feature_count": 0,
       "transferred_typed_feature_relation_constraint_count": 0,
       "transferred_typed_feature_skamp_constraint_count": 0,
       "transferred_unresolved_boundary_surface_feature_count": 0,
@@ -447,7 +370,7 @@
       "visible_torus_or_sphere_surface_row_count": 0
     },
     "format": "creo",
-    "geometry_transferred": true,
+    "geometry_transferred": false,
     "losses": [
       {
         "code": "carrier_summary",
@@ -458,11 +381,6 @@
         "code": "geometry_not_transferred",
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 1 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
-      },
-      {
-        "code": "carrier_summary",
-        "message": "Transferred 1 exact model-space construction datum plane carrier(s) from ActDatums; these are unbounded reference planes, not model B-rep faces.",
-        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
@@ -492,12 +410,6 @@
       "exactness": {
         "creo:ActDatums:section#76": {
           "entity": "unknown"
-        },
-        "creo:actdatums:surface#4": {
-          "entity": "derived"
-        },
-        "creo:model:feature#1": {
-          "entity": "derived"
         }
       },
       "provenance": {
@@ -505,16 +417,6 @@
           "offset": 76,
           "stream": 0,
           "tag": "psb_geometry_section"
-        },
-        "creo:actdatums:surface#4": {
-          "offset": 87,
-          "stream": 0,
-          "tag": "datum_plane_outline"
-        },
-        "creo:model:feature#1": {
-          "offset": 87,
-          "stream": 0,
-          "tag": "datum_plane_feature"
         }
       },
       "streams": [

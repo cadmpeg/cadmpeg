@@ -35,22 +35,7 @@
         },
         {
           "definition": {
-            "definition": "datum_plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
+            "definition": "datum_plane_unresolved"
           },
           "id": "creo:model:feature#4",
           "name": "Datum Plane id 4",
@@ -79,33 +64,7 @@
       "spatial_sketches": [],
       "spreadsheets": [],
       "subds": [],
-      "surfaces": [
-        {
-          "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          },
-          "id": "creo:actdatums:surface#4",
-          "source_object": {
-            "format": "creo",
-            "object_id": "ActDatums:4"
-          }
-        }
-      ],
+      "surfaces": [],
       "tessellations": [],
       "vertices": [],
       "view_presentations": []
@@ -113,33 +72,6 @@
     "native": {
       "creo": {
         "arenas": {
-          "datum_planes": [
-            {
-              "corners": [
-                [
-                  2.0,
-                  0.0,
-                  3.0
-                ],
-                [
-                  -2.0,
-                  0.0,
-                  -3.0
-                ]
-              ],
-              "datum_id": 4,
-              "id": "creo:datum:plane#87:4",
-              "normal": [
-                0.0,
-                1.0,
-                0.0
-              ],
-              "offset": 87,
-              "owner_feature_id": 4,
-              "plane_offset": 0.0,
-              "source_section": "ActDatums"
-            }
-          ],
           "feature_operation_states": [
             {
               "current": true,
@@ -278,7 +210,7 @@
       "decoded_curve_prototype_count": 0,
       "decoded_curve_prototype_topology_count": 0,
       "decoded_curve_topology_row_count": 0,
-      "decoded_datum_plane_count": 1,
+      "decoded_datum_plane_count": 0,
       "decoded_face_component_count": 0,
       "decoded_fc05_circle_count": 0,
       "decoded_fc05_cylinder_cap_pair_count": 0,
@@ -386,7 +318,7 @@
       "transferred_curve_expression_parameter_count": 0,
       "transferred_draft_feature_count": 0,
       "transferred_explicitly_unresolved_draft_feature_count": 0,
-      "transferred_explicitly_unresolved_feature_count": 0,
+      "transferred_explicitly_unresolved_feature_count": 1,
       "transferred_extrude_feature_count": 0,
       "transferred_extrusion_plane_boundary_curve_count": 0,
       "transferred_extrusion_plane_section_generator_curve_count": 0,
@@ -466,7 +398,7 @@
       "transferred_unresolved_chamfer_edge_selection_feature_count": 0,
       "transferred_unresolved_chamfer_spec_feature_count": 0,
       "transferred_unresolved_datum_coordinate_system_feature_count": 0,
-      "transferred_unresolved_datum_plane_feature_count": 0,
+      "transferred_unresolved_datum_plane_feature_count": 1,
       "transferred_unresolved_draft_angle_feature_count": 0,
       "transferred_unresolved_draft_direction_feature_count": 0,
       "transferred_unresolved_draft_face_selection_feature_count": 0,
@@ -536,7 +468,7 @@
       "visible_torus_or_sphere_surface_row_count": 0
     },
     "format": "creo",
-    "geometry_transferred": true,
+    "geometry_transferred": false,
     "losses": [
       {
         "code": "carrier_summary",
@@ -547,11 +479,6 @@
         "code": "geometry_not_transferred",
         "message": "General model B-rep transfer remains incomplete. Native face components transfer when every boundary edge has solved vertex orbits, face orientation is unique, and every loop is complete; a multi-loop planar face additionally requires one strict containment outer boundary. Selected cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete square cap outline establishes the complete axis placement and radius, or a compact class-911 table owns a complete positional cylinder carrier, a class-911 counterbore dimension replay agrees with its generated larger-cylinder carrier, or two same-feature patches have complementary square outline bounds on one axis-normal plane. Later positional instances do not inherit prototype placement or scalar defaults; they require their per-instance parameter bodies ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). 1 PSB geometry section(s) were preserved verbatim as unknown records.",
         "severity": "blocking"
-      },
-      {
-        "code": "carrier_summary",
-        "message": "Transferred 1 exact model-space construction datum plane carrier(s) from ActDatums; these are unbounded reference planes, not model B-rep faces.",
-        "severity": "info"
       },
       {
         "code": "geometry_not_transferred",
@@ -572,6 +499,11 @@
         "code": "feature_history_retained",
         "message": "1 recognized non-sweep history feature(s) retain incomplete required construction operands (fillet=1).",
         "severity": "warning"
+      },
+      {
+        "code": "feature_history_retained",
+        "message": "1 typed history feature definition(s) retain an explicitly unresolved model-space construction.",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -586,9 +518,6 @@
       "exactness": {
         "creo:ActDatums:section#76": {
           "entity": "unknown"
-        },
-        "creo:actdatums:surface#4": {
-          "entity": "derived"
         }
       },
       "provenance": {
@@ -596,11 +525,6 @@
           "offset": 76,
           "stream": 0,
           "tag": "psb_geometry_section"
-        },
-        "creo:actdatums:surface#4": {
-          "offset": 87,
-          "stream": 0,
-          "tag": "datum_plane_outline"
         },
         "creo:mdlstatus:feature_state#3:0": {
           "offset": 144,

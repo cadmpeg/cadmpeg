@@ -151,6 +151,10 @@ fixtures, claims above L1 remain unproven.
 - Positional `gsec3d_ptr` reference rows retain all six row fields, and the
   geometrically selected orientation plane supplies its own `ref_type`,
   `seg_id`, and `flip_flag`.
+- `ActDatums` positional datum promotion is limited to counted `srf_array`
+  rows with compact-width identifiers, `geom_type = 22`, `boundary_type = 01`,
+  and `next_geom_ptr = 0`; each row body is bounded at the next validated row
+  or its containing frame boundary.
 - Unique feature-owned class-200 materialized surfaces now emit feature-result
   topology face identities. Hole placement, thicken inputs, and knit inputs
   use generated face references only when those identities and their producer

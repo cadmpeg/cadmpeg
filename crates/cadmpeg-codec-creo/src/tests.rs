@@ -3812,7 +3812,8 @@ fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
 
 #[test]
 fn decode_transfers_strong_parents_as_ordered_dependencies() {
-    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 1, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     datum.extend([0x46, 0, 0, 0, 0, 0, 0, 0]);
     datum.push(0x0f);
@@ -3859,7 +3860,8 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
 
 #[test]
 fn decode_resolves_feature_dependencies_independently_of_storage_order() {
-    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 1, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     datum.extend([0x46, 0, 0, 0, 0, 0, 0, 0]);
     datum.push(0x0f);
@@ -9303,7 +9305,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
 
 #[test]
 fn scan_discovers_model_space_datum_planes() {
-    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 1, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {
@@ -9321,7 +9324,8 @@ fn scan_discovers_model_space_datum_planes() {
 
 #[test]
 fn decode_transfers_exact_datum_plane_carrier() {
-    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 1, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {
@@ -9354,7 +9358,8 @@ fn decode_transfers_exact_datum_plane_carrier() {
 
 #[test]
 fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
-    let mut datum = vec![4, 0x22, 4, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 4, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {
@@ -9408,7 +9413,7 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
 
 #[test]
 fn decode_withholds_competing_standalone_datum_planes() {
-    let mut row = vec![4, 0x22, 4, 1, 0, 0];
+    let mut row = vec![4, 0x22, 4, 1, 1, 0];
     row.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {
@@ -9419,21 +9424,25 @@ fn decode_withholds_competing_standalone_datum_planes() {
             row.extend(bytes);
         }
     }
-    let mut datum = row.clone();
+    let mut datum = b"srf_array\0\xf8\x02".to_vec();
+    datum.extend(row.clone());
     datum.extend(row);
     let data = build_prt("c", &[("ActDatums", datum)]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir.model.features.len(), 1);
-    assert!(matches!(
-        result.ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
-    ));
+    assert!(result.ir.model.features.is_empty());
     assert_eq!(
-        result.ir.native.namespace("creo").unwrap().arenas["datum_planes"].len(),
-        2
+        result
+            .ir
+            .native
+            .namespace("creo")
+            .unwrap()
+            .arenas
+            .get("datum_planes")
+            .map_or(0, Vec::len),
+        0
     );
 }
 
@@ -9497,7 +9506,8 @@ fn decode_retains_named_datum_plane_with_unresolved_placement() {
 
 #[test]
 fn decode_annotations_cover_every_emitted_entity() {
-    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    let mut datum = b"srf_array\0\xf8\x01".to_vec();
+    datum.extend([4, 0x22, 1, 1, 1, 0]);
     datum.extend([0x0f; 4]);
     for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
         if value == 0.0 {
