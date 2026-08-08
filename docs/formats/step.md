@@ -27,11 +27,15 @@ reference= "REFERENCE;" reference_entry* "ENDSEC;"
 data     = "DATA" data_parameters? ";" entity_instance* "ENDSEC;"
 data_parameters = "(" string "," "(" string ")" ")"
 signature= "SIGNATURE;" base64 "ENDSEC;"
-anchor_entry    = resource "=" anchor_item anchor_tag* ";"
-anchor_item     = parameter
+anchor_entry    = anchor_name "=" anchor_item anchor_tag* ";"
+anchor_item     = omitted | integer | real | enumeration | string | binary
+                  | rhs_occurrence_name | resource | anchor_item_list
+anchor_item_list = "(" anchor_item* ")"
+rhs_occurrence_name = entity_instance_name | value_instance_name
+                      | constant_entity_name | constant_value_name
 anchor_tag      = "{" tag_name ":" anchor_item "}"
-reference_entry = reference_name "=" resource ";"
-reference_name  = resource | entity_instance_name | value_instance_name
+reference_entry = (entity_instance_name | value_instance_name) "=" resource ";"
+anchor_name     = "<" uri_fragment_identifier ">"
 ```
 
 Outside string escape sequences, implementation levels with a major value
@@ -90,7 +94,10 @@ be used by the other prefix in the same exchange. Named occurrences begin with
 an ASCII letter or underscore, use only ASCII letters, digits, and underscore,
 and are canonicalized to uppercase. A numeric `#` occurrence is a DATA entity
 reference. A numeric `@` occurrence is a value reference declared by a
-`REFERENCE` entry. Named occurrences are EXPRESS entity or value constants.
+`REFERENCE` entry. Named occurrences are EXPRESS entity or value constants. An
+anchor name is a nonempty URI fragment identifier with at least one non-digit
+character. A reference left-hand side is a numeric entity or value occurrence
+name.
 
 `1.`, `0.E+000`, and Fortran `D` exponents are real values. A binary literal
 starts with one indicator nibble and continues with hexadecimal payload digits.
@@ -187,6 +194,20 @@ identifiers are:
 An AP242 identifier with another object identifier has an unspecified edition.
 ASCII case differences compare equal.
 
+After `FILE_SCHEMA`, the header may contain at most one `SCHEMA_POPULATION`,
+zero or more `FILE_POPULATION` entities, and `SECTION_LANGUAGE` and
+`SECTION_CONTEXT` entities with unique section selectors. A
+`SCHEMA_POPULATION` contains one or more triples of address string, optional
+timestamp string, and optional Base64 digest string. A `FILE_POPULATION`
+contains a governing schema name, a determination-method string, and either
+`$` or a nonempty set of DATA section names. `SECTION_LANGUAGE` contains an
+optional DATA section name and a three-letter language code. `SECTION_CONTEXT`
+contains an optional DATA section name and a nonempty list of context strings.
+Built-in header entities precede user-defined `!` header entities. Named
+section selectors identify DATA sections. Implementation level `2;1` forbids
+FILE_POPULATION, SECTION_LANGUAGE, and SECTION_CONTEXT; level `3;1` forbids
+SCHEMA_POPULATION.
+
 ## 7. Edition 3 sections
 
 ANCHOR entries bind a resource name to an in-file parameter value and may carry
@@ -197,9 +218,7 @@ omitted inherited `name` attributes are repaired. A cycle is a structural
 error. Resource references in tag values use the same recursive resolution
 rules as anchor values.
 
-REFERENCE entries bind a local resource name to a resource URI. They also bind
-an external entity or value occurrence name to a resource URI. Resource names
-and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
+REFERENCE entries bind an external entity or value occurrence name to a resource URI. Resource names and URIs are delimited by `<` and `>`; external names use `#id` or `@id`.
 Entity and value occurrence integers are unique across both prefixes, and
 neither may collide with a local DATA entity instance. A URI target outside the
 exchange structure is an external dependency. External names do not enter the

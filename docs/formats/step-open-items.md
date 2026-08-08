@@ -20,7 +20,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which base URI and normalization rules apply to each relative URI in a REFERENCE section or a document-reference entity?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." state that a REFERENCE entry binds a local resource name to a resource URI and that a target outside the exchange structure is an external dependency.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." state that a REFERENCE entry binds an external occurrence name to a resource URI and that a target outside the exchange structure is an external dependency.
 
 **Need.** We must know the rules to identify the external resource that a relative URI selects.
 
@@ -28,7 +28,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which retrieval and authentication procedure applies to each external resource URI?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." identifies URI targets outside the exchange structure as external dependencies. The clear-text exchange structure does not contain an access procedure.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." identifies URI targets outside the exchange structure as external dependencies. The clear-text exchange structure does not contain an access procedure.
 
 **Need.** We must know the procedure to obtain the selected external resource.
 
@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each external resource combine with the local instance graph?
 
-**Known.** `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define identity and reference resolution inside the DATA sections. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define local resource bindings and external dependencies.
+**Known.** `step.md` §5 "Entity instance names share one namespace across all DATA sections." through `step.md` §5 "Entity instance names share one namespace across all DATA sections." define identity and reference resolution inside the DATA sections. `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define external occurrence bindings and external dependencies.
 
 **Need.** We must know the composition rule to resolve cross-resource identities and build one product graph.
 
@@ -44,7 +44,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which URI components and resource metadata determine whether two external resource references identify the same cached resource?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." and `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." state that each REFERENCE entry contains a resource URI. The specification gives no cache-identity rule.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." and `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." state that each REFERENCE entry contains a resource URI. The specification gives no cache-identity rule.
 
 **Need.** We must know the identity rule to reuse a retrieved resource without combining different resources.
 
@@ -80,7 +80,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How do references between exchange resources in an edition-3 ZIP container resolve?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define resource names and URIs in a Part 21 REFERENCE section. The specification gives no container-relative resolution rule.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define resource names and URIs in a Part 21 REFERENCE section. The specification gives no container-relative resolution rule.
 
 **Need.** We must know the resolution rule to combine the contained resources into one product graph.
 
@@ -140,7 +140,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which SIGNATURE field identifies the signature method and its parameters?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define the complete byte boundary of a SIGNATURE section. The specification gives no field grammar for its content.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the complete byte boundary of a SIGNATURE section. The specification gives no field grammar for its content.
 
 **Need.** We must know the selection rule to choose the correct signature verification method.
 
@@ -148,7 +148,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which exact bytes does each signature method authenticate?
 
-**Known.** `step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place each SIGNATURE section after the exchange terminator. `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define the byte boundary of the SIGNATURE section.
+**Known.** `step.md` §2 "A clear-text exchange structure uses this outer grammar:" through `step.md` §2 "A clear-text exchange structure uses this outer grammar:" place each SIGNATURE section after the exchange terminator. `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define the byte boundary of the SIGNATURE section.
 
 **Need.** We must know the byte sequence to calculate the verification input.
 
@@ -156,7 +156,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How does each signature method encode its signature value and verification material in the SIGNATURE section?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." require retention of the complete SIGNATURE byte range. The specification gives no field grammar for the retained content.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." require retention of the complete SIGNATURE byte range. The specification gives no field grammar for the retained content.
 
 **Need.** We must know the encoding to extract the signature value, keys, certificates, and method parameters.
 
@@ -164,7 +164,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which validation conditions make each signature valid, invalid, or indeterminate?
 
-**Known.** `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." through `step.md` §7 "REFERENCE entries bind a local resource name to a resource URI." define structural retention only. The specification gives no cryptographic validation conditions.
+**Known.** `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." through `step.md` §7 "REFERENCE entries bind an external entity or value occurrence name to a resource URI." define structural retention only. The specification gives no cryptographic validation conditions.
 
 **Need.** We must know the conditions to report a signature verification result.
 
