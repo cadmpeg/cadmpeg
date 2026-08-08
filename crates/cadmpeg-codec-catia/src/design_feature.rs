@@ -84,6 +84,7 @@ impl DesignFeatureTransfer {
             &exact_feature_owners,
             &self.feature_ids,
         );
+        assign_native_operation_parameter_values(ir, &exact_feature_owners);
     }
 
     /// Bind a neutral feature to a transferred structural parent.
@@ -181,6 +182,45 @@ fn assign_feature_parameter_ordinals(
     for parameter in &mut ir.model.parameters {
         if let Some(ordinal) = parameter_ordinals.get(&parameter.id) {
             parameter.ordinal = *ordinal;
+        }
+    }
+}
+
+/// Expose exact feature-owned parameter expressions on an opaque native
+/// operation without assigning operation-specific roles. A source-name
+/// collision makes the map non-injective, so the whole feature is omitted
+/// rather than silently merging or renaming inputs.
+fn assign_native_operation_parameter_values(
+    ir: &mut CadIr,
+    exact_feature_owners: &HashMap<ParameterId, FeatureId>,
+) {
+    let mut values_by_feature = HashMap::<FeatureId, Option<BTreeMap<String, String>>>::new();
+    for parameter in &ir.model.parameters {
+        let Some(feature_id) = exact_feature_owners.get(&parameter.id) else {
+            continue;
+        };
+        let entry = values_by_feature
+            .entry(feature_id.clone())
+            .or_insert_with(|| Some(BTreeMap::new()));
+        let Some(values) = entry else {
+            continue;
+        };
+        if parameter.name.is_empty() || values.contains_key(&parameter.name) {
+            *entry = None;
+            continue;
+        }
+        values.insert(parameter.name.clone(), parameter.expression.clone());
+    }
+
+    for feature in &mut ir.model.features {
+        let Some(Some(values)) = values_by_feature.remove(&feature.id) else {
+            continue;
+        };
+        let FeatureDefinition::Native { parameters, .. } = &mut feature.definition else {
+            continue;
+        };
+        if parameters.is_empty() {
+            *parameters = values;
         }
     }
 }
@@ -942,6 +982,61 @@ mod tests {
                 ),
             ]
         );
+        let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
+            panic!("expected an opaque native operation");
+        };
+        assert_eq!(
+            parameters,
+            &BTreeMap::from([
+                ("early-parameter".to_string(), "1 mm".to_string()),
+                ("late-parameter".to_string(), "1 mm".to_string()),
+            ])
+        );
+    }
+
+    #[test]
+    fn omits_native_parameter_map_when_source_names_collide() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId::from("feature"),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("Prism_ThickThin1".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "Prism_ThickThin1".to_string(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            native_ref: Some("native-feature".to_string()),
+        });
+        let mut first = parameter("first", "first-native");
+        first.name = "Length".to_string();
+        let mut second = parameter("second", "second-native");
+        second.name = "Length".to_string();
+        ir.model.parameters.extend([first, second]);
+
+        assign_native_operation_parameter_values(
+            &mut ir,
+            &HashMap::from([
+                (ParameterId("first".to_string()), FeatureId::from("feature")),
+                (
+                    ParameterId("second".to_string()),
+                    FeatureId::from("feature"),
+                ),
+            ]),
+        );
+
+        let FeatureDefinition::Native { parameters, .. } = &ir.model.features[0].definition else {
+            panic!("expected an opaque native operation");
+        };
+        assert!(parameters.is_empty());
     }
 
     #[test]

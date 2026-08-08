@@ -267,6 +267,11 @@ current scores require those matrices and representative fixtures.
   tie-breaker. This records parameter order and ownership only; it does not
   assign a parameter to an operation role such as profile, direction, extent,
   or output.
+- Opaque native operation definitions expose exact feature-owned parameter
+  expressions in their source-name keyed `parameters` map when every source
+  name is non-empty and unique within that feature. A name collision omits the
+  complete map rather than merging or renaming inputs. The map records generic
+  feature inputs only; it does not assign operation roles.
 - A transferred feature receives a structural `parent` only when its exact
   `owner_design_object` incidence selects another design object that also
   transfers as a feature. Self-links and owner cycles do not create neutral
