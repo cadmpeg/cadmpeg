@@ -5788,6 +5788,62 @@ fn decode_infers_unlinked_occurrence_placements_from_parent_shape_items() {
 }
 
 #[test]
+fn repeated_child_uses_without_owned_placements_remain_unresolved() {
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('ROOT','Root assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('root definition','',#4,#5);
+#7=PRODUCT_DEFINITION_SHAPE('','',#6);
+#8=PRODUCT('CHILD','Child','',(#2));
+#9=PRODUCT_DEFINITION_FORMATION('','',#8);
+#10=PRODUCT_DEFINITION('child definition','',#9,#5);
+#11=PRODUCT_DEFINITION_SHAPE('','',#10);
+#16=NEXT_ASSEMBLY_USAGE_OCCURRENCE('one','First child','',#6,#10,$);
+#17=NEXT_ASSEMBLY_USAGE_OCCURRENCE('two','Second child','',#6,#10,$);
+#20=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#21=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#20)) REPRESENTATION_CONTEXT('model','3D'));
+#22=SHAPE_REPRESENTATION('root',(#39,#41),#21);
+#23=SHAPE_REPRESENTATION('child',(),#21);
+#25=SHAPE_DEFINITION_REPRESENTATION(#7,#22);
+#26=SHAPE_DEFINITION_REPRESENTATION(#11,#23);
+#30=CARTESIAN_POINT('',(0.,0.,0.));
+#31=CARTESIAN_POINT('',(25.,0.,0.));
+#32=CARTESIAN_POINT('',(-10.,4.,0.));
+#33=DIRECTION('',(0.,0.,1.));
+#34=DIRECTION('',(1.,0.,0.));
+#35=AXIS2_PLACEMENT_3D('',#30,#33,#34);
+#36=AXIS2_PLACEMENT_3D('',#31,#33,#34);
+#37=AXIS2_PLACEMENT_3D('',#32,#33,#34);
+#38=REPRESENTATION_MAP(#35,#23);
+#39=MAPPED_ITEM('First child',#38,#36);
+#40=REPRESENTATION_MAP(#35,#23);
+#41=MAPPED_ITEM('Second child',#40,#37);",
+    );
+
+    let children = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.id.0.contains("#16") || occurrence.id.0.contains("#17"))
+        .collect::<Vec<_>>();
+    assert_eq!(children.len(), 2);
+    assert!(children
+        .iter()
+        .all(|occurrence| occurrence.transform == cadmpeg_ir::transform::Transform::identity()));
+    for usage_id in [16, 17] {
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
+                && loss.severity == cadmpeg_ir::Severity::Error
+                && loss.message.contains(&format!("NAUO #{usage_id}"))
+        }));
+    }
+}
+
+#[test]
 fn decode_transfers_ap242_one_based_tessellation_indices() {
     let bytes = include_bytes!("../tests/fixtures/ap242_tessellation.p21");
     let result = StepCodec::default()

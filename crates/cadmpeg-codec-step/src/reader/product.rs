@@ -748,6 +748,17 @@ fn infer_parent_representation_placements(
                 .map_or(usize::MAX, |record| record.span.start)
         });
 
+        let mut child_definitions = BTreeSet::new();
+        if parent_usages
+            .iter()
+            .any(|(_, usage)| !child_definitions.insert(usage.child_definition))
+        {
+            // Representation item order does not bind repeated uses of one
+            // child definition. Such uses require occurrence-owned shape
+            // representations or an explicit context-dependent placement.
+            continue;
+        }
+
         let Some(parent_representations) = definition_representations.get(&parent_definition)
         else {
             continue;

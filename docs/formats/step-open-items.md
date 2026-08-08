@@ -552,30 +552,20 @@ positional contract across component splitting.
 
 ### PS-01. Placement binding for repeated child uses
 
-**Question.** Which `MAPPED_ITEM` placement belongs to which
-`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when one parent uses one child definition
-more than once?
+**Resolved.** A parent representation's mapped-item order does not bind
+repeated uses of one child definition to individual
+`NEXT_ASSEMBLY_USAGE_OCCURRENCE` records.
 
 **Known.** `step.md` §8 "Repeated child uses without an occurrence-specific
 shape representation remain ambiguous and report the unresolved placement."
 settles this as unresolvable.
 
-**Conflict.** `infer_parent_representation_placements` resolves it by order
-(`crates/cadmpeg-codec-step/src/reader/product.rs:712-811`). It sorts the
-parent's usages by record byte offset, collects the parent representation's
-mapped children in `items` list order, and zips the two sequences. The guard
-at `product.rs:799-802` compares the child-definition sequences, which is
-vacuously true when every usage names the same child definition — the exact
-case the specification calls ambiguous. Reordering the two root `items`
-references, with no other change, swaps the two occurrences' transforms and
-reports no loss. Neither ISO 10303-44 nor `step.md` makes
-`REPRESENTATION.items` order or record byte order significant.
-
-**Note.** The code was added by `907246f70` on 2026-08-08. That commit
-touched only `product.rs` and `tests.rs`; it did not update `step.md` or this
-ledger, and its commit body is empty. Its test uses two distinct child
-definitions, so it does not reach the repeated-child path. The item needs a
-decision on which of the two documents is correct.
+**Rule.** The decoder may infer a parent-representation placement only when
+each child definition occurs once in that parent's usage set and the complete
+mapped-child sequence agrees with the usage set. Repeated child uses require
+an occurrence-owned shape representation or an explicit context-dependent
+placement. Without one, the occurrence keeps identity transform and reports
+`AssemblyPlacementsNotTransferred`.
 
 ### PS-02. Transform direction of `ITEM_DEFINED_TRANSFORMATION`
 
