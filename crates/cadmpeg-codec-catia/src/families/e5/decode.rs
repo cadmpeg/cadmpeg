@@ -30,6 +30,8 @@ use crate::container::{self, ContainerScan};
 use crate::families::FamilyOutput;
 use crate::solve::UnionFind;
 
+const E5_ENDPOINT_MATCH_TOLERANCE: f64 = 2e-3;
+
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
@@ -957,13 +959,12 @@ fn plan_e5_boundary(
                 let reverse_error = endpoints[0]
                     .distance(*end)
                     .max(endpoints[1].distance(*start));
+                // A degenerate native bound has no parameter sign. Endpoint
+                // positions are an independent constraint, but they only
+                // select a direction when exactly one order meets the model
+                // tolerance. Never choose the smaller of two failing errors.
                 let reversed = e5_stored_pcurve_reversed(topology, edge_ref, pcurve_ref, range)
-                    .or_else(|| {
-                        let edge = topology.edges.get(&edge_ref)?;
-                        (edge.parameter_start == edge.parameter_end
-                            && (forward - reverse_error).abs() > 1e-9)
-                            .then_some(reverse_error < forward)
-                    });
+                    .or_else(|| unique_endpoint_direction(forward, reverse_error));
                 let Some(reversed) = reversed else {
                     return None;
                 };
@@ -973,7 +974,7 @@ fn plan_e5_boundary(
                 {
                     return None;
                 }
-                if if reversed { reverse_error } else { forward } > 2e-3 {
+                if if reversed { reverse_error } else { forward } > E5_ENDPOINT_MATCH_TOLERANCE {
                     return None;
                 }
                 let oriented_pcurve = if reversed {
@@ -1687,6 +1688,17 @@ pub(crate) fn e5_stored_pcurve_reversed(
     parameter_ranges_reversed(parameters, native_range)
 }
 
+fn unique_endpoint_direction(forward_error: f64, reverse_error: f64) -> Option<bool> {
+    match (
+        forward_error.is_finite() && forward_error <= E5_ENDPOINT_MATCH_TOLERANCE,
+        reverse_error.is_finite() && reverse_error <= E5_ENDPOINT_MATCH_TOLERANCE,
+    ) {
+        (true, false) => Some(false),
+        (false, true) => Some(true),
+        (true, true) | (false, false) => None,
+    }
+}
+
 pub(crate) fn parameter_ranges_reversed(
     parameters: [f64; 2],
     native_range: [f64; 2],
@@ -2336,12 +2348,15 @@ mod route_tests {
         e5_boundary_curve, e5_native_uv_endpoints, e5_occurrence_intersection_context,
         e5_ownership_plan, e5_pcurve_on_surface, e5_stored_pcurve_reversed,
         equivalent_e5_curve_carriers, fit_e5_plane_axes, fit_rank_one_e5_plane_axes,
-        parameter_range_agreement_tolerance, parameter_ranges_reversed, solve_e5_plane_frame,
+        parameter_range_agreement_tolerance, parameter_ranges_reversed, plan_e5_boundary,
+        solve_e5_plane_frame,
     };
 
     use crate::families::e5::graph::{
-        E5BoundEntry, E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5Pcurve, E5Topology,
+        E5BoundEntry, E5Bounds, E5CurveSupport, E5Edge, E5Face, E5Loop, E5OrientedMember, E5Pcurve,
+        E5Topology,
     };
+    use crate::families::e5::records::E5Surface;
 
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
@@ -2352,7 +2367,7 @@ mod route_tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
 
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, HashMap};
 
     #[test]
     fn e5_native_uv_endpoints_reject_nonfinite_results() {
@@ -2549,6 +2564,105 @@ mod route_tests {
             e5_stored_pcurve_reversed(&topology, 1, 20, [0.0, 1.0]),
             None
         );
+    }
+
+    #[test]
+    fn boundary_planning_rejects_degenerate_occurrence_direction() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 100,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [1.0, 1.0],
+        };
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![E5Face {
+                record_id: 1,
+                surface: 100,
+                trailer_sign: 1,
+                loops: vec![E5Loop {
+                    record_id: 2,
+                    surface: 100,
+                    pcurves: vec![20],
+                    edge_uses: vec![200],
+                    reversed: vec![false],
+                    oriented_members: Some(vec![E5OrientedMember {
+                        serialized_index: 0,
+                        reversed: false,
+                    }]),
+                    outer: Some(true),
+                    orientation_signs: Vec::new(),
+                }],
+            }],
+            edges: BTreeMap::from([(
+                200,
+                E5Edge {
+                    record_id: 200,
+                    support: 300,
+                    start_vertex: 400,
+                    end_vertex: 401,
+                    parameter_start: 500,
+                    parameter_end: 501,
+                    tail: Vec::new(),
+                },
+            )]),
+            pcurves: BTreeMap::from([(
+                20,
+                E5Pcurve::Line {
+                    surface: 100,
+                    origin: [0.0, 0.0],
+                    direction: [1.0, 0.0],
+                    range: [0.0, 1.0],
+                },
+            )]),
+            bounds: BTreeMap::from([
+                (
+                    500,
+                    E5Bounds {
+                        record_id: 500,
+                        entries: vec![E5BoundEntry {
+                            representation: 20,
+                            parameter: 0.0,
+                            code: 0,
+                        }],
+                    },
+                ),
+                (
+                    501,
+                    E5Bounds {
+                        record_id: 501,
+                        entries: vec![E5BoundEntry {
+                            representation: 20,
+                            parameter: 0.0,
+                            code: 0,
+                        }],
+                    },
+                ),
+            ]),
+            curve_supports: BTreeMap::from([(
+                300,
+                E5CurveSupport {
+                    record_id: 300,
+                    intersection: false,
+                    pcurves: vec![20],
+                    mode: 0,
+                    range: [0.0, 1.0],
+                    tail: Vec::new(),
+                },
+            )]),
+            vertex_refs: vec![400, 401],
+        };
+        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let points = HashMap::from([
+            (400, Point3::new(0.0, 0.0, 0.0)),
+            (401, Point3::new(0.0, 0.0, 0.0)),
+        ]);
+
+        assert!(plan_e5_boundary(&topology, &surfaces, &points).is_none());
     }
 
     #[test]
