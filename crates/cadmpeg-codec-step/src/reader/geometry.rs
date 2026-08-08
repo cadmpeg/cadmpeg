@@ -2176,6 +2176,9 @@ fn collect_references(value: &Value, references: &mut Vec<u64>) {
         | Value::Enumeration(_)
         | Value::Binary(_)
         | Value::Resource(_)
+        | Value::ValueReference(_)
+        | Value::ConstantEntity(_)
+        | Value::ConstantValue(_)
         | Value::Omitted
         | Value::Derived => {}
     }

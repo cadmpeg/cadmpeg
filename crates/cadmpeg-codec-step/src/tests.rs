@@ -109,6 +109,22 @@ fn lexer_accepts_hyphens_in_enumeration_names() {
 }
 
 #[test]
+fn lexer_distinguishes_entity_and_value_occurrence_names() {
+    use crate::lex::{lex, TokenKind};
+
+    let tokens = lex(b"#001 @002 #pi_value @_LIMIT").expect("occurrence names");
+    assert_eq!(tokens[0].kind, TokenKind::Instance(1));
+    assert_eq!(tokens[1].kind, TokenKind::ValueInstance(2));
+    assert_eq!(tokens[2].kind, TokenKind::ConstantEntity("PI_VALUE".into()));
+    assert_eq!(tokens[3].kind, TokenKind::ConstantValue("_LIMIT".into()));
+
+    for input in [b"#0".as_slice(), b"@00"] {
+        let error = lex(input).expect_err("zero occurrence name");
+        assert_eq!(error.message, "instance name must not be zero");
+    }
+}
+
+#[test]
 fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
     let nested = format!("{}1{}", "(".repeat(300), ")".repeat(300));
     let source = format!(
@@ -319,6 +335,63 @@ fn parser_accepts_external_instance_references_in_edition_three() {
         exchange.records[&1].partials[0].parameters,
         vec![crate::parse::Value::Reference(100)]
     );
+}
+
+#[test]
+fn parser_accepts_value_instances_and_express_constants_in_edition_three() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<constant_entity>=#PI; <constant_value>=@E; <external_value>=@100;ENDSEC;REFERENCE;#200=<part.step#entity>;@100=<part.step#value>;ENDSEC;DATA;#1=ITEM(#PI,@E,@100,#200);ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("edition-3 occurrences");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(
+        exchange
+            .references
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>(),
+        ["#200", "@100"]
+    );
+    assert_eq!(
+        exchange.anchors[0].value,
+        crate::parse::Value::ConstantEntity("PI".into())
+    );
+    assert_eq!(
+        exchange.anchors[1].value,
+        crate::parse::Value::ConstantValue("E".into())
+    );
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![
+            crate::parse::Value::ConstantEntity("PI".into()),
+            crate::parse::Value::ConstantValue("E".into()),
+            crate::parse::Value::ValueReference(100),
+            crate::parse::Value::Reference(200),
+        ]
+    );
+}
+
+#[test]
+fn parser_rejects_unresolved_or_colliding_value_instances() {
+    let unresolved = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(@100);ENDSEC;END-ISO-10303-21;";
+    let error = crate::parse::parse(unresolved).expect_err("unresolved value instance");
+    assert!(error
+        .to_string()
+        .contains("unresolved value instance reference"));
+
+    let collision = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;@100=<part.step#value>;ENDSEC;DATA;#100=ITEM();ENDSEC;END-ISO-10303-21;";
+    let error = crate::parse::parse(collision).expect_err("colliding value instance");
+    assert!(error
+        .to_string()
+        .contains("external value instance collides with a DATA instance"));
+}
+
+#[test]
+fn parser_rejects_edition_three_occurrences_in_historical_data() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM(#PI);ENDSEC;END-ISO-10303-21;";
+    let error = crate::parse::parse(source).expect_err("historical occurrence name");
+    assert!(error
+        .to_string()
+        .contains("historical implementation levels forbid edition-3 occurrence names"));
 }
 
 #[test]

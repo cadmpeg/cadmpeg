@@ -14,6 +14,7 @@ pub struct Token {
 
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum TokenKind {
     /// Standard keyword or entity name.
     Name(String),
@@ -21,6 +22,12 @@ pub enum TokenKind {
     UserName(String),
     /// Numeric `#`-prefixed entity-instance name.
     Instance(u64),
+    /// Numeric `@`-prefixed value-instance name.
+    ValueInstance(u64),
+    /// `#`-prefixed EXPRESS entity constant name.
+    ConstantEntity(String),
+    /// `@`-prefixed EXPRESS value constant name.
+    ConstantValue(String),
     /// Signed decimal integer.
     Integer(i64),
     /// Decimal real, including an optional exponent.
@@ -231,7 +238,8 @@ impl<'a> Lexer<'a> {
             b'=' => self.one(TokenKind::Equals),
             b'$' => self.one(TokenKind::Omitted),
             b'*' => self.one(TokenKind::Derived),
-            b'#' => self.instance()?,
+            b'#' => self.occurrence(b'#')?,
+            b'@' => self.occurrence(b'@')?,
             b'\'' => self.string()?,
             b'"' => self.binary()?,
             b'<' => self.resource()?,
@@ -244,7 +252,7 @@ impl<'a> Lexer<'a> {
             }
             b'!' => self.user_name()?,
             b'+' | b'-' | b'0'..=b'9' | b'.' => self.number()?,
-            b if b.is_ascii_alphabetic() => self.name(),
+            b if b.is_ascii_alphabetic() || b == b'_' => self.name(),
             _ => return Err(Self::error(start, "unexpected byte")),
         };
         Ok(Token {
@@ -274,7 +282,11 @@ impl<'a> Lexer<'a> {
     fn user_name(&mut self) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        if !self.input.get(self.at).is_some_and(u8::is_ascii_alphabetic) {
+        if !self
+            .input
+            .get(self.at)
+            .is_some_and(|byte| byte.is_ascii_alphabetic() || *byte == b'_')
+        {
             return Err(Self::error(start, "user-defined name has no identifier"));
         }
         let TokenKind::Name(name) = self.name() else {
@@ -283,21 +295,48 @@ impl<'a> Lexer<'a> {
         Ok(TokenKind::UserName(name))
     }
 
-    fn instance(&mut self) -> Result<TokenKind, LexError> {
+    fn occurrence(&mut self, prefix: u8) -> Result<TokenKind, LexError> {
         let start = self.at;
         self.at += 1;
-        let digits = self.at;
-        while self.input.get(self.at).is_some_and(u8::is_ascii_digit) {
-            self.at += 1;
+        match self.input.get(self.at).copied() {
+            Some(byte) if byte.is_ascii_digit() => {
+                let digits = self.at;
+                while self.input.get(self.at).is_some_and(u8::is_ascii_digit) {
+                    self.at += 1;
+                }
+                let value = std::str::from_utf8(&self.input[digits..self.at])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
+                if value == 0 {
+                    return Err(Self::error(start, "instance name must not be zero"));
+                }
+                match prefix {
+                    b'#' => Ok(TokenKind::Instance(value)),
+                    b'@' => Ok(TokenKind::ValueInstance(value)),
+                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                }
+            }
+            Some(byte) if byte.is_ascii_alphabetic() || byte == b'_' => {
+                let name_start = self.at;
+                self.at += 1;
+                while self
+                    .input
+                    .get(self.at)
+                    .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+                {
+                    self.at += 1;
+                }
+                let name =
+                    String::from_utf8_lossy(&self.input[name_start..self.at]).to_ascii_uppercase();
+                match prefix {
+                    b'#' => Ok(TokenKind::ConstantEntity(name)),
+                    b'@' => Ok(TokenKind::ConstantValue(name)),
+                    _ => unreachable!("occurrence prefixes are fixed by the lexer"),
+                }
+            }
+            _ => Err(Self::error(start, "occurrence name has no identifier")),
         }
-        if digits == self.at {
-            return Err(Self::error(start, "instance name has no digits"));
-        }
-        let value = std::str::from_utf8(&self.input[digits..self.at])
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .ok_or_else(|| Self::error(start, "instance name is out of range"))?;
-        Ok(TokenKind::Instance(value))
     }
 
     fn number(&mut self) -> Result<TokenKind, LexError> {

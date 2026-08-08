@@ -470,6 +470,9 @@ fn value_text(
 ) -> Option<String> {
     match value {
         Value::Reference(id) => Some(format!("#{id}")),
+        Value::ValueReference(id) => Some(format!("@{id}")),
+        Value::ConstantEntity(name) => Some(format!("#{name}")),
+        Value::ConstantValue(name) => Some(format!("@{name}")),
         Value::Integer(value) => Some(value.to_string()),
         Value::Real(value) => Some(value.to_string()),
         Value::Enumeration(value) => Some(format!(".{value}.")),

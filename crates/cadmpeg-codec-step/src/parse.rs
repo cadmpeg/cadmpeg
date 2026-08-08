@@ -14,9 +14,16 @@ use crate::lex::{BinaryValue, LexError, Lexer, Token, TokenKind};
 
 /// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     /// Reference to a DATA entity instance.
     Reference(u64),
+    /// Reference to an externally defined value instance.
+    ValueReference(u64),
+    /// Reference to an EXPRESS entity constant.
+    ConstantEntity(String),
+    /// Reference to an EXPRESS value constant.
+    ConstantValue(String),
     /// Signed integer value.
     Integer(i64),
     /// Real value.
@@ -486,22 +493,35 @@ impl Parser<'_> {
         }
         let mut reference_entries = Vec::new();
         let mut external_reference_ids = BTreeSet::new();
+        let mut external_value_reference_ids = BTreeSet::new();
         let mut reference_names = BTreeSet::new();
         if self.peek_name("REFERENCE") {
             self.next_kind()?;
             self.punct(&TokenKind::Semicolon)?;
             while !self.peek_name("ENDSEC") {
-                let (name, instance_id) = match self.next_kind()? {
+                let (name, occurrence_id) = match self.next_kind()? {
                     TokenKind::Resource(name) => (name, None),
-                    TokenKind::Instance(id) => (format!("#{id}"), Some(id)),
+                    TokenKind::Instance(id) => (format!("#{id}"), Some((b'#', id))),
+                    TokenKind::ValueInstance(id) => (format!("@{id}"), Some((b'@', id))),
                     _ => return self.err("expected reference name"),
                 };
                 if !reference_names.insert(name.clone()) {
                     return self.err("duplicate reference name");
                 }
-                if let Some(id) = instance_id {
-                    if !external_reference_ids.insert(id) {
-                        return self.err("duplicate external reference instance name");
+                if let Some((prefix, id)) = occurrence_id {
+                    let already_used = external_reference_ids.contains(&id)
+                        || external_value_reference_ids.contains(&id);
+                    if already_used {
+                        return self.err("duplicate external occurrence integer");
+                    }
+                    match prefix {
+                        b'#' => {
+                            external_reference_ids.insert(id);
+                        }
+                        b'@' => {
+                            external_value_reference_ids.insert(id);
+                        }
+                        _ => unreachable!("occurrence prefixes are fixed by the parser"),
                     }
                 }
                 self.punct(&TokenKind::Equals)?;
@@ -591,6 +611,12 @@ impl Parser<'_> {
         if records.keys().any(|id| external_reference_ids.contains(id)) {
             return self.err("external reference instance collides with a DATA instance");
         }
+        if records
+            .keys()
+            .any(|id| external_value_reference_ids.contains(id))
+        {
+            return self.err("external value instance collides with a DATA instance");
+        }
         if !anchors.is_empty() {
             let anchor_bindings = anchors
                 .iter()
@@ -630,21 +656,30 @@ impl Parser<'_> {
             }
         }
         let mut refs = Vec::new();
+        let mut value_refs = Vec::new();
         for anchor in &anchors {
             refs.clear();
-            references(&anchor.value, &mut refs);
+            value_refs.clear();
+            references(&anchor.value, &mut refs, &mut value_refs);
             if refs
                 .iter()
                 .any(|id| !records.contains_key(id) && !external_reference_ids.contains(id))
             {
                 return self.err("unresolved instance reference in anchor binding");
             }
+            if value_refs
+                .iter()
+                .any(|id| !external_value_reference_ids.contains(id))
+            {
+                return self.err("unresolved value instance reference in anchor binding");
+            }
         }
         for record in records.values() {
             refs.clear();
+            value_refs.clear();
             for partial in &record.partials {
                 for value in &partial.parameters {
-                    references(value, &mut refs);
+                    references(value, &mut refs, &mut value_refs);
                 }
             }
             if refs
@@ -653,6 +688,28 @@ impl Parser<'_> {
             {
                 return Self::err_at(record.span.start, "unresolved instance reference");
             }
+            if value_refs
+                .iter()
+                .any(|id| !external_value_reference_ids.contains(id))
+            {
+                return Self::err_at(record.span.start, "unresolved value instance reference");
+            }
+        }
+        let contains_edition3_occurrence_in_exchange =
+            implementation_level != ImplementationLevel::Edition3
+                && (header
+                    .iter()
+                    .any(|record| record.parameters.iter().any(contains_edition3_occurrence))
+                    || anchors
+                        .iter()
+                        .any(|anchor| contains_edition3_occurrence(&anchor.value))
+                    || records.values().any(|record| {
+                        record.partials.iter().any(|partial| {
+                            partial.parameters.iter().any(contains_edition3_occurrence)
+                        })
+                    }));
+        if contains_edition3_occurrence_in_exchange {
+            return self.err("historical implementation levels forbid edition-3 occurrence names");
         }
         if let Some(offset) = self.first_omitted_entity_name_offset {
             self.diagnostics.push(ParseDiagnostic {
@@ -774,6 +831,9 @@ impl Parser<'_> {
         }
         match self.next_kind()? {
             TokenKind::Instance(v) => Ok(Value::Reference(v)),
+            TokenKind::ValueInstance(v) => Ok(Value::ValueReference(v)),
+            TokenKind::ConstantEntity(name) => Ok(Value::ConstantEntity(name)),
+            TokenKind::ConstantValue(name) => Ok(Value::ConstantValue(name)),
             TokenKind::Integer(v) => Ok(Value::Integer(v)),
             TokenKind::Real(v) => Ok(Value::Real(v)),
             TokenKind::Enumeration(v) => Ok(Value::Enumeration(v)),
@@ -1080,15 +1140,25 @@ impl<'a> AnchorResolver<'a> {
     }
 }
 
-fn references(value: &Value, out: &mut Vec<u64>) {
+fn references(value: &Value, entity_out: &mut Vec<u64>, value_out: &mut Vec<u64>) {
     let mut pending = vec![value];
     while let Some(value) = pending.pop() {
         match value {
-            Value::Reference(id) => out.push(*id),
+            Value::Reference(id) => entity_out.push(*id),
+            Value::ValueReference(id) => value_out.push(*id),
             Value::List(values) => pending.extend(values.iter().rev()),
             Value::Typed(_, value) => pending.push(value),
             _ => {}
         }
+    }
+}
+
+fn contains_edition3_occurrence(value: &Value) -> bool {
+    match value {
+        Value::ValueReference(_) | Value::ConstantEntity(_) | Value::ConstantValue(_) => true,
+        Value::List(values) => values.iter().any(contains_edition3_occurrence),
+        Value::Typed(_, value) => contains_edition3_occurrence(value),
+        _ => false,
     }
 }
 
