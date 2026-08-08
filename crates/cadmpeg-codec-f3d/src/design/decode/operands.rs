@@ -2142,12 +2142,14 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let record_indexes = scope
-            .combine_operation
-            .as_ref()
-            .map_or(scope.reference_members.as_slice(), |operation| {
-                operation.body_selection_record_indexes.as_slice()
-            });
+        let combine_record_indexes = scope.combine_operation.as_ref().map(|operation| {
+            std::iter::once(operation.target.record_index)
+                .chain(operation.tools.iter().map(|tool| tool.record_index))
+                .collect::<Vec<_>>()
+        });
+        let record_indexes = combine_record_indexes
+            .as_deref()
+            .unwrap_or(&scope.reference_members);
         for record_index in record_indexes {
             let mut ordinals = scope
                 .reference_members

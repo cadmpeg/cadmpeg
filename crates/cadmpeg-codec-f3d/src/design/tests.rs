@@ -116,17 +116,18 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
     DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
     DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignCombineOperation, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
-    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
-    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
-    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
-    DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignCoilSectionPlacement, DesignCombineBodySelection, DesignCombineForm,
+    DesignCombineOperation, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
+    DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudePrologue,
+    DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand, DesignFaceRecipeNode,
+    DesignFaceRecipeStructure, DesignFixedChamferParameters, DesignFixedExtrudeDistance,
+    DesignFixedExtrudeParameters, DesignFixedExtrudeScalar, DesignFixedFilletParameters,
+    DesignHoleConstruction, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
     DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
@@ -7066,7 +7067,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         indexed_header(bytes, b"306", record_index);
     }
 
-    let scope_record_index = 90;
+    let scope_record_index = 90u32;
     let references = [91u32, 92, 93, 94, 95, 96];
     let mut bytes = Vec::new();
     indexed_header(&mut bytes, b"382", scope_record_index);
@@ -7111,11 +7112,25 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     assert_eq!(
         operation,
         DesignCombineOperation {
+            form: DesignCombineForm::Standard,
             operation: DesignExtrudeOperation::Join,
             operation_offset: 20,
             keep_tools: true,
             keep_tools_offset: 25,
-            body_selection_record_indexes: vec![96, 92, 94],
+            target: DesignCombineBodySelection {
+                record_index: 96,
+                external_identity: None,
+            },
+            tools: vec![
+                DesignCombineBodySelection {
+                    record_index: 92,
+                    external_identity: None,
+                },
+                DesignCombineBodySelection {
+                    record_index: 94,
+                    external_identity: None,
+                },
+            ],
         }
     );
     scope.combine_operation = Some(operation);
@@ -7144,7 +7159,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     compact_bytes[31..35].copy_from_slice(&1u32.to_le_bytes());
     compact_bytes[35] = 1;
     compact_bytes[36..44].copy_from_slice(&200u64.to_le_bytes());
-    compact_bytes[44] = 0;
+    compact_bytes[44..46].fill(0);
     let mut compact_scope = scope.clone();
     compact_scope.class_tag = "387".into();
     compact_scope.paired_class_tag = "258".into();
@@ -7158,7 +7173,185 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     assert_eq!(compact.operation, DesignExtrudeOperation::Join);
     assert_eq!(compact.operation_offset, 21);
     assert!(!compact.keep_tools);
-    assert_eq!(compact.body_selection_record_indexes, [96, 92, 94]);
+    assert_eq!(compact.form, DesignCombineForm::Compact);
+    assert_eq!(compact.target.record_index, 96);
+    assert_eq!(
+        compact
+            .tools
+            .iter()
+            .map(|tool| tool.record_index)
+            .collect::<Vec<_>>(),
+        [92, 94]
+    );
+
+    let mut malformed_compact_tail = compact_bytes;
+    malformed_compact_tail[45] = 1;
+    assert!(exact_combine_operation(
+        &malformed_compact_tail,
+        &IndexedRecordOffsets::build(&malformed_compact_tail),
+        &compact_scope,
+    )
+    .is_none());
+}
+
+#[test]
+fn combine_extended_reference_scope_retains_external_tool_identity() {
+    fn indexed_header(bytes: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32) {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class_tag);
+        bytes.extend_from_slice(&record_index.to_le_bytes());
+    }
+    fn local_reference(bytes: &mut Vec<u8>, target: u64) {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    fn operation_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"304", record_index);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&24u32.to_le_bytes());
+        bytes.extend_from_slice(b"DcFeatureOperationIdFlag");
+        bytes.extend_from_slice(&23u32.to_le_bytes());
+        bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&7u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"261", record_index);
+    }
+    fn target_record(bytes: &mut Vec<u8>, record_index: u32, selection_record_index: u32) {
+        indexed_header(bytes, b"304", record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&selection_record_index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(bytes, b"261", record_index);
+    }
+    fn external_selection_record(bytes: &mut Vec<u8>, scope: u32, record_index: u32) {
+        const ASSET: &str = "11111111-1111-4111-8111-111111111111";
+        const CONTEXT: &str = "22222222-2222-4222-8222-222222222222";
+        indexed_header(bytes, b"312", record_index);
+        bytes.extend_from_slice(&[0; 14]);
+        local_reference(bytes, u64::from(record_index + 3));
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(bytes, ASSET);
+        lp_utf16(bytes, CONTEXT);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        local_reference(bytes, 5_001);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&6_001u64.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(bytes, ASSET);
+        bytes.push(0);
+        lp_utf16(bytes, "component-body-link");
+        bytes.push(1);
+        lp_utf16(bytes, "33333333-3333-4333-8333-333333333333");
+        lp_utf16(bytes, "urn:example:version:4");
+        bytes.extend_from_slice(&9u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&11u64.to_le_bytes());
+        bytes.extend_from_slice(&48u32.to_le_bytes());
+        bytes.extend_from_slice(&12u64.to_le_bytes());
+        local_reference(bytes, u64::from(record_index + 2));
+        bytes.extend_from_slice(&[0; 2]);
+        local_reference(bytes, u64::from(record_index + 1));
+        bytes.push(0);
+        local_reference(bytes, u64::from(scope));
+        indexed_header(bytes, b"261", record_index);
+    }
+    fn simple_selection_record(bytes: &mut Vec<u8>, record_index: u32) {
+        indexed_header(bytes, b"312", record_index);
+        lp_utf16(bytes, "44444444-4444-4444-8444-444444444444");
+        lp_utf16(bytes, "55555555-5555-4555-8555-555555555555");
+        indexed_header(bytes, b"261", record_index);
+    }
+
+    let scope_record_index = 90u32;
+    let mut bytes = vec![0; 363];
+    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..7].copy_from_slice(b"329");
+    bytes[7..11].copy_from_slice(&scope_record_index.to_le_bytes());
+    bytes[29] = 1;
+    bytes[30] = 1;
+    bytes[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes[35] = 1;
+    bytes[36..44].copy_from_slice(&700u64.to_le_bytes());
+    bytes[44..46].fill(0);
+    indexed_header(&mut bytes, b"261", scope_record_index);
+    operation_record(&mut bytes, 91, 92);
+    external_selection_record(&mut bytes, scope_record_index, 92);
+    target_record(&mut bytes, 93, 94);
+    simple_selection_record(&mut bytes, 94);
+
+    let mut scope = DesignParameterScope::empty("scope", "Combine", scope_record_index);
+    scope.byte_offset = 0;
+    scope.class_tag = "329".into();
+    scope.paired_class_tag = "261".into();
+    scope.frame_length = 363;
+    scope.reference_members = vec![91, 92, 93, 94];
+    let records = IndexedRecordOffsets::build(&bytes);
+    let operation = exact_combine_operation(&bytes, &records, &scope)
+        .expect("extended-reference Combine construction");
+    assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
+    assert_eq!(operation.operation, DesignExtrudeOperation::Cut);
+    assert_eq!(operation.operation_offset, 31);
+    assert!(operation.keep_tools);
+    assert_eq!(operation.keep_tools_offset, 30);
+    assert_eq!(operation.target.record_index, 94);
+    let [tool] = operation.tools.as_slice() else {
+        panic!("one external tool");
+    };
+    let identity = tool
+        .external_identity
+        .as_ref()
+        .expect("cross-document body identity");
+    assert_eq!(identity.occurrence_reference, 5_001);
+    assert_eq!(identity.external_body_reference, 6_001);
+    assert_eq!(identity.external_segment, 7);
+    assert_eq!(identity.external_link_name, "component-body-link");
+    assert_eq!(
+        identity.external_property_key.as_deref(),
+        Some("33333333-3333-4333-8333-333333333333")
+    );
+    assert_eq!(
+        identity.external_version_urn.as_deref(),
+        Some("urn:example:version:4")
+    );
+    assert_eq!(identity.tail_values, [11, 12]);
+    assert_eq!(
+        identity.tail_value_offsets[1],
+        identity.tail_value_offsets[0] + 12
+    );
+
+    let mut malformed_scope = scope.clone();
+    malformed_scope.frame_length = 367;
+    assert!(exact_combine_operation(&bytes, &records, &malformed_scope).is_none());
+    let mut malformed_reference = bytes.clone();
+    malformed_reference[35] = 0;
+    assert!(exact_combine_operation(
+        &malformed_reference,
+        &IndexedRecordOffsets::build(&malformed_reference),
+        &scope,
+    )
+    .is_none());
+
+    let mut malformed_external_asset = bytes;
+    malformed_external_asset[usize::try_from(identity.external_asset_id_offset).unwrap()] = b'g';
+    let operation = exact_combine_operation(
+        &malformed_external_asset,
+        &IndexedRecordOffsets::build(&malformed_external_asset),
+        &scope,
+    )
+    .expect("operation remains exact when only the optional external identity is malformed");
+    assert!(operation.tools[0].external_identity.is_none());
 }
 
 #[test]
@@ -11122,11 +11315,16 @@ fn body_recipe_operand_decodes_counted_reference_table() {
     let mut combine_scope =
         DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#80", "Combine", 80);
     combine_scope.combine_operation = Some(crate::records::DesignCombineOperation {
+        form: crate::records::DesignCombineForm::Standard,
         operation: crate::records::DesignExtrudeOperation::Join,
         operation_offset: 0,
         keep_tools: false,
         keep_tools_offset: 0,
-        body_selection_record_indexes: Vec::new(),
+        target: crate::records::DesignCombineBodySelection {
+            record_index: 0,
+            external_identity: None,
+        },
+        tools: Vec::new(),
     });
     let combine_recipe = ConstructionRecipe {
         design_selector: Some(crate::records::ConstructionRecipeSelector {

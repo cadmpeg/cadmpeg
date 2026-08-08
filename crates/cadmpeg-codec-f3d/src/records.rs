@@ -1525,10 +1525,88 @@ pub enum DesignPathFeatureConstruction {
     },
 }
 
+/// Serialized prologue form of a `Combine` scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCombineForm {
+    /// Nine zero bytes followed by the operation at offset 20.
+    Standard,
+    /// Class-387 form with the operation at offset 21.
+    Compact,
+    /// Eighteen-zero reference form with the operation at offset 31.
+    ExtendedReference,
+}
+
+/// Cross-document persistent body identity carried by a `Combine` tool selector.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCombineExternalBodyIdentity {
+    /// Asset GUID of the enclosing body selector.
+    pub selector_asset_id: String,
+    /// Byte offset of `selector_asset_id`.
+    pub selector_asset_id_offset: u64,
+    /// Context GUID of the enclosing body selector.
+    pub selector_context_id: String,
+    /// Byte offset of `selector_context_id`.
+    pub selector_context_id_offset: u64,
+    /// Same-segment occurrence reference preceding the external body reference.
+    pub occurrence_reference: u64,
+    /// Byte offset of `occurrence_reference`.
+    pub occurrence_reference_offset: u64,
+    /// Entity reference of the body in the referenced document.
+    pub external_body_reference: u64,
+    /// Byte offset of `external_body_reference`.
+    pub external_body_reference_offset: u64,
+    /// Segment carried by the cross-document body reference.
+    pub external_segment: u32,
+    /// Byte offset of `external_segment`.
+    pub external_segment_offset: u64,
+    /// Asset GUID carried by the cross-document body reference.
+    pub external_asset_id: String,
+    /// Byte offset of `external_asset_id`.
+    pub external_asset_id_offset: u64,
+    /// Link name carried by the cross-document body reference.
+    pub external_link_name: String,
+    /// Byte offset of `external_link_name`.
+    pub external_link_name_offset: u64,
+    /// Optional property key preceding the version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key: Option<String>,
+    /// Byte offset of `external_property_key` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_property_key_offset: Option<u64>,
+    /// Optional referenced-document version identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn: Option<String>,
+    /// Byte offset of `external_version_urn` when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_version_urn_offset: Option<u64>,
+    /// Retained u64 values around the fixed `u32 48` member in the selector tail.
+    #[serde(default)]
+    pub tail_values: [u64; 2],
+    /// Byte offsets of `tail_values` in source order.
+    #[serde(default)]
+    pub tail_value_offsets: [u64; 2],
+}
+
+/// One target or tool body selector owned by a `Combine` operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignCombineBodySelection {
+    /// Body-selection record index.
+    pub record_index: u32,
+    /// Complete external body identity when the selector crosses a document boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_identity: Option<DesignCombineExternalBodyIdentity>,
+}
+
 /// Exact Boolean construction carried by a `Combine` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct DesignCombineOperation {
+    /// Serialized scope-prologue form.
+    pub form: DesignCombineForm,
     /// Join, cut, or intersect operation.
     pub operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
@@ -1537,8 +1615,10 @@ pub struct DesignCombineOperation {
     pub keep_tools: bool,
     /// Byte offset of the keep-tools Boolean.
     pub keep_tools_offset: u64,
-    /// Ordered body-selection record indexes: target first, then tools.
-    pub body_selection_record_indexes: Vec<u32>,
+    /// Boolean target body selector.
+    pub target: DesignCombineBodySelection,
+    /// Boolean tool body selectors in source order.
+    pub tools: Vec<DesignCombineBodySelection>,
 }
 
 /// Thread construction form selected by the scope prefix and payload marker.

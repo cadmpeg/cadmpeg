@@ -1269,17 +1269,22 @@ pub(crate) fn project_combine(
     use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
 
     let operation = scope.combine_operation.as_ref()?;
-    let (target, tools) = operation.body_selection_record_indexes.split_first()?;
-    if tools.is_empty() {
+    if operation.tools.is_empty() {
         return None;
     }
     let selection = |record_index| format!("{native_scope}:design-record#{record_index}");
     Some(FeatureDefinition::Combine {
-        target: BodySelection::Native(selection(*target)),
-        tools: if let [tool] = tools {
-            BodySelection::Native(selection(*tool))
+        target: BodySelection::Native(selection(operation.target.record_index)),
+        tools: if let [tool] = operation.tools.as_slice() {
+            BodySelection::Native(selection(tool.record_index))
         } else {
-            BodySelection::NativeSet(tools.iter().map(|tool| selection(*tool)).collect())
+            BodySelection::NativeSet(
+                operation
+                    .tools
+                    .iter()
+                    .map(|tool| selection(tool.record_index))
+                    .collect(),
+            )
         },
         op: match operation.operation {
             DesignExtrudeOperation::Join => BooleanOp::Join,

@@ -11015,6 +11015,117 @@ fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
 }
 
 #[test]
+fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
+    use crate::records::{
+        ConstructionRecipe, ConstructionRecipeKind, ConstructionRecipeSelector,
+        DesignBodyRecipeOperand, DesignBodyRecipeOperandOwner, DesignBodyRecipeReference,
+        DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
+        DesignExtrudeOperation, DesignParameterScope, DesignRecordHeader,
+    };
+
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let mut scopes = Vec::new();
+    let mut headers = Vec::new();
+    let mut recipes = Vec::new();
+    let mut operands = Vec::new();
+    for ordinal in 0..2u32 {
+        let scope_record_index = 10 + ordinal;
+        let operand_record_index = 100 + ordinal * 10;
+        let byte_offset = 1_000 + u64::from(ordinal) * 1_000;
+        let recipe_id = format!("{stream}:construction-recipe#{ordinal}");
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{scope_record_index}"),
+            "Combine",
+            scope_record_index,
+        );
+        scope.reference_members = vec![1, 2, 3, 4, 5, operand_record_index];
+        scope.combine_operation = Some(DesignCombineOperation {
+            form: DesignCombineForm::Standard,
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target: DesignCombineBodySelection {
+                record_index: operand_record_index,
+                external_identity: None,
+            },
+            tools: vec![DesignCombineBodySelection {
+                record_index: operand_record_index + 1,
+                external_identity: None,
+            }],
+        });
+        scopes.push(scope);
+        headers.push(DesignRecordHeader {
+            id: format!("{stream}:design-record-header#{operand_record_index}"),
+            record_index: operand_record_index,
+            class_tag: "365".into(),
+            byte_offset,
+        });
+        recipes.push(ConstructionRecipe {
+            id: recipe_id.clone(),
+            byte_offset: byte_offset + 220,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: Some("301".into()),
+            design_id_offset: Some(byte_offset + 197),
+            design_selector: Some(ConstructionRecipeSelector {
+                value: operand_record_index + 4,
+                byte_offset: byte_offset + 200,
+            }),
+            recipe_index: ordinal,
+            record_index: i32::try_from(operand_record_index + 3).unwrap(),
+        });
+        operands.push(DesignBodyRecipeOperand {
+            id: format!("{stream}:design-body-recipe-operand#{operand_record_index}"),
+            scope_record_index,
+            owner: DesignBodyRecipeOperandOwner::ScopeReference {
+                scope_reference_ordinal: 5,
+            },
+            record_index: operand_record_index,
+            byte_offset,
+            class_tag: "365".into(),
+            asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            asset_id_offset: byte_offset + 56,
+            context_id: "22222222-2222-4222-8222-222222222222".into(),
+            context_id_offset: byte_offset + 136,
+            references: vec![DesignBodyRecipeReference {
+                design_reference: u64::from(300 + ordinal),
+                design_reference_offset: byte_offset + 25,
+                form: 3,
+                form_offset: byte_offset + 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: u64::from(operand_record_index + 3),
+            nested_record_index_offset: byte_offset + 38,
+            recipe_id,
+            resolved_face_slot: None,
+            resolved_body_slot: None,
+            next_record_index: operand_record_index + 4,
+            next_byte_offset: byte_offset + 300,
+        });
+    }
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes = scopes;
+        native.design_record_headers = headers;
+        native.construction_recipes = recipes;
+        native.design_body_recipe_operands = operands;
+    }
+
+    let findings = crate::validate::validate_native(&ir);
+    let invalid_operands = findings
+        .iter()
+        .filter(|finding| {
+            finding.message == "Fusion Design body recipe operand has an invalid nested frame"
+        })
+        .collect::<Vec<_>>();
+    assert!(invalid_operands.is_empty(), "{invalid_operands:#?}");
+}
+
+#[test]
 fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec

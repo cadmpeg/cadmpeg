@@ -1395,6 +1395,165 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         .contains(&(native_stream, operation.opposite_angle_record_index))
             }
         };
+        let combine_link = match (
+            scope.combine_operation.as_ref(),
+            design::design_feature_family(&scope.kind),
+        ) {
+            (None, _) => true,
+            (Some(_), family) if family != Some(design::DesignFeatureFamily::Combine) => false,
+            (Some(operation), _) => {
+                let expected_selections = scope
+                    .reference_members
+                    .iter()
+                    .skip(1)
+                    .step_by(2)
+                    .copied()
+                    .collect::<HashSet<_>>();
+                let selections = std::iter::once(&operation.target)
+                    .chain(&operation.tools)
+                    .collect::<Vec<_>>();
+                let actual_selections = selections
+                    .iter()
+                    .map(|selection| selection.record_index)
+                    .collect::<HashSet<_>>();
+                let valid_external = |selection: &records::DesignCombineBodySelection| {
+                    selection.external_identity.as_ref().is_none_or(|identity| {
+                        let Some(header) =
+                            records_by_index.get(&(native_stream, selection.record_index))
+                        else {
+                            return false;
+                        };
+                        let utf16_end = |offset: u64, value: &str| {
+                            u64::try_from(value.encode_utf16().count())
+                                .ok()?
+                                .checked_mul(2)?
+                                .checked_add(offset)
+                        };
+                        let Some(selector_asset_end) = utf16_end(
+                            identity.selector_asset_id_offset,
+                            &identity.selector_asset_id,
+                        ) else {
+                            return false;
+                        };
+                        let Some(selector_context_end) = utf16_end(
+                            identity.selector_context_id_offset,
+                            &identity.selector_context_id,
+                        ) else {
+                            return false;
+                        };
+                        let Some(external_asset_end) = utf16_end(
+                            identity.external_asset_id_offset,
+                            &identity.external_asset_id,
+                        ) else {
+                            return false;
+                        };
+                        let Some(external_link_name_end) = utf16_end(
+                            identity.external_link_name_offset,
+                            &identity.external_link_name,
+                        ) else {
+                            return false;
+                        };
+                        let optional_tail_is_valid = match (
+                            identity.external_property_key.as_deref(),
+                            identity.external_property_key_offset,
+                            identity.external_version_urn.as_deref(),
+                            identity.external_version_urn_offset,
+                        ) {
+                            (None, None, None, None) => {
+                                external_link_name_end.checked_add(7)
+                                    == Some(identity.tail_value_offsets[0])
+                            }
+                            (
+                                Some(property_key),
+                                Some(property_key_offset),
+                                Some(version_urn),
+                                Some(version_urn_offset),
+                            ) => {
+                                let property_key_offset_is_valid = external_link_name_end
+                                    .checked_add(5)
+                                    == Some(property_key_offset);
+                                let property_key_end = utf16_end(property_key_offset, property_key);
+                                let version_urn_offset_is_valid = property_key_end
+                                    .and_then(|end| end.checked_add(4))
+                                    == Some(version_urn_offset);
+                                let tail_offset_is_valid =
+                                    utf16_end(version_urn_offset, version_urn)
+                                        .and_then(|end| end.checked_add(6))
+                                        == Some(identity.tail_value_offsets[0]);
+                                crate::bytes::is_guid_relaxed(property_key)
+                                    && !version_urn.is_empty()
+                                    && property_key_offset_is_valid
+                                    && version_urn_offset_is_valid
+                                    && tail_offset_is_valid
+                            }
+                            _ => false,
+                        };
+                        crate::bytes::is_guid_relaxed(&identity.selector_asset_id)
+                            && crate::bytes::is_guid_relaxed(&identity.selector_context_id)
+                            && crate::bytes::is_guid_relaxed(&identity.external_asset_id)
+                            && identity.external_asset_id == identity.selector_asset_id
+                            && identity.occurrence_reference != 0
+                            && identity.external_body_reference != 0
+                            && !identity.external_link_name.is_empty()
+                            && header.byte_offset.checked_add(44)
+                                == Some(identity.selector_asset_id_offset)
+                            && selector_asset_end.checked_add(4)
+                                == Some(identity.selector_context_id_offset)
+                            && selector_context_end.checked_add(13)
+                                == Some(identity.occurrence_reference_offset)
+                            && identity.occurrence_reference_offset.checked_add(15)
+                                == Some(identity.external_body_reference_offset)
+                            && identity.external_body_reference_offset.checked_add(9)
+                                == Some(identity.external_segment_offset)
+                            && identity.external_segment_offset.checked_add(8)
+                                == Some(identity.external_asset_id_offset)
+                            && external_asset_end.checked_add(5)
+                                == Some(identity.external_link_name_offset)
+                            && optional_tail_is_valid
+                            && identity.tail_value_offsets[0].checked_add(12)
+                                == Some(identity.tail_value_offsets[1])
+                    })
+                };
+                let compact_scope = scope.class_tag == "387"
+                    && scope.paired_class_tag == "258"
+                    && design::decode::scopes::parameter_scope_payload_length(scope) == Some(314);
+                let extended_reference_scope = scope.class_tag == "329"
+                    && scope.paired_class_tag == "261"
+                    && scope.frame_length == 363;
+                scope.reference_members.len() >= 4
+                    && scope.reference_members.len().is_multiple_of(2)
+                    && !operation.tools.is_empty()
+                    && operation.target.external_identity.is_none()
+                    && selections.len() == scope.reference_members.len() / 2
+                    && actual_selections.len() == selections.len()
+                    && actual_selections == expected_selections
+                    && selections.into_iter().all(valid_external)
+                    && match operation.form {
+                        records::DesignCombineForm::Standard => {
+                            !compact_scope
+                                && !extended_reference_scope
+                                && operation.operation_offset
+                                    == scope.byte_offset.saturating_add(20)
+                                && operation.keep_tools_offset
+                                    == scope.byte_offset.saturating_add(25)
+                        }
+                        records::DesignCombineForm::Compact => {
+                            compact_scope
+                                && operation.operation_offset
+                                    == scope.byte_offset.saturating_add(21)
+                                && operation.keep_tools_offset
+                                    == scope.byte_offset.saturating_add(25)
+                        }
+                        records::DesignCombineForm::ExtendedReference => {
+                            extended_reference_scope
+                                && operation.operation_offset
+                                    == scope.byte_offset.saturating_add(31)
+                                && operation.keep_tools_offset
+                                    == scope.byte_offset.saturating_add(30)
+                        }
+                    }
+            }
+        };
         let thread_link = match (
             scope.thread_construction.as_ref(),
             design::design_feature_family(&scope.kind),
@@ -1864,6 +2023,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) {
             && component_insert_link
             && copy_paste_component_link
             && draft_link
+            && combine_link
             && thread_link
             && joint_origin_link
             && (scope.kind != "Sketch"
@@ -3727,9 +3887,11 @@ fn validate_body_recipe_operands<'a>(
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
                         == Some(&operand.record_index)
                     && (scope.combine_operation.as_ref().is_some_and(|operation| {
-                        operation
-                            .body_selection_record_indexes
-                            .contains(&operand.record_index)
+                        operation.target.record_index == operand.record_index
+                            || operation
+                                .tools
+                                .iter()
+                                .any(|tool| tool.record_index == operand.record_index)
                     }) || scope.kind == "Hole")
             }
         });
@@ -3795,7 +3957,7 @@ fn validate_body_recipe_operands<'a>(
             && operand.next_record_index == operand.record_index.saturating_add(4)
             && operand.next_byte_offset > operand.nested_record_index_offset
             && expected_operands.get(operand.id.as_str()) == Some(&operand)
-            && member_slots.insert((native_stream, operand.owner))
+            && member_slots.insert((native_stream, operand.scope_record_index, operand.owner))
             && operand_records.insert((native_stream, operand.record_index));
         if !valid {
             findings.push(Finding {

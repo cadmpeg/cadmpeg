@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse parameter scopes and exact feature-construction frames.
 
-use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference};
+use crate::bytes::{is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference};
 use crate::container::{role, ContainerScan};
 use crate::design::decode::operands::{
     parse_construction_operand_group, parse_entity_selection_frame, parse_entity_selection_prefix,
@@ -16,7 +16,8 @@ use crate::records::{
     ConstructionRecipe, DesignAssemblyAlignment, DesignAssemblyOperandFrame,
     DesignAssemblyOperandPath, DesignBaseFeatureConstruction, DesignBaseFlangeOperation,
     DesignBendPosition, DesignCircularPatternConstruction, DesignCoilExtent, DesignCoilPlacement,
-    DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineOperation,
+    DesignCoilSection, DesignCoilSectionPlacement, DesignCoilSelection, DesignCombineBodySelection,
+    DesignCombineExternalBodyIdentity, DesignCombineForm, DesignCombineOperation,
     DesignComponentInsertConstruction, DesignComponentOccurrence,
     DesignComponentPatternOccurrences, DesignCopyPasteBodiesOperation,
     DesignCopyPasteComponentOperation, DesignDirectFaceOperation, DesignDraftOperation,
@@ -34,7 +35,7 @@ use crate::records::{
     DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation,
     DesignThreadConstruction, DesignThreadForm, DesignWorkAxisConstruction,
 };
-use cadmpeg_core::le::{f64_at, f64s_at, u32_at, u64_at as read_u64};
+use cadmpeg_core::le::{f64_at, f64s_at, u16_at, u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
@@ -4229,26 +4230,41 @@ pub(crate) fn exact_combine_operation(
     let compact = scope.class_tag == "387"
         && scope.paired_class_tag == "258"
         && parameter_scope_payload_length(scope) == Some(314);
-    let operation_offset = if compact {
+    let extended_reference =
+        scope.class_tag == "329" && scope.paired_class_tag == "261" && scope.frame_length == 363;
+    let (form, operation_offset, keep_tools_offset) = if compact {
         if bytes.get(start + 11..start + 21)? != [0; 10]
             || bytes.get(start + 26..start + 29)? != [0; 3]
             || bytes.get(start + 29..start + 31)? != [1, 0]
             || u32_at(bytes, start + 31) != Some(1)
             || bytes.get(start + 35) != Some(&1)
             || read_u64(bytes, start + 36) == Some(0)
-            || bytes.get(start + 43..start + 45)? != [0; 2]
+            || bytes.get(start + 44..start + 46)? != [0; 2]
         {
             return None;
         }
-        start + 21
+        (DesignCombineForm::Compact, start + 21, start + 25)
+    } else if extended_reference {
+        let mut reference_at = start.checked_add(35)?;
+        let reference = take_reference(bytes, &mut reference_at)?;
+        if bytes.get(start + 11..start + 29)? != [0; 18]
+            || bytes.get(start + 29) != Some(&1)
+            || reference.target.is_none_or(|target| target == 0)
+            || reference.segment.is_some()
+            || reference.link_name.is_some()
+            || reference_at != start.checked_add(46)?
+        {
+            return None;
+        }
+        (DesignCombineForm::ExtendedReference, start + 31, start + 30)
     } else {
-        if bytes.get(start + 11..start + 19)? != [0; 8]
+        if bytes.get(start + 11..start + 20)? != [0; 9]
             || bytes.get(start + 24) != Some(&0)
             || bytes.get(start + 26..start + 33)? != [0; 7]
         {
             return None;
         }
-        start + 20
+        (DesignCombineForm::Standard, start + 20, start + 25)
     };
     let operation = match u32_at(bytes, operation_offset)? {
         1 => DesignExtrudeOperation::Join,
@@ -4256,7 +4272,7 @@ pub(crate) fn exact_combine_operation(
         3 => DesignExtrudeOperation::Intersect,
         _ => return None,
     };
-    let keep_tools = match bytes.get(start + 25)? {
+    let keep_tools = match bytes.get(keep_tools_offset)? {
         0 => false,
         1 => true,
         _ => return None,
@@ -4270,37 +4286,238 @@ pub(crate) fn exact_combine_operation(
         let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
             return None;
         };
-        match combine_operation_identity_role(
+        let role = combine_operation_identity_role(
             bytes.get(*operation_at..*operation_end)?,
             *selection_record_index,
-        )? {
-            CombineOperandRole::Target => {
-                if target.replace(*selection_record_index).is_some() {
-                    return None;
-                }
-            }
-            CombineOperandRole::Tool => tools.push(*selection_record_index),
-        }
+        )?;
         let [selection_at, selection_end] = records.offsets(*selection_record_index) else {
             return None;
         };
         if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
             return None;
         }
+        let selection = DesignCombineBodySelection {
+            record_index: *selection_record_index,
+            external_identity: if matches!(role, CombineOperandRole::Tool) {
+                exact_combine_external_body_identity(
+                    bytes,
+                    *selection_at,
+                    *selection_end,
+                    scope.record_index,
+                    *selection_record_index,
+                )
+            } else {
+                None
+            },
+        };
+        match role {
+            CombineOperandRole::Target => {
+                if target.replace(selection).is_some() {
+                    return None;
+                }
+            }
+            CombineOperandRole::Tool => tools.push(selection),
+        }
     }
     let target = target?;
     if tools.is_empty() {
         return None;
     }
-    let mut body_selection_record_indexes = Vec::with_capacity(tools.len() + 1);
-    body_selection_record_indexes.push(target);
-    body_selection_record_indexes.extend(tools);
     Some(DesignCombineOperation {
+        form,
         operation,
         operation_offset: u64::try_from(operation_offset).ok()?,
         keep_tools,
-        keep_tools_offset: u64::try_from(start + 25).ok()?,
-        body_selection_record_indexes,
+        keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
+        target,
+        tools,
+    })
+}
+
+struct CombineExternalReference {
+    target: u64,
+    target_offset: u64,
+    segment: u32,
+    segment_offset: u64,
+    asset_id: String,
+    asset_id_offset: u64,
+    link_name: String,
+    link_name_offset: u64,
+    property_key: Option<String>,
+    property_key_offset: Option<u64>,
+    version_urn: Option<String>,
+    version_urn_offset: Option<u64>,
+}
+
+fn take_combine_external_reference(
+    bytes: &[u8],
+    cursor: &mut usize,
+) -> Option<CombineExternalReference> {
+    if bytes.get(*cursor) != Some(&1) {
+        return None;
+    }
+    let target_at = cursor.checked_add(1)?;
+    let target = read_u64(bytes, target_at)?;
+    if target == 0 || bytes.get(target_at.checked_add(8)?) != Some(&1) {
+        return None;
+    }
+    let segment_at = target_at.checked_add(9)?;
+    let segment = u32_at(bytes, segment_at)?;
+    let asset_at = segment_at.checked_add(4)?;
+    let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_at, 1..=256)?;
+    if !is_guid_relaxed(&asset_id) || bytes.get(after_asset_id) != Some(&0) {
+        return None;
+    }
+    let link_name_at = after_asset_id.checked_add(1)?;
+    let (link_name, after_link_name) = lp_utf16_bounded(bytes, link_name_at, 1..=256)?;
+    let (property_key, property_key_offset, version_urn, version_urn_offset, end) =
+        match bytes.get(after_link_name)? {
+            0 => (None, None, None, None, after_link_name.checked_add(1)?),
+            1 => {
+                let property_key_at = after_link_name.checked_add(1)?;
+                let (property_key, after_property_key) =
+                    lp_utf16_bounded(bytes, property_key_at, 1..=256)?;
+                let version_urn_at = after_property_key;
+                let (version_urn, end) = lp_utf16_bounded(bytes, version_urn_at, 1..=256)?;
+                if !is_guid_relaxed(&property_key) {
+                    return None;
+                }
+                (
+                    Some(property_key),
+                    Some(u64::try_from(property_key_at.checked_add(4)?).ok()?),
+                    Some(version_urn),
+                    Some(u64::try_from(version_urn_at.checked_add(4)?).ok()?),
+                    end,
+                )
+            }
+            _ => return None,
+        };
+    *cursor = end;
+    Some(CombineExternalReference {
+        target,
+        target_offset: u64::try_from(target_at).ok()?,
+        segment,
+        segment_offset: u64::try_from(segment_at).ok()?,
+        asset_id,
+        asset_id_offset: u64::try_from(asset_at.checked_add(4)?).ok()?,
+        link_name,
+        link_name_offset: u64::try_from(link_name_at.checked_add(4)?).ok()?,
+        property_key,
+        property_key_offset,
+        version_urn,
+        version_urn_offset,
+    })
+}
+
+fn exact_combine_external_body_identity(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    scope_record_index: u32,
+    record_index: u32,
+) -> Option<DesignCombineExternalBodyIdentity> {
+    if bytes.get(start + 11..start + 25)? != [0; 14] {
+        return None;
+    }
+    let mut cursor = start.checked_add(25)?;
+    let nested = take_reference(bytes, &mut cursor)?;
+    if nested.target != Some(u64::from(record_index.checked_add(3)?))
+        || nested.segment.is_some()
+        || nested.link_name.is_some()
+        || u32_at(bytes, cursor)? != 1
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let selector_asset_at = cursor;
+    let (selector_asset_id, after_selector_asset_id) =
+        lp_utf16_bounded(bytes, selector_asset_at, 1..=256)?;
+    let selector_context_at = after_selector_asset_id;
+    let (selector_context_id, after_selector_context_id) =
+        lp_utf16_bounded(bytes, selector_context_at, 1..=256)?;
+    if !is_guid_relaxed(&selector_asset_id)
+        || !is_guid_relaxed(&selector_context_id)
+        || u32_at(bytes, after_selector_context_id)? != 2
+        || u32_at(bytes, after_selector_context_id.checked_add(4)?)? != 0
+        || u32_at(bytes, after_selector_context_id.checked_add(8)?)? != 1
+    {
+        return None;
+    }
+    cursor = after_selector_context_id.checked_add(12)?;
+    let occurrence_reference_at = cursor.checked_add(1)?;
+    let occurrence = take_reference(bytes, &mut cursor)?;
+    let occurrence_reference = occurrence.target?;
+    if occurrence_reference == 0
+        || occurrence.segment.is_some()
+        || occurrence.link_name.is_some()
+        || u32_at(bytes, cursor)? != 1
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let external = take_combine_external_reference(bytes, &mut cursor)?;
+    if external.asset_id != selector_asset_id
+        || u32_at(bytes, cursor)? != 9
+        || u16_at(bytes, cursor.checked_add(4)?)? != 2
+    {
+        return None;
+    }
+    cursor = cursor.checked_add(6)?;
+    let first_tail_value_at = cursor;
+    let first_tail_value = read_u64(bytes, cursor)?;
+    cursor = cursor.checked_add(8)?;
+    if u32_at(bytes, cursor)? != 48 {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let second_tail_value_at = cursor;
+    let second_tail_value = read_u64(bytes, cursor)?;
+    cursor = cursor.checked_add(8)?;
+    let take_local = |cursor: &mut usize, expected| {
+        let reference = take_reference(bytes, cursor)?;
+        (reference.target == Some(u64::from(expected))
+            && reference.segment.is_none()
+            && reference.link_name.is_none())
+        .then_some(())
+    };
+    take_local(&mut cursor, record_index.checked_add(2)?)?;
+    if bytes.get(cursor..cursor.checked_add(2)?)? != [0; 2] {
+        return None;
+    }
+    cursor = cursor.checked_add(2)?;
+    take_local(&mut cursor, record_index.checked_add(1)?)?;
+    if bytes.get(cursor) != Some(&0) {
+        return None;
+    }
+    cursor = cursor.checked_add(1)?;
+    take_local(&mut cursor, scope_record_index)?;
+    if cursor != paired_at {
+        return None;
+    }
+    Some(DesignCombineExternalBodyIdentity {
+        selector_asset_id,
+        selector_asset_id_offset: u64::try_from(selector_asset_at.checked_add(4)?).ok()?,
+        selector_context_id,
+        selector_context_id_offset: u64::try_from(selector_context_at.checked_add(4)?).ok()?,
+        occurrence_reference,
+        occurrence_reference_offset: u64::try_from(occurrence_reference_at).ok()?,
+        external_body_reference: external.target,
+        external_body_reference_offset: external.target_offset,
+        external_segment: external.segment,
+        external_segment_offset: external.segment_offset,
+        external_asset_id: external.asset_id,
+        external_asset_id_offset: external.asset_id_offset,
+        external_link_name: external.link_name,
+        external_link_name_offset: external.link_name_offset,
+        external_property_key: external.property_key,
+        external_property_key_offset: external.property_key_offset,
+        external_version_urn: external.version_urn,
+        external_version_urn_offset: external.version_urn_offset,
+        tail_values: [first_tail_value, second_tail_value],
+        tail_value_offsets: [
+            u64::try_from(first_tail_value_at).ok()?,
+            u64::try_from(second_tail_value_at).ok()?,
+        ],
     })
 }
 
@@ -6294,7 +6511,7 @@ fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
     u32_at(bytes, at + 1)
 }
 
-fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
+pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
     let kind_bytes = u64::try_from(scope.kind.encode_utf16().count())
         .ok()?
         .checked_mul(2)?;

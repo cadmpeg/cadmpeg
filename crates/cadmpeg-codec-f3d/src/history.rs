@@ -918,8 +918,19 @@ pub(crate) fn bind_feature_body_selections(
             else {
                 bind_direct_body_recipe_body_selection(target, scope, inputs);
                 bind_direct_body_recipe_body_selection(tools, scope, inputs);
+                if matches!(
+                    tools,
+                    BodySelection::Native(_) | BodySelection::NativeSet(_)
+                ) {
+                    if let Some(local) = combine_external_local_tools(scope) {
+                        *tools = local;
+                    }
+                }
                 continue;
             };
+            if let Some(local) = combine_external_local_tools(scope) {
+                *tools = local;
+            }
             let BodySelection::Native(native) = target else {
                 continue;
             };
@@ -952,34 +963,21 @@ pub(crate) fn bind_feature_body_selections(
                 bodies: vec![crate::ids::history_input_body_id(&prefix, body)],
                 native: native.clone(),
             };
-            let mut native_tools = match tools {
-                BodySelection::Native(native) => vec![native.clone()],
-                BodySelection::NativeSet(native) => native.clone(),
-                _ => continue,
-            };
             let Some(stream) = crate::ids::native_stream(&scope.id) else {
                 continue;
             };
+            let Some(operation) = scope.combine_operation.as_ref() else {
+                continue;
+            };
+            let mut native_tools = operation
+                .tools
+                .iter()
+                .map(|tool| format!("{stream}:design-record#{}", tool.record_index))
+                .collect::<Vec<_>>();
             let current_history_source = historical_brep_source(&state.id);
             let mut historical_tool_bodies = Vec::with_capacity(native_tools.len());
             let mut direct_tool_bodies = Vec::with_capacity(native_tools.len());
-            for native in &native_tools {
-                let Some((native_stream, record_index)) = native.rsplit_once(":design-record#")
-                else {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                };
-                let Ok(record_index) = record_index.parse::<u32>() else {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                };
-                if native_stream != stream {
-                    historical_tool_bodies.clear();
-                    direct_tool_bodies.clear();
-                    break;
-                }
+            for record_index in operation.tools.iter().map(|tool| tool.record_index) {
                 let mut matching = body_recipe_operands.iter().filter(|operand| {
                     crate::ids::native_stream(&operand.id) == Some(stream)
                         && operand.scope_record_index == scope.record_index
@@ -1170,6 +1168,28 @@ fn pattern_combine_tool_slots(
     let mut tool_bodies = pattern_bodies.clone();
     tool_bodies.remove(&target_body).then_some(())?;
     (tool_bodies.len() == native_tool_count).then(|| tool_bodies.into_iter().collect())
+}
+
+fn combine_external_local_tools(
+    scope: &crate::records::DesignParameterScope,
+) -> Option<cadmpeg_ir::features::BodySelection> {
+    let operation = scope.combine_operation.as_ref()?;
+    let bodies = operation
+        .tools
+        .iter()
+        .map(|tool| {
+            tool.external_identity
+                .as_ref()
+                .map(crate::ids::neutral_combine_external_body_id)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if bodies.is_empty() || bodies.iter().collect::<HashSet<_>>().len() != bodies.len() {
+        return None;
+    }
+    Some(cadmpeg_ir::features::BodySelection::Local {
+        bodies,
+        native: scope.id.clone(),
+    })
 }
 
 fn historical_body_slot(id: &str) -> Option<i64> {
@@ -9528,6 +9548,71 @@ mod tests {
             Some(2)
         );
         assert_eq!(historical_body_slot("f3d:brep:entity#2"), None);
+    }
+
+    #[test]
+    fn combine_external_tools_retain_complete_occurrence_local_identities() {
+        use cadmpeg_ir::features::BodySelection;
+
+        let identity = |occurrence_reference| crate::records::DesignCombineExternalBodyIdentity {
+            selector_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            selector_asset_id_offset: 0,
+            selector_context_id: "22222222-2222-4222-8222-222222222222".into(),
+            selector_context_id_offset: 0,
+            occurrence_reference,
+            occurrence_reference_offset: 0,
+            external_body_reference: 700,
+            external_body_reference_offset: 0,
+            external_segment: 2,
+            external_segment_offset: 0,
+            external_asset_id: "11111111-1111-4111-8111-111111111111".into(),
+            external_asset_id_offset: 0,
+            external_link_name: "component-body-link".into(),
+            external_link_name_offset: 0,
+            external_property_key: None,
+            external_property_key_offset: None,
+            external_version_urn: None,
+            external_version_urn_offset: None,
+            tail_values: [0, 0],
+            tail_value_offsets: [0, 12],
+        };
+        let tool =
+            |record_index, occurrence_reference| crate::records::DesignCombineBodySelection {
+                record_index,
+                external_identity: Some(identity(occurrence_reference)),
+            };
+        let mut scope = crate::records::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            "Combine",
+            10,
+        );
+        scope.combine_operation = Some(crate::records::DesignCombineOperation {
+            form: crate::records::DesignCombineForm::ExtendedReference,
+            operation: crate::records::DesignExtrudeOperation::Join,
+            operation_offset: 0,
+            keep_tools: false,
+            keep_tools_offset: 0,
+            target: crate::records::DesignCombineBodySelection {
+                record_index: 11,
+                external_identity: None,
+            },
+            tools: vec![tool(12, 500), tool(13, 501)],
+        });
+        let BodySelection::Local { bodies, native } =
+            super::combine_external_local_tools(&scope).expect("complete local tool identity")
+        else {
+            panic!("local body selection");
+        };
+        assert_eq!(bodies.len(), 2);
+        assert_ne!(bodies[0], bodies[1]);
+        assert_eq!(native, scope.id);
+
+        scope
+            .combine_operation
+            .as_mut()
+            .expect("Combine operation")
+            .tools[1] = tool(13, 500);
+        assert!(super::combine_external_local_tools(&scope).is_none());
     }
 
     #[test]

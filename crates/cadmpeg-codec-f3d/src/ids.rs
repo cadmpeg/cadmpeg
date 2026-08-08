@@ -14,7 +14,9 @@
 //! sites that share a prefix but differ in tail structure get distinct builders
 //! rather than a single reshaped one.
 
-use crate::records::{DesignParameter, DesignParameterScope, DesignSketchPlacement};
+use crate::records::{
+    DesignCombineExternalBodyIdentity, DesignParameter, DesignParameterScope, DesignSketchPlacement,
+};
 
 /// The scheme prefix shared by every `f3d:` URN. Used to strip or test the
 /// scheme when parsing an identity key back into its stream and tail.
@@ -237,6 +239,46 @@ pub(crate) fn neutral_feature_id_parts(
         feature_ordinal,
         scope_record_index,
     ))
+}
+
+/// Feature-input-local body key for one complete external `Combine` selector path.
+pub(crate) fn neutral_combine_external_body_id(
+    identity: &DesignCombineExternalBodyIdentity,
+) -> String {
+    let selector_asset = identity_key_component(&identity.selector_asset_id);
+    let selector_context = identity_key_component(&identity.selector_context_id);
+    let external_asset = identity_key_component(&identity.external_asset_id);
+    let link_name = identity_key_component(&identity.external_link_name);
+    let property_key = identity
+        .external_property_key
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    let version_urn = identity
+        .external_version_urn
+        .as_deref()
+        .map(identity_key_component)
+        .unwrap_or_default();
+    format!(
+        "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        selector_asset.len(),
+        selector_asset,
+        selector_context.len(),
+        selector_context,
+        identity.occurrence_reference,
+        identity.external_body_reference,
+        identity.external_segment,
+        external_asset.len(),
+        external_asset,
+        link_name.len(),
+        link_name,
+        u8::from(identity.external_property_key.is_some()),
+        property_key.len(),
+        property_key,
+        u8::from(identity.external_version_urn.is_some()),
+        version_urn.len(),
+        version_urn,
+    )
 }
 
 /// The neutral embedded-asset key for one exact archive entry.
