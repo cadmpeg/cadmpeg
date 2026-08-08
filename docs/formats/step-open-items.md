@@ -262,28 +262,13 @@ fixture covers the inherited-attribute form.
 
 ### UM-01. Unit context selection
 
-**Question.** Which `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the length and
-plane-angle scale for a value, when an exchange structure contains more than
-one context?
-
-**Known.** `step.md` §8 "Length values convert to millimetres." gives the
-target units. `step.md` §8 "Representation uncertainty is a linear tolerance
-measured in the representation's length unit." states a per-representation
-model. The decoder resolves one document-global scale instead. It takes the
-context that `BTreeMap` iteration reaches first, which is the context with the
-lowest instance name, and does not compare the other contexts. When that
-context lists no length unit, it adopts any `LENGTH_UNIT` record anywhere in
-the file (`crates/cadmpeg-codec-step/src/reader/geometry.rs:2635-2661`).
-`plane_angle_scale` uses the same rule (`geometry.rs:2663-2689`). The scale
-applies to every point, radius, and extent, and passes into `pmi`,
-`tessellation`, `topology`, and `validation`.
-
-**Need.** An assembly whose imported component declares an inch context and
-whose top level declares a millimetre context scales every coordinate in the
-file by the lower-numbered context. No loss is recorded, because the
-`unresolved_unit_loss` path fires only when resolution returns nothing, never
-when it resolves to the wrong context. We must know which context governs a
-value to bind a scale per representation.
+**Resolved.** Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies
+the length and plane-angle scales for that representation and its reachable
+representation-item closure. A carrier shared by representations must have
+one equal scale in every context. A conflicting carrier has no per-carrier
+override, uses the document fallback scale, and produces a geometry loss.
+Unscoped values use the document fallback scale. The resolved scales reach
+geometry, PMI, tessellation, topology, and validation consumers.
 
 ### UM-02. Representation uncertainty selection
 

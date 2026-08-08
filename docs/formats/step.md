@@ -174,7 +174,12 @@ Length values convert to millimetres. Plane-angle values remain radians. SI
 prefixes apply before conversion-based-unit factors. Conversion-based units
 form an acyclic chain that ends in a dimensional base unit. Representation
 uncertainty is a linear tolerance measured in the representation's length
-unit. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
+unit. Each representation's `GLOBAL_UNIT_ASSIGNED_CONTEXT` supplies the
+length and plane-angle scales for that representation and its reachable
+representation-item closure. A carrier shared by representations must have
+one equal scale in every such context; conflicting contexts leave the carrier
+on the document fallback scale and produce a geometry loss. Unscoped values
+use the document fallback scale. `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` selects an uncertainty measure
 whose unit resolves to a length unit. When several length measures are
 present, the one named `distance_accuracy_value` is selected; otherwise a
 unique length measure is required. An ambiguous set does not define a linear
