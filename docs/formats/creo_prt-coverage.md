@@ -176,6 +176,11 @@ fixtures, claims above L1 remain unproven.
   equalities when their selected point rows are unique. This includes the
   two-sense-zero-point form of type three; contradictory components retain
   stored non-conflicting coordinates.
+- Signed type-zero linear dimensions select their measured coordinate from a
+  unique spanning line, or from one equal endpoint coordinate on uniquely
+  incident point rows when no segment spans the pair. The selected equation
+  can derive a missing ordinate; ambiguous endpoint or orientation evidence
+  does not derive one.
 - Constraint coverage separates typed and native `skamp_ptr` incidences and
   `relat_ptr` relations by discriminator, including the active native subset.
   It also counts decoded and missing declared relation, incidence, and

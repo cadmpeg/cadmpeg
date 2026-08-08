@@ -3257,13 +3257,8 @@ pub(crate) fn resolved_section_coordinates(
             let [Some(first), Some(second), _, _] = vectors[0] else {
                 return None;
             };
-            let mut matching_segments = segments.iter().filter(|segment| {
-                segment.point_ids == [first, second] || segment.point_ids == [second, first]
-            });
-            let segment = matching_segments.next()?;
-            matching_segments.next().is_none().then_some(())?;
             let coordinate =
-                1usize.checked_sub(section_line_fixed_coordinate(definition, segment)?)?;
+                section_linear_distance_coordinate(definition, &segments, first, second, &points)?;
             let magnitude = section_relation_length_dimension(definition, relation)?
                 .value
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
@@ -3417,6 +3412,90 @@ pub(crate) fn resolved_section_coordinates(
         }
     }
     solve_section_coordinate_equations(&equations, &stored_coordinates)
+}
+
+fn section_linear_distance_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    segments: &[&crate::feature::FeatureSegment],
+    first: u32,
+    second: u32,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> Option<usize> {
+    let matching_segments = segments
+        .iter()
+        .copied()
+        .filter(|segment| {
+            segment.point_ids == [first, second] || segment.point_ids == [second, first]
+        })
+        .collect::<Vec<_>>();
+    if let [segment] = matching_segments.as_slice() {
+        if let Some(fixed_coordinate) = section_line_fixed_coordinate(definition, segment) {
+            return 1usize.checked_sub(fixed_coordinate);
+        }
+    }
+    if matching_segments.len() > 1 {
+        return None;
+    }
+    let table = definition.segments.as_ref()?;
+    let has_unique_incident_entity = |point_id| {
+        table.rows.iter().any(|segment| {
+            segment.point_ids.contains(&point_id)
+                && table.external_id_count(segment.external_id) == 1
+        }) || table.point_rows.iter().any(|segment| {
+            segment.point_id == point_id && table.external_id_count(segment.external_id) == 1
+        })
+    };
+    has_unique_incident_entity(first).then_some(())?;
+    has_unique_incident_entity(second).then_some(())?;
+    let equal_coordinate = |coordinate: usize| -> Option<bool> {
+        let first = coordinates.get(&first).and_then(|point| point[coordinate]);
+        let second = coordinates.get(&second).and_then(|point| point[coordinate]);
+        match (first, second) {
+            (Some(first), Some(second)) => {
+                let scale = first.abs().max(second.abs()).max(1.0);
+                Some((first - second).abs() <= 1e-9 * scale)
+            }
+            _ => None,
+        }
+    };
+    let equal_u = equal_coordinate(0);
+    let equal_v = equal_coordinate(1);
+    if equal_u == Some(true) && equal_v != Some(true) {
+        return Some(1);
+    }
+    if equal_v == Some(true) && equal_u != Some(true) {
+        return Some(0);
+    }
+    let incident_fixed_coordinates = [first, second]
+        .into_iter()
+        .filter_map(|point_id| {
+            let coordinates = table
+                .rows
+                .iter()
+                .filter(|segment| {
+                    segment.point_ids.contains(&point_id)
+                        && table.external_id_count(segment.external_id) == 1
+                        && segment.kind == crate::feature::FeatureSegmentKind::Line
+                })
+                .filter_map(|segment| {
+                    section_line_entity_fixed_coordinate(definition, segment.external_id)
+                })
+                .collect::<BTreeSet<_>>();
+            let coordinates = coordinates.into_iter().collect::<Vec<_>>();
+            let [coordinate] = coordinates.as_slice() else {
+                return None;
+            };
+            Some(*coordinate)
+        })
+        .collect::<Vec<_>>();
+    let [first_fixed, second_fixed] = incident_fixed_coordinates.as_slice() else {
+        return None;
+    };
+    if first_fixed == second_fixed {
+        Some(1usize.checked_sub(*first_fixed)?)
+    } else {
+        None
+    }
 }
 
 pub(crate) fn resolved_section_points(

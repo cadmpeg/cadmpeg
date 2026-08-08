@@ -12276,6 +12276,30 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         [Some(0), Some(0), Some(0), Some(0)],
         [Some(15), Some(16), Some(15), Some(1)],
     ]);
+    let mut unspanned_distance = distance_definition.clone();
+    unspanned_distance
+        .variables
+        .as_mut()
+        .expect("variables")
+        .points
+        .iter_mut()
+        .find(|point| point.point_id == 5)
+        .expect("point 5")
+        .u = None;
+    unspanned_distance
+        .relations
+        .as_mut()
+        .expect("relations")
+        .rows[0]
+        .operand_vectors = Some([
+        [Some(1), Some(5), None, Some(1)],
+        [Some(0), Some(0), Some(0), Some(0)],
+        [Some(15), Some(16), Some(15), Some(1)],
+    ]);
+    assert_eq!(
+        resolved_section_points(&unspanned_distance).get(&5),
+        Some(&[3.0, 2.0])
+    );
     distance_definition
         .relations
         .as_mut()
