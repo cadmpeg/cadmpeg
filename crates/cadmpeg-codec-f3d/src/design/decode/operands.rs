@@ -2201,6 +2201,9 @@ pub fn decode_body_recipe_operands(
     Ok(out)
 }
 
+/// Select the sole body recipe in the structural interval after the `N+3`
+/// header and before the enclosing `N+4` header. The bounded Design stream,
+/// rather than an arbitrary byte distance, limits the interval.
 fn unique_body_recipe<'a>(
     bytes: &[u8],
     header: &DesignRecordHeader,
@@ -2213,7 +2216,7 @@ fn unique_body_recipe<'a>(
         prologue_end,
         header.record_index.checked_add(4)?,
     )?;
-    let lower = u64::try_from(prologue_end.max(next_at.saturating_sub(1 << 16))).ok()?;
+    let lower = u64::try_from(prologue_end).ok()?;
     let upper = u64::try_from(next_at).ok()?;
     let matching = &recipes[recipes.partition_point(|recipe| recipe.byte_offset < lower)
         ..recipes.partition_point(|recipe| recipe.byte_offset < upper)];
@@ -2247,8 +2250,8 @@ fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Op
 }
 
 /// Offset of the record carrying `record_index + 4` that closes a body-recipe
-/// operand whose recipe sits at `recipe_at`, searching the 64 KiB after the
-/// recipe. The recipe must follow the prologue that ends at `prologue_end`.
+/// operand whose recipe sits at `recipe_at`. The recipe must follow the
+/// prologue that ends at `prologue_end`.
 fn body_recipe_operand_end(
     bytes: &[u8],
     prologue_end: usize,
@@ -2258,17 +2261,7 @@ fn body_recipe_operand_end(
     if recipe_at < prologue_end {
         return None;
     }
-    let expected = record_index.checked_add(4)?;
-    let search_limit = recipe_at.checked_add(1 << 16)?.min(bytes.len());
-    let window = bytes.get(..search_limit)?;
-    let mut search = recipe_at;
-    while let Some(at) = next_indexed_record_offset(window, search) {
-        if indexed_record_index(window, at) == Some(expected) {
-            return Some(at);
-        }
-        search = at.checked_add(1)?;
-    }
-    None
+    next_indexed_record_offset_with_index(bytes, recipe_at, record_index.checked_add(4)?)
 }
 
 pub(crate) fn parse_body_recipe_operand(
@@ -3604,7 +3597,11 @@ pub(crate) fn has_typed_edge_treatment_group(kind: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_sketch_profile_region_selection;
+    use super::{
+        body_recipe_operand_end, body_recipe_prologue_end, parse_sketch_profile_region_selection,
+        unique_body_recipe,
+    };
+    use crate::records::{ConstructionRecipe, ConstructionRecipeKind, DesignRecordHeader};
 
     fn indexed_header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -3647,6 +3644,67 @@ mod tests {
         bytes.extend_from_slice(&[0; 5]);
         indexed_header(&mut bytes, *b"261", profile_record_index + 3);
         (bytes, selection_at, second_region_marker, terminator)
+    }
+
+    #[test]
+    fn body_recipe_envelope_uses_its_structural_record_boundary() {
+        const RECORD_INDEX: u32 = 100;
+        const NEXT_AT: usize = 70_000;
+        const EARLY_RECIPE_AT: usize = 100;
+        const LATE_RECIPE_AT: usize = NEXT_AT - 32;
+
+        let mut bytes = Vec::new();
+        for record_index in [
+            RECORD_INDEX,
+            RECORD_INDEX,
+            RECORD_INDEX + 1,
+            RECORD_INDEX + 2,
+            RECORD_INDEX + 3,
+        ] {
+            indexed_header(&mut bytes, *b"365", record_index);
+        }
+        let prologue_end = bytes.len();
+        bytes.resize(NEXT_AT, 0xaa);
+        for recipe_at in [EARLY_RECIPE_AT, LATE_RECIPE_AT] {
+            bytes[recipe_at..recipe_at + b"body_recipe_data".len()]
+                .copy_from_slice(b"body_recipe_data");
+        }
+        indexed_header(&mut bytes, *b"311", RECORD_INDEX + 4);
+
+        let header = DesignRecordHeader {
+            id: "stream:record-100".into(),
+            record_index: RECORD_INDEX,
+            class_tag: "365".into(),
+            byte_offset: 0,
+        };
+        let early = ConstructionRecipe {
+            id: "stream:recipe-early".into(),
+            byte_offset: EARLY_RECIPE_AT as u64,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Body,
+            design_id: None,
+            design_id_offset: None,
+            design_selector: None,
+            recipe_index: 0,
+            record_index: 0,
+        };
+        let late = ConstructionRecipe {
+            id: "stream:recipe-late".into(),
+            byte_offset: LATE_RECIPE_AT as u64,
+            recipe_index: 1,
+            ..early.clone()
+        };
+
+        assert_eq!(
+            body_recipe_prologue_end(&bytes, 0, RECORD_INDEX),
+            Some(prologue_end)
+        );
+        assert_eq!(
+            body_recipe_operand_end(&bytes, prologue_end, RECORD_INDEX, EARLY_RECIPE_AT),
+            Some(NEXT_AT)
+        );
+        assert_eq!(unique_body_recipe(&bytes, &header, &[&early]), Some(&early));
+        assert_eq!(unique_body_recipe(&bytes, &header, &[&early, &late]), None);
     }
 
     #[test]
