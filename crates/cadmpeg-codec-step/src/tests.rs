@@ -6243,6 +6243,52 @@ fn complex_surface_targets_use_surface_style_domain() {
 }
 
 #[test]
+fn curve_targets_use_curve_style_domain() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('surface',1.,0.,0.);
+#2=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
+#3=COLOUR_RGB('curve',0.,1.,0.);
+#4=CURVE_STYLE('',#3,$,$);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));
+#6=STYLED_ITEM('',(#5),#7);
+#7=POLYLINE('styled curve',());",
+    );
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        })
+    );
+}
+
+#[test]
+fn point_targets_use_point_style_domain() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('surface',1.,0.,0.);
+#2=SURFACE_STYLE_RENDERING(#1,$,$,$,$,$);
+#3=COLOUR_RGB('point',0.,1.,0.);
+#4=POINT_STYLE('',.DOT.,POSITIVE_LENGTH_MEASURE(1.),#3);
+#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));
+#6=STYLED_ITEM('',(#5),#7);
+#7=CARTESIAN_POINT('styled point',(0.,0.,0.));",
+    );
+    assert_eq!(result.ir.model.appearances.len(), 1);
+    assert_eq!(
+        result.ir.model.appearances[0].base_color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.0,
+            g: 1.0,
+            b: 0.0,
+            a: 1.0,
+        })
+    );
+}
+
+#[test]
 fn null_style_branch_does_not_suppress_a_sibling_color() {
     let result = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));

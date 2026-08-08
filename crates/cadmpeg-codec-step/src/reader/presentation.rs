@@ -221,24 +221,40 @@ pub(super) fn decode(
         let domain = style_domain(target_step, exchange);
         let mut active = BTreeSet::new();
         let mut color_cache = BTreeMap::new();
-        let Some((color_id, color, name)) = parts
+        let style_references = parts
             .styles
             .list()
             .into_iter()
             .flatten()
             .flat_map(references)
-            .find_map(|reference| {
-                find_color(
-                    reference,
-                    exchange,
-                    domain,
-                    &mut active,
-                    &mut color_cache,
-                    &mut losses,
-                    0,
-                )
-            })
-        else {
+            .collect::<Vec<_>>();
+        let color = style_references.iter().copied().find_map(|reference| {
+            find_color(
+                reference,
+                exchange,
+                domain,
+                &mut active,
+                &mut color_cache,
+                &mut losses,
+                0,
+            )
+        });
+        let color = color.or_else(|| {
+            matches!(domain, StyleDomain::Curve | StyleDomain::Point).then(|| {
+                style_references.iter().copied().find_map(|reference| {
+                    find_color(
+                        reference,
+                        exchange,
+                        StyleDomain::Surface,
+                        &mut active,
+                        &mut color_cache,
+                        &mut losses,
+                        0,
+                    )
+                })
+            })?
+        });
+        let Some((color_id, color, name)) = color else {
             let mut visited = BTreeSet::new();
             if !contains_null_style(parts.styles, exchange, &mut visited, 0) {
                 warnings.push(format!(
@@ -312,7 +328,7 @@ pub(super) fn decode(
         if let Some(overridden) = overridden_style(style) {
             typed.insert(overridden);
         }
-        typed.extend(color_cache.keys().copied());
+        typed.extend(color_cache.keys().map(|(id, _)| *id));
         typed.insert(color_id);
     }
     PresentationResult {
@@ -772,14 +788,14 @@ fn find_color(
     exchange: &Exchange,
     domain: StyleDomain,
     active: &mut BTreeSet<u64>,
-    cache: &mut BTreeMap<u64, CachedColor>,
+    cache: &mut BTreeMap<(u64, StyleDomain), CachedColor>,
     losses: &mut Vec<LossNote>,
     depth: usize,
 ) -> Option<(u64, Color, Option<String>)> {
     if depth >= 256 {
         return None;
     }
-    if let Some(result) = cache.get(&id) {
+    if let Some(result) = cache.get(&(id, domain)) {
         return result.clone();
     }
     if !active.insert(id) {
@@ -910,11 +926,11 @@ fn find_color(
         }
     })();
     active.remove(&id);
-    cache.insert(id, result.clone());
+    cache.insert((id, domain), result.clone());
     result
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum StyleDomain {
     Any,
     Surface,
@@ -926,6 +942,26 @@ fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
     let Some(record) = exchange.records.get(&id) else {
         return StyleDomain::Any;
     };
+    let has_point = record.partials.iter().any(|partial| {
+        let name = partial.name.as_str();
+        name.contains("POINT") || name.contains("VERTEX")
+    });
+    if has_point {
+        return StyleDomain::Point;
+    }
+    let has_curve = record.partials.iter().any(|partial| {
+        let name = partial.name.as_str();
+        name.contains("CURVE")
+            || name.contains("EDGE")
+            || name.contains("_LINE")
+            || matches!(
+                name,
+                "LINE" | "POLYLINE" | "CIRCLE" | "ELLIPSE" | "HYPERBOLA" | "PARABOLA"
+            )
+    });
+    if has_curve {
+        return StyleDomain::Curve;
+    }
     if record.partials.iter().any(|partial| {
         let name = partial.name.as_str();
         name.contains("FACE")
