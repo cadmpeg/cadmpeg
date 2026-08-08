@@ -1561,7 +1561,10 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_committed_surfaces, pcurve_endpoint_fit, pcurve_selection_seeds};
+    use super::{
+        drop_committed_surfaces, endpoint_parameter_transform, pcurve_endpoint_fit,
+        pcurve_selection_seeds,
+    };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
     use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
@@ -1662,6 +1665,42 @@ mod tests {
         assert_eq!(fit.start_parameter, 0.0);
         assert_eq!(fit.end_parameter, 1.0);
         assert!(fit.score <= f64::EPSILON);
+    }
+
+    #[test]
+    fn synthesized_pcurve_chart_rejects_a_collapsed_bowed_axis() {
+        let bowed = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 1.0),
+                Point2::new(0.0, 2.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+
+        assert!(endpoint_parameter_transform(
+            &bowed,
+            [Point2::new(0.0, 0.0), Point2::new(0.0, 2.0)],
+            [[1.0, 0.0], [1.0, 2.0]],
+        )
+        .is_none());
+
+        let isoparametric = PcurveGeometry::Trimmed {
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            }),
+            parameter_range: [0.0, 1.0],
+        };
+        assert!(endpoint_parameter_transform(
+            &isoparametric,
+            [Point2::new(0.0, 0.0), Point2::new(0.0, 1.0)],
+            [[3.0, 4.0], [3.0, 5.0]],
+        )
+        .is_some());
     }
 
     #[test]
@@ -3308,7 +3347,7 @@ fn procedural_pcurve_calibration(
     ]
     .into_iter()
     .filter_map(|targets| {
-        let transform = endpoint_parameter_transform([first, last], targets)?;
+        let transform = endpoint_parameter_transform(geometry, [first, last], targets)?;
         Some(PcurveGeometry::Transformed {
             basis: Box::new(geometry.clone()),
             transform,
@@ -3318,9 +3357,11 @@ fn procedural_pcurve_calibration(
 }
 
 fn endpoint_parameter_transform(
+    geometry: &PcurveGeometry,
     source: [Point2; 2],
     destination: [[f64; 2]; 2],
 ) -> Option<Transform2> {
+    let source_bounds = pcurve_coordinate_bounds(geometry);
     let mut rows = [[0.0, 0.0, 0.0]; 3];
     for axis in 0..2 {
         let source_start = [source[0].u, source[0].v][axis];
@@ -3329,16 +3370,30 @@ fn endpoint_parameter_transform(
         let destination_end = destination[1][axis];
         let source_span = source_end - source_start;
         let destination_span = destination_end - destination_start;
-        let scale =
-            if source_span.abs() > 1.0e-12 * (1.0 + source_start.abs().max(source_end.abs())) {
-                destination_span / source_span
-            } else if destination_span.abs()
-                <= 1.0e-9 * (1.0 + destination_start.abs().max(destination_end.abs()))
-            {
-                0.0
-            } else {
+        let source_endpoint_tolerance = 1.0e-12 * (1.0 + source_start.abs().max(source_end.abs()));
+        let destination_tolerance =
+            1.0e-9 * (1.0 + destination_start.abs().max(destination_end.abs()));
+        let destination_collapses = destination_span.abs() <= destination_tolerance;
+        let source_is_constant = source_bounds.is_some_and(|bounds| {
+            let [lower, upper] = bounds[axis];
+            (upper - lower).abs() <= 1.0e-9 * (1.0 + lower.abs().max(upper.abs()))
+        });
+        let scale = if source_span.abs() > source_endpoint_tolerance {
+            if destination_collapses {
+                // A zero destination scale erases a varying source axis. The
+                // endpoint score cannot detect that loss because both ends
+                // still coincide.
                 return None;
-            };
+            }
+            destination_span / source_span
+        } else if destination_collapses && source_is_constant {
+            0.0
+        } else {
+            // A constant source endpoint pair cannot be stretched to two
+            // distinct destination values. A varying interior also makes a
+            // zero-scale map invalid, even when both endpoint pairs agree.
+            return None;
+        };
         let offset = destination_start - scale * source_start;
         if !scale.is_finite() || !offset.is_finite() {
             return None;
@@ -3621,12 +3676,15 @@ fn isoparametric_coordinate_bounds(
 }
 
 fn pcurve_coordinate_bounds(geometry: &PcurveGeometry) -> Option<[[f64; 2]; 2]> {
+    const SAMPLE_COUNT: usize = 33;
     let [lower, upper] = pcurve_selection_parameter_domain(geometry)?;
     if !lower.is_finite() || !upper.is_finite() || lower >= upper {
         return None;
     }
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
-    for parameter in [lower, upper] {
+    for sample in 0..SAMPLE_COUNT {
+        let fraction = sample as f64 / (SAMPLE_COUNT - 1) as f64;
+        let parameter = lower + (upper - lower) * fraction;
         let point = pcurve_uv(geometry, parameter)?;
         for (axis, value) in [point.u, point.v].into_iter().enumerate() {
             if !value.is_finite() {

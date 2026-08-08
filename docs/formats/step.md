@@ -252,7 +252,11 @@ values are available.
 vector as the V-direction displacement. `SURFACE_OF_REVOLUTION` uses the axis
 placement origin and direction as its rotation axis, the directrix parameter as
 V, and the plane angle in radians as U. A pcurve on either surface maps into
-the same U/V parameterization as its owning surface.
+the same U/V parameterization as its owning surface. Endpoint-derived
+calibration of a bounded procedural pcurve is accepted only when every source
+coordinate that the affine map collapses is constant across the pcurve's
+declared parameter interval. Otherwise the pcurve remains opaque and the
+decoder does not replace its native parameterization.
 
 Orientation composes at each topology relation through face-bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and

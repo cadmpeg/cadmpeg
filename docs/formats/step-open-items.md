@@ -344,25 +344,14 @@ may override a declared unit.
 **Question.** May the decoder replace a pcurve's parameterization with an
 affine map that it derives from the edge endpoints?
 
-**Known.** `step.md` §8 states the opposite twice: "A pcurve on either surface
-maps into the same U/V parameterization as its owning surface" and "A pcurve
-carrier that cannot preserve its native parameterization under an anisotropic
-surface-unit map remains opaque." The decoder instead inverts the surface at
-the edge's two vertex points, builds a per-axis affine map from the pcurve
-domain endpoints onto those surface parameters, and accepts the variant with
-the best endpoint score
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3218-3322`). The score is
-the larger of the two endpoint distances (`topology.rs:3841`). The 33-sample
-locus comparison is used only to break ties between source candidates, never
-to check a synthesized chart against the source curve.
-
-**Need.** When a pcurve's two domain endpoints share one axis value, the
-degenerate branch sets that axis scale to 0.0 and its offset to the endpoint
-value (`topology.rs:3306-3313`), so the axis becomes constant and a bowed
-curve collapses to an isoparametric line. Both endpoints still fit, so the
-variant is selected and written back. No loss is recorded. We must know
-whether producers parameterize a bounded edge locally, as the code comment
-asserts, before the decoder may synthesize a chart rather than stay opaque.
+**Resolved.** Endpoint-derived calibration is allowed only when it preserves
+every source coordinate. A destination axis may have zero scale only when the
+source coordinate is constant over the complete declared pcurve interval.
+Distinct source and destination endpoint values still use an affine map. A
+source axis with equal endpoints but interior variation, or a varying source
+axis mapped to equal destination endpoints, rejects the synthesized variant;
+the pcurve remains opaque rather than losing its locus. Coordinate bounds use
+33 samples over the declared interval, including both endpoints.
 
 ### PC-03. Surface chart remap from the pcurve population
 
