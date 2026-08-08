@@ -109,14 +109,15 @@ pub fn named_plane(payload: &[u8]) -> Option<DatumPlane> {
     let cache = scalar::ScalarCache::from_section(payload);
     let slots = named_outline_slots(payload, outline + marker.len(), &cache)?;
     let standalone_zero = |slot: &DatumSlot| matches!(slot.token.as_slice(), [0x18 | 0x0f]);
-    let zero_axis =
-        (0..3).find(|axis| standalone_zero(&slots[*axis]) && standalone_zero(&slots[*axis + 3]));
+    let zero_axes = (0..3)
+        .filter(|axis| standalone_zero(&slots[*axis]) && standalone_zero(&slots[*axis + 3]))
+        .collect::<Vec<_>>();
     let held = (0..3)
         .filter(|axis| slot_equal(&slots[*axis], &slots[*axis + 3]) == Some(true))
         .collect::<Vec<_>>();
-    let axis = match (zero_axis, held.as_slice()) {
-        (Some(axis), _) => axis,
-        (None, [axis]) => *axis,
+    let axis = match (zero_axes.as_slice(), held.as_slice()) {
+        ([axis], _) => *axis,
+        ([], [axis]) => *axis,
         _ => return None,
     };
     let offset = slots[axis].value?;
@@ -333,7 +334,7 @@ mod tests {
 
     #[test]
     fn decodes_named_standard_plane_from_zero_slots() {
-        let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
+        let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0\x18\x46\x08\0\0\0\0\0\0\x46\x08\0\0\0\0\0\0";
         let plane = named_plane(data).expect("required invariant");
         assert_eq!(plane.id, 2);
         assert_eq!(plane.feature_id, 1);
@@ -342,10 +343,17 @@ mod tests {
         assert_eq!(
             plane.corners,
             [
-                [Some(0.0), Some(3.0), Some(0.0)],
-                [Some(0.0), Some(3.0), Some(0.0)]
+                [Some(0.0), Some(3.0), Some(3.0)],
+                [Some(0.0), Some(3.0), Some(3.0)]
             ]
         );
+    }
+
+    #[test]
+    fn withholds_named_plane_with_competing_standalone_zero_axes() {
+        let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x46\x08\0\0\0\0\0\0\x18\x18\x46\x08\0\0\0\0\0\0\x18";
+
+        assert!(named_plane(data).is_none());
     }
 
     #[test]
