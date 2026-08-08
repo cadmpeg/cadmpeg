@@ -504,20 +504,12 @@ relationship endpoints.
 
 ### PS-03. Repeated mapped placements of one representation
 
-**Question.** How many bodies does one shape representation that is mapped at
-several placements produce?
-
-**Known.** `step.md` §8 "Mapped representations and context-dependent
-relationships that identify one placement apply that placement once."
-addresses the single-placement case only. `apply_body_placements` iterates
-`MAPPED_ITEM` records in ascending instance-name order and assigns
-`body.transform`, replacing any previous value
-(`crates/cadmpeg-codec-step/src/reader/product.rs:439-472`).
-
-**Need.** One representation mapped twice, without product structure, yields
-one body at the placement of the higher-numbered mapped item. The other
-placement is discarded with no warning and no loss. We must know whether
-repeated mapped items denote instances, and how the IR represents them.
+**Resolved.** A body-producing representation may have several standalone
+`MAPPED_ITEM` records only when all records resolve to one transform. Distinct
+placements cannot be represented by one `Body.transform`; the reader leaves
+that body unplaced and reports `AssemblyPlacementsNotTransferred`. Mappings
+owned by product occurrences use occurrence transforms and are not part of
+this rule.
 
 ### PS-04. Product and product-definition identity
 

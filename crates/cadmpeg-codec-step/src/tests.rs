@@ -5840,6 +5840,31 @@ fn mapped_presentation_does_not_report_body_placement_loss() {
 }
 
 #[test]
+fn conflicting_standalone_mapped_body_placements_are_not_overwritten() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#70=CARTESIAN_POINT('',(20.,0.,0.));\n#71=CARTESIAN_POINT('',(40.,0.,0.));\n#72=AXIS2_PLACEMENT_3D('',#70,#9,#10);\n#73=AXIS2_PLACEMENT_3D('',#71,#9,#10);\n#74=REPRESENTATION_MAP(#27,#32);\n#75=MAPPED_ITEM('first',#74,#72);\n#76=MAPPED_ITEM('second',#74,#73);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode conflicting standalone body mappings");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(result.ir.model.bodies[0].transform.is_none());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::AssemblyPlacementsNotTransferred
+            && loss.severity == cadmpeg_ir::Severity::Error
+            && loss
+                .message
+                .contains("conflicting standalone MAPPED_ITEM placements")
+            && loss.message.contains("#75")
+            && loss.message.contains("#76")
+    }));
+}
+
+#[test]
 fn two_dimensional_mapping_does_not_change_body_placement() {
     let mut source = export(&unit_cube());
     let representation_line = source

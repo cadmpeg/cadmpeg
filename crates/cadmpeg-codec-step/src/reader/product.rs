@@ -362,7 +362,15 @@ pub(super) fn decode(
     if !had_roots && !usages.is_empty() {
         warnings.push("assembly occurrence graph has no resolvable root".into());
     }
-    apply_body_placements(exchange, geometry, topology, &usages, ir, &mut warnings);
+    apply_body_placements(
+        exchange,
+        geometry,
+        topology,
+        &usages,
+        ir,
+        &mut warnings,
+        &mut losses,
+    );
     for (id, record) in exchange.entities_any(&[
         "APPLICATION_CONTEXT",
         "PRODUCT_CONTEXT",
@@ -411,6 +419,7 @@ fn apply_body_placements(
     usages: &BTreeMap<u64, Usage>,
     ir: &mut CadIr,
     warnings: &mut Vec<String>,
+    losses: &mut Vec<LossNote>,
 ) {
     let pds = exchange
         .entities("PRODUCT_DEFINITION_SHAPE")
@@ -441,6 +450,7 @@ fn apply_body_placements(
         .map(|(index, body)| (body.id.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut representation_cache = BTreeMap::new();
+    let mut placements_by_body = BTreeMap::<BodyId, Vec<(u64, Transform)>>::new();
     for (id, item) in exchange.entities("MAPPED_ITEM") {
         if item.partial("MAPPED_ITEM").is_none() {
             continue;
@@ -470,8 +480,40 @@ fn apply_body_placements(
             continue;
         };
         for body in bodies {
-            if let Some(index) = body_indices.get(&body) {
-                ir.model.bodies[*index].transform = Some(transform);
+            placements_by_body
+                .entry(body)
+                .or_default()
+                .push((id, transform));
+        }
+    }
+    for (body, placements) in placements_by_body {
+        let mut unique = Vec::<(u64, Transform)>::new();
+        for placement in placements {
+            if unique.iter().all(|(_, existing)| *existing != placement.1) {
+                unique.push(placement);
+            }
+        }
+        match unique.as_slice() {
+            [(_, transform)] => {
+                if let Some(index) = body_indices.get(&body) {
+                    ir.model.bodies[*index].transform = Some(*transform);
+                }
+            }
+            [] => {}
+            _ => {
+                let mapped_items = unique
+                    .iter()
+                    .map(|(id, _)| format!("#{id}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                losses.push(LossNote {
+                    code: LossKind::AssemblyPlacementsNotTransferred,
+                    severity: Severity::Error,
+                    message: format!(
+                        "body {body} has conflicting standalone MAPPED_ITEM placements ({mapped_items}); no body placement was selected"
+                    ),
+                    provenance: None,
+                });
             }
         }
     }
