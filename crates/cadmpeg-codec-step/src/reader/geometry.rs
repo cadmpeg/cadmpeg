@@ -76,33 +76,33 @@ pub(super) fn infer_edge_parameter_ranges(ir: &mut CadIr) {
         })
         .collect::<Vec<_>>();
 
-    for (index, curve, start, end) in candidates {
-        let Some(start_parameter) =
-            cadmpeg_ir::eval::model_curve_parameter_near_point(ir, &curve, start, 0.0)
-        else {
-            continue;
-        };
-        let Some(end_parameter) =
-            cadmpeg_ir::eval::model_curve_parameter_near_point(ir, &curve, end, start_parameter)
-        else {
-            continue;
-        };
-        let Some(curve_geometry) = ir
-            .model
-            .curves
-            .iter()
-            .find(|candidate| candidate.id == curve)
-            .map(|candidate| &candidate.geometry)
-        else {
-            continue;
-        };
-        let Some([start_parameter, end_parameter]) =
-            edge_parameter_range(curve_geometry, start_parameter, end_parameter)
-        else {
-            continue;
-        };
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let inferred = candidates
+        .into_iter()
+        .filter_map(|(edge_index, curve, start, end)| {
+            let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                &model_index,
+                &curve,
+                start,
+                0.0,
+            )?;
+            let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                &model_index,
+                &curve,
+                end,
+                start_parameter,
+            )?;
+            let curve_geometry = model_index.curves(curve.0.as_str())?.geometry.clone();
+            let [start_parameter, end_parameter] =
+                edge_parameter_range(&curve_geometry, start_parameter, end_parameter)?;
+            Some((edge_index, [start_parameter, end_parameter]))
+        })
+        .collect::<Vec<_>>();
+    drop(model_index);
+
+    for (index, range) in inferred {
         if let Some(edge) = ir.model.edges.get_mut(index) {
-            edge.param_range = Some([start_parameter, end_parameter]);
+            edge.param_range = Some(range);
         }
     }
 }

@@ -391,6 +391,23 @@ pub fn nurbs_pcurve_parameter_domain(
     (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
 }
 
+const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
+const NURBS_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
+
+#[derive(Clone, Copy)]
+struct NurbsSearchWindow<'a> {
+    domain: [f64; 2],
+    boundaries: &'a [f64],
+}
+
+#[derive(Clone, Copy)]
+struct NurbsPcurveCarrier<'a> {
+    degree: u32,
+    knots: &'a [f64],
+    control_points: &'a [Point2],
+    weights: &'a [f64],
+}
+
 /// Find a parameter witness whose NURBS curve point lies within `tolerance` of
 /// `point`, searching finite knot spans in proximity to `seed`.
 ///
@@ -404,8 +421,6 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Option<f64> {
-    const MAX_INTERVALS: usize = 100_000;
-
     let degree = usize::try_from(curve.degree).ok()?;
     let count = curve.control_points.len();
     let domain = nurbs_curve_parameter_domain(curve)?;
@@ -448,6 +463,19 @@ pub fn nurbs_curve_parameter_near_point(
             return Some(parameter);
         }
     }
+    if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
+        curve,
+        &weights,
+        point,
+        tolerance,
+        seed,
+        NurbsSearchWindow {
+            domain,
+            boundaries: &boundaries,
+        },
+    ) {
+        return Some(parameter);
+    }
     let mut intervals = boundaries
         .windows(2)
         .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
@@ -459,7 +487,7 @@ pub fn nurbs_curve_parameter_near_point(
     let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
         examined += 1;
-        if examined > MAX_INTERVALS {
+        if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
         let middle = start + (end - start) * 0.5;
@@ -480,6 +508,57 @@ pub fn nurbs_curve_parameter_near_point(
         );
         intervals.push(halves[1 - nearer]);
         intervals.push(halves[nearer]);
+    }
+    None
+}
+
+fn nurbs_curve_parameter_near_point_newton(
+    curve: &NurbsCurve,
+    weights: &[f64],
+    point: Point3,
+    tolerance: f64,
+    seed: f64,
+    search: NurbsSearchWindow<'_>,
+) -> Option<f64> {
+    let [lower, upper] =
+        parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
+    let mut parameter = seed.clamp(lower, upper);
+    for _ in 0..NURBS_SEARCH_MAX_NEWTON_ITERATIONS {
+        let position = nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            Some(weights),
+            parameter,
+        )?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        if residual.norm() <= tolerance {
+            return Some(parameter);
+        }
+        let tangent = nurbs_curve_tangent(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            Some(weights),
+            parameter,
+        )?;
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let next = parameter - residual.dot(tangent) / denominator;
+        if !next.is_finite() {
+            return None;
+        }
+        let next = next.clamp(lower, upper);
+        if next == parameter {
+            return None;
+        }
+        parameter = next;
     }
     None
 }
@@ -570,6 +649,13 @@ fn interval_distance_to_parameter(interval: [f64; 2], parameter: f64) -> f64 {
     } else {
         0.0
     }
+}
+
+fn parameter_interval_containing(boundaries: &[f64], parameter: f64) -> Option<[f64; 2]> {
+    boundaries.windows(2).find_map(|pair| {
+        (pair[0] < pair[1] && parameter >= pair[0] && parameter <= pair[1])
+            .then_some([pair[0], pair[1]])
+    })
 }
 
 /// Map a NURBS parameter onto its evaluable knot branch.
@@ -745,8 +831,6 @@ pub fn nurbs_pcurve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Option<f64> {
-    const MAX_INTERVALS: usize = 100_000;
-
     if !tolerance.is_finite()
         || tolerance < 0.0
         || !seed.is_finite()
@@ -775,6 +859,23 @@ pub fn nurbs_pcurve_parameter_near_point(
             return Some(parameter);
         }
     }
+    if let Some(parameter) = nurbs_pcurve_parameter_near_point_newton(
+        NurbsPcurveCarrier {
+            degree,
+            knots,
+            control_points,
+            weights: &weights,
+        },
+        point,
+        tolerance,
+        seed,
+        NurbsSearchWindow {
+            domain: [lower, upper],
+            boundaries: &boundaries,
+        },
+    ) {
+        return Some(parameter);
+    }
     let mut intervals = boundaries
         .windows(2)
         .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
@@ -789,7 +890,7 @@ pub fn nurbs_pcurve_parameter_near_point(
     let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
         examined += 1;
-        if examined > MAX_INTERVALS {
+        if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
         let middle = start + (end - start) * 0.5;
@@ -814,6 +915,49 @@ pub fn nurbs_pcurve_parameter_near_point(
     None
 }
 
+fn nurbs_pcurve_parameter_near_point_newton(
+    carrier: NurbsPcurveCarrier<'_>,
+    point: Point2,
+    tolerance: f64,
+    seed: f64,
+    search: NurbsSearchWindow<'_>,
+) -> Option<f64> {
+    let [lower, upper] =
+        parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
+    let mut parameter = seed.clamp(lower, upper);
+    for _ in 0..NURBS_SEARCH_MAX_NEWTON_ITERATIONS {
+        let differential = nurbs_pcurve_differential(
+            carrier.degree,
+            carrier.knots,
+            carrier.control_points,
+            Some(carrier.weights),
+            parameter,
+        )?;
+        let residual = Point2::new(
+            differential.point.u - point.u,
+            differential.point.v - point.v,
+        );
+        if residual.u.hypot(residual.v) <= tolerance {
+            return Some(parameter);
+        }
+        let tangent = differential.tangent?;
+        let denominator = tangent.u * tangent.u + tangent.v * tangent.v;
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let next = parameter - (residual.u * tangent.u + residual.v * tangent.v) / denominator;
+        if !next.is_finite() {
+            return None;
+        }
+        let next = next.clamp(lower, upper);
+        if next == parameter {
+            return None;
+        }
+        parameter = next;
+    }
+    None
+}
+
 /// Return whether a point lies within `tolerance` of a nonperiodic NURBS
 /// pcurve, using evaluated witnesses and Lipschitz-bounded interval rejection.
 ///
@@ -831,8 +975,6 @@ pub fn nurbs_pcurve_contains_point(
     point: Point2,
     tolerance: f64,
 ) -> Option<bool> {
-    const MAX_INTERVALS: usize = 100_000;
-
     let weights = validated_nurbs_pcurve_weights(degree, knots, control_points, weights)?;
     let domain = nurbs_pcurve_parameter_domain(degree, knots, control_points.len())?;
     let degree_usize = usize::try_from(degree).ok()?;
@@ -849,7 +991,7 @@ pub fn nurbs_pcurve_contains_point(
     let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
         examined += 1;
-        if examined > MAX_INTERVALS {
+        if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
         let middle = start + (end - start) * 0.5;
@@ -1543,13 +1685,28 @@ pub fn model_curve_parameter_near_point(
     seed: f64,
 ) -> Option<f64> {
     let index = crate::index::ModelIndex::new(ir);
+    model_curve_parameter_near_point_in_index(&index, curve_id, point, seed)
+}
+
+/// Invert a model curve using a caller-owned lookup index.
+///
+/// Callers that invert more than one carrier should build one
+/// [`crate::index::ModelIndex`] and reuse it. Building the index is linear in
+/// the document size, so rebuilding it inside an edge or coedge loop turns a
+/// linear inference pass into quadratic work.
+pub fn model_curve_parameter_near_point_in_index(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+) -> Option<f64> {
     let curve = index.curves(&curve_id.0)?;
     if !matches!(&curve.geometry, CurveGeometry::Procedural { .. }) {
         return direct_curve_parameter_near_point(
             &curve.geometry,
             point,
             seed,
-            ir.tolerances.linear,
+            index.ir().tolerances.linear,
         );
     }
     let CurveGeometry::Procedural { construction } = &curve.geometry else {
@@ -1582,12 +1739,12 @@ pub fn model_curve_parameter_near_point(
         };
         let parameter = match &surface.geometry {
             SurfaceGeometry::Plane { .. } => {
-                let Some(base) = model_surface_point_by_id(&index, support_id, origin.u, origin.v)
+                let Some(base) = model_surface_point_by_id(index, support_id, origin.u, origin.v)
                 else {
                     continue;
                 };
                 let Some(next) = model_surface_point_by_id(
-                    &index,
+                    index,
                     support_id,
                     origin.u + direction.u,
                     origin.v + direction.v,
@@ -1655,7 +1812,7 @@ pub fn model_curve_parameter_near_point(
         } else if parameter < range[0] || parameter > range[1] {
             continue;
         }
-        let Some(evaluated) = model_curve_point_by_id(&index, curve_id, parameter) else {
+        let Some(evaluated) = model_curve_point_by_id(index, curve_id, parameter) else {
             continue;
         };
         let distance = ((evaluated.x - point.x).powi(2)
