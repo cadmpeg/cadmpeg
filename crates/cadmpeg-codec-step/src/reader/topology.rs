@@ -10,7 +10,7 @@ use cadmpeg_ir::eval::{
     pcurve_tangent, pcurve_uv,
 };
 use cadmpeg_ir::geometry::{
-    CurveGeometry, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
@@ -1562,13 +1562,13 @@ fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
 #[cfg(test)]
 mod tests {
     use super::{
-        drop_committed_surfaces, endpoint_parameter_transform, pcurve_endpoint_fit,
-        pcurve_selection_seeds,
+        drop_committed_surfaces, endpoint_parameter_transform, materialize_pcurve_variant,
+        pcurve_endpoint_fit, pcurve_selection_seeds, SelectedPcurve,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::draft::{CommitSession, ModelDraft};
-    use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, Surface, SurfaceGeometry};
-    use cadmpeg_ir::ids::{BodyId, RegionId, SurfaceId};
+    use cadmpeg_ir::geometry::{NurbsSurface, Pcurve, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{BodyId, CoedgeId, PcurveId, RegionId, SurfaceId};
     use cadmpeg_ir::index::ModelIndex;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Body, BodyKind, Region, Vertex};
@@ -1701,6 +1701,51 @@ mod tests {
             [[3.0, 4.0], [3.0, 5.0]],
         )
         .is_some());
+    }
+
+    #[test]
+    fn selected_pcurve_variants_are_use_scoped() {
+        let source_id = PcurveId("step:data:pcurve#shared".into());
+        let source_geometry = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let selected_geometry = PcurveGeometry::Line {
+            origin: Point2::new(4.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.pcurves.push(Pcurve {
+            id: source_id.clone(),
+            geometry: source_geometry.clone(),
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+        let selected = SelectedPcurve {
+            id: source_id.clone(),
+            geometry: selected_geometry.clone(),
+            parameter_range: Some([0.0, 1.0]),
+        };
+
+        let (first, first_variant) =
+            materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#first".into()));
+        let (second, second_variant) =
+            materialize_pcurve_variant(&ir, &selected, &CoedgeId("step:data:coedge#second".into()));
+
+        assert_ne!(first, source_id);
+        assert_ne!(second, source_id);
+        assert_ne!(first, second);
+        assert_eq!(ir.model.pcurves[0].geometry, source_geometry);
+        assert_eq!(
+            first_variant.expect("first pcurve variant").geometry,
+            selected_geometry
+        );
+        assert_eq!(
+            second_variant.expect("second pcurve variant").geometry,
+            selected_geometry
+        );
     }
 
     #[test]
@@ -2087,6 +2132,7 @@ fn build_one(
     let mut loops = Vec::new();
     let mut faces = Vec::new();
     let mut surfaces = Vec::new();
+    let mut pcurve_variants = Vec::new();
     let mut shells = Vec::new();
     let mut region = Region {
         id: rid.clone(),
@@ -2468,6 +2514,9 @@ fn build_one(
                         })
                     });
                     let associated = explicit_pcurve.into_iter().collect::<Vec<_>>();
+                    let cid = CoedgeId(format!(
+                        "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
+                    ));
                     let associated = if associated.is_empty() {
                         match (surface_step, edge.curve) {
                             (Some(surface_step), Some(curve)) => {
@@ -2508,7 +2557,12 @@ fn build_one(
                                 )
                             });
                             if let Some(selected) = selected {
-                                vec![(selected.id, selected.parameter_range)]
+                                let (pcurve, variant) =
+                                    materialize_pcurve_variant(ir, &selected, &cid);
+                                if let Some(variant) = variant {
+                                    pcurve_variants.push(variant);
+                                }
+                                vec![(pcurve, selected.parameter_range)]
                             } else {
                                 let n = candidates.len();
                                 let message = match (edge.curve, surface_step, n) {
@@ -2532,9 +2586,6 @@ fn build_one(
                             }
                         }
                     };
-                    let cid = CoedgeId(format!(
-                        "step:data:coedge#{use_step}-face-{face_step}{face_suffix}"
-                    ));
                     coedge_ids.push(cid.clone());
                     coedges.push(Coedge {
                         id: cid,
@@ -2816,6 +2867,9 @@ fn build_one(
         id,
         "topology draft",
     )?;
+    for pcurve in pcurve_variants {
+        built.draft.insert(pcurve).ok()?;
+    }
     for &shell_reference in shell_steps {
         let shell_step = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
             shell_reference
@@ -3207,8 +3261,11 @@ fn associated_pcurves(
 /// to one deterministic identity.
 struct SelectedPcurve {
     id: PcurveId,
+    geometry: PcurveGeometry,
     parameter_range: Option<[f64; 2]>,
 }
+
+const PCURVE_VARIANT_MARKER: &str = "-use-";
 
 #[derive(Clone)]
 struct PcurveCandidateFit {
@@ -3846,6 +3903,7 @@ fn select_associated_pcurve(
         });
         Some(SelectedPcurve {
             id: candidates[candidate_index].clone(),
+            geometry: fit.geometry.clone(),
             parameter_range,
         })
     };
@@ -3891,17 +3949,39 @@ fn select_associated_pcurve(
         return None;
     };
     let selected = selected(selected_index)?;
-    let selected_geometry = fits[selected_index].geometry.clone();
     drop(index);
-    if let Some(pcurve) = ir
+    Some(selected)
+}
+
+fn materialize_pcurve_variant(
+    ir: &CadIr,
+    selected: &SelectedPcurve,
+    coedge_id: &CoedgeId,
+) -> (PcurveId, Option<Pcurve>) {
+    let Some(source) = ir
         .model
         .pcurves
-        .iter_mut()
-        .find(|pcurve| pcurve.id == candidates[selected_index])
-    {
-        pcurve.geometry = selected_geometry;
+        .iter()
+        .find(|pcurve| pcurve.id == selected.id)
+        .cloned()
+    else {
+        return (selected.id.clone(), None);
+    };
+    if source.geometry == selected.geometry {
+        return (selected.id.clone(), None);
     }
-    Some(selected)
+
+    let use_key = coedge_id.0.replace([':', '#'], "-");
+    let id = PcurveId(format!("{}{PCURVE_VARIANT_MARKER}{use_key}", source.id.0));
+    let variant = Pcurve {
+        id: id.clone(),
+        geometry: selected.geometry.clone(),
+        wrapper_reversed: source.wrapper_reversed,
+        native_tail_flags: source.native_tail_flags,
+        parameter_range: source.parameter_range,
+        fit_tolerance: source.fit_tolerance,
+    };
+    (id, Some(variant))
 }
 
 #[derive(Clone, Copy)]

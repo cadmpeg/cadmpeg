@@ -2169,6 +2169,28 @@ fn normalized_linear_extrusion_pcurve_is_calibrated_to_surface_endpoints() {
             .count(),
         1
     );
+    let used_id = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .next()
+        .expect("calibrated linear-extrusion pcurve use")
+        .pcurve
+        .clone();
+    assert!(used_id.as_str().starts_with("step:data:pcurve#56-use-"));
+    let used = decoded
+        .ir
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == used_id)
+        .expect("calibrated linear-extrusion pcurve");
+    assert!(matches!(
+        used.geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Transformed { .. }
+    ));
     assert!(!decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
             && loss.message.contains("curve #57")
@@ -3687,12 +3709,23 @@ fn degree_valued_cylindrical_pcurve_is_normalized_before_topology_selection() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode degree-valued cylindrical pcurve");
 
+    let used_id = decoded
+        .ir
+        .model
+        .coedges
+        .iter()
+        .flat_map(|coedge| coedge.pcurves.iter())
+        .next()
+        .expect("normalized cylindrical pcurve use")
+        .pcurve
+        .clone();
+    assert!(used_id.as_str().starts_with("step:data:pcurve#56-use-"));
     let pcurve = decoded
         .ir
         .model
         .pcurves
         .iter()
-        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .find(|pcurve| pcurve.id == used_id)
         .expect("normalized cylindrical pcurve");
     assert!(matches!(
         pcurve.geometry,
@@ -3702,12 +3735,6 @@ fn degree_valued_cylindrical_pcurve_is_normalized_before_topology_selection() {
                 && direction.u.abs() < 1.0e-12
                 && (direction.v - 10.0).abs() < 1.0e-12
     ));
-    assert!(decoded.ir.model.coedges.iter().any(|coedge| {
-        coedge
-            .pcurves
-            .iter()
-            .any(|use_| use_.pcurve.as_str() == "step:data:pcurve#56")
-    }));
     assert!(!decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
             && loss.message.contains("curve #57")

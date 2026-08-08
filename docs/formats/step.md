@@ -432,6 +432,11 @@ endpoint interval. Candidates with equivalent model-space loci are one
 semantic carrier and the first source candidate is retained. Distinct tied or
 otherwise unresolved candidates remain detached and produce a topology loss.
 
+The source pcurve carrier is immutable. A chart variant derived from one
+coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns that
+variant through its `PcurveUse`; selecting a variant for another coedge does not
+change the source carrier or the first coedge's parameter range.
+
 A topology-referenced curve or surface whose geometry fails transfer retains
 its STEP identity as an unknown carrier linked to its opaque record. The body
 topology keeps the relation. An optional pcurve that fails transfer leaves the

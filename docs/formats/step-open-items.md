@@ -362,21 +362,19 @@ rule for procedural surfaces.
 
 ### PC-04. Chart write-back to the shared pcurve
 
-**Question.** Which coedge owns the parameterization of a pcurve that several
-edges reference?
+**Resolved.** The source pcurve carrier is immutable. A chart variant derived
+from one coedge's endpoint fit is a use-scoped pcurve carrier. The coedge owns
+the derived carrier through its `PcurveUse`; another coedge may select a
+different variant without changing the source carrier or the first coedge's
+parameter range.
 
-**Known.** `select_associated_pcurve` runs for each coedge with that coedge's
-vertex points and overwrites the pcurve arena entry with the variant
-calibrated to those points
-(`crates/cadmpeg-codec-step/src/reader/topology.rs:3806-3817`). There is no
-guard against a previous write.
-
-**Need.** Two `EDGE_CURVE` records on one `SURFACE_CURVE`, or a `SUBEDGE` that
-inherits its parent's pcurve, calibrate the same arena entry in turn. The
-first coedge stores a `parameter_range` measured in the chart that the second
-coedge then replaces, so the stored range no longer refers to the stored
-geometry. We must know whether a pcurve chart is a property of the carrier or
-of the occurrence.
+**Rule.** If selection keeps the source geometry, the coedge references the
+source pcurve. If selection changes the geometry, the reader creates a
+canonical use-scoped pcurve identity and copies the source carrier metadata.
+The source pcurve remains available for other uses and for opaque-record
+ownership. When no typed use retains the source identity, normal carrier
+retention removes the unowned neutral source carrier while preserving its raw
+STEP record as opaque data.
 
 ### PC-05. Periodic trim interval
 
