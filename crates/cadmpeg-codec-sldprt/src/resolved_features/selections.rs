@@ -531,23 +531,12 @@ fn operation_surface_selection_candidates(
         })
         .collect::<Vec<_>>();
     let mut candidates = if let [surface_class] = surface_classes.as_slice() {
-        let Some(class_offset) = usize::try_from(surface_class.offset).ok() else {
-            return Vec::new();
-        };
-        let Some(token_offset) = class_offset.checked_add(6 + surface_class.name.len()) else {
-            return Vec::new();
-        };
-        let Some(token) = lane.native_payload.get(token_offset..token_offset + 2) else {
-            return Vec::new();
-        };
-        (start..end.saturating_sub(105))
-            .filter(|offset| lane.native_payload.get(*offset..*offset + 2) == Some(token))
-            .filter_map(|offset| {
-                let marker = offset + 103;
-                compact_surface_selection_at(&lane.native_payload, marker)
-                    .map(|components| (marker, components))
-            })
-            .collect::<Vec<_>>()
+        compact_surface_selection_candidates_for_class(
+            &lane.native_payload,
+            surface_class,
+            start,
+            end,
+        )
     } else {
         Vec::new()
     };
@@ -574,6 +563,41 @@ fn operation_surface_selection_candidates(
     } else {
         Vec::new()
     }
+}
+
+fn compact_surface_selection_candidates_for_class(
+    payload: &[u8],
+    class: &crate::records::FeatureInputClass,
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let Some(class_offset) = usize::try_from(class.offset).ok() else {
+        return Vec::new();
+    };
+    if !(start..end).contains(&class_offset) {
+        return Vec::new();
+    }
+    let Some(body) = class_offset.checked_add(6 + class.name.len()) else {
+        return Vec::new();
+    };
+    let Some(bounded_payload) = payload.get(..end.min(payload.len())) else {
+        return Vec::new();
+    };
+    let Some(last_marker) = bounded_payload
+        .len()
+        .checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())
+    else {
+        return Vec::new();
+    };
+    if body > last_marker {
+        return Vec::new();
+    }
+    (body..=last_marker)
+        .filter_map(|marker| {
+            compact_surface_selection_at(bounded_payload, marker)
+                .map(|components| (marker, components))
+        })
+        .collect()
 }
 
 pub(super) fn history_features_with_object_sources(

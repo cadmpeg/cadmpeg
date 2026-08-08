@@ -14,9 +14,10 @@ use super::{
     cosmetic_thread_cylinder_references, cosmetic_thread_diameter_child_tail,
     generated_surface_identities, history_features_with_object_sources,
     inline_surface_reference_at, marker_local_links, mirror_pattern_component_path_at,
-    mirror_surface_component_path_at, surface_reference_matches_at, unique_marker_candidate,
-    COMPACT_EDGE_VECTOR_MARKER,
+    mirror_surface_component_path_at, operation_surface_selection_candidates,
+    surface_reference_matches_at, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
 };
+use crate::classification::FeatureClass;
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -701,6 +702,58 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
             .collect::<Vec<_>>(),
         vec![Some(2)]
     );
+}
+
+#[test]
+fn operation_surface_selection_finds_marker_inside_class_body() {
+    let class_name = "moCompSurfaceBody_c";
+    let class_body = 6 + class_name.len();
+    let marker = class_body + 43;
+    let entry = marker + 18;
+    let signature = [
+        0x23, 0x86, 0x25, 0x06, 0x02, 0x02, 0, 0, 0xc3, 0xea, 0xde, 0x51,
+    ];
+    let mut payload = vec![0; entry + 20];
+    payload[..4].copy_from_slice(CLASS_MARKER);
+    payload[4..6].copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[6..class_body].copy_from_slice(class_name.as_bytes());
+    payload[class_body..class_body + 2].copy_from_slice(&0x860eu16.to_le_bytes());
+    payload[marker - 12..marker - 8].copy_from_slice(&6u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0x04, 0x02, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    payload[entry..entry + 2].copy_from_slice(&0x8781u16.to_le_bytes());
+    payload[entry + 4..entry + 16].copy_from_slice(&signature);
+    payload[entry + 16..entry + 20].copy_from_slice(&6u32.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
+            role: FeatureInputClassRole::Reference,
+        }],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let selections =
+        operation_surface_selection_candidates(FeatureClass::TrimSurface, &lane, 0, payload.len());
+
+    assert_eq!(selections.len(), 1);
+    assert_eq!(selections[0].0, marker);
+    assert_eq!(selections[0].1[0].local_id, Some(6));
 }
 
 #[test]
