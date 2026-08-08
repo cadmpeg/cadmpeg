@@ -519,7 +519,10 @@ fn historical_record_archive(
     for record in states
         .iter()
         .flat_map(|state| &state.records)
-        .filter(|record| !is_history_boundary_record(record))
+        // `End-of-ASM-History-Section` can be the first archived entity
+        // record. The snapshot pairing, not its display name, identifies
+        // records that belong in the revision archive.
+        .filter(|record| record.revision_id.is_some())
     {
         let revision_id = record.revision_id?;
         let offset = usize::try_from(record.byte_offset).ok()?;
@@ -9427,6 +9430,99 @@ mod tests {
         assert_eq!(table.len(), 2);
         assert_eq!(table[1].index, 1);
         assert_eq!(&*table[1].tokens, [cadmpeg_asm::sab::Token::Ref(1)]);
+    }
+
+    #[test]
+    fn qualified_history_marker_remains_an_archived_record() {
+        let mut archived_bytes = Vec::new();
+        for part in ["End", "of", "ASM", "History"] {
+            archived_bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
+            archived_bytes.extend_from_slice(part.as_bytes());
+        }
+        archived_bytes.extend_from_slice(&[0x0d, 7]);
+        archived_bytes.extend_from_slice(b"Section");
+        archived_bytes.extend_from_slice(&[0x0d, 4]);
+        archived_bytes.extend_from_slice(b"body");
+        archived_bytes.push(0x0c);
+        archived_bytes.extend_from_slice(&2i64.to_le_bytes());
+        archived_bytes.push(0x11);
+        let state_id = "state".to_string();
+        let board_id = "board".to_string();
+        let state = AsmDeltaState {
+            id: state_id.clone(),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id: 1,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: 0,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: vec![AsmBulletinBoard {
+                id: board_id.clone(),
+                parent: state_id.clone(),
+                byte_offset: 0,
+                owner_ref: 0,
+                number: 2,
+                changes: vec![AsmEntityChange {
+                    id: "change".into(),
+                    parent: board_id,
+                    byte_offset: 0,
+                    kind: AsmEntityChangeKind::Update,
+                    old_ref: Some(2),
+                    new_ref: Some(1),
+                }],
+            }],
+            records: vec![AsmHistoryRecord {
+                id: "record".into(),
+                parent: state_id,
+                revision_id: Some(2),
+                index: 0,
+                byte_offset: 0,
+                name: "End-of-ASM-History-Section".into(),
+                framing_error: None,
+                entity_references: vec![2],
+                raw_bytes: archived_bytes.clone(),
+            }],
+            entity_versions: vec![
+                AsmEntityVersion {
+                    entity_ref: 0,
+                    record_ref: 0,
+                },
+                AsmEntityVersion {
+                    entity_ref: 1,
+                    record_ref: 2,
+                },
+            ],
+            record_table_complete: false,
+            topology: None,
+            transition: None,
+        };
+        let active = ["asmheader", "body"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, name)| cadmpeg_asm::sab::Record {
+                index,
+                name: name.into(),
+                head: name.into(),
+                tokens: Vec::new().into(),
+                offset: 0,
+                len: 0,
+            })
+            .collect::<Vec<_>>();
+
+        let archive =
+            historical_record_archive(std::slice::from_ref(&state), &active, &archived_bytes, 8)
+                .expect("qualified history marker is an archived record");
+        let record = archive
+            .records
+            .get(&2)
+            .expect("marker revision is retained");
+        assert_eq!(record.name, "End-of-ASM-History-Section");
+        assert_eq!(record.index, 1);
+        assert!(record.tokens.contains(&cadmpeg_asm::sab::Token::Ref(1)));
     }
 
     #[test]
