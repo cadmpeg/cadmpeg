@@ -1018,16 +1018,6 @@ There is no test of the element count. `field_marker` at `pmi.rs:611` takes the 
 
 **Need.** We must know the position. A window bound also drops a valid vector that lies past it.
 
-### DI-49. Reference-axis frame layout
-
-**Question.** What layout does a reference-axis record use, and what fixes the position of its frame?
-
-**Known.** `sldprt.md` §2 gives no reference-axis frame layout. `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs:962` scans every 88-byte window of the feature record and accepts a window whose nine f64 values give two endpoints, two extents, and a unit direction parallel to the endpoint delta. `reference_geometry.rs:1003` then ranks the windows: rank `0` when both extents are positive and equal, rank `1` otherwise, and keeps the best rank before the uniqueness gate runs. A rank-0 window therefore defeats every rank-1 window instead of making the frame ambiguous.
-
-The caller at `reference_geometry.rs:862` anchors the scan to `moPlaneInterAxisData_c` and `moSurfaceAxisData_c` bodies when those classes exist, and scans the whole feature interval when they do not.
-
-**Need.** We must know the layout to read the frame at a fixed position. Extent symmetry is not a stored discriminator.
-
 ### DI-50. Mid-plane in-plane axis
 
 **Question.** Which record carries the in-plane axis of a mid-plane datum?

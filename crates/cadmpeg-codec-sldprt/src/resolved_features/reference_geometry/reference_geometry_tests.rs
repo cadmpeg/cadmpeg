@@ -14,7 +14,10 @@ use super::{
     sketch_block_record_origin, structured_offset_plane_sources, FIXED_REFERENCE_PLANE_FRAME_LEN,
     MINIMAL_REFERENCE_PLANE_FRAME_LEN,
 };
-use crate::records::Feature;
+use crate::records::{
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+    FeatureInputName,
+};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashSet};
@@ -191,6 +194,127 @@ fn explicit_reference_axis_requires_redundant_collinear_witnesses() {
 
     record[24..32].copy_from_slice(&0.5_f64.to_le_bytes());
     assert_eq!(explicit_reference_axis_frame(&record), None);
+}
+
+#[test]
+fn explicit_reference_axis_does_not_rank_unanchored_candidates() {
+    let frame = |origin_x: f64, first_scalar: f64, second_scalar: f64| {
+        let mut record = vec![0; 88];
+        for (offset, value) in [
+            (0, origin_x),
+            (8, -0.4),
+            (16, 0.1),
+            (24, origin_x),
+            (32, 0.6),
+            (40, 0.1),
+            (48, first_scalar),
+            (56, second_scalar),
+            (64, 0.0),
+            (72, 1.0),
+            (80, 0.0),
+        ] {
+            record[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        record
+    };
+    let mut payload = frame(0.25, 0.0, -0.5);
+    payload.extend_from_slice(&[0xff; 88]);
+    payload.extend_from_slice(&frame(0.35, 1.0, 1.0));
+    assert_eq!(explicit_reference_axis_frame(&payload), None);
+}
+
+#[test]
+fn two_points_axis_data_frame_is_anchored_after_class_name() {
+    let class_name = b"moTwoPtsAxisData_c";
+    let class_offset = 16;
+    let body = class_offset + CLASS_MARKER.len() + 2 + class_name.len();
+    let mut payload = vec![0; body + 88];
+    payload[class_offset..class_offset + CLASS_MARKER.len()].copy_from_slice(CLASS_MARKER);
+    payload[class_offset + CLASS_MARKER.len()..class_offset + CLASS_MARKER.len() + 2]
+        .copy_from_slice(&(class_name.len() as u16).to_le_bytes());
+    payload[class_offset + CLASS_MARKER.len() + 2..body].copy_from_slice(class_name);
+    for (offset, value) in [
+        (0, 0.25_f64),
+        (8, -0.4),
+        (16, 0.1),
+        (24, 0.25),
+        (32, 0.6),
+        (40, 0.1),
+        (48, 0.0),
+        (56, 1.0),
+        (64, 0.0),
+        (72, 1.0),
+        (80, 0.0),
+    ] {
+        payload[body + offset..body + offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+
+    let mut histories = vec![FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "axis".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("2080".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Axis1".into(),
+            kind: String::new(),
+            input_class: Some("moRefAxis_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }];
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: vec![FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: class_offset as u64,
+            name: String::from_utf8(class_name.to_vec()).unwrap(),
+            role: FeatureInputClassRole::default(),
+        }],
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(2080),
+            value: "Axis1".into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    super::enrich_history_reference_axes(&mut histories, &[lane]);
+
+    assert_eq!(
+        histories[0].features[0].properties.get("Origin"),
+        Some(&"250mm,0mm,100mm".to_string())
+    );
+    assert_eq!(
+        histories[0].features[0].properties.get("Direction"),
+        Some(&"0,1,0".to_string())
+    );
 }
 
 #[test]

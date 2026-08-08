@@ -2,7 +2,6 @@
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::sketch_plane_frames;
-use super::relation_loci::same_dimension_length;
 use super::scalars::feature_object_name;
 use super::selections::component_face_reference_in_record;
 use super::{CLASS_MARKER, NAME_MARKER};
@@ -816,7 +815,7 @@ pub(crate) fn enrich_history_reference_axes(
                 .filter(|class| {
                     matches!(
                         class.name.as_str(),
-                        "moPlaneInterAxisData_c" | "moSurfaceAxisData_c"
+                        "moPlaneInterAxisData_c" | "moSurfaceAxisData_c" | "moTwoPtsAxisData_c"
                     ) && usize::try_from(class.offset)
                         .is_ok_and(|offset| (start..end).contains(&offset))
                 })
@@ -926,8 +925,8 @@ pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, V
         .filter_map(|bytes| {
             let first = Vector3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
             let second = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
-            let first_extent = scalar(bytes, 48)?;
-            let second_extent = scalar(bytes, 56)?;
+            let _first_parameter = scalar(bytes, 48)?;
+            let _second_parameter = scalar(bytes, 56)?;
             let stored_direction =
                 Vector3::new(scalar(bytes, 64)?, scalar(bytes, 72)?, scalar(bytes, 80)?);
             let delta = Vector3::new(second.x - first.x, second.y - first.y, second.z - first.z);
@@ -962,33 +961,19 @@ pub(super) fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, V
             );
             let canonical_zero =
                 |value: f64, tolerance: f64| if value.abs() <= tolerance { 0.0 } else { value };
-            let layout_rank = usize::from(
-                first_extent <= 0.0
-                    || second_extent <= 0.0
-                    || !same_dimension_length(first_extent, second_extent),
-            );
             Some((
-                layout_rank,
-                (
-                    Point3::new(
-                        canonical_zero(origin.x, ORIGIN_ZERO_TOLERANCE_MM),
-                        canonical_zero(origin.y, ORIGIN_ZERO_TOLERANCE_MM),
-                        canonical_zero(origin.z, ORIGIN_ZERO_TOLERANCE_MM),
-                    ),
-                    Vector3::new(
-                        canonical_zero(direction.x, DIRECTION_ZERO_TOLERANCE),
-                        canonical_zero(direction.y, DIRECTION_ZERO_TOLERANCE),
-                        canonical_zero(direction.z, DIRECTION_ZERO_TOLERANCE),
-                    ),
+                Point3::new(
+                    canonical_zero(origin.x, ORIGIN_ZERO_TOLERANCE_MM),
+                    canonical_zero(origin.y, ORIGIN_ZERO_TOLERANCE_MM),
+                    canonical_zero(origin.z, ORIGIN_ZERO_TOLERANCE_MM),
+                ),
+                Vector3::new(
+                    canonical_zero(direction.x, DIRECTION_ZERO_TOLERANCE),
+                    canonical_zero(direction.y, DIRECTION_ZERO_TOLERANCE),
+                    canonical_zero(direction.z, DIRECTION_ZERO_TOLERANCE),
                 ),
             ))
         })
-        .collect::<Vec<_>>();
-    let best_rank = candidates.iter().map(|(rank, _)| *rank).min()?;
-    candidates.retain(|(rank, _)| *rank == best_rank);
-    let mut candidates = candidates
-        .into_iter()
-        .map(|(_, frame)| frame)
         .collect::<Vec<_>>();
     candidates.sort_by_key(reference_axis_frame_key);
     candidates.dedup_by_key(|frame| reference_axis_frame_key(frame));
