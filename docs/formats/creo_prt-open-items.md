@@ -343,7 +343,11 @@ eight-slot axis-distance form with two point pairs, two type-4-or-type-5
 auxiliary rows, a type-0 distance row, and a type-5 auxiliary row. The
 non-negative type-0 value transfers when it agrees with exactly one absolute
 coordinate difference; a missing value transfers only when exactly one
-coordinate difference is non-zero. Other function-43 forms remain native.
+coordinate difference is non-zero. Function-16 direct rows with two type-4
+angle rows, a type-0 result row, and a zero type-5 selector transfer the
+non-negative first-minus-second angle difference when it is at most π; a
+missing result transfers from the two finite angles. Other function-16 forms
+and other function-43 forms remain native.
 
 **Need.** We must know each equation to solve the section geometry.
 

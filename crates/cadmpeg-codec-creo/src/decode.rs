@@ -4390,6 +4390,9 @@ pub(crate) fn resolved_section_scalar_values(
     ) {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
+    for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
     {
@@ -4406,6 +4409,78 @@ pub(crate) fn resolved_section_scalar_values(
     values
         .into_iter()
         .filter_map(|(variable, value)| Some((variable, value?)))
+        .collect()
+}
+
+fn section_equation_function_sixteen_angle_difference_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<(SectionScalarVariable, f64)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    let row = |ordinal: u32| {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    equations
+        .rows
+        .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+        .filter_map(|equation| {
+            if equation.function_id != 16 || equation.arguments.len() != 4 {
+                return None;
+            }
+            let [Some(first), Some(second), Some(difference), Some(selector)] =
+                equation.arguments.as_slice()
+            else {
+                return None;
+            };
+            let (Some(first), Some(second), Some(difference), Some(selector)) =
+                (row(*first), row(*second), row(*difference), row(*selector))
+            else {
+                return None;
+            };
+            if first.variable_type != 4
+                || second.variable_type != 4
+                || difference.variable_type != 0
+                || selector.variable_type != 5
+                || selector.value != Some(0.0)
+            {
+                return None;
+            }
+            let (Some(first), Some(second)) = (first.value, second.value) else {
+                return None;
+            };
+            if !first.is_finite() || !second.is_finite() || first < second {
+                return None;
+            }
+            let value = first - second;
+            if !value.is_finite() || value > std::f64::consts::PI {
+                return None;
+            }
+            if difference.value.is_some_and(|stored| {
+                !stored.is_finite() || stored < 0.0 || !approximately_equal(stored, value)
+            }) {
+                return None;
+            }
+            Some(((difference.variable_type, difference.key), value))
+        })
         .collect()
 }
 

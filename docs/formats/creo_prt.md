@@ -1543,6 +1543,13 @@ missing type-0 scalar is derived only when exactly one coordinate difference is
 non-zero. A stored scalar must agree with exactly one coordinate difference.
 Non-zero type-5 auxiliary values, ambiguous coordinate matches, and incomplete
 point pairs leave the equation native.
+Function `16` has a direct four-slot form with two type-4 angle rows, a type-0
+result row, and a type-5 selector row. When the selector value is zero and the
+first angle is not less than the second, the type-0 result is the non-negative
+first-minus-second angle difference in radians, bounded by π. A missing result
+is derived from the two finite angles; a stored result must be finite,
+non-negative, and equal to that difference. A missing selector, a reversed or
+over-π difference, or a conflicting result leaves the equation native.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table

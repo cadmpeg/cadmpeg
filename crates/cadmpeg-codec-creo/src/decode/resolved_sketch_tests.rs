@@ -6946,6 +6946,85 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
 }
 
 #[test]
+fn equation_function_sixteen_derives_direct_angle_difference() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: value.is_none(),
+        offset: 0,
+    };
+    let definition = |first, second, difference, selector| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x10\xf8\x04\x00\x01\x02\x03\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: vec![
+                row(4, 10, first),
+                row(4, 11, second),
+                row(0, 20, difference),
+                row(5, 0, selector),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(0.0)))
+            .get(&(0, 20)),
+        Some(&1.5)
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), Some(1.5), Some(0.0),))
+            .get(&(0, 20)),
+        Some(&1.5)
+    );
+    assert!(!resolved_section_scalar_values(&definition(
+        Some(2.5),
+        Some(1.0),
+        Some(1.0),
+        Some(0.0),
+    ))
+    .contains_key(&(0, 20)));
+    assert!(
+        !resolved_section_scalar_values(&definition(Some(2.5), Some(1.0), None, Some(1.0)))
+            .contains_key(&(0, 20))
+    );
+    assert!(
+        !resolved_section_scalar_values(&definition(Some(1.0), Some(2.5), None, Some(0.0)))
+            .contains_key(&(0, 20))
+    );
+    assert!(
+        !resolved_section_scalar_values(&definition(Some(4.0), Some(0.0), None, Some(0.0)))
+            .contains_key(&(0, 20))
+    );
+}
+
+#[test]
 fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
         variable_type,
