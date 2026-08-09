@@ -2444,7 +2444,7 @@ fn pcurve_endpoints(
     geometry: &B5PcurveContext<'_>,
 ) -> Option<[[f64; 3]; 2]> {
     if let Some(pcurve) = geometry.pcurves.get(&pcurve_id) {
-        let Some(parameters) = edge_pcurve_parameter_values(
+        let parameters = edge_pcurve_parameter_values(
             geometry.edge_parameter_incidences,
             geometry.parameter_incidences,
             edge_id,
@@ -2452,18 +2452,22 @@ fn pcurve_endpoints(
         )
         .and_then(|parameters| {
             bounded_occurrence_range(parameters, pcurve_parameter_domain(pcurve)?)
-        }) else {
+        })
+        // A missing or invalid edge incidence selects the complete pcurve
+        // knot domain. This is the native object-stream fallback; it is not
+        // permission to use an arbitrary control-polygon endpoint.
+        .or_else(|| pcurve_parameter_domain(pcurve));
+        let Some(parameters) = parameters else {
             return pcurve.lifted_endpoints;
         };
         let uv = [
             evaluate_pcurve(pcurve, parameters[0])?,
             evaluate_pcurve(pcurve, parameters[1])?,
         ];
-        return lift_pcurve_endpoints(
-            geometry.surfaces.get(&pcurve.surface)?,
-            geometry.profiles,
-            &uv,
-        );
+        let Some(surface) = geometry.surfaces.get(&pcurve.surface) else {
+            return pcurve.lifted_endpoints;
+        };
+        return lift_pcurve_endpoints(surface, geometry.profiles, &uv).or(pcurve.lifted_endpoints);
     }
     let opaque = geometry.opaque_pcurves.get(&pcurve_id)?;
     let pcurve = opaque.sphere_great_circle.as_ref()?;
@@ -6069,6 +6073,52 @@ mod tests {
                 &[[2.5, 0.0, 0.0], [7.5, 0.0, 0.0]],
             ),
             BTreeMap::from([(3, [0, 1])])
+        );
+    }
+
+    #[test]
+    fn missing_edge_parameter_incidence_uses_complete_pcurve_domain() {
+        let pcurves = BTreeMap::from([(
+            2,
+            B5Pcurve {
+                object_id: 2,
+                surface: 4,
+                degree: 1,
+                distinct_knots: vec![2.0, 8.0],
+                multiplicities: vec![2, 2],
+                control_points: vec![[2.0, 0.0], [8.0, 0.0]],
+                weights: None,
+                parameter_range: Some([2.0, 8.0]),
+                class_21_suffix_scalar: None,
+                lifted_endpoints: None,
+            },
+        )]);
+        let surfaces = BTreeMap::from([(
+            4,
+            B5Surface::Plane {
+                origin: [0.0, 0.0, 0.0],
+                direction_u: [1.0, 0.0, 0.0],
+                direction_v: [0.0, 1.0, 0.0],
+                u_range: [0.0, 10.0],
+                v_range: [-1.0, 1.0],
+            },
+        )]);
+        let opaque_pcurves = BTreeMap::new();
+        let profiles = BTreeMap::new();
+        let edge_parameter_incidences = BTreeMap::new();
+        let parameter_incidences = BTreeMap::new();
+        let geometry = B5PcurveContext {
+            pcurves: &pcurves,
+            opaque_pcurves: &opaque_pcurves,
+            surfaces: &surfaces,
+            profiles: &profiles,
+            edge_parameter_incidences: &edge_parameter_incidences,
+            parameter_incidences: &parameter_incidences,
+        };
+
+        assert_eq!(
+            pcurve_endpoints(2, 3, &geometry),
+            Some([[2.0, 0.0, 0.0], [8.0, 0.0, 0.0]])
         );
     }
 
