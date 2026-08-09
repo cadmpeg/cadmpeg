@@ -181,6 +181,49 @@ fn blank_directory_status_defaults_to_zero_fields() {
 }
 
 #[test]
+fn right_justified_directory_status_supplies_leading_zero_groups() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "STATUS".into(),
+                status: "     201",
+                parameters: "116,1,2,3,0;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let entity = &result.ir.native.namespace("iges").unwrap().arenas["entities"][0];
+
+    assert_eq!(entity.fields()["blank_status"], 0);
+    assert_eq!(entity.fields()["subordinate_status"], 0);
+    assert_eq!(entity.fields()["use_flag"], 2);
+    assert_eq!(entity.fields()["hierarchy_status"], 1);
+}
+
+#[test]
+fn directory_status_rejects_embedded_or_trailing_blanks() {
+    for status in ["0000 201", "0000020 "] {
+        let error = IgesCodec
+            .decode(
+                &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                    entity_type: 116,
+                    form: 0,
+                    label: "STATUS".into(),
+                    status,
+                    parameters: "116,1,2,3,0;".into(),
+                }])),
+                &DecodeOptions::default(),
+            )
+            .unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("status number is neither blank nor a right-justified decimal integer"));
+    }
+}
+
+#[test]
 fn blank_parameter_field_is_an_omitted_value() {
     let result = IgesCodec
         .decode(

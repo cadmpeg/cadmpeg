@@ -77,8 +77,8 @@ Columns 1-72 of the first of the two Directory Entry cards, as nine fixed eight-
 | 25-32 | `line_font_pattern` | `text` | spec | structure, line font pattern, level, view |
 | 33-40 | `level` | `text` | spec | line font pattern, level, view, transformation matrix |
 | 41-48 | `view` | `text` | spec | level, view, transformation matrix, label-display associativity |
-| 49-56 | `transformation_matrix` | `text` | spec | view, transformation matrix, label-display associativity, and the eight-digit status number |
-| 57-64 | `label_display` | `text` | spec | transformation matrix, label-display associativity, and the eight-digit status number |
+| 49-56 | `transformation_matrix` | `text` | spec | view, transformation matrix, label-display associativity, and the eight-character status number |
+| 57-64 | `label_display` | `text` | spec | transformation matrix, label-display associativity, and the eight-character status number |
 | 65-72 | `status` | `text` | spec | Four two-digit decimal subfields: blank status, subordinate-entity switch, entity-use flag, and hierarchy. |
 
 Cross-checked against code:

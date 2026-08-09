@@ -102,7 +102,7 @@ note = "The parser reads the back-pointer from zero-based 64..72, which is 1-bas
 name = "directory_entry_card_1"
 kind = "column"
 section = "Directory Entry section"
-anchor = "The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-digit status number."
+anchor = "The first card fields are entity type, Parameter Data start sequence, structure, line font pattern, level, view, transformation matrix, label-display associativity, and the eight-character status number."
 size = 72
 note = "Columns 1-72 of the first of the two Directory Entry cards, as nine fixed eight-column fields. Blank numeric fields take their field-defined default; nonblank numeric fields are right-aligned signed decimal integers. Columns 73-80 carry the section marker and sequence field of the enclosing card."
 
@@ -153,21 +153,21 @@ name = "transformation_matrix"
 columns = "49-56"
 type = "text"
 source = "spec"
-anchor = "view, transformation matrix, label-display associativity, and the eight-digit status number"
+anchor = "view, transformation matrix, label-display associativity, and the eight-character status number"
 
 [[record.field]]
 name = "label_display"
 columns = "57-64"
 type = "text"
 source = "spec"
-anchor = "transformation matrix, label-display associativity, and the eight-digit status number"
+anchor = "transformation matrix, label-display associativity, and the eight-character status number"
 
 [[record.field]]
 name = "status"
 columns = "65-72"
 type = "text"
 source = "spec"
-anchor = "the eight-digit status number"
+anchor = "the eight-character status number"
 note = "Four two-digit decimal subfields: blank status, subordinate-entity switch, entity-use flag, and hierarchy."
 
 [[record.code]]

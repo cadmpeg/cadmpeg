@@ -152,16 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-09. The Directory status field accepts blank or eight digits and nothing between
-
-**Question.** Must the Directory status number be zero-padded to eight digits?
-
-**Known.** `directory.rs:70-84` accepts an all-blank field as four zero pairs, and refuses any field that holds a non-digit byte. Every other Directory field is a trimmed right-aligned integer (`directory.rs:59-68`). A card carrying `"     201"` is refused, and the error propagates out of `decode`, so the complete file fails.
-
-**Note.** `iges.md` "Directory Entry section" describes "four two-digit decimal fields", which is consistent with mandatory padding. Whether IGES requires eight digits, or describes the conventional rendering, is not verified against the specification text.
-
-**Need.** A writer that formats all twenty Directory fields with one right-aligned integer routine produces files that never decode. The blast radius is the complete file, so the rule needs evidence.
-
 ### DR-10. Two fabricated defaults in the Type 406 Form 30 native record
 
 **Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
