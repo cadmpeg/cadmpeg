@@ -24711,6 +24711,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
             visual_guid: visual_guid.into(),
+            color: None,
         }],
     )
     .expect("unique face appearance");
@@ -24760,12 +24761,122 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         &[crate::materials::FaceAppearanceAssignment {
             face_guid: face_guid.into(),
             visual_guid: visual_guid.into(),
+            color: None,
         }],
     )
     .expect_err("a face material attribute with two GUID operands is ambiguous");
     assert!(error
         .to_string()
         .contains("exactly one lower-case face GUID"));
+}
+
+#[test]
+fn legacy_face_assignment_color_precedes_appearance_base_but_not_brep_color() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::topology::Color;
+
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
+    let assignment_color = Color {
+        r: 0.75,
+        g: 0.25,
+        b: 0.125,
+        a: 1.0,
+    };
+    let explicit_color = Color {
+        r: 0.1,
+        g: 0.8,
+        b: 0.2,
+        a: 1.0,
+    };
+    let make_ir = || {
+        let mut ir = cadmpeg_ir::examples::unit_cube();
+        let face = ir.model.faces[0].id.clone();
+        ir.model.attributes.push(SourceAttribute {
+            id: "f3d:test:face-material".into(),
+            target: AttributeTarget::Face(face),
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            values: vec![
+                AttributeValue::String("NEUTRON_Material_attrib_def".into()),
+                AttributeValue::String(face_guid.into()),
+            ],
+        });
+        ir.model.appearances.push(Appearance {
+            id: "appearance:face".into(),
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: Some(visual_guid.into()),
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: Some(Color {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            }),
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        });
+        ir
+    };
+    let assignment = crate::materials::FaceAppearanceAssignment {
+        face_guid: face_guid.into(),
+        visual_guid: visual_guid.into(),
+        color: Some(assignment_color),
+    };
+
+    let mut ir = make_ir();
+    crate::decode::resolve_face_appearance_bindings(&mut ir, std::slice::from_ref(&assignment))
+        .expect("legacy face assignment");
+    assert_eq!(ir.model.faces[0].color, Some(assignment_color));
+    assert_eq!(ir.model.appearance_bindings.len(), 1);
+
+    let mut explicit = make_ir();
+    explicit.model.faces[0].color = Some(explicit_color);
+    crate::decode::resolve_face_appearance_bindings(
+        &mut explicit,
+        std::slice::from_ref(&assignment),
+    )
+    .expect("explicit face color");
+    assert_eq!(explicit.model.faces[0].color, Some(explicit_color));
+
+    let mut no_asset = make_ir();
+    no_asset.model.appearances.clear();
+    crate::decode::resolve_face_appearance_bindings(
+        &mut no_asset,
+        std::slice::from_ref(&assignment),
+    )
+    .expect("face color independent of appearance lookup");
+    assert_eq!(no_asset.model.faces[0].color, Some(assignment_color));
+    assert!(no_asset.model.appearance_bindings.is_empty());
+}
+
+#[test]
+fn duplicate_face_assignments_reject_conflicting_colors() {
+    use cadmpeg_ir::topology::Color;
+
+    let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
+    let assignment = |r| crate::materials::FaceAppearanceAssignment {
+        face_guid: face_guid.into(),
+        visual_guid: visual_guid.into(),
+        color: Some(Color {
+            r,
+            g: 0.25,
+            b: 0.5,
+            a: 1.0,
+        }),
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let error = crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[assignment(0.25), assignment(0.75)],
+    )
+    .expect_err("one face material GUID cannot carry two neutral colors");
+    assert!(error.to_string().contains("conflicting neutral colors"));
 }
 
 #[test]
@@ -25591,21 +25702,51 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
 }
 
 #[test]
-fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
+fn legacy_face_appearance_assignment_decodes_both_variable_width_forms() {
+    let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let first = legacy_face_appearance_entry(
+        face_guid,
+        [0.25, 0.5, 0.75, 1.0],
+        visual_guid,
+        0,
+        None,
+        "Prism-042",
+    );
+    let second = legacy_face_appearance_entry(
+        "e6c14fe2-6c11-4a22-8ccc-c10fba912345",
+        [0.75, 0.25, 0.5, 1.0],
+        "A1C44310-E91B-4B59-B527-18265C123456_Post2015",
+        1,
+        Some("X"),
+        "PrismOpaque",
+    );
+    assert_ne!(first.len(), second.len());
+
     let mut bytes = vec![0u8; 8];
-    bytes.extend(lp_utf16_bytes("cd92d0f6-5b31-4bbf-84ae-4611f435537e"));
-    bytes.extend([0u8; 20]);
-    bytes.extend(lp_utf16_bytes(
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015_Post2015",
-    ));
-    bytes.extend([0u8; 6]);
-    bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    bytes.extend(first);
+    bytes.extend(second);
     let out = crate::materials::face_appearance_assignments(&bytes);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].face_guid, "cd92d0f6-5b31-4bbf-84ae-4611f435537e");
+    assert_eq!(out.len(), 2);
+    assert_eq!(out[0].face_guid, face_guid);
+    assert_eq!(out[0].visual_guid, visual_guid);
     assert_eq!(
-        out[0].visual_guid,
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015_Post2015"
+        out[0].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.25,
+            g: 0.5,
+            b: 0.75,
+            a: 1.0,
+        })
+    );
+    assert_eq!(
+        out[1].color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.75,
+            g: 0.25,
+            b: 0.5,
+            a: 1.0,
+        })
     );
 }
 
@@ -25618,14 +25759,66 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
         "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
         "c1eea57c-3f56-45fc-b8cb-a9ec46a9994C",
     ] {
-        let mut bytes = vec![0u8; 8];
-        bytes.extend(lp_utf16_bytes(target));
-        bytes.extend(lp_utf16_bytes(
+        let bytes = legacy_face_appearance_entry(
+            target,
+            [0.25, 0.5, 0.75, 1.0],
             "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
-        ));
-        bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+            1,
+            None,
+            "PrismOpaque",
+        );
         assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
     }
+}
+
+#[test]
+fn legacy_face_appearance_assignment_rejects_partial_and_malformed_envelopes() {
+    let face_guid = "cd92d0f6-5b31-4bbf-84ae-4611f435537e";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let mut partial = lp_utf16_bytes(face_guid);
+    partial.extend(lp_utf16_bytes(visual_guid));
+    partial.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    assert!(crate::materials::face_appearance_assignments(&partial).is_empty());
+
+    let mut malformed = legacy_face_appearance_entry(
+        face_guid,
+        [0.25, 0.5, 0.75, 1.0],
+        visual_guid,
+        1,
+        None,
+        "PrismOpaque",
+    );
+    let carrier_at = lp_utf16_bytes(face_guid).len() + 4 * size_of::<f32>();
+    malformed[carrier_at + 2] = 1;
+    assert!(crate::materials::face_appearance_assignments(&malformed).is_empty());
+}
+
+fn legacy_face_appearance_entry(
+    face_guid: &str,
+    color: [f32; 4],
+    visual_guid: &str,
+    selector_kind: u8,
+    display_name: Option<&str>,
+    selector: &str,
+) -> Vec<u8> {
+    let mut bytes = lp_utf16_bytes(face_guid);
+    for component in color {
+        bytes.extend(component.to_le_bytes());
+    }
+    bytes.extend([1, 1]);
+    bytes.extend([0; 9]);
+    bytes.push(selector_kind);
+    bytes.extend(lp_utf16_bytes(visual_guid));
+    bytes.extend(lp_utf16_bytes("BA5EE55E-9982-449B-9D66-9F036540E140"));
+    if let Some(display_name) = display_name {
+        bytes.extend(lp_utf16_bytes(display_name));
+    } else {
+        bytes.extend(0_u32.to_le_bytes());
+    }
+    bytes.extend(lp_utf16_bytes(selector));
+    bytes.extend(0_f32.to_le_bytes());
+    bytes.extend(1_f32.to_le_bytes());
+    bytes
 }
 
 #[test]
@@ -25654,6 +25847,7 @@ fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].face_guid, face_guid);
     assert_eq!(out[0].visual_guid, visual_guid);
+    assert_eq!(out[0].color, None);
 
     let mut malformed = bytes;
     let first_gap_at = lp_utf16_bytes(unrelated_guid).len() + lp_utf16_bytes(first_guid).len();

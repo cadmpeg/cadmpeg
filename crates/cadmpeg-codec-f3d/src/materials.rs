@@ -982,11 +982,14 @@ fn decode_body_appearance_overrides(
 /// The face GUID joins the BREP face that carries the same GUID in its
 /// `NEUTRON_Material_attrib_def` attribute
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
+#[derive(Debug, Clone, PartialEq)]
 pub struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
     pub face_guid: String,
     /// Complete serialized visual token bound by the face record.
     pub visual_guid: String,
+    /// Face-local neutral color carried by a legacy assignment entry.
+    pub color: Option<Color>,
 }
 
 /// Decode per-face appearance assignments from every Design `BulkStream`.
@@ -1011,11 +1014,9 @@ fn decode_face_appearance_assignments(
         else {
             continue;
         };
-        let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
         for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
             out.extend(face_appearance_assignments_in_frame(
                 &bytes[frame.start..frame.end],
-                &browser_nodes,
             ));
         }
     }
@@ -1025,40 +1026,147 @@ fn decode_face_appearance_assignments(
 /// Decode a synthetic test slice as one Design primary-index frame.
 #[cfg(test)]
 pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
-    let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
-    face_appearance_assignments_in_frame(bytes, &browser_nodes)
+    face_appearance_assignments_in_frame(bytes)
 }
 
 /// Decode face assignments from one exact Design primary-index frame.
-fn face_appearance_assignments_in_frame(
-    bytes: &[u8],
-    browser_nodes: &std::collections::HashMap<String, u64>,
-) -> Vec<FaceAppearanceAssignment> {
+fn face_appearance_assignments_in_frame(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
     let strings = lp_utf16_strings(bytes);
-    let mut out = Vec::new();
-    for (index, (_, value)) in strings.iter().enumerate() {
-        if value != APPEARANCE_LIBRARY_ID || index < 2 {
-            continue;
-        }
-        // A body-presentation record also terminates at this marker, but its
-        // bounded prefix contains the GUID of a browser node. That relation
-        // assigns the record to a body and excludes the adjacent record GUID
-        // from the face-identity grammar.
-        if body_node_candidate(&strings, index, browser_nodes).is_some() {
-            continue;
-        }
-        let (_, visual) = &strings[index - 1];
-        let (_, face_guid) = &strings[index - 2];
-        if visual_token(visual).is_none() || !is_lowercase_guid(face_guid) {
-            continue;
-        }
-        out.push(FaceAppearanceAssignment {
-            face_guid: face_guid.clone(),
-            visual_guid: visual.clone(),
-        });
-    }
+    let mut out = legacy_face_appearance_assignments(bytes, &strings);
     out.extend(modern_face_appearance_assignments(bytes, &strings));
     out
+}
+
+/// Decode the variable-width legacy face-assignment envelope.
+///
+/// Every accepted member is adjacent to the next one. This excludes other
+/// body-presentation records that share the appearance-library marker.
+fn legacy_face_appearance_assignments(
+    bytes: &[u8],
+    strings: &[(usize, String)],
+) -> Vec<FaceAppearanceAssignment> {
+    const LP_GUID_BYTES: usize = 4 + GUID_LEN * 2;
+    const COLOR_BYTES: usize = 4 * size_of::<f32>();
+    const CARRIER_BYTES: usize = 12;
+
+    let mut out = Vec::new();
+    for (index, (marker_at, marker)) in strings.iter().enumerate() {
+        if marker != APPEARANCE_LIBRARY_ID {
+            continue;
+        }
+        let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
+            continue;
+        };
+        let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
+            continue;
+        };
+        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+            continue;
+        }
+
+        let Some(face_at) = visual_at.checked_sub(LP_GUID_BYTES + COLOR_BYTES + CARRIER_BYTES)
+        else {
+            continue;
+        };
+        let Some((face_guid, face_len)) = lp_utf16_string_at(bytes, face_at) else {
+            continue;
+        };
+        if face_len != LP_GUID_BYTES || !is_lowercase_guid(&face_guid) {
+            continue;
+        }
+        let color_at = face_at + face_len;
+        let Some(color) = normalized_legacy_face_color(bytes, color_at) else {
+            continue;
+        };
+        let carrier_at = color_at + COLOR_BYTES;
+        let Some(selector_kind) =
+            legacy_face_selector_kind(bytes.get(carrier_at..carrier_at + CARRIER_BYTES))
+        else {
+            continue;
+        };
+        if carrier_at + CARRIER_BYTES != *visual_at {
+            continue;
+        }
+
+        let Some((_, marker_len)) = lp_utf16_string_at(bytes, *marker_at) else {
+            continue;
+        };
+        let mut cursor = marker_at + marker_len;
+        let Some(optional_name_count) = u32_at(bytes, cursor) else {
+            continue;
+        };
+        if optional_name_count == 0 {
+            cursor += 4;
+        } else {
+            let Some((display_name, display_name_end)) = lp_utf16_bounded(bytes, cursor, 1..=256)
+            else {
+                continue;
+            };
+            if display_name.chars().any(char::is_control) {
+                continue;
+            }
+            cursor = display_name_end;
+        }
+        let Some((selector, selector_len)) = lp_utf16_string_at(bytes, cursor) else {
+            continue;
+        };
+        if !legacy_face_selector_is_valid(selector_kind, &selector) {
+            continue;
+        }
+        cursor += selector_len;
+        if bytes.get(cursor..cursor + 4) != Some(&0_f32.to_le_bytes())
+            || bytes.get(cursor + 4..cursor + 8) != Some(&1_f32.to_le_bytes())
+        {
+            continue;
+        }
+
+        out.push(FaceAppearanceAssignment {
+            face_guid,
+            visual_guid: visual.clone(),
+            color: Some(color),
+        });
+    }
+    out
+}
+
+/// Decode the normalized RGBA carrier of a legacy face assignment.
+fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
+    let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
+    let component = |at: usize| Some(f32::from_le_bytes(raw.get(at..at + 4)?.try_into().ok()?));
+    let color = Color {
+        r: component(0)?,
+        g: component(4)?,
+        b: component(8)?,
+        a: component(12)?,
+    };
+    [color.r, color.g, color.b, color.a]
+        .into_iter()
+        .all(|value| value.is_finite() && (0.0..=1.0).contains(&value))
+        .then_some(color)
+        .filter(|color| color.a == 1.0)
+}
+
+/// Decode the selector-name form flag in the legacy twelve-byte carrier.
+fn legacy_face_selector_kind(carrier: Option<&[u8]>) -> Option<u8> {
+    let carrier = carrier?;
+    (carrier.len() == 12
+        && carrier.get(0..2) == Some(&[1, 1])
+        && carrier.get(2..11) == Some(&[0; 9])
+        && matches!(carrier[11], 0 | 1))
+    .then_some(carrier[11])
+}
+
+/// Validate the selector family selected by the legacy carrier flag.
+fn legacy_face_selector_is_valid(kind: u8, selector: &str) -> bool {
+    match kind {
+        0 => selector.strip_prefix("Prism-").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        }),
+        1 => selector.strip_prefix("Prism").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        }),
+        _ => false,
+    }
 }
 
 /// Decode a face-scoped appearance assignment from the paired-library marker
@@ -1142,6 +1250,7 @@ fn modern_face_appearance_assignments(
         out.push(FaceAppearanceAssignment {
             face_guid,
             visual_guid: visual.clone(),
+            color: None,
         });
     }
     out

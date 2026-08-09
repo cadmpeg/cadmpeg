@@ -4248,12 +4248,43 @@ pub(crate) fn resolve_face_appearance_bindings(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use std::collections::btree_map::Entry;
 
     if face_assignments.is_empty() {
         return Ok(());
     }
-    let mut faces_by_guid: std::collections::HashMap<&str, Vec<cadmpeg_ir::ids::FaceId>> =
-        std::collections::HashMap::new();
+
+    let mut assignments_by_guid = std::collections::BTreeMap::new();
+    for assignment in face_assignments {
+        match assignments_by_guid.entry(assignment.face_guid.clone()) {
+            Entry::Vacant(entry) => {
+                entry.insert(assignment.clone());
+            }
+            Entry::Occupied(mut entry) => {
+                let existing = entry.get_mut();
+                if !materials::visual_tokens_match(&existing.visual_guid, &assignment.visual_guid) {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D face material GUID {} carries conflicting visual tokens",
+                        assignment.face_guid
+                    )));
+                }
+                match (existing.color, assignment.color) {
+                    (Some(left), Some(right)) if left != right => {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D face material GUID {} carries conflicting neutral colors",
+                            assignment.face_guid
+                        )));
+                    }
+                    (None, Some(color)) => existing.color = Some(color),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let mut faces_by_guid =
+        std::collections::BTreeMap::<String, Vec<cadmpeg_ir::ids::FaceId>>::new();
+    let mut guid_by_face = std::collections::BTreeMap::<cadmpeg_ir::ids::FaceId, String>::new();
     for attribute in &ir.model.attributes {
         let AttributeTarget::Face(face) = &attribute.target else {
             continue;
@@ -4294,8 +4325,15 @@ pub(crate) fn resolve_face_appearance_bindings(
                     .into(),
             ));
         }
+        if let Some(previous) = guid_by_face.insert(face.clone(), face_guid.to_owned()) {
+            if previous != face_guid {
+                return Err(CodecError::Malformed(format!(
+                    "F3D face {face} carries multiple material GUIDs"
+                )));
+            }
+        }
         faces_by_guid
-            .entry(face_guid)
+            .entry(face_guid.to_owned())
             .or_default()
             .push(face.clone());
     }
@@ -4307,24 +4345,50 @@ pub(crate) fn resolve_face_appearance_bindings(
         .model
         .appearance_bindings
         .iter()
-        .map(|binding| binding.target.clone())
-        .collect::<std::collections::HashSet<_>>();
-    for assignment in face_assignments {
+        .map(|binding| (binding.target.clone(), binding.appearance.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let face_indices = ir
+        .model
+        .faces
+        .iter()
+        .enumerate()
+        .map(|(index, face)| (face.id.clone(), index))
+        .collect::<std::collections::HashMap<_, _>>();
+    for assignment in assignments_by_guid.values() {
         let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
             continue;
         };
-        let Some(appearance) = materials::appearance_for_visual_token(
+        let appearance = materials::appearance_for_visual_token(
             &ir.model.appearances,
             &assignment.visual_guid,
             None,
         )?
-        else {
-            continue;
-        };
+        .map(|appearance| appearance.id.clone());
         for face in faces {
-            let target = AppearanceTarget::Face(face.clone());
-            if !bound_targets.insert(target.clone()) {
+            if let Some(color) = assignment.color {
+                if let Some(index) = face_indices.get(face).copied() {
+                    let target = &mut ir.model.faces[index];
+                    if target.color.is_none() {
+                        target.color = Some(color);
+                    }
+                }
+            }
+            let Some(appearance) = appearance.as_ref() else {
                 continue;
+            };
+            let target = AppearanceTarget::Face(face.clone());
+            match bound_targets.entry(target.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => {
+                    if entry.get() != appearance {
+                        return Err(CodecError::Malformed(format!(
+                            "F3D face {face} carries conflicting appearance assignments"
+                        )));
+                    }
+                    continue;
+                }
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(appearance.clone());
+                }
             }
             ir.model.appearance_bindings.push(AppearanceBinding {
                 // The face id completes the key: one appearance attribute GUID
@@ -4336,7 +4400,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                     face,
                 ),
                 target,
-                appearance: appearance.id.clone(),
+                appearance: appearance.clone(),
                 source_entity_id: None,
                 object_type: None,
                 channels: std::collections::BTreeMap::new(),

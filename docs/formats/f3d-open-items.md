@@ -410,11 +410,11 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 ### MA-07. Precedence of library colour records
 
-**Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments? What do the twelve bytes and the eight bytes of a per-face assignment entry hold?
+**Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments?
 
-**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §3.2 "Legacy per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
+**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "Legacy per-face appearance assignments live" gives the complete variable-width assignment-entry grammar. The twelve-byte carrier selects the preset-token or shader-family selector-name form. The final eight bytes are f32 `0` and f32 `1`. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib`, `truecolor-adesk-attrib`, or" gives the precedence of direct colours, the assignment-entry RGBA colour, and the bound appearance base colour.
 
-**Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
+**Need.** A target can carry a palette or material-library attribute in addition to an exact direct colour, an assignment-entry colour, or an appearance binding. We must define whether either library record independently selects a neutral colour and, if it does, where that colour enters the order.
 
 ## 4. T-splines
 
