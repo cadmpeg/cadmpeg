@@ -4255,13 +4255,13 @@ anchor = "The same direction is repeated as three f64 LE values at +89"
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 contains = "fn coordinate_system_line_axes("
-note = "The parser requires two ordered records with the component-point generation word."
+note = "The parser retains the line point and direction and requires every axis record to share the component-point generation word."
 
 [[record]]
 name = "coordinate_system_xy_tail"
 kind = "byte"
 section = "2"
-anchor = "The 29 bytes immediately after the second line-axis record complete the frame"
+anchor = "The 29 bytes immediately after the second line-axis record complete a two-axis frame"
 size = 29
 endianness = "little"
 
@@ -4284,7 +4284,7 @@ name = "z_reversed"
 offset = 2
 type = "u8"
 source = "spec"
-anchor = "The complete X/Y form has a zero Z flag"
+anchor = "The complete X/Y forms have a zero Z flag"
 
 [[record.field]]
 name = "origin"
@@ -4303,7 +4303,7 @@ anchor = "The final u16 token is nonzero"
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 contains = "const FRAME_TAIL_LEN: usize = 29;"
-note = "The parser requires the tail immediately after the second line-axis record."
+note = "The parser requires one exact tail after the final line-axis record, with the defined optional two-byte zero gap for a one-axis frame."
 
 [[record]]
 name = "constructed_reference_plane_fixed_frame"

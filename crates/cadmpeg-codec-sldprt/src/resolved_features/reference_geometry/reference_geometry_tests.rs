@@ -375,9 +375,8 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     assert_eq!(resolved_coordinate_system(&malformed), None);
 
     let mut malformed = record.lane.native_payload.clone();
-    let leading_axis = malformed[record.axes[0]..record.axes[0] + 113].to_vec();
-    malformed.splice(record.origin..record.origin, leading_axis);
-    malformed[record.axes[0] + 113] = 0;
+    let extra_axis = malformed[record.axes[0]..record.axes[0] + 113].to_vec();
+    malformed.splice(record.axes[0]..record.axes[0], extra_axis);
     assert_eq!(resolved_coordinate_system(&malformed), None);
 
     let mut malformed = record.lane.native_payload.clone();
@@ -418,6 +417,37 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
             None
         );
     }
+}
+
+#[test]
+fn solved_coordinate_system_constructs_y_from_one_offset_line_axis() {
+    let mut record =
+        coordinate_system_record("lane", [0.0, 0.0, 0.0], &[[1.0, 0.0, 0.0]], [1, 1, 0]);
+    let axis = record.axes[0];
+    for (component, value) in [2.0_f64, 3.0, 0.0].into_iter().enumerate() {
+        let offset = axis + 40 + component * 8;
+        record.lane.native_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        resolved_coordinate_system(&record.lane.native_payload),
+        Some((
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(-1.0, 0.0, 0.0),
+            Vector3::new(0.0, -1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ))
+    );
+
+    record
+        .lane
+        .native_payload
+        .splice(record.tail..record.tail, [0, 0]);
+    assert!(resolved_coordinate_system(&record.lane.native_payload).is_some());
+    record.lane.native_payload[record.tail] = 1;
+    assert_eq!(
+        resolved_coordinate_system(&record.lane.native_payload),
+        None
+    );
 }
 
 #[test]

@@ -683,34 +683,30 @@ pub(crate) fn enrich_history_coordinate_systems(
 
 fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
     const AXIS_RECORD_LEN: usize = 113;
-    const FRAME_TAIL_LEN: usize = 29;
 
     let (origin, generation, origin_end) = coordinate_system_origin(record)?;
     let axes = coordinate_system_line_axes(record, generation, origin_end);
-    let [(first_offset, mut x_axis), (last_offset, mut y_axis)] = axes.as_slice() else {
-        return None;
+    let (mut x_axis, mut y_axis, tail_offsets) = match axes.as_slice() {
+        [(offset, point, direction)] => (
+            *direction,
+            Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z),
+            vec![
+                (offset.checked_add(AXIS_RECORD_LEN)?, false),
+                (offset.checked_add(AXIS_RECORD_LEN + 2)?, true),
+            ],
+        ),
+        [(first_offset, _, first_direction), (last_offset, _, last_direction)]
+            if first_offset < last_offset =>
+        {
+            (
+                *first_direction,
+                *last_direction,
+                vec![(last_offset.checked_add(AXIS_RECORD_LEN)?, false)],
+            )
+        }
+        _ => return None,
     };
-    if first_offset >= last_offset {
-        return None;
-    }
-
-    let tail = last_offset.checked_add(AXIS_RECORD_LEN)?;
-    let bytes = record.get(tail..tail.checked_add(FRAME_TAIL_LEN)?)?;
-    let flips = bytes.get(..3)?;
-    if flips.iter().any(|value| !matches!(value, 0 | 1))
-        || flips[2] != 0
-        || bytes.get(27..29) == Some(&[0, 0])
-    {
-        return None;
-    }
-    let tail_origin = Point3::new(
-        finite_f64(bytes, 3)? * 1000.0,
-        finite_f64(bytes, 11)? * 1000.0,
-        finite_f64(bytes, 19)? * 1000.0,
-    );
-    if reference_point_key(&tail_origin) != reference_point_key(&origin) {
-        return None;
-    }
+    let flips = coordinate_system_tail(record, &tail_offsets, origin)?;
 
     if flips[0] == 1 {
         x_axis = Vector3::new(-x_axis.x, -x_axis.y, -x_axis.z);
@@ -728,6 +724,40 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
     .unit()?;
     let z_axis = x_axis.cross(y_axis).unit()?;
     Some((origin, x_axis, y_axis, z_axis))
+}
+
+fn coordinate_system_tail(
+    record: &[u8],
+    offsets: &[(usize, bool)],
+    origin: Point3,
+) -> Option<[u8; 3]> {
+    const FRAME_TAIL_LEN: usize = 29;
+    let candidates = offsets
+        .iter()
+        .filter_map(|(offset, has_zero_gap)| {
+            if *has_zero_gap && record.get(offset.checked_sub(2)?..*offset) != Some(&[0; 2]) {
+                return None;
+            }
+            let bytes = record.get(*offset..offset.checked_add(FRAME_TAIL_LEN)?)?;
+            let flips: [u8; 3] = bytes.get(..3)?.try_into().ok()?;
+            if flips.iter().any(|value| !matches!(value, 0 | 1))
+                || flips[2] != 0
+                || bytes.get(27..29) == Some(&[0, 0])
+            {
+                return None;
+            }
+            let tail_origin = Point3::new(
+                finite_f64(bytes, 3)? * 1000.0,
+                finite_f64(bytes, 11)? * 1000.0,
+                finite_f64(bytes, 19)? * 1000.0,
+            );
+            (reference_point_key(&tail_origin) == reference_point_key(&origin)).then_some(flips)
+        })
+        .collect::<Vec<_>>();
+    let [flips] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*flips)
 }
 
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
@@ -786,7 +816,7 @@ fn coordinate_system_line_axes(
     record: &[u8],
     generation: u32,
     origin_end: usize,
-) -> Vec<(usize, Vector3)> {
+) -> Vec<(usize, Point3, Vector3)> {
     const PREFIX: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     record
         .windows(PREFIX.len())
@@ -801,9 +831,11 @@ fn coordinate_system_line_axes(
                 return None;
             }
             let scalar = finite_f64(record, prefix + 32)?;
-            finite_f64(record, prefix + 40)?;
-            finite_f64(record, prefix + 48)?;
-            finite_f64(record, prefix + 56)?;
+            let point = Point3::new(
+                finite_f64(record, prefix + 40)? * 1000.0,
+                finite_f64(record, prefix + 48)? * 1000.0,
+                finite_f64(record, prefix + 56)? * 1000.0,
+            );
             let direction = Vector3::new(
                 finite_f64(record, prefix + 64)?,
                 finite_f64(record, prefix + 72)?,
@@ -818,7 +850,7 @@ fn coordinate_system_line_axes(
                 && (direction.y - repeated.y).abs() <= 1.0e-12
                 && (direction.z - repeated.z).abs() <= 1.0e-12;
             (scalar > 0.0 && (direction.norm() - 1.0).abs() <= 1.0e-9 && repeated_matches)
-                .then_some((prefix, direction))
+                .then_some((prefix, point, direction))
         })
         .collect()
 }

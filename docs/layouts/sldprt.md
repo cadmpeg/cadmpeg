@@ -1118,7 +1118,7 @@ Spec §2 · layout: byte offsets · size: 113 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires two ordered records with the component-point generation word.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser retains the line point and direction and requires every axis record to share the component-point generation word.
 
 ## `coordinate_system_xy_tail`
 
@@ -1128,13 +1128,13 @@ Spec §2 · layout: byte offsets · size: 29 B
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `x_reversed` | `u8` | little | spec | Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags |
 | 1 | 1 | `y_reversed` | `u8` | little | spec | Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags |
-| 2 | 1 | `z_reversed` | `u8` | little | spec | The complete X/Y form has a zero Z flag |
+| 2 | 1 | `z_reversed` | `u8` | little | spec | The complete X/Y forms have a zero Z flag |
 | 3 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +3 store the origin in metres |
 | 27 | 2 | `terminator` | `u16` | little | spec | The final u16 token is nonzero |
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the tail immediately after the second line-axis record.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires one exact tail after the final line-axis record, with the defined optional two-byte zero gap for a one-axis frame.
 
 ## `constructed_reference_plane_fixed_frame`
 
