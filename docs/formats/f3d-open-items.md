@@ -197,12 +197,12 @@ The thirty-byte class tail is `u32 0`, `u8 1`, five f32 `(0, 0, 0, 1, 1)`, `u32 
 **Question.** What do these members of a sketch-relation subclass hold?
 
 - the three `u8` flags of the tangency class and the three of the rectangular-pattern class
-- the u32-counted reference run of the rectangular-pattern class
+- the targets of the u32-counted reference run of the rectangular-pattern class
 - the u64 key and the u64 values of the pattern-table map, and the u32 of the pattern-table run
 - the first of the two text-frame references
 - the zero `u8` that closes the circular-pattern class
 
-**Known.** `f3d.md` §3.1 "A sketch-relation class writes" gives the member sequence of each class, and each sequence closes the record on its exact end. The fields above have a width and no meaning. The decoder consumes them and transfers nothing from them.
+**Known.** `f3d.md` §3.1 "A sketch-relation class writes" gives the member sequence of each class, and each sequence closes the record on its exact end. The rectangular-pattern run count has settled meaning: zero selects a seed-to-final span and a nonzero count selects adjacent spacing. The decoder retains the exact count. The targets in that run and the other listed members have no assigned meaning. The decoder consumes them and transfers no unresolved value from them.
 
 **Need.** A pattern relation must be written back from a neutral model, and these members must carry the values the source would have written. The map keys and values are small integers in the range of record indices, so they may be a per-instance record grouping that a writer must rebuild rather than copy.
 
@@ -295,16 +295,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 **Known.** `exact_legacy_distance_extrude_prologue` in `design/decode/scopes.rs` reads one word at `operation + 4` and refuses the record when the value is not `2`. Under `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" that word is the travel direction and the value `2` is two sides. `DesignExtrudePrologue::extent` in `records.rs` returns a one-sided distance for this dialect without reading a field.
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
-
-### DR-48. Adjacent-versus-span discriminator of a rectangular sketch pattern
-
-**Question.** Which stored member states whether a rectangular sketch-pattern distance is adjacent spacing or the seed-to-final span?
-
-**Conflict.** `f3d.md` §3.1 "The two reference runs hold the same members." states that the member is stored: "A non-empty counted reference run stores adjacent spacing in the source distance scalar. An empty counted reference run stores the total seed-to-final span." DR-27 states of the same run that the field has "a width and no meaning" and that the decoder transfers nothing from it. `exact_rectangular_pattern` in `design/constraints.rs` reads neither: it builds the instances under both readings and keeps the reading that gives a unique result.
-
-**Known.** The two readings agree for a count of two, because the span divided by count minus one equals the adjacent spacing. Both arms then give equal directions and equal instances and differ only in which parameter slot holds the reference. The uniqueness gate fails and every two-instance rectangular pattern falls back to a native relation.
-
-**Need.** The three statements disagree. The reading decides whether the decoder must retain the counted run's emptiness and whether a two-instance pattern can transfer at all.
 
 ### DR-49. Verification of a spatial counted-offset pair
 
