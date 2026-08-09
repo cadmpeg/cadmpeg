@@ -255,6 +255,8 @@ struct HomogeneousBezierSpan {
     controls: Vec<[f64; 4]>,
 }
 
+type HomogeneousBezierSplit = (Vec<[f64; 4]>, Vec<[f64; 4]>);
+
 fn insert_homogeneous_knot(
     degree: usize,
     knots: &mut Vec<f64>,
@@ -325,10 +327,7 @@ fn homogeneous_bezier_spans(
     (!spans.is_empty()).then_some(spans)
 }
 
-fn rational_surface_residual_patches(
-    surface: &NurbsSurface,
-    point: Point3,
-) -> Option<Vec<RationalBezierSurfacePatch>> {
+fn rational_surface_patches(surface: &NurbsSurface) -> Option<Vec<RationalBezierSurfacePatch>> {
     let u_degree = usize::try_from(surface.u_degree).ok()?;
     let v_degree = usize::try_from(surface.v_degree).ok()?;
     let u_count = usize::try_from(surface.u_count).ok()?;
@@ -351,9 +350,6 @@ fn rational_surface_residual_patches(
         || surface.control_points.iter().any(|control| {
             !control.x.is_finite() || !control.y.is_finite() || !control.z.is_finite()
         })
-        || !point.x.is_finite()
-        || !point.y.is_finite()
-        || !point.z.is_finite()
     {
         return None;
     }
@@ -369,20 +365,20 @@ fn rational_surface_residual_patches(
         Some(_) => return None,
         None => vec![1.0; control_count],
     };
-    let residual_controls = surface
+    let homogeneous_controls = surface
         .control_points
         .iter()
         .zip(weights)
         .map(|(control, weight)| {
             [
-                weight * (control.x - point.x),
-                weight * (control.y - point.y),
-                weight * (control.z - point.z),
+                weight * control.x,
+                weight * control.y,
+                weight * control.z,
                 weight,
             ]
         })
         .collect::<Vec<_>>();
-    if residual_controls
+    if homogeneous_controls
         .iter()
         .flatten()
         .any(|value| !value.is_finite())
@@ -395,7 +391,7 @@ fn rational_surface_residual_patches(
                 u_degree,
                 &surface.u_knots,
                 (0..u_count)
-                    .map(|u| residual_controls[u * v_count + v])
+                    .map(|u| homogeneous_controls[u * v_count + v])
                     .collect(),
             )
         })
@@ -448,6 +444,267 @@ fn rational_surface_residual_patches(
         }
     }
     (!patches.is_empty()).then_some(patches)
+}
+
+fn rational_surface_residual_patches(
+    surface: &NurbsSurface,
+    point: Point3,
+) -> Option<Vec<RationalBezierSurfacePatch>> {
+    if !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite() {
+        return None;
+    }
+    let mut patches = rational_surface_patches(surface)?;
+    for patch in &mut patches {
+        for control in &mut patch.controls {
+            for (axis, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+                control[axis] -= control[3] * coordinate;
+            }
+        }
+    }
+    Some(patches)
+}
+
+fn split_homogeneous_bezier(
+    controls: &[[f64; 4]],
+    parameter: f64,
+) -> Option<HomogeneousBezierSplit> {
+    if controls.is_empty() || !parameter.is_finite() || !(0.0..=1.0).contains(&parameter) {
+        return None;
+    }
+    let mut levels = vec![controls.to_vec()];
+    while levels.last()?.len() > 1 {
+        levels.push(
+            levels
+                .last()?
+                .windows(2)
+                .map(|pair| {
+                    std::array::from_fn(|axis| {
+                        (1.0 - parameter) * pair[0][axis] + parameter * pair[1][axis]
+                    })
+                })
+                .collect(),
+        );
+    }
+    let left = levels.iter().map(|level| level[0]).collect();
+    let right = levels
+        .iter()
+        .rev()
+        .map(|level| *level.last().expect("nonempty de Casteljau level"))
+        .collect();
+    Some((left, right))
+}
+
+fn restrict_homogeneous_bezier(
+    controls: &[[f64; 4]],
+    start: f64,
+    end: f64,
+) -> Option<Vec<[f64; 4]>> {
+    if start > end {
+        let mut restricted = restrict_homogeneous_bezier(controls, end, start)?;
+        restricted.reverse();
+        return Some(restricted);
+    }
+    if start == end {
+        let point = split_homogeneous_bezier(controls, start)?.0.pop()?;
+        return Some(vec![point; controls.len()]);
+    }
+    let left = split_homogeneous_bezier(controls, end)?.0;
+    if start == 0.0 {
+        return Some(left);
+    }
+    let relative_start = start / end;
+    split_homogeneous_bezier(&left, relative_start).map(|(_, right)| right)
+}
+
+fn binomial_coefficient(degree: usize, index: usize) -> f64 {
+    let index = index.min(degree - index);
+    (1..=index).fold(1.0, |value, factor| {
+        value * (degree - index + factor) as f64 / factor as f64
+    })
+}
+
+fn rational_patch_parameter_segment(
+    patch: &RationalBezierSurfacePatch,
+    start: Point2,
+    end: Point2,
+) -> Option<Vec<[f64; 4]>> {
+    let normalize = |value: f64, domain: [f64; 2]| {
+        let parameter = (value - domain[0]) / (domain[1] - domain[0]);
+        parameter.is_finite().then(|| parameter.clamp(0.0, 1.0))
+    };
+    let u_range = [
+        normalize(start.u, patch.u_domain)?,
+        normalize(end.u, patch.u_domain)?,
+    ];
+    let v_range = [
+        normalize(start.v, patch.v_domain)?,
+        normalize(end.v, patch.v_domain)?,
+    ];
+    let u_lines = (0..=patch.v_degree)
+        .map(|v| {
+            restrict_homogeneous_bezier(
+                &(0..=patch.u_degree)
+                    .map(|u| patch.controls[u * (patch.v_degree + 1) + v])
+                    .collect::<Vec<_>>(),
+                u_range[0],
+                u_range[1],
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let restricted = (0..=patch.u_degree)
+        .map(|u| {
+            restrict_homogeneous_bezier(
+                &(0..=patch.v_degree)
+                    .map(|v| u_lines[v][u])
+                    .collect::<Vec<_>>(),
+                v_range[0],
+                v_range[1],
+            )
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let degree = patch.u_degree + patch.v_degree;
+    let mut diagonal = vec![[0.0; 4]; degree + 1];
+    for (u, row) in restricted.iter().enumerate() {
+        for (v, control) in row.iter().enumerate() {
+            let index = u + v;
+            let factor = binomial_coefficient(patch.u_degree, u)
+                * binomial_coefficient(patch.v_degree, v)
+                / binomial_coefficient(degree, index);
+            for axis in 0..4 {
+                diagonal[index][axis] += factor * control[axis];
+            }
+        }
+    }
+    diagonal
+        .iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(diagonal)
+}
+
+fn point_on_chord(chord: [Point3; 2], parameter: f64) -> Point3 {
+    Point3::new(
+        chord[0].x + parameter * (chord[1].x - chord[0].x),
+        chord[0].y + parameter * (chord[1].y - chord[0].y),
+        chord[0].z + parameter * (chord[1].z - chord[0].z),
+    )
+}
+
+fn rational_curve_chord_bound(controls: &[[f64; 4]], chord: [Point3; 2]) -> Option<f64> {
+    let degree = controls.len().checked_sub(1)?;
+    let elevated_degree = degree + 1;
+    let mut bound = 0.0_f64;
+    let mut coordinate_scale = chord
+        .iter()
+        .flat_map(|point| [point.x, point.y, point.z])
+        .fold(1.0_f64, |scale, coordinate| scale.max(coordinate.abs()));
+    for index in 0..=elevated_degree {
+        let previous = index.checked_sub(1).and_then(|index| controls.get(index));
+        let current = controls.get(index);
+        let previous_factor = index as f64 / elevated_degree as f64;
+        let current_factor = 1.0 - previous_factor;
+        let weight = previous_factor * previous.map_or(0.0, |control| control[3])
+            + current_factor * current.map_or(0.0, |control| control[3]);
+        if !weight.is_finite() || weight <= 0.0 {
+            return None;
+        }
+        let mut squared_residual = 0.0;
+        for (axis, chord_coordinates) in [
+            [chord[0].x, chord[1].x],
+            [chord[0].y, chord[1].y],
+            [chord[0].z, chord[1].z],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let coordinate = previous_factor * previous.map_or(0.0, |control| control[axis])
+                + current_factor * current.map_or(0.0, |control| control[axis]);
+            let weighted_chord =
+                current_factor * current.map_or(0.0, |control| control[3]) * chord_coordinates[0]
+                    + previous_factor
+                        * previous.map_or(0.0, |control| control[3])
+                        * chord_coordinates[1];
+            let residual = (coordinate - weighted_chord) / weight;
+            if !residual.is_finite() {
+                return None;
+            }
+            squared_residual += residual * residual;
+            coordinate_scale = coordinate_scale.max((coordinate / weight).abs());
+        }
+        bound = bound.max(squared_residual.sqrt());
+    }
+    let rounding_margin = 256.0 * f64::EPSILON * coordinate_scale.max(bound);
+    (bound.is_finite() && rounding_margin.is_finite()).then_some(bound + rounding_margin)
+}
+
+/// Conservatively bound the separation between a NURBS surface image of a
+/// linear parameter segment and a model-space chord with the same parameter.
+///
+/// The segment is split at every surface knot. Each rational Bézier piece is
+/// restricted exactly to the parameter line, and its positive-weight residual
+/// control hull bounds the complete piece rather than selected samples.
+pub fn nurbs_surface_parameter_segment_chord_bound(
+    surface: &NurbsSurface,
+    parameters: [Point2; 2],
+    chord: [Point3; 2],
+) -> Option<f64> {
+    if parameters
+        .iter()
+        .any(|point| !point.u.is_finite() || !point.v.is_finite())
+        || chord
+            .iter()
+            .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
+    {
+        return None;
+    }
+    let patches = rational_surface_patches(surface)?;
+    let mut splits = vec![0.0, 1.0];
+    for patch in &patches {
+        for (boundary, start, end) in [
+            (patch.u_domain[0], parameters[0].u, parameters[1].u),
+            (patch.u_domain[1], parameters[0].u, parameters[1].u),
+            (patch.v_domain[0], parameters[0].v, parameters[1].v),
+            (patch.v_domain[1], parameters[0].v, parameters[1].v),
+        ] {
+            if start != end {
+                let parameter = (boundary - start) / (end - start);
+                if parameter.is_finite() && 0.0 < parameter && parameter < 1.0 {
+                    splits.push(parameter);
+                }
+            }
+        }
+    }
+    splits.sort_by(f64::total_cmp);
+    splits.dedup();
+    splits.windows(2).try_fold(0.0_f64, |bound, range| {
+        let middle = 0.5 * (range[0] + range[1]);
+        let parameter_point = |parameter: f64| {
+            Point2::new(
+                parameters[0].u + parameter * (parameters[1].u - parameters[0].u),
+                parameters[0].v + parameter * (parameters[1].v - parameters[0].v),
+            )
+        };
+        let midpoint = parameter_point(middle);
+        let patch = patches.iter().find(|patch| {
+            patch.u_domain[0] <= midpoint.u
+                && midpoint.u <= patch.u_domain[1]
+                && patch.v_domain[0] <= midpoint.v
+                && midpoint.v <= patch.v_domain[1]
+        })?;
+        let controls = rational_patch_parameter_segment(
+            patch,
+            parameter_point(range[0]),
+            parameter_point(range[1]),
+        )?;
+        let piece_bound = rational_curve_chord_bound(
+            &controls,
+            [
+                point_on_chord(chord, range[0]),
+                point_on_chord(chord, range[1]),
+            ],
+        )?;
+        Some(bound.max(piece_bound))
+    })
 }
 
 fn rational_patch_distance_bounds(patch: &RationalBezierSurfacePatch) -> Option<(f64, f64)> {
@@ -3537,9 +3794,10 @@ mod tests {
         curve_point, curve_second_derivative, curve_tangent, model_surface_partials_by_id,
         model_surface_point_by_id, nurbs_curve_parameter_near_point, nurbs_curve_point,
         nurbs_curve_speed_bound, nurbs_surface_closest_parameter, nurbs_surface_isocurve,
-        nurbs_surface_isoline, nurbs_surface_parameter_within_tolerance, nurbs_surface_partials,
-        nurbs_surface_point, nurbs_surface_second_partials, pcurve_tangent, pcurve_uv,
-        surface_partials, surface_second_partials, IsolineDirection,
+        nurbs_surface_isoline, nurbs_surface_parameter_segment_chord_bound,
+        nurbs_surface_parameter_within_tolerance, nurbs_surface_partials, nurbs_surface_point,
+        nurbs_surface_second_partials, pcurve_tangent, pcurve_uv, surface_partials,
+        surface_second_partials, IsolineDirection,
     };
     use crate::geometry::{
         Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
@@ -3611,6 +3869,82 @@ mod tests {
             .expect("rational multi-span inverse");
         assert!((parameters.u - 0.75).abs() < 1.0e-9);
         assert!((parameters.v - 0.4).abs() < 1.0e-9);
+    }
+
+    #[test]
+    fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
+        let mut surface = bilinear_surface();
+        surface.control_points[3].z = 1.0;
+        let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
+        let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
+        let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)
+            .expect("rational Bézier residual bound");
+
+        assert!(bound >= 1.0 / 3.0);
+        assert!(bound < 1.0 / 3.0 + 1.0e-12);
+        let reverse_bound = nurbs_surface_parameter_segment_chord_bound(
+            &surface,
+            [parameters[1], parameters[0]],
+            [chord[1], chord[0]],
+        )
+        .expect("reversed rational Bézier residual bound");
+        assert!((reverse_bound - bound).abs() < 1.0e-12);
+        for index in 0..=100 {
+            let parameter = f64::from(index) / 100.0;
+            let point = nurbs_surface_point(&surface, parameter, parameter).expect("surface point");
+            let target = Point3::new(parameter, parameter, parameter);
+            let distance = (point.x - target.x)
+                .hypot(point.y - target.y)
+                .hypot(point.z - target.z);
+            assert!(distance <= bound);
+        }
+    }
+
+    #[test]
+    fn nurbs_surface_parameter_segment_bound_splits_internal_knots() {
+        let surface = NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.5, 0.0, 0.25),
+                Point3::new(0.5, 1.0, 0.25),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let parameters = [Point2::new(0.1, 0.2), Point2::new(0.9, 0.8)];
+        let endpoints = parameters.map(|point| {
+            nurbs_surface_point(&surface, point.u, point.v).expect("surface endpoint")
+        });
+        let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, endpoints)
+            .expect("multi-span rational Bézier residual bound");
+
+        for index in 0..=100 {
+            let parameter = f64::from(index) / 100.0;
+            let uv = Point2::new(
+                parameters[0].u + parameter * (parameters[1].u - parameters[0].u),
+                parameters[0].v + parameter * (parameters[1].v - parameters[0].v),
+            );
+            let point = nurbs_surface_point(&surface, uv.u, uv.v).expect("surface point");
+            let target = Point3::new(
+                endpoints[0].x + parameter * (endpoints[1].x - endpoints[0].x),
+                endpoints[0].y + parameter * (endpoints[1].y - endpoints[0].y),
+                endpoints[0].z + parameter * (endpoints[1].z - endpoints[0].z),
+            );
+            let distance = (point.x - target.x)
+                .hypot(point.y - target.y)
+                .hypot(point.z - target.z);
+            assert!(distance <= bound);
+        }
     }
 
     #[test]

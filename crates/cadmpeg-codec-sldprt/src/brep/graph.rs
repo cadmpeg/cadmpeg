@@ -11,7 +11,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point,
-    nurbs_surface_isocurve, nurbs_surface_point, surface_point,
+    nurbs_surface_isocurve, nurbs_surface_parameter_segment_chord_bound,
+    nurbs_surface_parameter_within_tolerance, nurbs_surface_point, surface_point,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
@@ -1015,6 +1016,9 @@ fn decode_graph(
                                 IntersectionPcurveSource::StoredCache => "surface_intersection_uv",
                                 IntersectionPcurveSource::AnalyticInverse => {
                                     "derived_intersection_analytic_uv"
+                                }
+                                IntersectionPcurveSource::NurbsInverse => {
+                                    "derived_intersection_nurbs_uv"
                                 }
                             });
                         annotations.exactness(&id, Exactness::Derived);
@@ -2872,6 +2876,7 @@ fn derive_nurbs_isoparametric_pcurves(
 enum IntersectionPcurveSource {
     StoredCache,
     AnalyticInverse,
+    NurbsInverse,
 }
 
 /// Conservative maximum separation between one analytic surface image of a
@@ -2927,11 +2932,14 @@ fn intersection_support_pcurve(
         || chart.periodic
         || chart.control_points.len() < 2
         || chart.knots.len() != chart.control_points.len() + 2
+        || chart.knots.iter().any(|knot| !knot.is_finite())
+        || chart.knots.windows(2).any(|pair| pair[0] > pair[1])
         || !support_data.fit_tolerance_mm.is_finite()
         || support_data.fit_tolerance_mm <= 0.0
     {
         return None;
     }
+    let parameter_range = nurbs_curve_parameter_domain(chart)?;
     let support_index = match support_data.supports.map(|support| support == surface_attr) {
         [true, false] => 0,
         [false, true] => 1,
@@ -2974,38 +2982,68 @@ fn intersection_support_pcurve(
         }
         (control_points, IntersectionPcurveSource::StoredCache)
     } else {
-        let mut control_points = chart
-            .control_points
-            .iter()
-            .copied()
-            .map(|point| analytic_surface_parameters(surface, point))
-            .collect::<Option<Vec<_>>>()?;
-        for index in 1..control_points.len() {
-            let previous = control_points[index - 1];
-            match surface {
-                SurfaceGeometry::Cylinder { .. }
-                | SurfaceGeometry::Cone { .. }
-                | SurfaceGeometry::Sphere { .. }
-                | SurfaceGeometry::Torus { .. } => {
-                    control_points[index].u +=
-                        ((previous.u - control_points[index].u) / std::f64::consts::TAU).round()
-                            * std::f64::consts::TAU;
+        match surface {
+            SurfaceGeometry::Nurbs(surface) => {
+                let mut control_points = Vec::with_capacity(chart.control_points.len());
+                for point in &chart.control_points {
+                    let parameters = nurbs_surface_parameter_within_tolerance(
+                        surface,
+                        *point,
+                        control_points.last().copied(),
+                        support_data.fit_tolerance_mm,
+                    )?;
+                    control_points.push(parameters);
                 }
-                SurfaceGeometry::Plane { .. } => {}
-                _ => return None,
+                (control_points, IntersectionPcurveSource::NurbsInverse)
             }
-            if matches!(surface, SurfaceGeometry::Torus { .. }) {
-                control_points[index].v +=
-                    ((previous.v - control_points[index].v) / std::f64::consts::TAU).round()
-                        * std::f64::consts::TAU;
+            _ => {
+                let mut control_points = chart
+                    .control_points
+                    .iter()
+                    .copied()
+                    .map(|point| analytic_surface_parameters(surface, point))
+                    .collect::<Option<Vec<_>>>()?;
+                for index in 1..control_points.len() {
+                    let previous = control_points[index - 1];
+                    match surface {
+                        SurfaceGeometry::Cylinder { .. }
+                        | SurfaceGeometry::Cone { .. }
+                        | SurfaceGeometry::Sphere { .. }
+                        | SurfaceGeometry::Torus { .. } => {
+                            control_points[index].u += ((previous.u - control_points[index].u)
+                                / std::f64::consts::TAU)
+                                .round()
+                                * std::f64::consts::TAU;
+                        }
+                        SurfaceGeometry::Plane { .. } => {}
+                        _ => return None,
+                    }
+                    if matches!(surface, SurfaceGeometry::Torus { .. }) {
+                        control_points[index].v += ((previous.v - control_points[index].v)
+                            / std::f64::consts::TAU)
+                            .round()
+                            * std::f64::consts::TAU;
+                    }
+                }
+                (control_points, IntersectionPcurveSource::AnalyticInverse)
             }
         }
-        (control_points, IntersectionPcurveSource::AnalyticInverse)
     };
     if control_points.len() != chart.control_points.len() {
         return None;
     }
-    if !matches!(surface, SurfaceGeometry::Nurbs(_)) {
+    if let SurfaceGeometry::Nurbs(surface) = surface {
+        let tolerance = inverse_coordinate_tolerance(edge_endpoints);
+        let last = control_points.len() - 1;
+        for (index, target) in [(0, targets[0]), (last, targets[1])] {
+            control_points[index] = nurbs_surface_parameter_within_tolerance(
+                surface,
+                target,
+                Some(control_points[index]),
+                tolerance,
+            )?;
+        }
+    } else {
         let adjust_periodic = |parameter: f64, reference: f64| {
             parameter
                 + ((reference - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
@@ -3056,18 +3094,24 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    if !matches!(surface, SurfaceGeometry::Nurbs(_))
-        && control_points
-            .windows(2)
-            .zip(control_errors.windows(2))
-            .any(|(parameters, endpoint_errors)| {
-                analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
-                    |curvature_error| {
-                        curvature_error + endpoint_errors[0].max(endpoint_errors[1])
-                            > support_data.fit_tolerance_mm
-                    },
-                )
-            })
+    if control_points
+        .windows(2)
+        .zip(chart.control_points.windows(2))
+        .zip(control_errors.windows(2))
+        .any(|((parameters, chord), endpoint_errors)| match surface {
+            SurfaceGeometry::Nurbs(surface) => nurbs_surface_parameter_segment_chord_bound(
+                surface,
+                [parameters[0], parameters[1]],
+                [chord[0], chord[1]],
+            )
+            .is_none_or(|error| error > support_data.fit_tolerance_mm),
+            _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
+                |curvature_error| {
+                    curvature_error + endpoint_errors[0].max(endpoint_errors[1])
+                        > support_data.fit_tolerance_mm
+                },
+            ),
+        })
     {
         return None;
     }
@@ -3079,7 +3123,7 @@ fn intersection_support_pcurve(
             weights: None,
             periodic: false,
         },
-        [*chart.knots.first()?, *chart.knots.last()?],
+        parameter_range,
         source,
     ))
 }
@@ -4201,6 +4245,114 @@ mod tests {
             assert!((point.u - expected.0).abs() < 1.0e-12);
             assert!((point.v - expected.1).abs() < 1.0e-12);
         }
+    }
+
+    #[test]
+    fn nurbs_intersection_chart_inverts_with_continuation_seeds() {
+        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs.clone());
+        let expected = [(0.2, 0.1), (0.5, 0.4), (0.8, 0.7)];
+        let model_points = expected
+            .map(|(u, v)| {
+                cadmpeg_ir::eval::nurbs_surface_point(&nurbs, u, v).expect("surface point")
+            })
+            .to_vec();
+        let endpoints = [model_points[0], model_points[2]];
+        let chart = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            control_points: model_points,
+            weights: None,
+            periodic: false,
+        };
+        let support_data = super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm: 1.0e-9,
+            support_uv: None,
+        };
+
+        let (geometry, _, source) =
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+                .expect("NURBS support inversion");
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected solved UV NURBS");
+        };
+        for (point, expected) in control_points.iter().zip(expected) {
+            assert!((point.u - expected.0).abs() < 1.0e-10);
+            assert!((point.v - expected.1).abs() < 1.0e-10);
+        }
+        assert_eq!(source, super::IntersectionPcurveSource::NurbsInverse);
+    }
+
+    #[test]
+    fn nurbs_intersection_chart_requires_a_complete_chord_certificate() {
+        let nurbs = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs);
+        let endpoints = [
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(1.0, 1.0, 1.0),
+        ];
+        let chart = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: endpoints.to_vec(),
+            weights: None,
+            periodic: false,
+        };
+        let support_data = |fit_tolerance_mm| super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm,
+            support_uv: None,
+        };
+
+        assert!(super::intersection_support_pcurve(
+            &support_data(0.3),
+            &chart,
+            10,
+            &surface,
+            endpoints,
+        )
+        .is_none());
+        assert!(super::intersection_support_pcurve(
+            &support_data(0.34),
+            &chart,
+            10,
+            &surface,
+            endpoints,
+        )
+        .is_some());
     }
 
     #[test]
