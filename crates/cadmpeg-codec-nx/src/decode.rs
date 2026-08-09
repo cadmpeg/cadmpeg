@@ -10412,7 +10412,7 @@ fn build_geometry_report(
                  Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
-                 each key. Validated partition topology remained authoritative, including any \
+                 each key within each current body-sequence interval. Validated partition topology remained authoritative, including any \
                  point, curve, or surface carrier still referenced by surviving topology. Complete \
                  ENTITY_51, ENTITY_52, ENTITY_53, and ENTITY_54 records were retained for native \
                  attribute extraction. Every completely bounded full record, compact tombstone, \
@@ -10435,7 +10435,7 @@ fn build_geometry_report(
             } else {
                 format!(
                     "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
-                 Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
+                    Equal-schema deltas were paired with the preceding partition. Exact-key revisions in current body-sequence intervals were applied using the last \
                  event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
                  current or earlier-added key and remain unresolved: {unmatched_tombstone_detail}.",
                     scan.count(StreamKind::Deltas)

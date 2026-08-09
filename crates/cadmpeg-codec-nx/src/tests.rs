@@ -4300,6 +4300,13 @@ fn deltas_body_revision(node_id: u32) -> Vec<u8> {
     revision
 }
 
+fn deltas_point(xmt: u16, x: f64) -> Vec<u8> {
+    let mut point = status_framed_deltas_point_stream();
+    point[2..4].copy_from_slice(&xmt.to_be_bytes());
+    point[20..28].copy_from_slice(&x.to_be_bytes());
+    point
+}
+
 #[test]
 fn final_body_revision_scopes_deltas_overlay_events() {
     let mut partition = record(29, 40);
@@ -4317,6 +4324,66 @@ fn final_body_revision_scopes_deltas_overlay_events() {
     current_delete.extend_from_slice(&known_tombstone);
     let merged = crate::deltas::merge_full_records(&partition, &current_delete);
     assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+}
+
+#[test]
+fn body_revision_scopes_keep_each_monotonic_sequence_current() {
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend(deltas_point(50, 0.001));
+    deltas.extend(deltas_body_revision(2));
+    deltas.extend(deltas_point(50, 0.002));
+    deltas.extend(deltas_body_revision(1));
+    deltas.extend(deltas_point(51, 0.003));
+    deltas.extend(deltas_body_revision(2));
+    deltas.extend(deltas_point(51, 0.004));
+
+    let merged = crate::deltas::merge_full_records(&[], &deltas);
+    let graph = crate::topology::Graph::parse(&merged);
+    assert!(graph.get(29, 50).is_some());
+    assert!(graph.get(29, 51).is_some());
+    let points = crate::geometry::points(&merged);
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
+}
+
+#[test]
+fn body_revision_scopes_accept_reverse_serialized_counter_direction() {
+    let mut deltas = deltas_body_revision(4);
+    deltas.extend(deltas_point(50, 0.001));
+    deltas.extend(deltas_body_revision(3));
+    deltas.extend(deltas_point(50, 0.002));
+    deltas.extend(deltas_body_revision(4));
+    deltas.extend(deltas_point(51, 0.003));
+    deltas.extend(deltas_body_revision(3));
+    deltas.extend(deltas_point(51, 0.004));
+
+    let merged = crate::deltas::merge_full_records(&[], &deltas);
+    let graph = crate::topology::Graph::parse(&merged);
+    assert!(graph.get(29, 50).is_some());
+    assert!(graph.get(29, 51).is_some());
+    let points = crate::geometry::points(&merged);
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 2.0).abs() <= 1e-12));
+    assert!(points
+        .iter()
+        .any(|point| (point.position.x - 4.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 1.0).abs() <= 1e-12));
+    assert!(!points
+        .iter()
+        .any(|point| (point.position.x - 3.0).abs() <= 1e-12));
 }
 
 #[test]
@@ -4339,6 +4406,29 @@ fn unmatched_tombstones_are_scoped_to_the_final_body_revision() {
 }
 
 #[test]
+fn unmatched_tombstones_are_scoped_per_body_revision_sequence() {
+    let partition = topology_partition_stream();
+    let historical_first = [0, 29, 0, 98, 0, 1];
+    let historical_second = [0, 29, 0, 99, 0, 1];
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend_from_slice(&historical_first);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&historical_first);
+    deltas.extend_from_slice(&deltas_body_revision(1));
+    deltas.extend_from_slice(&historical_second);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &deltas),
+        1
+    );
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones_by_family(&partition, &deltas).get("POINT"),
+        Some(&1)
+    );
+}
+
+#[test]
 fn semantic_residual_masks_historical_body_revisions() {
     let mut deltas = deltas_body_revision(1);
     let historical_len = deltas.len();
@@ -4351,6 +4441,51 @@ fn semantic_residual_masks_historical_body_revisions() {
         .iter()
         .all(|byte| *byte == 0xff));
     assert!(residual.ends_with(&[0, 38, 0x11, 0x22, 0x33]));
+}
+
+#[test]
+fn semantic_residual_masks_historical_interleaved_body_sequences() {
+    let mut first_historical = status_framed_deltas_intersection_stream();
+    first_historical[4..8].copy_from_slice(&1u32.to_be_bytes());
+    let mut first_current = status_framed_deltas_intersection_stream();
+    first_current[4..8].copy_from_slice(&2u32.to_be_bytes());
+    let mut second_historical = status_framed_deltas_intersection_stream();
+    second_historical[2..4].copy_from_slice(&13u16.to_be_bytes());
+    second_historical[4..8].copy_from_slice(&3u32.to_be_bytes());
+    let mut second_current = second_historical.clone();
+    second_current[4..8].copy_from_slice(&4u32.to_be_bytes());
+
+    let mut deltas = deltas_body_revision(1);
+    deltas.extend_from_slice(&first_historical);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&first_current);
+    deltas.extend_from_slice(&deltas_body_revision(1));
+    deltas.extend_from_slice(&second_historical);
+    deltas.extend_from_slice(&deltas_body_revision(2));
+    deltas.extend_from_slice(&second_current);
+
+    let census = crate::deltas::walk(&deltas);
+    let first_current_offset = census.body_revisions[1].offset;
+    let second_sequence_offset = census.body_revisions[2].offset;
+    let second_current_offset = census.body_revisions[3].offset;
+    let residual = crate::deltas::semantic_residual(&deltas);
+    assert!(residual[..first_current_offset]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    assert!(residual[second_sequence_offset..second_current_offset]
+        .iter()
+        .all(|byte| *byte == 0xff));
+    let mut expected = crate::deltas::walk(&first_current).records[0]
+        .canonical_bytes
+        .clone();
+    expected.extend_from_slice(&crate::deltas::walk(&second_current).records[0].canonical_bytes);
+    assert!(residual.ends_with(&expected));
+    assert!(!residual
+        .windows(first_historical.len())
+        .any(|window| window == first_historical));
+    assert!(!residual
+        .windows(second_historical.len())
+        .any(|window| window == second_historical));
 }
 
 #[test]

@@ -2175,17 +2175,17 @@ fn body_revision_prefix(stream: &[u8], offset: usize) -> Option<BodyRevision> {
 ///
 /// Replaced partition records are masked with non-tag bytes. Status-free
 /// canonical current replacements are appended once. When BODY revision
-/// envelopes are present, only records in the final revision contribute to the
-/// current image. Raw current-revision deltas bytes remain available to
-/// independent procedural decoders.
+/// envelopes are present, only records in the current interval of each body
+/// sequence contribute to the current image. Raw current-revision deltas bytes
+/// remain available to independent procedural decoders.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
-    let revision_start = current_revision_start(&census);
+    let current_scopes = current_revision_scopes(&census, deltas.len());
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
     for record in census
         .records
         .iter()
-        .filter(|record| record.offset >= revision_start)
+        .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
@@ -2199,7 +2199,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     for tombstone in census
         .tombstones
         .iter()
-        .filter(|tombstone| tombstone.offset >= revision_start)
+        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
             tombstones.insert((kind, tombstone.xmt), tombstone);
@@ -2285,13 +2285,13 @@ pub fn unmatched_terminal_tombstones_by_family(
     }
 
     let census = walk(deltas);
-    let revision_start = current_revision_start(&census);
+    let current_scopes = current_revision_scopes(&census, deltas.len());
     let graph = crate::topology::Graph::parse(partition);
     let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
     for record in census
         .records
         .into_iter()
-        .filter(|record| record.offset >= revision_start)
+        .filter(|record| current_scope_contains(&current_scopes, record.offset))
     {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
@@ -2309,7 +2309,7 @@ pub fn unmatched_terminal_tombstones_by_family(
     for tombstone in census
         .tombstones
         .into_iter()
-        .filter(|tombstone| tombstone.offset >= revision_start)
+        .filter(|tombstone| current_scope_contains(&current_scopes, tombstone.offset))
     {
         let Ok(kind) = u8::try_from(tombstone.kind) else {
             continue;
@@ -2352,26 +2352,119 @@ fn mergeable_record(record: &Record, kind: u8) -> bool {
         .is_some()
 }
 
-fn current_revision_start(census: &Census) -> usize {
-    census
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RevisionScope {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RevisionDirection {
+    Ascending,
+    Descending,
+}
+
+fn current_revision_scopes(census: &Census, stream_len: usize) -> Vec<RevisionScope> {
+    // Only xmt 3 BODY envelopes delimit snapshots. Other validated type-12
+    // envelopes remain available to the byte ledger without changing scope.
+    let snapshot_revisions = census
         .body_revisions
-        .last()
-        .map_or(0, |revision| revision.offset)
+        .iter()
+        .enumerate()
+        .filter(|(_, revision)| revision.xmt == 3)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if snapshot_revisions.is_empty() {
+        return vec![RevisionScope {
+            start: 0,
+            end: stream_len,
+        }];
+    }
+
+    let direction = revision_direction(
+        &snapshot_revisions
+            .iter()
+            .map(|index| census.body_revisions[*index].node_id)
+            .collect::<Vec<_>>(),
+    );
+    let mut run_starts = vec![0];
+    for (position, pair) in snapshot_revisions.windows(2).enumerate() {
+        let previous = census.body_revisions[pair[0]].node_id;
+        let current = census.body_revisions[pair[1]].node_id;
+        if !revision_follows_direction(previous, current, direction) {
+            run_starts.push(position + 1);
+        }
+    }
+
+    let mut scopes = Vec::new();
+    for (run, &run_start) in run_starts.iter().enumerate() {
+        let run_end = run_starts
+            .get(run + 1)
+            .copied()
+            .unwrap_or(snapshot_revisions.len());
+        let current_revision = &census.body_revisions[snapshot_revisions[run_end - 1]];
+        let end = run_starts
+            .get(run + 1)
+            .map_or(stream_len, |next_run_start| {
+                census.body_revisions[snapshot_revisions[*next_run_start]].offset
+            });
+        if current_revision.offset < end {
+            scopes.push(RevisionScope {
+                start: current_revision.offset,
+                end,
+            });
+        }
+        debug_assert!(run_start < run_end);
+    }
+
+    debug_assert!(scopes.windows(2).all(|pair| pair[0].end <= pair[1].start));
+    scopes
+}
+
+fn revision_direction(node_ids: &[u32]) -> RevisionDirection {
+    // A stream can serialize one revision sequence in either direction. The
+    // direction with fewer violations is the sequence direction; the opposite
+    // transitions are the resets that begin another sequence.
+    let ascending_violations = node_ids.windows(2).filter(|pair| pair[1] < pair[0]).count();
+    let descending_violations = node_ids.windows(2).filter(|pair| pair[1] > pair[0]).count();
+    if ascending_violations <= descending_violations {
+        RevisionDirection::Ascending
+    } else {
+        RevisionDirection::Descending
+    }
+}
+
+fn revision_follows_direction(previous: u32, current: u32, direction: RevisionDirection) -> bool {
+    match direction {
+        RevisionDirection::Ascending => current >= previous,
+        RevisionDirection::Descending => current <= previous,
+    }
+}
+
+fn current_scope_contains(scopes: &[RevisionScope], offset: usize) -> bool {
+    scopes
+        .iter()
+        .any(|scope| scope.start <= offset && offset < scope.end)
 }
 
 /// Return raw deltas bytes with decoded records and compact tombstones masked.
-/// Bytes preceding the final BODY revision are also masked. Current-revision
-/// records needed by semantic scanners are appended in their partition form.
+/// Historical BODY revision intervals are also masked. Current-revision records
+/// needed by semantic scanners are appended in their partition form.
 pub fn semantic_residual(stream: &[u8]) -> Vec<u8> {
     let census = walk(stream);
     let mut residual = stream.to_vec();
-    let revision_start = current_revision_start(&census);
-    residual[..revision_start].fill(0xff);
+    let current_scopes = current_revision_scopes(&census, stream.len());
+    let mut cursor = 0;
+    for scope in &current_scopes {
+        residual[cursor..scope.start].fill(0xff);
+        cursor = scope.end;
+    }
+    residual[cursor..].fill(0xff);
     let canonical_residual_records = census
         .records
         .iter()
         .filter(|record| {
-            let is_current = record.offset >= revision_start;
+            let is_current = current_scope_contains(&current_scopes, record.offset);
             let is_semantic = matches!(
                 record.kind,
                 38 | 40 | 41 | 45 | 59 | 81..=84 | 91 | 125..=128 | 135..=136 | 141 | 204

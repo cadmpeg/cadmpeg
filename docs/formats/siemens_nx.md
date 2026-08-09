@@ -1753,13 +1753,17 @@ live = partition ∪ delta_full − tombstones
 BODY (`00 0c`) records delimit body revisions. The record prefix is
 `type:u16 BE, xmt, node_id:u32 BE, ref_status[8]`; `xmt` is non-null and all
 reference statuses are `01`. Its bounded state tail extends to the next
-admitted deltas event or the end of the inflated stream. `node_id` is a
-monotonic per-body revision counter. The final validated BODY envelope begins
-the current revision; preceding fixed records, tombstones, and procedural
-records are historical and do not contribute to the current image. A partition
-containing a validated body-shape SHELL is the authoritative current topology
-image. BODY through REGION records in its paired deltas stream do not replace
-or delete that topology image.
+admitted deltas event or the end of the inflated stream. An `xmt == 3` BODY
+envelope is a snapshot delimiter. Snapshot `node_id` values form maximal
+source-order runs that are monotonic in one serialized direction. A transition
+against that direction starts the next body sequence. The final snapshot
+envelope in each run begins that sequence's current interval; the interval ends
+at the first snapshot envelope of the next run or at the stream end. Fixed
+records, tombstones, and procedural records outside these intervals are
+historical and do not contribute to the current image. A partition containing
+a validated body-shape SHELL is the authoritative current topology image.
+BODY through REGION records in its paired deltas stream do not replace or
+delete that topology image.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table starts at the first little-endian `count:u32` after the `UGS::Solid::Topol` registry marker whose following `count` ordered `object_id:u32` words end immediately before the self-framed product record `04|05 01 text_length:u8 "NX " product_text 00`. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 
@@ -1792,7 +1796,14 @@ Slot zero names the child `.prt`, slot one is the reference code, slot two is th
 
 The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`, and `schema_embedding_map`; each serializes as a null or empty array and supplies no tombstone bridge.
 
-A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body snapshot. Its `node_id` is a monotonic revision counter within that body sequence, and a reset begins another interleaved body sequence. Deltas streams encode null-node deletions as descending contiguous xmt runs that can span topology, geometry, and attribute record types.
+A deltas-stream BODY record with type `00 0c` and xmt `3` delimits a body
+snapshot. Its `node_id` is a monotonic revision counter within that body
+sequence. Snapshot records are partitioned into source-order monotonic runs;
+the final snapshot in each run starts the current interval for that sequence,
+and the interval ends at the next run's first snapshot or at the stream end. A
+transition against the established monotonic direction starts the next
+sequence. Deltas streams encode null-node deletions as descending contiguous
+xmt runs that can span topology, geometry, and attribute record types.
 
 ### 9.3 B-spline payloads
 
