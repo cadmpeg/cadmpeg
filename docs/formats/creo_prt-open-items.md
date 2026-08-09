@@ -316,14 +316,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the nonlinear solve rules to evaluate all derived curve parameters.
 
-### SP-02. Other simultaneous-solve states
-
-**Question.** How must a simultaneous-solve block evaluate when an unknown does not have a previous numeric value?
-
-**Known.** The defined affine solver uses the ordered equations, declared unknowns, dimensions, and previous numeric values.
-
-**Need.** We must know the initialization rule to evaluate the block deterministically.
-
 ### SP-03. Section-to-datum joins
 
 **Question.** Which fields join a section definition to its sketch datum when the defined owner and generated-datum joins do not select one datum?

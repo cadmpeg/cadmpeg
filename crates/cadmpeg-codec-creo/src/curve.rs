@@ -1515,7 +1515,7 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.offset == line.offset)
         {
-            if let Some(dimensions) = block
+            let dimensions = block
                 .variables
                 .iter()
                 .map(|variable| {
@@ -1524,10 +1524,8 @@ fn evaluate_expression_program_details(
                         .and_then(quantity_parts_ref)
                         .map(|(_, dimension)| dimension)
                 })
-                .collect::<Option<Vec<_>>>()
-            {
-                solve_block_dimensions.insert(block.offset, dimensions);
-            }
+                .collect::<Vec<_>>();
+            solve_block_dimensions.insert(block.offset, dimensions);
             for variable in &block.variables {
                 let key = expression_identifier_key(variable);
                 values.remove(&key);
@@ -1547,12 +1545,14 @@ fn evaluate_expression_program_details(
             .iter()
             .find(|block| block.for_offset == line.offset)
         {
-            if let Some(solution) =
-                solve_block_dimensions
-                    .get(&block.offset)
-                    .and_then(|dimensions| {
-                        solve_affine_expression_block(block, &values, dimensions, context)
-                    })
+            if let Some(solution) = solve_block_dimensions
+                .get(&block.offset)
+                .and_then(|dimensions| {
+                    infer_solve_variable_dimensions(block, &values, dimensions, context)
+                })
+                .and_then(|dimensions| {
+                    solve_affine_expression_block(block, &values, &dimensions, context)
+                })
             {
                 for (variable, value) in block.variables.iter().zip(&solution) {
                     let key = expression_identifier_key(variable);
@@ -2418,6 +2418,1040 @@ impl ExpressionValue for SimultaneousAffineValue {
 
     fn finite(&self) -> bool {
         self.constant.is_finite() && self.coefficients.values().all(|value| value.is_finite())
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DimensionForm {
+    constant: i16,
+    variables: BTreeMap<String, i16>,
+}
+
+impl DimensionForm {
+    fn constant(value: i8) -> Self {
+        Self {
+            constant: i16::from(value),
+            variables: BTreeMap::new(),
+        }
+    }
+
+    fn variable(name: &str) -> Self {
+        Self {
+            constant: 0,
+            variables: BTreeMap::from([(name.to_owned(), 1)]),
+        }
+    }
+
+    fn combine(mut self, right: Self, subtract: bool) -> Option<Self> {
+        let sign = if subtract { -1 } else { 1 };
+        self.constant = self
+            .constant
+            .checked_add(right.constant.checked_mul(sign)?)?;
+        for (name, coefficient) in right.variables {
+            let entry = self.variables.entry(name.clone()).or_default();
+            *entry = entry.checked_add(coefficient.checked_mul(sign)?)?;
+            if *entry == 0 {
+                self.variables.remove(&name);
+            }
+        }
+        Some(self)
+    }
+
+    fn scale(mut self, factor: i8) -> Option<Self> {
+        let factor = i16::from(factor);
+        self.constant = self.constant.checked_mul(factor)?;
+        for coefficient in self.variables.values_mut() {
+            *coefficient = coefficient.checked_mul(factor)?;
+        }
+        self.variables.retain(|_, coefficient| *coefficient != 0);
+        Some(self)
+    }
+
+    fn divide_exact(mut self, divisor: i16) -> Option<Self> {
+        (divisor != 0 && self.constant % divisor == 0).then_some(())?;
+        self.constant /= divisor;
+        for coefficient in self.variables.values_mut() {
+            (*coefficient % divisor == 0).then_some(())?;
+            *coefficient /= divisor;
+        }
+        self.variables.retain(|_, coefficient| *coefficient != 0);
+        Some(self)
+    }
+
+    fn is_zero(&self) -> bool {
+        self.constant == 0 && self.variables.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SymbolicRelationDimension {
+    axes: [DimensionForm; 5],
+}
+
+impl SymbolicRelationDimension {
+    fn from_relation_dimension(dimension: RelationDimension) -> Self {
+        Self {
+            axes: [
+                DimensionForm::constant(dimension.length),
+                DimensionForm::constant(dimension.mass),
+                DimensionForm::constant(dimension.time),
+                DimensionForm::constant(dimension.angle),
+                DimensionForm::constant(dimension.temperature),
+            ],
+        }
+    }
+
+    fn variable(name: &str) -> Self {
+        Self {
+            axes: std::array::from_fn(|_| DimensionForm::variable(name)),
+        }
+    }
+
+    fn combine(self, right: Self, subtract: bool) -> Option<Self> {
+        let mut axes = std::array::from_fn(|_| DimensionForm::default());
+        for (axis, (left, right)) in self.axes.into_iter().zip(right.axes).enumerate() {
+            axes[axis] = left.combine(right, subtract)?;
+        }
+        Some(Self { axes })
+    }
+
+    fn scale(self, factor: i8) -> Option<Self> {
+        Some(Self {
+            axes: self
+                .axes
+                .into_iter()
+                .map(|axis| axis.scale(factor))
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?,
+        })
+    }
+
+    fn root(self, degree: i16) -> Option<Self> {
+        (degree > 0).then_some(())?;
+        Some(Self {
+            axes: self
+                .axes
+                .into_iter()
+                .map(|axis| axis.divide_exact(degree))
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?,
+        })
+    }
+
+    fn is_zero(&self) -> bool {
+        self.axes.iter().all(DimensionForm::is_zero)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DimensionEquality {
+    left: SymbolicRelationDimension,
+    right: SymbolicRelationDimension,
+}
+
+#[derive(Debug, Clone)]
+enum DimensionProbeKind {
+    Numeric(Option<f64>),
+    Text(Option<String>),
+}
+
+enum DimensionProbeNumber {
+    Unknown,
+    Known(f64),
+}
+
+impl DimensionProbeNumber {
+    fn into_option(self) -> Option<f64> {
+        match self {
+            Self::Unknown => None,
+            Self::Known(value) => Some(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct DimensionProbeValue {
+    dimension: SymbolicRelationDimension,
+    kind: DimensionProbeKind,
+    constraints: Vec<DimensionEquality>,
+}
+
+impl DimensionProbeValue {
+    fn numeric(value: Option<f64>) -> Self {
+        Self {
+            dimension: SymbolicRelationDimension::default(),
+            kind: DimensionProbeKind::Numeric(value),
+            constraints: Vec::new(),
+        }
+    }
+
+    fn text(value: Option<String>) -> Self {
+        Self {
+            dimension: SymbolicRelationDimension::default(),
+            kind: DimensionProbeKind::Text(value),
+            constraints: Vec::new(),
+        }
+    }
+
+    fn variable(name: &str) -> Self {
+        Self {
+            dimension: SymbolicRelationDimension::variable(name),
+            kind: DimensionProbeKind::Numeric(None),
+            constraints: Vec::new(),
+        }
+    }
+
+    fn from_relation_value(value: &CurveExpressionValue) -> Option<Self> {
+        match value {
+            CurveExpressionValue::String(value) => Some(Self::text(Some(value.clone()))),
+            value => {
+                let (value, dimension) = quantity_parts_ref(value)?;
+                Some(Self {
+                    dimension: SymbolicRelationDimension::from_relation_dimension(dimension),
+                    kind: DimensionProbeKind::Numeric(Some(value)),
+                    constraints: Vec::new(),
+                })
+            }
+        }
+    }
+
+    fn numeric_value(&self) -> Option<f64> {
+        match &self.kind {
+            DimensionProbeKind::Numeric(value) => *value,
+            DimensionProbeKind::Text(_) => None,
+        }
+    }
+
+    fn text_value(&self) -> Option<&str> {
+        match &self.kind {
+            DimensionProbeKind::Text(Some(value)) => Some(value),
+            DimensionProbeKind::Numeric(_) | DimensionProbeKind::Text(None) => None,
+        }
+    }
+
+    fn with_constraint(
+        mut self,
+        left: SymbolicRelationDimension,
+        right: SymbolicRelationDimension,
+    ) -> Self {
+        self.constraints.push(DimensionEquality { left, right });
+        self
+    }
+
+    fn constrain_to(self, dimension: SymbolicRelationDimension) -> Self {
+        let current = self.dimension.clone();
+        self.with_constraint(current, dimension)
+    }
+
+    fn merge_constraints(left: &Self, right: &Self) -> Vec<DimensionEquality> {
+        left.constraints
+            .iter()
+            .cloned()
+            .chain(right.constraints.iter().cloned())
+            .collect()
+    }
+
+    fn argument_constraints(arguments: &[Self]) -> Vec<DimensionEquality> {
+        arguments
+            .iter()
+            .flat_map(|argument| argument.constraints.iter().cloned())
+            .collect()
+    }
+
+    fn numeric_result(
+        dimension: SymbolicRelationDimension,
+        value: Option<f64>,
+        constraints: Vec<DimensionEquality>,
+    ) -> Self {
+        Self {
+            dimension,
+            kind: DimensionProbeKind::Numeric(value),
+            constraints,
+        }
+    }
+
+    fn text_result(value: Option<String>, constraints: Vec<DimensionEquality>) -> Self {
+        Self {
+            dimension: SymbolicRelationDimension::default(),
+            kind: DimensionProbeKind::Text(value),
+            constraints,
+        }
+    }
+
+    fn optional_math(name: CreoMathFunction, arguments: &[Self]) -> Option<DimensionProbeNumber> {
+        let Some(values) = arguments
+            .iter()
+            .map(Self::numeric_value)
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Some(DimensionProbeNumber::Unknown);
+        };
+        evaluate_creo_math_function(name, &values).map(DimensionProbeNumber::Known)
+    }
+
+    fn optional_round(
+        value: &Self,
+        decimal_places: Option<&Self>,
+        upward: bool,
+    ) -> Option<DimensionProbeNumber> {
+        let Some(value) = value.numeric_value() else {
+            return Some(DimensionProbeNumber::Unknown);
+        };
+        let decimal_places = match decimal_places {
+            Some(decimal_places) => {
+                let Some(decimal_places) = decimal_places.numeric_value() else {
+                    return Some(DimensionProbeNumber::Unknown);
+                };
+                decimal_places
+            }
+            None => 0.0,
+        };
+        relation_round(value, decimal_places, upward).map(DimensionProbeNumber::Known)
+    }
+}
+
+impl ExpressionValue for DimensionProbeValue {
+    fn number(value: f64) -> Self {
+        Self::numeric(Some(value))
+    }
+
+    fn reserved(name: &str) -> Option<Self> {
+        Self::from_relation_value(&CurveExpressionValue::reserved(name)?)
+    }
+
+    fn string(value: String) -> Option<Self> {
+        Some(Self::text(Some(value)))
+    }
+
+    fn with_unit(self, unit: RelationUnit) -> Option<Self> {
+        let Self {
+            dimension,
+            kind: DimensionProbeKind::Numeric(value),
+            mut constraints,
+        } = self
+        else {
+            return None;
+        };
+        constraints.push(DimensionEquality {
+            left: dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        let value = value
+            .map(|value| value * unit.scale + unit.offset)
+            .filter(|value| value.is_finite());
+        Some(Self::numeric_result(
+            SymbolicRelationDimension::from_relation_dimension(unit.dimension),
+            value,
+            constraints,
+        ))
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let value = left
+                    .as_ref()
+                    .zip(right_value.as_ref())
+                    .map(|(left, right)| {
+                        let mut value = left.clone();
+                        value.push_str(right);
+                        value
+                    });
+                Some(Self::text_result(
+                    value,
+                    Self::merge_constraints(&self, &right),
+                ))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints(&self, &right);
+                constraints.push(DimensionEquality {
+                    left: self.dimension.clone(),
+                    right: right.dimension.clone(),
+                });
+                Some(Self::numeric_result(
+                    self.dimension.clone(),
+                    (*left).zip(*right_value).map(|(left, right)| left + right),
+                    constraints,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return None;
+        };
+        let mut constraints = Self::merge_constraints(&self, &right);
+        constraints.push(DimensionEquality {
+            left: self.dimension.clone(),
+            right: right.dimension.clone(),
+        });
+        Some(Self::numeric_result(
+            self.dimension.clone(),
+            (*left).zip(*right_value).map(|(left, right)| left - right),
+            constraints,
+        ))
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return None;
+        };
+        let constraints = Self::merge_constraints(&self, &right);
+        let dimension = self
+            .dimension
+            .clone()
+            .combine(right.dimension.clone(), false)?;
+        Some(Self::numeric_result(
+            dimension,
+            (*left).zip(*right_value).map(|(left, right)| left * right),
+            constraints,
+        ))
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return None;
+        };
+        if right_value.is_some_and(|value| value == 0.0) {
+            return None;
+        }
+        let constraints = Self::merge_constraints(&self, &right);
+        let dimension = self
+            .dimension
+            .clone()
+            .combine(right.dimension.clone(), true)?;
+        Some(Self::numeric_result(
+            dimension,
+            (*left).zip(*right_value).map(|(left, right)| left / right),
+            constraints,
+        ))
+    }
+
+    fn power(self, right: Self) -> Option<Self> {
+        let DimensionProbeKind::Numeric(exponent) = &right.kind else {
+            return None;
+        };
+        let mut constraints = Self::merge_constraints(&self, &right);
+        constraints.push(DimensionEquality {
+            left: right.dimension.clone(),
+            right: SymbolicRelationDimension::default(),
+        });
+        let base_dimension = self.dimension.clone();
+        let value = self
+            .numeric_value()
+            .zip(*exponent)
+            .map(|(value, exponent)| value.powf(exponent));
+        let dimension = match exponent {
+            Some(exponent) if exponent.fract() == 0.0 => {
+                base_dimension.scale(i8::try_from(*exponent as i16).ok()?)?
+            }
+            Some(_) => base_dimension
+                .is_zero()
+                .then_some(SymbolicRelationDimension::default())?,
+            None if base_dimension.is_zero() => SymbolicRelationDimension::default(),
+            None => return None,
+        };
+        Some(Self::numeric_result(dimension, value, constraints))
+    }
+
+    fn compare(self, right: Self, operator: ComparisonOperator) -> Option<Self> {
+        match (&self.kind, &right.kind) {
+            (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right_value)) => {
+                let value = match operator {
+                    ComparisonOperator::Equal => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left == right)),
+                    ComparisonOperator::NotEqual => left
+                        .as_ref()
+                        .zip(right_value.as_ref())
+                        .map(|(left, right)| f64::from(left != right)),
+                    _ => return None,
+                };
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    Self::merge_constraints(&self, &right),
+                ))
+            }
+            (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) => {
+                let mut constraints = Self::merge_constraints(&self, &right);
+                constraints.push(DimensionEquality {
+                    left: self.dimension.clone(),
+                    right: right.dimension.clone(),
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    (*left)
+                        .zip(*right_value)
+                        .map(|(left, right)| f64::from(operator.evaluate(left, right))),
+                    constraints,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn logical_and(self, right: Self) -> Option<Self> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return None;
+        };
+        let mut constraints = Self::merge_constraints(&self, &right);
+        constraints.extend([
+            DimensionEquality {
+                left: self.dimension.clone(),
+                right: SymbolicRelationDimension::default(),
+            },
+            DimensionEquality {
+                left: right.dimension.clone(),
+                right: SymbolicRelationDimension::default(),
+            },
+        ]);
+        Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 && right != 0.0)),
+            constraints,
+        ))
+    }
+
+    fn logical_or(self, right: Self) -> Option<Self> {
+        let (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right_value)) =
+            (&self.kind, &right.kind)
+        else {
+            return None;
+        };
+        let mut constraints = Self::merge_constraints(&self, &right);
+        constraints.extend([
+            DimensionEquality {
+                left: self.dimension.clone(),
+                right: SymbolicRelationDimension::default(),
+            },
+            DimensionEquality {
+                left: right.dimension.clone(),
+                right: SymbolicRelationDimension::default(),
+            },
+        ]);
+        Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            (*left)
+                .zip(*right_value)
+                .map(|(left, right)| f64::from(left != 0.0 || right != 0.0)),
+            constraints,
+        ))
+    }
+
+    fn logical_not(self) -> Option<Self> {
+        let DimensionProbeKind::Numeric(value) = self.kind else {
+            return None;
+        };
+        let mut constraints = self.constraints;
+        constraints.push(DimensionEquality {
+            left: self.dimension,
+            right: SymbolicRelationDimension::default(),
+        });
+        Some(Self::numeric_result(
+            SymbolicRelationDimension::default(),
+            value.map(|value| f64::from(value == 0.0)),
+            constraints,
+        ))
+    }
+
+    fn function(
+        name: CreoMathFunction,
+        scope: Option<&str>,
+        arguments: &[Self],
+        context: RelationEvaluationContext<'_>,
+    ) -> Option<Self> {
+        scope.is_none().then_some(())?;
+        let constraints = Self::argument_constraints(arguments);
+        let numeric = |name| Self::optional_math(name, arguments);
+        let numeric_args = |arguments: &[Self]| {
+            arguments
+                .iter()
+                .map(Self::numeric_value)
+                .collect::<Option<Vec<_>>>()
+        };
+        match (name, arguments) {
+            (CreoMathFunction::Itos, [argument]) => {
+                let value = argument.numeric_value().map(f64::round).map(|value| {
+                    if value == 0.0 {
+                        String::new()
+                    } else {
+                        format!("{value:.0}")
+                    }
+                });
+                Some(Self::text_result(value, constraints))
+            }
+            (CreoMathFunction::Rtos, [argument, controls @ ..]) => {
+                let mut constraints = constraints;
+                let controls = controls
+                    .iter()
+                    .map(|control| {
+                        let control = control
+                            .clone()
+                            .constrain_to(SymbolicRelationDimension::default());
+                        constraints.extend(control.constraints.iter().cloned());
+                        control.numeric_value()
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                let (decimals, scientific) = match controls.as_slice() {
+                    [] => (None, false),
+                    [decimals] => (Some(relation_precision(*decimals)?), false),
+                    [decimals, scientific] => {
+                        (Some(relation_precision(*decimals)?), *scientific != 0.0)
+                    }
+                    _ => return None,
+                };
+                let value = match argument.numeric_value() {
+                    Some(value) => Some(format_relation_real(value, decimals, scientific)?),
+                    None => None,
+                };
+                Some(Self::text_result(value, constraints))
+            }
+            (CreoMathFunction::RelModelName, []) => Some(Self::text_result(
+                context.model_name.map(str::to_owned),
+                constraints,
+            )),
+            (CreoMathFunction::RelModelType, []) => {
+                Some(Self::text_result(Some("part".to_owned()), constraints))
+            }
+            (CreoMathFunction::Exists, [argument]) => {
+                let value = argument.text_value().and_then(|value| {
+                    context
+                        .existing_symbols?
+                        .contains(&expression_identifier_key(value))
+                        .then_some(1.0)
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    value,
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Search, [value, needle]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(needle.text_value())
+                    .map(|(value, needle)| {
+                        value
+                            .find(needle)
+                            .map_or(0, |byte| value[..byte].chars().count() + 1)
+                            as f64
+                    }),
+                constraints,
+            )),
+            (CreoMathFunction::Extract, [value, position, length]) => {
+                let mut constraints = constraints;
+                let position = position
+                    .clone()
+                    .constrain_to(SymbolicRelationDimension::default());
+                constraints.extend(position.constraints.iter().cloned());
+                let position = position.numeric_value();
+                let length = length
+                    .clone()
+                    .constrain_to(SymbolicRelationDimension::default());
+                constraints.extend(length.constraints.iter().cloned());
+                let length = length.numeric_value();
+                let extracted = value.text_value().zip(position).zip(length).map(
+                    |((value, position), length)| {
+                        if !position.is_finite()
+                            || !length.is_finite()
+                            || position.fract() != 0.0
+                            || length.fract() != 0.0
+                            || position <= 0.0
+                            || length < 0.0
+                        {
+                            return None;
+                        }
+                        let character_count = value.chars().count();
+                        if position > character_count as f64 {
+                            Some(String::new())
+                        } else {
+                            let start = position as usize - 1;
+                            let remaining = character_count - start;
+                            let count = if length >= remaining as f64 {
+                                remaining
+                            } else {
+                                length as usize
+                            };
+                            Some(value.chars().skip(start).take(count).collect())
+                        }
+                    },
+                );
+                let value = match extracted {
+                    Some(Some(value)) => Some(value),
+                    Some(None) => return None,
+                    None => None,
+                };
+                Some(Self::text_result(value, constraints))
+            }
+            (CreoMathFunction::StringLength, [value]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value.text_value().map(|value| value.chars().count() as f64),
+                constraints,
+            )),
+            (CreoMathFunction::StringStarts, [value, prefix]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(prefix.text_value())
+                    .map(|(value, prefix)| f64::from(value.starts_with(prefix))),
+                constraints,
+            )),
+            (CreoMathFunction::StringEnds, [value, suffix]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(suffix.text_value())
+                    .map(|(value, suffix)| f64::from(value.ends_with(suffix))),
+                constraints,
+            )),
+            (CreoMathFunction::StringMatch, [value, expected]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(expected.text_value())
+                    .map(|(value, expected)| f64::from(value == expected)),
+                constraints,
+            )),
+            (CreoMathFunction::StringPattern, [value, pattern]) => Some(Self::numeric_result(
+                SymbolicRelationDimension::default(),
+                value
+                    .text_value()
+                    .zip(pattern.text_value())
+                    .and_then(|(value, pattern)| relation_string_pattern(value, pattern))
+                    .map(f64::from),
+                constraints,
+            )),
+            (
+                name @ (CreoMathFunction::Sin | CreoMathFunction::Cos | CreoMathFunction::Tan),
+                [argument],
+            ) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: argument.dimension.clone(),
+                    right: SymbolicRelationDimension::from_relation_dimension(
+                        RelationDimension::ANGLE,
+                    ),
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    numeric(name)?.into_option(),
+                    constraints,
+                ))
+            }
+            (
+                name @ (CreoMathFunction::Asin | CreoMathFunction::Acos | CreoMathFunction::Atan),
+                [argument],
+            ) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: argument.dimension.clone(),
+                    right: SymbolicRelationDimension::default(),
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
+                    numeric(name)?.into_option(),
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Atan2, [left, right]) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: left.dimension.clone(),
+                    right: right.dimension.clone(),
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::from_relation_dimension(RelationDimension::ANGLE),
+                    numeric(CreoMathFunction::Atan2)?.into_option(),
+                    constraints,
+                ))
+            }
+            (
+                name @ (CreoMathFunction::Sinh
+                | CreoMathFunction::Cosh
+                | CreoMathFunction::Tanh
+                | CreoMathFunction::Log
+                | CreoMathFunction::Ln
+                | CreoMathFunction::Exp),
+                [argument],
+            ) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: argument.dimension.clone(),
+                    right: SymbolicRelationDimension::default(),
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    numeric(name)?.into_option(),
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Sign, [value, sign]) => {
+                let numeric_value =
+                    value
+                        .numeric_value()
+                        .zip(sign.numeric_value())
+                        .map(|(value, sign)| {
+                            if sign < 0.0 {
+                                -value.abs()
+                            } else {
+                                value.abs()
+                            }
+                        });
+                Some(Self::numeric_result(
+                    value.dimension.clone(),
+                    numeric_value,
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Mod, [left, right]) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: left.dimension.clone(),
+                    right: right.dimension.clone(),
+                });
+                let value = left.numeric_value().zip(right.numeric_value());
+                if right.numeric_value().is_some_and(|value| value == 0.0) {
+                    return None;
+                }
+                Some(Self::numeric_result(
+                    left.dimension.clone(),
+                    value.map(|(left, right)| left % right),
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::If, [condition, when_true, when_false]) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: condition.dimension.clone(),
+                    right: SymbolicRelationDimension::default(),
+                });
+                match (&when_true.kind, &when_false.kind) {
+                    (DimensionProbeKind::Text(left), DimensionProbeKind::Text(right)) => {
+                        let value = condition
+                            .numeric_value()
+                            .zip(left.as_ref().zip(right.as_ref()))
+                            .map(|(condition, (left, right))| {
+                                if condition == 0.0 {
+                                    right.clone()
+                                } else {
+                                    left.clone()
+                                }
+                            });
+                        Some(Self::text_result(value, constraints))
+                    }
+                    (DimensionProbeKind::Numeric(left), DimensionProbeKind::Numeric(right)) => {
+                        constraints.push(DimensionEquality {
+                            left: when_true.dimension.clone(),
+                            right: when_false.dimension.clone(),
+                        });
+                        let value = condition.numeric_value().zip(left.zip(*right)).map(
+                            |(condition, (left, right))| {
+                                if condition == 0.0 {
+                                    right
+                                } else {
+                                    left
+                                }
+                            },
+                        );
+                        Some(Self::numeric_result(
+                            when_true.dimension.clone(),
+                            value,
+                            constraints,
+                        ))
+                    }
+                    _ => None,
+                }
+            }
+            (CreoMathFunction::Bound, [value, lower, upper]) => {
+                let mut constraints = constraints;
+                constraints.extend([
+                    DimensionEquality {
+                        left: value.dimension.clone(),
+                        right: lower.dimension.clone(),
+                    },
+                    DimensionEquality {
+                        left: value.dimension.clone(),
+                        right: upper.dimension.clone(),
+                    },
+                ]);
+                let numeric = numeric_args(arguments).map(|values| {
+                    let [value, lower, upper] = values.as_slice() else {
+                        return None;
+                    };
+                    (lower < upper).then(|| value.clamp(*lower, *upper))
+                });
+                Some(Self::numeric_result(
+                    arguments[0].dimension.clone(),
+                    numeric.flatten(),
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Dead, [value, lower, upper]) => {
+                let mut constraints = constraints;
+                constraints.extend([
+                    DimensionEquality {
+                        left: value.dimension.clone(),
+                        right: lower.dimension.clone(),
+                    },
+                    DimensionEquality {
+                        left: value.dimension.clone(),
+                        right: upper.dimension.clone(),
+                    },
+                ]);
+                let numeric = numeric_args(arguments).map(|values| {
+                    let [value, lower, upper] = values.as_slice() else {
+                        return None;
+                    };
+                    (lower <= upper).then(|| {
+                        if value < lower {
+                            value - lower
+                        } else if value > upper {
+                            value - upper
+                        } else {
+                            0.0
+                        }
+                    })
+                });
+                Some(Self::numeric_result(
+                    arguments[0].dimension.clone(),
+                    numeric.flatten(),
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Near | CreoMathFunction::DblInTol, [left, right, tolerance]) => {
+                let mut constraints = constraints;
+                constraints.extend([
+                    DimensionEquality {
+                        left: left.dimension.clone(),
+                        right: right.dimension.clone(),
+                    },
+                    DimensionEquality {
+                        left: left.dimension.clone(),
+                        right: tolerance.dimension.clone(),
+                    },
+                ]);
+                let numeric = numeric_args(arguments).map(|values| {
+                    let [left, right, tolerance] = values.as_slice() else {
+                        return None;
+                    };
+                    (*tolerance >= 0.0).then(|| f64::from((*left - *right).abs() <= *tolerance))
+                });
+                Some(Self::numeric_result(
+                    SymbolicRelationDimension::default(),
+                    numeric.flatten(),
+                    constraints,
+                ))
+            }
+            (name @ (CreoMathFunction::Min | CreoMathFunction::Max), [left, right]) => {
+                let mut constraints = constraints;
+                constraints.push(DimensionEquality {
+                    left: left.dimension.clone(),
+                    right: right.dimension.clone(),
+                });
+                let numeric =
+                    left.numeric_value()
+                        .zip(right.numeric_value())
+                        .map(|(left, right)| {
+                            if extremum_selects_left(name, left, right).unwrap_or(false) {
+                                left
+                            } else {
+                                right
+                            }
+                        });
+                Some(Self::numeric_result(
+                    left.dimension.clone(),
+                    numeric,
+                    constraints,
+                ))
+            }
+            (CreoMathFunction::Pow, [base, exponent]) => base.clone().power(exponent.clone()),
+            (CreoMathFunction::Sqrt, [argument]) => {
+                let value = argument.numeric_value().map(f64::sqrt);
+                Some(Self::numeric_result(
+                    argument.dimension.clone().root(2)?,
+                    value,
+                    constraints,
+                ))
+            }
+            (
+                name @ (CreoMathFunction::Abs | CreoMathFunction::Ceil | CreoMathFunction::Floor),
+                [argument],
+            ) => {
+                let value = match name {
+                    CreoMathFunction::Abs => argument.numeric_value().map(f64::abs),
+                    CreoMathFunction::Ceil => {
+                        Self::optional_round(argument, None, true)?.into_option()
+                    }
+                    CreoMathFunction::Floor => {
+                        Self::optional_round(argument, None, false)?.into_option()
+                    }
+                    _ => unreachable!(),
+                };
+                Some(Self::numeric_result(
+                    argument.dimension.clone(),
+                    value,
+                    constraints,
+                ))
+            }
+            (
+                name @ (CreoMathFunction::Ceil | CreoMathFunction::Floor),
+                [argument, decimal_places],
+            ) => {
+                let decimal_places = decimal_places
+                    .clone()
+                    .constrain_to(SymbolicRelationDimension::default());
+                let mut constraints = constraints;
+                constraints.extend(decimal_places.constraints.iter().cloned());
+                let value = Self::optional_round(
+                    argument,
+                    Some(&decimal_places),
+                    matches!(name, CreoMathFunction::Ceil),
+                )?
+                .into_option();
+                Some(Self::numeric_result(
+                    argument.dimension.clone(),
+                    value,
+                    constraints,
+                ))
+            }
+            _ => None,
+        }
+    }
+
+    fn negate(self) -> Option<Self> {
+        let kind = match self.kind {
+            DimensionProbeKind::Numeric(value) => DimensionProbeKind::Numeric(value.map(|v| -v)),
+            DimensionProbeKind::Text(_) => return None,
+        };
+        Some(Self {
+            dimension: self.dimension,
+            kind,
+            constraints: self.constraints,
+        })
+    }
+
+    fn finite(&self) -> bool {
+        match &self.kind {
+            DimensionProbeKind::Numeric(Some(value)) => value.is_finite(),
+            DimensionProbeKind::Numeric(None) | DimensionProbeKind::Text(_) => true,
+        }
     }
 }
 
@@ -3459,6 +4493,185 @@ fn evaluate_simultaneous_affine_expression(
     let value = parser.logical_or()?;
     parser.whitespace();
     (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn evaluate_dimension_expression(
+    expression: &str,
+    values: &BTreeMap<String, DimensionProbeValue>,
+    context: RelationEvaluationContext<'_>,
+) -> Option<DimensionProbeValue> {
+    let mut parser = ExpressionParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+        context,
+        nesting: 0,
+    };
+    let value = parser.logical_or()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn infer_solve_variable_dimensions(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    known_dimensions: &[Option<RelationDimension>],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<RelationDimension>> {
+    (known_dimensions.len() == block.variables.len()).then_some(())?;
+    let variable_keys = block
+        .variables
+        .iter()
+        .map(|variable| expression_identifier_key(variable))
+        .collect::<Vec<_>>();
+    let unique_keys = variable_keys.iter().collect::<BTreeSet<_>>();
+    (unique_keys.len() == variable_keys.len()).then_some(())?;
+
+    let mut probe_values = values
+        .iter()
+        .filter_map(|(name, value)| {
+            DimensionProbeValue::from_relation_value(value).map(|value| (name.clone(), value))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (key, dimension) in variable_keys.iter().zip(known_dimensions) {
+        let value = dimension.map_or_else(
+            || DimensionProbeValue::variable(key),
+            |dimension| DimensionProbeValue {
+                dimension: SymbolicRelationDimension::from_relation_dimension(dimension),
+                kind: DimensionProbeKind::Numeric(None),
+                constraints: Vec::new(),
+            },
+        );
+        probe_values.insert(key.clone(), value);
+    }
+
+    let mut constraints = Vec::new();
+    for equation in &block.equations {
+        let left = evaluate_dimension_expression(&equation.left, &probe_values, context)?;
+        let right = evaluate_dimension_expression(&equation.right, &probe_values, context)?;
+        constraints.extend(left.constraints.iter().cloned());
+        constraints.extend(right.constraints.iter().cloned());
+        constraints.push(DimensionEquality {
+            left: left.dimension,
+            right: right.dimension,
+        });
+    }
+
+    let mut axis_rows: [Vec<AffineEquationRow>; 5] =
+        std::array::from_fn(|_| Vec::<AffineEquationRow>::new());
+    for equality in constraints {
+        for (axis, rows) in axis_rows.iter_mut().enumerate() {
+            let difference = equality.left.axes[axis]
+                .clone()
+                .combine(equality.right.axes[axis].clone(), true)?;
+            let coefficients = variable_keys
+                .iter()
+                .map(|variable| {
+                    difference
+                        .variables
+                        .get(variable)
+                        .copied()
+                        .unwrap_or_default() as f64
+                })
+                .collect::<Vec<_>>();
+            let rhs = -f64::from(difference.constant);
+            if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
+                rows.push(AffineEquationRow { coefficients, rhs });
+            }
+        }
+    }
+
+    let mut components: [Vec<i8>; 5] = std::array::from_fn(|_| vec![0i8; variable_keys.len()]);
+    for (index, dimension) in known_dimensions.iter().enumerate() {
+        if let Some(dimension) = dimension {
+            components[0][index] = dimension.length;
+            components[1][index] = dimension.mass;
+            components[2][index] = dimension.time;
+            components[3][index] = dimension.angle;
+            components[4][index] = dimension.temperature;
+        }
+    }
+    for (axis, rows) in axis_rows.iter_mut().enumerate() {
+        let solution = solve_dimension_axis(rows, variable_keys.len())?;
+        for (index, value) in solution.into_iter().enumerate() {
+            if known_dimensions[index].is_some() {
+                continue;
+            }
+            let rounded = value.round();
+            (value.is_finite() && (value - rounded).abs() <= 1e-9).then_some(())?;
+            components[axis][index] = i8::try_from(rounded as i16).ok()?;
+        }
+    }
+    Some(
+        (0..variable_keys.len())
+            .map(|index| RelationDimension {
+                length: components[0][index],
+                mass: components[1][index],
+                time: components[2][index],
+                angle: components[3][index],
+                temperature: components[4][index],
+            })
+            .collect(),
+    )
+}
+
+fn solve_dimension_axis(rows: &mut [AffineEquationRow], variable_count: usize) -> Option<Vec<f64>> {
+    let mut pivot_row = 0;
+    let mut pivot_rows = Vec::new();
+    let coefficient_tolerance = 1e-12;
+    for column in 0..variable_count {
+        let Some(selected) = (pivot_row..rows.len()).max_by(|&first, &second| {
+            rows[first].coefficients[column]
+                .abs()
+                .total_cmp(&rows[second].coefficients[column].abs())
+        }) else {
+            break;
+        };
+        let divisor = rows[selected].coefficients[column];
+        if divisor.abs() <= coefficient_tolerance {
+            continue;
+        }
+        rows.swap(pivot_row, selected);
+        for coefficient in &mut rows[pivot_row].coefficients {
+            *coefficient /= divisor;
+        }
+        rows[pivot_row].rhs /= divisor;
+        let pivot_coefficients = rows[pivot_row].coefficients.clone();
+        let pivot_rhs = rows[pivot_row].rhs;
+        for (row_index, row) in rows.iter_mut().enumerate() {
+            if row_index == pivot_row {
+                continue;
+            }
+            let factor = row.coefficients[column];
+            if factor.abs() <= coefficient_tolerance {
+                continue;
+            }
+            for (coefficient, pivot) in row.coefficients.iter_mut().zip(&pivot_coefficients) {
+                *coefficient -= factor * pivot;
+                if coefficient.abs() <= coefficient_tolerance {
+                    *coefficient = 0.0;
+                }
+            }
+            row.rhs -= factor * pivot_rhs;
+        }
+        pivot_rows.push((column, pivot_row));
+        pivot_row += 1;
+    }
+    let residual_tolerance = 1e-9 * rows.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    rows.iter()
+        .all(|row| {
+            let has_coefficients = row
+                .coefficients
+                .iter()
+                .any(|coefficient| coefficient.abs() > coefficient_tolerance);
+            has_coefficients || row.rhs.abs() <= residual_tolerance
+        })
+        .then_some(())?;
+    let mut solution = vec![0.0; variable_count];
+    for (column, row) in pivot_rows {
+        solution[column] = rows[row].rhs;
+    }
+    Some(solution)
 }
 
 fn solve_affine_expression_block(
@@ -4961,6 +6174,81 @@ mod tests {
                 Some(CurveExpressionValue::Number(24.0)),
             ]
         );
+    }
+
+    #[test]
+    fn solves_affine_systems_without_previous_numeric_values() {
+        let lines = ["SOLVE", "x+y=10[mm]", "x-y=2[mm]", "FOR x,y", "sum=x+y"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&0],
+            [
+                CurveExpressionValue::Length(6.0),
+                CurveExpressionValue::Length(4.0),
+            ]
+        );
+        assert_eq!(
+            evaluation.assignments[0].value,
+            Some(CurveExpressionValue::Length(10.0))
+        );
+    }
+
+    #[test]
+    fn infers_missing_solve_dimensions_through_known_quantities() {
+        let lines = [
+            "speed=2[mm/s]",
+            "total=10[mm]",
+            "SOLVE",
+            "distance+speed*duration=total",
+            "duration=2[s]",
+            "FOR distance,duration",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(offset, text)| CurveExpressionLine {
+            text: text.to_owned(),
+            offset,
+        })
+        .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert_eq!(
+            evaluation.solve_solutions[&2],
+            [
+                CurveExpressionValue::Length(6.0),
+                quantity_value(2.0, RelationDimension::TIME),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_missing_solve_dimensions_with_conflicting_units() {
+        let lines = ["SOLVE", "x=1[mm]", "x=1[s]", "FOR x"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert!(evaluation.assignments.is_empty());
     }
 
     #[test]
