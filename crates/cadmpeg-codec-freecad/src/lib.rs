@@ -1282,7 +1282,12 @@ impl Codec for FcstdCodec {
             drawing::transfer_neutral(&mut ir.model, &drawings, &graph.properties);
             namespace.set_arena("drawings", &drawings)?;
             let annotations = annotation::transfer(&graph.objects, &graph.properties);
-            annotation::transfer_neutral(&mut ir.model, &annotations, &graph.properties, &drawings);
+            annotation::transfer_neutral(
+                &mut ir.model,
+                &annotations,
+                &graph.properties,
+                &drawings,
+            )?;
             namespace.set_arena("annotations", &annotations)?;
             namespace.set_arena(
                 "applications",

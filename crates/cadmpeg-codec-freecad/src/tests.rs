@@ -4181,6 +4181,68 @@ fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn transfers_app_annotation_text_and_position_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="App::Annotation" name="Note"/>
+ <Object type="App::AnnotationLabel" name="Label"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Note"><Properties Count="2">
+  <Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+  <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="1" valueY="2" valueZ="3"/></Property>
+ </Properties></Object>
+ <Object name="Label"><Properties Count="2">
+  <Property name="LabelText" type="App::PropertyStringList"><StringList count="1"><String value="LABEL"/></StringList></Property>
+  <Property name="TextPosition" type="App::PropertyVector"><PropertyVector valueX="4" valueY="5" valueZ="6"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("App annotations");
+
+    let annotations = &result.ir.model.semantic_annotations;
+    assert_eq!(annotations.len(), 2);
+    let note = annotations
+        .iter()
+        .find(|annotation| annotation.runtime_type == "App::Annotation")
+        .expect("note annotation");
+    assert_eq!(note.text, ["NOTE"]);
+    assert_eq!(note.position, Some([1.0, 2.0, 3.0]));
+    let label = annotations
+        .iter()
+        .find(|annotation| annotation.runtime_type == "App::AnnotationLabel")
+        .expect("label annotation");
+    assert_eq!(label.text, ["LABEL"]);
+    assert_eq!(label.position, Some([4.0, 5.0, 6.0]));
+}
+
+#[test]
+fn rejects_incomplete_annotation_position_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects>
+<ObjectData Count="1"><Object name="Note"><Properties Count="2">
+<Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="NOTE"/></StringList></Property>
+<Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("incomplete annotation position");
+
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("position requires both X and Y")
+    ));
+}
+
+#[test]
 fn separates_semantic_annotations_from_drawing_relationships() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -4196,8 +4258,8 @@ fn separates_semantic_annotations_from_drawing_relationships() {
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
   <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link obj="Model" sub="Edge1"/></LinkList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
-  <Property name="Measurement" type="App::PropertyLength"><Float value="12.5"/></Property>
-  <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="10" valueY="20" valueZ="0"/></Property>
+  <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
+  <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
  </Properties></Object>
  <Object name="Note"><Properties Count="2">
   <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="INSPECT"/></StringList></Property>
@@ -4269,7 +4331,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
     );
     assert_eq!(semantic_dimension.text, ["12.5 mm"]);
     assert_eq!(semantic_dimension.format.as_deref(), Some("12.5 mm"));
-    assert_eq!(semantic_dimension.value, Some(12.5));
+    assert_eq!(semantic_dimension.value, None);
     assert_eq!(semantic_dimension.position, Some([10.0, 20.0, 0.0]));
     assert_eq!(
         semantic_dimension.references["References2D"][0].subelements,
@@ -4348,16 +4410,14 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
         .iter()
         .map(|annotation| annotation.kind.clone())
         .collect::<Vec<_>>();
-    assert_eq!(
-        kinds,
-        [
-            Kind::Balloon,
-            Kind::Datum,
-            Kind::Leader,
-            Kind::Symbol,
-            Kind::GeometricTolerance
-        ]
-    );
+    assert_eq!(kinds, [Kind::Balloon, Kind::Leader, Kind::Symbol]);
+    assert!(result
+        .ir
+        .model
+        .semantic_annotations
+        .iter()
+        .all(|annotation| !annotation.object.ends_with("#Datum")
+            && !annotation.object.ends_with("#Tolerance")));
     let balloon = &result.ir.model.semantic_annotations[0];
     assert_eq!(balloon.text, ["7"]);
     assert_eq!(balloon.references["Source"][0].subelements, ["Face1"]);

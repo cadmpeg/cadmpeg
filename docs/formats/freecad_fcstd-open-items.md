@@ -183,25 +183,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Conflict.** `topology_transfer.rs` `close_radial_rings` groups emitted coedges by edge and links them in global emission order. For three or more uses, this asserts a radial order without reading a source relation or deriving the around-edge order from geometry. A different root or face traversal changes the asserted cycle.
 
 **Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain an unordered incidence relation or mark the radial order as unresolved.
-
-## 8. Semantic annotations
-
-### SA-01. Runtime-type to annotation-kind mapping
-
-**Question.** Which exact application runtime types represent dimensions, geometric tolerances, datums, balloons, leaders, symbols, and text annotations?
-
-**Known.** The native annotation record retains the exact runtime type. `freecad_fcstd.md` §11 "Native namespace version 9 separates semantic annotation records" requires exact annotation-object coverage and separate semantic kinds.
-
-**Conflict.** `annotation.rs` `is_annotation_type` admits any object whose unqualified type name contains one of eight case-insensitive tokens. `classify` then chooses the first matching token in a different ordered test. An application-defined type can enter the semantic annotation census because an unrelated word contains a token, and a type with multiple tokens receives the first decoder-defined kind.
-
-**Need.** We must define an exact or inheritance-aware runtime-type registry and its kind mapping. Unknown application annotation types must remain native until their semantic family is established.
-
-### SA-02. Annotation scalar and position property selection
-
-**Question.** Which property carries the semantic scalar and position for each annotation runtime type?
-
-**Known.** The native property graph retains every named value independently. A neutral semantic annotation has one optional scalar and one optional position.
-
-**Conflict.** `annotation.rs` `transfer_neutral` selects the first available scalar in the fixed order `Value`, `Measurement`, `Distance`, `Angle`. It selects `Position` before the `X` and `Y` pair. It does not dispatch by runtime type or require simultaneous carriers to agree. An object that legitimately owns more than one of these properties can transfer the wrong quantity or position.
-
-**Need.** We must map scalar and position carriers by runtime type and reject contradictory duplicate carriers. The decoder must not use property-name priority as semantic dispatch.

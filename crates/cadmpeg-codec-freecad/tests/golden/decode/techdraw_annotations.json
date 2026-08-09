@@ -1790,8 +1790,7 @@
           },
           "runtime_type": "TechDraw::DrawViewDimension",
           "text": [
-            "%.2w",
-            "Dimension"
+            "%.2w"
           ]
         },
         {
@@ -1834,8 +1833,6 @@
           },
           "runtime_type": "TechDraw::DrawViewAnnotation",
           "text": [
-            "Note",
-            "\n                        ",
             "CC0 INSPECTION NOTE"
           ]
         },
@@ -1872,10 +1869,7 @@
               }
             ]
           },
-          "runtime_type": "TechDraw::DrawViewSymbol",
-          "text": [
-            "Symbol"
-          ]
+          "runtime_type": "TechDraw::DrawViewSymbol"
         }
       ],
       "shells": [
@@ -2098,8 +2092,8 @@
     },
     "native": {
       "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 620756,
-      "__sha256": "37ad3c10c83254cbadcbb7477843c90ab96e547fbb622f82206799881a2eeac1"
+      "__serialized_len": 620700,
+      "__sha256": "2e2819c833669247a1041ef3a1064511dfc45b3807eb0268c3447f086e33c21e"
     },
     "source": {
       "attributes": {

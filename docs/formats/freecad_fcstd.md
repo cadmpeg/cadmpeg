@@ -374,13 +374,28 @@ object identities, and external document/object pairs remain explicit without be
 local references. View position, positive scale, nonzero projection direction, rotation, exact
 fallback parameters, and resolved template or image assets are independently validated.
 
-The format-neutral semantic-annotation arena contains dimensions, notes,
-geometric tolerances, datums, balloons, leaders, symbols, and extension annotations retain source
-order, visible text, exact runtime classification, role-grouped model or drawing references,
-subelement selectors, explicit numeric measurements, formatting expressions, positions, fallback
-parameters, and resolved assets. Local drawing targets resolve to neutral drawing identities;
-external document/object pairs remain explicit. Referential and finite-numeric validation is
-independent of drawing presentation and of provenance annotations.
+The format-neutral semantic-annotation arena maps an exact core runtime-type registry. Text records
+are `App::Annotation`, `App::AnnotationLabel`, `TechDraw::DrawViewAnnotation`,
+`TechDraw::DrawViewAnnotationPython`, `TechDraw::DrawRichAnno`, and
+`TechDraw::DrawRichAnnoPython`. Dimension records are `TechDraw::DrawViewDimension`,
+`TechDraw::DrawViewDimExtent`, and `TechDraw::LandmarkDimension`. Balloon records are
+`TechDraw::DrawViewBalloon`. Leader records are `TechDraw::DrawLeaderLine` and
+`TechDraw::DrawLeaderLinePython`. Symbol records are `TechDraw::DrawViewSymbol`,
+`TechDraw::DrawViewSymbolPython`, `TechDraw::DrawWeldSymbol`, and
+`TechDraw::DrawWeldSymbolPython`. Other runtime types remain application objects and do not enter
+the semantic-annotation arena. The core registry has no semantic datum or geometric-tolerance
+runtime type.
+
+`App::Annotation` uses `LabelText` and `Position`. `App::AnnotationLabel` uses `LabelText` and
+`TextPosition`. TechDraw text, dimension, balloon, leader, and symbol records use the inherited `X`
+and `Y` pair as their optional position; one coordinate without the other is invalid. TechDraw
+annotation text uses `Text`, rich annotation text uses `AnnoText`, balloon text uses `Text`, weld
+symbol text uses `TailText`, and dimension display text and format use `FormatSpec`. A persisted
+TechDraw dimension has no scalar measurement property; its measurement is computed from its
+references, so decode does not select `Value`, `Measurement`, `Distance`, or `Angle` by name.
+Records retain source order, exact runtime classification, role-grouped references, subelement
+selectors, fallback parameters, and resolved assets. Local drawing targets resolve to neutral
+drawing identities; external document/object pairs remain explicit.
 
 Persisted empty drawing and annotation links are explicit. A target whose
 native link record is present but names no document object has `is_null: true`; it is distinct
