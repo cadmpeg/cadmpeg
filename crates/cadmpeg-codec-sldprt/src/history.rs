@@ -396,6 +396,40 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
     features
 }
 
+/// Project standalone history notes into the semantic-annotation arena.
+pub fn project_semantic_notes(
+    histories: &[FeatureHistory],
+) -> Vec<cadmpeg_ir::semantic_annotations::SemanticAnnotation> {
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| is_semantic_note(feature))
+        .map(|feature| {
+            let key = feature
+                .id
+                .strip_prefix("sldprt:history:feature#")
+                .unwrap_or(&feature.id);
+            cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+                id: cadmpeg_ir::semantic_annotations::SemanticAnnotationId(format!(
+                    "sldprt:semantic-annotation:note#{key}"
+                )),
+                object: feature.id.clone(),
+                kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+                runtime_type: feature.kind.clone(),
+                order: feature.ordinal,
+                text: feature.text.iter().cloned().collect(),
+                references: BTreeMap::new(),
+                value: None,
+                format: None,
+                position: None,
+                parameters: BTreeMap::new(),
+                assets: Vec::new(),
+                native_ref: feature.id.clone(),
+            }
+        })
+        .collect()
+}
+
 fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) {
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
@@ -784,8 +818,17 @@ fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
+fn is_semantic_note(feature: &Feature) -> bool {
+    feature.xml_tag.eq_ignore_ascii_case("Note")
+        && feature.kind.eq_ignore_ascii_case("Note")
+        && feature.text.as_ref().is_some_and(|text| !text.is_empty())
+        && feature.parameters.is_empty()
+        && feature.properties.is_empty()
+}
+
 pub(crate) fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
     if is_custom_property(feature)
+        || is_semantic_note(feature)
         || matches!(
             feature.input_class.as_deref(),
             Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
@@ -2435,6 +2478,35 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn standalone_history_note_projects_as_text_annotation_not_feature() {
+        let mut note = feature("sldprt:history:feature#7:3", Some("42"), 3);
+        note.xml_tag = "Note".into();
+        note.name = "Manufacturing note".into();
+        note.kind = "Note".into();
+        note.text = Some("REMOVE ALL BURRS".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![note.clone()],
+        };
+
+        let annotations = project_semantic_notes(std::slice::from_ref(&history));
+        assert!(project_features(&[history]).is_empty());
+        assert!(matches!(
+            annotations.as_slice(),
+            [cadmpeg_ir::semantic_annotations::SemanticAnnotation {
+                kind: cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
+                text,
+                native_ref,
+                ..
+            }] if text == &["REMOVE ALL BURRS"] && native_ref == &note.id
+        ));
     }
 
     #[test]

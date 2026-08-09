@@ -3261,6 +3261,7 @@ fn project_design_history(
         pmi_dimensions,
         crate::history::HistoryEnrichment::Read,
     );
+    ir.model.semantic_annotations = crate::history::project_semantic_notes(&semantic_projection);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::bindings::bind_pattern_inputs(
         &mut ir.model.features,

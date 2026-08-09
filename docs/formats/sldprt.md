@@ -365,6 +365,8 @@ A classless Keywords `Extrusion` element is a joined blind solid extrusion. Its 
 
 Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name is that attribute family's definition object.
 
+A classless Keywords `Note` element whose type is `Note`, whose text is nonempty, and which has no parameters or properties is a standalone semantic text annotation. It is not a regeneration feature. Its element text is the ordered visible text content.
+
 A classless Keywords `Feature` whose ordered dimension children exactly cover its parameters uses the parameter schema as its operation class. A `D2` value with a diameter modifier and no parameter outside `D1` and `D2` is a cosmetic thread. Exactly `D1` and `D2`, with positive distance `D1` and an explicitly unit-suffixed `D2` angle strictly between zero and pi, is a distance-angle chamfer.
 
 An extrusion bound to `moCut_c` has Boolean operation cut independently of its localized Keywords type token.
