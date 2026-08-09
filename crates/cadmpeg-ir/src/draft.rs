@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Atomic staging for neutral entity transfer.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{Hash, Hasher};
 
 use crate::annotations::{Annotations, ExactnessNote};
 use crate::appearance::{Appearance, AppearanceBinding};
@@ -120,6 +121,53 @@ macro_rules! impl_arena_entities {
 
 crate::document::arena_registry!(impl_arena_entities);
 
+/// One neutral identity location. The arena owns the identity string; the
+/// index stores only its stable slot, so transaction checks do not allocate a
+/// second copy of every model identity.
+#[derive(Debug, Clone, Copy)]
+struct IdentitySlot {
+    kind: EntityKind,
+    index: usize,
+}
+
+type IdentityIndex = HashMap<u64, Vec<IdentitySlot>>;
+
+fn identity_hash(identity: &str) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    identity.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn identity_index_contains(model: &Model, index: &IdentityIndex, identity: &str) -> bool {
+    index
+        .get(&identity_hash(identity))
+        .into_iter()
+        .flatten()
+        .any(|slot| model.identity_at(slot.kind, slot.index) == Some(identity))
+}
+
+fn index_model_identities(model: &Model) -> Result<IdentityIndex, DraftError> {
+    let mut identity_index = IdentityIndex::new();
+    macro_rules! index_arenas {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+            $(for (slot_index, entity) in model.$field.iter().enumerate() {
+                if identity_index_contains(model, &identity_index, entity.identity()) {
+                    return Err(DraftError::IdentityCollision(entity.identity().to_owned()));
+                }
+                identity_index
+                    .entry(identity_hash(entity.identity()))
+                    .or_default()
+                    .push(IdentitySlot {
+                        kind: <$ty as EntitySchema>::KIND,
+                        index: slot_index,
+                    });
+            })*
+        };
+    }
+    crate::document::arena_registry!(index_arenas);
+    Ok(identity_index)
+}
+
 /// Error returned before an atomic draft commit mutates its destination.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DraftError {
@@ -143,7 +191,7 @@ pub enum DraftError {
 #[derive(Debug, Default)]
 pub struct ModelDraft {
     model: Model,
-    identities: HashSet<String>,
+    identity_index: IdentityIndex,
     identities_synced: bool,
     exactness: BTreeMap<String, ExactnessNote>,
     notes: Vec<LossNote>,
@@ -161,10 +209,19 @@ impl ModelDraft {
 
     /// Inserts one entity, rejecting draft-local identity collisions immediately.
     pub fn insert<T: ArenaEntity>(&mut self, entity: T) -> Result<(), DraftError> {
-        let identity = entity.identity().to_owned();
-        if !self.identities.insert(identity.clone()) {
-            return Err(DraftError::IdentityCollision(identity));
+        self.synchronize_identities()?;
+        let identity = entity.identity();
+        if identity_index_contains(&self.model, &self.identity_index, identity) {
+            return Err(DraftError::IdentityCollision(identity.to_owned()));
         }
+        let index = T::arena(&self.model).len();
+        self.identity_index
+            .entry(identity_hash(identity))
+            .or_default()
+            .push(IdentitySlot {
+                kind: T::KIND,
+                index,
+            });
         T::arena_mut(&mut self.model).push(entity);
         Ok(())
     }
@@ -245,36 +302,36 @@ impl ModelDraft {
         self.validate_with_contains(|identity| index.contains(identity))
     }
 
+    fn synchronize_identities(&mut self) -> Result<(), DraftError> {
+        if self.identities_synced {
+            return Ok(());
+        }
+        self.identity_index = index_model_identities(&self.model)?;
+        self.identities_synced = true;
+        Ok(())
+    }
+
     /// Validates staged identities and references against one identity universe.
     ///
     /// The caller supplies the identities already committed outside this draft;
     /// references may also target another entity staged in the same draft. The
-    /// identity set populated by `insert` is reused. Direct mutable staging
-    /// invalidates that set and causes one complete rebuild before validation.
+    /// index populated by `insert` is reused. Direct mutable staging invalidates
+    /// that index and causes one complete rebuild before validation.
     fn validate_with_contains(
         &mut self,
         contains: impl Fn(&str) -> bool,
     ) -> Result<(), DraftError> {
-        if !self.identities_synced {
-            self.identities.clear();
-            macro_rules! collect_staged_identities {
-                ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                    $(for entity in &self.model.$field {
-                        let identity = entity.identity().to_owned();
-                        if !self.identities.insert(identity.clone()) {
-                            return Err(DraftError::IdentityCollision(identity));
-                        }
-                    })*
-                };
-            }
-            crate::document::arena_registry!(collect_staged_identities);
-            self.identities_synced = true;
+        self.synchronize_identities()?;
+        macro_rules! check_external_identities {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(for entity in &self.model.$field {
+                    if contains(entity.identity()) {
+                        return Err(DraftError::IdentityCollision(entity.identity().to_owned()));
+                    }
+                })*
+            };
         }
-        for identity in &self.identities {
-            if contains(identity) {
-                return Err(DraftError::IdentityCollision(identity.clone()));
-            }
-        }
+        crate::document::arena_registry!(check_external_identities);
         macro_rules! validate_arenas {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &self.model.$field {
@@ -283,7 +340,11 @@ impl ModelDraft {
                     entity.visit_references(&mut |reference| {
                         if missing.is_none()
                             && !contains(&reference.target)
-                            && !self.identities.contains(&reference.target)
+                            && !identity_index_contains(
+                                &self.model,
+                                &self.identity_index,
+                                &reference.target,
+                            )
                         {
                             missing = Some(reference.target);
                         }
@@ -310,7 +371,7 @@ impl ModelDraft {
         ledger: &mut TransferLedger,
     ) -> Result<(), DraftError> {
         self.validate_against(base)?;
-        let _ = self.commit_validated(base, annotations, notes, ledger);
+        self.commit_validated(base, annotations, notes, ledger);
         Ok(())
     }
 
@@ -329,18 +390,11 @@ impl ModelDraft {
             };
         }
         crate::document::arena_registry!(retain_arenas);
-        self.identities.clear();
-        macro_rules! collect_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(self.identities.extend(
-                    self.model.$field.iter().map(|entity| entity.identity().to_owned())
-                );)*
-            };
-        }
-        crate::document::arena_registry!(collect_identities);
-        self.identities_synced = false;
+        let identity_index = index_model_identities(&self.model)?;
         self.exactness
-            .retain(|identity, _| self.identities.contains(identity));
+            .retain(|identity, _| identity_index_contains(&self.model, &identity_index, identity));
+        self.identity_index = identity_index;
+        self.identities_synced = true;
         self.commit(base, annotations, notes, ledger)
     }
 
@@ -350,10 +404,10 @@ impl ModelDraft {
         annotations: &mut Annotations,
         notes: &mut Vec<LossNote>,
         ledger: &mut TransferLedger,
-    ) -> HashSet<String> {
+    ) {
         let Self {
             mut model,
-            identities,
+            identity_index: _,
             identities_synced: _,
             exactness,
             notes: staged_notes,
@@ -368,11 +422,18 @@ impl ModelDraft {
         annotations.exactness.extend(exactness);
         notes.extend(staged_notes);
         ledger.entries.extend(staged_ledger.entries);
-        identities
     }
 }
 
-/// Owned identity universe for one decode-scoped sequence of draft commits.
+#[derive(Debug)]
+enum CommittedIdentity {
+    Neutral(IdentitySlot),
+    Native(String),
+}
+
+type CommittedIdentityIndex = HashMap<u64, Vec<CommittedIdentity>>;
+
+/// Identity universe for one decode-scoped sequence of draft commits.
 ///
 /// A session is valid only while the associated [`CadIr`] is mutated through
 /// this session. Inserting a neutral or native record directly into `base`
@@ -381,38 +442,85 @@ impl ModelDraft {
 /// no other record insertion during that phase.
 #[derive(Debug)]
 pub struct CommitSession {
-    identities: HashSet<String>,
+    identities: CommittedIdentityIndex,
 }
 
 impl CommitSession {
-    /// Builds an owned identity universe from every neutral and native arena.
+    /// Builds an identity index over every neutral and native arena.
     pub fn new(base: &CadIr) -> Self {
-        let mut identities = HashSet::with_capacity(base.model.entity_count());
+        let mut identities = CommittedIdentityIndex::new();
         macro_rules! collect_model_identities {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(identities.extend(
-                    base.model.$field.iter().map(|entity| entity.identity().to_owned())
-                );)*
+                $(for (index, entity) in base.model.$field.iter().enumerate() {
+                    Self::insert_neutral(
+                        &mut identities,
+                        entity.identity(),
+                        IdentitySlot {
+                            kind: <$ty as EntitySchema>::KIND,
+                            index,
+                        },
+                    );
+                })*
             };
         }
         crate::document::arena_registry!(collect_model_identities);
-        identities.extend(
-            base.native
-                .0
-                .values()
-                .flat_map(|namespace| namespace.arenas.values().flatten())
-                .map(|record| record.id().to_owned()),
-        );
+        for record in base
+            .native
+            .0
+            .values()
+            .flat_map(|namespace| namespace.arenas.values().flatten())
+        {
+            identities
+                .entry(identity_hash(record.id()))
+                .or_default()
+                .push(CommittedIdentity::Native(record.id().to_owned()));
+        }
         Self { identities }
     }
 
-    /// Reports whether `identity` is already owned by the base document or a
+    fn insert_neutral(identities: &mut CommittedIdentityIndex, identity: &str, slot: IdentitySlot) {
+        identities
+            .entry(identity_hash(identity))
+            .or_default()
+            .push(CommittedIdentity::Neutral(slot));
+    }
+
+    /// Reports whether `identity` is already owned by `base` or a
     /// prior successful commit in this session.
     ///
     /// Identity ownership is kind-blind: this checks all neutral and native
     /// arenas, not whether a record exists in one particular arena.
-    pub fn contains(&self, identity: &str) -> bool {
-        self.identities.contains(identity)
+    pub fn contains(&self, base: &CadIr, identity: &str) -> bool {
+        self.identities
+            .get(&identity_hash(identity))
+            .into_iter()
+            .flatten()
+            .any(|owner| match owner {
+                CommittedIdentity::Neutral(slot) => {
+                    base.model.identity_at(slot.kind, slot.index) == Some(identity)
+                }
+                CommittedIdentity::Native(candidate) => candidate == identity,
+            })
+    }
+
+    fn register_added(&mut self, model: &Model, checkpoint: &ModelCheckpoint) {
+        macro_rules! register_arenas {
+            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+                $(if let Some(added) = checkpoint.added::<$ty>(model) {
+                    for (offset, entity) in added.iter().enumerate() {
+                        Self::insert_neutral(
+                            &mut self.identities,
+                            entity.identity(),
+                            IdentitySlot {
+                                kind: <$ty as EntitySchema>::KIND,
+                                index: checkpoint.arena_len::<$ty>() + offset,
+                            },
+                        );
+                    }
+                })*
+            };
+        }
+        crate::document::arena_registry!(register_arenas);
     }
 
     /// Validates and commits one model draft into `base`.
@@ -426,14 +534,15 @@ impl CommitSession {
         mut draft: ModelDraft,
         base: &mut CadIr,
     ) -> Result<(), DraftError> {
-        draft.validate_with_contains(|identity| self.identities.contains(identity))?;
-        let staged_identities = draft.commit_validated(
+        draft.validate_with_contains(|identity| self.contains(base, identity))?;
+        let checkpoint = ModelCheckpoint::capture(&base.model);
+        draft.commit_validated(
             base,
             &mut Annotations::default(),
             &mut Vec::new(),
             &mut TransferLedger::default(),
         );
-        self.identities.extend(staged_identities);
+        self.register_added(&base.model, &checkpoint);
         Ok(())
     }
 }
@@ -451,21 +560,20 @@ impl BrepAssembly {
                 draft.model.bodies.len()
             )));
         }
-        let mut identities = HashSet::with_capacity(draft.model.entity_count());
-        macro_rules! collect_identities {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
-                $(identities.extend(
-                    draft.model.$field.iter().map(|entity| entity.identity().to_owned())
-                );)*
-            };
-        }
-        crate::document::arena_registry!(collect_identities);
+        let identity_index = index_model_identities(&draft.model)
+            .map_err(|error| DraftError::InvalidBrep(error.to_string()))?;
         macro_rules! check_closure {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
                 $(for entity in &draft.model.$field {
                     let mut missing = None;
                     entity.visit_references(&mut |reference| {
-                        if missing.is_none() && !identities.contains(&reference.target) {
+                        if missing.is_none()
+                            && !identity_index_contains(
+                                &draft.model,
+                                &identity_index,
+                                &reference.target,
+                            )
+                        {
                             missing = Some(reference.target);
                         }
                     });
@@ -795,11 +903,11 @@ mod tests {
         let mut ir = CadIr::empty(Units::default());
         let mut session = CommitSession::new(&ir);
 
-        assert!(!session.contains(committed_identity));
+        assert!(!session.contains(&ir, committed_identity));
         session
             .commit_model(point_draft(committed_identity), &mut ir)
             .expect("point commit");
-        assert!(session.contains(committed_identity));
+        assert!(session.contains(&ir, committed_identity));
 
         let mut rejected = ModelDraft::new();
         rejected
@@ -809,8 +917,8 @@ mod tests {
                 tolerance: None,
             })
             .expect("insert rejected vertex");
-        assert!(!session.contains(rejected_identity));
+        assert!(!session.contains(&ir, rejected_identity));
         assert!(session.commit_model(rejected, &mut ir).is_err());
-        assert!(!session.contains(rejected_identity));
+        assert!(!session.contains(&ir, rejected_identity));
     }
 }
