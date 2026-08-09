@@ -1079,7 +1079,7 @@ Spec §2 · layout: byte offsets · size: 151 B
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 10 | `prefix` | `bytes[10]` | little | spec | begins `2f 80 02 00 00 00 00 00 00 00` |
+| 0 | 10 | `prefix` | `bytes[10]` | little | spec | begins with family byte `2d` or `2f` and suffix `80 02 00 00 00 00 00 00 00` |
 | 10 | 35 | `zero_header` | `bytes[35]` | little | spec | followed by 35 zero bytes |
 | 45 | 16 | `sentinel` | `bytes[16]` | little | spec | sixteen `ff` bytes |
 | 61 | 8 | `zero_before_source` | `bytes[8]` | little | spec | and eight zero bytes |

@@ -761,12 +761,12 @@ fn coordinate_system_tail(
 }
 
 fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
-    const PREFIX: &[u8] = &[0x2f, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
+    const PREFIX_SUFFIX: &[u8] = &[0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let candidates = record
-        .windows(PREFIX.len())
+        .windows(PREFIX_SUFFIX.len() + 1)
         .enumerate()
-        .filter(|(_, bytes)| *bytes == PREFIX)
+        .filter(|(_, bytes)| matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX)
         .filter_map(|(prefix, _)| {
             if record.get(prefix + 10..prefix + 45) != Some(&[0; 35])
                 || record.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])

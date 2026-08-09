@@ -365,6 +365,12 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     }
     assert!(resolved_coordinate_system(&other_generation).is_some());
 
+    let mut alternate_family = record.lane.native_payload.clone();
+    alternate_family[record.origin] = 0x2d;
+    assert!(resolved_coordinate_system(&alternate_family).is_some());
+    alternate_family[record.origin] = 0x2e;
+    assert_eq!(resolved_coordinate_system(&alternate_family), None);
+
     let mut extended_origin = record.lane.native_payload.clone();
     extended_origin.splice(record.origin + 103..record.origin + 103, [0; 14]);
     extended_origin[record.origin + 77..record.origin + 81].copy_from_slice(&1234u32.to_le_bytes());

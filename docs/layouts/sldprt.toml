@@ -4060,7 +4060,7 @@ note = "The parser accepts zero or non-null optional identities and requires the
 name = "coordinate_system_component_point"
 kind = "byte"
 section = "2"
-anchor = "The 151-byte component-point record begins `2f 80 02 00 00 00 00 00 00 00`"
+anchor = "The 151-byte component-point record begins with family byte `2d` or `2f`"
 size = 151
 endianness = "little"
 
@@ -4069,7 +4069,7 @@ name = "prefix"
 offset = 0
 type = "bytes[10]"
 source = "spec"
-anchor = "begins `2f 80 02 00 00 00 00 00 00 00`"
+anchor = "begins with family byte `2d` or `2f` and suffix `80 02 00 00 00 00 00 00 00`"
 
 [[record.field]]
 name = "zero_header"
