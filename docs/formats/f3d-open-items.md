@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-49. Verification of a spatial counted-offset pair
-
-**Question.** What proves the offset distance and the offset side of a spatial offset pair whose curves are not lines?
-
-**Known.** `f3d.md` §3.1 gives the counted offset relation. `spatial_counted_offset_dimension_definition` in `design/dimensions.rs` measures a pair only when both curves are lines. A pair of circles, arcs, or NURBS bypasses the distance check, enters the emitted pair list, and takes the reversal flag that a line pair elsewhere in the same relation set. One witnessed pair legitimizes every other pair.
-
-The planar sibling `exact_counted_offset` in the same file is stronger. It requires a measured offset for every pair and holds an arc-specific rule.
-
-**Need.** A relation with one line pair and three arc pairs states an offset distance and an offset side for the three arc pairs that nothing measured. The measurement rule for a non-line spatial offset settles the item.
-
 ### DR-50. Construction order of scopes with no history-state identity
 
 **Question.** What gives the construction order of two feature scopes that carry no history-state identity?
