@@ -215,30 +215,48 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
         return Vec::new();
     };
     let end = marker + MARKER.len();
-    for relative in [8usize, 40] {
-        if let Some((mesh, mut at)) = parse_table(payload, end + relative) {
-            if !mesh.vertices.is_empty() {
-                let mut meshes = vec![mesh];
-                while at + 16 <= payload.len() {
-                    let Some(relative) = payload[at..].windows(4).position(|w| w == [4, 0, 0, 0])
-                    else {
-                        break;
-                    };
-                    at += relative;
-                    if let Some((next, end)) = parse_table(payload, at) {
-                        if !next.vertices.is_empty() {
-                            meshes.push(next);
-                        }
-                        at = end;
-                    } else {
-                        at += 4;
-                    }
-                }
-                return meshes;
+    unique_table_sequence(
+        [8usize, 40]
+            .into_iter()
+            .filter_map(|relative| parse_table_sequence(payload, end + relative)),
+    )
+}
+
+fn parse_table_sequence(payload: &[u8], at: usize) -> Option<Vec<Mesh>> {
+    let (mesh, mut at) = parse_table(payload, at)?;
+    if mesh.vertices.is_empty() {
+        return None;
+    }
+    let mut meshes = vec![mesh];
+    while at + 16 <= payload.len() {
+        let Some(relative) = payload[at..]
+            .windows(4)
+            .position(|window| window == [4, 0, 0, 0])
+        else {
+            break;
+        };
+        at += relative;
+        if let Some((next, end)) = parse_table(payload, at) {
+            if !next.vertices.is_empty() {
+                meshes.push(next);
             }
+            at = end;
+        } else {
+            at += 4;
         }
     }
-    Vec::new()
+    Some(meshes)
+}
+
+fn unique_table_sequence(mut candidates: impl Iterator<Item = Vec<Mesh>>) -> Vec<Mesh> {
+    let Some(unique) = candidates.next() else {
+        return Vec::new();
+    };
+    if candidates.next().is_some() {
+        Vec::new()
+    } else {
+        unique
+    }
 }
 
 pub fn section_summary(section: Section<'_>) -> Option<Summary> {
@@ -311,5 +329,17 @@ mod tests {
         }
 
         assert!(scene_classes(&payload).is_empty());
+    }
+
+    #[test]
+    fn ambiguous_descriptor_table_offsets_are_withheld() {
+        let candidate = || {
+            vec![Mesh {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0)],
+                ..Default::default()
+            }]
+        };
+        assert_eq!(unique_table_sequence(std::iter::once(candidate())).len(), 1);
+        assert!(unique_table_sequence([candidate(), candidate()].into_iter()).is_empty());
     }
 }

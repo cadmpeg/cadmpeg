@@ -186,16 +186,9 @@ The decoder has a second and different idea of the active stream, `container::se
 
 **Known.** `sldprt.md` §7.3 "**`00 28` chart**" gives the descriptor relations `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`. It gives no offset for the table. `docs/layouts/sldprt.toml` records the offset as `not_applicable` and states that the parser asserts fixed offsets that the specification does not give.
 
-`crates/cadmpeg-codec-sldprt/src/tessellation.rs:257` tries two offsets in order and takes the first that frames:
+The decoder tests offsets `+8` and `+40`. It accepts the table only when exactly one offset frames a complete descriptor sequence with consistent strip totals and vertex counts. If both offsets frame, tessellation remains unresolved.
 
-```rust
-for relative in [8usize, 40] {
-    if let Some((mesh, mut at)) = parse_table(payload, end + relative) {
-```
-
-`parse_table` does check the strip totals against the vertex count, so a distant offset is refused. The decoder does not test that the `+8` reading is invalid before it accepts it, and it does not withhold when both offsets frame.
-
-**Need.** We must know the offset to find the table. Two offsets that both frame must not select by order.
+**Need.** We must know the offset to distinguish a valid table from two structurally valid candidates without withholding tessellation.
 
 ### AL-03. Color record framing
 
