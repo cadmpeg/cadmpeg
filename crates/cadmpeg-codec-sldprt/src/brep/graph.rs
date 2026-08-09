@@ -562,6 +562,9 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 if facts.bodies.is_empty() {
                     facts.bodies = scanned_facts.bodies;
                 }
+                if facts.class_root_bodies.is_empty() {
+                    facts.class_root_bodies = scanned_facts.class_root_bodies;
+                }
                 if facts.cluster_bodies.is_empty() {
                     facts.cluster_bodies = scanned_facts.cluster_bodies;
                 }
@@ -627,6 +630,7 @@ fn decode_graph(
     stream: &str,
 ) -> Brep {
     let mut body_records = entity_facts.bodies;
+    let class_root_bodies = entity_facts.class_root_bodies;
     let cluster_bodies = entity_facts.cluster_bodies;
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
 
@@ -1018,28 +1022,45 @@ fn decode_graph(
         }
         (bridge_group, bridge_shell)
     };
+    let complete_cluster_binding = |records: &[entity::BodyRecord]| {
+        let (mut group, mut shell) = bind_bridges(records, &faces);
+        if let [sole] = records {
+            let shell_attr = sole
+                .regions
+                .first()
+                .and_then(|region| region.shells.first())
+                .map(|record| record.attr);
+            for face in &faces {
+                group.entry(face.bridge_attr).or_insert(0);
+                if let Some(shell_attr) = shell_attr {
+                    shell.entry(face.bridge_attr).or_insert(shell_attr);
+                }
+            }
+        }
+        (group, shell)
+    };
     let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
-    // Primary body records that own no face are superseded by cluster-key
-    // chain bodies; a sole chain owns every canonical face in the site.
-    if (body_records.is_empty() || bridge_group.is_empty()) && !cluster_bodies.is_empty() {
-        let (cluster_group, cluster_shell) = bind_bridges(&cluster_bodies, &faces);
-        if !cluster_group.is_empty() || cluster_bodies.len() == 1 {
+    let mut class_root_selected = false;
+    if !class_root_bodies.is_empty() {
+        let (root_group, root_shell) = complete_cluster_binding(&class_root_bodies);
+        if !root_group.is_empty() {
+            body_records = class_root_bodies;
+            bridge_group = root_group;
+            bridge_shell = root_shell;
+            class_root_selected = true;
+        }
+    }
+    // An unindexed cluster-key chain remains a fallback when the primary body
+    // layout owns no face. A sole chain owns every canonical face in the site.
+    if !class_root_selected
+        && (body_records.is_empty() || bridge_group.is_empty())
+        && !cluster_bodies.is_empty()
+    {
+        let (cluster_group, cluster_shell) = complete_cluster_binding(&cluster_bodies);
+        if !cluster_group.is_empty() {
             body_records = cluster_bodies;
             bridge_group = cluster_group;
             bridge_shell = cluster_shell;
-            if let [sole] = body_records.as_slice() {
-                let shell_attr = sole
-                    .regions
-                    .first()
-                    .and_then(|region| region.shells.first())
-                    .map(|shell| shell.attr);
-                for face in &faces {
-                    bridge_group.entry(face.bridge_attr).or_insert(0);
-                    if let Some(shell_attr) = shell_attr {
-                        bridge_shell.entry(face.bridge_attr).or_insert(shell_attr);
-                    }
-                }
-            }
         }
     }
     if !body_records.is_empty() {

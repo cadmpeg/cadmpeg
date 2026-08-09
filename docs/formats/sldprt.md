@@ -974,6 +974,23 @@ The disc1c-compact-disc04-face layout uses one `0x1c/flo2` region with a slot-1 
 
 Sites whose entity families fall outside these disc layouts carry the same ownership content in a class-number-independent form. The bridge owner field names a canonical face entity whose slot 0 is the bridge attribute. A body list head is a `flo = 2` record shaped `[key, root, 1, …]` whose root record carries slot 0 equal to `key` and slot 2 naming the head. The root begins a descending chain of records that share slot 0 = `key` and link through slot 1; the chain terminates at a slot-1 sentinel, and each chain is one stored body with one shell. List heads partition the stream into section intervals in offset order; a body owns the canonical faces whose entity records lie in its interval. A sole chain owns every canonical face in the site.
 
+The class-root directory has this fixed prefix and variable root vector:
+
+```
++0  signature       bytes[2]       ; CI
++2  name_len        u8             ; 16
++3  field_name      bytes[16]      ; index_map_offset
++19 instance_marker bytes[6]       ; 00 00 00 01 01 64
++25 ccz             bytes[3]       ; CCZ
++28 type_tag        u32 BE         ; 20
++32 class_token     u16 BE
++34 root_count      u32 BE
++38 roots_preamble  bytes[6]       ; 00 00 00 00 00 01
++44 roots           u16 BE[root_count]
+```
+
+`class_token` is a stream-local nonsentinel token. `root_count` is positive. Each root is a distinct nonsentinel entity attribute. Exactly one distinct valid vector selects class-root relations; an incomplete vector, a vector with a duplicate or sentinel root, or multiple distinct valid vectors selects no relation. A root that resolves to a complete class-number-independent body list head selects that body chain. A selected complete chain is the authoritative body relation for the site and supersedes a disc-keyed subchain. Multiple selected chains retain section-interval ownership. A sole selected chain owns every canonical face in the site.
+
 ---
 
 ## 7. Geometry carriers

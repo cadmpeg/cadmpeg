@@ -8,8 +8,8 @@ Source of truth: [`docs/formats/sldprt.md`](../../docs/formats/sldprt.md).
 Table source: `docs/layouts/sldprt.toml`.
 
 Covers the container envelopes (§1, §1.1-§1.3), the typed topology tag
-inventory (§4), the entity common header (§5), and the Parasolid geometry
-carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
+inventory (§4), the entity common header (§5), the class-root directory (§6),
+and the Parasolid geometry carriers (§7.1-§7.4). §2 documents about 125 distinct ResolvedFeatures marker
 layouts in prose; the fixed-offset profile and sketch-input layouts are tabulated
 below, and the remaining layouts are listed under "Not tabulated" with a coverage
 note.
@@ -151,6 +151,28 @@ Unstated regions:
 
 - `0..6` (6 B): Common-header `flags` and `attr`; §5 states no attribute-instance-specific field here.
 - `8..10` (2 B): §5 states no field between the +6 selector and the +10 definition node id.
+
+## `class_root_directory_prefix`
+
+Spec §6 · layout: byte offsets · size: 44 B
+
+Fixed prefix only. The root vector contains root_count u16 BE attributes from +44.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `signature` | `bytes[2]` | big | spec | +0 signature bytes[2] ; CI |
+| 2 | 1 | `name_len` | `u8` | big | spec | +2 name_len u8 ; 16 |
+| 3 | 16 | `field_name` | `bytes[16]` | big | spec | +3 field_name bytes[16] ; index_map_offset |
+| 19 | 6 | `instance_marker` | `bytes[6]` | big | spec | +19 instance_marker bytes[6] ; 00 00 00 01 01 64 |
+| 25 | 3 | `ccz` | `bytes[3]` | big | spec | +25 ccz bytes[3] ; CCZ |
+| 28 | 4 | `type_tag` | `u32` | big | spec | +28 type_tag u32 BE ; 20 |
+| 32 | 2 | `class_token` | `u16` | big | spec | +32 class_token u16 BE |
+| 34 | 4 | `root_count` | `u32` | big | spec | +34 root_count u32 BE |
+| 38 | 6 | `roots_preamble` | `bytes[6]` | big | spec | +38 roots_preamble bytes[6] ; 00 00 00 00 00 01 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/brep/entity.rs` — The parser matches the fixed signature through type_tag before it reads the variable token and root count.
 
 ## `compact_analytic_header`
 
@@ -948,7 +970,7 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
 | ResolvedFeatures sketch and feature-input markers (§2) | §2 | The remaining marker layouts are about 125 distinct records, each one prose paragraph stating marker-relative offsets for a specific record length. The fixed-offset layouts above cover the currently tabulated profile and sketch-input forms; the remaining paragraphs are transcribable in principle and can be added incrementally. |
-| Body records (§6) | §6 | §6 states slot-reference graphs and population invariants over about thirty named disc layouts. It states no byte offsets; the slot values are reached through the §5 common header and the §10 framing arithmetic. |
+| Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a record: `end = pos + 14 + 3*slot_count + 1` for a prefixed subrecord and `end = pos + 14 + 2*slot_count` for a bare one. The slot-count table it depends on is an open item, not a stated layout. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |
 | Tessellation and appearance lanes (§8) | §8 | §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request. |

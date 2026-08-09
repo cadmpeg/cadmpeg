@@ -933,6 +933,17 @@ fn entity51(flags: u32, attr: u16, disc: u16, slots: &[u16]) -> Vec<u8> {
     b
 }
 
+fn class_root_index(attrs: &[u16]) -> Vec<u8> {
+    let mut bytes = b"CI\x10index_map_offset\0\0\0\x01\x01dCCZ\0\0\0\x14".to_vec();
+    be16(&mut bytes, 0x0042);
+    be32(&mut bytes, u32::try_from(attrs.len()).expect("root count"));
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 1]);
+    for attr in attrs {
+        be16(&mut bytes, *attr);
+    }
+    bytes
+}
+
 fn count_entity51_family(payload: &[u8], flags: u32, disc: u16) -> usize {
     payload
         .windows(14)
@@ -6388,6 +6399,38 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
                 .message
                 .contains("not claimed by an explicit body relation")
     }));
+}
+
+#[test]
+fn class_root_index_selects_complete_cluster_body_relation() {
+    let mut body = class_root_index(&[5, 32, 36, 500, 510, 520, 700, 701]);
+    body.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1]));
+    body.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1]));
+    body.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1]));
+    body.extend(entity51(2, 500, 0x001a, &[510, 1, 1, 1, 1, 1]));
+    body.extend(entity51(2, 510, 0x0016, &[520, 1, 1, 1, 1, 1]));
+    body.extend(entity51(2, 520, 0x0020, &[1, 1, 700, 520, 1, 1]));
+    body.extend(entity51(1, 700, 0x0014, &[10, 1, 1, 1, 1, 1]));
+    body.extend(entity51(1, 701, 0x0014, &[210, 1, 1, 1, 1, 1]));
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 2.0));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#32");
+    assert_eq!(result.ir.model.faces.len(), 2);
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]

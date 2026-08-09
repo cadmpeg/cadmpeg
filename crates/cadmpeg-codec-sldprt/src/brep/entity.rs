@@ -44,6 +44,8 @@ pub struct Facts {
     /// Number of framed top-level model entity records in the stream.
     pub entity_count: usize,
     pub bodies: Vec<BodyRecord>,
+    /// Cluster-key bodies selected by the stream's class-root index.
+    pub class_root_bodies: Vec<BodyRecord>,
     /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
     pub cluster_bodies: Vec<BodyRecord>,
     /// Schema-33103 body heads whose maximum face-component overlap was tied.
@@ -64,6 +66,8 @@ struct EntityRecord {
     refs: Vec<u16>,
     offset: usize,
 }
+
+const CLASS_ROOT_INDEX_PREFIX: &[u8] = b"CI\x10index_map_offset\0\0\0\x01\x01dCCZ\0\0\0\x14";
 
 impl EntityRecord {
     fn flo(&self) -> u8 {
@@ -142,6 +146,48 @@ fn scan_entities(body: &[u8]) -> Vec<EntityRecord> {
     out
 }
 
+fn class_root_attrs_at(body: &[u8], offset: usize) -> Option<Vec<u16>> {
+    let token_at = offset.checked_add(CLASS_ROOT_INDEX_PREFIX.len())?;
+    let token = u16_be(body, token_at)?;
+    let count = u32_be(body, token_at.checked_add(2)?)?;
+    let preamble_at = token_at.checked_add(6)?;
+    let roots_at = preamble_at.checked_add(6)?;
+    if token <= 1 || body.get(preamble_at..roots_at) != Some(&[0, 0, 0, 0, 0, 1]) {
+        return None;
+    }
+    let remaining = body.len().saturating_sub(roots_at);
+    let count = cadmpeg_core::cursor::bounded_len(u64::from(count), 2, remaining)?;
+    if count == 0 {
+        return None;
+    }
+    let mut roots = Vec::with_capacity(count);
+    let mut distinct = HashSet::new();
+    for index in 0..count {
+        let attr = u16_be(body, roots_at.checked_add(index.checked_mul(2)?)?)?;
+        if attr <= 1 || !distinct.insert(attr) {
+            return None;
+        }
+        roots.push(attr);
+    }
+    Some(roots)
+}
+
+fn class_root_attrs(body: &[u8], entity_attrs: &HashSet<u16>) -> Option<HashSet<u16>> {
+    let mut candidates = body
+        .windows(CLASS_ROOT_INDEX_PREFIX.len())
+        .enumerate()
+        .filter(|(_, window)| *window == CLASS_ROOT_INDEX_PREFIX)
+        .filter_map(|(offset, _)| class_root_attrs_at(body, offset))
+        .filter(|roots| roots.iter().all(|attr| entity_attrs.contains(attr)))
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [roots] = candidates.as_slice() else {
+        return None;
+    };
+    Some(roots.iter().copied().collect())
+}
+
 fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     if body.get(off..off + 2) != Some(&[0x00, 0x53]) {
         return None;
@@ -180,6 +226,8 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
 
 pub fn scan(body: &[u8]) -> Facts {
     let entities = scan_entities(body);
+    let entity_attrs = entities.iter().map(|record| record.attr).collect();
+    let class_roots = class_root_attrs(body, &entity_attrs);
     let mut colors = HashMap::new();
     for off in 0..body.len().saturating_sub(31) {
         if let Some((attr, color, _end)) = color_record(body, off) {
@@ -225,7 +273,10 @@ pub fn scan(body: &[u8]) -> Facts {
     Facts {
         entity_count: entities.len(),
         bodies,
-        cluster_bodies: cluster_chain_bodies(&entities),
+        class_root_bodies: class_roots.as_ref().map_or_else(Vec::new, |roots| {
+            cluster_chain_bodies(&entities, Some(roots))
+        }),
+        cluster_bodies: cluster_chain_bodies(&entities, None),
         ambiguous_body_assignments,
         face_colors: face_colors.into_values().collect(),
         face_atoms: super::attrib::scan(body),
@@ -241,7 +292,10 @@ pub fn scan(body: &[u8]) -> Facts {
 /// `slot0 == key` linked through `slot1`; each valid chain is one stored body.
 /// The entity records between one head and the next, in stream order, form the
 /// body's section interval; a body owns the face entities in its interval.
-fn cluster_chain_bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
+fn cluster_chain_bodies(
+    entities: &[EntityRecord],
+    selected_heads: Option<&HashSet<u16>>,
+) -> Vec<BodyRecord> {
     let mut by_attr: HashMap<u16, &EntityRecord> = HashMap::new();
     for record in entities {
         if by_attr
@@ -284,16 +338,19 @@ fn cluster_chain_bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
             cursor = node;
         }
         if chain.len() >= 2 {
-            heads.push((head.offset, key, root, chain));
+            heads.push((head.offset, head.attr, key, root, chain));
         }
     }
     heads.sort_by_key(|(offset, ..)| *offset);
     let mut out = Vec::new();
-    for (index, (offset, _key, root, chain)) in heads.iter().enumerate() {
+    for (index, (offset, head_attr, _key, root, chain)) in heads.iter().enumerate() {
         let start = if index == 0 { 0 } else { *offset };
         let end = heads
             .get(index + 1)
             .map_or(usize::MAX, |(next_offset, ..)| *next_offset);
+        if selected_heads.is_some_and(|roots| !roots.contains(head_attr)) {
+            continue;
+        }
         let mut refs: Vec<u16> = entities
             .iter()
             .filter(|record| (start..end).contains(&record.offset))
@@ -3820,6 +3877,44 @@ mod tests {
         out
     }
 
+    fn class_root_index(attrs: &[u16]) -> Vec<u8> {
+        let mut bytes = CLASS_ROOT_INDEX_PREFIX.to_vec();
+        bytes.extend_from_slice(&0x0042_u16.to_be_bytes());
+        bytes.extend_from_slice(&(attrs.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&[0, 0, 0, 0, 0, 1]);
+        for attr in attrs {
+            bytes.extend_from_slice(&attr.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn class_root_index_requires_one_complete_distinct_vector() {
+        let entity_attrs = HashSet::from([5, 32, 36, 100, 132, 136]);
+        let bytes = class_root_index(&[5, 32, 36]);
+        assert_eq!(
+            class_root_attrs(&bytes, &entity_attrs),
+            Some(HashSet::from([5, 32, 36]))
+        );
+
+        let mut truncated = bytes.clone();
+        truncated.pop();
+        assert_eq!(class_root_attrs(&truncated, &entity_attrs), None);
+
+        truncated.extend(class_root_index(&[5, 32, 36]));
+        assert_eq!(
+            class_root_attrs(&truncated, &entity_attrs),
+            Some(HashSet::from([5, 32, 36]))
+        );
+
+        let mut ambiguous = bytes;
+        ambiguous.extend(class_root_index(&[100, 132, 136]));
+        assert_eq!(class_root_attrs(&ambiguous, &entity_attrs), None);
+
+        let unknown_root = class_root_index(&[5, 32, 200]);
+        assert_eq!(class_root_attrs(&unknown_root, &entity_attrs), None);
+    }
+
     #[test]
     fn cluster_key_chain_heads_partition_bodies() {
         let records = vec![
@@ -3833,7 +3928,7 @@ mod tests {
             flo2(136, 0x11, [7, 1, 132, 1, 1, 1]),
         ];
 
-        let bodies = cluster_chain_bodies(&records);
+        let bodies = cluster_chain_bodies(&records, None);
         let [first, second] = bodies.as_slice() else {
             panic!("two chain bodies, got {bodies:?}");
         };
@@ -3844,11 +3939,22 @@ mod tests {
         assert_eq!(first.regions[0].shells[0].attr, 32);
         assert_eq!(second.regions[0].shells[0].attr, 132);
 
+        let selected_heads = HashSet::from([5, 32, 36]);
+        let selected = cluster_chain_bodies(&records, Some(&selected_heads));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].attr, 32);
+
+        let selected_heads = HashSet::from([100]);
+        let selected = cluster_chain_bodies(&records, Some(&selected_heads));
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].attr, 132);
+        assert!(selected[0].refs.contains(&120) && !selected[0].refs.contains(&57));
+
         // A head without a mutual root produces no chain body.
         let broken = vec![
             flo2(5, 0x04, [3, 32, 1, 1, 1, 1]),
             flo2(32, 0x0f, [4, 36, 5, 1, 1, 1]),
         ];
-        assert!(cluster_chain_bodies(&broken).is_empty());
+        assert!(cluster_chain_bodies(&broken, None).is_empty());
     }
 }

@@ -16,14 +16,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-01. Other class-root layouts
-
-**Question.** What grammar binds a class-root vector after `index_map_offset` when the vector does not satisfy a defined body, shell, face-use, or cluster-key layout?
-
-**Known.** `sldprt.md` §5 "Face records use these families:" through `sldprt.md` §6 "The disc22-disc12-face layout uses" define the disc-keyed ownership layouts and the class-number-independent cluster-key layout. Each complete layout assigns canonical faces to a stored body.
-
-**Need.** We must know the other layouts to assign their faces to bodies.
-
 ### BC-02. Deltas faces outside partition intervals
 
 **Question.** Which body owns a deltas-stream face that is outside all partition intervals of a multi-chain site?
