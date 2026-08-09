@@ -12343,6 +12343,58 @@ fn unique_bounded_curve_segment(
     (segments.external_id_count(external_id) == 1).then_some(segment)
 }
 
+fn unique_decoded_section_entity(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<()> {
+    let segments = definition.segments.as_ref()?;
+    segments.is_complete().then_some(())?;
+    (segments.external_id_count(external_id) == 1).then_some(())?;
+    let mut decoded = segments
+        .rows
+        .iter()
+        .map(|segment| segment.external_id)
+        .chain(
+            segments
+                .circle_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        )
+        .chain(
+            segments
+                .point_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        )
+        .chain(
+            segments
+                .centered_line_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        )
+        .chain(
+            segments
+                .reference_line_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        )
+        .chain(
+            segments
+                .bounded_curve_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        )
+        .chain(
+            segments
+                .conic_rows
+                .iter()
+                .map(|segment| segment.external_id),
+        );
+    decoded
+        .any(|candidate| candidate == external_id)
+        .then_some(())
+}
+
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -13496,9 +13548,8 @@ fn section_skamp_constraints_for_geometry(
                         }
                     }
                     (33, [item])
-                        if skamp.flags == 34
-                            && item.sense == 10
-                            && unique_bounded_curve_segment(definition, item.entity_id)
+                        if item.sense == 10
+                            && unique_decoded_section_entity(definition, item.entity_id)
                                 .is_some() =>
                     {
                         SketchConstraintDefinition::Fixed {

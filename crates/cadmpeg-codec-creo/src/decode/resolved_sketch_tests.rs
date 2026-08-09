@@ -10722,7 +10722,7 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         )[0]
         .0
         .definition,
-        SketchConstraintDefinition::Native { .. }
+        SketchConstraintDefinition::Fixed { .. }
     ));
     fixed_bounded_curve
         .relations
@@ -10767,6 +10767,36 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         .0
         .definition,
         SketchConstraintDefinition::Native { .. }
+    ));
+
+    let mut fixed_line = definition.clone();
+    fixed_line.relations.as_mut().expect("relations").skamps = vec![crate::feature::FeatureSkamp {
+        id: 20,
+        kind: 33,
+        flags: 393_216,
+        status: 35,
+        items: vec![crate::feature::FeatureSkampItem {
+            entity_id: 12,
+            sense: 10,
+        }],
+        offset: 88,
+    }];
+    synchronize_skamp_count(&mut fixed_line);
+    assert_eq!(
+        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Fixed {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+        }
+    );
+
+    fixed_line.relations.as_mut().expect("relations").skamps[0].flags = 0;
+    assert!(matches!(
+        section_skamp_constraints(&fixed_line, &SketchId("creo:model:sketch#917".into()),)[0]
+            .0
+            .definition,
+        SketchConstraintDefinition::Fixed { .. }
     ));
     let point_entity = crate::feature::FeatureSkampItem {
         entity_id: 14,
