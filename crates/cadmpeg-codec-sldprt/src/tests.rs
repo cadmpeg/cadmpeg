@@ -1344,9 +1344,9 @@ fn display_list_payload() -> Vec<u8> {
     }
     b.extend(descriptor(12, 100, 3, &positions));
     b.extend(descriptor(12, 100, 3, &[0u8; 36]));
-    b.extend(descriptor(4, 8, 0, &[]));
+    b.extend(descriptor(4, 8, 4, &[0; 16]));
     b.extend(descriptor(4, 8, 1, &4u32.to_le_bytes()));
-    b.extend(descriptor(1, 8, 0, &[]));
+    b.extend(descriptor(1, 8, 4, &[0; 4]));
     b
 }
 

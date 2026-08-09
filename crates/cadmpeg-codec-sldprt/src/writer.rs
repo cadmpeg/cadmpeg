@@ -1976,7 +1976,22 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         }
         descriptor(&mut out, 12, 100, 2, mesh.normals.len(), &normals);
         let auxiliary_start = usize::from(has_core_tessellation_channels(&mesh.channels)) * 3;
-        for channel in mesh.channels.iter().skip(auxiliary_start).take(3) {
+        let auxiliary_count = mesh.channels.len().saturating_sub(auxiliary_start).min(3);
+        let auxiliary = &mesh.channels[auxiliary_start..auxiliary_start + auxiliary_count];
+        let strip_lengths = mesh
+            .strip_lengths
+            .iter()
+            .map(|length| usize::try_from(*length))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
+        if !auxiliary.is_empty()
+            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
+        {
+            return Err(CodecError::Malformed(
+                "tessellation auxiliary channels are incomplete or inconsistent".into(),
+            ));
+        }
+        for channel in auxiliary {
             descriptor(
                 &mut out,
                 channel.item_size,
@@ -1986,8 +2001,31 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 &channel.data,
             );
         }
-        for _ in mesh.channels.len().saturating_sub(auxiliary_start).min(3)..3 {
-            descriptor(&mut out, 1, 8, 2, 0, &[]);
+        let list_c = mesh
+            .strip_lengths
+            .iter()
+            .map(|length| {
+                length
+                    .checked_mul(2)
+                    .and_then(|value| value.checked_sub(2))
+                    .ok_or_else(|| {
+                        CodecError::Malformed("tessellation strip is too short or too large".into())
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        for index in auxiliary_count..3 {
+            match index {
+                0 => descriptor(&mut out, 4, 8, 2, 0, &[]),
+                1 => {
+                    let data = list_c
+                        .iter()
+                        .flat_map(|value| value.to_le_bytes())
+                        .collect::<Vec<_>>();
+                    descriptor(&mut out, 4, 8, 2, list_c.len(), &data);
+                }
+                2 => descriptor(&mut out, 1, 8, 2, 0, &[]),
+                _ => unreachable!("three auxiliary descriptors"),
+            }
         }
     }
     Ok(out)

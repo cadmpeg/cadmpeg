@@ -112,6 +112,51 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses
     }
 }
 
+pub(crate) fn auxiliary_channels_are_consistent(
+    strips: &[usize],
+    channels: &[TessellationChannel],
+) -> bool {
+    let [b, c, d] = channels else { return false };
+    if (b.item_size, b.kind, b.flags) != (4, 8, 2)
+        || (c.item_size, c.kind, c.flags) != (4, 8, 2)
+        || (d.item_size, d.kind, d.flags) != (1, 8, 2)
+    {
+        return false;
+    }
+    let Some(list_c) = strips
+        .iter()
+        .map(|length| length.checked_mul(2)?.checked_sub(2))
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(endpoint_count) = list_c
+        .iter()
+        .try_fold(0usize, |total, count| total.checked_add(*count))
+    else {
+        return false;
+    };
+    let stored_list_c = c
+        .data
+        .chunks_exact(4)
+        .map(|bytes| usize::try_from(u32::from_le_bytes(bytes.try_into().ok()?)).ok())
+        .collect::<Option<Vec<_>>>();
+    let counts = (usize::try_from(b.count).ok(), usize::try_from(d.count).ok());
+    let payload_lengths = channels.iter().all(|channel| {
+        usize::try_from(channel.item_size)
+            .ok()
+            .and_then(|size| usize::try_from(channel.count).ok()?.checked_mul(size))
+            == Some(channel.data.len())
+    });
+    payload_lengths
+        && (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
+        && usize::try_from(c.count).ok() == Some(strips.len())
+        && stored_list_c.as_deref() == Some(list_c.as_slice())
+        && b.data
+            .chunks_exact(4)
+            .all(|bytes| f32::from_le_bytes(bytes.try_into().expect("four-byte chunk")).is_finite())
+}
+
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
@@ -172,10 +217,18 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     let vertex_count = strips
         .iter()
         .try_fold(0usize, |total, length| total.checked_add(*length))?;
+    if !matches!(channels.as_slice(), [a, positions, normals, ..]
+        if (a.item_size, a.kind, a.flags) == (4, 8, 2)
+            && (positions.item_size, positions.kind, positions.flags) == (12, 100, 2)
+            && (normals.item_size, normals.kind, normals.flags) == (12, 100, 2))
+    {
+        return None;
+    }
     if strips.is_empty()
         || vertices.is_empty()
         || vertex_count != vertices.len()
         || !normals.is_empty() && normals.len() != vertices.len()
+        || !auxiliary_channels_are_consistent(&strips, &channels[3..])
     {
         return None;
     }
@@ -304,9 +357,9 @@ mod tests {
             .collect::<Vec<_>>();
         out.extend(descriptor(12, 100, 3, &positions));
         out.extend(descriptor(12, 100, 3, &[0; 36]));
-        for _ in 0..3 {
-            out.extend(descriptor(1, 8, 0, &[]));
-        }
+        out.extend(descriptor(4, 8, 4, &[0; 16]));
+        out.extend(descriptor(4, 8, 1, &4_u32.to_le_bytes()));
+        out.extend(descriptor(1, 8, 4, &[0; 4]));
         out
     }
 
@@ -389,5 +442,13 @@ mod tests {
         }
         payload.extend(table());
         assert_eq!(descriptor_table_offset(&payload, 0), 8);
+    }
+
+    #[test]
+    fn inconsistent_auxiliary_count_invalidates_the_table() {
+        let mut payload = table();
+        let list_b_count = 20 + 52 + 52 + 12;
+        payload[list_b_count..list_b_count + 4].copy_from_slice(&3_u32.to_le_bytes());
+        assert!(parse_table(&payload, 0).is_none());
     }
 }
