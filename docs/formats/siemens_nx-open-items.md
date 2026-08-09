@@ -512,12 +512,12 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
-### AM-10. Face material bindings
+### AM-10. Physical material bindings
 
-**Question.** Which serialized relation binds a material or appearance to a Parasolid face identity?
+**Question.** Which serialized relation binds a physical material to a Parasolid face identity?
 
-**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes.
+**Known.** `siemens_nx.md` §2.3 "Each `/Root/materialsTif/<name>` file entry contains one TIFF stream." and `siemens_nx.md` §9.4 "The type-81 definition reference selects an attribute class when it equals" define preview and texture assets, the material-texture catalog, and topology-owned Parasolid attributes. `siemens_nx.md` §7.1 "An explicit display-color assignment addresses a face when" defines the complete face appearance relation; a palette color is not a physical-material assignment.
 
-**Need.** We must know the relation to assign material and appearance state to neutral faces.
+**Need.** We must know the relation to assign physical-material state to neutral faces without treating a display color, texture asset, or topology attribute as a material identity.
 
 ## 4. Test evidence
