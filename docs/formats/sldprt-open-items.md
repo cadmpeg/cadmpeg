@@ -388,25 +388,13 @@ Equal cardinality is the only link between the group and the class. `sldprt.md` 
 
 **Need.** We must know the other byte values to construct the extrusion Boolean operation.
 
-### DI-22. Other extrusion form codes
+### DI-22. Other sparse extrusion form codes
 
-**Question.** What distinguishes a joining `moICE_c` form-`11` object from a subtracting form-`11` object, and what operation and record shape does each sparse extrusion object outside the defined form codes use?
+**Question.** What operation and record shape does each sparse extrusion object outside the defined form codes use?
 
-**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Most form-`11` objects subtract, but a minority join.
+**Known.** `sldprt.md` §2 "Keywords element order is serialization order, not regeneration order. Neutral regeneration" through `sldprt.md` §2 "Feature-tree" define direct, repeated-class, sentinel, terminated-trailer, and sparse-trailer objects. Form code `11` identifies an object form and does not determine its Boolean operation. A Keywords operation token or a complete inline operation trailer supplies the operation. Without either carrier, the operation remains unresolved and the decoder reports a design loss.
 
-**Need.** We must know the discriminator and the other form codes to parse the object and construct its Boolean operation.
-
-**Conflict.** `sldprt.md` §2 "An extrusion object-name record is followed by four zero bytes, a little-endian u16 family word," states the answer as fact: "Form code `3` joins and form code `11` subtracts for either class." This item states that most form-`11` objects subtract and a minority join. One of the two documents is wrong.
-
-`crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs:89` follows the specification sentence and always gives `Cut`:
-
-```rust
-(Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993 | u32::MAX) | (_, 11) => {
-    Some(BooleanOp::Cut)
-}
-```
-
-There is no unresolved branch for code `11` and no loss. A joining form-`11` object subtracts in the neutral model. Decide which document is correct before the code changes.
+**Need.** We must know the remaining form codes to parse each object and construct its Boolean operation.
 
 ### DI-23. Combine-body reconciliation
 

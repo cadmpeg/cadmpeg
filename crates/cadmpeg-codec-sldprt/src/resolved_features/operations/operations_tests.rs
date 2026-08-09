@@ -162,7 +162,7 @@ fn declared_ice_object_uses_a_unanimous_repeated_class_form() {
     payload[trailer + 16..trailer + 19].copy_from_slice(&[0xff, 0xfe, 0xff]);
     for name_offset in [100_usize, 150] {
         let code_offset = name_offset - 14;
-        payload[code_offset..code_offset + 4].copy_from_slice(&11u32.to_le_bytes());
+        payload[code_offset..code_offset + 4].copy_from_slice(&1u32.to_le_bytes());
         payload[name_offset - 2..name_offset].copy_from_slice(&0x8000u16.to_le_bytes());
     }
     let mut lane = FeatureInputLane {
@@ -226,6 +226,8 @@ fn extrusion_form_codes_are_scoped_to_their_native_classes() {
             Some(BooleanOp::Cut)
         );
     }
+    assert_eq!(extrusion_operation(Some("moICE_c"), 11), None);
+    assert_eq!(extrusion_operation(Some("moExtrusion_c"), 11), None);
     assert_eq!(extrusion_operation(Some("moExtrusion_c"), u32::MAX), None);
 }
 

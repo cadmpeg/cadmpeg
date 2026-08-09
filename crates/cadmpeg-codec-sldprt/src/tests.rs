@@ -18685,12 +18685,6 @@ fn decode_projects_feature_input_extrusion_operations() {
             &[(true, 8), (true, 4), (false, 8), (false, 4)][..],
         ),
         (
-            11,
-            cadmpeg_ir::features::BooleanOp::Cut,
-            "moICE_c",
-            &[(true, 8), (true, 4), (false, 8), (false, 4)][..],
-        ),
-        (
             1,
             cadmpeg_ir::features::BooleanOp::Join,
             "moExtrusion_c",
@@ -18762,7 +18756,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         }
     }
 
-    for code in [4, 20] {
+    for code in [4, 11, 20] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
             0x42,
@@ -18790,6 +18784,50 @@ fn decode_projects_feature_input_extrusion_operations() {
                 op: cadmpeg_ir::features::BooleanOp::Unresolved,
                 ..
             }
+        ));
+        if code == 11 {
+            assert!(decoded
+                .report
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(
+                    "typed feature(s) retain native or unresolved required operation operands"
+                )));
+        }
+    }
+
+    for (kind, expected) in [
+        ("BossExtrude", cadmpeg_ir::features::BooleanOp::Join),
+        ("CutExtrude", cadmpeg_ir::features::BooleanOp::Cut),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        add_solidworks_version(&mut source, 17_000);
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            format!(
+                "<Keywords><Extrusion Name=\"Extrude1\" Type=\"{kind}\" id=\"8\"><Dimension Name=\"D1\">25</Dimension></Extrusion></Keywords>"
+            )
+            .as_bytes(),
+        ));
+        source.extend(make_block(
+            0x45,
+            "Contents/Config-0-ResolvedFeatures",
+            &operation_payload(11, 8, "Extrude1", "moICE_c", true, 8),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let feature = decoded
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Extrude1"))
+            .expect("projected extrusion feature");
+        assert!(matches!(
+            &feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
         ));
     }
 
