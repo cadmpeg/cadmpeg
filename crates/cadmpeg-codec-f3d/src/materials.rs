@@ -991,9 +991,10 @@ pub struct FaceAppearanceAssignment {
 
 /// Decode per-face appearance assignments from every Design `BulkStream`.
 ///
-/// A face assignment ends with the `BA5EE55E-…` marker GUID; the two
-/// length-prefixed UTF-16 strings before the marker are the 36-character
-/// face GUID and the bound visual token
+/// A legacy face assignment ends with the `BA5EE55E-…` marker GUID. A current
+/// assignment ends with the paired-library tail decoded by
+/// [`modern_face_appearance_assignments`]. Both forms stay inside one exact
+/// primary-index frame
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 fn decode_face_appearance_assignments(
     scan: &ContainerScan,
@@ -1005,16 +1006,35 @@ fn decode_face_appearance_assignments(
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        out.extend(face_appearance_assignments(bytes));
+        let Some(metadata) =
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
+        for frame in crate::metastream::primary_record_frames(&metadata, bytes.len())? {
+            out.extend(face_appearance_assignments_in_frame(
+                &bytes[frame.start..frame.end],
+                &browser_nodes,
+            ));
+        }
     }
     Ok(out)
 }
 
-/// Scan one Design `BulkStream` for face appearance assignments; see
-/// [`decode_face_appearance_assignments`].
+/// Decode a synthetic test slice as one Design primary-index frame.
+#[cfg(test)]
 pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAssignment> {
-    let strings = lp_utf16_strings(bytes);
     let browser_nodes = crate::design::decode::body::browser_node_entities(bytes);
+    face_appearance_assignments_in_frame(bytes, &browser_nodes)
+}
+
+/// Decode face assignments from one exact Design primary-index frame.
+fn face_appearance_assignments_in_frame(
+    bytes: &[u8],
+    browser_nodes: &std::collections::HashMap<String, u64>,
+) -> Vec<FaceAppearanceAssignment> {
+    let strings = lp_utf16_strings(bytes);
     let mut out = Vec::new();
     for (index, (_, value)) in strings.iter().enumerate() {
         if value != APPEARANCE_LIBRARY_ID || index < 2 {
@@ -1024,54 +1044,11 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
         // bounded prefix contains the GUID of a browser node. That relation
         // assigns the record to a body and excludes the adjacent record GUID
         // from the face-identity grammar.
-        if body_node_candidate(&strings, index, &browser_nodes).is_some() {
+        if body_node_candidate(&strings, index, browser_nodes).is_some() {
             continue;
         }
         let (_, visual) = &strings[index - 1];
         let (_, face_guid) = &strings[index - 2];
-        if visual_token(visual).is_none()
-            || face_guid.len() != 36
-            || !is_guid_prefix(face_guid)
-            || face_guid.as_bytes()[0].is_ascii_uppercase()
-        {
-            continue;
-        }
-        out.push(FaceAppearanceAssignment {
-            face_guid: face_guid.clone(),
-            visual_guid: visual.clone(),
-        });
-    }
-    out.extend(modern_face_appearance_assignments(&strings));
-    out
-}
-
-/// Decode a face-scoped appearance assignment from the paired-library marker
-/// form.
-///
-/// The assignment envelope ends with the visual token and the two library
-/// marker GUIDs. Its terminal lower-case GUID is the B-rep face identity. A
-/// body-scoped envelope has a material token in that position and therefore
-/// does not satisfy this grammar.
-fn modern_face_appearance_assignments(
-    strings: &[(usize, String)],
-) -> Vec<FaceAppearanceAssignment> {
-    let mut out = Vec::new();
-    for (index, (_, marker)) in strings.iter().enumerate() {
-        if marker != APPEARANCE_LIBRARY_ID_PAIR[0]
-            || strings
-                .get(index + 1)
-                .is_none_or(|(_, next)| next != APPEARANCE_LIBRARY_ID_PAIR[1])
-        {
-            continue;
-        }
-        let Some(visual_index) = index.checked_sub(1) else {
-            continue;
-        };
-        let Some(face_index) = visual_index.checked_sub(1) else {
-            continue;
-        };
-        let visual = &strings[visual_index].1;
-        let face_guid = &strings[face_index].1;
         if visual_token(visual).is_none() || !is_lowercase_guid(face_guid) {
             continue;
         }
@@ -1080,10 +1057,122 @@ fn modern_face_appearance_assignments(
             visual_guid: visual.clone(),
         });
     }
+    out.extend(modern_face_appearance_assignments(bytes, &strings));
     out
 }
 
-/// Whether the first 36 characters form a lower-case hexadecimal GUID.
+/// Decode a face-scoped appearance assignment from the paired-library marker
+/// form.
+///
+/// The assignment envelope ends with the visual token and the two library
+/// marker GUIDs. Two lower-case GUIDs precede the tail through fixed carrier
+/// gaps; the second is the B-rep face-attribute identity. Other paired-library
+/// envelopes do not satisfy this grammar.
+fn modern_face_appearance_assignments(
+    bytes: &[u8],
+    strings: &[(usize, String)],
+) -> Vec<FaceAppearanceAssignment> {
+    const LP_GUID_BYTES: usize = 4 + GUID_LEN * 2;
+    const FIRST_GUID_GAP: usize = 25;
+    const FACE_GUID_GAP: usize = 28;
+
+    let mut out = Vec::new();
+    for (index, (marker_at, marker)) in strings.iter().enumerate() {
+        if marker != APPEARANCE_LIBRARY_ID_PAIR[0]
+            || strings
+                .get(index + 1)
+                .is_none_or(|(_, next)| next != APPEARANCE_LIBRARY_ID_PAIR[1])
+        {
+            continue;
+        }
+        let Some((visual_at, visual)) = index.checked_sub(1).and_then(|at| strings.get(at)) else {
+            continue;
+        };
+        let Some((_, visual_len)) = lp_utf16_string_at(bytes, *visual_at) else {
+            continue;
+        };
+        if visual_at.checked_add(visual_len) != Some(*marker_at) || visual_token(visual).is_none() {
+            continue;
+        }
+
+        let Some((_, first_library_len)) = lp_utf16_string_at(bytes, *marker_at) else {
+            continue;
+        };
+        let Some(second_library_at) = marker_at.checked_add(first_library_len).and_then(|end| {
+            let separator_end = end.checked_add(4)?;
+            (bytes.get(end..separator_end) == Some(&[0; 4])).then_some(separator_end)
+        }) else {
+            continue;
+        };
+        if strings.get(index + 1).map(|(at, _)| *at) != Some(second_library_at) {
+            continue;
+        }
+
+        let Some(face_end) = visual_at.checked_sub(FACE_GUID_GAP) else {
+            continue;
+        };
+        let Some(face_at) = face_end.checked_sub(LP_GUID_BYTES) else {
+            continue;
+        };
+        let Some((face_guid, face_len)) = lp_utf16_string_at(bytes, face_at) else {
+            continue;
+        };
+        if face_at.checked_add(face_len) != Some(face_end)
+            || !is_lowercase_guid(&face_guid)
+            || !is_face_to_visual_gap(bytes.get(face_end..*visual_at))
+        {
+            continue;
+        }
+
+        let Some(first_guid_end) = face_at.checked_sub(FIRST_GUID_GAP) else {
+            continue;
+        };
+        let Some(first_guid_at) = first_guid_end.checked_sub(LP_GUID_BYTES) else {
+            continue;
+        };
+        let Some((first_guid, first_guid_len)) = lp_utf16_string_at(bytes, first_guid_at) else {
+            continue;
+        };
+        if first_guid_at.checked_add(first_guid_len) != Some(first_guid_end)
+            || !is_lowercase_guid(&first_guid)
+            || !is_first_guid_to_face_gap(bytes.get(first_guid_end..face_at))
+        {
+            continue;
+        }
+        out.push(FaceAppearanceAssignment {
+            face_guid,
+            visual_guid: visual.clone(),
+        });
+    }
+    out
+}
+
+/// Validate the fixed carrier gap after the first lower-case GUID of a paired
+/// face-appearance envelope. Its leading eight-byte field is not framing; the
+/// remaining bytes are invariant.
+fn is_first_guid_to_face_gap(gap: Option<&[u8]>) -> bool {
+    gap.is_some_and(|gap| {
+        gap.len() == 25
+            && gap.get(8..16) == Some(&[0; 8])
+            && gap.get(16..20) == Some(&1_u32.to_le_bytes())
+            && gap.get(20..22) == Some(&[1, 1])
+            && gap.get(22..25) == Some(&[0; 3])
+    })
+}
+
+/// Validate the fixed presentation tail between the B-rep face GUID and the
+/// visual token.
+fn is_face_to_visual_gap(gap: Option<&[u8]>) -> bool {
+    gap.is_some_and(|gap| {
+        gap.len() == 28
+            && gap.get(0..12) == Some(&[0; 12])
+            && gap.get(12..16) == Some(&1_f32.to_le_bytes())
+            && gap.get(16..18) == Some(&[1, 1])
+            && gap.get(18..28) == Some(&[0; 10])
+    })
+}
+
+/// Whether the complete value is a lower-case hyphenated hexadecimal GUID.
 fn is_lowercase_guid(value: &str) -> bool {
     value.len() == GUID_LEN
         && is_guid_prefix(value)

@@ -412,21 +412,9 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Question.** What is the precedence of the `color-adesk-attrib` record and the `material-adesk-attrib` record against direct colours and appearance assignments? What do the twelve bytes and the eight bytes of a per-face assignment entry hold?
 
-**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §3.2 "Per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
+**Known.** `f3d.md` §3.2 "Color attribute records include" gives the content of both records. `color-adesk-attrib` holds a palette index. `material-adesk-attrib` holds a library lookup pair. `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the two other colour records only. An explicit `rgb_color-st-attrib` or `truecolor-adesk-attrib` on a body or a face gives that target its neutral colour. If neither is present, one appearance binding with a base colour gives the colour. `f3d.md` §3.2 "Legacy per-face appearance assignments live" gives the assignment entry; its two unnamed byte runs have a width and no meaning.
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
-
-### MA-09. Face identity of a paired-library appearance assignment
-
-**Question.** How does a paired-library face-scoped appearance assignment name its face?
-
-**Known.** `f3d.md` §3.1 gives the typed body-presentation form. A paired-library face-scoped record carries no physical-material token and no body owner. Its presentation envelope holds two lowercase GUIDs before the visual token. A document that assigns one face appearance writes two such records naming the same visual token, alongside one body-scope record.
-
-**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual token as the face identity and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual token and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved.
-
-The closure also has no operand. `resolve_face_appearance_bindings` in `decode.rs` builds its face map only from face attributes that hold `NEUTRON_Material_attrib_def`, and this item states that the stream of this generation carries no such attribute. Either that statement is wrong, or the closed rule binds nothing in the generation it settles. The commit resolves neither reading.
-
-**Need.** Face colour cannot transfer for this generation without the face operand. A document assigning distinct appearances to two named faces of one body separates the two GUIDs and fixes which one carries face identity. The same document also shows which attribute carries the face-side join.
 
 ## 4. T-splines
 

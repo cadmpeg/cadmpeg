@@ -4266,14 +4266,42 @@ pub(crate) fn resolve_face_appearance_bindings(
                 _ => None,
             })
             .collect();
-        if !strings.contains(&"NEUTRON_Material_attrib_def") {
+        let material_name_count = strings
+            .iter()
+            .filter(|value| **value == "NEUTRON_Material_attrib_def")
+            .count();
+        if material_name_count == 0 {
             continue;
         }
-        for value in strings {
-            if value.len() == 36 && value.matches('-').count() == 4 {
-                faces_by_guid.entry(value).or_default().push(face.clone());
-            }
+        if material_name_count != 1 {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute repeats its attribute-definition name".into(),
+            ));
         }
+        let mut face_guids = strings.iter().copied().filter(|value| {
+            crate::bytes::is_guid_hyphenated(value)
+                && value.bytes().all(|byte| !byte.is_ascii_uppercase())
+        });
+        let Some(face_guid) = face_guids.next() else {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute does not carry exactly one lower-case face GUID"
+                    .into(),
+            ));
+        };
+        if face_guids.next().is_some() {
+            return Err(CodecError::Malformed(
+                "F3D face material attribute does not carry exactly one lower-case face GUID"
+                    .into(),
+            ));
+        }
+        faces_by_guid
+            .entry(face_guid)
+            .or_default()
+            .push(face.clone());
+    }
+    for faces in faces_by_guid.values_mut() {
+        faces.sort();
+        faces.dedup();
     }
     let mut bound_targets = ir
         .model

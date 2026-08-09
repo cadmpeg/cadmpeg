@@ -24679,7 +24679,7 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         ir.model.attributes.push(SourceAttribute {
             id: format!("attr:{face}").into(),
             target: AttributeTarget::Face(face.into()),
-            name: "NEUTRON_Material_attrib_def".into(),
+            name: "ATTRIB_CUSTOM-attrib".into(),
             values: vec![
                 AttributeValue::String("NEUTRON_Material_attrib_def".into()),
                 AttributeValue::String(face_guid.into()),
@@ -24751,6 +24751,21 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .appearance_bindings
         .windows(2)
         .all(|pair| pair[0].id < pair[1].id));
+
+    ir.model.attributes[0].values.push(AttributeValue::String(
+        "cccccccc-1111-2222-3333-dddddddddddd".into(),
+    ));
+    let error = crate::decode::resolve_face_appearance_bindings(
+        &mut ir,
+        &[crate::materials::FaceAppearanceAssignment {
+            face_guid: face_guid.into(),
+            visual_guid: visual_guid.into(),
+        }],
+    )
+    .expect_err("a face material attribute with two GUID operands is ambiguous");
+    assert!(error
+        .to_string()
+        .contains("exactly one lower-case face GUID"));
 }
 
 #[test]
@@ -25597,8 +25612,12 @@ fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
 #[test]
 fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
     // A body-style assignment has an entity id, not a face GUID, before the
-    // visual token; an uppercase GUID is a marker constant, not a face GUID.
-    for target in ["0_985", "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"] {
+    // visual token. Uppercase or mixed-case GUIDs are not face identities.
+    for target in [
+        "0_985",
+        "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
+        "c1eea57c-3f56-45fc-b8cb-a9ec46a9994C",
+    ] {
         let mut bytes = vec![0u8; 8];
         bytes.extend(lp_utf16_bytes(target));
         bytes.extend(lp_utf16_bytes(
@@ -25610,25 +25629,51 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
 }
 
 #[test]
-fn modern_face_appearance_assignment_uses_terminal_lowercase_guid() {
+fn modern_face_appearance_assignment_uses_second_framed_lowercase_guid() {
+    let unrelated_guid = "11111111-1111-1111-1111-111111111111";
+    let first_guid = "22222222-2222-2222-2222-222222222222";
+    let face_guid = "33333333-3333-3333-3333-333333333333";
+    let visual_guid = "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015";
+    let mut bytes = lp_utf16_bytes(unrelated_guid);
+    bytes.extend(lp_utf16_bytes(first_guid));
+    bytes.extend([0xa5; 8]);
+    bytes.extend([0; 8]);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend([1, 1, 0, 0, 0]);
+    bytes.extend(lp_utf16_bytes(face_guid));
+    bytes.extend([0; 12]);
+    bytes.extend(1_f32.to_le_bytes());
+    bytes.extend([1, 1]);
+    bytes.extend([0; 10]);
+    for value in [visual_guid, "08861000-1D69-CF2A-C082-CBD98E7E5D7F"] {
+        bytes.extend(lp_utf16_bytes(value));
+    }
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    let out = crate::materials::face_appearance_assignments(&bytes);
+    assert_eq!(out.len(), 1);
+    assert_eq!(out[0].face_guid, face_guid);
+    assert_eq!(out[0].visual_guid, visual_guid);
+
+    let mut malformed = bytes;
+    let first_gap_at = lp_utf16_bytes(unrelated_guid).len() + lp_utf16_bytes(first_guid).len();
+    malformed[first_gap_at + 8] = 1;
+    assert!(crate::materials::face_appearance_assignments(&malformed).is_empty());
+}
+
+#[test]
+fn modern_face_appearance_assignment_requires_the_first_guid_carrier() {
     let mut bytes = vec![0u8; 8];
     for value in [
-        "11111111-1111-1111-1111-111111111111",
         "22222222-2222-2222-2222-222222222222",
-        "33333333-3333-3333-3333-333333333333",
         "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
         "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
-        "005E1000-55CE-AFB6-81A1-36E3EF077C5F",
     ] {
         bytes.extend(lp_utf16_bytes(value));
     }
-    let out = crate::materials::face_appearance_assignments(&bytes);
-    assert_eq!(out.len(), 1);
-    assert_eq!(out[0].face_guid, "33333333-3333-3333-3333-333333333333");
-    assert_eq!(
-        out[0].visual_guid,
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015"
-    );
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
+    assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
 }
 
 #[test]
@@ -25639,10 +25684,11 @@ fn modern_body_appearance_is_not_a_face_assignment() {
         "PrismMaterial-018",
         "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015",
         "08861000-1D69-CF2A-C082-CBD98E7E5D7F",
-        "005E1000-55CE-AFB6-81A1-36E3EF077C5F",
     ] {
         bytes.extend(lp_utf16_bytes(value));
     }
+    bytes.extend(0_u32.to_le_bytes());
+    bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
     assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
 }
 
