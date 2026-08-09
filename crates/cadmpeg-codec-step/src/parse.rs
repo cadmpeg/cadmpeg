@@ -7,6 +7,7 @@
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::mem::size_of;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -561,7 +562,9 @@ impl Parser<'_, '_, '_> {
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") {
             let name = self.take_name()?;
+            self.charge_string_storage(&name, "step_parse_name_storage")?;
             let parameters = self.parameters()?;
+            self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
             header.push(HeaderRecord { name, parameters });
         }
@@ -601,6 +604,7 @@ impl Parser<'_, '_, '_> {
                 if !valid_anchor_name(&name) {
                     return self.err("anchor name must contain a non-digit character");
                 }
+                self.charge_string_storage(&name, "step_parse_name_storage")?;
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
                 if !is_anchor_item(&value) {
@@ -612,6 +616,7 @@ impl Parser<'_, '_, '_> {
                     let TokenKind::TagName(name) = self.next_kind()? else {
                         return self.err("expected anchor tag name");
                     };
+                    self.charge_string_storage(&name, "step_parse_name_storage")?;
                     self.punct(&TokenKind::Colon)?;
                     let value = self.value()?;
                     if !is_anchor_item(&value) {
@@ -641,6 +646,7 @@ impl Parser<'_, '_, '_> {
                     TokenKind::ValueInstance(id) => (format!("@{id}"), Some((b'@', id))),
                     _ => return self.err("expected reference name"),
                 };
+                self.charge_string_storage(&name, "step_parse_reference_storage")?;
                 if !reference_names.insert(name.clone()) {
                     return self.err("duplicate reference name");
                 }
@@ -664,6 +670,7 @@ impl Parser<'_, '_, '_> {
                 let TokenKind::Resource(uri) = self.next_kind()? else {
                     return self.err("expected reference URI");
                 };
+                self.charge_string_storage(&uri, "step_parse_reference_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
                 reference_entries.push(ReferenceEntry { name, uri });
             }
@@ -690,6 +697,7 @@ impl Parser<'_, '_, '_> {
                     return self.err("2;1 forbids DATA section parameters");
                 }
                 let parameters = self.parameters()?;
+                self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
                 if let Err(message) = valid_data_parameters(
                     &parameters,
                     &schema_identifiers,
@@ -710,6 +718,10 @@ impl Parser<'_, '_, '_> {
             while !self.peek_name("ENDSEC") {
                 let record = self.record()?;
                 let id = record.id;
+                self.charge_retained(
+                    btree_node_storage::<u64, RawRecord>(),
+                    "step_parse_record_table_storage",
+                )?;
                 if records.insert(id, record).is_some() {
                     return self.err("duplicate instance name");
                 }
@@ -717,6 +729,7 @@ impl Parser<'_, '_, '_> {
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
+            self.charge_vec_storage(&ids, "step_parse_section_storage")?;
             data.push(DataSection {
                 parameters,
                 records: ids,
@@ -767,6 +780,7 @@ impl Parser<'_, '_, '_> {
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
             let cms = decode_signature_payload(self.lexer.input(), &payload)?;
+            self.charge_vec_storage(&cms, "step_parse_signature_storage")?;
             signature_sections.push(SignatureSection {
                 span: span.clone(),
                 payload,
@@ -788,6 +802,13 @@ impl Parser<'_, '_, '_> {
             return self.err("external value instance collides with a DATA instance");
         }
         if !anchors.is_empty() {
+            for anchor in &anchors {
+                self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
+                self.charge_retained(
+                    btree_node_storage::<String, Value>(),
+                    "step_anchor_binding_storage",
+                )?;
+            }
             let anchor_bindings = anchors
                 .iter()
                 .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
@@ -795,27 +816,23 @@ impl Parser<'_, '_, '_> {
             if anchor_bindings.len() != anchors.len() {
                 return self.err("duplicate anchor name");
             }
-            let mut resolver = AnchorResolver::new(&anchor_bindings);
+            let mut resolver = AnchorResolver::new(&anchor_bindings, self.budget);
             for anchor in &mut anchors {
                 anchor.value = resolver
                     .resolve_root(&anchor.value)
-                    .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+                    .map_err(|error| error.into_parse_error(0))?;
                 for tag in &mut anchor.tags {
                     tag.value = resolver
                         .resolve_root(&tag.value)
-                        .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+                        .map_err(|error| error.into_parse_error(0))?;
                 }
             }
             for record in records.values_mut() {
                 for partial in &mut record.partials {
                     for value in &mut partial.parameters {
-                        *value =
-                            resolver
-                                .resolve_root(value)
-                                .map_err(|message| ParseError::Syntax {
-                                    offset: record.span.start,
-                                    message,
-                                })?;
+                        *value = resolver
+                            .resolve_root(value)
+                            .map_err(|error| error.into_parse_error(record.span.start))?;
                     }
                 }
             }
@@ -839,8 +856,8 @@ impl Parser<'_, '_, '_> {
                             partial.parameters.iter().any(contains_class3_occurrence)
                         })
                     }));
-        resolve_local_references(&mut anchors, &mut records, &reference_entries)
-            .map_err(|message| ParseError::Syntax { offset: 0, message })?;
+        resolve_local_references(&mut anchors, &mut records, &reference_entries, self.budget)
+            .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 record.partials[0]
@@ -941,6 +958,12 @@ impl Parser<'_, '_, '_> {
                 ),
             });
         }
+        self.charge_vec_storage(&header, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&anchors, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&reference_entries, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&data, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&signatures, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&signature_sections, "step_parse_exchange_storage")?;
         Ok((
             Exchange {
                 header,
@@ -1003,6 +1026,7 @@ impl Parser<'_, '_, '_> {
         } else {
             vec![self.partial()?]
         };
+        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
         self.punct(&TokenKind::Semicolon)?;
         Ok(RawRecord {
             id,
@@ -1013,7 +1037,9 @@ impl Parser<'_, '_, '_> {
 
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {
         let name = self.take_name()?;
+        self.charge_string_storage(&name, "step_parse_name_storage")?;
         let parameters = self.parameters()?;
+        self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
         Ok(PartialRecord { name, parameters })
     }
 
@@ -1049,26 +1075,29 @@ impl Parser<'_, '_, '_> {
     }
 
     fn value(&mut self) -> Result<Value, ParseError> {
-        if self.peek(&TokenKind::LParen) {
-            return Ok(Value::List(self.parameters()?));
-        }
-        match self.next_kind()? {
-            TokenKind::Instance(v) => Ok(Value::Reference(v)),
-            TokenKind::ValueInstance(v) => Ok(Value::ValueReference(v)),
-            TokenKind::ConstantEntity(name) => Ok(Value::ConstantEntity(name)),
-            TokenKind::ConstantValue(name) => Ok(Value::ConstantValue(name)),
-            TokenKind::Integer(v) => Ok(Value::Integer(v)),
-            TokenKind::Real(v) => Ok(Value::Real(v)),
-            TokenKind::Enumeration(v) => Ok(Value::Enumeration(v)),
-            TokenKind::String(v) => Ok(Value::String(v)),
-            TokenKind::Binary(v) => Ok(Value::Binary(v)),
-            TokenKind::Resource(v) => Ok(Value::Resource(v)),
-            TokenKind::Omitted => Ok(Value::Omitted),
-            TokenKind::Derived => Ok(Value::Derived),
-            TokenKind::Name(name) => self.typed_parameter(name),
-            TokenKind::UserName(name) => self.typed_parameter(format!("!{name}")),
-            _ => self.err("expected parameter value"),
-        }
+        let value = if self.peek(&TokenKind::LParen) {
+            Value::List(self.parameters()?)
+        } else {
+            match self.next_kind()? {
+                TokenKind::Instance(v) => Value::Reference(v),
+                TokenKind::ValueInstance(v) => Value::ValueReference(v),
+                TokenKind::ConstantEntity(name) => Value::ConstantEntity(name),
+                TokenKind::ConstantValue(name) => Value::ConstantValue(name),
+                TokenKind::Integer(v) => Value::Integer(v),
+                TokenKind::Real(v) => Value::Real(v),
+                TokenKind::Enumeration(v) => Value::Enumeration(v),
+                TokenKind::String(v) => Value::String(v),
+                TokenKind::Binary(v) => Value::Binary(v),
+                TokenKind::Resource(v) => Value::Resource(v),
+                TokenKind::Omitted => Value::Omitted,
+                TokenKind::Derived => Value::Derived,
+                TokenKind::Name(name) => self.typed_parameter(name)?,
+                TokenKind::UserName(name) => self.typed_parameter(format!("!{name}"))?,
+                _ => return self.err("expected parameter value"),
+            }
+        };
+        self.charge_retained(value_node_storage_bytes(&value), "step_parse_value_storage")?;
+        Ok(value)
     }
 
     fn typed_parameter(&mut self, name: String) -> Result<Value, ParseError> {
@@ -1152,6 +1181,41 @@ impl Parser<'_, '_, '_> {
             .map_or(Ok(()), |ctx| ctx.charge_collection_items(count, operation))
             .map_err(ParseError::Resource)
     }
+    fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), ParseError> {
+        self.budget
+            .map_or(Ok(()), |ctx| ctx.charge_retained(bytes, operation, None))
+            .map_err(ParseError::Resource)
+    }
+    fn charge_value_vec_storage(
+        &self,
+        values: &Vec<Value>,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            allocation_bytes(values.capacity(), size_of::<Value>()),
+            operation,
+        )
+    }
+    fn charge_string_storage(
+        &self,
+        value: &String,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            u64::try_from(value.capacity()).unwrap_or(u64::MAX),
+            operation,
+        )
+    }
+    fn charge_vec_storage<T>(
+        &self,
+        values: &Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            allocation_bytes(values.capacity(), size_of::<T>()),
+            operation,
+        )
+    }
     fn current_offset(&self) -> usize {
         self.current
             .as_ref()
@@ -1169,6 +1233,52 @@ impl Parser<'_, '_, '_> {
             message: message.into(),
         })
     }
+}
+
+fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
+    u64::try_from(capacity)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(u64::try_from(element_size).unwrap_or(u64::MAX))
+}
+
+fn btree_node_storage<K, V>() -> u64 {
+    allocation_bytes(
+        1,
+        size_of::<(K, V)>().saturating_add(3 * size_of::<usize>()),
+    )
+}
+
+fn value_node_storage_bytes(value: &Value) -> u64 {
+    let dynamic = match value {
+        Value::ConstantEntity(value)
+        | Value::ConstantValue(value)
+        | Value::Enumeration(value)
+        | Value::Resource(value) => value.capacity(),
+        Value::String(value) => value.capacity(),
+        Value::Binary(value) => value.data.len(),
+        Value::List(values) => values.capacity().saturating_mul(size_of::<Value>()),
+        Value::Typed(name, _) => name.capacity().saturating_add(size_of::<Value>()),
+        Value::Reference(_)
+        | Value::ValueReference(_)
+        | Value::Integer(_)
+        | Value::Real(_)
+        | Value::Omitted
+        | Value::Derived => 0,
+    };
+    u64::try_from(size_of::<Value>())
+        .unwrap_or(u64::MAX)
+        .saturating_add(u64::try_from(dynamic).unwrap_or(u64::MAX))
+}
+
+fn value_storage_bytes(value: &Value) -> u64 {
+    value_node_storage_bytes(value).saturating_add(match value {
+        Value::List(values) => values
+            .iter()
+            .map(value_storage_bytes)
+            .fold(0, u64::saturating_add),
+        Value::Typed(_, value) => value_storage_bytes(value),
+        _ => 0,
+    })
 }
 
 fn validate_header(header: &[HeaderRecord]) -> Result<ImplementationLevel, &'static str> {
@@ -1940,32 +2050,92 @@ fn is_anchor_item(value: &Value) -> bool {
     }
 }
 
-struct AnchorResolver<'a> {
+#[derive(Debug)]
+enum ResolveError {
+    Syntax(String),
+    Resource(CodecError),
+}
+
+impl ResolveError {
+    fn into_parse_error(self, offset: usize) -> ParseError {
+        match self {
+            Self::Syntax(message) => ParseError::Syntax { offset, message },
+            Self::Resource(error) => ParseError::Resource(error),
+        }
+    }
+}
+
+impl From<String> for ResolveError {
+    fn from(message: String) -> Self {
+        Self::Syntax(message)
+    }
+}
+
+impl From<&str> for ResolveError {
+    fn from(message: &str) -> Self {
+        Self::Syntax(message.into())
+    }
+}
+
+struct AnchorResolver<'a, 'ctx, 'arena> {
     anchors: &'a BTreeMap<String, Value>,
     memo: BTreeMap<String, (Value, usize)>,
     remaining_nodes: usize,
+    budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
-impl<'a> AnchorResolver<'a> {
+impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
-    fn new(anchors: &'a BTreeMap<String, Value>) -> Self {
+    fn new(
+        anchors: &'a BTreeMap<String, Value>,
+        budget: Option<&'ctx DecodeContext<'arena>>,
+    ) -> Self {
         Self {
             anchors,
             memo: BTreeMap::new(),
             remaining_nodes: Self::MAX_EXPANDED_NODES,
+            budget,
         }
     }
 
-    fn resolve_root(&mut self, value: &Value) -> Result<Value, String> {
+    fn resolve_root(&mut self, value: &Value) -> Result<Value, ResolveError> {
         let (value, _, expanded_nodes) =
             self.resolve(value, &mut Vec::new(), self.remaining_nodes, 0)?;
         self.remaining_nodes = self
             .remaining_nodes
             .checked_sub(expanded_nodes)
-            .ok_or_else(|| "aggregate expanded anchor graph exceeds 1000000 nodes".to_string())?;
+            .ok_or_else(|| {
+                ResolveError::Syntax("aggregate expanded anchor graph exceeds 1000000 nodes".into())
+            })?;
         Ok(value)
+    }
+
+    fn charge_nodes(&self, count: usize) -> Result<(), ResolveError> {
+        let count = u64::try_from(count).unwrap_or(u64::MAX);
+        if let Some(budget) = self.budget {
+            budget
+                .charge_collection_items(count, "step_anchor_materialization")
+                .map_err(ResolveError::Resource)?;
+            budget
+                .charge_work(count, "step_anchor_materialization")
+                .map_err(ResolveError::Resource)?;
+        }
+        Ok(())
+    }
+
+    fn charge_storage(&self, value: &Value) -> Result<(), ResolveError> {
+        if let Some(budget) = self.budget {
+            budget
+                .charge_retained(
+                    value_storage_bytes(value),
+                    "step_anchor_materialization_storage",
+                    None,
+                )
+                .map_err(ResolveError::Resource)?;
+        }
+        Ok(())
     }
 
     fn resolve(
@@ -1974,7 +2144,7 @@ impl<'a> AnchorResolver<'a> {
         stack: &mut Vec<String>,
         budget: usize,
         depth: usize,
-    ) -> Result<(Value, usize, usize), String> {
+    ) -> Result<(Value, usize, usize), ResolveError> {
         if depth >= Self::MAX_REFERENCE_DEPTH {
             return Err("expanded anchor graph exceeds its node or depth limit".into());
         }
@@ -1984,23 +2154,32 @@ impl<'a> AnchorResolver<'a> {
                     if *nodes > budget {
                         return Err("expanded anchor value exceeds 1000000 nodes".into());
                     }
+                    self.charge_nodes(*nodes)?;
+                    self.charge_storage(value)?;
                     return Ok((value.clone(), *nodes, *nodes));
                 }
                 if stack.contains(name) {
-                    return Err(format!("cyclic anchor binding <{name}>"));
+                    return Err(format!("cyclic anchor binding <{name}>").into());
                 }
                 stack.push(name.clone());
-                let source = self.anchors[name].clone();
+                let source = &self.anchors[name];
+                self.charge_nodes(value_node_count(source, Self::MAX_EXPANDED_NODES)?)?;
+                self.charge_storage(source)?;
+                let source = source.clone();
                 let resolved = self.resolve(&source, stack, budget, depth + 1);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
                 if nodes > budget {
                     return Err("expanded anchor value exceeds 1000000 nodes".into());
                 }
+                self.charge_nodes(nodes)?;
+                self.charge_storage(&value)?;
                 self.memo.insert(name.clone(), (value.clone(), nodes));
+                self.charge_storage(&value)?;
                 Ok((value, nodes, nodes))
             }
             Value::List(values) => {
+                self.charge_nodes(1)?;
                 let mut nodes = 1usize;
                 let mut expanded_nodes = 0usize;
                 let mut resolved = Vec::with_capacity(values.len());
@@ -2018,18 +2197,23 @@ impl<'a> AnchorResolver<'a> {
                         .ok_or_else(|| "expanded anchor value exceeds 1000000 nodes".to_string())?;
                     resolved.push(value);
                 }
-                Ok((Value::List(resolved), nodes, expanded_nodes))
+                let resolved = Value::List(resolved);
+                self.charge_storage(&resolved)?;
+                Ok((resolved, nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
+                self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
-                Ok((
-                    Value::Typed(name.clone(), Box::new(value)),
-                    nodes + 1,
-                    expanded_nodes,
-                ))
+                let value = Value::Typed(name.clone(), Box::new(value));
+                self.charge_storage(&value)?;
+                Ok((value, nodes + 1, expanded_nodes))
             }
-            value => Ok((value.clone(), 1, 0)),
+            value => {
+                self.charge_nodes(1)?;
+                self.charge_storage(value)?;
+                Ok((value.clone(), 1, 0))
+            }
         }
     }
 }
@@ -2046,36 +2230,44 @@ struct ReferenceKey {
     id: u64,
 }
 
-struct ReferenceResolver<'a> {
+struct ReferenceResolver<'a, 'ctx, 'arena> {
     bindings: BTreeMap<ReferenceKey, &'a str>,
     anchors: &'a BTreeMap<String, Value>,
     stack: Vec<ReferenceKey>,
     remaining_nodes: usize,
+    budget: Option<&'ctx DecodeContext<'arena>>,
 }
 
-impl<'a> ReferenceResolver<'a> {
+impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
     const MAX_MATERIALIZED_NODES: usize = 1_000_000;
     const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(
         references: &'a [ReferenceEntry],
         anchors: &'a BTreeMap<String, Value>,
-    ) -> Result<Self, String> {
+        budget: Option<&'ctx DecodeContext<'arena>>,
+    ) -> Result<Self, ResolveError> {
         let mut bindings = BTreeMap::new();
         for reference in references {
             let (kind, id) = match reference.name.as_bytes().first() {
                 Some(b'#') => (ReferenceKind::Entity, &reference.name[1..]),
                 Some(b'@') => (ReferenceKind::Value, &reference.name[1..]),
-                _ => return Err("invalid REFERENCE occurrence name".into()),
+                _ => {
+                    return Err(ResolveError::Syntax(
+                        "invalid REFERENCE occurrence name".into(),
+                    ))
+                }
             };
             let id = id
                 .parse::<u64>()
-                .map_err(|_| "invalid REFERENCE occurrence name")?;
+                .map_err(|_| ResolveError::Syntax("invalid REFERENCE occurrence name".into()))?;
             if bindings
                 .insert(ReferenceKey { kind, id }, reference.uri.as_str())
                 .is_some()
             {
-                return Err("duplicate REFERENCE occurrence name".into());
+                return Err(ResolveError::Syntax(
+                    "duplicate REFERENCE occurrence name".into(),
+                ));
             }
         }
         Ok(Self {
@@ -2083,10 +2275,11 @@ impl<'a> ReferenceResolver<'a> {
             anchors,
             stack: Vec::new(),
             remaining_nodes: Self::MAX_MATERIALIZED_NODES,
+            budget,
         })
     }
 
-    fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, String> {
+    fn resolve_value(&mut self, value: &Value, depth: usize) -> Result<Value, ResolveError> {
         if depth >= Self::MAX_REFERENCE_DEPTH {
             return Err("REFERENCE expansion exceeds its depth limit".into());
         }
@@ -2125,7 +2318,7 @@ impl<'a> ReferenceResolver<'a> {
         key: ReferenceKey,
         original: &Value,
         depth: usize,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ResolveError> {
         let Some(uri) = self.bindings.get(&key).copied() else {
             return Ok(original.clone());
         };
@@ -2163,12 +2356,27 @@ impl<'a> ReferenceResolver<'a> {
         Ok(resolved)
     }
 
-    fn charge_materialized_nodes(&mut self, value: &Value) -> Result<(), String> {
+    fn charge_materialized_nodes(&mut self, value: &Value) -> Result<(), ResolveError> {
         let nodes = value_node_count(value, self.remaining_nodes)?;
-        self.remaining_nodes = self
-            .remaining_nodes
-            .checked_sub(nodes)
-            .ok_or_else(|| "REFERENCE expansion exceeds 1000000 nodes".to_string())?;
+        self.remaining_nodes = self.remaining_nodes.checked_sub(nodes).ok_or_else(|| {
+            ResolveError::Syntax("REFERENCE expansion exceeds 1000000 nodes".into())
+        })?;
+        if let Some(budget) = self.budget {
+            let nodes = u64::try_from(nodes).unwrap_or(u64::MAX);
+            budget
+                .charge_collection_items(nodes, "step_reference_materialization")
+                .map_err(ResolveError::Resource)?;
+            budget
+                .charge_work(nodes, "step_reference_materialization")
+                .map_err(ResolveError::Resource)?;
+            budget
+                .charge_retained(
+                    value_storage_bytes(value),
+                    "step_reference_materialization_storage",
+                    None,
+                )
+                .map_err(ResolveError::Resource)?;
+        }
         Ok(())
     }
 }
@@ -2177,7 +2385,8 @@ fn resolve_local_references(
     anchors: &mut [AnchorEntry],
     records: &mut BTreeMap<u64, RawRecord>,
     references: &[ReferenceEntry],
-) -> Result<(), String> {
+    budget: Option<&DecodeContext<'_>>,
+) -> Result<(), ResolveError> {
     if references.is_empty() {
         return Ok(());
     }
@@ -2185,7 +2394,7 @@ fn resolve_local_references(
         .iter()
         .map(|anchor| (anchor.name.clone(), anchor.value.clone()))
         .collect::<BTreeMap<_, _>>();
-    let mut resolver = ReferenceResolver::new(references, &anchor_bindings)?;
+    let mut resolver = ReferenceResolver::new(references, &anchor_bindings, budget)?;
     for anchor in anchors {
         anchor.value = resolver.resolve_value(&anchor.value, 0)?;
         for tag in &mut anchor.tags {
@@ -2305,11 +2514,14 @@ mod tests {
     #[test]
     fn anchor_budget_charges_only_resource_expansion() {
         let anchors = BTreeMap::new();
-        let mut resolver = AnchorResolver::new(&anchors);
+        let mut resolver = AnchorResolver::new(&anchors, None);
         resolver.remaining_nodes = 0;
 
         let ordinary = Value::List((0..1024).map(Value::Integer).collect());
-        assert_eq!(resolver.resolve_root(&ordinary), Ok(ordinary));
+        assert_eq!(
+            resolver.resolve_root(&ordinary).expect("ordinary value"),
+            ordinary
+        );
         assert_eq!(resolver.remaining_nodes, 0);
     }
 
@@ -2319,7 +2531,7 @@ mod tests {
             "a".to_string(),
             Value::List(vec![Value::Integer(1), Value::Integer(2)]),
         )]);
-        let mut resolver = AnchorResolver::new(&anchors);
+        let mut resolver = AnchorResolver::new(&anchors, None);
         resolver.remaining_nodes = 2;
 
         assert!(resolver
