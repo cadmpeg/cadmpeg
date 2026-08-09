@@ -11541,6 +11541,35 @@ fn surface_replica_dependencies_resolve_before_trimmed_surfaces() {
 }
 
 #[test]
+fn long_forward_offset_surface_chain_resolves_with_a_worklist() {
+    let mut records = String::from(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=PLANE('',#4);
+",
+    );
+    for id in 6..=261 {
+        writeln!(records, "#{id}=OFFSET_SURFACE('',#{},1.,.F.);", id + 1)
+            .expect("append offset surface");
+    }
+    records.push_str("#262=OFFSET_SURFACE('',#5,1.,.F.);\n#263=GEOMETRIC_SET('',(#6));");
+
+    let decoded = decode_inline(&records);
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "step:data:surface#6"));
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("OFFSET_SURFACE #6 has invalid or unresolved support parameters")
+    }));
+}
+
+#[test]
 fn replicas_retain_bounded_parent_relations() {
     let decoded = decode_inline(
         "#1=CARTESIAN_POINT('',(0.,0.,0.));
