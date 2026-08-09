@@ -226,7 +226,7 @@ pub(crate) fn patch_protein_appearances(
         }
         let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
-            patch_instance_colors(&mut bytes, edits, &mut patched)?;
+            patch_instance_colors(protein, &mut bytes, edits, &mut patched)?;
         }
         zip.start_file(name, options).map_err(|error| {
             CodecError::Malformed(format!("cannot write nested Protein entry: {error}"))
@@ -241,20 +241,22 @@ pub(crate) fn patch_protein_appearances(
 }
 
 fn patch_instance_colors(
+    protein: &[u8],
     bytes: &mut [u8],
     edits: &BTreeMap<String, ProteinAppearanceEdit>,
     patched: &mut std::collections::BTreeSet<String>,
 ) -> Result<(), CodecError> {
-    let logical = dechunk(bytes).ok_or_else(|| {
-        CodecError::Malformed("cannot map Protein InstanceProperties pages".into())
+    let frames = crate::protein::record_frames(bytes).ok_or_else(|| {
+        CodecError::Malformed("cannot frame Protein InstanceProperties pages".into())
     })?;
-    let starts = logical
-        .windows(RECORD_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, window)| (window == RECORD_MARKER).then_some(offset))
-        .collect::<Vec<_>>();
-    for start in starts {
-        let record = &logical[start..];
+    let schema_driven = crate::protein::has_schemas(protein);
+    let decoded = if schema_driven {
+        crate::protein::decode(protein, bytes)?
+    } else {
+        Vec::new()
+    };
+    for frame in frames {
+        let record = frame.bytes.as_slice();
         let mut position = RECORD_MARKER.len();
         let schema = take_lp_utf8(record, &mut position).ok_or_else(|| {
             CodecError::Malformed("Protein appearance schema is truncated".into())
@@ -266,47 +268,135 @@ fn patch_instance_colors(
         let Some(edit) = edits.get(&guid) else {
             continue;
         };
-        let delta = if schema == "GenericSchema" {
-            generic_connection_delta(record, position).ok_or_else(|| {
-                CodecError::Malformed("Protein GenericSchema connection list is malformed".into())
-            })?
+        let decoded_record = if schema_driven {
+            Some(
+                decoded
+                    .iter()
+                    .find(|decoded| {
+                        decoded.logical_offset == frame.logical_offset
+                            && decoded.schema == schema
+                            && decoded.guid == guid
+                    })
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "Protein appearance {guid} has no decoded schema record"
+                        ))
+                    })?,
+            )
         } else {
-            0
+            None
         };
         if let Some(color) = edit.color {
-            let relative = match schema.as_str() {
-                "GenericSchema" => position + 112 + delta,
-                "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
-                "PrismTransparentSchema" => position + 121,
-                _ => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "Protein schema {schema} has no writable color carrier"
-                    )))
+            let relative = if let Some(decoded_record) = decoded_record {
+                let property_id =
+                    appearance_base_color_property_id(decoded_record).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "Protein appearance {guid} has no schema-selected color carrier"
+                        ))
+                    })?;
+                let property = decoded_record
+                    .properties
+                    .get(property_id)
+                    .filter(|property| {
+                        matches!(&property.value, crate::protein::PropertyValue::Color(_))
+                    })
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "Protein appearance {guid} has no {property_id} color carrier"
+                        ))
+                    })?;
+                property.value_offset
+            } else {
+                match schema.as_str() {
+                    "GenericSchema" => {
+                        position
+                            + 112
+                            + generic_connection_delta(record, position).ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "Protein GenericSchema connection list is malformed".into(),
+                                )
+                            })?
+                    }
+                    "PrismOpaqueSchema" | "PrismMetalSchema" => position + 8,
+                    "PrismTransparentSchema" => position + 121,
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "Protein schema {schema} has no writable color carrier"
+                        )))
+                    }
                 }
             };
             for (ordinal, value) in [color.r, color.g, color.b, color.a].into_iter().enumerate() {
-                patch_logical_f64(bytes, start + relative + ordinal * 8, f64::from(value))?;
+                patch_logical_f64(
+                    bytes,
+                    frame.logical_offset + relative + ordinal * 8,
+                    f64::from(value),
+                )?;
             }
         }
         for (name, value) in &edit.properties {
-            let relative = match (schema.as_str(), name.as_str()) {
-                ("GenericSchema", "reflectivity_at_0deg") => position + 175 + delta,
-                ("GenericSchema", "refraction_index") => position + 201 + delta,
-                ("PrismOpaqueSchema", "surface_roughness") => {
-                    find(record, b"\x0e\x20\x00\x00", position)
-                        .map(|marker| marker + 4)
-                        .ok_or_else(|| {
-                            CodecError::Malformed("Protein roughness carrier is absent".into())
-                        })?
-                }
-                ("PrismTransparentSchema", "refraction_index") => position + 169,
-                _ => {
-                    return Err(CodecError::NotImplemented(format!(
-                        "Protein schema {schema} property {name} has no writable carrier"
-                    )))
+            let relative = if let Some(decoded_record) = decoded_record {
+                let property_id = match (schema.as_str(), name.as_str()) {
+                    ("GenericSchema", "reflectivity_at_0deg") => "generic_reflectivity_at_0deg",
+                    ("GenericSchema", "refraction_index") => "generic_refraction_index",
+                    ("PrismOpaqueSchema", "surface_roughness") => "surface_roughness",
+                    ("PrismTransparentSchema", "refraction_index") => {
+                        "transparent_refraction_index"
+                    }
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "Protein schema {schema} property {name} has no writable carrier"
+                        )))
+                    }
+                };
+                decoded_record
+                    .properties
+                    .get(property_id)
+                    .filter(|property| {
+                        matches!(&property.value, crate::protein::PropertyValue::Float(_))
+                    })
+                    .map(|property| property.value_offset)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "Protein appearance {guid} has no {property_id} scalar carrier"
+                        ))
+                    })?
+            } else {
+                match (schema.as_str(), name.as_str()) {
+                    ("GenericSchema", "reflectivity_at_0deg") => {
+                        position
+                            + 175
+                            + generic_connection_delta(record, position).ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "Protein GenericSchema connection list is malformed".into(),
+                                )
+                            })?
+                    }
+                    ("GenericSchema", "refraction_index") => {
+                        position
+                            + 201
+                            + generic_connection_delta(record, position).ok_or_else(|| {
+                                CodecError::Malformed(
+                                    "Protein GenericSchema connection list is malformed".into(),
+                                )
+                            })?
+                    }
+                    ("PrismOpaqueSchema", "surface_roughness") => {
+                        find(record, b"\x0e\x20\x00\x00", position)
+                            .map(|marker| marker + 4)
+                            .ok_or_else(|| {
+                                CodecError::Malformed("Protein roughness carrier is absent".into())
+                            })?
+                    }
+                    ("PrismTransparentSchema", "refraction_index") => position + 169,
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "Protein schema {schema} property {name} has no writable carrier"
+                        )))
+                    }
                 }
             };
-            patch_logical_f64(bytes, start + relative, *value)?;
+            patch_logical_f64(bytes, frame.logical_offset + relative, *value)?;
         }
         patched.insert(guid);
     }
@@ -399,7 +489,7 @@ pub fn decode_with_body_bindings(
         let Some(instance) = instance_properties(payload) else {
             continue;
         };
-        let Some(logical) = dechunk(&instance) else {
+        let Some(record_frames) = crate::protein::record_frames(&instance) else {
             continue;
         };
         let catalog = definition_catalog(payload);
@@ -411,13 +501,13 @@ pub fn decode_with_body_bindings(
                 .map(|appearance| appearance.id.clone())
                 .collect::<std::collections::HashSet<_>>();
             decoded.extend(
-                decode_fixed_logical_records(&logical)
+                decode_fixed_logical_records(&record_frames)
                     .into_iter()
                     .filter(|appearance| !decoded_ids.contains(&appearance.id)),
             );
             decoded
         } else {
-            decode_fixed_logical_records(&logical)
+            decode_fixed_logical_records(&record_frames)
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -548,14 +638,7 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
                     .cmp(&right.slot)
                     .then_with(|| left.asset_guid.cmp(&right.asset_guid))
             });
-            let base_color = [
-                "generic_diffuse",
-                "opaque_albedo",
-                "surface_albedo",
-                "common_Tint_color",
-            ]
-            .into_iter()
-            .find_map(|id| color_property(record, id));
+            let base_color = appearance_base_color(record);
             Appearance {
                 id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
                 name: Some(record.base.clone()),
@@ -571,6 +654,44 @@ fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) ->
             }
         })
         .collect()
+}
+
+/// Resolve the one schema member that supplies an appearance's neutral base
+/// colour. An enabled common tint replaces the shader family's primary colour;
+/// a disabled or absent tint does not participate in selection.
+fn appearance_base_color(record: &crate::protein::DecodedRecord) -> Option<Color> {
+    color_property(record, appearance_base_color_property_id(record)?)
+}
+
+/// Select the serialized color carrier that represents the neutral base color.
+fn appearance_base_color_property_id(
+    record: &crate::protein::DecodedRecord,
+) -> Option<&'static str> {
+    if matches!(
+        record
+            .properties
+            .get("common_Tint_toggle")
+            .map(|property| &property.value),
+        Some(crate::protein::PropertyValue::Boolean(true))
+    ) {
+        return Some("common_Tint_color");
+    }
+
+    let id = match record.schema.as_str() {
+        "GenericSchema" => "generic_diffuse",
+        "MetalSchema" => "metal_color",
+        "MetallicPaintSchema" => "metallicpaint_base_color",
+        "PlasticVinylSchema" => "plasticvinyl_color",
+        "PrismLayeredSchema" => "layered_diffuse",
+        "PrismMetalSchema" => "metal_f0",
+        "PrismOpaqueSchema" => "opaque_albedo",
+        "PrismTransparentSchema" => "transparent_color",
+        // `PrismCommonSchema` supplies the common fallback used by derived
+        // families that do not define one primary constant-colour member.
+        _ if record.properties.contains_key("surface_albedo") => "surface_albedo",
+        _ => return None,
+    };
+    Some(id)
 }
 
 fn color_property(record: &crate::protein::DecodedRecord, id: &str) -> Option<Color> {
@@ -1429,44 +1550,12 @@ fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
     None
 }
 
-fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
-    if bytes.len() < 16 + PAGE_SIZE
-        || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
-        || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
-    {
-        return None;
-    }
-    let mut out = Vec::new();
-    for page in bytes[16..].chunks_exact(PAGE_SIZE) {
-        if page.get(4..8) == Some(RECORD_MARKER) {
-            out.extend_from_slice(&page[4..]);
-        } else if page.get(4..8) == Some(b"\x80\x00\x00\x00") {
-            out.extend_from_slice(&page[8..]);
-        } else if page.get(0..4) == Some(b"\xff\xff\xff\xff") {
-            let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
-            out.extend_from_slice(page.get(8..8 + used)?);
-        } else {
-            return None;
-        }
-    }
-    Some(out)
-}
-
 /// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
 /// Protein assets package schemas and use the schema-driven path instead.
-fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
-    let starts = bytes
-        .windows(RECORD_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, marker)| (marker == RECORD_MARKER).then_some(offset))
-        .collect::<Vec<_>>();
-    starts
+fn decode_fixed_logical_records(frames: &[crate::protein::RecordFrame]) -> Vec<Appearance> {
+    frames
         .iter()
-        .enumerate()
-        .filter_map(|(ordinal, start)| {
-            let end = starts.get(ordinal + 1).copied().unwrap_or(bytes.len());
-            decode_fixed_record(&bytes[*start..end])
-        })
+        .filter_map(|frame| decode_fixed_record(&frame.bytes))
         .collect()
 }
 
@@ -1853,6 +1942,7 @@ mod tests {
 
     fn distance_record(unit: u32, value: f64) -> crate::protein::DecodedRecord {
         crate::protein::DecodedRecord {
+            logical_offset: 0,
             schema: "TestSchema".into(),
             guid: String::new(),
             base: String::new(),
@@ -1860,6 +1950,7 @@ mod tests {
             properties: std::collections::BTreeMap::from([(
                 "test_Depth".to_owned(),
                 crate::protein::DecodedProperty {
+                    value_offset: 0,
                     value: crate::protein::PropertyValue::Distance { unit, value },
                     connections: Vec::new(),
                 },
@@ -1886,45 +1977,92 @@ mod tests {
         }
     }
 
-    /// The schema-driven path takes the appearance colour from the connectable
-    /// albedo member and does not select on the schema name, so every
-    /// `interior_model` subtype gets a colour. The fixed layouts cover only the
-    /// subtypes the source-less encoder writes.
     #[test]
-    fn every_prism_subtype_decodes_its_albedo_colour() {
-        for schema in [
-            "PrismOpaqueSchema",
-            "PrismMetalSchema",
-            "PrismLayeredSchema",
-            "PrismTransparentSchema",
-            "PrismWoodSchema",
+    fn schema_primary_colour_wins_over_rival_colour_members() {
+        for (schema, primary_id) in [
+            ("GenericSchema", "generic_diffuse"),
+            ("MetalSchema", "metal_color"),
+            ("MetallicPaintSchema", "metallicpaint_base_color"),
+            ("PlasticVinylSchema", "plasticvinyl_color"),
+            ("PrismLayeredSchema", "layered_diffuse"),
+            ("PrismMetalSchema", "metal_f0"),
+            ("PrismOpaqueSchema", "opaque_albedo"),
+            ("PrismTransparentSchema", "transparent_color"),
+            ("PrismWoodSchema", "surface_albedo"),
         ] {
-            let decoded = super::appearances_from_schema_records(&[albedo_record(schema)]);
-            let [appearance] = decoded.as_slice() else {
-                panic!("{schema} record decodes to one appearance");
-            };
-            assert_eq!(appearance.schema.as_deref(), Some(schema));
+            let mut properties = std::collections::BTreeMap::from([
+                color_property("common_Tint_color", [0.75, 0.75, 0.75, 1.0]),
+                color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
+                (
+                    "common_Tint_toggle".to_owned(),
+                    crate::protein::DecodedProperty {
+                        value_offset: 0,
+                        value: crate::protein::PropertyValue::Boolean(false),
+                        connections: Vec::new(),
+                    },
+                ),
+            ]);
+            properties.insert(
+                primary_id.to_owned(),
+                crate::protein::DecodedProperty {
+                    value_offset: 0,
+                    value: crate::protein::PropertyValue::Color([0.125, 0.25, 0.375, 1.0]),
+                    connections: Vec::new(),
+                },
+            );
+            let record = appearance_record(schema, properties);
             assert_eq!(
-                appearance.base_color.map(|color| color.g),
+                super::appearance_base_color(&record).map(|color| color.g),
                 Some(0.25),
-                "{schema} keeps its albedo colour"
+                "{schema} selects {primary_id}"
             );
         }
     }
 
-    fn albedo_record(schema: &str) -> crate::protein::DecodedRecord {
+    #[test]
+    fn enabled_common_tint_replaces_the_schema_primary_colour() {
+        let mut properties = std::collections::BTreeMap::from([
+            color_property("opaque_albedo", [0.125, 0.25, 0.375, 1.0]),
+            color_property("surface_albedo", [0.5, 0.5, 0.5, 1.0]),
+            color_property("common_Tint_color", [0.75, 0.625, 0.5, 1.0]),
+        ]);
+        properties.insert(
+            "common_Tint_toggle".to_owned(),
+            crate::protein::DecodedProperty {
+                value_offset: 0,
+                value: crate::protein::PropertyValue::Boolean(true),
+                connections: Vec::new(),
+            },
+        );
+        let record = appearance_record("PrismOpaqueSchema", properties);
+        assert_eq!(
+            super::appearance_base_color(&record).map(|color| color.g),
+            Some(0.625)
+        );
+    }
+
+    fn color_property(id: &str, color: [f64; 4]) -> (String, crate::protein::DecodedProperty) {
+        (
+            id.to_owned(),
+            crate::protein::DecodedProperty {
+                value_offset: 0,
+                value: crate::protein::PropertyValue::Color(color),
+                connections: Vec::new(),
+            },
+        )
+    }
+
+    fn appearance_record(
+        schema: &str,
+        properties: std::collections::BTreeMap<String, crate::protein::DecodedProperty>,
+    ) -> crate::protein::DecodedRecord {
         crate::protein::DecodedRecord {
+            logical_offset: 0,
             schema: schema.to_owned(),
             guid: "11111111-2222-3333-4444-555555555555".to_owned(),
             base: "Prism-001".to_owned(),
             asset_lib_id: String::new(),
-            properties: std::collections::BTreeMap::from([(
-                "surface_albedo".to_owned(),
-                crate::protein::DecodedProperty {
-                    value: crate::protein::PropertyValue::Color([0.5, 0.25, 0.125, 1.0]),
-                    connections: Vec::new(),
-                },
-            )]),
+            properties,
         }
     }
 

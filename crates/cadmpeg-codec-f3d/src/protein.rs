@@ -45,6 +45,10 @@ struct Schema {
 /// One typed property decoded according to its packaged schema.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DecodedProperty {
+    /// Byte offset of the scalar or color payload relative to its record.
+    /// A unit-tagged scalar points after its four-byte unit tag.
+    /// A multiple-value property points to its count prefix.
+    pub(crate) value_offset: usize,
     pub(crate) value: PropertyValue,
     pub(crate) connections: Vec<String>,
 }
@@ -71,6 +75,8 @@ pub(crate) enum PropertyValue {
 /// One paged Protein instance record.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DecodedRecord {
+    /// Byte offset of the record in the dechunked logical stream.
+    pub(crate) logical_offset: usize,
     pub(crate) schema: String,
     pub(crate) guid: String,
     pub(crate) base: String,
@@ -80,18 +86,28 @@ pub(crate) struct DecodedRecord {
     pub(crate) properties: BTreeMap<String, DecodedProperty>,
 }
 
+/// One exact logical record recovered from the `InstanceProperties` page
+/// framing.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct RecordFrame {
+    /// Byte offset in the dechunked logical stream.
+    pub(crate) logical_offset: usize,
+    /// Complete record bytes, including the opening marker.
+    pub(crate) bytes: Vec<u8>,
+}
+
 /// Decode every `InstanceProperties` record in the paged `instance` stream
 /// using the schemas packaged in the same Protein archive. Records whose value
 /// block cannot be consumed are dropped; page framing keeps the remaining
 /// records decodable.
 pub(crate) fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
     let schemas = schemas(protein)?;
-    let Some(pages) = paged_records(instance) else {
+    let Some(frames) = record_frames(instance) else {
         return Ok(Vec::new());
     };
     let mut records = Vec::new();
-    for record in pages {
-        if let Ok(Some(record)) = decode_record(&record, &schemas) {
+    for frame in frames {
+        if let Ok(Some(record)) = decode_record(&frame.bytes, frame.logical_offset, &schemas) {
             records.push(record);
         }
     }
@@ -105,7 +121,7 @@ pub(crate) fn decode(protein: &[u8], instance: &[u8]) -> Result<Vec<DecodedRecor
 /// extends it, and a page opening with [`TERMINAL_MARKER`] closes it and carries
 /// the used byte count as a `u16` at offset 4. Every record is returned with the
 /// opening marker restored so record offsets match the on-page layout.
-fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
+pub(crate) fn record_frames(bytes: &[u8]) -> Option<Vec<RecordFrame>> {
     if bytes.len() < 16 + PAGE_SIZE
         || u32::from_le_bytes(bytes.get(0..4)?.try_into().ok()?) as usize != PAGE_SIZE
         || !(bytes.len() - 16).is_multiple_of(PAGE_SIZE)
@@ -113,22 +129,28 @@ fn paged_records(bytes: &[u8]) -> Option<Vec<Vec<u8>>> {
         return None;
     }
     let mut records = Vec::new();
-    let mut current: Option<Vec<u8>> = None;
+    let mut current: Option<RecordFrame> = None;
+    let mut logical_offset = 0usize;
     for page in bytes[16..].chunks_exact(PAGE_SIZE) {
         if page.get(4..8) == Some(RECORD_MARKER) {
             if let Some(record) = current.take() {
+                logical_offset = logical_offset.checked_add(record.bytes.len())?;
                 records.push(record);
             }
-            let mut record = RECORD_MARKER.to_vec();
-            record.extend_from_slice(&page[8..]);
-            current = Some(record);
+            let mut frame = RecordFrame {
+                logical_offset,
+                bytes: RECORD_MARKER.to_vec(),
+            };
+            frame.bytes.extend_from_slice(&page[8..]);
+            current = Some(frame);
         } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
-            current.as_mut()?.extend_from_slice(&page[8..]);
+            current.as_mut()?.bytes.extend_from_slice(&page[8..]);
         } else if page.get(0..4) == Some(TERMINAL_MARKER) {
             let used = u16::from_le_bytes(page.get(4..6)?.try_into().ok()?) as usize;
-            let mut record = current.take()?;
-            record.extend_from_slice(page.get(8..8 + used)?);
-            records.push(record);
+            let mut frame = current.take()?;
+            frame.bytes.extend_from_slice(page.get(8..8 + used)?);
+            logical_offset = logical_offset.checked_add(frame.bytes.len())?;
+            records.push(frame);
         } else {
             return None;
         }
@@ -264,6 +286,7 @@ fn property_closure(
 
 fn decode_record(
     record: &[u8],
+    logical_offset: usize,
     schemas: &HashMap<String, Schema>,
 ) -> Result<Option<DecodedRecord>, CodecError> {
     if !record.starts_with(RECORD_MARKER) {
@@ -293,6 +316,17 @@ fn decode_record(
             continue;
         }
         let property_at = at;
+        let value_offset = if !property.multiple
+            && matches!(property.carrier, Carrier::UnitFloat | Carrier::Distance)
+        {
+            property_at.checked_add(4).ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "Protein {schema} instance {guid} property {id} offset overflows usize"
+                ))
+            })?
+        } else {
+            property_at
+        };
         let value = read_property(record, &mut at, &property, &id).map_err(|error| {
             CodecError::Malformed(format!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
@@ -309,7 +343,14 @@ fn decode_record(
         } else {
             Vec::new()
         };
-        values.insert(id, DecodedProperty { value, connections });
+        values.insert(
+            id,
+            DecodedProperty {
+                value_offset,
+                value,
+                connections,
+            },
+        );
     }
     if at != record.len() {
         return Err(CodecError::Malformed(format!(
@@ -318,6 +359,7 @@ fn decode_record(
         )));
     }
     Ok(Some(DecodedRecord {
+        logical_offset,
         schema,
         guid,
         base,
@@ -484,7 +526,7 @@ fn take<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u8; N]> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::io::{Read, Write};
 
     use super::*;
 
@@ -622,12 +664,14 @@ mod tests {
         assert_eq!(records.len(), 1);
         let properties = &records[0].properties;
         assert_eq!(
-            properties["a_color"],
-            DecodedProperty {
-                value: PropertyValue::Color([0.1, 0.2, 0.3, 1.0]),
-                connections: vec!["first-guid".into(), "second-guid".into()],
-            }
+            properties["a_color"].value,
+            PropertyValue::Color([0.1, 0.2, 0.3, 1.0])
         );
+        assert_eq!(
+            properties["a_color"].connections,
+            ["first-guid", "second-guid"]
+        );
+        assert!(properties["a_color"].value_offset > RECORD_MARKER.len());
         assert_eq!(
             properties["b_distance"].value,
             PropertyValue::Distance {
@@ -718,22 +762,110 @@ mod tests {
         for value in ["S", "guid-one", &long, ""] {
             push_lp(&mut first, value);
         }
+        first.extend_from_slice(RECORD_MARKER);
         let short = "y".repeat(140);
         let mut second = Vec::new();
         for value in ["S", "guid-two", &short, ""] {
             push_lp(&mut second, value);
         }
         let stream = paged_stream(&[&first, &second]);
-        let records = paged_records(&stream).expect("stream is paged");
-        assert_eq!(records.len(), 2);
-        assert_eq!(records[0], [RECORD_MARKER, &first].concat());
-        assert_eq!(records[1], [RECORD_MARKER, &second].concat());
+        let frames = record_frames(&stream).expect("stream is paged");
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].logical_offset, 0);
+        assert_eq!(frames[0].bytes, [RECORD_MARKER, &first].concat());
+        assert_eq!(frames[1].logical_offset, frames[0].bytes.len());
+        assert_eq!(frames[1].bytes, [RECORD_MARKER, &second].concat());
         assert!(stream.len() > 16 + 3 * PAGE_SIZE, "record one spans pages");
 
-        assert!(paged_records(&[]).is_none());
+        assert!(record_frames(&[]).is_none());
         let mut truncated = stream.clone();
         truncated.truncate(16 + PAGE_SIZE + 1);
-        assert!(paged_records(&truncated).is_none());
+        assert!(record_frames(&truncated).is_none());
+    }
+
+    #[test]
+    fn appearance_edit_patches_the_enabled_tint_carrier() {
+        let schemas = [
+            (
+                "Schemas/CommonSchema.xml",
+                r#"<Schema>
+                    <UID val="CommonSchema"/>
+                    <Color id="common_Tint_color"/>
+                    <Boolean id="common_Tint_toggle"/>
+                </Schema>"#,
+            ),
+            (
+                "Schemas/PrismOpaqueSchema.xml",
+                r#"<Schema>
+                    <UID val="PrismOpaqueSchema"/>
+                    <Base val="CommonSchema"/>
+                    <Color id="opaque_albedo"/>
+                    <Color id="surface_albedo"/>
+                    <Float id="surface_roughness" unit="unitless"/>
+                </Schema>"#,
+            ),
+        ];
+        let guid = "11111111-2222-3333-4444-555555555555";
+        let mut record = Vec::new();
+        for value in ["PrismOpaqueSchema", guid, "Prism-001", ""] {
+            push_lp(&mut record, value);
+        }
+        for channel in [0.75_f64, 0.625, 0.5, 1.0] {
+            record.extend_from_slice(&channel.to_le_bytes()); // common_Tint_color
+        }
+        record.push(1); // common_Tint_toggle
+        for color in [[0.125_f64, 0.25, 0.375, 1.0], [0.875, 0.75, 0.625, 1.0]] {
+            for channel in color {
+                record.extend_from_slice(&channel.to_le_bytes());
+            }
+        }
+        record.extend_from_slice(&0x200e_u32.to_le_bytes());
+        record.extend_from_slice(&0.5_f64.to_le_bytes());
+        let instance = paged_stream(&[&record]);
+        let protein = protein_archive(&schemas, Some(&instance));
+        let edit = crate::materials::ProteinAppearanceEdit {
+            color: Some(cadmpeg_ir::topology::Color {
+                r: 0.25,
+                g: 0.5,
+                b: 0.75,
+                a: 1.0,
+            }),
+            properties: BTreeMap::from([("surface_roughness".to_owned(), 0.375)]),
+        };
+        let (patched_protein, patched) = crate::materials::patch_protein_appearances(
+            &protein,
+            &BTreeMap::from([(guid.to_owned(), edit)]),
+        )
+        .expect("active tint edit");
+        assert_eq!(patched, [guid.to_owned()].into_iter().collect());
+
+        let mut archive = zip::ZipArchive::new(Cursor::new(&patched_protein)).unwrap();
+        let mut patched_instance = Vec::new();
+        archive
+            .by_name("AssetData/InstanceProperties.bin")
+            .unwrap()
+            .read_to_end(&mut patched_instance)
+            .unwrap();
+        let records = decode(&patched_protein, &patched_instance).expect("patched schema record");
+        let [record] = records.as_slice() else {
+            panic!("one patched appearance record expected")
+        };
+        assert_eq!(
+            record.properties["common_Tint_color"].value,
+            PropertyValue::Color([0.25, 0.5, 0.75, 1.0])
+        );
+        assert_eq!(
+            record.properties["opaque_albedo"].value,
+            PropertyValue::Color([0.125, 0.25, 0.375, 1.0])
+        );
+        assert_eq!(
+            record.properties["surface_albedo"].value,
+            PropertyValue::Color([0.875, 0.75, 0.625, 1.0])
+        );
+        assert_eq!(
+            record.properties["surface_roughness"].value,
+            PropertyValue::Float(0.375)
+        );
     }
 
     /// Lay records out as `InstanceProperties.bin` does: a 16-byte stream header,
@@ -777,11 +909,21 @@ mod tests {
     }
 
     fn schema_archive(entries: &[(&str, &str)]) -> Vec<u8> {
+        protein_archive(entries, None)
+    }
+
+    fn protein_archive(entries: &[(&str, &str)], instance: Option<&[u8]>) -> Vec<u8> {
         let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
         let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
         for (name, xml) in entries {
             archive.start_file(name, options).expect("start schema");
             archive.write_all(xml.as_bytes()).expect("write schema");
+        }
+        if let Some(instance) = instance {
+            archive
+                .start_file("AssetData/InstanceProperties.bin", options)
+                .expect("start instance");
+            archive.write_all(instance).expect("write instance");
         }
         archive.finish().expect("finish schemas").into_inner()
     }

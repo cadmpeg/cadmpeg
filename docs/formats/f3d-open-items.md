@@ -428,16 +428,6 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 **Need.** Face colour cannot transfer for this generation without the face operand. A document assigning distinct appearances to two named faces of one body separates the two GUIDs and fixes which one carries face identity. The same document also shows which attribute carries the face-side join.
 
-### MA-10. Precedence of the base-colour members of one schema record
-
-**Question.** Which member gives the base colour when one appearance record holds more than one colour member?
-
-**Known.** `f3d.md` §3.2 "An explicit `rgb_color-st-attrib` or" gives the precedence of the colour records against appearance bindings. It gives no precedence among the colour members inside one record. `appearances_from_schema_records` in `materials.rs` takes the first member that resolves from the ordered list `generic_diffuse`, `opaque_albedo`, `surface_albedo`, `common_Tint_color`.
-
-`common_Tint_color` is a `CommonSchema` member and stands beside `surface_albedo` on a Prism record. The list prefers `surface_albedo` and drops the tint with no loss recorded.
-
-**Need.** The order is the only arbiter and is not in the specification. A tinted Prism appearance carries both members, and the neutral colour must come from the member the source uses.
-
 ## 4. T-splines
 
 ### TS-01. `0m cg` wedge partition
