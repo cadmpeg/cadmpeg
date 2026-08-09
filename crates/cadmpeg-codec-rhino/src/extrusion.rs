@@ -6,12 +6,9 @@ use std::ops::Range;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
-use crate::chunks::{
-    chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk,
-};
+use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk};
 use crate::curves::{
     decode_embedded_curve_2d, error, exact_nurbs, unsupported, DecodedCurve, GeometryError,
-    MAX_CURVE_ITEMS,
 };
 use crate::objects::parse_class_wrapper;
 use crate::settings::{interval, point, vector};
@@ -23,7 +20,7 @@ pub(crate) const ON_EXTRUSION: Uuid = Uuid::from_canonical([
 ]);
 const ANONYMOUS: u32 = 0x4000_8000;
 const UNIT_TOLERANCE: f64 = 1.0e-10;
-const MITER_Z_MINIMUM: f64 = 1.0e-6;
+const MITER_Z_MINIMUM: f64 = 1.0 / 64.0;
 
 /// One exact profile boundary at both effective path ends.
 #[derive(Debug, Clone)]
@@ -108,7 +105,9 @@ pub(crate) fn decode(
         ));
     }
 
+    let profile_start = reader.position();
     let profile = decode_embedded_curve_2d(data, &mut reader, scale, archive, 1)?;
+    let profile_range = profile_start..reader.position();
     let path_from = scaled_point(point(&mut reader)?, scale)
         .ok_or_else(|| error(reader.position(), "scaled extrusion path is invalid"))?;
     let path_to = scaled_point(point(&mut reader)?, scale)
@@ -143,7 +142,15 @@ pub(crate) fn decode(
         [false, false]
     };
     let mut warnings = Vec::new();
+    let mut payload_children = vec![profile_range];
     let meshes = if minor >= 3 {
+        let cache_start = reader.position();
+        let cache_range = chunk_at(data, cache_start, reader.end(), archive, false)
+            .ok()
+            .map(|chunk| chunk.range());
+        if let Some(range) = cache_range {
+            payload_children.push(range);
+        }
         match read_mesh_cache(
             expand,
             data,
@@ -154,7 +161,9 @@ pub(crate) fn decode(
             mesh_budget,
             &mut warnings,
         ) {
-            Ok(meshes) => meshes,
+            Ok(meshes) => {
+                meshes
+            }
             Err(cache_error) => {
                 // The document budget is not rolled back: any buffer the cache
                 // inflated before failing is retained in the arena, so its
@@ -167,7 +176,7 @@ pub(crate) fn decode(
     } else {
         Vec::new()
     };
-    finish_payload(data, &outer, reader, &mut warnings)?;
+    finish_payload(data, &outer, reader, &payload_children, &mut warnings)?;
 
     let path_delta = subtract_points(path_to, path_from);
     let path_length = path_delta.norm();
@@ -185,21 +194,10 @@ pub(crate) fn decode(
             "extrusion up vector is not perpendicular to path",
         ));
     }
-    for index in 0..2 {
-        if miter_present[index] {
-            require_unit(
-                miter_normals[index],
-                version_offset,
-                "extrusion miter normal",
-            )?;
-            if miter_normals[index].z <= MITER_Z_MINIMUM {
-                return Err(error(
-                    version_offset,
-                    "active extrusion miter normal has invalid local z",
-                ));
-            }
-        }
-    }
+    let active_miters = [
+        active_miter(miter_present[0], miter_normals[0]),
+        active_miter(miter_present[1], miter_normals[1]),
+    ];
 
     let source_boundaries = split_profiles(profile, profile_count as usize, version_offset)?;
     let xaxis = normalize(
@@ -225,7 +223,7 @@ pub(crate) fn decode(
             xaxis,
             up,
             tangent,
-            miter_present[0].then_some(miter_normals[0]),
+            active_miters[0],
             version_offset,
         )?;
         let end_nurbs = transform_nurbs(
@@ -234,7 +232,7 @@ pub(crate) fn decode(
             xaxis,
             up,
             tangent,
-            miter_present[1].then_some(miter_normals[1]),
+            active_miters[1],
             version_offset,
         )?;
         let start_curve = DecodedCurve {
@@ -242,20 +240,8 @@ pub(crate) fn decode(
             compound: None,
             warnings: source.warnings,
         };
-        let start_frame = cap_frame(
-            xaxis,
-            up,
-            tangent,
-            miter_present[0].then_some(miter_normals[0]),
-            version_offset,
-        )?;
-        let end_frame = cap_frame(
-            xaxis,
-            up,
-            tangent,
-            miter_present[1].then_some(miter_normals[1]),
-            version_offset,
-        )?;
+        let start_frame = cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?;
+        let end_frame = cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?;
         let start_pcurve = cap_pcurve(&start_nurbs, cap_origins[0], start_frame, version_offset)?;
         let end_pcurve = cap_pcurve(&end_nurbs, cap_origins[1], end_frame, version_offset)?;
         laterals.push(crate::surfaces::extrusion_nurbs(
@@ -298,20 +284,8 @@ pub(crate) fn decode(
         ));
     }
     let cap_frames = [
-        cap_frame(
-            xaxis,
-            up,
-            tangent,
-            miter_present[0].then_some(miter_normals[0]),
-            version_offset,
-        )?,
-        cap_frame(
-            xaxis,
-            up,
-            tangent,
-            miter_present[1].then_some(miter_normals[1]),
-            version_offset,
-        )?,
+        cap_frame(xaxis, up, tangent, active_miters[0], version_offset)?,
+        cap_frame(xaxis, up, tangent, active_miters[1], version_offset)?,
     ];
     Ok(DecodedExtrusion {
         boundaries,
@@ -517,6 +491,7 @@ fn read_mesh_cache(
     let mut cache_reader = BoundedReader::new(data, cache.body.start, cache.body.end)?;
     require_anonymous_version(&mut cache_reader, 1, 0, "extrusion mesh cache")?;
     let mut meshes = Vec::new();
+    let mut cache_children = Vec::new();
     let mut index = 0_usize;
     loop {
         match cache_reader.u8()? {
@@ -530,6 +505,7 @@ fn read_mesh_cache(
             }
         }
         let item = anonymous_chunk(data, &mut cache_reader, archive, "mesh-cache item")?;
+        cache_children.push(item.range());
         let mut item_reader = BoundedReader::new(data, item.body.start, item.body.end)?;
         require_anonymous_version(&mut item_reader, 1, 0, "mesh-cache item")?;
         item_reader.skip(16)?;
@@ -559,21 +535,20 @@ fn read_mesh_cache(
             &mut cache_reader,
             &item,
             item_reader,
+            std::slice::from_ref(&wrapper.range()),
             "mesh-cache item",
             warnings,
         )?;
         index = index
             .checked_add(1)
             .ok_or_else(|| error(wrapper_start, "mesh-cache item count overflow"))?;
-        if index > MAX_CURVE_ITEMS {
-            return Err(error(wrapper_start, "mesh-cache item count exceeds limit"));
-        }
     }
     finish_anonymous(
         data,
         reader,
         &cache,
         cache_reader,
+        &cache_children,
         "extrusion mesh cache",
         warnings,
     )?;
@@ -601,6 +576,7 @@ fn finish_anonymous(
     parent: &mut BoundedReader<'_>,
     chunk: &Chunk,
     child: BoundedReader<'_>,
+    children: &[std::ops::Range<usize>],
     name: &str,
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
@@ -610,8 +586,9 @@ fn finish_anonymous(
             &format!("{name} has trailing bytes"),
         ));
     }
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
     if matches!(
-        verify_checksum(data, chunk)?,
+        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push(format!(
@@ -627,6 +604,7 @@ fn finish_payload(
     data: &[u8],
     chunk: &Chunk,
     reader: BoundedReader<'_>,
+    children: &[std::ops::Range<usize>],
     warnings: &mut Vec<String>,
 ) -> Result<(), GeometryError> {
     if reader.remaining() != 0 {
@@ -635,8 +613,9 @@ fn finish_payload(
             "extrusion payload has trailing bytes",
         ));
     }
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
     if matches!(
-        verify_checksum(data, chunk)?,
+        crate::chunks::verify_checksum_ranges(data, chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push(format!(
@@ -683,6 +662,18 @@ fn require_unit(value: Vector3, offset: usize, name: &str) -> Result<(), Geometr
     } else {
         Err(error(offset, &format!("{name} is not unit")))
     }
+}
+
+fn active_miter(present: bool, value: Vector3) -> Option<Vector3> {
+    if !present {
+        return None;
+    }
+    let length = value.norm();
+    if !length.is_finite() || length <= 0.0 {
+        return None;
+    }
+    let unit = scale_vector(value, 1.0 / length);
+    (unit.z > MITER_Z_MINIMUM).then_some(unit)
 }
 
 fn normalize(value: Vector3, offset: usize, name: &str) -> Result<Vector3, GeometryError> {
@@ -760,8 +751,8 @@ fn rodrigues(value: Vector3, axis: Vector3, angle: f64) -> Vector3 {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        cap_frame, exact_orientation, mitered_local, split_profiles, DecodedCurve, GeometryError,
-        ANONYMOUS,
+        active_miter, cap_frame, exact_orientation, mitered_local, split_profiles, DecodedCurve,
+        GeometryError, ANONYMOUS,
     };
     use crate::chunks::ArchiveVersion;
     use crate::curves::Compound;
@@ -807,6 +798,22 @@ pub(crate) mod tests {
     fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut payload = body.to_vec();
         payload.extend(crc32fast::hash(body).to_le_bytes());
+        long(typecode, &payload)
+    }
+
+    fn crc_chunk_excluding(
+        typecode: u32,
+        body: &[u8],
+        children: &[std::ops::Range<usize>],
+    ) -> Vec<u8> {
+        let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+            .expect("valid test child ranges");
+        let mut hasher = crc32fast::Hasher::new();
+        for range in direct {
+            hasher.update(&body[range]);
+        }
+        let mut payload = body.to_vec();
+        payload.extend(hasher.finalize().to_le_bytes());
         long(typecode, &payload)
     }
 
@@ -886,6 +893,7 @@ pub(crate) mod tests {
         let mut body = Vec::new();
         push_i32(&mut body, 1);
         push_i32(&mut body, minor);
+        let profile_range = body.len()..body.len() + profile.len();
         body.extend(profile);
         for value in [10.0, 20.0, 30.0, 10.0, 20.0, 40.0] {
             push_f64(&mut body, value);
@@ -911,10 +919,13 @@ pub(crate) mod tests {
             body.push(u8::from(caps[0]));
             body.push(u8::from(caps[1]));
         }
+        let mut children = vec![profile_range];
         if minor >= 3 {
-            body.extend(cache.unwrap_or_else(empty_mesh_cache));
+            let cache = cache.unwrap_or_else(empty_mesh_cache);
+            children.push(body.len()..body.len() + cache.len());
+            body.extend(cache);
         }
-        crc_chunk(ANONYMOUS, &body)
+        crc_chunk_excluding(ANONYMOUS, &body, &children)
     }
 
     pub(crate) fn archive_payload(
@@ -935,6 +946,7 @@ pub(crate) mod tests {
                 empty_mesh_cache()
             }
         });
+        let profile_len = profile.len();
         let mut payload = payload_with_profile(minor, caps, cache, profile);
         if with_hole {
             let cap_bytes = usize::from(minor >= 2) * 2;
@@ -950,7 +962,17 @@ pub(crate) mod tests {
             let count = payload.len() - 4 - cap_bytes - cache_bytes - 4;
             payload[count..count + 4].copy_from_slice(&2_i32.to_le_bytes());
             let body = &payload[12..payload.len() - 4];
-            let crc = crc32fast::hash(body);
+            let mut children = vec![8..8 + profile_len];
+            if cache_bytes != 0 {
+                children.push(body.len() - cache_bytes..body.len());
+            }
+            let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
+                .expect("valid extrusion children");
+            let mut hasher = crc32fast::Hasher::new();
+            for range in direct {
+                hasher.update(&body[range]);
+            }
+            let crc = hasher.finalize();
             let end = payload.len();
             payload[end - 4..].copy_from_slice(&crc.to_le_bytes());
         }
@@ -998,19 +1020,22 @@ pub(crate) mod tests {
         class_body.extend(0x8002_7fff_u32.to_le_bytes());
         class_body.extend(0_i64.to_le_bytes());
         let wrapper = long(0x0002_7ffa, &class_body);
+        let wrapper_len = wrapper.len();
         let mut item = Vec::new();
         push_i32(&mut item, 1);
         push_i32(&mut item, 0);
         item.extend([7; 16]);
         item.extend(wrapper);
-        let item = crc_chunk(ANONYMOUS, &item);
+        let wrapper_range = 24..24 + wrapper_len;
+        let item = crc_chunk_excluding(ANONYMOUS, &item, &[wrapper_range]);
+        let item_len = item.len();
         let mut cache = Vec::new();
         push_i32(&mut cache, 1);
         push_i32(&mut cache, 0);
         cache.push(1);
         cache.extend(item);
         cache.push(0);
-        crc_chunk(ANONYMOUS, &cache)
+        crc_chunk_excluding(ANONYMOUS, &cache, &[9..9 + item_len])
     }
 
     fn decoded_polygon(clockwise: bool, closed: bool) -> DecodedCurve {
@@ -1168,9 +1193,17 @@ pub(crate) mod tests {
         let miter_flags = up_start + 24;
         let path_domain = miter_flags + 2 + 48;
         let mut cases = Vec::new();
-        let mut bad_bool = valid.clone();
-        bad_bool[miter_flags] = 2;
-        cases.push(bad_bool);
+        let mut noncanonical_bool = valid.clone();
+        noncanonical_bool[miter_flags] = 2;
+        assert!(decode(
+            &noncanonical_bool,
+            0..noncanonical_bool.len(),
+            ArchiveVersion::V5,
+            None,
+            1.0,
+            &mut crate::mesh::MeshBudget::new(),
+        )
+        .is_ok());
         let mut bad_trim = valid.clone();
         bad_trim[trim_start..trim_start + 8].copy_from_slice(&(-0.1_f64).to_le_bytes());
         cases.push(bad_trim);
@@ -1221,7 +1254,13 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn active_miter_requires_unit_positive_local_z_and_changes_cap_frame() {
+    fn active_miter_unitizes_and_applies_only_above_the_z_threshold() {
+        assert_eq!(
+            active_miter(true, Vector3::new(0.0, 1.2, 1.6)),
+            Some(Vector3::new(0.0, 0.6, 0.8))
+        );
+        assert_eq!(active_miter(true, Vector3::new(1.0, 0.0, 0.01)), None);
+        assert_eq!(active_miter(true, Vector3::new(0.0, 0.0, 0.0)), None);
         assert!(mitered_local(
             Vector3::new(1.0, 0.0, 0.0),
             Some(Vector3::new(0.0, 0.6, 0.8)),

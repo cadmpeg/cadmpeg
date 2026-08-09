@@ -25,6 +25,7 @@ use crate::wire::Uuid;
 pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
+const TCODE_TABLE: u32 = 0x1000_0000;
 const TCODE_PROPERTIES: u32 = 0x1000_0014;
 const TCODE_SETTINGS: u32 = 0x1000_0015;
 const TCODE_BITMAP: u32 = 0x1000_0016;
@@ -175,7 +176,15 @@ fn checksum_warning(
     archive: ArchiveVersion,
 ) -> Result<Option<String>, CodecError> {
     let chunk = chunk_at(data, offset, parent_end, archive, false).map_err(framing_error)?;
-    match verify_checksum(data, &chunk).map_err(framing_error)? {
+    let status = if typecode & TCODE_TABLE != 0
+        || matches!(typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
+    {
+        crate::chunks::verify_checksum_ranges(data, &chunk, &[])
+    } else {
+        verify_checksum(data, &chunk)
+    }
+    .map_err(framing_error)?;
+    match status {
         ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {offset} for typecode {typecode:#x}: expected {expected:#x}, got {actual:#x}"
         ))),
@@ -329,14 +338,18 @@ pub(crate) fn scan(data: &[u8]) -> Result<Scan<'_>, CodecError> {
 fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, CodecError> {
     let header = parse_header(data).map_err(framing_error)?;
     let archive = header.archive_version;
-    let comment = parse_record(data, 32, data.len(), archive)?;
+    let archive_start = header.start_offset;
+    let comment_offset = archive_start + 32;
+    let comment = parse_record(data, comment_offset, data.len(), archive)?;
     if comment.typecode != TCODE_COMMENT || comment.short {
         return Err(CodecError::Malformed(
             "first post-header chunk is not a long comment".to_string(),
         ));
     }
     let mut warnings = Vec::new();
-    if let Some(note) = checksum_warning(data, comment.typecode, 32, data.len(), archive)? {
+    if let Some(note) =
+        checksum_warning(data, comment.typecode, comment_offset, data.len(), archive)?
+    {
         warnings.push(note);
     }
     let mut tables = Vec::new();
@@ -452,32 +465,15 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
                         record.typecode, chunk.typecode
                     )));
                 }
-                if record.short {
-                    return Err(CodecError::Malformed(format!(
-                        "unknown table record {:#x} is short-framed",
-                        record.typecode
-                    )));
-                }
                 warnings.push(format!(
                     "unknown bounded record {:#x} skipped in table {:#x} at offset {child_offset}",
                     record.typecode, chunk.typecode
                 ));
             }
-            // A layer wrapper has no direct bytes, and object records use a
-            // zero outer CRC. Checksummed leaf children remain independently
-            // validated.
-            let zero_nested_container_crc =
-                matches!(record.typecode, TCODE_OBJECT_RECORD | TCODE_LAYER_RECORD)
-                    && child
-                        .checksum
-                        .as_ref()
-                        .is_some_and(|range| data[range.clone()].iter().all(|byte| *byte == 0));
-            if !zero_nested_container_crc {
-                if let Some(note) =
-                    checksum_warning(data, record.typecode, child_offset, chunk.body.end, archive)?
-                {
-                    warnings.push(note);
-                }
+            if let Some(note) =
+                checksum_warning(data, record.typecode, child_offset, chunk.body.end, archive)?
+            {
+                warnings.push(note);
             }
             if table_base(chunk.typecode) == TCODE_OBJECTS && record.typecode == TCODE_OBJECT_RECORD
             {
@@ -499,10 +495,10 @@ fn scan_with_record_limit(data: &[u8], record_limit: usize) -> Result<Scan<'_>, 
             child_offset = child.next_offset;
         }
         if !terminated {
-            return Err(CodecError::Malformed(format!(
-                "table {:#x} is missing end-of-table marker",
+            warnings.push(format!(
+                "table {:#x} has no end-of-table marker",
                 chunk.typecode
-            )));
+            ));
         }
         if let Some(note) =
             checksum_warning(data, chunk.typecode, offset, chunk.next_offset, archive)?
@@ -676,10 +672,7 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
 pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
     matches!(
         archive,
-        ArchiveVersion::V1
-            | ArchiveVersion::V2
-            | ArchiveVersion::LegacyV5
-            | ArchiveVersion::Other(_)
+        ArchiveVersion::V1 | ArchiveVersion::LegacyV5 | ArchiveVersion::Other(_)
     )
 }
 
@@ -709,6 +702,9 @@ pub(crate) fn decode(
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
     let data = acquire(root);
     let header = parse_header(data).map_err(framing_error)?;
+    if header.archive_version == ArchiveVersion::V1 {
+        return crate::legacy::decode_v1(data);
+    }
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(
             "Rhino archive version {} decode is not implemented",

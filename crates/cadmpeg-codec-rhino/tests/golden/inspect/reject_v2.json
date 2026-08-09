@@ -1,8 +1,3 @@
 {
-  "container_kind": "3dm-chunks",
-  "entries": [],
-  "format": "rhino",
-  "notes": [
-    "archive version 2"
-  ]
+  "inspect_error": "malformed container: range 32..36 exceeds bound 32"
 }

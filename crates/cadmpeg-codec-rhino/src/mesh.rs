@@ -120,6 +120,8 @@ pub(crate) struct DecodedMesh {
     pub(crate) warnings: Vec<String>,
     /// Whether source coordinates were converted to millimeters.
     pub(crate) scaled: bool,
+    /// Number of stored n-gon group records not represented in the IR.
+    pub(crate) ngon_count: usize,
 }
 
 /// Caller-owned identity and archive metadata for one mesh decode.
@@ -228,8 +230,9 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let triangles = read_faces(&mut reader, vertex_count, face_count)?;
+    let faces = read_faces(&mut reader, vertex_count, face_count)?;
     let mut decompressed_bytes = 0;
+    let mut ngon_count = 0;
     if major == 1 {
         read_raw_channels(
             &mut reader,
@@ -274,64 +277,71 @@ pub(crate) fn decode(
             ));
         }
     }
-    if major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010) {
+    let post_2006_fields =
+        major == 3 && minor >= 4 && writer_version.is_some_and(|version| version >= 200_606_010);
+    if post_2006_fields {
         read_mapping_tag(&mut reader, archive, &mut decoded.warnings)?;
-    }
-    if major == 3 && minor >= 5 {
-        for _ in 0..3 {
-            let value = reader.u8()?;
-            if value > 2 {
-                decoded
-                    .warnings
-                    .push("invalid mesh tri-state flag retained".to_string());
-            }
-        }
-    }
-    if major == 3 && minor >= 6 && reader.bool()? {
-        read_ngons(
-            &mut reader,
-            archive,
-            vertex_count,
-            face_count,
-            &mut decoded.warnings,
-        )?;
-    }
-    let mut double_vertices = None;
-    if major == 3 && minor >= 7 && reader.bool()? {
-        let (count, bytes) = read_double_chunk(
-            expand,
-            &mut reader,
-            archive,
-            &mut decoded.warnings,
-            vertex_count,
-            &mut decompressed_bytes,
-            document_budget,
-        )?;
-        if count == vertex_count {
-            if let Some(bytes) = bytes {
-                let values = parse_f64_points(&bytes)?;
-                if values
-                    .iter()
-                    .all(|point| point.iter().all(|v| v.is_finite()))
-                    && synchronization_ok(&values, &decoded.vertices)
-                {
-                    double_vertices = Some(values);
-                } else {
+        if minor >= 5 {
+            for _ in 0..3 {
+                let value = reader.u8()?;
+                if value > 2 {
                     decoded
                         .warnings
-                        .push("double vertices rejected; using float vertices".to_string());
+                        .push("invalid mesh tri-state flag retained".to_string());
                 }
             }
-        } else {
-            decoded
-                .warnings
-                .push("double vertex count mismatch; using float vertices".to_string());
+        }
+        if minor >= 6 && reader.bool()? {
+            ngon_count = read_ngons(
+                &mut reader,
+                archive,
+                vertex_count,
+                face_count,
+                &mut decoded.warnings,
+            )?;
         }
     }
-    if major == 3 && minor >= 8 {
-        for _ in 0..6 {
-            reader.f64()?;
+    let mut double_vertices = None;
+    if post_2006_fields {
+        if minor >= 7 && reader.bool()? {
+            let (count, bytes) = read_double_chunk(
+                expand,
+                &mut reader,
+                archive,
+                &mut decoded.warnings,
+                vertex_count,
+                &mut decompressed_bytes,
+                document_budget,
+            )?;
+            if count == vertex_count {
+                if let Some(bytes) = bytes {
+                    let values = parse_f64_points(&bytes)?;
+                    if values
+                        .iter()
+                        .all(|point| point.iter().all(|v| v.is_finite()))
+                        && synchronization_ok(&values, &decoded.vertices)
+                    {
+                        double_vertices = Some(values);
+                    } else {
+                        decoded
+                            .warnings
+                            .push("double vertices rejected; using float vertices".to_string());
+                    }
+                }
+            } else {
+                decoded
+                    .warnings
+                    .push("double vertex count mismatch; using float vertices".to_string());
+            }
         }
+        if minor >= 8 {
+            for _ in 0..6 {
+                reader.f64()?;
+            }
+        }
+    }
+    if major == 3 && minor >= 4 && !post_2006_fields {
+        reader.skip(reader.remaining())?;
     }
     if reader.remaining() != 0 {
         return Err(error(
@@ -363,6 +373,7 @@ pub(crate) fn decode(
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| error(reader.position(), "scaled mesh vertex is invalid"))?;
+    let triangles = triangulate_faces(&faces, &vertices);
     Ok(DecodedMesh {
         tessellation: Tessellation {
             id,
@@ -378,6 +389,7 @@ pub(crate) fn decode(
         },
         warnings: decoded.warnings,
         scaled: scale != 1.0,
+        ngon_count,
     })
 }
 
@@ -385,19 +397,12 @@ fn read_faces(
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
-) -> Result<Vec<[u32; 3]>, GeometryError> {
+) -> Result<Vec<[u32; 4]>, GeometryError> {
     let width = reader.i32()?;
-    let expected = if vertices < 256 {
-        1
-    } else if vertices < 65_536 {
-        2
-    } else {
-        4
-    };
-    if width != expected {
+    if !matches!(width, 1 | 2 | 4) {
         return Err(error(
             reader.position() - 4,
-            "mesh face index width mismatch",
+            "invalid mesh face index width",
         ));
     }
     let bytes = faces
@@ -405,20 +410,9 @@ fn read_faces(
         .and_then(|value| value.checked_mul(width as usize))
         .ok_or_else(|| error(reader.position(), "mesh face byte count overflow"))?;
     let raw = reader.take(bytes)?;
-    let quad_count = (0..faces)
-        .filter(|face| {
-            let base = face * 4 * width as usize;
-            face_index(raw, base + 2 * width as usize, width)
-                != face_index(raw, base + 3 * width as usize, width)
-        })
-        .count();
-    let triangle_count = faces
-        .checked_add(quad_count)
-        .filter(|count| *count <= MAX_MESH_FACES)
-        .ok_or_else(|| error(reader.position(), "mesh triangle output budget exceeded"))?;
     let mut result = Vec::new();
     result
-        .try_reserve_exact(triangle_count)
+        .try_reserve_exact(faces)
         .map_err(|_| error(reader.position(), "mesh triangle allocation failed"))?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
@@ -429,15 +423,39 @@ fn read_faces(
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
         }
-        if indices[2] == indices[3] {
-            result.push([indices[0], indices[1], indices[2]]);
-        } else {
-            result.push([indices[0], indices[1], indices[2]]);
-            result.push([indices[0], indices[2], indices[3]]);
+        result.push(indices);
+    }
+    Ok(result)
+}
+
+pub(crate) fn triangulate_faces(faces: &[[u32; 4]], vertices: &[Point3]) -> Vec<[u32; 3]> {
+    let mut triangles = Vec::with_capacity(faces.len().saturating_mul(2));
+    for face in faces {
+        let mut unique = Vec::with_capacity(4);
+        for index in face {
+            if !unique.contains(index) {
+                unique.push(*index);
+            }
+        }
+        if unique.len() == 3 {
+            triangles.push([unique[0], unique[1], unique[2]]);
+        } else if unique.len() == 4 {
+            let diagonal_02 =
+                distance_squared(vertices[face[0] as usize], vertices[face[2] as usize]);
+            let diagonal_13 =
+                distance_squared(vertices[face[1] as usize], vertices[face[3] as usize]);
+            if diagonal_02 <= diagonal_13 {
+                triangles.extend([[face[0], face[1], face[2]], [face[0], face[2], face[3]]]);
+            } else {
+                triangles.extend([[face[0], face[1], face[3]], [face[1], face[2], face[3]]]);
+            }
         }
     }
-    debug_assert_eq!(result.len(), triangle_count);
-    Ok(result)
+    triangles
+}
+
+fn distance_squared(a: Point3, b: Point3) -> f64 {
+    (a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)
 }
 
 fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
@@ -762,7 +780,7 @@ fn read_ngons(
     vertices: usize,
     faces: usize,
     warnings: &mut Vec<String>,
-) -> Result<(), GeometryError> {
+) -> Result<usize, GeometryError> {
     let chunk = chunk_at(
         reader.backing_bytes(),
         reader.position(),
@@ -798,7 +816,7 @@ fn read_ngons(
         return Err(error(child.position(), "ngon chunk has trailing bytes"));
     }
     reader.skip(chunk.next_offset - reader.position())?;
-    Ok(())
+    Ok(count)
 }
 
 fn read_mapping_tag(
@@ -867,12 +885,6 @@ fn read_double_chunk<'a>(
         archive,
         false,
     )?;
-    push_chunk_checksum_warning(
-        reader.backing_bytes(),
-        &chunk,
-        warnings,
-        "mesh double vertices",
-    )?;
     let mut child = BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
     let major = child.i32()?;
     let minor = child.i32()?;
@@ -886,6 +898,19 @@ fn read_double_chunk<'a>(
     let expected = count
         .checked_mul(24)
         .ok_or_else(|| error(child.position(), "double-vertex size overflow"))?;
+    let buffer_start = child.position();
+    let nested_buffer = (reader.backing_bytes().get(buffer_start + 8).copied() == Some(1))
+        .then(|| {
+            chunk_at(
+                reader.backing_bytes(),
+                buffer_start + 9,
+                chunk.body.end,
+                archive,
+                false,
+            )
+            .map(|child| child.range())
+        })
+        .transpose()?;
     let bytes = read_buffer(
         expand,
         &mut child,
@@ -902,6 +927,19 @@ fn read_double_chunk<'a>(
             "double-vertex chunk has trailing bytes",
         ));
     }
+    let direct = crate::chunks::direct_checksum_ranges(
+        &chunk.body,
+        nested_buffer.as_ref().map_or(&[][..], std::slice::from_ref),
+    )?;
+    if matches!(
+        crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        warnings.push(format!(
+            "mesh double vertices CRC mismatch at offset {}",
+            chunk.header_start
+        ));
+    }
     reader.skip(chunk.next_offset - reader.position())?;
     if count != vertex_count {
         return Ok((count, None));
@@ -912,12 +950,11 @@ fn read_double_chunk<'a>(
 fn consume_optional_chunk(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-    warnings: &mut Vec<String>,
-    label: &str,
+    _warnings: &mut Vec<String>,
+    _label: &str,
 ) -> Result<(), GeometryError> {
     let bytes = reader.backing_bytes();
     let chunk = chunk_at(bytes, reader.position(), reader.end(), archive, false)?;
-    push_chunk_checksum_warning(bytes, &chunk, warnings, label)?;
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
@@ -1128,6 +1165,31 @@ mod tests {
             payload.extend(0_u32.to_le_bytes());
         }
         payload
+    }
+
+    #[test]
+    fn later_mesh_fields_require_the_post_2006_writer_gate() {
+        let mut bytes = compressed_mesh();
+        bytes[0] = 0x35;
+        bytes.extend([0_u8; 16]);
+        bytes.extend(0_u32.to_le_bytes());
+        bytes.extend(0_i32.to_le_bytes());
+        let decoded = with_expand(&bytes, |expand| {
+            decode(
+                expand,
+                &bytes,
+                0..bytes.len(),
+                ArchiveVersion::V5,
+                MeshDecodeOptions {
+                    writer_version: None,
+                    association: None,
+                    id: "legacy-minor-five".to_string(),
+                    scale: 1.0,
+                },
+                &mut MeshBudget::new(),
+            )
+        });
+        assert!(decoded.is_ok(), "{decoded:?}");
     }
 
     #[test]
@@ -1448,7 +1510,7 @@ mod tests {
                 let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
                 assert_eq!(
                     read_faces(&mut reader, vertices, 1).expect("face"),
-                    vec![[0, 1, 2]]
+                    vec![[0, 1, 2, 2]]
                 );
             });
         }
@@ -1541,10 +1603,10 @@ mod tests {
     }
 
     #[test]
-    fn archive_booleans_reject_reserved_values() {
+    fn archive_booleans_normalize_nonzero_values() {
         let bytes = [2_u8];
         let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-        assert!(reader.bool().is_err());
+        assert!(reader.bool().expect("nonzero boolean"));
     }
 
     #[test]
@@ -1618,15 +1680,29 @@ mod tests {
     }
 
     #[test]
-    fn read_faces_charges_triangle_accumulator() {
+    fn read_faces_preserves_quad_indices_until_vertices_are_available() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
         raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
         raw.extend([0, 1, 2, 0]); // quad -> two triangles
         with_expand(&raw, |_expand| {
             let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
-            let triangles = read_faces(&mut reader, 3, 2).expect("faces");
-            assert_eq!(triangles, vec![[0, 1, 2], [0, 1, 2], [0, 2, 0]]);
+            let faces = read_faces(&mut reader, 3, 2).expect("faces");
+            assert_eq!(faces, vec![[0, 1, 2, 2], [0, 1, 2, 0]]);
         });
+    }
+
+    #[test]
+    fn quad_uses_shorter_diagonal_and_collapses_duplicate_vertex() {
+        let vertices = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+        ];
+        assert_eq!(
+            triangulate_faces(&[[0, 1, 2, 3], [0, 1, 2, 2]], &vertices),
+            vec![[0, 1, 3], [1, 2, 3], [0, 1, 2]]
+        );
     }
 
     #[test]

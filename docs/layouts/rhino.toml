@@ -43,7 +43,7 @@ anchor = "| `ON_Interval` | two `f64` values, lower/upper |"
 name = "file_header"
 kind = "byte"
 section = "2"
-anchor = "The first 32 bytes are:"
+anchor = "The 32-byte start section begins at the first matching magic sequence within"
 size = 32
 note = "The version field is right-justified decimal text, not a binary integer: leading ASCII spaces then at least one ASCII digit. Version `5` and version `50` are distinct."
 

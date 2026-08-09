@@ -173,9 +173,9 @@ pub(crate) fn decode(
                     message: format!("unsupported SubDimple version {major}.{minor}"),
                 });
             }
-            let (surface, level_count) =
+            let (surface, level_count, children) =
                 read_subdimple(&mut child, archive, minor, scale, id, &mut warnings)?;
-            finish_chunk(&mut reader, &chunk, child, &mut warnings)?;
+            finish_chunk_children(&mut reader, &chunk, child, &children, &mut warnings)?;
             finish_payload(&reader)?;
             Ok(DecodedSubd::Surface {
                 surface: Box::new(surface),
@@ -197,7 +197,7 @@ fn read_subdimple(
     scale: f64,
     id: cadmpeg_ir::ids::SubdId,
     warnings: &mut Vec<String>,
-) -> Result<(SubdSurface, usize), SubdError> {
+) -> Result<(SubdSurface, usize, Vec<Range<usize>>), SubdError> {
     let level_count = capped_u32(reader, MAX_LEVELS, "SubD level count")?;
     reader.u32()?;
     reader.u32()?;
@@ -205,8 +205,11 @@ fn read_subdimple(
     read_finite_values(reader, 6, "SubD global bounding box")?;
 
     let mut level_zero = None;
+    let mut children = Vec::new();
     for expected_level in 0..level_count {
+        let start = reader.position();
         let level = read_level(reader, archive, expected_level, warnings)?;
+        children.push(start..reader.position());
         validate_level(&level, expected_level)?;
         if expected_level == 0 {
             level_zero = Some(level);
@@ -215,10 +218,14 @@ fn read_subdimple(
 
     if minor >= 1 {
         reader.u8()?;
+        let start = reader.position();
         read_mapping_tag(reader, archive, warnings)?;
+        children.push(start..reader.position());
     }
     if minor >= 2 {
+        let start = reader.position();
         read_symmetry(reader, archive, warnings)?;
+        children.push(start..reader.position());
     }
     if minor >= 3 {
         reader.u64()?;
@@ -227,11 +234,13 @@ fn read_subdimple(
         reader.bool()?;
         reader.take(16)?;
         reader.bool()?;
+        let start = reader.position();
         read_subd_hash(reader, archive, warnings)?;
+        children.push(start..reader.position());
     }
 
     let level = level_zero.ok_or_else(|| malformed(reader.position(), "SubD has no level zero"))?;
-    Ok((materialize(level, scale, id)?, level_count))
+    Ok((materialize(level, scale, id)?, level_count, children))
 }
 
 fn read_level(
@@ -1113,7 +1122,7 @@ fn read_mapping_tag(
     if minor >= 1 {
         reader.u32()?;
     }
-    finish_chunk(parent, &chunk, reader, warnings)
+    finish_direct_chunk(parent, &chunk, reader, warnings)
 }
 
 fn read_symmetry(
@@ -1132,11 +1141,12 @@ fn read_symmetry(
         });
     }
     let mut symmetry_type = reader.u8()?;
-    if symmetry_type == 113 {
+    let new_rotate_prototype = symmetry_type == 113;
+    if new_rotate_prototype {
         symmetry_type = 2;
     }
     if symmetry_type == 0 {
-        return finish_chunk(parent, &chunk, reader, warnings);
+        return finish_direct_chunk(parent, &chunk, reader, warnings);
     }
     if !(1..=5).contains(&symmetry_type) {
         return Err(malformed(
@@ -1164,8 +1174,8 @@ fn read_symmetry(
         1 => read_finite_values(&mut transform, 4, "SubD reflection plane")?,
         2 => {
             read_finite_values(&mut transform, 6, "SubD rotation axis")?;
-            if inner_version >= 2 {
-                read_finite_values(&mut transform, 4, "SubD rotation plane")?;
+            if inner_version >= 2 && !new_rotate_prototype {
+                transform.skip(4 * std::mem::size_of::<f64>())?;
             }
         }
         3 => {
@@ -1180,7 +1190,7 @@ fn read_symmetry(
         }
         _ => unreachable!("symmetry type checked"),
     }
-    finish_chunk(&mut reader, &inner, transform, warnings)?;
+    finish_direct_chunk(&mut reader, &inner, transform, warnings)?;
     if version >= 2 && reader.u8()? > 2 {
         return Err(malformed(
             reader.position() - 1,
@@ -1240,7 +1250,7 @@ fn read_sha1(
         });
     }
     reader.take(20)?;
-    finish_chunk(parent, &chunk, reader, warnings)
+    finish_direct_chunk(parent, &chunk, reader, warnings)
 }
 
 fn expect_zero(reader: &mut BoundedReader<'_>, label: &str) -> Result<(), SubdError> {
@@ -1279,23 +1289,30 @@ fn consume_anonymous(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     label: &str,
-    warnings: &mut Vec<String>,
+    _warnings: &mut Vec<String>,
 ) -> Result<(), SubdError> {
     let chunk = anonymous_chunk(reader, archive, label)?;
-    if matches!(
-        verify_checksum(reader.backing_bytes(), &chunk)?,
-        ChecksumStatus::Mismatch { .. }
-    ) {
-        warnings.push(format!(
-            "{label} CRC mismatch at offset {}",
-            chunk.header_start
-        ));
-    }
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(())
 }
 
 fn finish_chunk(
+    parent: &mut BoundedReader<'_>,
+    chunk: &crate::chunks::Chunk,
+    child: BoundedReader<'_>,
+    _warnings: &mut Vec<String>,
+) -> Result<(), SubdError> {
+    if child.remaining() != 0 {
+        return Err(malformed(
+            child.position(),
+            "SubD anonymous chunk has trailing bytes",
+        ));
+    }
+    parent.skip(chunk.next_offset - parent.position())?;
+    Ok(())
+}
+
+fn finish_direct_chunk(
     parent: &mut BoundedReader<'_>,
     chunk: &crate::chunks::Chunk,
     child: BoundedReader<'_>,
@@ -1309,6 +1326,33 @@ fn finish_chunk(
     }
     if matches!(
         verify_checksum(parent.backing_bytes(), chunk)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        warnings.push(format!(
+            "SubD anonymous CRC mismatch at offset {}",
+            chunk.header_start
+        ));
+    }
+    parent.skip(chunk.next_offset - parent.position())?;
+    Ok(())
+}
+
+fn finish_chunk_children(
+    parent: &mut BoundedReader<'_>,
+    chunk: &crate::chunks::Chunk,
+    child: BoundedReader<'_>,
+    children: &[Range<usize>],
+    warnings: &mut Vec<String>,
+) -> Result<(), SubdError> {
+    if child.remaining() != 0 {
+        return Err(malformed(
+            child.position(),
+            "SubD anonymous chunk has trailing bytes",
+        ));
+    }
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    if matches!(
+        crate::chunks::verify_checksum_ranges(parent.backing_bytes(), chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push(format!(
@@ -1395,6 +1439,57 @@ pub(crate) mod tests {
         bytes.extend_from_slice(body);
         bytes.extend_from_slice(&crc32fast::hash(body).to_le_bytes());
         bytes
+    }
+
+    fn anonymous_mixed(body: &[u8], children: &[Range<usize>]) -> Vec<u8> {
+        let direct = crate::chunks::direct_checksum_ranges(&(0..body.len()), children)
+            .expect("valid SubD fixture children");
+        let mut hasher = crc32fast::Hasher::new();
+        for range in direct {
+            hasher.update(&body[range]);
+        }
+        let mut bytes = ANONYMOUS.to_le_bytes().to_vec();
+        bytes.extend_from_slice(
+            &i64::try_from(body.len() + 4)
+                .expect("anonymous length")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(body);
+        bytes.extend_from_slice(&hasher.finalize().to_le_bytes());
+        bytes
+    }
+
+    fn rotate_symmetry(symmetry_type: u8, include_legacy_plane: bool) -> Vec<u8> {
+        let mut transform = 1_i32.to_le_bytes().to_vec();
+        transform.extend(2_i32.to_le_bytes());
+        for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0] {
+            transform.extend(value.to_le_bytes());
+        }
+        if include_legacy_plane {
+            for _ in 0..4 {
+                transform.extend(f64::NAN.to_le_bytes());
+            }
+        }
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(2_i32.to_le_bytes());
+        body.push(symmetry_type);
+        body.extend(0_u32.to_le_bytes());
+        body.extend(0_u32.to_le_bytes());
+        body.extend([0_u8; 16]);
+        body.extend(anonymous(&transform));
+        body.push(0);
+        anonymous(&body)
+    }
+
+    #[test]
+    fn rotate_symmetry_accepts_nan_padding_and_prototype_omission() {
+        for bytes in [rotate_symmetry(2, true), rotate_symmetry(113, false)] {
+            let mut reader =
+                BoundedReader::new(&bytes, 0, bytes.len()).expect("bounded symmetry reader");
+            read_symmetry(&mut reader, ArchiveVersion::V5, &mut Vec::new())
+                .expect("rotate symmetry");
+            assert_eq!(reader.remaining(), 0);
+        }
     }
 
     fn pointer(bytes: &mut Vec<u8>, id: u32, flags: u8) {
@@ -1566,6 +1661,7 @@ pub(crate) mod tests {
 
     fn payload(fixture: Fixture) -> Vec<u8> {
         let mut body = Vec::new();
+        let mut children = Vec::new();
         body.extend_from_slice(&1_i32.to_le_bytes());
         body.extend_from_slice(&fixture.minor.to_le_bytes());
         body.extend_from_slice(
@@ -1580,10 +1676,9 @@ pub(crate) mod tests {
             body.extend_from_slice(&value.to_le_bytes());
         }
         for level_index in 0..fixture.level_count {
-            body.extend(level(
-                fixture,
-                u16::try_from(level_index).expect("level index"),
-            ));
+            let child = level(fixture, u16::try_from(level_index).expect("level index"));
+            children.push(body.len()..body.len() + child.len());
+            body.extend(child);
         }
         if fixture.minor >= 1 {
             body.push(0);
@@ -1596,14 +1691,18 @@ pub(crate) mod tests {
                 mapping
                     .extend_from_slice(&(if index % 5 == 0 { 1.0_f64 } else { 0.0 }).to_le_bytes());
             }
-            body.extend(anonymous(&mapping));
+            let child = anonymous(&mapping);
+            children.push(body.len()..body.len() + child.len());
+            body.extend(child);
         }
         if fixture.minor >= 2 {
             let mut symmetry = Vec::new();
             symmetry.extend_from_slice(&1_i32.to_le_bytes());
             symmetry.extend_from_slice(&4_i32.to_le_bytes());
             symmetry.push(0);
-            body.extend(anonymous(&symmetry));
+            let child = anonymous(&symmetry);
+            children.push(body.len()..body.len() + child.len());
+            body.extend(child);
         }
         if fixture.minor >= 3 {
             body.extend_from_slice(&42_u64.to_le_bytes());
@@ -1616,10 +1715,12 @@ pub(crate) mod tests {
             hash.extend_from_slice(&1_i32.to_le_bytes());
             hash.extend_from_slice(&1_i32.to_le_bytes());
             hash.push(1);
-            body.extend(anonymous(&hash));
+            let child = anonymous(&hash);
+            children.push(body.len()..body.len() + child.len());
+            body.extend(child);
         }
         let mut payload = vec![1];
-        payload.extend(anonymous(&body));
+        payload.extend(anonymous_mixed(&body, &children));
         payload
     }
 
