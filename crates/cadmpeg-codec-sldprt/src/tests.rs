@@ -6340,7 +6340,7 @@ fn decode_reports_and_withholds_faces_without_body_membership() {
 }
 
 #[test]
-fn deltas_cannot_add_a_superseded_face_to_partition_membership() {
+fn unselected_deltas_bridges_do_not_enter_partition_membership() {
     let partition = triangle_body();
     let deltas = owned_triangle(200, 900, 10.0);
     let mut cur = Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas));

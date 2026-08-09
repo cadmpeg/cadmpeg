@@ -357,7 +357,11 @@ pub struct Tables {
 }
 
 impl Tables {
-    /// Merge a deltas table without replacing partition topology membership.
+    /// Merge deltas without replacing partition topology membership.
+    ///
+    /// The change roster does not identify a partition face that a deltas
+    /// bridge supersedes. Keep the partition bridge set when it exists; a
+    /// deltas bridge set is usable only for a site with no partition bridges.
     pub fn merge_deltas(&mut self, mut deltas: Self) {
         if self.bridges.is_empty() {
             self.bridges = deltas.bridges;

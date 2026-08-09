@@ -32,14 +32,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the owner to construct the final body membership of a multi-chain site.
 
-### BC-03. Superseded partition faces
-
-**Question.** Which field or relation identifies the partition face that a deltas face supersedes?
-
-**Known.** `sldprt.md` §4.2 "A deltas stream groups its records into change sets." states that change-roster membership does not identify persistence. `sldprt.md` §4.2 "A deltas change set can re-create subordinate topology and geometry records under new attributes." states that deltas can carry alternate topology, but it does not identify the partition face that a deltas face supersedes.
-
-**Need.** We must identify the superseded face to prevent duplicate faces in the final body.
-
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
