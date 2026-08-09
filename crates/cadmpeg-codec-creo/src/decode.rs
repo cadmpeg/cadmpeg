@@ -3311,6 +3311,9 @@ pub(crate) fn resolved_section_coordinates(
         .filter(|table| feature_relation_table_complete(table))
         .flat_map(|table| &table.rows)
         .filter_map(|relation| {
+            if section_solver_relation_is_disabled(definition, relation.relation_id) {
+                return None;
+            }
             if relation.relation_type != 0 {
                 return None;
             }
@@ -3735,6 +3738,7 @@ fn section_equation_coordinate_equalities(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter_map(|equation| {
             let (first, second, auxiliary) = match equation.function_id {
                 2 if equation.arguments.len() == 2 => {
@@ -3822,6 +3826,7 @@ fn section_equation_radial_constraints(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
         .filter_map(|equation| {
             let [
@@ -3977,6 +3982,7 @@ fn section_equation_unsigned_coordinate_distances(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
         .filter_map(|equation| {
             let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
@@ -4049,6 +4055,7 @@ fn section_equation_radius_dimensions(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
         .filter_map(|equation| {
             let [Some(first), Some(second)] = equation.arguments.as_slice() else {
@@ -4111,6 +4118,7 @@ fn section_equation_point_on_line_constraints(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let [
@@ -4197,6 +4205,7 @@ fn section_equation_equal_length_constraints(
     equations
         .rows
         .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
         .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
         .filter_map(|equation| {
             let mut rows = Vec::with_capacity(equation.arguments.len());
@@ -5257,6 +5266,9 @@ pub(crate) fn resolved_section_radii(
         .filter(|table| feature_relation_table_complete(table))
         .flat_map(|table| &table.rows)
     {
+        if section_solver_relation_is_disabled(definition, relation.relation_id) {
+            continue;
+        }
         if relation.relation_type == 5 && relation.sign == 1 {
             let Some(_) = section_type5_radius_arc(definition, relation) else {
                 continue;
@@ -11524,6 +11536,62 @@ fn joined_relation_incidence_link(
         return None;
     };
     Some((*join, *incidence))
+}
+
+fn section_solver_relation_is_disabled(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> bool {
+    let Some(relations) = definition
+        .relations
+        .as_ref()
+        .filter(|relations| feature_relation_table_complete(relations))
+    else {
+        return false;
+    };
+    if relations
+        .rows
+        .iter()
+        .filter(|relation| relation.relation_id == relation_id)
+        .count()
+        != 1
+    {
+        return false;
+    }
+    joined_relation_incidence(definition, relation_id)
+        .is_some_and(|incidence| !section_skamp_active(incidence.status))
+}
+
+fn section_solver_equation_is_disabled(
+    definition: &crate::feature::FeatureDefinition,
+    equation_id: u32,
+) -> bool {
+    let Some(relations) = &definition.relations else {
+        return false;
+    };
+    if !feature_solver_table_complete(relations.triples_header.as_ref(), relations.triples.len())
+        || !feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len())
+    {
+        return false;
+    }
+    let incidence_ids = relations
+        .triples
+        .iter()
+        .filter(|triple| triple.equation_id == Some(equation_id))
+        .filter_map(|triple| triple.skamp_id)
+        .collect::<Vec<_>>();
+    let [incidence_id] = incidence_ids.as_slice() else {
+        return false;
+    };
+    let incidences = relations
+        .skamps
+        .iter()
+        .filter(|skamp| skamp.id == *incidence_id)
+        .collect::<Vec<_>>();
+    let [incidence] = incidences.as_slice() else {
+        return false;
+    };
+    !section_skamp_active(incidence.status)
 }
 
 fn relation_incidence(

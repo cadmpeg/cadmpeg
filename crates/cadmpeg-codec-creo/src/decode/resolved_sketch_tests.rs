@@ -6721,6 +6721,46 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         Some(&[Some(5.0), None])
     );
 
+    let equation_id = crate::feature::equation_table(&definition.body, 0, definition.body.len())
+        .expect("equation table")
+        .rows
+        .iter()
+        .find(|equation| equation.function_id == 3)
+        .expect("function-three equation")
+        .equation_id;
+    let mut disabled_equation = definition.clone();
+    disabled_equation.relations = Some(crate::feature::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: Vec::new(),
+        skamps: vec![crate::feature::FeatureSkamp {
+            id: 900,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: Vec::new(),
+            offset: 900,
+        }],
+        skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 901,
+            offset: 900,
+        }),
+        triples: vec![crate::feature::FeatureRelationTriple {
+            relation_id: None,
+            equation_id: Some(equation_id),
+            skamp_id: Some(900),
+            offset: 902,
+        }],
+        triples_header: Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 903,
+            offset: 902,
+        }),
+        offset: 899,
+    });
+    assert!(!resolved_section_coordinates(&disabled_equation).contains_key(&2));
+
     let mut mismatched = definition;
     mismatched
         .dimensions
@@ -13427,6 +13467,42 @@ fn section_solver_constraints_require_complete_unique_semantics() {
         resolved_section_points(&unspanned_distance).get(&5),
         Some(&[3.0, 2.0])
     );
+    let mut disabled_distance = distance_definition.clone();
+    let disabled_relations = disabled_distance.relations.as_mut().expect("relations");
+    disabled_relations.skamps = vec![crate::feature::FeatureSkamp {
+        id: 900,
+        kind: 0,
+        flags: 0,
+        status: 0,
+        items: vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 3,
+            },
+        ],
+        offset: 900,
+    }];
+    disabled_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 901,
+        offset: 900,
+    });
+    disabled_relations.triples = vec![crate::feature::FeatureRelationTriple {
+        relation_id: Some(8),
+        equation_id: None,
+        skamp_id: Some(900),
+        offset: 902,
+    }];
+    disabled_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
+        declared_count: 1,
+        entity_ref: 903,
+        offset: 902,
+    });
+    assert!(!resolved_section_points(&disabled_distance).contains_key(&2));
     distance_definition
         .relations
         .as_mut()
