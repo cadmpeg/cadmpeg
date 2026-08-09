@@ -915,6 +915,7 @@ referenced list and its instances resolve.
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
 Distinct fixed analytic carrier records retain physical record order within each point, surface, or curve family. A graph-bounded fixed analytic carrier and a scanner candidate at the same type-tag offset are one carrier; graph framing and XMT identity are authoritative.
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
+If either endpoint's `FIN.vertex → VERTEX.point` path does not resolve, the EDGE and its dependent loop are omitted. The only coincident-endpoint exception is the explicit closed null-FIN witness: both FIN vertex references are null, both FIN links self-reference, and the FIN is its own forward and backward partner.
 An unresolved carrier placeholder belongs to the transferred model only when an
 emitted FACE or EDGE references it. Fixed-record scanner candidates outside the
 resolved body closure do not create free unknown carriers.
