@@ -3353,12 +3353,16 @@ pub(crate) fn resolved_section_coordinates(
             Some((first, second, coordinate, delta))
         })
         .collect::<Vec<_>>();
-    let unsigned_dimension_candidates = linear_dimension_candidates
+    let mut unsigned_dimension_candidates = linear_dimension_candidates
         .iter()
         .filter_map(|&(first, second, coordinate, magnitude, sign)| {
             (sign == 0).then_some((first, second, coordinate, magnitude))
         })
         .collect::<Vec<_>>();
+    unsigned_dimension_candidates.extend(section_equation_unsigned_coordinate_distances(
+        definition,
+        &ambiguous_point_ids,
+    ));
     let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
     for (first, second, coordinate, delta) in signed_dimension_candidates {
         let (key, canonical_delta) = if first <= second {
@@ -3649,6 +3653,79 @@ fn section_equation_coordinate_equalities(
                 return None;
             }
             Some((first.key, second.key, usize::from(first.variable_type == 2)))
+        })
+        .collect()
+}
+
+fn section_equation_unsigned_coordinate_distances(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<(u32, u32, usize, f64)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(dimensions) = definition
+        .dimensions
+        .as_ref()
+        .filter(|table| feature_dimension_table_complete(table))
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 3 && equation.arguments.len() == 3)
+        .filter_map(|equation| {
+            let [Some(first), Some(second), Some(dimension)] = equation.arguments.as_slice() else {
+                return None;
+            };
+            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+            let dimension = variables.rows.get(usize::try_from(*dimension).ok()?)?;
+            if first.variable_type != second.variable_type
+                || !matches!(first.variable_type, 1 | 2)
+                || dimension.variable_type != 0
+                || ambiguous_point_ids.contains(&first.key)
+                || ambiguous_point_ids.contains(&second.key)
+                || first.key == second.key
+                || dimension.value.is_none()
+            {
+                return None;
+            }
+            let scalar = dimension.value?;
+            let dimension = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
+            let value = dimension.value?;
+            if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !matches!(dimension.dimension_type, 1..=5)
+                || !scalar.is_finite()
+                || scalar < 0.0
+                || !value.is_finite()
+                || value < 0.0
+            {
+                return None;
+            }
+            let scale = scalar.abs().max(value.abs()).max(1.0);
+            ((scalar - value).abs() <= 1e-9 * scale).then_some((
+                first.key,
+                second.key,
+                usize::from(first.variable_type == 2),
+                value,
+            ))
         })
         .collect()
 }

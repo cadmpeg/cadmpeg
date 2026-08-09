@@ -1468,7 +1468,12 @@ non-null equation argument is a zero-based ordinal into the containing
 dimension identifier. Function `2` has exactly two argument slots and asserts
 equality of the two referenced scalar rows. When both rows have type `1` or
 both rows have type `2`, the assertion equates the corresponding coordinate of
-their point keys.
+their point keys. Function `3` has exactly three argument slots. Its first two
+rows have the same type, either `1` or `2`; its third row has type `0`. The
+third row key is a zero-based ordinal into a complete `dimtab_ptr` row table.
+For dimension types `1` through `5`, the type-0 scalar and selected dimension
+value are equal non-negative millimetre values, and the equation asserts that
+the absolute difference of the first two coordinates equals that value.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table

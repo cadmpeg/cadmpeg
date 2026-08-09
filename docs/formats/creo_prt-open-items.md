@@ -398,10 +398,13 @@ The named `dimtab_ptr` prototype may also carry `dim_ref` rows with nullable
 the `var_arr` solver-variable identity. A complete `eqtn_arr` uses zero-based
 `var_arr` row ordinals for its argument slots. Function `2` transfers scalar
 equality between two referenced rows; for two type-1 rows or two type-2 rows,
-this transfers equality between the corresponding point coordinates.
+this transfers equality between the corresponding point coordinates. Function
+`3` transfers a complete non-negative linear dimension into an unsigned
+coordinate-difference constraint when its type-0 scalar agrees with the
+selected dimension row.
 
-**Need.** We must know the non-equality equation and relation joins that assign
-a dimension value to a dimension-driven solver variable.
+**Need.** We must know the remaining non-equality equation and relation joins
+that assign a dimension value to a dimension-driven solver variable.
 
 ### SP-13. `relat_ptr.used` states
 

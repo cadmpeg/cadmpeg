@@ -6370,6 +6370,90 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
 }
 
 #[test]
+fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
+    let variable =
+        |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {
+            variable_type,
+            key,
+            value,
+            value_body: Vec::new(),
+            guess: value,
+            guess_body: Vec::new(),
+            guess_dimension_driven: dimension_driven,
+            known: Some(0),
+            homogeneity: Some(1),
+            uvar_id: None,
+            dimension_driven,
+            offset: 0,
+        };
+    let dimension = |value| crate::feature::FeatureDimension {
+        dimension_type: 1,
+        value: Some(value),
+        value_body: Vec::new(),
+        unresolved_value_token: None,
+        value_unit: crate::feature::DimensionUnit::Millimeters,
+        direction_byte: 0,
+        auxiliary_value: None,
+        auxiliary_body: Vec::new(),
+        external_id: 0,
+        references: None,
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x03\xf8\x03\x00\x01\x03\xf6\xe2\
+                \x02\x03\xf8\x03\x01\x02\x04\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 5,
+            entity_ref: None,
+            rows: vec![
+                variable(1, 1, Some(0.0), false),
+                variable(1, 2, None, true),
+                variable(1, 3, Some(10.0), false),
+                variable(0, 0, Some(5.0), false),
+                variable(0, 1, Some(5.0), false),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::FeatureDimensionTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![dimension(5.0), dimension(5.0)],
+            offset: 0,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition).get(&2),
+        Some(&[Some(5.0), None])
+    );
+
+    let mut mismatched = definition;
+    mismatched
+        .dimensions
+        .as_mut()
+        .expect("dimension table")
+        .rows[0]
+        .value = Some(6.0);
+    assert!(!resolved_section_coordinates(&mismatched).contains_key(&2));
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,
