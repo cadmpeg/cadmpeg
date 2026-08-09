@@ -998,6 +998,35 @@ Cross-checked against code:
 - `crates/cadmpeg-codec-sldprt/src/metadata.rs` — The parser requires the fixed prefix before reading the value fields.
 - `crates/cadmpeg-codec-sldprt/src/writer.rs` — The writer emits the fixed prefix before the value fields.
 
+## `display_lists_compact_face_header`
+
+Spec §8 · layout: byte offsets · size: 8 B
+
+Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this compact header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `common` | `bytes[8]` | little | spec | Both forms start with an opaque 8-byte common header. |
+
+## `display_lists_extended_face_header`
+
+Spec §8 · layout: byte offsets · size: 40 B
+
+Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this extended header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `common` | `bytes[8]` | little | spec | Both forms start with an opaque 8-byte common header. |
+| 8 | 4 | `form` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
+| 12 | 4 | `zero_at_12` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
+| 16 | 4 | `zero_at_16` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
+| 20 | 4 | `form_token` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
+| 24 | 16 | `zero_tail` | `bytes[16]` | little | spec | followed by 16 zero bytes at `+24` |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The decoder selects the descriptor-table offset from the complete extended-header grammar.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
@@ -1006,4 +1035,3 @@ Cross-checked against code:
 | Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. The bare slot-count table is an open item, not a stated layout. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |
-| Tessellation and appearance lanes (§8) | §8 | Apart from the scene-source binding tabulated above, §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request. |

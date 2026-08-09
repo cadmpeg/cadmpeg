@@ -158,15 +158,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the mapping to attach each tessellated triangle to its face.
 
-### AL-02. DisplayLists descriptor table position
+### AL-03. DisplayLists table-header fields
 
-**Question.** What fixes the position of the descriptor table after a `uoTempFaceTessData_c` class token?
+**Question.** What do the two u32 cells in the common face-tessellation header and the nonzero extended-form token encode?
 
-**Known.** `sldprt.md` §7.3 "**`00 28` chart**" gives the descriptor relations `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`. It gives no offset for the table. `docs/layouts/sldprt.toml` records the offset as `not_applicable` and states that the parser asserts fixed offsets that the specification does not give.
+**Known.** `sldprt.md` §8 defines the compact and extended `uoTempFaceTessData_c` headers and the exact descriptor-table position for each form. The common 8-byte header does not select the form. The fixed extension cells and its nonzero token select the extended form.
 
-The decoder tests offsets `+8` and `+40`. It accepts the table only when exactly one offset frames a complete descriptor sequence with consistent strip totals and vertex counts. If both offsets frame, tessellation remains unresolved.
-
-**Need.** We must know the offset to distinguish a valid table from two structurally valid candidates without withholding tessellation.
+**Need.** We must know the field semantics to validate these cells and regenerate their values without a retained source record.
 
 ## 5. Design intent
 

@@ -1130,7 +1130,9 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 
 ## 8. Auxiliary lanes
 
-- **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.
+- **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`. Each descriptor is `item_size u32 LE`, `kind u32 LE`, `flags u32 LE`, `count u32 LE`, then `item_size * count` data bytes. The first descriptor has `item_size = 4` and `kind = 8`. The second and third descriptors have `item_size = 12` and `kind = 100`.
+
+  A `uoTempFaceTessData_c` class token has two table-header forms. Offsets are from the byte after the class token. Both forms start with an opaque 8-byte common header. In the compact form, the first descriptor starts at `+8`. The extended form has u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`, followed by 16 zero bytes at `+24`; its first descriptor starts at `+40`. The fixed cells and nonzero token select the extended form. A header that does not satisfy the complete extended grammar uses the compact offset and must frame a valid descriptor table there.
 - A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
 

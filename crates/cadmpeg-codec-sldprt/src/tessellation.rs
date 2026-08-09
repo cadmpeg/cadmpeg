@@ -215,11 +215,27 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
         return Vec::new();
     };
     let end = marker + MARKER.len();
-    unique_table_sequence(
-        [8usize, 40]
-            .into_iter()
-            .filter_map(|relative| parse_table_sequence(payload, end + relative)),
-    )
+    parse_table_sequence(payload, end + descriptor_table_offset(payload, end)).unwrap_or_default()
+}
+
+/// Offset of the first descriptor after a face-tessellation class name.
+///
+/// Both forms begin with two u32 cells. The extended form then carries a
+/// fixed 32-byte extension. A compact table begins with item
+/// size 4 at the same position, so it cannot satisfy the extension grammar.
+fn descriptor_table_offset(payload: &[u8], at: usize) -> usize {
+    let extended = u32_le(payload, at + 8) == Some(1)
+        && u32_le(payload, at + 12) == Some(0)
+        && u32_le(payload, at + 16) == Some(0)
+        && u32_le(payload, at + 20).is_some_and(|token| token != 0)
+        && payload
+            .get(at + 24..at + 40)
+            .is_some_and(|tail| tail.iter().all(|byte| *byte == 0));
+    if extended {
+        40
+    } else {
+        8
+    }
 }
 
 fn parse_table_sequence(payload: &[u8], at: usize) -> Option<Vec<Mesh>> {
@@ -248,17 +264,6 @@ fn parse_table_sequence(payload: &[u8], at: usize) -> Option<Vec<Mesh>> {
     Some(meshes)
 }
 
-fn unique_table_sequence(mut candidates: impl Iterator<Item = Vec<Mesh>>) -> Vec<Mesh> {
-    let Some(unique) = candidates.next() else {
-        return Vec::new();
-    };
-    if candidates.next().is_some() {
-        Vec::new()
-    } else {
-        unique
-    }
-}
-
 pub fn section_summary(section: Section<'_>) -> Option<Summary> {
     let meshes = section_meshes(section);
     (!meshes.is_empty()).then(|| Summary {
@@ -280,6 +285,30 @@ pub fn summary(scan: &ContainerScan) -> Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend(item_size.to_le_bytes());
+        out.extend(kind.to_le_bytes());
+        out.extend(2_u32.to_le_bytes());
+        out.extend(count.to_le_bytes());
+        out.extend(data);
+        out
+    }
+
+    fn table() -> Vec<u8> {
+        let mut out = descriptor(4, 8, 1, &3_u32.to_le_bytes());
+        let positions = [0.0_f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect::<Vec<_>>();
+        out.extend(descriptor(12, 100, 3, &positions));
+        out.extend(descriptor(12, 100, 3, &[0; 36]));
+        for _ in 0..3 {
+            out.extend(descriptor(1, 8, 0, &[]));
+        }
+        out
+    }
 
     fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
         payload.extend_from_slice(CLASS_MARKER);
@@ -332,14 +361,33 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_descriptor_table_offsets_are_withheld() {
-        let candidate = || {
-            vec![Mesh {
-                vertices: vec![Point3::new(0.0, 0.0, 0.0)],
-                ..Default::default()
-            }]
-        };
-        assert_eq!(unique_table_sequence(std::iter::once(candidate())).len(), 1);
-        assert!(unique_table_sequence([candidate(), candidate()].into_iter()).is_empty());
+    fn compact_face_tessellation_header_places_table_at_plus_8() {
+        let mut payload = Vec::new();
+        payload.extend(2_u32.to_le_bytes());
+        payload.extend(1_u32.to_le_bytes());
+        payload.extend(table());
+        assert_eq!(descriptor_table_offset(&payload, 0), 8);
+        assert!(parse_table_sequence(&payload, 8).is_some());
+    }
+
+    #[test]
+    fn extended_face_tessellation_header_places_table_at_plus_40() {
+        let mut payload = Vec::new();
+        for word in [2_u32, 1, 1, 0, 0, 0x0020_1296, 0, 0, 0, 0] {
+            payload.extend(word.to_le_bytes());
+        }
+        payload.extend(table());
+        assert_eq!(descriptor_table_offset(&payload, 0), 40);
+        assert!(parse_table_sequence(&payload, 40).is_some());
+    }
+
+    #[test]
+    fn incomplete_extended_header_does_not_shift_the_table() {
+        let mut payload = Vec::new();
+        for word in [2_u32, 1, 1, 0, 0, 0, 0, 0, 0, 0] {
+            payload.extend(word.to_le_bytes());
+        }
+        payload.extend(table());
+        assert_eq!(descriptor_table_offset(&payload, 0), 8);
     }
 }

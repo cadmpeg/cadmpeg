@@ -3807,6 +3807,78 @@ path = "crates/cadmpeg-codec-sldprt/src/writer.rs"
 contains = "objects.extend_from_slice(&[0xff; 8]);"
 note = "The writer emits the fixed prefix before the value fields."
 
+[[record]]
+name = "display_lists_compact_face_header"
+kind = "byte"
+section = "8"
+anchor = "Both forms start with an opaque 8-byte common header."
+size = 8
+endianness = "little"
+note = "Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this compact header."
+
+[[record.field]]
+name = "common"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Both forms start with an opaque 8-byte common header."
+
+[[record]]
+name = "display_lists_extended_face_header"
+kind = "byte"
+section = "8"
+anchor = "The extended form has u32 LE values"
+size = 40
+endianness = "little"
+note = "Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this extended header."
+
+[[record.field]]
+name = "common"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Both forms start with an opaque 8-byte common header."
+
+[[record.field]]
+name = "form"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`"
+
+[[record.field]]
+name = "zero_at_12"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`"
+
+[[record.field]]
+name = "zero_at_16"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`"
+
+[[record.field]]
+name = "form_token"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20`"
+
+[[record.field]]
+name = "zero_tail"
+offset = 24
+type = "bytes[16]"
+source = "spec"
+anchor = "followed by 16 zero bytes at `+24`"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
+contains = "fn descriptor_table_offset(payload: &[u8], at: usize) -> usize"
+note = "The decoder selects the descriptor-table offset from the complete extended-header grammar."
+
 # --- Not tabulated ---------------------------------------------------------
 
 [[not_applicable]]
@@ -3832,9 +3904,3 @@ area = "Compound File Binary directory entry (§1)"
 reason = "The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding."
 section = "1"
 anchor = "Directory entries are 128 bytes and carry a NUL-terminated UTF-16LE name"
-
-[[not_applicable]]
-area = "Tessellation and appearance lanes (§8)"
-reason = "Apart from the scene-source binding tabulated above, §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request."
-section = "8"
-anchor = "a 6-descriptor table: List A strip lengths"
