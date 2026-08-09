@@ -226,8 +226,10 @@ geometry.
 The `bounds` aggregate of a `FACE` contains at most one `FACE_OUTER_BOUND`.
 The applicable surface-face subtype requires its outer bound. All remaining
 bounds are `FACE_BOUND` inner bounds. A source with more than one explicit
-outer bound violates the schema rule. The decoder retains the explicit roles
-for diagnostics and validation does not reclassify them.
+outer bound violates the schema rule. The decoder reports
+`SourceTopologyInvalid`, rejects the affected sheet member or solid root before
+committing neutral topology, and retains the source records as named opaque
+data. It does not reclassify the explicit roles.
 
 `AXIS2_PLACEMENT_2D` defines the origin and positive-u axis of a parameter-space
 conic. Its positive-v axis is the counterclockwise perpendicular. A `PCURVE`

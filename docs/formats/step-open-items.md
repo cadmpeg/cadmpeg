@@ -37,8 +37,8 @@ charges the worst-case range-inference allowance before the pass. A synthesized
 plane inference uses the ordered outer-loop winding and a scale-relative
 collinearity threshold. The current full sweep has no decode timeout, but a
 large-file spot check still reached 3.3 GiB peak resident memory while writing
-342 MiB of CADIR from a 121 MiB input. The endpoint and termination bounds are
-therefore closed; memory efficiency remains an open defect in this gate.
+342 MiB of CADIR from a 121 MiB input. The endpoint and termination controls
+are in place; retained-memory efficiency remains an open defect in this gate.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic
@@ -66,11 +66,12 @@ so retaining or omitting many failed optional pcurves is linear in the decoded
 coedge population. Edition-3 anchor expansion charges every cloned value node
 to the same collection-item and work-unit dimensions before materialization;
 its independent expansion and depth fuses remain active. The service profile
-rejects four large inputs deterministically in about 0.3 s at its
-collection-item ceiling. The desktop profile completes the same spot checks,
-but the measured 3.3 GiB peak resident memory shows that retained allocation
-accounting and representation overhead are not yet efficient enough for an L9
-claim.
+rejects inputs deterministically at its collection-item ceiling. The desktop
+profile can complete the large spot checks, but the measured 3.3 GiB peak
+resident memory shows that retained allocation accounting and representation
+overhead are not yet efficient enough for an L9 claim. Parser value nodes,
+exact interned source names, compact exact identity slots, and streamed byte
+accounting are bounded controls; they do not close the retained-memory defect.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
@@ -90,29 +91,24 @@ deviation within the declared uncertainty is therefore valid; a larger
 deviation remains an error. The STEP reader applies this same contract before
 final retention: an optional pcurve that fails the surface-to-edge endpoint
 contract is omitted from the neutral coedge, retained with its complete source
-closure, and reported as `PcurveOmitted`. The STEP face-bound rule is retained
-as a source validity diagnostic. In the current 4,173-file admitted sweep,
-4,054 syntactically valid files decoded, with no decode or validation timeout
-and no unclassified source bytes. The sweep produced 308 `PcurveOmitted`
-losses and no remaining pcurve consistency findings. The remaining 3,697
-validation errors are classified as source-invalid topology: 3,693 faces have
-more than one explicit outer bound, and four source `OPEN_SHELL` records have
-disconnected face components. The decoder retains those records and findings.
-The rebuilt sweep emits 3,719 `source_topology_invalid` losses: 3,715 face
-losses and four shell losses. The 22 additional face losses describe source
-faces that are not present in a retained validation shell. Each source-invalid
-face or shell emits one stable loss with source provenance. A face loss includes
-its outer-bound count. A shell loss includes its source shell id, face count,
-and component count. These losses are warnings because a source defect does
-not mean that the retained topology was lost.
+closure, and reported as `PcurveOmitted`. The STEP face-bound rule is
+source-invalid. The reader rejects an affected sheet member or solid root
+before committing neutral topology. It retains the source records as named
+opaque data, emits `SourceTopologyInvalid` with source provenance, and emits
+`TopologyNotTransferred` for the rejected topology transaction. A disconnected
+source shell follows the same transaction rule. The neutral IR therefore does
+not contain a face with multiple outer loops or a disconnected shell. Optional
+pcurve failures remain omitted from neutral topology and are reported as
+`PcurveOmitted`.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
-artifact. Classify each failure as a source-invalid case with a retained
-diagnostic or fix the decoder. Reconcile typed records, named opaque records,
-unclassified bytes, and loss notes. Require zero unexplained validation errors
-and zero unclassified source bytes. The STEP face-bound rule is settled: more
-than one explicit `FACE_OUTER_BOUND` is source-invalid and must remain a
-validation finding, not be repaired by reclassification.
+artifact. Reconcile typed records, named opaque records, unclassified bytes,
+and loss notes. Require zero validation errors and zero unclassified source
+bytes. Require one stable source-provenance loss for every rejected invalid
+face or shell and one topology-transfer loss for every rejected topology
+transaction. The STEP face-bound rule is settled: more than one explicit
+`FACE_OUTER_BOUND` is source-invalid and must be rejected before neutral
+topology commit, not repaired by reclassification.
 
 ### L9-04. Native write and re-decode proof
 
@@ -166,10 +162,12 @@ per-input timeout and a 4 GiB RSS ceiling. All seven targets completed without
 a panic, sanitizer finding, timeout, or allocation failure. The checked-in
 seed inputs remain the reproducible regression corpus.
 
-**Closure.** Add parser and writer fuzz targets for the admitted envelope. Run
-bounded campaigns with resource policies enabled. Retain minimized synthesized
-regressions for crashes, hangs, stack growth, allocation failures, invalid IR,
-and nondeterministic losses.
+**Status.** Resolved for the declared fuzz envelope.
+
+**Closure.** The checked-in targets and bounded campaign satisfy this gate.
+Retain minimized synthesized regressions for crashes, hangs, stack growth,
+allocation failures, invalid IR, and nondeterministic losses when future
+campaigns find them.
 
 ## 1. External resources
 

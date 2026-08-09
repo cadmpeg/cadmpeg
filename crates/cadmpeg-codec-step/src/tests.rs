@@ -1760,7 +1760,7 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
 }
 
 #[test]
-fn disconnected_source_shell_is_classified_without_repairing_topology() {
+fn disconnected_source_shell_is_rejected_with_loss() {
     let mut source =
         String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
             .expect("fixture is UTF-8")
@@ -1800,7 +1800,8 @@ ENDSEC;\nEND-ISO-10303-21;",
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode disconnected source shell");
 
-    assert_eq!(decoded.ir.model.faces.len(), 2);
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.ir.model.faces.is_empty());
     let source_loss = decoded
         .report
         .losses
@@ -1812,12 +1813,10 @@ ENDSEC;\nEND-ISO-10303-21;",
     assert!(source_loss
         .message
         .contains("2 disconnected face component(s)"));
+    assert!(source_loss.message.contains("not transferred"));
 
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
-    assert!(validation.findings.iter().any(|finding| {
-        finding.check == cadmpeg_ir::Check::ShellTopology
-            && finding.entity.as_deref() == Some("step:data:shell#30")
-    }));
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -5548,7 +5547,7 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
 }
 
 #[test]
-fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
+fn duplicate_face_outer_bounds_reject_source_topology() {
     use cadmpeg_ir::ids::LoopId;
     use cadmpeg_ir::topology::Loop;
 
@@ -5572,11 +5571,16 @@ fn duplicate_face_outer_bounds_are_reported_without_reclassification() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode duplicate outer bounds");
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.ir.model.faces.is_empty());
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.code == cadmpeg_ir::LossKind::SourceTopologyInvalid
             && loss.message.contains("FACE_OUTER_BOUND")
             && loss.message.contains("violates the STEP face-bound rule")
+            && loss.message.contains("not transferred")
     }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]

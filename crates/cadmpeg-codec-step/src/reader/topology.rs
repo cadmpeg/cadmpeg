@@ -116,7 +116,7 @@ pub(super) fn decode(
         let note = LossNote::new(
             LossKind::SourceTopologyInvalid,
             format!(
-                "source {} #{} contains {} disconnected face component(s) across {} face(s); topology retained as decoded",
+                "source {} #{} contains {} disconnected face component(s) across {} face(s); affected topology is not transferred",
                 diagnostic.shell_type,
                 diagnostic.shell,
                 diagnostic.components,
@@ -544,14 +544,17 @@ struct BuildOutcome {
 struct BuildFailure {
     record_id: u64,
     carrier_kind: &'static str,
+    detail: Option<String>,
 }
 
 impl BuildFailure {
     fn message(&self) -> String {
-        format!(
-            "{} #{} missing or unresolved",
-            self.carrier_kind, self.record_id
-        )
+        self.detail.clone().unwrap_or_else(|| {
+            format!(
+                "{} #{} missing or unresolved",
+                self.carrier_kind, self.record_id
+            )
+        })
     }
 }
 
@@ -565,6 +568,7 @@ fn require_carrier<T>(
         failure.get_or_insert(BuildFailure {
             record_id,
             carrier_kind,
+            detail: None,
         });
     }
     value
@@ -574,6 +578,15 @@ fn note_failure(failure: &mut Option<BuildFailure>, record_id: u64, carrier_kind
     failure.get_or_insert(BuildFailure {
         record_id,
         carrier_kind,
+        detail: None,
+    });
+}
+
+fn note_failure_detail(failure: &mut Option<BuildFailure>, record_id: u64, detail: String) {
+    failure.get_or_insert(BuildFailure {
+        record_id,
+        carrier_kind: "source topology",
+        detail: Some(detail),
     });
 }
 
@@ -1665,6 +1678,7 @@ fn build(
             failure: Some(BuildFailure {
                 record_id: id,
                 carrier_kind: "topology root carrier",
+                detail: None,
             }),
         };
     };
@@ -1717,6 +1731,7 @@ fn build(
                     failure.get_or_insert(BuildFailure {
                         record_id: shell_reference,
                         carrier_kind: "shell carrier",
+                        detail: None,
                     });
                     failed += 1;
                     continue;
@@ -1886,6 +1901,66 @@ fn build_one(
             note_failure(failure, shell_step, "shell face list");
             return None;
         }
+        let mut face_infos = BTreeMap::new();
+        let mut invalid_faces = BTreeMap::new();
+        for &face_step in &face_steps {
+            if face_infos.contains_key(&face_step) {
+                continue;
+            }
+            let Some(face_info) = face_attributes(
+                require_carrier(
+                    exchange.records.get(&face_step),
+                    failure,
+                    face_step,
+                    "face record",
+                )?,
+                exchange,
+                &mut BTreeSet::new(),
+            ) else {
+                continue;
+            };
+            let outer_count = face_info
+                .bounds
+                .iter()
+                .filter(|bound| {
+                    exchange
+                        .records
+                        .get(bound)
+                        .is_some_and(|record| has_type(record, "FACE_OUTER_BOUND"))
+                })
+                .count();
+            if outer_count > 1 {
+                invalid_faces.insert(face_step, outer_count);
+            }
+            face_infos.insert(face_step, face_info);
+        }
+        for (&face_step, &outer_count) in &invalid_faces {
+            losses.push(source_face_invalid_loss(exchange, face_step, outer_count));
+        }
+        if let Some((&face_step, &outer_count)) = invalid_faces.first_key_value() {
+            note_failure_detail(
+                failure,
+                face_step,
+                format!(
+                    "source face #{face_step} has {outer_count} FACE_OUTER_BOUND loops; affected topology is not transferred"
+                ),
+            );
+            return None;
+        }
+        if let Some(diagnostic) = source_shell_diagnostic(shell_step, exchange, edefs, odefs) {
+            note_failure_detail(
+                failure,
+                shell_step,
+                format!(
+                    "source {} #{} contains {} disconnected face component(s) across {} face(s); affected topology is not transferred",
+                    diagnostic.shell_type,
+                    diagnostic.shell,
+                    diagnostic.components,
+                    diagnostic.face_count,
+                ),
+            );
+            return None;
+        }
         let sid = shell_identity(id, shell_step, scope_root);
         let mut face_ids = vec![];
         for face_step in face_steps {
@@ -1903,7 +1978,7 @@ fn build_one(
                 return None;
             }
             let face_info = require_carrier(
-                face_attributes(fr, exchange, &mut BTreeSet::new()),
+                face_infos.remove(&face_step),
                 failure,
                 face_step,
                 "face attributes",
@@ -2300,24 +2375,6 @@ fn build_one(
                 });
                 loop_ids.push((has_type(br, "FACE_OUTER_BOUND"), lid));
                 typed.extend([bound_step, loop_step]);
-            }
-            let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
-            if outer_count > 1 {
-                let note = LossNote::new(
-                    LossKind::SourceTopologyInvalid,
-                    format!(
-                        "face #{face_step} violates the STEP face-bound rule with {outer_count} FACE_OUTER_BOUND loops; retaining all explicit roles for diagnostics"
-                    ),
-                );
-                losses.push(match exchange.records.get(&face_step) {
-                    Some(record) => note.with_provenance(cadmpeg_ir::LossProvenance {
-                        format: "step".into(),
-                        stream: String::new(),
-                        offset: record.span.start as u64,
-                        tag: Some("advanced_face".into()),
-                    }),
-                    None => note,
-                });
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
             let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
@@ -2802,6 +2859,59 @@ struct SourceShellDiagnostic {
     components: usize,
 }
 
+fn source_face_invalid_loss(exchange: &Exchange, face_step: u64, outer_count: usize) -> LossNote {
+    let note = LossNote::new(
+        LossKind::SourceTopologyInvalid,
+        format!(
+            "face #{face_step} violates the STEP face-bound rule with {outer_count} FACE_OUTER_BOUND loops; affected topology is not transferred"
+        ),
+    );
+    match exchange.records.get(&face_step) {
+        Some(record) => note.with_provenance(cadmpeg_ir::LossProvenance {
+            format: "step".into(),
+            stream: String::new(),
+            offset: record.span.start as u64,
+            tag: Some("advanced_face".into()),
+        }),
+        None => note,
+    }
+}
+
+fn source_shell_diagnostic(
+    shell: u64,
+    exchange: &Exchange,
+    edge_definitions: &BTreeMap<u64, EdgeDef>,
+    oriented_definitions: &BTreeMap<u64, OrientedDef>,
+) -> Option<SourceShellDiagnostic> {
+    let record = exchange.records.get(&shell)?;
+    let shell_type = most_specific(
+        record,
+        &[
+            "OPEN_SHELL",
+            "CLOSED_SHELL",
+            "CONNECTED_FACE_SUB_SET",
+            "CONNECTED_FACE_SET",
+        ],
+    )?;
+    let faces = source_shell_faces(record, shell_type)?;
+    if faces.len() < 2 {
+        return None;
+    }
+    let face_keys = faces
+        .into_iter()
+        .map(|face| {
+            source_face_topology_keys(face, exchange, edge_definitions, oriented_definitions)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let components = source_face_components(&face_keys);
+    (components > 1).then_some(SourceShellDiagnostic {
+        shell,
+        shell_type,
+        face_count: face_keys.len(),
+        components,
+    })
+}
+
 fn source_invalid_shells(
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
@@ -2837,38 +2947,7 @@ fn source_invalid_shells(
     shell_steps
         .into_iter()
         .filter_map(|shell| {
-            let record = exchange.records.get(&shell)?;
-            let shell_type = most_specific(
-                record,
-                &[
-                    "OPEN_SHELL",
-                    "CLOSED_SHELL",
-                    "CONNECTED_FACE_SUB_SET",
-                    "CONNECTED_FACE_SET",
-                ],
-            )?;
-            let faces = source_shell_faces(record, shell_type)?;
-            if faces.len() < 2 {
-                return None;
-            }
-            let face_keys = faces
-                .into_iter()
-                .map(|face| {
-                    source_face_topology_keys(
-                        face,
-                        exchange,
-                        edge_definitions,
-                        oriented_definitions,
-                    )
-                })
-                .collect::<Option<Vec<_>>>()?;
-            let components = source_face_components(&face_keys);
-            (components > 1).then_some(SourceShellDiagnostic {
-                shell,
-                shell_type,
-                face_count: face_keys.len(),
-                components,
-            })
+            source_shell_diagnostic(shell, exchange, edge_definitions, oriented_definitions)
         })
         .collect()
 }

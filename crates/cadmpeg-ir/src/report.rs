@@ -102,7 +102,7 @@ pub enum LossKind {
     /// container were decoded.
     TopologyNotTransferred,
     /// The source topology violates a neutral shell invariant; the decoder
-    /// retained the source topology and reported the source defect.
+    /// rejected the affected neutral topology and reported the source defect.
     SourceTopologyInvalid,
     /// B-rep geometry was not transferred, though carriers or a container were
     /// decoded.
