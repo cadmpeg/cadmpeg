@@ -90,9 +90,11 @@ losses and no remaining pcurve consistency findings. The remaining 3,697
 validation errors are classified as source-invalid topology: 3,693 faces have
 more than one explicit outer bound, and four source `OPEN_SHELL` records have
 disconnected face components. The decoder retains those records and findings.
-Each disconnected shell also emits one `source_topology_invalid` loss with the
-source shell id, face count, and component count. The loss is a warning because
-the source defect does not mean that the retained topology was lost.
+Each source-invalid face or shell also emits one `source_topology_invalid` loss
+with source provenance. A face loss includes its outer-bound count. A shell
+loss includes its source shell id, face count, and component count. These losses
+are warnings because a source defect does not mean that the retained topology
+was lost.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
 artifact. Classify each failure as a source-invalid case with a retained

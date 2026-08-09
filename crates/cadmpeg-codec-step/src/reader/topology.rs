@@ -2303,13 +2303,20 @@ fn build_one(
             }
             let outer_count = loop_ids.iter().filter(|(outer, _)| *outer).count();
             if outer_count > 1 {
-                losses.push(LossNote {
-                    code: LossKind::DecodeDiagnostic,
-                    severity: Severity::Warning,
-                    message: format!(
+                let note = LossNote::new(
+                    LossKind::SourceTopologyInvalid,
+                    format!(
                         "face #{face_step} violates the STEP face-bound rule with {outer_count} FACE_OUTER_BOUND loops; retaining all explicit roles for diagnostics"
                     ),
-                    provenance: None,
+                );
+                losses.push(match exchange.records.get(&face_step) {
+                    Some(record) => note.with_provenance(cadmpeg_ir::LossProvenance {
+                        format: "step".into(),
+                        stream: String::new(),
+                        offset: record.span.start as u64,
+                        tag: Some("advanced_face".into()),
+                    }),
+                    None => note,
                 });
             }
             loop_ids.sort_by_key(|(outer, _)| !outer);
