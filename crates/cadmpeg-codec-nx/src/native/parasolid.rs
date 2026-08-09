@@ -2705,18 +2705,13 @@ pub fn parasolid_attribute_field_uses(
     uses
 }
 
-/// Whether a concrete attribute instance or field-name reference lacks its exact relation.
-pub fn parasolid_attribute_definitions_have_untransferred_fields(
+/// Whether a concrete topology-owned attribute field lacks its exact value relation.
+pub fn parasolid_topology_attribute_fields_have_untransferred_values(
     definitions: &[ParasolidAttributeDefinition],
-    field_names: &[ParasolidAttributeFieldNames],
     entities: &[ParasolidEntity51Record],
     field_uses: &[ParasolidAttributeFieldUse],
     topology_class_uses: &[ParasolidTopologyAttributeClassUse],
 ) -> bool {
-    let resolved_names = field_names
-        .iter()
-        .map(|names| names.attribute_definition.as_str())
-        .collect::<BTreeSet<_>>();
     let mut definitions_by_id = BTreeMap::<&str, Vec<&ParasolidAttributeDefinition>>::new();
     for definition in definitions {
         definitions_by_id
@@ -2751,9 +2746,6 @@ pub fn parasolid_attribute_definitions_have_untransferred_fields(
         else {
             return true;
         };
-        if definition.field_names_xmt != 1 && !resolved_names.contains(definition.id.as_str()) {
-            return true;
-        }
         definition
             .field_codes
             .iter()
@@ -3637,69 +3629,70 @@ mod tests {
         };
 
         // An unused declaration carries no value-loss evidence.
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            &[],
-            &[],
-            &[],
-        ));
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                &[],
+                &[],
+                &[],
+            )
+        );
         // A non-null instance reference must have exactly one resolved field use.
-        assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            std::slice::from_ref(&entity),
-            std::slice::from_ref(&field_use),
-            std::slice::from_ref(&topology_class_use),
-        ));
+        assert!(
+            parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
         // Null values and always-empty pointer fields require no value relation.
         let mut null_entity = entity.clone();
         null_entity.trailing_references[0] = 1;
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![4])],
-            &[],
-            &[null_entity],
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[definition(1, vec![9])],
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![4])],
+                &[null_entity],
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                &[definition(1, vec![9])],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
 
-        let named_definition = definition(22, vec![]);
-        let names = ParasolidAttributeFieldNames {
-            id: "names".into(),
-            stream_ordinal: 0,
-            attribute_definition: named_definition.id.clone(),
-            field_names_record: "record".into(),
-            value_records: vec!["string".into()],
-            names: vec!["field".into()],
-        };
-        assert!(parasolid_attribute_definitions_have_untransferred_fields(
-            std::slice::from_ref(&named_definition),
-            &[],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
-        assert!(!parasolid_attribute_definitions_have_untransferred_fields(
-            &[named_definition],
-            &[names],
-            std::slice::from_ref(&entity),
-            &[],
-            std::slice::from_ref(&topology_class_use),
-        ));
+        let named_definition = definition(22, vec![4]);
+        // An unresolved optional field-name list uses the specification's
+        // deterministic ordinal/code fallback and does not lose the value.
+        assert!(
+            !parasolid_topology_attribute_fields_have_untransferred_values(
+                std::slice::from_ref(&named_definition),
+                std::slice::from_ref(&entity),
+                std::slice::from_ref(&field_use),
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
+        assert!(
+            parasolid_topology_attribute_fields_have_untransferred_values(
+                &[named_definition],
+                std::slice::from_ref(&entity),
+                &[],
+                std::slice::from_ref(&topology_class_use),
+            )
+        );
     }
 
     #[test]

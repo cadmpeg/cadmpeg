@@ -11001,6 +11001,24 @@ mod tests {
             Some("SDL/TYSA_DENSITY.units")
         );
 
+        let generic_definition = ParasolidAttributeDefinition {
+            name: "CLASS".into(),
+            field_names_xmt: 25,
+            ..definition.clone()
+        };
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "double-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&generic_definition),
+                std::slice::from_ref(&field_use),
+                &[],
+            )
+            .as_deref(),
+            Some("CLASS.field_0.parasolid_type_2")
+        );
+
         let named_definition = ParasolidAttributeDefinition {
             name: "PVM/25_1".into(),
             field_names_xmt: 25,

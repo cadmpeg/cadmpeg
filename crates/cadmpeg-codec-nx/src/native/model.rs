@@ -305,9 +305,8 @@ pub(crate) struct NativeModel {
 
 impl NativeModel {
     pub(crate) fn has_untransferred_parasolid_attribute_fields(&self) -> bool {
-        parasolid_attribute_definitions_have_untransferred_fields(
+        parasolid_topology_attribute_fields_have_untransferred_values(
             &self.parasolid.parasolid_attribute_definitions,
-            &self.parasolid.parasolid_attribute_field_names,
             &self.parasolid.parasolid_entity_51_records,
             &self.parasolid.parasolid_attribute_field_uses,
             &self.parasolid.parasolid_topology_attribute_class_uses,

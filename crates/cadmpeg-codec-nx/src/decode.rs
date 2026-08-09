@@ -10466,8 +10466,8 @@ fn build_geometry_report(
         losses.push(LossNote {
             code: LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
-            message: "A referenced Parasolid attribute value or field-name record was not \
-                      transferred because its complete value relation did not resolve."
+            message: "A referenced Parasolid attribute value was not transferred because its \
+                      complete value relation did not resolve."
                 .to_string(),
             provenance: None,
         });
