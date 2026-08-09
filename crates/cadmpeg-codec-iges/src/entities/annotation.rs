@@ -226,7 +226,7 @@ fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEnt
         && (3..4 + count * 2).all(|index| finite(record, index))
 }
 
-fn parameterized_curve_type(entry: &DirectoryEntry) -> bool {
+pub(crate) fn parameterized_curve_type(entry: &DirectoryEntry) -> bool {
     matches!(
         entry.entity_type,
         100 | 102 | 104 | 106 | 110 | 112 | 126 | 130 | 142
@@ -563,7 +563,7 @@ fn general_symbol_valid(
         && exact_parameter_count(record, leader_count_index + 1 + leader_count, entries)
 }
 
-fn section_boundary_type(entry: &DirectoryEntry) -> bool {
+pub(crate) fn section_boundary_type(entry: &DirectoryEntry) -> bool {
     matches!(
         (entry.entity_type, entry.form),
         (100 | 102 | 112 | 126, 0) | (104, 1) | (106, 63)

@@ -3,6 +3,7 @@
 
 use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
+use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
 use crate::global::Global;
@@ -3864,26 +3865,90 @@ pub(crate) fn store(
                     transformation,
                 }
             } else {
-                let annotation_link = |index| {
+                let note_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                212,
+                                &[0],
+                            )
+                        })
                         .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
                 };
-                let entity_link = |index| {
+                let leader_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "type-214-form-1-through-12",
+                                |target| target.entity_type == 214 && matches!(target.form, 1..=12),
+                            )
+                        })
+                        .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+                };
+                let witness_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                106,
+                                &[40],
+                            )
+                        })
                         .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 };
-                let presentation_or_entity_link = |index| {
+                let curve_link = |index| {
                     record
                         .and_then(|record| record.integer(index))
                         .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "parameterized-curve",
+                                |target| {
+                                    parameterized_curve_type(target)
+                                        && target.status.subordinate == 1
+                                        && target.status.use_flag == 1
+                                },
+                            )
+                        })
+                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                };
+                let ordinate_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve(
+                                entry.sequence,
+                                index,
+                                sequence,
+                                "type-106-form-40-or-leader",
+                                |target| {
+                                    (target.entity_type == 106 && target.form == 40)
+                                        || (target.entity_type == 214
+                                            && matches!(target.form, 1..=12))
+                                },
+                            )
+                        })
                         .map(|sequence| {
-                            u32::try_from(sequence)
-                                .ok()
-                                .and_then(|sequence| entries.get(&sequence))
+                            entries
+                                .get(&sequence)
                                 .filter(|target| target.entity_type == 214)
                                 .map_or_else(
                                     || format!("iges:entity:directory#{sequence}"),
@@ -3897,30 +3962,30 @@ pub(crate) fn store(
                     202 => NativeAnnotation::AngularDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        witnesses: [entity_link(2), entity_link(3)],
+                        note: note_link(1),
+                        witnesses: [witness_link(2), witness_link(3)],
                         vertex: [
                             record.and_then(|record| record.number(4)),
                             record.and_then(|record| record.number(5)),
                         ],
                         radius: record.and_then(|record| record.number(6)),
-                        leaders: [annotation_link(7), annotation_link(8)],
+                        leaders: [leader_link(7), leader_link(8)],
                         transformation,
                     },
                     204 => NativeAnnotation::CurveDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        curves: [entity_link(2), entity_link(3)],
-                        leaders: [annotation_link(4), annotation_link(5)],
-                        witnesses: [entity_link(6), entity_link(7)],
+                        note: note_link(1),
+                        curves: [curve_link(2), curve_link(3)],
+                        leaders: [leader_link(4), leader_link(5)],
+                        witnesses: [witness_link(6), witness_link(7)],
                         transformation,
                     },
                     206 => NativeAnnotation::DiameterDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        leaders: [annotation_link(2), annotation_link(3)],
+                        note: note_link(1),
+                        leaders: [leader_link(2), leader_link(3)],
                         center: [
                             record.and_then(|record| record.number(4)),
                             record.and_then(|record| record.number(5)),
@@ -3937,7 +4002,7 @@ pub(crate) fn store(
                             .and_then(|record| record.count(count_index))
                             .unwrap_or_default();
                         let leaders = (0..leader_count)
-                            .map(|offset| annotation_link(leader_start + offset))
+                            .map(|offset| leader_link(leader_start + offset))
                             .collect();
                         if entry.entity_type == 208 {
                             NativeAnnotation::FlagNote {
@@ -3949,7 +4014,7 @@ pub(crate) fn store(
                                     record.and_then(|record| record.number(3)),
                                 ],
                                 rotation: record.and_then(|record| record.number(4)),
-                                note: annotation_link(note_index),
+                                note: note_link(note_index),
                                 declared_leader_count: record
                                     .and_then(|record| record.integer(count_index)),
                                 leaders,
@@ -3959,7 +4024,7 @@ pub(crate) fn store(
                             NativeAnnotation::GeneralLabel {
                                 id,
                                 source_entity,
-                                note: annotation_link(note_index),
+                                note: note_link(note_index),
                                 declared_leader_count: record
                                     .and_then(|record| record.integer(count_index)),
                                 leaders,
@@ -3971,38 +4036,54 @@ pub(crate) fn store(
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
-                        leaders: [annotation_link(2), annotation_link(3)],
-                        witnesses: [entity_link(4), entity_link(5)],
+                        note: note_link(1),
+                        leaders: [leader_link(2), leader_link(3)],
+                        witnesses: [witness_link(4), witness_link(5)],
                         transformation,
                     },
                     218 => NativeAnnotation::OrdinateDimension {
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
-                        ordinate: presentation_or_entity_link(2),
-                        supplemental_leader: (entry.form == 1)
-                            .then(|| annotation_link(3))
-                            .flatten(),
+                        note: note_link(1),
+                        ordinate: ordinate_link(2),
+                        supplemental_leader: (entry.form == 1).then(|| leader_link(3)).flatten(),
                         transformation,
                     },
                     220 => NativeAnnotation::PointDimension {
                         id,
                         source_entity,
-                        note: annotation_link(1),
-                        leader: annotation_link(2),
-                        enclosure: entity_link(3),
+                        note: note_link(1),
+                        leader: leader_link(2),
+                        enclosure: record
+                            .and_then(|record| record.integer(3))
+                            .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    3,
+                                    sequence,
+                                    "point-dimension-enclosure",
+                                    |target| {
+                                        matches!(
+                                            (target.entity_type, target.form),
+                                            (100 | 102, 0) | (106, 63)
+                                        ) && target.status.subordinate == 1
+                                            && target.status.use_flag == 1
+                                    },
+                                )
+                            })
+                            .map(|sequence| format!("iges:entity:directory#{sequence}")),
                         transformation,
                     },
                     222 => NativeAnnotation::RadiusDimension {
                         id,
                         source_entity,
                         form: entry.form,
-                        note: annotation_link(1),
+                        note: note_link(1),
                         leaders: [
-                            annotation_link(2),
-                            (entry.form == 1).then(|| annotation_link(5)).flatten(),
+                            leader_link(2),
+                            (entry.form == 1).then(|| leader_link(5)).flatten(),
                         ],
                         center: [
                             record.and_then(|record| record.number(3)),
@@ -4021,12 +4102,29 @@ pub(crate) fn store(
                         NativeAnnotation::GeneralSymbol {
                             id,
                             source_entity,
-                            note: annotation_link(1),
+                            note: note_link(1),
                             geometry: (0..geometry_count)
-                                .map(|offset| entity_link(3 + offset))
+                                .map(|offset| {
+                                    let index = 3 + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "subordinate-annotation-geometry",
+                                                |target| {
+                                                    target.status.subordinate == 1
+                                                        && target.status.use_flag == 1
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
                                 .collect(),
                             leaders: (0..leader_count)
-                                .map(|offset| annotation_link(leader_count_index + 1 + offset))
+                                .map(|offset| leader_link(leader_count_index + 1 + offset))
                                 .collect(),
                             transformation,
                         }
@@ -4038,7 +4136,18 @@ pub(crate) fn store(
                         NativeAnnotation::SectionedArea {
                             id,
                             source_entity,
-                            boundary: entity_link(1),
+                            boundary: record
+                                .and_then(|record| record.integer(1))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve(
+                                        entry.sequence,
+                                        1,
+                                        sequence,
+                                        "section-boundary-entity",
+                                        section_boundary_type,
+                                    )
+                                })
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             fill_pattern: record.and_then(|record| record.integer(2)),
                             pattern_anchor: [
                                 record.and_then(|record| record.number(3)),
@@ -4048,7 +4157,21 @@ pub(crate) fn store(
                             pattern_spacing: record.and_then(|record| record.number(6)),
                             pattern_angle: record.and_then(|record| record.number(7)),
                             islands: (0..island_count)
-                                .map(|offset| entity_link(9 + offset))
+                                .map(|offset| {
+                                    let index = 9 + offset;
+                                    record
+                                        .and_then(|record| record.integer(index))
+                                        .and_then(|sequence| {
+                                            parameter_resolver.resolve(
+                                                entry.sequence,
+                                                index,
+                                                sequence,
+                                                "section-boundary-entity",
+                                                section_boundary_type,
+                                            )
+                                        })
+                                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                                })
                                 .collect(),
                             transformation,
                         }

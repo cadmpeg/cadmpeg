@@ -4483,7 +4483,12 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1",
+                "iges:entity:directory#7",
+                "iges:entity:directory#3",
+                "iges:entity:directory#5"
+              ],
               "parameter_bytes": [
                 50,
                 48,
@@ -4629,7 +4634,40 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                },
+                {
+                  "expected": "type-106-form-40",
+                  "kind": "parameter",
+                  "parameter_index": 2,
+                  "raw_pointer": 7,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#7"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 7,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 8,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -4729,7 +4767,14 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1",
+                "iges:entity:directory#9",
+                "iges:entity:directory#11",
+                "iges:entity:directory#3",
+                "iges:entity:directory#5",
+                "iges:entity:directory#7"
+              ],
               "parameter_bytes": [
                 50,
                 48,
@@ -4867,7 +4912,56 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                },
+                {
+                  "expected": "parameterized-curve",
+                  "kind": "parameter",
+                  "parameter_index": 2,
+                  "raw_pointer": 9,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#9"
+                },
+                {
+                  "expected": "parameterized-curve",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": 11,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#11"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 4,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 5,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                },
+                {
+                  "expected": "type-106-form-40",
+                  "kind": "parameter",
+                  "parameter_index": 6,
+                  "raw_pointer": 7,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#7"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -4972,7 +5066,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#1",
+                "iges:entity:directory#3"
+              ],
               "parameter_bytes": [
                 50,
                 48,
@@ -5094,7 +5191,24 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-212-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 2,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -5193,7 +5307,11 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3",
+                "iges:entity:directory#5",
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 50,
                 48,
@@ -5339,7 +5457,32 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 7,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 8,
+                  "raw_pointer": 5,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#5"
+                },
+                {
+                  "expected": "type-212-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 5,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -5448,7 +5591,10 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#3",
+                "iges:entity:directory#1"
+              ],
               "parameter_bytes": [
                 50,
                 49,
@@ -5554,7 +5700,24 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-214-form-1-through-12",
+                  "kind": "parameter",
+                  "parameter_index": 3,
+                  "raw_pointer": 3,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#3"
+                },
+                {
+                  "expected": "type-212-form-0",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 1,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#1"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -6637,7 +6800,8 @@
       "entity.214.form.1=2",
       "parameter_records=11",
       "parameter_tokens=93",
-      "external_references=0"
+      "external_references=0",
+      "references.resolved=17"
     ]
   },
   "source_fidelity": {
