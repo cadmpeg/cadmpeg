@@ -2911,19 +2911,25 @@ fn attach_feature_operations(
         let block_projection = (label.value == "BLOCK")
             .then(|| block_placement(ir, block_dimension_values?, &outputs))
             .flatten();
+        let block_outputs_are_proven = !outputs.is_empty();
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
                 outputs.push(body.clone());
             }
         }
-        let block_op = block_boolean_op(
-            block_projection.is_some(),
-            &outputs,
-            initial_body_id.as_ref(),
+        let block_body_reference_count = body_reference_occurrences_by_operation
+            .get(label.id.as_str())
+            .map_or(0, Vec::len);
+        let block_op = block_boolean_op(&BlockBooleanEvidence {
+            has_complete_projection: block_projection.is_some(),
+            outputs: &outputs,
+            outputs_are_proven: block_outputs_are_proven,
+            body_reference_count: block_body_reference_count,
+            provisional_feature: initial_body_id.as_ref(),
             native_primary_body,
             offset_store_primary_body,
-            &body_writer_history,
-        );
+            history: &body_writer_history,
+        });
         if block_op == BooleanOp::NewBody {
             if let Some(initial_feature) = initial_body_id.as_ref().and_then(|id| {
                 ir.model
@@ -4951,21 +4957,41 @@ fn block_placement(
     ))
 }
 
-fn block_boolean_op(
+struct BlockBooleanEvidence<'a> {
     has_complete_projection: bool,
-    outputs: &[BodyId],
-    provisional_feature: Option<&FeatureId>,
+    outputs: &'a [BodyId],
+    outputs_are_proven: bool,
+    body_reference_count: usize,
+    provisional_feature: Option<&'a FeatureId>,
     native_primary_body: Option<u32>,
-    offset_store_primary_body: Option<&str>,
-    history: &BodyWriterHistory,
-) -> BooleanOp {
-    if has_complete_projection
-        && matches!(outputs, [_])
-        && !history.has_preceding_writer(
-            provisional_feature,
-            native_primary_body,
-            offset_store_primary_body,
-            outputs,
+    offset_store_primary_body: Option<&'a str>,
+    history: &'a BodyWriterHistory,
+}
+
+fn block_boolean_op(evidence: &BlockBooleanEvidence<'_>) -> BooleanOp {
+    // A unique offset-store body field proves the operation's local writer
+    // namespace, but the fallback body selected for placement is not that
+    // writer. Likewise, multiple body fields have no primary role until the
+    // operation-specific relation identifies one. Do not let a placement
+    // fallback turn either case into a neutral body Boolean.
+    if evidence.body_reference_count > 1
+        && evidence.native_primary_body.is_none()
+        && evidence.offset_store_primary_body.is_none()
+    {
+        return BooleanOp::Unresolved;
+    }
+    let writer_outputs = if evidence.outputs_are_proven {
+        evidence.outputs
+    } else {
+        &[]
+    };
+    if evidence.has_complete_projection
+        && matches!(evidence.outputs, [_])
+        && !evidence.history.has_preceding_writer(
+            evidence.provisional_feature,
+            evidence.native_primary_body,
+            evidence.offset_store_primary_body,
+            writer_outputs,
         )
     {
         BooleanOp::NewBody
@@ -9737,39 +9763,45 @@ mod tests {
         history.record_writer(None, None, std::slice::from_ref(&body), &provisional);
 
         assert_eq!(
-            super::block_boolean_op(
-                true,
-                std::slice::from_ref(&body),
-                Some(&provisional),
-                None,
-                None,
-                &history,
-            ),
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: true,
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
             BooleanOp::NewBody
         );
 
         let prior = FeatureId("prior-feature".into());
         history.record_writer(Some(7), None, std::slice::from_ref(&body), &prior);
         assert_eq!(
-            super::block_boolean_op(
-                true,
-                std::slice::from_ref(&body),
-                Some(&provisional),
-                Some(7),
-                None,
-                &history,
-            ),
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: true,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: Some(7),
+                offset_store_primary_body: None,
+                history: &history,
+            }),
             BooleanOp::Unresolved
         );
         assert_eq!(
-            super::block_boolean_op(
-                false,
-                std::slice::from_ref(&body),
-                Some(&provisional),
-                None,
-                None,
-                &history,
-            ),
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: false,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 0,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &history,
+            }),
             BooleanOp::Unresolved
         );
 
@@ -9777,14 +9809,45 @@ mod tests {
         let mut offset_history = BodyWriterHistory::default();
         offset_history.record_writer(None, Some("store:block#7"), &[], &offset_prior);
         assert_eq!(
-            super::block_boolean_op(
-                true,
-                std::slice::from_ref(&body),
-                Some(&provisional),
-                None,
-                Some("store:block#7"),
-                &offset_history,
-            ),
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#7"),
+                history: &offset_history,
+            }),
+            BooleanOp::Unresolved
+        );
+
+        let offset_without_prior = BodyWriterHistory::default();
+        assert_eq!(
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 1,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: Some("store:block#8"),
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
+        );
+
+        assert_eq!(
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
             BooleanOp::Unresolved
         );
     }
