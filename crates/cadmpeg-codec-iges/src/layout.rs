@@ -5,7 +5,7 @@ use crate::card;
 use cadmpeg_core::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 use cadmpeg_ir::codec::Confidence;
 use std::collections::BTreeMap;
-use std::io::SeekFrom;
+use std::io::{ErrorKind, SeekFrom};
 
 const DETECTION_PREFIX_BYTES: usize = 512;
 
@@ -75,7 +75,15 @@ pub(crate) fn confidence(prefix: &[u8]) -> Confidence {
 pub(crate) fn classify(reader: &mut dyn ReadSeek) -> Result<Representation, CodecError> {
     let position = reader.stream_position()?;
     let mut prefix = vec![0; DETECTION_PREFIX_BYTES];
-    let count = reader.read(&mut prefix)?;
+    let mut count = 0;
+    while count < prefix.len() {
+        match reader.read(&mut prefix[count..]) {
+            Ok(0) => break,
+            Ok(read) => count += read,
+            Err(error) if error.kind() == ErrorKind::Interrupted => {}
+            Err(error) => return Err(CodecError::Io(error)),
+        }
+    }
     prefix.truncate(count);
     reader.seek(SeekFrom::Start(position))?;
     Ok(classify_prefix(&prefix))

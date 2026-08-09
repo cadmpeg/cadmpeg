@@ -114,16 +114,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-01. A blank-only Parameter Data field
-
-**Question.** What does a Parameter Data field that contains only blank bytes mean?
-
-**Known.** `iges.md` gives one lexical rule: "An empty field between parameter delimiters is omitted." It gives no rule for a field of blanks. `parameter.rs:228-240` makes a token `TokenValue::Omitted` only when the delimiter byte is at the cursor. A field of blanks goes to `numeric` (`parameter.rs:197-216`), where `trim()` gives `""`, `"".parse::<i64>()` fails, and the function gives `CodecError::Malformed`. One blank field stops the decode of the complete file.
-
-The same lexical question has three different answers in one codec. Global keeps a blank field as `Value::Atom(b"   ")` and each accessor then gives a default (`global.rs:112-120`, see GL-01). Directory gives `0` (`directory.rs:59-68`).
-
-**Need.** IGES is an 80-column format with Fortran heritage, in which a blank numeric field is the usual way to write a defaulted value. We need the rule for a blank Parameter Data field, and one behavior for it in all three sections.
-
 ### PH-02. An even or zero Parameter Data back-pointer
 
 **Question.** Which Directory Entry owns a Parameter Data card whose back-pointer is even or zero?
@@ -148,16 +138,6 @@ The result decides two unrelated things: where an entity's own parameters stop, 
 
 **Need.** A Type 402 Form 1 group needs a back pointer in each member (`iges.md` "Product structure"). If one member's group holds a pointer to an absent entry, the membership evidence is lost silently. We need per-entity parameter arity, or a rule that keeps an unresolvable group as a finding.
 
-### PH-04. A physical line longer than 80 bytes
-
-**Question.** How does a line with more than 80 payload bytes divide into records?
-
-**Known.** `iges.md` "Physical representation" gives "A short card, bytes beyond column 80, a noncanonical line ending, and bytes after the Terminate card remain separate physical records with their original spans." `card.rs:164-170` gives a section and a sequence only when `payload.len() == CARD_WIDTH`. There is no division. A line of 81 bytes becomes one record with no section, `validate_card_order` steps over it, and a file whose lines each carry one trailing blank fails with "IGES Fixed ASCII requires Start through Terminate sections".
-
-**Conflict.** The specification gives a card record plus a remainder record. The code gives one opaque record.
-
-**Need.** Fixed-record-length transfer media and some writers pad each line beyond column 80. The card content of such a file is valid. We need the division rule that `iges.md` "Physical representation" states, or a correction to `iges.md`.
-
 ### PH-05. Disagreement between the declared and the actual Parameter Data card count
 
 **Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
@@ -175,16 +155,6 @@ The result decides two unrelated things: where an entity's own parameters stop, 
 **Note.** The Binary test accepts 75 in both byte orders. Acceptance of both byte orders is a record that the field's byte order is unknown. The unknown is in the code and not in this document.
 
 **Need.** Both representations give `NotImplemented`, so a wrong constant changes the reported identity only. We need the flag-record layout to give the correct refusal instead of `Representation::Unknown`.
-
-### PH-07. Detection reads one time
-
-**Question.** Does detection hold for a reader that gives a short read?
-
-**Known.** `layout.rs:75-82` calls `Read::read` one time and uses the byte count it gives. `Read::read` may give fewer bytes than requested when the source is not at its end. Detection needs the first two cards. A short read below that gives `Confidence::No`.
-
-**Note.** A file-backed reader gives the complete prefix in practice. The defect needs a pipe-backed or network-backed source. The item is recorded for completeness.
-
-**Need.** Detection must not depend on the buffering behavior of its source.
 
 ## 2. Global metadata
 

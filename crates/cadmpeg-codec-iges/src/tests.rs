@@ -20,7 +20,7 @@ use cadmpeg_ir::CadIr;
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::io::Cursor;
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::{IgesCodec, IgesEncoder, IgesVersion, IgesWriteOptions};
 
@@ -57,6 +57,84 @@ fn fixed_ascii_detection_allows_eight_bit_data_fields() {
     valid.extend(card(&[0x80, 0xff], b'G', 1));
 
     assert_eq!(IgesCodec.detect(&valid), Confidence::High);
+}
+
+#[derive(Debug)]
+struct ShortReader {
+    inner: Cursor<Vec<u8>>,
+    maximum_read: usize,
+}
+
+impl Read for ShortReader {
+    fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+        let length = buffer.len().min(self.maximum_read);
+        self.inner.read(&mut buffer[..length])
+    }
+}
+
+impl Seek for ShortReader {
+    fn seek(&mut self, position: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(position)
+    }
+}
+
+#[test]
+fn representation_classification_fills_its_prefix_across_short_reads() {
+    let bytes = point_file();
+    let mut reader = ShortReader {
+        inner: Cursor::new(bytes),
+        maximum_read: 7,
+    };
+
+    assert_eq!(
+        crate::layout::classify(&mut reader).unwrap(),
+        crate::layout::Representation::FixedAscii
+    );
+    assert_eq!(reader.stream_position().unwrap(), 0);
+}
+
+#[test]
+fn over_width_lines_split_into_cards_and_retained_remainders() {
+    let canonical = point_file();
+    let line_count = canonical.split_inclusive(|byte| *byte == b'\n').count();
+    let mut padded = Vec::with_capacity(canonical.len() + line_count);
+    for line in canonical.split_inclusive(|byte| *byte == b'\n') {
+        let (payload, ending) = line
+            .strip_suffix(b"\n")
+            .map_or((line, &b""[..]), |payload| (payload, &b"\n"[..]));
+        padded.extend_from_slice(payload);
+        padded.push(b' ');
+        padded.extend_from_slice(ending);
+    }
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(padded.clone()), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.points.len(), 1);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses);
+    assert!(validation.is_ok(), "{validation:#?}");
+
+    let summary = IgesCodec
+        .inspect(
+            &mut Cursor::new(padded),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap();
+    let remainders = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "noncanonical-physical-records")
+        .expect("over-width line remainders");
+    assert_eq!(
+        remainders.attributes["records"],
+        line_count.saturating_sub(1).to_string()
+    );
+    let post_terminate = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "post-terminate")
+        .expect("Terminate-card remainder");
+    assert_eq!(post_terminate.attributes["records"], "1");
 }
 
 #[test]
@@ -99,6 +177,26 @@ fn blank_directory_status_defaults_to_zero_fields() {
         result.report.losses
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn blank_parameter_field_is_an_omitted_value() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[OwnedTestEntity {
+                entity_type: 116,
+                form: 0,
+                label: "BLANK".into(),
+                status: "00010000",
+                parameters: "116,1,2,3,   ;".into(),
+            }])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses);
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -450,7 +548,7 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
         .find(|entry| entry.name == "noncanonical-physical-records")
         .unwrap();
     assert_eq!(noncanonical.role, "retained-opaque-records");
-    assert_eq!(noncanonical.attributes["records"], "2");
+    assert_eq!(noncanonical.attributes["records"], "3");
 }
 
 fn fixed_ascii_with_global(global: &[u8]) -> Vec<u8> {

@@ -18,7 +18,7 @@ The Terminate data area contains four eight-byte fields: `S` plus the seven-digi
 
 The Global data stream is the concatenation of bytes 1 through 72 from its cards. Its first value defines the parameter delimiter and its second value defines the record delimiter. Each is a one-character Hollerith string. Omitted first and second values select comma and semicolon respectively.
 
-A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty field between parameter delimiters is omitted. The record delimiter terminates the Global record.
+A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty or blank-only field between delimiters is omitted. The record delimiter terminates the Global record.
 
 Global fields declare the sender and receiver identifiers, native file name, generator, significant digits, single and double precision limits, model scale, units flag and unit name, maximum line-weight gradation and width, creation and modification timestamps, minimum resolution, maximum coordinate, author, organization, specification version, drafting standard, and application protocol. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged. The specification version field is `9` for IGES 5.1, `10` for IGES 5.2, and `11` for IGES 5.3.
 
@@ -34,7 +34,7 @@ The status number consists of four two-digit decimal fields: blank status, subor
 
 Bytes 1 through 64 of Parameter Data cards form parameter fragments. Bytes 65 through 72 identify the owning odd Directory Entry sequence. Fragments are grouped by that back-pointer and ordered by Parameter Data sequence. The Directory Entry Parameter Data start sequence and card count define the expected contiguous range. A record delimiter terminates the entity's primary parameters.
 
-Tokens retain their exact source spans and lexical bytes. Token classes are integer, real, Hollerith string, Directory Entry pointer, omitted value, parameter delimiter, record delimiter, and retained uninterpreted value. Entity accessors impose field-specific token types and arity. Pointer interpretation is field-specific; a numeric token is not globally coerced to a pointer.
+Tokens retain their exact source spans and lexical bytes. Token classes are integer, real, Hollerith string, Directory Entry pointer, omitted value, parameter delimiter, record delimiter, and retained uninterpreted value. An empty or blank-only Parameter Data field is an omitted value. Entity accessors impose field-specific token types and arity. Pointer interpretation is field-specific; a numeric token is not globally coerced to a pointer.
 
 After the primary record delimiter, an entity may carry an ordered associativity pointer group and an ordered property pointer group. Each group begins with a count followed by that many pointers. The complete trailing groups remain part of the owning entity and retain token spans.
 

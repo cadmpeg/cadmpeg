@@ -198,6 +198,12 @@ fn numeric(bytes: &[u8], span: Range<usize>, sequence: u32) -> Result<Token, Cod
     let text = std::str::from_utf8(&bytes[span.clone()])
         .map_err(|_| malformed(sequence, "numeric token is not ASCII"))?
         .trim();
+    if text.is_empty() {
+        return Ok(Token {
+            value: TokenValue::Omitted,
+            span,
+        });
+    }
     let real = text
         .bytes()
         .any(|byte| matches!(byte, b'.' | b'E' | b'e' | b'D' | b'd'));
