@@ -160,6 +160,29 @@ fn trim_record_rejects_invalid_present_frame_vector() {
 }
 
 #[test]
+fn trim_record_accepts_binary32_round_trip_frame_vector() {
+    let mut bytes = vec![0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
+    for value in [0.577_350_26f32, 0.577_350_26, 0.577_350_26] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
+
+    let record = parse_trim_record(&bytes, 0, 2).expect("binary32 unit vector");
+    assert!(record.frame_vector.is_some());
+}
+
+#[test]
+fn trim_record_rejects_frame_vector_outside_binary32_round_trip_bound() {
+    let mut bytes = vec![0x01, 0x49, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00];
+    for value in [1.00001f32, 0.0, 0.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
+
+    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
+}
+
+#[test]
 fn forced_trim_chain_has_no_recursive_depth_limit() {
     const RECORD_COUNT: usize = 10_000;
     let packet = triangle_packet([0, 0, 0]);

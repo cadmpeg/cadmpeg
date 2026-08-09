@@ -18,6 +18,12 @@ const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
 
+// A unit vector is stored as three binary32 values. Rounding a unit
+// direction to binary32 changes its squared norm by less than 2.1e-7; this
+// bound leaves room for binary32 arithmetic used by a writer without
+// admitting a materially non-unit frame.
+const FRAME_VECTOR_NORM2_TOLERANCE: f64 = 1e-6;
+
 /// Number of face rows in the governing standard topology spine. The spine is
 /// the unique largest contiguous stride-eight FBB run; shorter marker runs are
 /// not members of this face population. Equal-largest runs leave ownership
@@ -767,7 +773,9 @@ pub(crate) fn parse_trim_record_layout(
         ];
         position += 12;
         let norm2 = components.iter().map(|value| value * value).sum::<f64>();
-        if !components.iter().all(|value| value.is_finite()) || (norm2 - 1.0).abs() >= 2e-4 {
+        if !components.iter().all(|value| value.is_finite())
+            || (norm2 - 1.0).abs() >= FRAME_VECTOR_NORM2_TOLERANCE
+        {
             return None;
         }
         Some(components)

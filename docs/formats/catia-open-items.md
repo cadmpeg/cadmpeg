@@ -430,14 +430,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
 
-### SN-30. Trim-record acceptance bounds
-
-**Question.** What bounds the handle count of a trim record, and what tolerance applies to the norm of its `3×f32le` frame vector?
-
-**Known.** `catia.md` §5.3 "Invariant `N == 3*A + sum(K)`" gives `ff <N:u32le>` with the invariant `N == 3*A + sum(K)`, and gives the frame vector as a unit vector. It gives no upper bound for `N` and no tolerance. `fbb::parse_trim_record_layout` requires a positive `N`, requires the complete width-selected handle span to remain in the input, and rejects a frame when `|norm² − 1|` is not less than `2e-4`. The `2e-4` value is about three orders of magnitude larger than the round-trip error of a `f32` unit vector.
-
-**Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
-
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face
