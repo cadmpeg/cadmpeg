@@ -140,24 +140,6 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the authoritative boundary to distinguish a real following stream from payload bytes that happen to contain a complete header-shaped sequence.
 
-### CM-13. Primary site selection
-
-**Question.** Which field identifies the primary B-rep site when a file has more than one decodable site?
-
-**Known.** `sldprt.md` §3.2 defines a site. It gives no rule that ranks sites.
-
-`crates/cadmpeg-codec-sldprt/src/decode.rs:1910` selects the site with the most faces, then the most bodies, then the most points:
-
-```rust
-let score = (decoded.faces.len(), decoded.bodies.len(), decoded.points.len());
-```
-
-The other sites are merged into the model. Each untyped surface and curve retains the outer block or compound-stream identity of its own site.
-
-The decoder has a second and different idea of the active stream, `container::select_active_parasolid`, which uses `swConfigurationName`. `decode.rs:2637` uses that one for the `active_parasolid_block` attribute. The two are not reconciled.
-
-**Need.** We must know the field to select the primary site.
-
 ### CM-14. Configuration body membership
 
 **Question.** Which field binds an inactive configuration without `SourceIndex` to its bodies?

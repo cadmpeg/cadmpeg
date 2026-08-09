@@ -8,10 +8,10 @@
       "attributes": [],
       "bodies": [
         {
-          "id": "sldprt:brep:body#0",
+          "id": "sldprt:brep:body#0@block@250",
           "kind": "solid",
           "regions": [
-            "sldprt:brep:region#0"
+            "sldprt:brep:region#0@block@250"
           ]
         },
         {
@@ -24,12 +24,12 @@
       ],
       "coedges": [
         {
-          "edge": "sldprt:brep:edge#40",
-          "id": "sldprt:brep:coedge#30",
-          "next": "sldprt:brep:coedge#31",
-          "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#32",
-          "radial_next": "sldprt:brep:coedge#30",
+          "edge": "sldprt:brep:edge#40@block@250",
+          "id": "sldprt:brep:coedge#30@block@250",
+          "next": "sldprt:brep:coedge#31@block@250",
+          "owner_loop": "sldprt:brep:loop#20@block@250",
+          "previous": "sldprt:brep:coedge#32@block@250",
+          "radial_next": "sldprt:brep:coedge#30@block@250",
           "sense": "forward"
         },
         {
@@ -42,12 +42,12 @@
           "sense": "forward"
         },
         {
-          "edge": "sldprt:brep:edge#41",
-          "id": "sldprt:brep:coedge#31",
-          "next": "sldprt:brep:coedge#32",
-          "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#30",
-          "radial_next": "sldprt:brep:coedge#31",
+          "edge": "sldprt:brep:edge#41@block@250",
+          "id": "sldprt:brep:coedge#31@block@250",
+          "next": "sldprt:brep:coedge#32@block@250",
+          "owner_loop": "sldprt:brep:loop#20@block@250",
+          "previous": "sldprt:brep:coedge#30@block@250",
+          "radial_next": "sldprt:brep:coedge#31@block@250",
           "sense": "forward"
         },
         {
@@ -60,12 +60,12 @@
           "sense": "forward"
         },
         {
-          "edge": "sldprt:brep:edge#42",
-          "id": "sldprt:brep:coedge#32",
-          "next": "sldprt:brep:coedge#30",
-          "owner_loop": "sldprt:brep:loop#20",
-          "previous": "sldprt:brep:coedge#31",
-          "radial_next": "sldprt:brep:coedge#32",
+          "edge": "sldprt:brep:edge#42@block@250",
+          "id": "sldprt:brep:coedge#32@block@250",
+          "next": "sldprt:brep:coedge#30@block@250",
+          "owner_loop": "sldprt:brep:loop#20@block@250",
+          "previous": "sldprt:brep:coedge#31@block@250",
+          "radial_next": "sldprt:brep:coedge#32@block@250",
           "sense": "forward"
         },
         {
@@ -90,7 +90,7 @@
         },
         {
           "bodies": [
-            "sldprt:brep:body#0"
+            "sldprt:brep:body#0@block@250"
           ],
           "id": "sldprt:model:configuration#partition:1",
           "name": "Config-1",
@@ -102,9 +102,9 @@
       "drawings": [],
       "edges": [
         {
-          "end": "sldprt:brep:vertex#51",
-          "id": "sldprt:brep:edge#40",
-          "start": "sldprt:brep:vertex#50"
+          "end": "sldprt:brep:vertex#51@block@250",
+          "id": "sldprt:brep:edge#40@block@250",
+          "start": "sldprt:brep:vertex#50@block@250"
         },
         {
           "end": "sldprt:brep:vertex#51@block@8",
@@ -112,9 +112,9 @@
           "start": "sldprt:brep:vertex#50@block@8"
         },
         {
-          "end": "sldprt:brep:vertex#52",
-          "id": "sldprt:brep:edge#41",
-          "start": "sldprt:brep:vertex#51"
+          "end": "sldprt:brep:vertex#52@block@250",
+          "id": "sldprt:brep:edge#41@block@250",
+          "start": "sldprt:brep:vertex#51@block@250"
         },
         {
           "end": "sldprt:brep:vertex#52@block@8",
@@ -122,9 +122,9 @@
           "start": "sldprt:brep:vertex#51@block@8"
         },
         {
-          "end": "sldprt:brep:vertex#50",
-          "id": "sldprt:brep:edge#42",
-          "start": "sldprt:brep:vertex#52"
+          "end": "sldprt:brep:vertex#50@block@250",
+          "id": "sldprt:brep:edge#42@block@250",
+          "start": "sldprt:brep:vertex#52@block@250"
         },
         {
           "end": "sldprt:brep:vertex#50@block@8",
@@ -134,13 +134,13 @@
       ],
       "faces": [
         {
-          "id": "sldprt:brep:face#10",
+          "id": "sldprt:brep:face#10@block@250",
           "loops": [
-            "sldprt:brep:loop#20"
+            "sldprt:brep:loop#20@block@250"
           ],
           "sense": "forward",
-          "shell": "sldprt:brep:shell#0",
-          "surface": "sldprt:brep:surf#10"
+          "shell": "sldprt:brep:shell#0@block@250",
+          "surface": "sldprt:brep:surf#10@block@250"
         },
         {
           "id": "sldprt:brep:face#10@block@8",
@@ -157,12 +157,12 @@
         {
           "boundary_role": "unspecified",
           "coedges": [
-            "sldprt:brep:coedge#30",
-            "sldprt:brep:coedge#31",
-            "sldprt:brep:coedge#32"
+            "sldprt:brep:coedge#30@block@250",
+            "sldprt:brep:coedge#31@block@250",
+            "sldprt:brep:coedge#32@block@250"
           ],
-          "face": "sldprt:brep:face#10",
-          "id": "sldprt:brep:loop#20"
+          "face": "sldprt:brep:face#10@block@250",
+          "id": "sldprt:brep:loop#20@block@250"
         },
         {
           "boundary_role": "unspecified",
@@ -181,7 +181,7 @@
       "pmi": [],
       "points": [
         {
-          "id": "sldprt:brep:point#60",
+          "id": "sldprt:brep:point#60@block@250",
           "position": {
             "x": 10000.0,
             "y": 0.0,
@@ -197,7 +197,7 @@
           }
         },
         {
-          "id": "sldprt:brep:point#61",
+          "id": "sldprt:brep:point#61@block@250",
           "position": {
             "x": 11000.0,
             "y": 0.0,
@@ -213,7 +213,7 @@
           }
         },
         {
-          "id": "sldprt:brep:point#62",
+          "id": "sldprt:brep:point#62@block@250",
           "position": {
             "x": 10000.0,
             "y": 1000.0,
@@ -236,10 +236,10 @@
       "product_definitions": [],
       "regions": [
         {
-          "body": "sldprt:brep:body#0",
-          "id": "sldprt:brep:region#0",
+          "body": "sldprt:brep:body#0@block@250",
+          "id": "sldprt:brep:region#0@block@250",
           "shells": [
-            "sldprt:brep:shell#0"
+            "sldprt:brep:shell#0@block@250"
           ]
         },
         {
@@ -254,10 +254,10 @@
       "shells": [
         {
           "faces": [
-            "sldprt:brep:face#10"
+            "sldprt:brep:face#10@block@250"
           ],
-          "id": "sldprt:brep:shell#0",
-          "region": "sldprt:brep:region#0"
+          "id": "sldprt:brep:shell#0@block@250",
+          "region": "sldprt:brep:region#0@block@250"
         },
         {
           "faces": [
@@ -294,7 +294,7 @@
               "z": 0.0
             }
           },
-          "id": "sldprt:brep:surf#10"
+          "id": "sldprt:brep:surf#10@block@250"
         },
         {
           "geometry": {
@@ -321,24 +321,24 @@
       "tessellations": [],
       "vertices": [
         {
-          "id": "sldprt:brep:vertex#50",
-          "point": "sldprt:brep:point#60"
+          "id": "sldprt:brep:vertex#50@block@250",
+          "point": "sldprt:brep:point#60@block@250"
         },
         {
           "id": "sldprt:brep:vertex#50@block@8",
           "point": "sldprt:brep:point#60@block@8"
         },
         {
-          "id": "sldprt:brep:vertex#51",
-          "point": "sldprt:brep:point#61"
+          "id": "sldprt:brep:vertex#51@block@250",
+          "point": "sldprt:brep:point#61@block@250"
         },
         {
           "id": "sldprt:brep:vertex#51@block@8",
           "point": "sldprt:brep:point#61@block@8"
         },
         {
-          "id": "sldprt:brep:vertex#52",
-          "point": "sldprt:brep:point#62"
+          "id": "sldprt:brep:vertex#52@block@250",
+          "point": "sldprt:brep:point#62@block@250"
         },
         {
           "id": "sldprt:brep:vertex#52@block@8",
@@ -442,25 +442,25 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "sldprt:brep:body#0": {
+        "sldprt:brep:body#0@block@250": {
           "entity": "derived"
         },
         "sldprt:brep:body#0@block@8": {
           "entity": "derived"
         },
-        "sldprt:brep:region#0": {
+        "sldprt:brep:region#0@block@250": {
           "entity": "derived"
         },
         "sldprt:brep:region#0@block@8": {
           "entity": "derived"
         },
-        "sldprt:brep:shell#0": {
+        "sldprt:brep:shell#0@block@250": {
           "entity": "derived"
         },
         "sldprt:brep:shell#0@block@8": {
           "entity": "derived"
         },
-        "sldprt:brep:surf#10": {
+        "sldprt:brep:surf#10@block@250": {
           "entity": "byte_exact",
           "fields": {
             "geometry.u_axis": "derived"
@@ -474,7 +474,7 @@
         }
       },
       "provenance": {
-        "sldprt:brep:body#0": {
+        "sldprt:brep:body#0@block@250": {
           "offset": 0,
           "stream": 0,
           "tag": "synthetic_grouping"
@@ -484,7 +484,7 @@
           "stream": 1,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:coedge#30": {
+        "sldprt:brep:coedge#30@block@250": {
           "offset": 146,
           "stream": 0,
           "tag": "00_11"
@@ -494,7 +494,7 @@
           "stream": 1,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#31": {
+        "sldprt:brep:coedge#31@block@250": {
           "offset": 169,
           "stream": 0,
           "tag": "00_11"
@@ -504,7 +504,7 @@
           "stream": 1,
           "tag": "00_11"
         },
-        "sldprt:brep:coedge#32": {
+        "sldprt:brep:coedge#32@block@250": {
           "offset": 192,
           "stream": 0,
           "tag": "00_11"
@@ -514,7 +514,7 @@
           "stream": 1,
           "tag": "00_11"
         },
-        "sldprt:brep:edge#40": {
+        "sldprt:brep:edge#40@block@250": {
           "offset": 215,
           "stream": 0,
           "tag": "00_10"
@@ -524,7 +524,7 @@
           "stream": 1,
           "tag": "00_10"
         },
-        "sldprt:brep:edge#41": {
+        "sldprt:brep:edge#41@block@250": {
           "offset": 245,
           "stream": 0,
           "tag": "00_10"
@@ -534,7 +534,7 @@
           "stream": 1,
           "tag": "00_10"
         },
-        "sldprt:brep:edge#42": {
+        "sldprt:brep:edge#42@block@250": {
           "offset": 275,
           "stream": 0,
           "tag": "00_10"
@@ -544,7 +544,7 @@
           "stream": 1,
           "tag": "00_10"
         },
-        "sldprt:brep:face#10": {
+        "sldprt:brep:face#10@block@250": {
           "offset": 91,
           "stream": 0,
           "tag": "00_0e"
@@ -554,7 +554,7 @@
           "stream": 1,
           "tag": "00_0e"
         },
-        "sldprt:brep:loop#20": {
+        "sldprt:brep:loop#20@block@250": {
           "offset": 130,
           "stream": 0,
           "tag": "00_0f"
@@ -564,7 +564,7 @@
           "stream": 1,
           "tag": "00_0f"
         },
-        "sldprt:brep:point#60": {
+        "sldprt:brep:point#60@block@250": {
           "offset": 383,
           "stream": 0,
           "tag": "00_1d"
@@ -574,7 +574,7 @@
           "stream": 1,
           "tag": "00_1d"
         },
-        "sldprt:brep:point#61": {
+        "sldprt:brep:point#61@block@250": {
           "offset": 423,
           "stream": 0,
           "tag": "00_1d"
@@ -584,7 +584,7 @@
           "stream": 1,
           "tag": "00_1d"
         },
-        "sldprt:brep:point#62": {
+        "sldprt:brep:point#62@block@250": {
           "offset": 463,
           "stream": 0,
           "tag": "00_1d"
@@ -594,7 +594,7 @@
           "stream": 1,
           "tag": "00_1d"
         },
-        "sldprt:brep:region#0": {
+        "sldprt:brep:region#0@block@250": {
           "offset": 0,
           "stream": 0,
           "tag": "synthetic_grouping"
@@ -604,7 +604,7 @@
           "stream": 1,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:shell#0": {
+        "sldprt:brep:shell#0@block@250": {
           "offset": 0,
           "stream": 0,
           "tag": "synthetic_grouping"
@@ -614,7 +614,7 @@
           "stream": 1,
           "tag": "synthetic_grouping"
         },
-        "sldprt:brep:surf#10": {
+        "sldprt:brep:surf#10@block@250": {
           "offset": 0,
           "stream": 0,
           "tag": "compact_surface"
@@ -624,7 +624,7 @@
           "stream": 1,
           "tag": "compact_surface"
         },
-        "sldprt:brep:vertex#50": {
+        "sldprt:brep:vertex#50@block@250": {
           "offset": 305,
           "stream": 0,
           "tag": "00_12"
@@ -634,7 +634,7 @@
           "stream": 1,
           "tag": "00_12"
         },
-        "sldprt:brep:vertex#51": {
+        "sldprt:brep:vertex#51@block@250": {
           "offset": 331,
           "stream": 0,
           "tag": "00_12"
@@ -644,7 +644,7 @@
           "stream": 1,
           "tag": "00_12"
         },
-        "sldprt:brep:vertex#52": {
+        "sldprt:brep:vertex#52@block@250": {
           "offset": 357,
           "stream": 0,
           "tag": "00_12"

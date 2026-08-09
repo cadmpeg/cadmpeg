@@ -6493,8 +6493,50 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
         .map(|point| &point.id)
         .collect();
     assert_eq!(ids.len(), result.ir.model.points.len());
+    assert!(result
+        .ir
+        .model
+        .points
+        .iter()
+        .all(|point| point.id.0.contains("@block@")));
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+}
+
+#[test]
+fn decode_uses_the_active_configuration_source_site() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First" SourceIndex="0"/><Configuration Name="Second" SourceIndex="1"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    let active_points = result
+        .ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !point.id.0.contains("@block@"))
+        .collect::<Vec<_>>();
+    assert_eq!(active_points.len(), 3);
+    assert!(active_points
+        .iter()
+        .all(|point| point.position.x >= 10_000.0));
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes["active_parasolid_block"],
+        "Contents/Config-1-Partition"
+    );
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]

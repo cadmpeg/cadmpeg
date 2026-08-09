@@ -1913,11 +1913,20 @@ fn try_decode_brep(
         );
         decoded_sites.push((site.clone(), first, score, decoded));
     }
-    let selected_site = decoded_sites
-        .iter()
-        .enumerate()
-        .max_by_key(|(index, (_, _, score, _))| (*score, Reverse(*index)))
-        .map(|(index, _)| index)?;
+    let active_site = container::select_active_parasolid(scan)
+        .map(|(block, _)| format!("block@{}", block.offset));
+    let resolved_active_site = active_site.as_ref().and_then(|active| {
+        decoded_sites
+            .iter()
+            .position(|(site, _, _, _)| site == active)
+    });
+    let selected_site = resolved_active_site.or_else(|| {
+        decoded_sites
+            .iter()
+            .enumerate()
+            .max_by_key(|(index, (_, _, score, _))| (*score, Reverse(*index)))
+            .map(|(index, _)| index)
+    })?;
     let selected_is_empty_model = decoded_sites[selected_site].3.stats.source_entity_records == 0
         && sites[&decoded_sites[selected_site].0].iter().any(|index| {
             streams[*index]
@@ -1940,7 +1949,10 @@ fn try_decode_brep(
     {
         return None;
     }
-    let (_, selected, _, mut decoded) = decoded_sites.swap_remove(selected_site);
+    let (selected_site_key, selected, _, mut decoded) = decoded_sites.swap_remove(selected_site);
+    if resolved_active_site.is_none() {
+        decoded.qualify_ids(&selected_site_key);
+    }
     bind_opaque_geometry(&mut decoded, &streams[selected].origin.unknown_id());
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(&streams[selected].origin.name()) {
