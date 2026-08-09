@@ -506,15 +506,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the lane roles to validate the program against the surface it belongs to, and to write it.
 
-**Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it. That binding is the subject of OS-21.
-
-### OS-21. External pole grid binding
-
-**Question.** Which field binds an external pole grid allocation to its elided-pole `a8 03 34` carrier?
-
-**Known.** `catia.md` §6.6 "The elided-pole form places the fixed 141-byte" gives "Its external pole allocation is an unframed `nu×nv` XYZ grid ... occupying the complete gap between a length-closed `b5 <frame_flag> 21` pcurve and the next A/B-family frame", and gives "A grid binds only when its byte length, finite coordinate payload, and following frame boundary select one allocation." `a5a8::records::a8_surface_from_external_grid` tests every `b5 <flag> 21` frame in the complete stream, keeps every gap whose byte length equals the carrier's expected grid size and whose coordinates are finite, and requires exactly one such gap.
-
-**Need.** The rule is a size match over the complete stream. It states no relation between the carrier and the pcurve that precedes the grid. Two carriers with equal pole counts make the same candidate set, so both withhold. We must know the binding field to resolve a carrier when the size is not unique.
+**Note.** This item was removed in the tree that added the layout table and the `valid_a8_elided_tail` validator, and it is restored here with a narrower question. A table of observed literal values is a shape test, not the semantics the question asks for. The pole location half of the original question is answered: `catia.md` §6.7 gives the external allocation, and `a5a8::records::a8_surface_from_external_grid` binds it through the pcurve support reference.
 
 ## 5. Zero-entity `a9 03`
 
