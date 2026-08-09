@@ -383,7 +383,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                     return None;
                 }
             }
-            for edge_id in &raw.edges {
+            for (pcurve_id, edge_id) in raw.pcurves.iter().zip(&raw.edges) {
                 let edge = edges.get(edge_id)?;
                 if !vertex_ids.contains(&edge.start_vertex)
                     || !vertex_ids.contains(&edge.end_vertex)
@@ -393,14 +393,12 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 if [edge.parameter_start, edge.parameter_end]
                     .iter()
                     .any(|bound_ref| !bounds.contains_key(bound_ref))
-                    || raw.pcurves.iter().any(|pcurve| {
-                        [edge.parameter_start, edge.parameter_end]
-                            .iter()
-                            .any(|bound_ref| {
-                                bound_representation_parameter(&bounds, *bound_ref, *pcurve)
-                                    .is_none()
-                            })
-                    })
+                    || [edge.parameter_start, edge.parameter_end]
+                        .iter()
+                        .any(|bound_ref| {
+                            bound_representation_parameter(&bounds, *bound_ref, *pcurve_id)
+                                .is_none()
+                        })
                 {
                     return None;
                 }

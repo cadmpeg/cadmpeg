@@ -469,6 +469,33 @@ pub(crate) fn e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
     best
 }
 
+/// Return every valid `E5 0D 03` frame in a bounded stream region.
+///
+/// The complete E5 carrier stream may interleave these frames with other
+/// framed E5 records. Route selection still uses [`e5_record_spans`] because
+/// it needs a contiguous declared-stride walk; carrier decoders need the
+/// complete frame inventory instead.
+pub(crate) fn all_e5_record_spans(data: &[u8]) -> Vec<Range<usize>> {
+    let mut spans = Vec::new();
+    let mut search = 0;
+    while search < data.len() {
+        let Some(relative) = data[search..]
+            .windows(E5_MARKER.len())
+            .position(|bytes| bytes == E5_MARKER)
+        else {
+            break;
+        };
+        let start = search + relative;
+        let Some(end) = e5_record_end(data, start) else {
+            search = start.saturating_add(1);
+            continue;
+        };
+        spans.push(start..end);
+        search = end;
+    }
+    spans
+}
+
 fn e5_record_walk(data: &[u8], start: usize) -> (Vec<Range<usize>>, usize) {
     let mut walk = Vec::new();
     let mut position = start;
@@ -1515,6 +1542,15 @@ mod tests {
             append_e5_test_record(&mut body, id);
         }
         assert!(super::e5_record_stream(&outer_with_preamble(&body)).is_none());
+    }
+
+    #[test]
+    fn all_e5_record_spans_cross_other_framed_records() {
+        let mut body = Vec::new();
+        append_e5_test_record(&mut body, 1);
+        body.extend_from_slice(&[0xe5, 0x0d, 0x13, 0xf4, 0x01, 0x09, 0, 0, 0]);
+        append_e5_test_record(&mut body, 2);
+        assert_eq!(super::all_e5_record_spans(&body).len(), 2);
     }
 
     #[test]

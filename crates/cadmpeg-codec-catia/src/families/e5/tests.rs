@@ -67,13 +67,14 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     for id in [10u32, 20, 30] {
         append_e5_record(&mut bytes, 0xfe, id, &[]);
     }
-    for (id, start, end) in [(100u8, 10u8, 20u8), (101, 20, 30), (102, 30, 10)] {
-        append_e5_record(
-            &mut bytes,
-            0xff,
-            u32::from(id),
-            &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80],
-        );
+    for (id, start, end, bound) in [
+        (100u8, 10u8, 20u8, [210u8, 0]),
+        (101, 20, 30, [211, 0]),
+        (102, 30, 10, [212, 0]),
+    ] {
+        let mut payload = vec![0x85, 0x08, 200, 0x08, start, 0x08, end];
+        payload.extend_from_slice(&[0x18, bound[0], bound[1], 0x18, bound[0], bound[1]]);
+        append_e5_record(&mut bytes, 0xff, u32::from(id), &payload);
     }
     for (id, surface, offset) in [
         (400u32, 500u16, 0.0),
@@ -112,17 +113,23 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     support_payload.extend_from_slice(&le_f64(-10.0));
     support_payload.extend_from_slice(&le_f64(10.0));
     append_e5_record(&mut bytes, 0xc1, 200, &support_payload);
-    let mut occurrence_bound_payload = vec![0x86];
-    for pcurve in [400_u16, 401, 402, 410, 411, 412] {
-        occurrence_bound_payload.push(0x18);
-        occurrence_bound_payload.extend_from_slice(&pcurve.to_le_bytes());
+    for (bound, pcurves) in [
+        (210u32, [400u16, 410]),
+        (211, [401, 411]),
+        (212, [402, 412]),
+    ] {
+        let mut bound_payload = vec![0x82];
+        for pcurve in pcurves {
+            bound_payload.push(0x18);
+            bound_payload.extend_from_slice(&pcurve.to_le_bytes());
+        }
+        bound_payload.push(0x82);
+        bound_payload.extend_from_slice(&le_f64(0.5));
+        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        bound_payload.extend_from_slice(&le_f64(0.5));
+        bound_payload.extend_from_slice(&0_u32.to_le_bytes());
+        append_e5_record(&mut bytes, 0x0e, bound, &bound_payload);
     }
-    occurrence_bound_payload.push(0x86);
-    for parameter in [0.0_f64, 1.0, 0.0, 1.0, 0.0, 1.0] {
-        occurrence_bound_payload.extend_from_slice(&le_f64(parameter));
-        occurrence_bound_payload.extend_from_slice(&0_u32.to_le_bytes());
-    }
-    append_e5_record(&mut bytes, 0x0e, 0, &occurrence_bound_payload);
     let mut bound_payload = vec![0x82, 0x18, 144, 1, 0x08, 200, 0x82];
     for (parameter, code) in [(0.25f64, 1u32), (0.75, 7)] {
         bound_payload.extend_from_slice(&le_f64(parameter));

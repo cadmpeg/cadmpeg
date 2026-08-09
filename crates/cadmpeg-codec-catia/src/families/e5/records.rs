@@ -62,7 +62,7 @@ const MARKER: &[u8; 3] = b"\xe5\x0d\x03";
 
 fn e5_records(data: &[u8]) -> Vec<E5Record> {
     debug_assert_eq!(MARKER, crate::container::E5_MARKER);
-    crate::container::e5_record_spans(data)
+    crate::container::all_e5_record_spans(data)
         .into_iter()
         .filter_map(|range| {
             let pos = range.start;

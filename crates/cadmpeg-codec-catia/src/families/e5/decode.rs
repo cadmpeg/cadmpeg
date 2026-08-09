@@ -263,7 +263,7 @@ pub(crate) fn append_e5_planes(
             }
         }
         let expected_normal = normal.filter(|_| consistent);
-        let Some((normal, u_axis)) = solve_e5_plane_frame(
+        let Some((normal, u_axis, uv_scale)) = solve_e5_plane_frame(
             plane.record_id,
             plane.origin,
             topology,
@@ -280,7 +280,7 @@ pub(crate) fn append_e5_planes(
                 normal,
                 u_axis,
             },
-            uv_scale: [1.0, 1.0],
+            uv_scale,
         });
     }
 }
@@ -312,7 +312,7 @@ pub(crate) fn solve_e5_plane_frame(
     topology: &crate::families::e5::graph::E5Topology,
     points: &[Point3],
     expected_normal: Option<Vector3>,
-) -> Option<(Vector3, Vector3)> {
+) -> Option<(Vector3, Vector3, [f64; 2])> {
     if !origin.into_iter().all(f64::is_finite)
         || topology.vertex_refs.len() != points.len()
         || points
@@ -501,20 +501,32 @@ pub(crate) fn solve_e5_plane_frame(
         }
         if !candidates
             .iter()
-            .any(|(_, existing): &(Vector3, Vector3)| (*existing).dot(u_axis) > 1.0 - 1e-8)
+            .any(|(existing_normal, existing_u): &(Vector3, Vector3)| {
+                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+            })
         {
             candidates.push((normal, u_axis));
         }
     }
-    let canonical: Vec<_> = candidates
-        .into_iter()
-        .filter(|(_, u_axis)| {
-            [u_axis.x, u_axis.y, u_axis.z]
-                .into_iter()
-                .find(|value| value.abs() > 1e-12)
-                .is_some_and(|value| value > 0.0)
-        })
-        .collect();
+    let mut canonical = Vec::new();
+    for (normal, mut u_axis) in candidates {
+        let first = [u_axis.x, u_axis.y, u_axis.z]
+            .into_iter()
+            .find(|value| value.abs() > 1e-12)?;
+        let uv_scale = if first < 0.0 {
+            u_axis = Vector3::new(-u_axis.x, -u_axis.y, -u_axis.z);
+            [-1.0, -1.0]
+        } else {
+            [1.0, 1.0]
+        };
+        if !canonical.iter().any(
+            |(existing_normal, existing_u, _): &(Vector3, Vector3, [f64; 2])| {
+                existing_normal.dot(normal) > 1.0 - 1e-8 && existing_u.dot(u_axis) > 1.0 - 1e-8
+            },
+        ) {
+            canonical.push((normal, u_axis, uv_scale));
+        }
+    }
     (canonical.len() == 1).then(|| canonical[0])
 }
 
@@ -1003,6 +1015,7 @@ fn plan_e5_boundary(
                     &geometry,
                     range,
                     endpoints,
+                    decoded_surface.uv_scale,
                 ) {
                     if reversed {
                         let Some(reversed_curve) =
@@ -1090,6 +1103,7 @@ fn plan_e5_boundary(
                 &geometry,
                 range,
                 endpoints,
+                decoded_surface.uv_scale,
             ) else {
                 continue;
             };
@@ -1886,6 +1900,7 @@ pub(crate) fn e5_boundary_curve(
     pcurve: &PcurveGeometry,
     range: [f64; 2],
     endpoints: [Point3; 2],
+    uv_scale: [f64; 2],
 ) -> Option<(CurveGeometry, [f64; 2])> {
     let finite_point2 = |point: Point2| [point.u, point.v].into_iter().all(f64::is_finite);
     let finite_point = |point: Point3| [point.x, point.y, point.z].into_iter().all(f64::is_finite);
@@ -1894,7 +1909,12 @@ pub(crate) fn e5_boundary_curve(
             .into_iter()
             .all(f64::is_finite)
     };
-    if !range.into_iter().all(f64::is_finite) || !endpoints.iter().copied().all(finite_point) {
+    if !uv_scale
+        .into_iter()
+        .all(|value| value.is_finite() && value != 0.0)
+        || !range.into_iter().all(f64::is_finite)
+        || !endpoints.iter().copied().all(finite_point)
+    {
         return None;
     }
     if let (
@@ -1908,8 +1928,8 @@ pub(crate) fn e5_boundary_curve(
     {
         let v_axis = (*normal).cross(*u_axis);
         let center = (*origin)
-            .translated(*u_axis, center[0])
-            .translated(v_axis, center[1]);
+            .translated(*u_axis, center[0] * uv_scale[0])
+            .translated(v_axis, center[1] * uv_scale[1]);
         if !finite_point(center)
             || !finite_vector(*normal)
             || !finite_vector(*u_axis)
@@ -1923,7 +1943,7 @@ pub(crate) fn e5_boundary_curve(
             CurveGeometry::Circle {
                 center,
                 axis: *normal,
-                ref_direction: *u_axis,
+                ref_direction: u_axis.scale(uv_scale[0]),
                 radius: *radius,
             },
             crate::nurbs::canonical_periodic_range(range)?,
@@ -2477,10 +2497,12 @@ mod route_tests {
             vertex_refs,
         };
 
-        let (normal, u_axis) = solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
-            .expect("17-segment plane frame");
+        let (normal, u_axis, uv_scale) =
+            solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
+                .expect("17-segment plane frame");
         assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-8);
         assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-8);
+        assert_eq!(uv_scale, [1.0, 1.0]);
         assert!(solve_e5_plane_frame(
             100,
             [0.0, 0.0, 0.0],
@@ -2489,6 +2511,139 @@ mod route_tests {
             Some(Vector3::new(f64::NAN, 0.0, 1.0)),
         )
         .is_none());
+    }
+
+    #[test]
+    fn e5_plane_frame_solver_reflects_native_chart_for_canonical_u_sign() {
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: vec![E5Face {
+                record_id: 1,
+                surface: 100,
+                trailer_sign: 1,
+                loops: vec![E5Loop {
+                    record_id: 2,
+                    surface: 100,
+                    pcurves: vec![20, 21],
+                    edge_uses: vec![10, 11],
+                    reversed: vec![false, false],
+                    oriented_members: None,
+                    outer: Some(true),
+                    orientation_signs: Vec::new(),
+                }],
+            }],
+            edges: BTreeMap::from([
+                (
+                    10,
+                    E5Edge {
+                        record_id: 10,
+                        support: 0,
+                        start_vertex: 1,
+                        end_vertex: 2,
+                        parameter_start: 0,
+                        parameter_end: 0,
+                        tail: Vec::new(),
+                    },
+                ),
+                (
+                    11,
+                    E5Edge {
+                        record_id: 11,
+                        support: 0,
+                        start_vertex: 1,
+                        end_vertex: 3,
+                        parameter_start: 0,
+                        parameter_end: 0,
+                        tail: Vec::new(),
+                    },
+                ),
+            ]),
+            pcurves: BTreeMap::from([
+                (
+                    20,
+                    E5Pcurve::Line {
+                        surface: 100,
+                        origin: [0.0, 0.0],
+                        direction: [1.0, 0.0],
+                        range: [0.0, 1.0],
+                    },
+                ),
+                (
+                    21,
+                    E5Pcurve::Line {
+                        surface: 100,
+                        origin: [0.0, 0.0],
+                        direction: [0.0, 1.0],
+                        range: [0.0, 1.0],
+                    },
+                ),
+            ]),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: vec![1, 2, 3],
+        };
+        let points = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(-1.0, 0.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+        ];
+        let (normal, u_axis, uv_scale) =
+            solve_e5_plane_frame(100, [0.0, 0.0, 0.0], &topology, &points, None)
+                .expect("negative native chart frame");
+        assert!(normal.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-12);
+        assert!(u_axis.dot(Vector3::new(1.0, 0.0, 0.0)) > 1.0 - 1e-12);
+        assert_eq!(uv_scale, [-1.0, -1.0]);
+
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 100,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal,
+                u_axis,
+            },
+            uv_scale,
+        };
+        let (pcurve, range, endpoints) = e5_pcurve_on_surface(
+            &E5Pcurve::Line {
+                surface: 100,
+                origin: [0.0, 0.0],
+                direction: [1.0, 0.0],
+                range: [0.0, 1.0],
+            },
+            &surface,
+        )
+        .expect("reflected plane pcurve");
+        assert_eq!(
+            endpoints,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(-1.0, 0.0, 0.0)]
+        );
+        let PcurveGeometry::Line { direction, .. } = pcurve else {
+            panic!("expected reflected line pcurve");
+        };
+        assert_eq!(direction, Point2::new(-1.0, 0.0));
+        let (curve, _) = e5_boundary_curve(
+            &surface.geometry,
+            &E5Pcurve::Line {
+                surface: 100,
+                origin: [0.0, 0.0],
+                direction: [1.0, 0.0],
+                range: [0.0, 1.0],
+            },
+            &PcurveGeometry::Line {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(-1.0, 0.0),
+            },
+            range,
+            endpoints,
+            uv_scale,
+        )
+        .expect("reflected plane boundary");
+        assert!(matches!(
+            curve,
+            CurveGeometry::Line { direction, .. }
+                if direction == Vector3::new(-1.0, 0.0, 0.0)
+        ));
     }
 
     #[test]
@@ -2963,6 +3118,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
+            [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
         assert!(matches!(
@@ -3005,6 +3161,7 @@ mod route_tests {
                 Point3::new(2.0, 0.0, 3.0),
                 Point3::new(2.0 * 1.0f64.cos(), 2.0 * 1.0f64.sin(), 3.0),
             ],
+            [1.0, 1.0],
         )
         .expect("cylinder boundary circle");
         assert!(matches!(curve, CurveGeometry::Circle { radius: 2.0, .. }));
@@ -3031,6 +3188,7 @@ mod route_tests {
             &plane_pcurve,
             [0.0, 1.0],
             [Point3::new(0.0, 0.0, 0.0), tiny_endpoint],
+            [1.0, 1.0],
         )
         .expect("finite nonzero plane line");
         assert!(matches!(curve, CurveGeometry::Line { .. }));
@@ -3060,6 +3218,7 @@ mod route_tests {
             &pcurve,
             [1.0, 2.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            [1.0, 1.0],
         )
         .is_none());
     }
@@ -3089,6 +3248,7 @@ mod route_tests {
             &pcurve,
             [0.0, 1.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            [1.0, 1.0],
         )
         .is_none());
     }
@@ -3117,6 +3277,7 @@ mod route_tests {
             &pcurve,
             [0.0, 1.0],
             [Point3::new(0.0, 0.0, 0.0), Point3::new(tiny, 0.0, 0.0)],
+            [1.0, 1.0],
         )
         .expect("subnormal line chord");
         assert_eq!(range, [0.0, tiny]);
@@ -3150,6 +3311,7 @@ mod route_tests {
             &pcurve,
             [0.0, std::f64::consts::FRAC_PI_2],
             [Point3::new(7.0, 7.0, 3.0), Point3::new(5.0, 9.0, 3.0)],
+            [1.0, 1.0],
         )
         .expect("plane boundary circle");
         assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
@@ -3163,6 +3325,29 @@ mod route_tests {
             } if center == Point3::new(5.0, 7.0, 3.0)
                 && axis == Vector3::new(0.0, 0.0, 1.0)
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 2.0
+        ));
+
+        let (curve, range) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [Point3::new(-5.0, -3.0, 3.0), Point3::new(-3.0, -5.0, 3.0)],
+            [-1.0, -1.0],
+        )
+        .expect("reflected plane boundary circle");
+        assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
+        assert!(matches!(
+            curve,
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } if center == Point3::new(-3.0, -3.0, 3.0)
+                && axis == Vector3::new(0.0, 0.0, 1.0)
+                && ref_direction == Vector3::new(-1.0, 0.0, 0.0)
                 && radius == 2.0
         ));
     }
@@ -3195,6 +3380,7 @@ mod route_tests {
             &pcurve,
             [0.0, 1.0],
             [Point3::new(1.0, 2.0, 3.0), Point3::new(2.0, 4.0, 3.0)],
+            [1.0, 1.0],
         )
         .expect("plane jet curve");
         assert_eq!(range, [0.0, 1.0]);
@@ -3244,6 +3430,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
+            [1.0, 1.0],
         )
         .is_none());
     }
@@ -3440,6 +3627,7 @@ mod route_tests {
                 Point3::new(f64::MAX, 0.0, 0.0),
                 Point3::new(f64::MAX, 1.0, 0.0)
             ],
+            [1.0, 1.0],
         )
         .is_none());
     }
@@ -3671,7 +3859,7 @@ mod route_tests {
             Point3::new(7.5, 0.0, 0.0),
             Point3::new(-7.5, 0.0, 0.0),
         ];
-        let (normal, u_axis) = super::solve_e5_plane_frame(
+        let (normal, u_axis, uv_scale) = super::solve_e5_plane_frame(
             100,
             [0.0, 0.0, 0.0],
             &topology,
@@ -3681,6 +3869,7 @@ mod route_tests {
         .expect("rank-one plane frame");
         assert!(normal.dot(Vector3::new(0.0, 1.0, 0.0)) > 1.0 - 1e-12);
         assert!(u_axis.dot(Vector3::new(0.0, 0.0, 1.0)) > 1.0 - 1e-12);
+        assert_eq!(uv_scale, [-1.0, -1.0]);
     }
 
     #[test]
