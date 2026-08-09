@@ -130,6 +130,12 @@ fn rederived_body_census(
     ir: &CadIr,
 ) -> Result<BTreeSet<BodyId>, (FeatureId, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
+    let saved_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
     let mut seen_features = BTreeSet::new();
     let mut previous_ordinal = None;
     let mut features = ir.model.features.iter().collect::<Vec<_>>();
@@ -213,7 +219,7 @@ fn rederived_body_census(
                 placement: Some(placement),
                 op: BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
             } if dimensions.iter().copied().all(positive_length) && placement.is_proper_rigid() => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Block {
                 dimensions: Some(dimensions),
@@ -223,7 +229,7 @@ fn rederived_body_census(
                 && placement.is_proper_rigid()
                 && matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) =>
             {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Block { .. } => {
                 return Err((
@@ -245,7 +251,7 @@ fn rederived_body_census(
                 op: BooleanOp::Unresolved | BooleanOp::Join | BooleanOp::Cut | BooleanOp::Intersect,
                 ..
             } if matches!(feature.outputs.as_slice(), [output] if bodies.contains(output)) => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Extrude { .. } if output_free_local_body_construction(feature) => {}
             FeatureDefinition::Extrude { op, .. } => {
@@ -334,35 +340,35 @@ fn rederived_body_census(
                 bodies.extend(feature.outputs.iter().cloned());
             }
             FeatureDefinition::TrimSurface { .. } => {
-                preserve_in_place_outputs(feature, &bodies)?;
+                preserve_in_place_outputs(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::ExtendSurface { .. } => {
-                preserve_in_place_outputs(feature, &bodies)?;
+                preserve_in_place_outputs(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Hole { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Chamfer { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Fillet { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::FaceBlend { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::OffsetSurface { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Thicken { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Draft { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::DraftUnresolved if output_free_local_body_construction(feature) => {}
             FeatureDefinition::ReplaceFace { .. } => {
-                preserve_in_place_single_output(feature, &bodies)?;
+                preserve_in_place_single_output(feature, &bodies, &saved_bodies)?;
             }
             FeatureDefinition::Combine { target, tools, .. }
                 if feature.outputs.is_empty()
@@ -609,8 +615,9 @@ fn local_tool_combine_is_census_invariant(
 fn preserve_in_place_single_output(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
+    saved_bodies: &BTreeSet<BodyId>,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
-    preserve_in_place_outputs(feature, bodies)?;
+    preserve_in_place_outputs(feature, bodies, saved_bodies)?;
     if feature.outputs.len() > 1 {
         return Err((
             feature.id.clone(),
@@ -623,12 +630,18 @@ fn preserve_in_place_single_output(
 fn preserve_in_place_outputs(
     feature: &cadmpeg_ir::features::Feature,
     bodies: &BTreeSet<BodyId>,
+    saved_bodies: &BTreeSet<BodyId>,
 ) -> Result<(), (FeatureId, UnsupportedBodyCensusReason)> {
+    // A retained body image can be the final saved output of an in-place edit
+    // even when no replay writer has established it yet. In-place operations
+    // never create a body, so accept that terminal identity without inserting
+    // it into the replay set. An identity absent from both sets remains an
+    // invalid output lineage.
     if feature.outputs.iter().collect::<BTreeSet<_>>().len() != feature.outputs.len()
         || feature
             .outputs
             .iter()
-            .any(|output| !bodies.contains(output))
+            .any(|output| !bodies.contains(output) && !saved_bodies.contains(output))
     {
         return Err((
             feature.id.clone(),
@@ -1191,6 +1204,20 @@ mod tests {
             BodyCensusEvaluation::Verified {
                 bodies: vec![BodyId("body".to_string())],
             }
+        );
+    }
+
+    #[test]
+    fn in_place_edit_can_precede_a_saved_body_image_creator() {
+        let mut ir = complete_block_ir();
+        let body = ir.model.bodies[0].id.clone();
+        ir.model.features[0].ordinal = 1;
+        ir.model.features.push(complete_hole(body.clone()));
+        ir.model.features[1].ordinal = 0;
+
+        assert_eq!(
+            evaluate_saved_body_census(&ir),
+            BodyCensusEvaluation::Verified { bodies: vec![body] }
         );
     }
 
