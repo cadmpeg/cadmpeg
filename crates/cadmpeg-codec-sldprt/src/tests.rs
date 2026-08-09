@@ -2130,6 +2130,27 @@ fn parasolid_extracts_every_direct_stream_in_block() {
 }
 
 #[test]
+fn parasolid_does_not_split_at_an_unframed_interior_signature() {
+    assert!(crate::parasolid::extract_streams(b"PS\0\0not-a-stream-header").is_empty());
+
+    let mut first = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    first.extend_from_slice(b"PS\0\0not-a-stream-header");
+    let second = parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &world_point(60, [2.0, 0.0, 0.0]),
+    );
+    let second_offset = first.len();
+    first.extend_from_slice(&second);
+
+    let streams = crate::parasolid::extract_streams_with_offsets(&first);
+    assert_eq!(streams.len(), 2);
+    assert_eq!(streams[0].0, 0);
+    assert_eq!(streams[1].0, second_offset);
+    assert!(streams[0].1.ends_with(b"PS\0\0not-a-stream-header"));
+}
+
+#[test]
 fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     let description = b"boundary_polyline mesh";
     let schema = b"SCH_3201255_32001_13006";
