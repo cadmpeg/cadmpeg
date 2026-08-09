@@ -154,6 +154,36 @@ pub(crate) enum SegmentMetaState<'a> {
 pub(crate) struct SegmentDescriptor<'a> {
     pub(crate) pair: SegmentPair,
     pub(crate) meta: SegmentMetaState<'a>,
+    pub(crate) bulk: SegmentBulkState<'a>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BulkReadMode {
+    HeaderOnly,
+    Expand,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BulkForm(u16);
+
+impl BulkForm {
+    pub(crate) const fn value(self) -> u16 {
+        self.0
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct SegmentBulk<'a> {
+    pub(crate) prefix: [u8; 16],
+    pub(crate) form: BulkForm,
+    pub(crate) compressed: View<'a>,
+    pub(crate) expanded: Option<View<'a>>,
+}
+
+#[derive(Debug)]
+pub(crate) enum SegmentBulkState<'a> {
+    Framed(SegmentBulk<'a>),
+    Malformed(String),
 }
 
 /// `RSe` paths established from the compound directory.
@@ -166,7 +196,11 @@ pub(crate) struct RseInventory<'a> {
 }
 
 impl<'a> RseInventory<'a> {
-    pub(crate) fn build(ctx: &DecodeContext<'a>, snapshot: &CompoundSnapshot<'a>) -> Self {
+    pub(crate) fn build(
+        ctx: &DecodeContext<'a>,
+        snapshot: &CompoundSnapshot<'a>,
+        bulk_mode: BulkReadMode,
+    ) -> Self {
         let mut databases = Vec::new();
         let mut metadata = BTreeMap::new();
         let mut bulk = BTreeMap::new();
@@ -220,7 +254,16 @@ impl<'a> RseInventory<'a> {
                     Ok(meta) => meta,
                     Err(error) => SegmentMetaState::Malformed(error.to_string()),
                 };
-                SegmentDescriptor { pair, meta }
+                let bulk = snapshot
+                    .stream_by_id(pair.bulk)
+                    .ok_or_else(|| CodecError::Malformed("RSe bulk stream handle is absent".into()))
+                    .and_then(|entry| snapshot.open(ctx, entry))
+                    .and_then(|view| parse_bulk_stream(ctx, view, bulk_mode));
+                let bulk = match bulk {
+                    Ok(bulk) => SegmentBulkState::Framed(bulk),
+                    Err(error) => SegmentBulkState::Malformed(error.to_string()),
+                };
+                SegmentDescriptor { pair, meta, bulk }
             })
             .collect();
         let unpaired_metadata = metadata
@@ -240,6 +283,38 @@ impl<'a> RseInventory<'a> {
             unpaired_bulk,
         }
     }
+}
+
+fn parse_bulk_stream<'a>(
+    ctx: &DecodeContext<'a>,
+    source: View<'a>,
+    mode: BulkReadMode,
+) -> Result<SegmentBulk<'a>, CodecError> {
+    let bytes = source.window();
+    let header = bytes
+        .get(..18)
+        .ok_or_else(|| CodecError::Malformed("truncated RSe bulk envelope".into()))?;
+    if bytes.len() == header.len() {
+        return Err(CodecError::Malformed(
+            "RSe bulk envelope has no compressed member".into(),
+        ));
+    }
+    let mut prefix = [0; 16];
+    prefix.copy_from_slice(&header[..16]);
+    let form = BulkForm(u16::from_le_bytes([header[16], header[17]]));
+    let compressed = source
+        .child(source.start() + header.len(), source.end())
+        .ok_or_else(|| CodecError::Malformed("RSe bulk member range is invalid".into()))?;
+    let expanded = match mode {
+        BulkReadMode::HeaderOnly => None,
+        BulkReadMode::Expand => Some(inflate_zlib_exact(ctx, compressed)?),
+    };
+    Ok(SegmentBulk {
+        prefix,
+        form,
+        compressed,
+        expanded,
+    })
 }
 
 fn parse_meta_stream_v8<'a>(
@@ -434,6 +509,34 @@ mod tests {
         assert!(parse_meta_stream_v8(&ctx, root).is_err());
     }
 
+    #[test]
+    fn bulk_stream_frames_prefix_form_and_exact_zlib_member() {
+        let bytes = bulk_fixture(false);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic bulk stream fits policy");
+        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::Expand)
+            .expect("synthetic bulk stream parses");
+        assert_eq!(bulk.prefix, [0x3c; 16]);
+        assert_eq!(bulk.form.value(), 0x0104);
+        assert_eq!(
+            bulk.expanded.expect("expanded in decode mode").window(),
+            b"framed bulk records"
+        );
+    }
+
+    #[test]
+    fn bulk_stream_header_only_does_not_inflate_and_suffix_is_rejected() {
+        let bytes = bulk_fixture(true);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic bulk stream fits policy");
+        let bulk = parse_bulk_stream(&ctx, root, BulkReadMode::HeaderOnly)
+            .expect("header-only framing does not consume the member");
+        assert!(bulk.expanded.is_none());
+        assert!(parse_bulk_stream(&ctx, root, BulkReadMode::Expand).is_err());
+    }
+
     fn meta_fixture(suffix: bool) -> Vec<u8> {
         let mut bytes = Vec::new();
         push_bytes(&mut bytes, b"RSe Meta Stream Version 8");
@@ -454,6 +557,20 @@ mod tests {
             .write_all(b"typed metadata body")
             .expect("write synthetic zlib body");
         bytes.extend_from_slice(&encoder.finish().expect("finish synthetic zlib body"));
+        if suffix {
+            bytes.push(0);
+        }
+        bytes
+    }
+
+    fn bulk_fixture(suffix: bool) -> Vec<u8> {
+        let mut bytes = vec![0x3c; 16];
+        bytes.extend_from_slice(&0x0104_u16.to_le_bytes());
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder
+            .write_all(b"framed bulk records")
+            .expect("write synthetic bulk member");
+        bytes.extend_from_slice(&encoder.finish().expect("finish synthetic bulk member"));
         if suffix {
             bytes.push(0);
         }

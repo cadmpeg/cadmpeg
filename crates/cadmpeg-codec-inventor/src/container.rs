@@ -6,6 +6,22 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
+use crate::rse::{BulkReadMode, SegmentBulkState};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ContainerPurpose {
+    Inspect,
+    Decode,
+}
+
+impl ContainerPurpose {
+    const fn bulk_mode(self) -> BulkReadMode {
+        match self {
+            Self::Inspect => BulkReadMode::HeaderOnly,
+            Self::Decode => BulkReadMode::Expand,
+        }
+    }
+}
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
@@ -14,7 +30,11 @@ pub(crate) struct InventorContainer<'a> {
 }
 
 impl<'a> InventorContainer<'a> {
-    pub(crate) fn open(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Self, CodecError> {
+    pub(crate) fn open(
+        ctx: &DecodeContext<'a>,
+        root: View<'a>,
+        purpose: ContainerPurpose,
+    ) -> Result<Self, CodecError> {
         let snapshot = CompoundSnapshot::new(ctx, root)?;
         if !matches!(
             snapshot.entry("RSeStorage"),
@@ -24,7 +44,7 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(ctx, &snapshot);
+        let rse = RseInventory::build(ctx, &snapshot, purpose.bulk_mode());
         Ok(Self { snapshot, rse })
     }
 
@@ -67,6 +87,33 @@ impl<'a> InventorContainer<'a> {
                 }
                 SegmentMetaState::Malformed(error) => {
                     entry
+                        .attributes
+                        .insert("framing_error".into(), error.clone());
+                }
+            }
+            let bulk_directory_id = segment.pair.bulk.directory_id().to_string();
+            let Some(bulk_entry) = entries
+                .iter_mut()
+                .find(|entry| entry.attributes.get("directory_id") == Some(&bulk_directory_id))
+            else {
+                continue;
+            };
+            match &segment.bulk {
+                SegmentBulkState::Framed(bulk) => {
+                    bulk_entry
+                        .attributes
+                        .insert("inner_framing".into(), "zlib".into());
+                    bulk_entry
+                        .attributes
+                        .insert("bulk_form".into(), format!("0x{:04x}", bulk.form.value()));
+                    if let Some(expanded) = bulk.expanded {
+                        bulk_entry
+                            .attributes
+                            .insert("expanded_size".into(), expanded.window().len().to_string());
+                    }
+                }
+                SegmentBulkState::Malformed(error) => {
+                    bulk_entry
                         .attributes
                         .insert("framing_error".into(), error.clone());
                 }

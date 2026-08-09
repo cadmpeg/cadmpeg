@@ -52,3 +52,22 @@ pub(crate) struct SegmentMetaIssueRecord {
     pub(crate) status: String,
     pub(crate) detail: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SegmentBulkRecord {
+    pub(crate) id: String,
+    pub(crate) token: String,
+    pub(crate) prefix: String,
+    pub(crate) form: u16,
+    pub(crate) compressed_len: u64,
+    pub(crate) compressed_sha256: String,
+    pub(crate) expanded_len: u64,
+    pub(crate) expanded_sha256: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SegmentBulkIssueRecord {
+    pub(crate) id: String,
+    pub(crate) token: String,
+    pub(crate) detail: String,
+}

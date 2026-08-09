@@ -12,15 +12,15 @@ use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLed
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceFidelity;
 
-use crate::container::InventorContainer;
+use crate::container::{ContainerPurpose, InventorContainer};
 use crate::native::{
-    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, StorageBandRecord,
-    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, StorageBandRecord, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
-use crate::rse::SegmentMetaState;
+use crate::rse::{SegmentBulkState, SegmentMetaState};
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let container = InventorContainer::open(ctx, root)?;
+    let container = InventorContainer::open(ctx, root, ContainerPurpose::Decode)?;
     let mut ir = CadIr::empty(Units::default());
     let mut attributes = BTreeMap::new();
     attributes.insert(
@@ -109,6 +109,47 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             })
         })
         .collect::<Vec<_>>();
+    let segment_bulk = container
+        .rse
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let SegmentBulkState::Framed(bulk) = &segment.bulk else {
+                return None;
+            };
+            let expanded = bulk
+                .expanded
+                .expect("decode-purpose container expands every framed bulk stream");
+            Some(SegmentBulkRecord {
+                id: format!("inventor:rse:segment-bulk:{}", segment.pair.token.as_str()),
+                token: segment.pair.token.as_str().into(),
+                prefix: hex(&bulk.prefix),
+                form: bulk.form.value(),
+                compressed_len: bulk.compressed.window().len() as u64,
+                compressed_sha256: sha256_hex(bulk.compressed.window()),
+                expanded_len: expanded.window().len() as u64,
+                expanded_sha256: sha256_hex(expanded.window()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let segment_bulk_issues = container
+        .rse
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let SegmentBulkState::Malformed(detail) = &segment.bulk else {
+                return None;
+            };
+            Some(SegmentBulkIssueRecord {
+                id: format!(
+                    "inventor:rse:segment-bulk-issue:{}",
+                    segment.pair.token.as_str()
+                ),
+                token: segment.pair.token.as_str().into(),
+                detail: detail.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
     let unpaired_segments = container
         .rse
         .unpaired_metadata
@@ -136,6 +177,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             .saturating_add(segment_pairs.len())
             .saturating_add(segment_meta.len())
             .saturating_add(segment_meta_issues.len())
+            .saturating_add(segment_bulk.len())
+            .saturating_add(segment_bulk_issues.len())
             .saturating_add(unpaired_segments.len()) as u64,
         "retain Inventor native structural records",
     )?;
@@ -145,6 +188,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.set_arena("segment_pairs", &segment_pairs)?;
     namespace.set_arena("segment_meta", &segment_meta)?;
     namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
+    namespace.set_arena("segment_bulk", &segment_bulk)?;
+    namespace.set_arena("segment_bulk_issues", &segment_bulk_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     let mut losses = Vec::new();
     if ctx.container_only() {
@@ -179,6 +224,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ),
         ));
     }
+    if !segment_bulk_issues.is_empty() {
+        losses.push(LossNote::new(
+            LossKind::DecodeDiagnostic,
+            format!(
+                "{} RSe bulk stream(s) have invalid envelope or zlib framing.",
+                segment_bulk_issues.len()
+            ),
+        ));
+    }
     if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
         losses.push(LossNote::new(
             LossKind::DecodeDiagnostic,
@@ -201,6 +255,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
                 ("rse_segment_pairs".into(), segment_pairs.len()),
                 ("rse_segment_meta".into(), segment_meta.len()),
                 ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
+                ("rse_segment_bulk".into(), segment_bulk.len()),
+                ("rse_segment_bulk_issues".into(), segment_bulk_issues.len()),
             ]),
             losses,
             notes: Vec::new(),

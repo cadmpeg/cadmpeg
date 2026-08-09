@@ -42,7 +42,10 @@ impl Codec for InventorCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        Ok(container::InventorContainer::open(ctx, root)?.summary())
+        Ok(
+            container::InventorContainer::open(ctx, root, container::ContainerPurpose::Inspect)?
+                .summary(),
+        )
     }
 
     fn decode_impl(
