@@ -149,22 +149,6 @@ The discarded face keeps no loss record. Its loops, coedges, and edges do not en
 
 **Need.** We must know the carrier and relation to construct the exact surface geometry.
 
-### GC-08. Stored edge direction anchor
-
-**Question.** Which coedge anchors the stored edge direction in a prefixed deltas edge-use record?
-
-**Known.** `sldprt.md` §4.1 "canonical coedge = same-site coedge with attr == 00 10.refs[0]" defines the anchor. `sldprt.md` §4.1 "The `00 10.refs[0]` coedge anchors the stored edge direction." states the rule. `parse_edge_use_candidates` in `crates/cadmpeg-codec-sldprt/src/brep/topology.rs` fills all six references for the bare form. Its prefixed deltas branch fills `refs[3]` only, so `refs[0]` is not available for that form.
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:571` does not use `refs[0]` for the bare form either. It sorts the faces by bridge attribute and takes the direction from the coedge that the walk reaches first:
-
-```rust
-edge_ends.entry(edge_attr).or_insert((start_vuse, end_vuse, curve_attr));
-```
-
-The same statement reads `refs[3]` from the edge-use record for the curve carrier, so the anchor is available and unused. `crates/cadmpeg-ir/src/validate/topology.rs` has no vertex-continuity check for a loop, so a reversed edge passes validation.
-
-**Need.** We must use the anchor for the bare form. We must know the anchor for the prefixed deltas form.
-
 ### GC-09. Sphere seam pole selection
 
 **Question.** Which pole does a spherical face's degenerate seam use, and what identifies it?

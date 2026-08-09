@@ -172,7 +172,8 @@ fn record(attr: u16, refs: Vec<u16>, marker: Option<u8>, offset: usize) -> Recor
 ///
 /// A prefixed edge-use does not carry the complete six-cell array in the
 /// compact form. The third post-magic cell is the support-curve carrier, so
-/// preserve that field and leave the other cells as sentinels.
+/// preserve that field and leave the other cells as sentinels. The missing
+/// canonical-coedge slot is resolved from the coedge table by the graph walk.
 fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
     let Some(p) = body_start(buf, off, 0x10) else {
         return Vec::new();
@@ -227,7 +228,9 @@ fn parse_edge_use_candidates(buf: &[u8], off: usize) -> Vec<Record> {
 }
 
 /// Edge-use `00 10`: 28-byte body, magic at body+8, `refs[6]` at body+16.
-/// `refs[3]` = support curve carrier.
+/// `refs[0]` = canonical forward coedge when the bare record stores one;
+/// `refs[3]` = support curve carrier. Prefixed records leave `refs[0]` as a
+/// sentinel because their compact payload has no canonical-coedge slot.
 ///
 /// Coedge `00 11`: 21-byte body, no magic, `refs[9]` at body+2, marker at
 /// body+20. `refs[1]` = owning loop, `refs[3]` = next coedge, `refs[4]` = start

@@ -48,6 +48,37 @@ pub(super) fn typed_marker_relation_definition(
     )
 }
 
+fn unique_entity_from_link_intersection(
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchEntityId> {
+    let links = marker
+        .links
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link))
+        .collect::<Vec<_>>();
+    let first = links.first()?;
+    let mut candidates = marker_entities(&first.entity_ref, markers_by_id, loci_by_marker);
+    candidates.retain(|entity| {
+        !entity.0.contains("sketch-entity#relation-point:")
+            && sketch_entities
+                .iter()
+                .any(|candidate| candidate.id == *entity && candidate.sketch == *sketch)
+            && links.iter().skip(1).all(|link| {
+                marker_entities(&link.entity_ref, markers_by_id, loci_by_marker).contains(entity)
+            })
+    });
+    candidates.sort();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [entity] => Some(entity.clone()),
+        _ => None,
+    }
+}
+
 pub(super) fn typed_marker_relation_definition_in_sketch(
     marker: &SketchInputEntity,
     sketch: &SketchId,
@@ -123,6 +154,17 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     let Some(kind) = kind else {
         return Some(native());
     };
+    if kind == Fixed {
+        if let Some(entity) = unique_entity_from_link_intersection(
+            marker,
+            sketch,
+            sketch_entities,
+            markers_by_id,
+            loci_by_marker,
+        ) {
+            return Some(SketchConstraintDefinition::Fixed { entity });
+        }
+    }
     if matches!(kind, Horizontal | Vertical)
         && relation_owner_markers(marker, markers_by_id).is_empty()
     {
@@ -440,12 +482,69 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
                 .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
                 .collect::<Vec<_>>();
+            let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
+                let links = marker
+                    .links
+                    .iter()
+                    .filter(|link| !relation_link_identifies_owner(marker, link))
+                    .collect::<Vec<_>>();
+                if let [first_link, second_link] = links.as_slice() {
+                    let candidates = [first_link, second_link].map(|link| {
+                        marker_entities(&link.entity_ref, markers_by_id, loci_by_marker)
+                            .into_iter()
+                            .filter(|entity| {
+                                sketch_entities.iter().any(|candidate| {
+                                    candidate.id == *entity && candidate.sketch == *sketch
+                                })
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let mut matches = candidates[0]
+                        .iter()
+                        .flat_map(|first| {
+                            candidates[1].iter().filter_map(move |second| {
+                                (first != second).then_some((first, second))
+                            })
+                        })
+                        .filter(|(first, second)| {
+                            let Some(first_entity) =
+                                sketch_entities.iter().find(|entity| entity.id == **first)
+                            else {
+                                return false;
+                            };
+                            let Some(second_entity) =
+                                sketch_entities.iter().find(|entity| entity.id == **second)
+                            else {
+                                return false;
+                            };
+                            binary_relation_matches_evaluated_geometry(
+                                kind,
+                                first_entity,
+                                second_entity,
+                            )
+                        })
+                        .map(|(first, second)| (first.clone(), second.clone()))
+                        .collect::<Vec<_>>();
+                    matches.sort();
+                    matches.dedup();
+                    match matches.as_slice() {
+                        [pair] => Some(pair.clone()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let entities = if owner_entities.len() == 2
                 && forward_entities
                     .iter()
                     .all(|entity| owner_entities.contains(entity))
             {
                 owner_entities
+            } else if let Some((first, second)) = geometry_pair {
+                vec![first, second]
             } else {
                 let Some(entities) = linked_single_entities(marker, markers_by_id, loci_by_marker)
                 else {

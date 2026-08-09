@@ -809,7 +809,7 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 - **Bridge `00 0e`:** `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed). `ref0` = owner/use discriminator. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
-- **Edge-use `00 10`:** `refs[0]` = canonical forward coedge (`0x2b`), `refs[3]` = support curve (compact analytic or `00 86`).
+- **Edge-use `00 10`:** bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`). The prefixed deltas form carries the support curve in its third post-magic reference cell and has no serialized canonical-coedge slot.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal ring links (prev/next), `refs[4]` start vertex-use, `refs[5]` twin coedge, `refs[6]` edge-use, `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
 - **Vertex-use `00 12` / point `00 1d`:** `00 12.refs[4]` = point attr; a bare `00 1d` record has four references at body +6, requires reference 0 to be sentinel `0` or `1`, and stores xyz as three f64 BE at body +14, in metres. Attrs `0` and `1` are sentinels, not world points. A `[00 1d][attr]` adjacency-table entry does not satisfy the reference-0 sentinel invariant and is not a point record.
 
@@ -818,12 +818,13 @@ A support surface belongs to a face through `face -> bridge -> bridge.refs[4] ->
 ### 4.1 Stored edge direction
 
 ```
-canonical coedge = same-site coedge with attr == 00 10.refs[0]   (marker always 0x2b)
+bare canonical coedge = same-site coedge with attr == 00 10.refs[0]   (attr > 1; marker 0x2b)
+prefixed canonical coedge = the unique same-site coedge with refs[6] == edge-use attr and marker 0x2b
 edge.start_vertex = canonical.start_vertex_use → 00 12 → 00 1d
 edge.end_vertex   = partner coedge (same edge_use_attr).start_vertex_use → …
 ```
 
-The `00 10.refs[0]` coedge anchors the stored edge direction. Sentinel attributes `0` and `1` do not reference vertex-use or point records.
+The bare `00 10.refs[0]` coedge anchors the stored edge direction. A prefixed deltas edge-use has no serialized anchor; its direction is resolved from the unique same-edge forward coedge. Sentinel attributes `0` and `1` do not reference topology records. A non-sentinel bare reference must resolve to a same-edge forward coedge. If the explicit reference is invalid, or the prefixed same-edge forward coedge is absent or non-unique, the edge direction is unresolved.
 
 For an edge with exactly two coedge uses, equal coedge markers require opposite face senses and opposite coedge markers require equal face senses. The bridge marker of one face anchors the face-sense parity of each connected shell component; applying the edge parity across the component determines every other face sense.
 
@@ -835,7 +836,7 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 | ---------------------- | ----------- | -------- | ------------------------------------------------------------- |
 | `00 0e`                | tripled     | body +9  | owner triple before magic; five ref triples then marker after |
 | `00 0f`                | tripled     | none     | four ref triples at body +6                                   |
-| `00 10`                | prefixed    | body +9  | ref slot 2 = curve carrier                                    |
+| `00 10`                | prefixed    | body +9  | post-magic cell 2 = curve carrier; direction from unique same-edge forward coedge |
 | `00 11`                | tripled     | none     | slot4 vuse, slot5 twin, slot6 edge-use                        |
 | `00 12`                | prefixed    | body +21 | refs-before-magic slot 4 = point attr                         |
 | `00 1d`                | prefixed    | none     | xyz after `[hi][lo][01]*` run                                 |

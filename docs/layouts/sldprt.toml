@@ -263,7 +263,7 @@ anchor = "`00 0f` | loop head | ≥14 | none"
 tag = "00 10"
 name = "edge-use"
 payload_bytes = 28
-note = "bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells"
+note = "bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells; deltas cell 2 carries the curve and direction uses the unique same-edge 0x2b coedge"
 section = "4"
 anchor = "`00 10` | edge-use | 28 | at body +8"
 

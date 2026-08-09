@@ -465,6 +465,50 @@ fn sense_of(marker: u8) -> Sense {
     }
 }
 
+/// Resolve the coedge that defines an edge's stored direction.
+///
+/// Bare records carry an explicit coedge attr in `refs[0]`. Prefixed records
+/// carry no such slot, so a zero/sentinel slot is resolved only when exactly
+/// one same-edge forward coedge exists. A non-sentinel explicit reference is
+/// authoritative: a dangling, cross-edge, or reversed reference is rejected.
+fn canonical_coedge_attr(
+    edge_attr: u16,
+    edge_use: Option<&topology::Record>,
+    coedges: &HashMap<u16, topology::Record>,
+) -> Option<u16> {
+    if let Some(explicit) = edge_use
+        .and_then(|record| record.refs.first().copied())
+        .filter(|attr| *attr > 1)
+    {
+        let coedge = coedges.get(&explicit)?;
+        return (coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b))
+            .then_some(explicit);
+    }
+
+    let mut candidates = coedges.iter().filter(|(_, coedge)| {
+        coedge.refs.get(6) == Some(&edge_attr) && coedge.marker == Some(0x2b)
+    });
+    let (&attr, _) = candidates.next()?;
+    candidates.next().is_none().then_some(attr)
+}
+
+fn edge_end_vuse(canonical: u16, ring_end: u16, coedges: &HashMap<u16, topology::Record>) -> u16 {
+    let Some(twin) = coedges
+        .get(&canonical)
+        .and_then(|coedge| coedge.refs.get(5).copied())
+        .filter(|twin| *twin != canonical)
+    else {
+        return ring_end;
+    };
+    let Some(twin_record) = coedges.get(&twin) else {
+        return ring_end;
+    };
+    if twin_record.refs.get(5) != Some(&canonical) {
+        return ring_end;
+    }
+    twin_record.refs.get(4).copied().unwrap_or(ring_end)
+}
+
 fn surface_sense(marker: u8, orientation_reversed: bool) -> Sense {
     match (sense_of(marker), orientation_reversed) {
         (Sense::Forward, true) => Sense::Reversed,
@@ -601,11 +645,10 @@ fn decode_graph(
             .is_none_or(|owner| face_owners.insert(owner))
     });
 
-    // Kept-entity sets, so only chain-reachable records are emitted.
-    let mut kept_vertices: HashSet<u16> = HashSet::new();
-    let mut kept_points: HashSet<u16> = HashSet::new();
-    // Edge attr -> (start vuse, end vuse, curve carrier attr) from the ring walk.
-    let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
+    // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
+    // the ring walk. The ring order supplies a boundary edge's second endpoint;
+    // a reciprocal twin supplies it for a two-sided edge.
+    let mut edge_incidence: HashMap<u16, Vec<(u16, u16, u16)>> = HashMap::new();
 
     for f in &faces {
         for (_loop_attr, ring) in &f.loops {
@@ -615,34 +658,56 @@ fn decode_graph(
                     continue;
                 };
                 let next_attr = ring[(i + 1) % k];
-                let start_vuse = *ce.refs.get(4).unwrap_or(&0);
-                let end_vuse = t
+                let start_vuse = ce.refs.get(4).copied().unwrap_or(0);
+                let next_vuse = t
                     .coedges
                     .get(&next_attr)
-                    .and_then(|n| n.refs.get(4).copied())
+                    .and_then(|next| next.refs.get(4).copied())
                     .unwrap_or(0);
-                let edge_attr = *ce.refs.get(6).unwrap_or(&0);
+                let edge_attr = ce.refs.get(6).copied().unwrap_or(0);
                 if edge_attr != 0 {
-                    let curve_attr = t
-                        .edge_uses
-                        .get(&edge_attr)
-                        .and_then(|e| e.refs.get(3).copied())
-                        .unwrap_or(0);
-                    edge_ends
+                    edge_incidence
                         .entry(edge_attr)
-                        .or_insert((start_vuse, end_vuse, curve_attr));
+                        .or_default()
+                        .push((ce_attr, start_vuse, next_vuse));
                 }
-                for vuse in [start_vuse, end_vuse] {
-                    if vuse == 0 {
-                        continue;
-                    }
-                    if let Some(vu) = t.vertex_uses.get(&vuse) {
-                        let point_attr = *vu.refs.get(4).unwrap_or(&0);
-                        if t.points.contains_key(&point_attr) {
-                            kept_vertices.insert(vuse);
-                            kept_points.insert(point_attr);
-                        }
-                    }
+            }
+        }
+    }
+
+    // Kept-entity sets, so only chain-reachable records are emitted.
+    let mut kept_vertices: HashSet<u16> = HashSet::new();
+    let mut kept_points: HashSet<u16> = HashSet::new();
+    // Edge attr -> (canonical start vuse, canonical end vuse, curve carrier attr).
+    let mut edge_ends: HashMap<u16, (u16, u16, u16)> = HashMap::new();
+
+    for (edge_attr, incidences) in edge_incidence {
+        let canonical = canonical_coedge_attr(edge_attr, t.edge_uses.get(&edge_attr), &t.coedges);
+        let Some(canonical) = canonical else {
+            continue;
+        };
+        let Some((_, start_vuse, ring_end_vuse)) = incidences
+            .iter()
+            .find(|(coedge_attr, _, _)| *coedge_attr == canonical)
+        else {
+            continue;
+        };
+        let end_vuse = edge_end_vuse(canonical, *ring_end_vuse, &t.coedges);
+        let curve_attr = t
+            .edge_uses
+            .get(&edge_attr)
+            .and_then(|edge_use| edge_use.refs.get(3).copied())
+            .unwrap_or(0);
+        edge_ends.insert(edge_attr, (*start_vuse, end_vuse, curve_attr));
+        for vuse in [*start_vuse, end_vuse] {
+            if vuse == 0 {
+                continue;
+            }
+            if let Some(vu) = t.vertex_uses.get(&vuse) {
+                let point_attr = vu.refs.get(4).copied().unwrap_or(0);
+                if t.points.contains_key(&point_attr) {
+                    kept_vertices.insert(vuse);
+                    kept_points.insert(point_attr);
                 }
             }
         }
@@ -3356,6 +3421,78 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn canonical_edge_direction_uses_explicit_or_unique_forward_coedge() {
+        use std::collections::HashMap;
+
+        let record = |attr, refs, marker| super::Record {
+            attr,
+            refs,
+            marker,
+            xyz_m: None,
+            xyz_offset: None,
+            owner: None,
+            offset: 0,
+        };
+        let mut coedges = HashMap::from([
+            (10, record(10, vec![0, 0, 0, 0, 101, 0, 7], Some(0x2d))),
+            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7], Some(0x2b))),
+        ]);
+        let prefixed_edge = record(7, vec![0, 0, 0, 300, 0, 0], None);
+
+        assert_eq!(
+            super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
+            Some(11)
+        );
+
+        let bare_edge = record(7, vec![11, 0, 0, 300, 0, 0], None);
+        assert_eq!(
+            super::canonical_coedge_attr(7, Some(&bare_edge), &coedges),
+            Some(11)
+        );
+
+        let sentinel_edge = record(7, vec![1, 0, 0, 300, 0, 0], None);
+        assert_eq!(
+            super::canonical_coedge_attr(7, Some(&sentinel_edge), &coedges),
+            Some(11)
+        );
+
+        let reversed_edge = record(7, vec![10, 0, 0, 300, 0, 0], None);
+        assert_eq!(
+            super::canonical_coedge_attr(7, Some(&reversed_edge), &coedges),
+            None
+        );
+
+        coedges.insert(12, record(12, vec![0, 0, 0, 0, 103, 0, 7], Some(0x2b)));
+        assert_eq!(
+            super::canonical_coedge_attr(7, Some(&prefixed_edge), &coedges),
+            None
+        );
+    }
+
+    #[test]
+    fn boundary_coedge_uses_ring_endpoint_but_reciprocal_twin_supplies_edge_end() {
+        use std::collections::HashMap;
+
+        let record = |attr, refs| super::Record {
+            attr,
+            refs,
+            marker: Some(0x2b),
+            xyz_m: None,
+            xyz_offset: None,
+            owner: None,
+            offset: 0,
+        };
+        let boundary = HashMap::from([(10, record(10, vec![0, 0, 0, 0, 101, 10, 7]))]);
+        assert_eq!(super::edge_end_vuse(10, 102, &boundary), 102);
+
+        let reciprocal = HashMap::from([
+            (10, record(10, vec![0, 0, 0, 0, 101, 11, 7])),
+            (11, record(11, vec![0, 0, 0, 0, 102, 10, 7])),
+        ]);
+        assert_eq!(super::edge_end_vuse(10, 103, &reciprocal), 102);
+    }
+
     #[test]
     fn normalized_surface_parameter_reversal_toggles_face_sense() {
         use cadmpeg_ir::topology::Sense;

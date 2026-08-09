@@ -535,9 +535,9 @@ fn closed_cylinder_body() -> Vec<u8> {
     b.extend(first);
     b.extend(loop_head(21, 31, 10));
     b.extend(coedge(30, 20, 30, 50, 0, 40, false));
-    b.extend(coedge(31, 21, 31, 51, 0, 41, true));
-    b.extend(edge_use(40, 70));
-    b.extend(edge_use(41, 71));
+    b.extend(coedge(31, 21, 31, 51, 0, 41, false));
+    b.extend(edge_use_with_canonical(40, 30, 70));
+    b.extend(edge_use_with_canonical(41, 31, 71));
     b.extend(vertex_use(50, 60));
     b.extend(vertex_use(51, 61));
     b.extend(world_point(60, [-1.0, 0.0, 0.0]));
@@ -959,12 +959,19 @@ fn tripled_coedge(
 
 /// Edge-use `00 10`: `refs[3]` = support curve carrier (0 = none).
 fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+    edge_use_with_canonical(attr, 0, curve_attr)
+}
+
+/// Bare edge-use `refs[0]` names the forward coedge that stores the edge
+/// direction. A zero canonical reference is reserved for compact fixtures
+/// whose unique forward coedge supplies the same relation.
+fn edge_use_with_canonical(attr: u16, canonical_coedge: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr); // p+0
     be32(&mut b, 0); // p+2 seq
     be16(&mut b, 0); // p+6 ref0
     b.extend_from_slice(&MAGIC); // p+8..16
-    let refs = [0u16, 0, 0, curve_attr, 0, 0];
+    let refs = [canonical_coedge, 0, 0, curve_attr, 0, 0];
     for r in refs {
         be16(&mut b, r); // p+16..28
     }
