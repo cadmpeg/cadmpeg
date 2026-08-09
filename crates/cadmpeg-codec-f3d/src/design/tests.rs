@@ -59,9 +59,9 @@ use crate::design::dimensions::{
     owner_scoped_radial_dimension_definition, point_lies_on_sketch_geometry,
     radial_dimension_definition, radial_locus_dimension_definition,
     remove_dimension_frame_relations, repeated_linear_dimension,
-    spatial_parallel_line_distance_matches, spatial_point_distance_matches,
-    two_locus_distance_dimension, unique_point_class_dimension_definition,
-    unresolved_parameter_expression_dependency_count,
+    spatial_counted_offset_dimension_definition, spatial_parallel_line_distance_matches,
+    spatial_point_distance_matches, two_locus_distance_dimension,
+    unique_point_class_dimension_definition, unresolved_parameter_expression_dependency_count,
 };
 
 fn project_dimension_constraints(
@@ -149,7 +149,9 @@ use cadmpeg_ir::ids::{EdgeId, FaceId, ShellId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
     Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-    SketchGeometry, SketchId, SketchLocus, SpatialSketch, SpatialSketchConstraintDefinition,
+    SketchGeometry, SketchId, SketchLocus, SketchNativeOperand, SpatialSketch,
+    SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
+    SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
 };
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -16461,6 +16463,236 @@ fn counted_offset_accepts_concentric_arcs_with_the_same_sweep() {
     };
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
     assert!(exact_counted_offset(&[(1, 7), (2, 0)], &[1, 2], &entities).is_none());
+}
+
+#[test]
+fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs() {
+    let stream = "f3d:synthetic";
+    let sketch_id = SpatialSketchId("synthetic:spatial-sketch#offset".into());
+    let entity = |record_index, geometry| SpatialSketchEntity {
+        id: SpatialSketchEntityId(format!("synthetic:spatial-curve#{record_index}")),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: Some(format!("{stream}:sketch-curve#{record_index}")),
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry,
+    };
+    let sources = [
+        SpatialSketchGeometry::Line {
+            start: Point3::new(-20.0, 5.0, 8.0),
+            end: Point3::new(-15.0, 5.0, 8.0),
+        },
+        SpatialSketchGeometry::Arc {
+            center: Point3::new(30.0, -12.0, 9.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+            reference_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+        SpatialSketchGeometry::Circle {
+            center: Point3::new(50.0, 40.0, -7.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            reference_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: Length(4.0),
+        },
+        SpatialSketchGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(70.0, -5.0, 3.0), Point3::new(74.0, -2.0, 6.0)],
+            weights: None,
+            periodic: false,
+        },
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, geometry)| entity(index as u32 + 1, geometry))
+    .collect::<Vec<_>>();
+    let results = [
+        (Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)),
+        (Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)),
+        (Point3::new(10.0, 10.0, 0.0), Point3::new(0.0, 10.0, 0.0)),
+        (Point3::new(0.0, 10.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (start, end))| {
+        entity(
+            index as u32 + 11,
+            SpatialSketchGeometry::Line { start, end },
+        )
+    })
+    .collect::<Vec<_>>();
+    let profile = SpatialSketchProfile {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        boundary: results
+            .iter()
+            .map(|entity| SpatialSketchEntityUse {
+                entity: entity.id.clone(),
+                reversed: false,
+            })
+            .collect(),
+    };
+    let sketch = SpatialSketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        profiles: vec![profile],
+        native_ref: None,
+    };
+    let record_index = |entity: &SpatialSketchEntity| {
+        entity
+            .native_ref
+            .as_deref()
+            .and_then(|id| id.rsplit_once('#'))
+            .and_then(|(_, index)| index.parse().ok())
+            .expect("synthetic record index")
+    };
+    let mut operands = sources
+        .iter()
+        .map(|entity| SketchNativeOperand {
+            native_kind: "curve".into(),
+            native_field: Some("locus".into()),
+            native_role: Some(1),
+            object_index: record_index(entity),
+            native_ref: entity.native_ref.clone(),
+        })
+        .chain(results.iter().map(|entity| SketchNativeOperand {
+            native_kind: "curve".into(),
+            native_field: Some("locus".into()),
+            native_role: Some(0),
+            object_index: record_index(entity),
+            native_ref: entity.native_ref.clone(),
+        }))
+        .collect::<Vec<_>>();
+    operands.push(SketchNativeOperand {
+        native_kind: "record".into(),
+        native_field: Some("owner".into()),
+        native_role: Some(0),
+        object_index: 100,
+        native_ref: Some(format!("{stream}:design-entity#100")),
+    });
+    operands.extend(sources.iter().zip(&results).flat_map(|(source, result)| {
+        [source, result].map(|entity| SketchNativeOperand {
+            native_kind: "curve".into(),
+            native_field: Some("return".into()),
+            native_role: None,
+            object_index: record_index(entity),
+            native_ref: entity.native_ref.clone(),
+        })
+    }));
+    let mut by_record = sources
+        .iter()
+        .chain(&results)
+        .map(|entity| ((stream, record_index(entity)), entity))
+        .collect::<HashMap<_, _>>();
+    let parameter = ParameterId("synthetic:parameter#offset".into());
+
+    let definition = spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &operands,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .expect("counted spatial offset");
+    assert!(matches!(
+        definition,
+        SpatialSketchConstraintDefinition::Offset {
+            sources: actual_sources,
+            results: actual_results,
+            normal,
+            distance: Length(3.0),
+            parameter: Some(actual_parameter),
+            parameter_factor: Some(-1.0),
+        } if actual_sources == sources.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
+            && actual_results == results.iter().map(|entity| entity.id.clone()).collect::<Vec<_>>()
+            && normal == Vector3::new(0.0, 0.0, 1.0)
+            && actual_parameter == parameter
+    ));
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0),
+        &operands,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .is_none());
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &operands,
+        &parameter,
+        3.0,
+        -2.0,
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .is_none());
+    let outside_source = entity(
+        99,
+        SpatialSketchGeometry::Line {
+            start: Point3::new(-100.0, 0.0, 0.0),
+            end: Point3::new(-90.0, 0.0, 0.0),
+        },
+    );
+    by_record.insert((stream, 99), &outside_source);
+    let mut non_permutation = operands.clone();
+    let first_return = sources.len() + results.len() + 1;
+    non_permutation[first_return].object_index = 99;
+    non_permutation[first_return].native_ref = outside_source.native_ref.clone();
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &non_permutation,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .is_none());
+    let mut wrong_operand_kind = operands.clone();
+    wrong_operand_kind[0].native_kind = "point".into();
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &wrong_operand_kind,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&sketch),
+        &by_record,
+    )
+    .is_none());
+    let mut ambiguous_sketch = sketch.clone();
+    ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &operands,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&ambiguous_sketch),
+        &by_record,
+    )
+    .is_none());
 }
 
 #[test]

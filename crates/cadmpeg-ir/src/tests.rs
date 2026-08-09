@@ -4845,8 +4845,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchOffsetPair,
-        SpatialSketchProfile,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
     };
 
     let mut ir = unit_cube();
@@ -5072,11 +5071,8 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#offset".into()),
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::Offset {
-                pairs: vec![SpatialSketchOffsetPair {
-                    source: line.clone(),
-                    result: parallel_line.clone(),
-                    source_reversed: false,
-                }],
+                sources: vec![line.clone()],
+                results: vec![parallel_line.clone()],
                 normal: Vector3::new(
                     -2.0 / 6.0f64.sqrt(),
                     1.0 / 6.0f64.sqrt(),
@@ -5225,6 +5221,47 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut overlapping_offset = ir.clone();
+    let SpatialSketchConstraintDefinition::Offset {
+        sources, results, ..
+    } = &mut overlapping_offset
+        .model
+        .spatial_sketch_constraints
+        .iter_mut()
+        .find(|constraint| constraint.id.0.ends_with("#offset"))
+        .expect("spatial offset constraint")
+        .definition
+    else {
+        panic!("spatial offset definition");
+    };
+    results[0] = sources[0].clone();
+    assert!(validate(&overlapping_offset, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "invalid spatial constraint arity"));
+    let mut non_curve_offset = ir.clone();
+    let point_entity = non_curve_offset
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .find(|entity| matches!(entity.geometry, SpatialSketchGeometry::Point { .. }))
+        .expect("spatial point")
+        .id
+        .clone();
+    let SpatialSketchConstraintDefinition::Offset { sources, .. } = &mut non_curve_offset
+        .model
+        .spatial_sketch_constraints
+        .iter_mut()
+        .find(|constraint| constraint.id.0.ends_with("#offset"))
+        .expect("spatial offset constraint")
+        .definition
+    else {
+        panic!("spatial offset definition");
+    };
+    sources[0] = point_entity;
+    assert!(validate(&non_curve_offset, Vec::new()).findings.iter().any(
+        |finding| finding.message == "spatial offset source and result members must be curves"
+    ));
     let mut invalid_distance = ir.clone();
     invalid_distance
         .model
@@ -5233,12 +5270,13 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
         .value = Some(ParameterValue::Length(Length(3.0)));
-    assert!(validate(&invalid_distance, Vec::new())
-        .findings
+    let invalid_distance_findings = validate(&invalid_distance, Vec::new()).findings;
+    assert!(invalid_distance_findings.iter().any(|finding| finding
+        .message
+        .contains("spatial distance requires parallel lines")));
+    assert!(invalid_distance_findings
         .iter()
-        .any(|finding| finding
-            .message
-            .contains("spatial distance requires parallel lines")));
+        .any(|finding| finding.message == "spatial offset distance does not match its parameter"));
     let json = ir.to_canonical_json().expect("serialize spatial sketch");
     let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
     assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);

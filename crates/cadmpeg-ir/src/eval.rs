@@ -17,7 +17,6 @@ use crate::geometry::{
     SurfaceGeometry, SurfaceParameterAxis,
 };
 use crate::math::{Point2, Point3, Vector3};
-use crate::sketches::SpatialSketchGeometry;
 use crate::transform::Transform;
 use crate::CadIr;
 
@@ -27,59 +26,6 @@ fn cross(a: Vector3, b: Vector3) -> Vector3 {
         a.z * b.x - a.x * b.z,
         a.x * b.y - a.y * b.x,
     )
-}
-
-/// Signed separation of two parallel model-space sketch lines in one plane.
-///
-/// Positive distance is along the left normal selected by `plane_normal`
-/// and the source line's stored traversal.
-pub fn spatial_line_offset(
-    source: &SpatialSketchGeometry,
-    result: &SpatialSketchGeometry,
-    plane_normal: Vector3,
-) -> Option<f64> {
-    let (
-        SpatialSketchGeometry::Line {
-            start: source_start,
-            end: source_end,
-        },
-        SpatialSketchGeometry::Line {
-            start: result_start,
-            end: result_end,
-        },
-    ) = (source, result)
-    else {
-        return None;
-    };
-    let tangent = Vector3::new(
-        source_end.x - source_start.x,
-        source_end.y - source_start.y,
-        source_end.z - source_start.z,
-    );
-    let result_tangent = Vector3::new(
-        result_end.x - result_start.x,
-        result_end.y - result_start.y,
-        result_end.z - result_start.z,
-    );
-    let length = tangent.norm();
-    let result_length = result_tangent.norm();
-    if length <= 1.0e-12
-        || result_length <= 1.0e-12
-        || cross(tangent, result_tangent).norm() > 1.0e-9 * length * result_length
-    {
-        return None;
-    }
-    let left = cross(plane_normal, tangent);
-    let left_length = left.norm();
-    if left_length <= 1.0e-12 {
-        return None;
-    }
-    let offset = Vector3::new(
-        result_start.x - source_start.x,
-        result_start.y - source_start.y,
-        result_start.z - source_start.z,
-    );
-    Some((offset.x * left.x + offset.y * left.y + offset.z * left.z) / left_length)
 }
 
 /// Test whether two model-space points are reflections across a line carrier.
