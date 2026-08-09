@@ -158,6 +158,12 @@ the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
 
+Two bounded endpoints connect when an active coincident-loci constraint identifies them or their
+solved coordinates differ by at most 64 binary64 machine epsilons at the coordinate scale. The
+coordinate scale is the maximum absolute endpoint coordinate or one. If one endpoint connects to
+more than one endpoint of other non-construction entities, all incident entities remain separate
+single-entity profiles. The decoder does not select one branch by record order.
+
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
 distance, horizontal/vertical distance, angle, radius, and diameter relations transfer to neutral

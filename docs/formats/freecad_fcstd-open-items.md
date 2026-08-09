@@ -214,19 +214,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain an unordered incidence relation or mark the radial order as unresolved.
 
-## 8. Design projection
-
-### DP-03. Sketch profile junction ambiguity and tolerance
-
-**Question.** What endpoint tolerance connects two sketch entities, and what happens when more than one unused entity meets the current endpoint?
-
-**Known.** Constraints and persisted geometry can produce coincident endpoints. A neutral profile chain asserts one ordered continuation and orientation at every junction. Unresolved design geometry must remain attributable in the native lane.
-
-**Conflict.** `design.rs` `build_profiles` uses an uncited coordinate tolerance of `1e-9` on each axis. It takes the first persisted entity whose start or end passes that test. It does not detect two candidates, branching geometry, or two opposite endpoints that both pass. The selected branch depends on persisted entity order.
-
-**Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
-
-## 9. Semantic annotations
+## 8. Semantic annotations
 
 ### SA-01. Runtime-type to annotation-kind mapping
 
