@@ -65,7 +65,13 @@ pub(crate) fn transfer(
             element_transforms: parse_placement_list(&owned, entries)?,
             element_scales: parse_vector_list(&owned, entries)?,
             linked_subelements: prototype_link
-                .map(|link| link.subelements.clone())
+                .map(|link| {
+                    link.subelements
+                        .iter()
+                        .filter(|subelement| !subelement.is_empty())
+                        .cloned()
+                        .collect()
+                })
                 .unwrap_or_default(),
             claim_child: scalar(&owned, "LinkClaimChild").and_then(parse_bool),
             copy_on_change: owned

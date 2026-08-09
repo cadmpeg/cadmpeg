@@ -597,7 +597,7 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
 </GeometryList></Property>
-<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Source" sub="Edge1"/></LinkList></Property>
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Source" sub="Edge1"/></LinkSubList></Property>
 <Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
@@ -781,12 +781,12 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
  </Properties></Object>
  <Object name="Fillet"><Properties Count="3">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Revolution" sub="Edge1"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Revolution" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Radius" type="App::PropertyLength"><Float value="2"/></Property>
   <Property name="UseAllEdges" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
  <Object name="Chamfer"><Properties Count="5">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Fillet" sub="Edge2"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Fillet" count="1"><Sub value="Edge2"/></LinkSub></Property>
   <Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
@@ -869,7 +869,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
-  <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="Standalone" sub="Face1"/></Property>
+  <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="Standalone" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="TwoAngles"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -887,7 +887,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
   <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Sketch" sub="H_Axis"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="H_Axis"/></LinkSub></Property>
   <Property name="FuseOrder" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
@@ -904,7 +904,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyFloatConstraint"><Float value="45"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="AxisLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+  <Property name="AxisLink" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -1412,8 +1412,8 @@ fn transfers_part_ruled_surface_and_section_intersection() {
  <Object name="First"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Ruled"><Properties Count="3">
-  <Property name="Curve1" type="App::PropertyLinkSub"><Link object="First" sub="Edge1"/></Property>
-  <Property name="Curve2" type="App::PropertyLinkSub"><Link object="Second" sub="Wire1"/></Property>
+  <Property name="Curve1" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Edge1"/></LinkSub></Property>
+  <Property name="Curve2" type="App::PropertyLinkSub"><LinkSub value="Second" count="1"><Sub value="Wire1"/></LinkSub></Property>
   <Property name="Orientation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
  </Properties></Object>
  <Object name="Section"><Properties Count="3">
@@ -1472,7 +1472,7 @@ fn transfers_standalone_part_mirror_plane_semantics() {
   <Property name="Source" type="App::PropertyLink"><Link value="Source"/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
   <Property name="Normal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
-  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="PlaneCarrier" sub="Face1"/></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="PlaneCarrier" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -1515,8 +1515,8 @@ fn transfers_part_projection_on_surface_construction() {
  <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
  <Object name="Support"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="3"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
  <Object name="Projection"><Properties Count="6">
-  <Property name="Projection" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="First" sub="Wire1"/><Link object="Second" sub="Face2"/></LinkList></Property>
-  <Property name="SupportFace" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="Projection" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="First" sub="Wire1"/><Link obj="Second" sub="Face2"/></LinkSubList></Property>
+  <Property name="SupportFace" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="0" z="5"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
@@ -1697,10 +1697,10 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  </Properties></Object>
  <Object name="Pipe"><Properties Count="11">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
-  <Property name="Sections" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="Section1"/><Link object="Section2"/></LinkList></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkSubList count="2"><Link obj="Section1" sub=""/><Link obj="Section2" sub=""/></LinkSubList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="SpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
-  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge2"/></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge2"/></LinkSub></Property>
   <Property name="AuxiliarySpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="AuxiliaryCurvilinear" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
@@ -1716,7 +1716,7 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
  </Properties></Object>
  <Object name="SurfaceSweep"><Properties Count="6">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -1822,21 +1822,21 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
  <Object name="Path"><Properties Count="0"/></Object>
  <Object name="Fixed"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>
  <Object name="Frenet"><Properties Count="5">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
  </Properties></Object>
  <Object name="Binormal"><Properties Count="6">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
   <Property name="Binormal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -1844,17 +1844,17 @@ fn transfers_remaining_pipe_orientation_and_transformation_modes() {
  </Properties></Object>
  <Object name="Linear"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
  </Properties></Object>
  <Object name="SShape"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="3"/></Property>
  </Properties></Object>
  <Object name="Interpolation"><Properties Count="3">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
-  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><LinkSub value="Path" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="4"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
@@ -2345,14 +2345,14 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
  <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Ring"><Properties Count="5">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="Axis" type="App::PropertyLinkSub"><Link object="Axis" sub=""/></Property>
+  <Property name="Axis" type="App::PropertyLinkSub"><LinkSub value="Axis" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="360"/></Property>
   <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
  </Properties></Object>
  <Object name="Mirror"><Properties Count="2">
   <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
-  <Property name="MirrorPlane" type="App::PropertyLinkSub"><Link object="Plane" sub=""/></Property>
+  <Property name="MirrorPlane" type="App::PropertyLinkSub"><LinkSub value="Plane" count="1"><Sub value=""/></LinkSub></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2492,7 +2492,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
 <ObjectData Count="3">
  <Object name="Profile"><Properties Count="0"/></Object>
  <Object name="Spring"><Properties Count="14">
-  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
+  <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="1"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
@@ -2508,7 +2508,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
   <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="OutsideCut"><Properties Count="13">
-  <Property name="Profile" type="App::PropertyLinkSub"><Link object="Profile" sub=""/></Property>
+  <Property name="Profile" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
@@ -2618,10 +2618,10 @@ fn transfers_shape_and_subshape_binder_construction() {
 <ObjectData Count="4">
  <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
  <Object name="Context"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
- <Object name="ShapeBind"><Properties Count="2"><Property name="Support" type="App::PropertyLinkSubListGlobal"><LinkList count="1"><Link object="Source" sub="Face1 Face2"/></LinkList></Property><Property name="TraceSupport" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="ShapeBind"><Properties Count="2"><Property name="Support" type="App::PropertyLinkSubListGlobal"><LinkSubList count="1"><Link obj="Source" sub="Face1 Face2"/></LinkSubList></Property><Property name="TraceSupport" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
  <Object name="SubBind"><Properties Count="15">
-  <Property name="Support" type="App::PropertyXLinkSubList"><LinkList count="2"><XLink object="Source" sub="Edge1"/><XLink document="library.FCStd" object="RemotePart" sub="Face3"/></LinkList></Property>
-  <Property name="Context" type="App::PropertyXLink"><XLink object="Context"/></Property>
+  <Property name="Support" type="App::PropertyXLinkSubList"><XLinkSubList count="2"><XLink name="Source" sub="Edge1"/><XLink file="library.FCStd" name="RemotePart" sub="Face3"/></XLinkSubList></Property>
+  <Property name="Context" type="App::PropertyXLink"><XLink name="Context"/></Property>
   <Property name="ClaimChildren" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Relative" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fuse" type="App::PropertyBool"><Bool value="true"/></Property><Property name="MakeFace" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="BindMode" type="App::PropertyEnumeration"><Integer value="1"/></Property><Property name="PartialLoad" type="App::PropertyBool"><Bool value="true"/></Property><Property name="BindCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
   <Property name="Offset" type="App::PropertyFloat"><Float value="-2.5"/></Property><Property name="OffsetJoinType" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="OffsetFill" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetOpenResult" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
@@ -2710,7 +2710,7 @@ fn transfers_complete_thickness_construction_controls() {
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
  </Properties></Object>
  <Object name="Wall"><Properties Count="7">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face2 Face4"/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face2 Face4"/></LinkSub></Property>
   <Property name="Value" type="App::PropertyLength"><Float value="2.5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -2765,7 +2765,7 @@ fn transfers_part_thickness_and_shape_offset_construction() {
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
  </Properties></Object>
  <Object name="Thickness"><Properties Count="6">
-  <Property name="Faces" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
+  <Property name="Faces" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1 Face3"/></LinkSub></Property>
   <Property name="Value" type="App::PropertyLength"><Float value="-2"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Join" type="App::PropertyEnumeration"><Integer value="2"/></Property>
@@ -2858,9 +2858,9 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
  <Object name="Neutral"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="2" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Pull"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property></Properties></Object>
  <Object name="Draft"><Properties Count="5">
-  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
-  <Property name="NeutralPlane" type="App::PropertyLinkSub"><Link object="Neutral" sub=""/></Property>
-  <Property name="PullDirection" type="App::PropertyLinkSub"><Link object="Pull" sub=""/></Property>
+  <Property name="Base" type="App::PropertyLinkSub"><LinkSub value="Base" count="1"><Sub value="Face1 Face3"/></LinkSub></Property>
+  <Property name="NeutralPlane" type="App::PropertyLinkSub"><LinkSub value="Neutral" count="1"><Sub value=""/></LinkSub></Property>
+  <Property name="PullDirection" type="App::PropertyLinkSub"><LinkSub value="Pull" count="1"><Sub value=""/></LinkSub></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
@@ -3631,15 +3631,13 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
 }
 
 #[test]
-fn distinguishes_external_product_paths_document_ids_and_targets() {
+fn transfers_external_product_paths_and_targets() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
+<Objects Count="1">
  <Object type="App::Link" name="ByPath" id="1"/>
- <Object type="App::Link" name="ByDocument" id="2"/>
 </Objects>
-<ObjectData Count="2">
+<ObjectData Count="1">
  <Object name="ByPath"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="parts/widget.FCStd" name="Body"/></Property></Properties></Object>
- <Object name="ByDocument"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
@@ -3647,7 +3645,7 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
             &DecodeOptions::default(),
         )
         .expect("external products");
-    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 1);
     let by_path = result
         .ir
         .model
@@ -3671,29 +3669,6 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
         cadmpeg_ir::ExternalResolution::Unresolved
     );
 
-    let by_document = result
-        .ir
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("ByDocument"))
-        })
-        .expect("document occurrence");
-    let cadmpeg_ir::PrototypeReference::External { document, object } = &by_document.prototype
-    else {
-        panic!("document prototype is external");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("document-7"));
-    assert_eq!(object.as_deref(), Some("Gear"));
-    assert_eq!(
-        document.resolution,
-        cadmpeg_ir::ExternalResolution::Unresolved
-    );
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
@@ -3708,6 +3683,73 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
+}
+
+#[test]
+fn rejects_non_schema_link_carrier_aliases() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
+<ObjectData Count="1"><Object name="Link"><Properties Count="1">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("unsupported XLink document alias");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("unsupported link carrier document")
+    ));
+}
+
+#[test]
+fn restores_shadowed_link_subelement_name() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<ObjectData Count="2"><Object name="Owner"><Properties Count="1">
+<Property name="Support" type="App::PropertyLinkSub"><LinkSub value="Target" count="1"><Sub value="Face1" shadowed="Face7"/></LinkSub></Property>
+</Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("shadowed subelement");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let support = properties
+        .iter()
+        .find(|property| property.name == "Support")
+        .expect("support");
+    assert_eq!(support.links[0].subelements, ["Face7"]);
+}
+
+#[test]
+fn rejects_conflicting_xlink_subelement_carriers() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Link" name="Link"/></Objects>
+<ObjectData Count="1"><Object name="Link"><Properties Count="1">
+<Property name="LinkedObject" type="App::PropertyXLink"><XLink name="Gear" sub="Face1" count="1"><Sub value="Face2"/></XLink></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect_err("conflicting XLink subelement carriers");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::Malformed(message)
+            if message.contains("both sub and count carriers")
+    ));
 }
 
 #[test]
@@ -4256,7 +4298,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
  <Object name="Dimension"><Properties Count="5">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
-  <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link obj="Model" sub="Edge1"/></LinkList></Property>
+  <Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Model" sub="Edge1"/></LinkSubList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
   <Property name="X" type="App::PropertyDistance"><Float value="10"/></Property>
   <Property name="Y" type="App::PropertyDistance"><Float value="20"/></Property>
@@ -4387,7 +4429,7 @@ fn transfers_remaining_semantic_annotation_families_and_assets() {
  <Object name="Model"><Properties Count="0"/></Object>
  <Object name="Balloon"><Properties Count="2">
   <Property name="Text" type="App::PropertyString"><String value="7"/></Property>
-  <Property name="Source" type="App::PropertyLinkSub"><Link object="Model" sub="Face1"/></Property>
+  <Property name="Source" type="App::PropertyLinkSub"><LinkSub value="Model" count="1"><Sub value="Face1"/></LinkSub></Property>
  </Properties></Object>
  <Object name="Leader"><Properties Count="1"><Property name="Text" type="App::PropertyString"><String value="LEAD"/></Property></Properties></Object>
  <Object name="Symbol"><Properties Count="1"><Property name="Symbol" type="App::PropertyFileIncluded"><FileIncluded file="symbol.svg"/></Property></Properties></Object>
@@ -4460,12 +4502,12 @@ fn transfers_non_default_extrusion_termination_branches() {
   <Object name="ToFace"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
-    <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face1"/></Property>
+    <Property name="UpToFace" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face1"/></LinkSub></Property>
   </Properties></Object>
   <Object name="ToShape"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Type" type="App::PropertyEnumeration"><Integer value="5"/></Property>
-    <Property name="UpToShape" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face2"/></Property>
+    <Property name="UpToShape" type="App::PropertyLinkSub"><LinkSub value="PartExtrusion" count="1"><Sub value="Face2"/></LinkSub></Property>
   </Properties></Object>
   <Object name="ThroughAll"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -4486,7 +4528,7 @@ fn transfers_non_default_extrusion_termination_branches() {
     <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
     <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="4"/></Property>
     <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
-    <Property name="DirLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+    <Property name="DirLink" type="App::PropertyLinkSub"><LinkSub value="Sketch" count="1"><Sub value="Edge1"/></LinkSub></Property>
     <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
     <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
     <Property name="FaceMakerMode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
@@ -4686,10 +4728,10 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Length" type="App::PropertyLength"><Float value="-5"/></Property>
   <Property name="Type2" type="App::PropertyEnumeration"><Integer value="5"/></Property>
-  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Target" sub="Face2"/></LinkList></Property>
+  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="Target" sub="Face2"/></LinkSubList></Property>
   <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
   <Property name="UseCustomVector" type="App::PropertyBool"><Bool value="false"/></Property>
-  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Profile" sub="Edge1"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><LinkSub value="Profile" count="1"><Sub value="Edge1"/></LinkSub></Property>
   <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
   <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="-3"/></Property>
   <Property name="Offset" type="App::PropertyDistance"><Float value="1"/></Property>
@@ -4964,7 +5006,7 @@ fn retains_support_attachment_and_distinct_offset_frame() {
  <Object name="Support"><Properties Count="0"/></Object>
  <Object name="Sketch"><Properties Count="5">
   <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
-  <Property name="Support" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="Support" type="App::PropertyLinkSub"><LinkSub value="Support" count="1"><Sub value="Face1"/></LinkSub></Property>
   <Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/></Property>
   <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="AttachmentOffset" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -5958,7 +6000,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 <ObjectData Count="2">
 <Object name="Body" Extensions="True"><Extensions Count="1"><Extension type="Demo::Extension" name="Demo"><Properties Count="1"><Property name="ExtensionValue" type="App::PropertyString"><String value="kept"/></Property></Properties></Extension></Extensions><Properties Count="4" TransientCount="1">
 <_Property name="TransientState" type="App::PropertyInteger" status="8"/>
-<Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
+<Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><LinkSub value="Sketch" count="1"><Sub value="Face1"/></LinkSub></Property>
 <Property name="Members" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value=""/></LinkList></Property>
 <Property name="Payload" type="App::PropertyFileIncluded"><File file="Payload.bin"/></Property>
 <Property name="Shape" type="Part::PropertyPartShape"><Part ElementMap="" file="Shape.brp"/></Property>

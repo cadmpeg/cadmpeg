@@ -58,6 +58,27 @@ elements.
 file version, object type, property type, value tag, and side-entry form. Unsupported combinations
 are reported using those structural attributes.
 
+Schema 4 link properties use a closed runtime-type and value-tag grammar. All runtime types in this
+grammar have the `App::` prefix. `PropertyLink` and its
+`Child`, `Global`, and `Hidden` variants contain one `Link` with a `value` object name.
+`PropertyLinkList` and its three variants contain one `LinkList`; `count` equals the number of
+`Link` children, and each child has a `value` object name. `PropertyLinkSub` and its three variants
+contain one `LinkSub` with a `value` object name and a `count` of `Sub` children. Each `Sub` has a
+`value` subelement name. `PropertyLinkSubList` and its three variants contain one `LinkSubList`;
+`count` equals the number of `Link` children, and each child has an `obj` object name and a `sub`
+subelement name.
+
+`PropertyXLink`, `PropertyXLinkSub`, and `PropertyXLinkSubHidden` contain one `XLink`. Its `name`
+is the object name. An optional `file` is the external document path; an absent or empty `file`
+selects the current document. Zero subelements use no `sub` or `count` attribute. One subelement
+uses the `sub` attribute. Multiple subelements use `count` and the same number of `Sub` children,
+each with a `value` attribute. `PropertyXLinkSubList` and `PropertyXLinkList` contain one
+`XLinkSubList`; its `count` equals the number of child `XLink` values. A `shadowed` attribute on a
+subelement carrier supplies the restored subelement value; the primary `sub` or `value` remains
+the compatibility name. Other carrier names and simultaneous `sub` and `count` carriers are
+invalid. A property type outside this registry retains its XML but does not infer link targets from
+nested tag names.
+
 ## 4. Identity and retention
 
 Every document object has a stable identity composed from the document identity and its persisted
@@ -65,8 +86,9 @@ object identity. Every property identity includes its owner and persisted proper
 order is significant for declarations, properties, links, and side-entry requests.
 
 Unknown object and property types retain their type name, owner, persisted name, status and dynamic
-metadata, recoverable links, raw XML span, referenced entry bytes, and source order. Unknown
-application records remain named records rather than being merged into one document-wide payload.
+metadata, links decoded by a registered grammar, raw XML span, referenced entry bytes, and source
+order. Unknown application records remain named records rather than being merged into one
+document-wide payload.
 
 Serialized Python and extension payloads are inert bytes. Reading, inspecting, validating,
 diffing, and exporting never executes or imports them.

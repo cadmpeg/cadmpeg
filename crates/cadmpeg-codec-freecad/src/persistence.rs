@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generic schema-4 object and property graph recovery.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::CodecError;
 
@@ -395,7 +395,7 @@ fn parse_properties(
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
         let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
-            parse_link_targets(node, &values)
+            parse_link_targets(node, &type_name)?
         } else {
             Vec::new()
         };
@@ -446,55 +446,189 @@ fn parse_properties(
 
 fn parse_link_targets(
     property: roxmltree::Node<'_, '_>,
-    values: &[ValueRecord],
-) -> Vec<LinkTarget> {
-    let structured = property
-        .descendants()
-        .filter(|node| matches!(node.tag_name().name(), "Link" | "XLink"))
-        .filter_map(|node| {
-            let attributes = node
-                .attributes()
-                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
-                .collect::<BTreeMap<_, _>>();
-            let object = attribute_any(
-                &attributes,
-                &[
-                    "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
-                ],
-            );
-            let document_pair = attribute_any_named(
-                &attributes,
-                &["document", "Document", "doc", "Doc", "file", "File"],
-            );
-            let document = document_pair
-                .as_ref()
-                .map(|(_, value)| value.clone())
-                .filter(|document| !document.is_empty());
-            let subelements = node
-                .attributes()
-                .filter(|attribute| attribute.name().to_ascii_lowercase().contains("sub"))
-                .map(|attribute| attribute.value().to_owned())
-                .chain(
-                    node.children()
-                        .filter(|child| child.has_tag_name("Sub"))
-                        .filter_map(|child| child.attribute("value").map(str::to_owned)),
-                )
-                .collect::<Vec<_>>();
-            (object.is_some() || document.is_some() || !subelements.is_empty()).then_some(
-                LinkTarget {
-                    document,
-                    document_attribute: document_pair.map(|(name, _)| name),
-                    object,
-                    subelements,
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    if structured.is_empty() {
-        values.iter().flat_map(link_targets).collect()
-    } else {
-        structured
+    type_name: &str,
+) -> Result<Vec<LinkTarget>, CodecError> {
+    let grammar = link_grammar(type_name);
+    let Some(grammar) = grammar else {
+        return Ok(Vec::new());
+    };
+    let root = single_value_element(property, grammar.root_tag(), type_name)?;
+    match grammar {
+        LinkGrammar::Link => Ok(vec![local_link(root, "value", &[])?]),
+        LinkGrammar::LinkList => counted_children(root, "Link", type_name)?
+            .map(|node| local_link(node, "value", &[]))
+            .collect(),
+        LinkGrammar::LinkSub => {
+            let subelements = counted_children(root, "Sub", type_name)?
+                .map(|node| restored_subelement(node, "value"))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(vec![local_link(root, "value", &subelements)?])
+        }
+        LinkGrammar::LinkSubList => counted_children(root, "Link", type_name)?
+            .map(|node| {
+                let sub = restored_subelement(node, "sub")?;
+                local_link(node, "obj", &[sub])
+            })
+            .collect(),
+        LinkGrammar::XLink => Ok(vec![xlink(root)?]),
+        LinkGrammar::XLinkList => counted_children(root, "XLink", type_name)?
+            .map(xlink)
+            .collect(),
     }
+}
+
+#[derive(Clone, Copy)]
+enum LinkGrammar {
+    Link,
+    LinkList,
+    LinkSub,
+    LinkSubList,
+    XLink,
+    XLinkList,
+}
+
+impl LinkGrammar {
+    fn root_tag(self) -> &'static str {
+        match self {
+            Self::Link => "Link",
+            Self::LinkList => "LinkList",
+            Self::LinkSub => "LinkSub",
+            Self::LinkSubList => "LinkSubList",
+            Self::XLink => "XLink",
+            Self::XLinkList => "XLinkSubList",
+        }
+    }
+}
+
+fn link_grammar(type_name: &str) -> Option<LinkGrammar> {
+    let grammar = match type_name {
+        "App::PropertyLink"
+        | "App::PropertyLinkChild"
+        | "App::PropertyLinkGlobal"
+        | "App::PropertyLinkHidden" => LinkGrammar::Link,
+        "App::PropertyLinkList"
+        | "App::PropertyLinkListChild"
+        | "App::PropertyLinkListGlobal"
+        | "App::PropertyLinkListHidden" => LinkGrammar::LinkList,
+        "App::PropertyLinkSub"
+        | "App::PropertyLinkSubChild"
+        | "App::PropertyLinkSubGlobal"
+        | "App::PropertyLinkSubHidden" => LinkGrammar::LinkSub,
+        "App::PropertyLinkSubList"
+        | "App::PropertyLinkSubListChild"
+        | "App::PropertyLinkSubListGlobal"
+        | "App::PropertyLinkSubListHidden" => LinkGrammar::LinkSubList,
+        "App::PropertyXLink" | "App::PropertyXLinkSub" | "App::PropertyXLinkSubHidden" => {
+            LinkGrammar::XLink
+        }
+        "App::PropertyXLinkSubList" | "App::PropertyXLinkList" => LinkGrammar::XLinkList,
+        _ => return None,
+    };
+    Some(grammar)
+}
+
+fn single_value_element<'a, 'input>(
+    property: roxmltree::Node<'a, 'input>,
+    tag: &str,
+    type_name: &str,
+) -> Result<roxmltree::Node<'a, 'input>, CodecError> {
+    let mut elements = property.children().filter(roxmltree::Node::is_element);
+    let value = elements
+        .next()
+        .ok_or_else(|| CodecError::Malformed(format!("{type_name} requires one {tag} value")))?;
+    if !value.has_tag_name(tag) || elements.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "{type_name} requires exactly one {tag} value"
+        )));
+    }
+    Ok(value)
+}
+
+fn counted_children<'a, 'input>(
+    parent: roxmltree::Node<'a, 'input>,
+    tag: &'static str,
+    type_name: &str,
+) -> Result<impl Iterator<Item = roxmltree::Node<'a, 'input>>, CodecError> {
+    let count = required_attr(parent, "count")?
+        .parse::<usize>()
+        .map_err(|_| CodecError::Malformed(format!("{type_name} count is invalid")))?;
+    let children = parent
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    if children.len() != count || children.iter().any(|child| !child.has_tag_name(tag)) {
+        return Err(CodecError::Malformed(format!(
+            "{type_name} count={count} but {} {tag} values were found",
+            children.len()
+        )));
+    }
+    Ok(children.into_iter())
+}
+
+fn local_link(
+    node: roxmltree::Node<'_, '_>,
+    object_attribute: &str,
+    subelements: &[String],
+) -> Result<LinkTarget, CodecError> {
+    if object_attribute == "obj" {
+        reject_link_aliases(node, &["obj", "sub"])?;
+    } else {
+        reject_link_aliases(node, &[object_attribute])?;
+    }
+    Ok(LinkTarget {
+        document: None,
+        document_attribute: None,
+        object: Some(required_attr(node, object_attribute)?),
+        subelements: subelements.to_vec(),
+    })
+}
+
+fn xlink(node: roxmltree::Node<'_, '_>) -> Result<LinkTarget, CodecError> {
+    reject_link_aliases(node, &["name", "file", "sub"])?;
+    let file = node.attribute("file").map(str::to_owned);
+    let subelements = match (node.attribute("sub"), node.attribute("count")) {
+        (Some(_), None) => vec![restored_subelement(node, "sub")?],
+        (None, Some(_)) => counted_children(node, "Sub", "App::PropertyXLink")?
+            .map(|child| restored_subelement(child, "value"))
+            .collect::<Result<Vec<_>, _>>()?,
+        (None, None) => Vec::new(),
+        (Some(_), Some(_)) => {
+            return Err(CodecError::Malformed(
+                "App::PropertyXLink has both sub and count carriers".into(),
+            ));
+        }
+    };
+    Ok(LinkTarget {
+        document: file.as_ref().filter(|value| !value.is_empty()).cloned(),
+        document_attribute: file.map(|_| "file".into()),
+        object: Some(required_attr(node, "name")?),
+        subelements,
+    })
+}
+
+fn restored_subelement(
+    node: roxmltree::Node<'_, '_>,
+    primary_attribute: &str,
+) -> Result<String, CodecError> {
+    let primary = required_attr(node, primary_attribute)?;
+    Ok(node.attribute("shadowed").unwrap_or(&primary).to_owned())
+}
+
+fn reject_link_aliases(node: roxmltree::Node<'_, '_>, allowed: &[&str]) -> Result<(), CodecError> {
+    const CARRIERS: &[&str] = &[
+        "value", "Value", "object", "Object", "obj", "Obj", "name", "Name", "document", "Document",
+        "doc", "Doc", "file", "File", "sub", "Sub",
+    ];
+    if let Some(attribute) = node.attributes().find(|attribute| {
+        CARRIERS.contains(&attribute.name()) && !allowed.contains(&attribute.name())
+    }) {
+        return Err(CodecError::Malformed(format!(
+            "{} has unsupported link carrier {}",
+            node.tag_name().name(),
+            attribute.name()
+        )));
+    }
+    Ok(())
 }
 
 fn classify_property(type_name: &str) -> PropertyFamily {
@@ -550,60 +684,6 @@ fn classify_property(type_name: &str) -> PropertyFamily {
     } else {
         PropertyFamily::Unknown
     }
-}
-
-fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
-    let object = attribute_any(
-        &value.attributes,
-        &[
-            "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
-        ],
-    );
-    let document_pair =
-        attribute_any_named(&value.attributes, &["document", "Document", "doc", "Doc"]).or_else(
-            || {
-                value
-                    .tag
-                    .contains("XLink")
-                    .then(|| attribute_any_named(&value.attributes, &["file", "File"]))
-                    .flatten()
-            },
-        );
-    let document = document_pair
-        .as_ref()
-        .map(|(_, value)| value.clone())
-        .filter(|document| !document.is_empty());
-    let subelements = value
-        .attributes
-        .iter()
-        .filter(|(name, _)| name.to_ascii_lowercase().contains("sub"))
-        .map(|(_, value)| value.clone())
-        .collect::<Vec<_>>();
-    if object.is_some() || document.is_some() || !subelements.is_empty() {
-        vec![LinkTarget {
-            document,
-            document_attribute: document_pair.map(|(name, _)| name),
-            object,
-            subelements,
-        }]
-    } else {
-        Vec::new()
-    }
-}
-
-fn attribute_any(attributes: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
-    names.iter().find_map(|name| attributes.get(*name).cloned())
-}
-
-fn attribute_any_named(
-    attributes: &BTreeMap<String, String>,
-    names: &[&str],
-) -> Option<(String, String)> {
-    names.iter().find_map(|name| {
-        attributes
-            .get(*name)
-            .map(|value| ((*name).into(), value.clone()))
-    })
 }
 
 fn object_id(name: &str) -> String {

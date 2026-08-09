@@ -128,19 +128,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-02, and they can support format-support claims because FreeCAD wrote them.
 
-## 5. Persistence graph
-
-### PG-02. Link-property value dispatch
-
-**Question.** Which value tag and attribute names carry the object, document, and subelement fields for each `PropertyLink` and `PropertyXLink` runtime type?
-
-**Known.** `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." states that property type and value tag select parsing dispatch. Link target order and source spelling remain retained in the native property record.
-
-**Conflict.** `persistence.rs` `parse_link_targets` accepts both `Link` and `XLink` descendants for every link-family type. It selects an object attribute by the fixed priority `value`, `Value`, `object`, `Object`, `obj`, `Obj`, `name`, `Name`; it applies a similar priority to document attributes; and any structured descendant suppresses all targets decoded from other value records. Conflicting aliases or an unrelated nested `Link` element therefore select one target without a type-specific grammar or an ambiguity check.
-
-**Need.** We must define the value grammar for each link runtime type and schema. The decoder must dispatch on that grammar and reject contradictory simultaneous carriers.
-
-## 6. Persistent topology identity
+## 5. Persistent topology identity
 
 ### PT-02. Element-map position to neutral-occurrence order
 
@@ -152,7 +140,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.
 
-## 7. Exact-topology transfer
+## 6. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
 
