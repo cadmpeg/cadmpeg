@@ -290,14 +290,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know each remaining relation to construct complete feature dependencies and selections.
 
-### OM-09. Embedded operation common-frame ownership
-
-**Question.** Which operation owns each embedded common frame, and what do the state-lane fields other than `m_modifiesParasolidData` mean?
-
-**Known.** `siemens_nx.md` §7.1 "A bounded operation payload's terminal common-frame suffix is" and `siemens_nx.md` §7.1 "An exact common frame is" define the exact frame and state-lane boundaries for the admitted operation families. The fourth state byte is the Boolean `m_legacyInactiveModules` field. The fifth state byte is the Boolean `m_modifiesParasolidData` field. The sixth and seventh state bytes are the exact two-byte `m_splitTrackingData` representation. The eighth state byte is the unsigned `m_groupCount` field. Legacy module inactivity is not feature suppression.
-
-**Need.** We must know ownership and field roles to attach the state to the correct operation.
-
 ### OM-10. Operation suppression fields
 
 **Question.** How do the embedded operation state lanes encode suppression?
@@ -393,14 +385,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `siemens_nx.md` §7.1 "`Multi Instance Output` payloads contain at most one counted output lane" defines the ordered lane framing and retains its exact selectors and references.
 
 **Need.** We must know the roles to relate pattern instances to their output bodies or geometry.
-
-### OM-22. Equal pattern and profile labels
-
-**Question.** What serialized relation establishes identity or a seed relation between blocks that have equal canonical line labels?
-
-**Known.** `siemens_nx.md` §2 "Input bindings from two or more distinct operation headers form an identity" and `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one ten-slot construction-reference graph." define operation input identity by resolved store block. Equal text in distinct pattern and profile blocks does not establish block identity.
-
-**Need.** We must know the relation to connect a pattern to the correct seed without merging unrelated blocks.
 
 ### OM-23. `POINT` header fields
 
