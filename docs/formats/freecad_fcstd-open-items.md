@@ -82,16 +82,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
-### AR-04. Shared side-entry logical ownership
-
-**Question.** How does the logical byte ledger represent one archive entry that is referenced by more than one property or typed payload?
-
-**Known.** An `EntryRecord` retains all property references in `referenced_by`. `freecad_fcstd.md` §4 "Every document object has a stable identity composed from the document identity and its persisted" and §11 "Application data without a neutral representation retains its owning object and property" require property-level ownership. `freecad_fcstd.md` §6 "Logical XML spans classify declarations, delimiters, comments, whitespace, and escaping as" requires each logical byte to have one non-overlapping classification.
-
-**Conflict.** `lib.rs` `logical_ledger` collects typed entry owners into a `HashMap`, so a later typed claim replaces an earlier claim. For an untyped entry, it assigns the complete `named_opaque` span to `entry.referenced_by.first()`. The other property references disappear from the byte-ledger ownership relation.
-
-**Need.** We must know whether typed side entries can be shared. If sharing is valid, the ledger needs a separate many-owner relation that does not duplicate byte spans. If sharing is invalid for a typed family, decoding must reject the conflicting claims.
-
 ## 3. GUI properties
 
 ### GP-01. Other GUI property grammars

@@ -5245,7 +5245,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 21);
+    assert_eq!(namespace.version, 22);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -5808,6 +5808,46 @@ fn thumbnail_bytes_are_retained_with_digest() {
         .first()
         .expect("retained thumbnail");
     assert_eq!(retained.data.as_deref(), Some(b"png".as_slice()));
+}
+
+#[test]
+fn retains_every_reference_to_a_shared_side_entry() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Owner"/></Objects>
+<ObjectData Count="1"><Object name="Owner"><Properties Count="2">
+<Property name="First" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+<Property name="Second" type="App::PropertyFileIncluded"><File file="Shared.bin"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Shared.bin", b"shared"),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("shared side entry");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let shared = entries
+        .iter()
+        .find(|entry| entry.name == "Shared.bin")
+        .expect("shared entry");
+    let spans = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    let span = spans
+        .iter()
+        .find(|span| span.entry == "Shared.bin")
+        .expect("shared entry span");
+
+    assert_eq!(shared.referenced_by.len(), 2);
+    assert_ne!(shared.referenced_by[0], shared.referenced_by[1]);
+    assert_eq!(span.classification, "named_opaque");
+    assert_eq!(span.owner.as_deref(), Some(shared.id.as_str()));
+    assert!(crate::validate_native(&result.ir).is_empty());
 }
 
 #[test]

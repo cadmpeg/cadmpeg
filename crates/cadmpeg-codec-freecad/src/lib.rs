@@ -1924,32 +1924,29 @@ fn logical_ledger(
 ) -> Result<Vec<native::LogicalSpan>, CodecError> {
     let typed_entries = shape_payloads
         .iter()
-        .map(|payload| (payload.entry.as_str(), payload.id.as_str()))
-        .chain(string_tables.iter().filter_map(|table| {
-            table
-                .source_entry
-                .as_deref()
-                .map(|entry| (entry, table.id.as_str()))
-        }))
-        .chain(element_maps.iter().filter_map(|map| {
-            map.source_entry
-                .as_deref()
-                .map(|entry| (entry, map.id.as_str()))
-        }))
-        .collect::<HashMap<_, _>>();
+        .map(|payload| payload.entry.as_str())
+        .chain(
+            string_tables
+                .iter()
+                .filter_map(|table| table.source_entry.as_deref()),
+        )
+        .chain(
+            element_maps
+                .iter()
+                .filter_map(|map| map.source_entry.as_deref()),
+        )
+        .collect::<HashSet<_>>();
     let mut output = Vec::new();
     for entry in entries {
-        let typed_owner = typed_entries
-            .get(entry.id.as_str())
-            .or_else(|| typed_entries.get(entry.name.as_str()));
-        if let Some(owner) = typed_owner {
+        if typed_entries.contains(entry.id.as_str()) || typed_entries.contains(entry.name.as_str())
+        {
             push_logical_span(
                 &mut output,
                 entry,
                 0,
                 entry.byte_len,
                 "typed",
-                Some((*owner).to_owned()),
+                Some(entry.id.clone()),
             );
         } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
             let mut ranges = if entry.name == "Document.xml" {
@@ -2008,18 +2005,13 @@ fn logical_ledger(
                 None,
             );
         } else {
-            let owner = entry
-                .referenced_by
-                .first()
-                .cloned()
-                .unwrap_or_else(|| entry.id.clone());
             push_logical_span(
                 &mut output,
                 entry,
                 0,
                 entry.byte_len,
                 "named_opaque",
-                Some(owner),
+                Some(entry.id.clone()),
             );
         }
     }

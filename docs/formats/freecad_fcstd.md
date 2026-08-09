@@ -394,9 +394,11 @@ display-asset references.
 Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
 side-entry string-table, and side-entry element-map payloads are wholly typed after successful
 framing. `Document.xml` properties and `GuiDocument.xml` state/property spans are typed while the
-intervening XML syntax is structural. Uninterpreted embedded assets remain named opaque and retain
-their owning record. These claims are sorted and rejected on overlap before the ledger is emitted;
-validation then requires every logical entry to close without gaps.
+intervening XML syntax is structural. Each side-entry span is owned by its archive entry record.
+The entry's ordered `referenced_by` relation independently retains every application property, GUI
+property, or GUI state that references the bytes. Uninterpreted embedded assets remain named
+opaque. These claims are sorted and rejected on overlap before the ledger is emitted; validation
+then requires every logical entry to close without gaps.
 
 Native namespace version 19 adds a deterministic `byte_coverage` report. It records physical
 archive length and span count, logical entry length and span count, byte totals by the closed
@@ -412,6 +414,10 @@ form. This is FreeCAD's persisted representation of a null or suppressed `Proper
 a malformed text B-rep. Only side entries classified as B-rep payloads are parsed as shapes;
 element-map, placement-list, scale-list, and other side entries owned by the same property remain
 in their own typed or named-opaque carrier.
+
+Native namespace version 22 separates side-entry byte ownership from semantic references. A
+logical side-entry span has its `EntryRecord` as its single owner. `EntryRecord.referenced_by` is
+the ordered many-reference relation and can contain more than one property or GUI record.
 
 Native namespace version 11 adds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
