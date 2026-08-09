@@ -10,13 +10,13 @@ use crate::design::decode::sketch::{
     indexed_record_offsets, parse_genesis_entity_header, parse_settled_entity_header,
 };
 use crate::design::presentation::{
-    is_physical_material_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID,
+    is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID,
     BODY_PRESENTATION_TYPE_VERSION, BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION,
     BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION, BROWSER_NODE_TYPE_GUID,
-    BROWSER_NODE_TYPE_VERSION, MODERN_APPEARANCE_LIBRARY_IDS, PHYSICAL_MATERIAL_LIBRARY_ID,
+    BROWSER_NODE_TYPE_VERSION, GUID_LEN, MODERN_APPEARANCE_LIBRARY_IDS,
+    PHYSICAL_MATERIAL_LIBRARY_ID,
 };
 
-const GUID_LEN: usize = 36;
 const MAX_ENVELOPE_GAP: usize = 8;
 
 /// One typed browser-node record.
@@ -245,7 +245,7 @@ fn presentation_material(
         let Some((visual_guid, after_visual)) = lp_utf16_bounded(bytes, visual_at, 1..=256) else {
             continue;
         };
-        if visual_guid.len() < GUID_LEN || !is_guid_prefix(&visual_guid) {
+        if visual_token(&visual_guid).is_none() {
             continue;
         }
         let Some(visual_marker_at) = skip_zeros(bytes, after_visual, end) else {
@@ -283,7 +283,7 @@ fn presentation_material(
             node_guid,
             physical_token,
             physical_token_offset: (token_at + 4) as u64,
-            visual_guid: visual_guid[..GUID_LEN].to_owned(),
+            visual_guid,
             visual_guid_offset: (visual_at + 4) as u64,
             visual_preset: visual_preset.as_ref().map(|(_, value)| value.clone()),
             visual_preset_offset: visual_preset.map(|(at, _)| (at + 4) as u64),
@@ -429,7 +429,7 @@ mod tests {
         let node_tag = 257u32;
         let entity = (1u64 << 40) + 42;
         let node_guid = "11111111-2222-8333-A444-555555555555";
-        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
+        let visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE_Post2015";
         let mut bytes = Vec::new();
         push_ascii(&mut bytes, &body_tag.to_string());
         bytes.extend_from_slice(&entity.to_le_bytes());

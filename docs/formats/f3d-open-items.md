@@ -420,9 +420,9 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Question.** How does a paired-library face-scoped appearance assignment name its face?
 
-**Known.** `f3d.md` §3.1 gives the typed body-presentation form. A paired-library face-scoped record carries no physical-material token and no body owner. Its presentation envelope holds two lowercase GUIDs before the visual GUID. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
+**Known.** `f3d.md` §3.1 gives the typed body-presentation form. A paired-library face-scoped record carries no physical-material token and no body owner. Its presentation envelope holds two lowercase GUIDs before the visual token. A document that assigns one face appearance writes two such records naming the same visual token, alongside one body-scope record.
 
-**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual GUID as the face identity and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual GUID and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved.
+**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual token as the face identity and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual token and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved.
 
 The closure also has no operand. `resolve_face_appearance_bindings` in `decode.rs` builds its face map only from face attributes that hold `NEUTRON_Material_attrib_def`, and this item states that the stream of this generation carries no such attribute. Either that statement is wrong, or the closed rule binds nothing in the generation it settles. The commit resolves neither reading.
 
@@ -440,21 +440,13 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 ### MA-11. Owner join of an indexed-head Design material assignment
 
-**Question.** What bounds an indexed-head material-assignment record and joins its token and visual GUID to the target entity?
+**Question.** What bounds an indexed-head material-assignment record and joins its physical-material and visual tokens to the target entity?
 
-**Known.** `f3d.md` §3.1 gives the typed body-presentation owner and its exact material envelope. The indexed-head form instead stores class tag `299`, entity suffix `E`, the physical-material token, a browser-node GUID, node entity `E + 1`, the visual GUID, and the appearance-library marker pair.
+**Known.** `f3d.md` §3.1 gives the typed body-presentation owner and its exact material envelope. The indexed-head form instead stores class tag `299`, entity suffix `E`, the physical-material token, a browser-node GUID, node entity `E + 1`, the visual token, and the appearance-library marker pair.
 
 `browser_body_appearance_at` in `materials.rs` validates the indexed-head member sequence but searches up to 65,536 preceding bytes for the nearest class-299 header. It does not prove the owning record boundary or resolve that class tag through the segment type table. An unrelated class-299 record in that window can retarget the assignment.
 
 **Need.** The writer cannot rewrite an indexed-head assignment owner without its exact owner frame. A stream with two nearby class-299 records separates the enclosing owner from the nearest preceding header.
-
-### MA-14. Length of a visual GUID and the uniqueness of its match
-
-**Question.** Is a visual GUID exactly 36 characters, and may two appearances agree on their first 36 characters?
-
-**Known.** `visual_guid_matches` in `materials.rs` compares only the first 36 characters and `is_guid_prefix` accepts a longer string. `resolve_face_appearance_bindings` in `decode.rs` then takes the first appearance that matches, with no uniqueness gate, so two appearances that agree on the prefix bind by arena order. `f3d.md` §3.2 gives the library-qualified preset form, in which a suffix follows the GUID.
-
-**Need.** The comparison is deliberately truncated and the selection is not gated. The suffix's role, and whether it separates two assets, settle whether the truncation is safe.
 
 ## 4. T-splines
 

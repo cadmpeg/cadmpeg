@@ -25,14 +25,12 @@ use crate::bytes::{
 };
 use crate::container::{role, ContainerScan};
 use crate::design::presentation::{
-    is_physical_material_token, APPEARANCE_LIBRARY_ID,
+    is_physical_material_token, visual_token, APPEARANCE_LIBRARY_ID, GUID_LEN,
     MODERN_APPEARANCE_LIBRARY_IDS as APPEARANCE_LIBRARY_ID_PAIR,
 };
 
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
-/// A stored appearance or physical-material GUID is 36 characters.
-const GUID_LEN: usize = 36;
 /// The `AssetLibID` [`encode_protein`] writes for an appearance that names no
 /// library. A stored library identifier is a library GUID or a library path;
 /// the null GUID names neither.
@@ -44,12 +42,12 @@ fn library_id(asset_lib_id: &str) -> Option<String> {
     (!asset_lib_id.is_empty() && asset_lib_id != NO_ASSET_LIB_ID).then(|| asset_lib_id.to_owned())
 }
 
-/// Compare a serialized Protein visual token with a Design visual GUID.
-///
-/// Protein assets may append one or more `_Post2015` revisions to their
-/// 36-character GUID. Design assignments retain only the GUID prefix.
-pub(crate) fn visual_guid_matches(left: &str, right: &str) -> bool {
-    is_guid_prefix(left) && is_guid_prefix(right) && left[..36].eq_ignore_ascii_case(&right[..36])
+/// Whether two complete serialized visual tokens identify one appearance
+/// record.
+pub(crate) fn visual_tokens_match(left: &str, right: &str) -> bool {
+    visual_token(left)
+        .zip(visual_token(right))
+        .is_some_and(|(left, right)| left.matches(right))
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
@@ -434,15 +432,21 @@ pub fn decode_with_body_bindings(
         out.extend(appearances);
     }
     out.sort_by(|a, b| a.id.0.cmp(&b.id.0));
+    if let Some(pair) = out
+        .windows(2)
+        .find(|pair| pair[0].id == pair[1].id && pair[0] != pair[1])
+    {
+        return Err(CodecError::Malformed(format!(
+            "F3D appearance asset {} has conflicting payloads",
+            pair[0].id
+        )));
+    }
     out.dedup_by(|a, b| a.id == b.id);
     let assignments = decode_design_assignments(scan)?;
     let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
-        if !out
-            .iter()
-            .any(|appearance| appearance_matches_assignment(appearance, assignment))
-        {
+        if appearance_for_assignment(&out, assignment)?.is_none() {
             out.push(Appearance {
                 id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
                 name: assignment.visual_preset.clone(),
@@ -463,7 +467,7 @@ pub fn decode_with_body_bindings(
             appearance
                 .visual_guid
                 .as_deref()
-                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
+                .is_some_and(|guid| visual_tokens_match(guid, &assignment.visual_guid))
         }) {
             appearance.physical_token = assignment.physical_token.clone();
         }
@@ -483,12 +487,7 @@ pub fn decode_with_body_bindings(
         {
             continue;
         }
-        let Some(appearance) = out.iter().find(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| visual_guid_matches(guid, &over.visual_guid))
-        }) else {
+        let Some(appearance) = appearance_for_visual_token(&out, &over.visual_guid, None)? else {
             continue;
         };
         bindings.push(AppearanceBinding {
@@ -778,7 +777,7 @@ pub(crate) struct BodyAppearanceOverride {
     pub body: BodyId,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
-    /// First 36 characters of the bound visual GUID.
+    /// Complete serialized visual token bound by the body record.
     pub visual_guid: String,
 }
 
@@ -834,7 +833,7 @@ fn decode_body_appearance_overrides(
     out.dedup_by(|left, right| {
         left.body == right.body
             && left.entity_suffix == right.entity_suffix
-            && visual_guid_matches(&left.visual_guid, &right.visual_guid)
+            && visual_tokens_match(&left.visual_guid, &right.visual_guid)
     });
     Ok(out)
 }
@@ -847,7 +846,7 @@ fn decode_body_appearance_overrides(
 pub struct FaceAppearanceAssignment {
     /// The face GUID shared with the BREP face attribute.
     pub face_guid: String,
-    /// First 36 characters of the bound visual GUID.
+    /// Complete serialized visual token bound by the face record.
     pub visual_guid: String,
 }
 
@@ -855,7 +854,7 @@ pub struct FaceAppearanceAssignment {
 ///
 /// A face assignment ends with the `BA5EE55E-…` marker GUID; the two
 /// length-prefixed UTF-16 strings before the marker are the 36-character
-/// face GUID and the bound visual GUID
+/// face GUID and the bound visual token
 /// ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)).
 fn decode_face_appearance_assignments(
     scan: &ContainerScan,
@@ -891,8 +890,7 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
         }
         let (_, visual) = &strings[index - 1];
         let (_, face_guid) = &strings[index - 2];
-        if visual.len() < 36
-            || !is_guid_prefix(visual)
+        if visual_token(visual).is_none()
             || face_guid.len() != 36
             || !is_guid_prefix(face_guid)
             || face_guid.as_bytes()[0].is_ascii_uppercase()
@@ -901,7 +899,7 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
         }
         out.push(FaceAppearanceAssignment {
             face_guid: face_guid.clone(),
-            visual_guid: visual[..36].to_string(),
+            visual_guid: visual.clone(),
         });
     }
     out.extend(modern_face_appearance_assignments(&strings));
@@ -911,7 +909,7 @@ pub(crate) fn face_appearance_assignments(bytes: &[u8]) -> Vec<FaceAppearanceAss
 /// Decode a face-scoped appearance assignment from the paired-library marker
 /// form.
 ///
-/// The assignment envelope ends with the visual GUID and the two library
+/// The assignment envelope ends with the visual token and the two library
 /// marker GUIDs. Its terminal lower-case GUID is the B-rep face identity. A
 /// body-scoped envelope has a material token in that position and therefore
 /// does not satisfy this grammar.
@@ -935,12 +933,12 @@ fn modern_face_appearance_assignments(
         };
         let visual = &strings[visual_index].1;
         let face_guid = &strings[face_index].1;
-        if !is_guid_prefix(visual) || visual.len() < GUID_LEN || !is_lowercase_guid(face_guid) {
+        if visual_token(visual).is_none() || !is_lowercase_guid(face_guid) {
             continue;
         }
         out.push(FaceAppearanceAssignment {
             face_guid: face_guid.clone(),
-            visual_guid: visual[..GUID_LEN].to_string(),
+            visual_guid: visual.clone(),
         });
     }
     out
@@ -964,14 +962,14 @@ const BODY_RECORD_MARKER_GUIDS: [&str; 2] = [
 ];
 
 /// Scan a Design `BulkStream` for indexed-head body-presentation records that bind an
-/// appearance and return `(body entity suffix, 36-character visual GUID)`
+/// appearance and return `(body entity suffix, complete visual token)`
 /// pairs.
 ///
 /// An indexed-head body-presentation record carries a `299`-tagged head whose entity is the
 /// body's design-entity suffix, the marker GUID pair, the physical-material
 /// token, the browser-node GUID with the node's entity (the body suffix plus
 /// one), the display name, an f32 opacity, the `01 01` marker, and the bound
-/// visual GUID ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
+/// visual token ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 /// The scan requires the head entity and node entity to agree before
 /// accepting a record.
 pub(crate) fn browser_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
@@ -1012,11 +1010,11 @@ fn browser_node_body_appearances(bytes: &[u8]) -> Vec<(u64, String)> {
             continue;
         }
         let visual = &strings[index - 1].1;
-        if !is_guid_prefix(visual) {
+        if visual_token(visual).is_none() {
             continue;
         }
         if let Some(entity_suffix) = body_node_candidate(&strings, index, &nodes) {
-            out.push((entity_suffix, visual[..GUID_LEN].to_string()));
+            out.push((entity_suffix, visual.clone()));
         }
     }
     out
@@ -1069,20 +1067,18 @@ fn browser_body_appearance_at(
     };
     let visual_at = record_tail_visual_offset(bytes, name_end)?;
     let (visual, _) = lp_utf16_bounded(bytes, visual_at, 1..=256)?;
-    if visual.len() < 36 || !is_guid_prefix(&visual) {
-        return None;
-    }
+    visual_token(&visual)?;
     // The record head's `299` class tag names the body's design entity; it
     // precedes the marker pair and equals the node entity minus one.
     let head_entity = preceding_class_299_entity(bytes, marker_at)?;
     if head_entity + 1 != node_entity {
         return None;
     }
-    Some((head_entity, visual[..36].to_string()))
+    Some((head_entity, visual))
 }
 
 /// Skip the zeros and f32 opacity between a body-presentation record's display name and
-/// its `01 01` marker and return the visual GUID's length-prefix offset.
+/// its `01 01` marker and return the visual token's length-prefix offset.
 fn record_tail_visual_offset(bytes: &[u8], name_end: usize) -> Option<usize> {
     const OPACITY_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0x3f];
     for delta in 0..40usize {
@@ -1150,10 +1146,7 @@ fn bind_bodies(
         else {
             continue;
         };
-        let Some(appearance) = appearances
-            .iter()
-            .find(|appearance| appearance_matches_assignment(appearance, assignment))
-        else {
+        let Some(appearance) = appearance_for_assignment(appearances, assignment)? else {
             continue;
         };
         out.push(AppearanceBinding {
@@ -1174,23 +1167,71 @@ fn bind_bodies(
     Ok(out)
 }
 
-/// Whether one decoded appearance has the identity carried by a Design
-/// material assignment.
+/// Resolve one Design assignment to a unique appearance record.
 ///
-/// The visual preset is a secondary identity only when the assignment stores
-/// one. Absence of a preset is not an identity shared by preset-less assets.
-fn appearance_matches_assignment(
-    appearance: &Appearance,
+/// The complete visual token is authoritative. A present preset name is a
+/// secondary identity only when no appearance carries that token.
+pub(crate) fn appearance_for_assignment<'a>(
+    appearances: &'a [Appearance],
     assignment: &DesignMaterialAssignment,
-) -> bool {
-    appearance
-        .visual_guid
-        .as_deref()
-        .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
-        || assignment
-            .visual_preset
-            .as_deref()
-            .is_some_and(|preset| appearance.name.as_deref() == Some(preset))
+) -> Result<Option<&'a Appearance>, CodecError> {
+    appearance_for_visual_token(
+        appearances,
+        &assignment.visual_guid,
+        assignment.visual_preset.as_deref(),
+    )
+}
+
+/// Resolve one complete serialized visual token to a unique appearance.
+///
+/// A preset name is an optional fallback for assignments whose visual token
+/// names no decoded asset. Absence of a preset supplies no fallback identity.
+pub(crate) fn appearance_for_visual_token<'a>(
+    appearances: &'a [Appearance],
+    serialized_token: &str,
+    fallback_name: Option<&str>,
+) -> Result<Option<&'a Appearance>, CodecError> {
+    if visual_token(serialized_token).is_none() {
+        return Err(CodecError::Malformed(
+            "F3D appearance assignment has a malformed visual token".into(),
+        ));
+    }
+    let exact = unique_appearance(
+        appearances.iter().filter(|appearance| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|token| visual_tokens_match(token, serialized_token))
+        }),
+        "visual token",
+    )?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+    let Some(name) = fallback_name else {
+        return Ok(None);
+    };
+    unique_appearance(
+        appearances
+            .iter()
+            .filter(|appearance| appearance.name.as_deref() == Some(name)),
+        "visual preset",
+    )
+}
+
+fn unique_appearance<'a>(
+    mut matches: impl Iterator<Item = &'a Appearance>,
+    identity: &str,
+) -> Result<Option<&'a Appearance>, CodecError> {
+    let Some(appearance) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "F3D {identity} matches multiple appearance assets"
+        )));
+    }
+    Ok(Some(appearance))
 }
 
 /// Resolve one material owner through its exact ordered body-map pair.
@@ -1811,23 +1852,93 @@ mod tests {
             visual_preset_offset: None,
         };
 
-        assert!(!super::appearance_matches_assignment(
-            &appearance,
-            &assignment
-        ));
+        assert!(
+            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+                .expect("valid preset-less assignment")
+                .is_none()
+        );
 
         assignment.visual_guid = appearance_guid.into();
-        assert!(super::appearance_matches_assignment(
-            &appearance,
-            &assignment
-        ));
+        assert!(
+            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+                .expect("exact visual-token assignment")
+                .is_some()
+        );
 
         assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
         assignment.visual_preset = Some("Prism-017".into());
         appearance.name = Some("Prism-017".into());
-        assert!(super::appearance_matches_assignment(
-            &appearance,
-            &assignment
+        assert!(
+            super::appearance_for_assignment(std::slice::from_ref(&appearance), &assignment)
+                .expect("present preset-name fallback")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn complete_visual_token_selects_one_revision_record() {
+        let base_token = "11111111-2222-3333-4444-555555555555";
+        let revised_token = "11111111-2222-3333-4444-555555555555_Post2015";
+        let appearance = |id: &str, token: &str| cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId(id.into()),
+            name: None,
+            asset_guid: Some(token.into()),
+            library_id: None,
+            visual_guid: Some(token.into()),
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        };
+        let appearances = [
+            appearance("f3d:appearance#base", base_token),
+            appearance("f3d:appearance#revised", revised_token),
+        ];
+
+        let selected = super::appearance_for_visual_token(&appearances, revised_token, None)
+            .expect("unique complete visual token")
+            .expect("revised appearance exists");
+        assert_eq!(selected.id.as_str(), "f3d:appearance#revised");
+
+        let duplicates = [
+            appearance("f3d:appearance#first", revised_token),
+            appearance("f3d:appearance#second", revised_token),
+        ];
+        assert!(matches!(
+            super::appearance_for_visual_token(&duplicates, revised_token, None),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn visual_preset_fallback_requires_one_record() {
+        let appearance = |id: &str| cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId(id.into()),
+            name: Some("Prism-017".into()),
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        };
+        let appearances = [
+            appearance("f3d:appearance#first"),
+            appearance("f3d:appearance#second"),
+        ];
+
+        assert!(matches!(
+            super::appearance_for_visual_token(
+                &appearances,
+                "11111111-2222-3333-4444-555555555555",
+                Some("Prism-017"),
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
         ));
     }
 

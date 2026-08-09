@@ -45,7 +45,7 @@ pub(crate) struct AttributeIndex<'a> {
 }
 
 impl<'a> AttributeIndex<'a> {
-    pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
+    pub(crate) fn new(target: &'a CadIr, native: &'a F3dNative) -> Result<Self, CodecError> {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
         let mut body_keys = HashMap::new();
         for key in &native.body_native_keys {
@@ -53,38 +53,20 @@ impl<'a> AttributeIndex<'a> {
         }
         let mut material_body_keys = HashMap::new();
         for assignment in &native.design_material_assignments {
-            if crate::materials::visual_guid_matches(
-                &assignment.visual_guid,
-                &assignment.visual_guid,
-            ) {
+            if let Some(appearance) =
+                crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?
+            {
                 material_body_keys
-                    .entry(assignment.visual_guid[..36].to_ascii_lowercase())
+                    .entry(appearance.id.as_str())
                     .or_insert(assignment.asm_body_key);
             }
         }
-        let appearance_guids = target
-            .model
-            .appearances
-            .iter()
-            .filter_map(|appearance| {
-                appearance
-                    .visual_guid
-                    .as_deref()
-                    .map(|guid| (appearance.id.as_str(), guid))
-            })
-            .collect::<HashMap<_, _>>();
         let mut assigned_body_keys = HashMap::new();
         for binding in &target.model.appearance_bindings {
             let cadmpeg_ir::appearance::AppearanceTarget::Body(body) = &binding.target else {
                 continue;
             };
-            let Some(guid) = appearance_guids.get(binding.appearance.as_str()) else {
-                continue;
-            };
-            if !crate::materials::visual_guid_matches(guid, guid) {
-                continue;
-            }
-            if let Some(key) = material_body_keys.get(&guid[..36].to_ascii_lowercase()) {
+            if let Some(key) = material_body_keys.get(binding.appearance.as_str()) {
                 assigned_body_keys.entry(body.as_str()).or_insert(*key);
             }
         }
@@ -234,7 +216,7 @@ impl<'a> AttributeIndex<'a> {
             .enumerate()
             .map(|(ordinal, coedge)| (coedge.id.0.clone(), ordinal))
             .collect();
-        Self {
+        Ok(Self {
             creation_timestamps: &native.creation_timestamps,
             body_group_ordinals,
             face_group_ordinals,
@@ -259,7 +241,7 @@ impl<'a> AttributeIndex<'a> {
             vertex_timestamp_ordinals,
             body_keys,
             assigned_body_keys,
-        }
+        })
     }
 
     fn timestamp(

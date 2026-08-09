@@ -24672,7 +24672,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
     // binding id, or the arena holds colliding ids and fails both the global
     // identity check and the strict arena-order check.
     let face_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let visual_guid = "11111111-2222-3333-4444-555555555555";
+    let visual_family = "11111111-2222-3333-4444-555555555555";
+    let visual_guid = "11111111-2222-3333-4444-555555555555_Post2015";
     let mut ir = cadmpeg_ir::CadIr::empty(Units::default());
     for face in ["face:1", "face:2", "face:3"] {
         ir.model.attributes.push(SourceAttribute {
@@ -24685,19 +24686,25 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             ],
         });
     }
-    ir.model.appearances.push(Appearance {
-        id: "appearance:1".into(),
+    let appearance = |id: &str, token: &str| Appearance {
+        id: id.into(),
         name: None,
         asset_guid: None,
         library_id: None,
-        visual_guid: Some(visual_guid.into()),
+        visual_guid: Some(token.into()),
         physical_token: None,
         schema: None,
         category: None,
         base_color: None,
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
-    });
+    };
+    // The base record is deliberately first. Prefix-only selection would bind
+    // it instead of the revision token carried by the face assignment.
+    ir.model.appearances.extend([
+        appearance("appearance:base", visual_family),
+        appearance("appearance:revision", visual_guid),
+    ]);
 
     crate::decode::resolve_face_appearance_bindings(
         &mut ir,
@@ -24705,7 +24712,8 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
             face_guid: face_guid.into(),
             visual_guid: visual_guid.into(),
         }],
-    );
+    )
+    .expect("unique face appearance");
 
     assert_eq!(ir.model.appearance_bindings.len(), 3);
     let ids = ir
@@ -24715,6 +24723,11 @@ fn face_appearance_bindings_stay_unique_when_one_appearance_binds_many_faces() {
         .map(|binding| binding.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
     assert_eq!(ids.len(), 3);
+    assert!(ir
+        .model
+        .appearance_bindings
+        .iter()
+        .all(|binding| binding.appearance.as_str() == "appearance:revision"));
     let targets = ir
         .model
         .appearance_bindings
@@ -25534,24 +25547,21 @@ fn browser_body_appearance_decodes_named_and_nameless_records() {
     let out = crate::materials::browser_body_appearances(&bytes);
     assert_eq!(
         out,
-        vec![
-            (200_598, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-            (454_966, "7DD7765D-CA8C-4A38-B156-B3B4916E0C17".to_string()),
-        ]
+        vec![(200_598, visual.to_string()), (454_966, visual.to_string()),]
     );
 }
 
 #[test]
-fn protein_revision_suffix_does_not_change_visual_guid_identity() {
-    assert!(crate::materials::visual_guid_matches(
+fn protein_revision_suffix_distinguishes_visual_record_identity() {
+    assert!(!crate::materials::visual_tokens_match(
         "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015_Post2015",
         "7dd7765d-ca8c-4a38-b156-b3b4916e0c17",
     ));
-    assert!(!crate::materials::visual_guid_matches(
+    assert!(crate::materials::visual_tokens_match(
         "7DD7765D-CA8C-4A38-B156-B3B4916E0C17_Post2015",
-        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F",
+        "7dd7765d-ca8c-4a38-b156-b3b4916e0c17_Post2015",
     ));
-    assert!(!crate::materials::visual_guid_matches(
+    assert!(!crate::materials::visual_tokens_match(
         "not-a-guid_Post2015",
         "not-a-guid",
     ));
@@ -25609,8 +25619,8 @@ fn browser_body_appearance_joins_through_browser_node_guid() {
     assert_eq!(
         crate::materials::browser_body_appearances(&bytes),
         [
-            (37_251, "674E6024-4294-4322-B572-A88F64F0DA77".to_string()),
-            (37_441, "4218E352-E25F-423E-8DCD-527E5148C2F6".to_string()),
+            (37_251, records[0].1.to_string()),
+            (37_441, records[1].1.to_string()),
         ]
     );
     assert!(
@@ -25632,13 +25642,16 @@ fn face_appearance_assignment_joins_face_guid_to_visual_guid() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].face_guid, "cd92d0f6-5b31-4bbf-84ae-4611f435537e");
-    assert_eq!(out[0].visual_guid, "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F");
+    assert_eq!(
+        out[0].visual_guid,
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015_Post2015"
+    );
 }
 
 #[test]
 fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
     // A body-style assignment has an entity id, not a face GUID, before the
-    // visual GUID; an uppercase GUID is a marker constant, not a face GUID.
+    // visual token; an uppercase GUID is a marker constant, not a face GUID.
     for target in ["0_985", "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"] {
         let mut bytes = vec![0u8; 8];
         bytes.extend(lp_utf16_bytes(target));
@@ -25666,7 +25679,10 @@ fn modern_face_appearance_assignment_uses_terminal_lowercase_guid() {
     let out = crate::materials::face_appearance_assignments(&bytes);
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].face_guid, "33333333-3333-3333-3333-333333333333");
-    assert_eq!(out[0].visual_guid, "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F");
+    assert_eq!(
+        out[0].visual_guid,
+        "F0EF16AD-4AD3-4D25-9AA8-ECF48936A48F_Post2015"
+    );
 }
 
 #[test]

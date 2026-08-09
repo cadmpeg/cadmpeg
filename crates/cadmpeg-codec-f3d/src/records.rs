@@ -4282,9 +4282,9 @@ pub struct DesignMaterialAssignment {
     pub entity_id: String,
     /// Byte offset of the UTF-16 entity-id code units.
     pub entity_id_offset: u64,
-    /// Visual asset GUID.
+    /// Complete serialized visual token.
     pub visual_guid: String,
-    /// Byte offset of the UTF-16 visual-GUID code units.
+    /// Byte offset of the UTF-16 visual-token code units.
     pub visual_guid_offset: u64,
     /// Physical-material token, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -401,7 +401,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let attributes = super::AttributeIndex::new(&target, &native);
+        let attributes = super::AttributeIndex::new(&target, &native)
+            .expect("unambiguous appearance assignments");
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("synthetic body bindings");
         GeneratedDesignRegistry::new(&target, bindings, &attributes)
@@ -436,7 +437,8 @@ mod tests {
         let mut target = cadmpeg_ir::examples::unit_cube();
         target.model.bodies[0].visible = Some(true);
         let native = crate::native::F3dNative::default();
-        let attributes = super::AttributeIndex::new(&target, &native);
+        let attributes = super::AttributeIndex::new(&target, &native)
+            .expect("unambiguous appearance assignments");
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
@@ -460,7 +462,8 @@ mod tests {
             design_types: vec![body_map_type(vec![17])],
             ..Default::default()
         };
-        let attributes = super::AttributeIndex::new(&target, &native);
+        let attributes = super::AttributeIndex::new(&target, &native)
+            .expect("unambiguous appearance assignments");
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
@@ -487,7 +490,8 @@ mod tests {
             design_types: vec![browser_node_type(vec![17])],
             ..Default::default()
         };
-        let attributes = super::AttributeIndex::new(&target, &native);
+        let attributes = super::AttributeIndex::new(&target, &native)
+            .expect("unambiguous appearance assignments");
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)
@@ -515,7 +519,8 @@ mod tests {
             design_types: vec![browser_node_type(vec![u64::from(u32::MAX)])],
             ..Default::default()
         };
-        let attributes = super::AttributeIndex::new(&target, &native);
+        let attributes = super::AttributeIndex::new(&target, &native)
+            .expect("unambiguous appearance assignments");
         let bindings = super::super::preconditions::validate_source_less_design_bindings(&native)
             .expect("empty Design bindings");
         let registry = GeneratedDesignRegistry::new(&target, bindings, &attributes)

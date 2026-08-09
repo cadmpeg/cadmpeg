@@ -775,18 +775,24 @@ pub(crate) fn validate_material_assignment_appearances(
         }
         if edit.color.is_some() || !edit.properties.is_empty() {
             let guid = after.visual_guid.clone().ok_or_else(|| {
-                CodecError::NotImplemented(format!("F3D appearance {id} has no visual GUID"))
+                CodecError::NotImplemented(format!("F3D appearance {id} has no visual token"))
             })?;
             appearance_edits.insert(guid, edit);
         }
         if after.physical_token == before.physical_token {
             continue;
         }
-        let synchronized = target_assignments.iter().any(|assignment| {
-            after.visual_guid.as_deref().is_some_and(|guid| {
-                crate::materials::visual_guid_matches(guid, &assignment.visual_guid)
-            }) && after.physical_token == assignment.physical_token
-        });
+        let mut synchronized = false;
+        for assignment in target_assignments {
+            let selected =
+                crate::materials::appearance_for_assignment(&target.model.appearances, assignment)?;
+            if selected.is_some_and(|appearance| appearance.id == after.id)
+                && after.physical_token == assignment.physical_token
+            {
+                synchronized = true;
+                break;
+            }
+        }
         if !synchronized {
             return Err(CodecError::NotImplemented(format!(
                 "F3D appearance {id} changed without a synchronized material assignment"
@@ -800,12 +806,10 @@ pub(crate) fn validate_material_assignment_appearances(
         else {
             continue;
         };
+        let selected =
+            crate::materials::appearance_for_assignment(&target.model.appearances, after)?;
         if after.physical_token != before.physical_token
-            && !target.model.appearances.iter().any(|appearance| {
-                appearance.visual_guid.as_deref().is_some_and(|guid| {
-                    crate::materials::visual_guid_matches(guid, &after.visual_guid)
-                }) && appearance.physical_token == after.physical_token
-            })
+            && selected.is_none_or(|appearance| appearance.physical_token != after.physical_token)
         {
             return Err(CodecError::NotImplemented(format!(
                 "F3D material assignment {} changed without its appearance physical token",

@@ -1859,7 +1859,7 @@ fn finish_model_decode<'a>(
     }
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
-    resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments);
+    resolve_face_appearance_bindings(&mut ir, &decoded_materials.face_assignments)?;
     apply_appearance_base_colors(&mut ir);
     ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
     reconcile_appearance_loss(&mut report, &ir, decoded_materials.has_topology_assignments);
@@ -4245,12 +4245,12 @@ pub(crate) fn reconcile_appearance_loss(
 pub(crate) fn resolve_face_appearance_bindings(
     ir: &mut CadIr,
     face_assignments: &[materials::FaceAppearanceAssignment],
-) {
+) -> Result<(), CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 
     if face_assignments.is_empty() {
-        return;
+        return Ok(());
     }
     let mut faces_by_guid: std::collections::HashMap<&str, Vec<cadmpeg_ir::ids::FaceId>> =
         std::collections::HashMap::new();
@@ -4285,12 +4285,12 @@ pub(crate) fn resolve_face_appearance_bindings(
         let Some(faces) = faces_by_guid.get(assignment.face_guid.as_str()) else {
             continue;
         };
-        let Some(appearance) = ir.model.appearances.iter().find(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| materials::visual_guid_matches(guid, &assignment.visual_guid))
-        }) else {
+        let Some(appearance) = materials::appearance_for_visual_token(
+            &ir.model.appearances,
+            &assignment.visual_guid,
+            None,
+        )?
+        else {
             continue;
         };
         for face in faces {
@@ -4315,6 +4315,7 @@ pub(crate) fn resolve_face_appearance_bindings(
             });
         }
     }
+    Ok(())
 }
 
 /// Fill absent explicit topology colors from uniquely bound appearance assets.

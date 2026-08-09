@@ -41,7 +41,7 @@ pub(crate) fn patch_material_assignments(
             bytes,
             assignment.visual_guid_offset,
             &assignment.visual_guid,
-            "material-assignment visual GUID",
+            "material-assignment visual token",
         )?;
         if let (Some(offset), Some(value)) = (
             assignment.physical_token_offset,
