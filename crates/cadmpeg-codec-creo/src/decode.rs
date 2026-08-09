@@ -3779,6 +3779,140 @@ fn section_equation_coordinate_equalities(
         .collect()
 }
 
+type SectionScalarVariable = (u32, u32);
+
+fn section_equation_scalar_equality_components(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<BTreeSet<SectionScalarVariable>> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+
+    let mut adjacency = BTreeMap::<SectionScalarVariable, BTreeSet<SectionScalarVariable>>::new();
+    for equation in equations
+        .rows
+        .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
+    {
+        let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+            continue;
+        };
+        let Some(first) = usize::try_from(*first)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+        else {
+            continue;
+        };
+        let Some(second) = usize::try_from(*second)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+        else {
+            continue;
+        };
+        if first.variable_type != second.variable_type
+            || matches!(first.variable_type, 1 | 2)
+            || first.key == second.key
+        {
+            continue;
+        }
+        let first = (first.variable_type, first.key);
+        let second = (second.variable_type, second.key);
+        adjacency.entry(first).or_default().insert(second);
+        adjacency.entry(second).or_default().insert(first);
+    }
+
+    let mut remaining = adjacency.keys().copied().collect::<BTreeSet<_>>();
+    let mut components = Vec::new();
+    while let Some(seed) = remaining.pop_first() {
+        let mut component = BTreeSet::from([seed]);
+        let mut pending = std::collections::VecDeque::from([seed]);
+        while let Some(variable) = pending.pop_front() {
+            for neighbor in adjacency
+                .get(&variable)
+                .into_iter()
+                .flat_map(|neighbors| neighbors.iter())
+                .copied()
+            {
+                if component.insert(neighbor) {
+                    remaining.remove(&neighbor);
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        components.push(component);
+    }
+    components
+}
+
+fn section_equation_scalar_equalities(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<SectionScalarVariable, f64> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return BTreeMap::new();
+    };
+    let mut values = BTreeMap::<SectionScalarVariable, Vec<f64>>::new();
+    let mut invalid = BTreeSet::<SectionScalarVariable>::new();
+    for row in &variables.rows {
+        if matches!(row.variable_type, 1 | 2) {
+            continue;
+        }
+        let variable = (row.variable_type, row.key);
+        match row.value {
+            Some(value) if value.is_finite() => values.entry(variable).or_default().push(value),
+            Some(_) => {
+                invalid.insert(variable);
+            }
+            None => {}
+        }
+    }
+
+    let mut resolved = BTreeMap::new();
+    for component in section_equation_scalar_equality_components(definition) {
+        if component.iter().any(|variable| invalid.contains(variable)) {
+            continue;
+        }
+        let component_values = component
+            .iter()
+            .flat_map(|variable| values.get(variable).into_iter().flatten().copied())
+            .collect::<Vec<_>>();
+        let Some(first) = component_values.first().copied() else {
+            continue;
+        };
+        let scale = component_values
+            .iter()
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        if component_values
+            .iter()
+            .any(|value| (*value - first).abs() > 1e-9 * scale)
+        {
+            continue;
+        }
+        resolved.extend(component.into_iter().map(|variable| (variable, first)));
+    }
+    resolved
+}
+
 #[derive(Clone, Copy)]
 struct SectionRadialConstraint {
     first: u32,
@@ -3918,6 +4052,9 @@ pub(crate) fn resolved_section_scalar_values(
 ) -> BTreeMap<(u32, u32), f64> {
     let coordinates = resolved_section_coordinates(definition);
     let mut values = BTreeMap::<(u32, u32), Option<f64>>::new();
+    for (variable, value) in section_equation_scalar_equalities(definition) {
+        values.insert(variable, Some(value));
+    }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
     {
@@ -5393,6 +5530,42 @@ pub(crate) fn resolved_section_radii(
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
+    let mut invalid_scalar_radius_ids = BTreeSet::new();
+    if let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    {
+        for component in section_equation_scalar_equality_components(definition) {
+            let radius_ids = component
+                .iter()
+                .filter_map(|&(variable_type, radius_id)| (variable_type == 3).then_some(radius_id))
+                .collect::<Vec<_>>();
+            if radius_ids.len() != component.len() {
+                continue;
+            }
+            let invalid = component.iter().any(|&(variable_type, radius_id)| {
+                variables.rows.iter().any(|row| {
+                    row.variable_type == variable_type
+                        && row.key == radius_id
+                        && row
+                            .value
+                            .is_some_and(|value| !value.is_finite() || value <= 0.0)
+                })
+            });
+            if invalid {
+                invalid_scalar_radius_ids.extend(radius_ids);
+                continue;
+            }
+            for pair in radius_ids.windows(2) {
+                let [first, second] = pair else {
+                    unreachable!();
+                };
+                adjacency.entry(*first).or_default().insert(*second);
+                adjacency.entry(*second).or_default().insert(*first);
+            }
+        }
+    }
     for skamp in active_complete_section_skamps(definition) {
         let [first, second] = skamp.items.as_slice() else {
             continue;
@@ -5433,6 +5606,13 @@ pub(crate) fn resolved_section_radii(
                     pending.push_back(*neighbor);
                 }
             }
+        }
+        if component
+            .iter()
+            .any(|radius_id| invalid_scalar_radius_ids.contains(radius_id))
+        {
+            remaining.retain(|radius_id| !component.contains(radius_id));
+            continue;
         }
         let values = component
             .iter()

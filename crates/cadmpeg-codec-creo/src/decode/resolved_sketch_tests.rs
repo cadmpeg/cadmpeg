@@ -6476,6 +6476,115 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
 }
 
 #[test]
+fn equation_function_two_propagates_non_coordinate_scalar_components() {
+    let row = |key, value, dimension_driven| crate::feature::FeatureVariableRow {
+        variable_type: 6,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: dimension_driven,
+        known: Some(0),
+        homogeneity: Some(0),
+        uvar_id: None,
+        dimension_driven,
+        offset: 0,
+    };
+    let definition = |middle_value, last_value| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x03\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2\
+                \x02\x02\xf8\x02\x01\x02\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 3,
+            entity_ref: None,
+            rows: vec![
+                row(10, None, true),
+                row(11, middle_value, middle_value.is_none()),
+                row(12, last_value, last_value.is_none()),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    let resolved = resolved_section_scalar_values(&definition(None, Some(2.5)));
+    assert_eq!(resolved.get(&(6, 10)), Some(&2.5));
+    assert_eq!(resolved.get(&(6, 11)), Some(&2.5));
+    assert_eq!(resolved.get(&(6, 12)), Some(&2.5));
+
+    let conflicting = resolved_section_scalar_values(&definition(Some(2.5), Some(3.5)));
+    assert!(!conflicting.contains_key(&(6, 10)));
+    assert!(!conflicting.contains_key(&(6, 11)));
+}
+
+#[test]
+fn equation_function_two_propagates_radius_components() {
+    let row = |key, value| crate::feature::FeatureVariableRow {
+        variable_type: 3,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: value.is_none(),
+        offset: 0,
+    };
+    let definition = |first_value, second_value| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![row(42, first_value), row(43, second_value)],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_radii(&definition(None, Some(2.5))),
+        BTreeMap::from([(42, 2.5), (43, 2.5)])
+    );
+    assert!(resolved_section_radii(&definition(Some(2.5), Some(3.5))).is_empty());
+    assert!(resolved_section_radii(&definition(Some(0.0), Some(2.5))).is_empty());
+}
+
+#[test]
 fn equation_function_two_binds_radius_row_to_dimension_row() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,
