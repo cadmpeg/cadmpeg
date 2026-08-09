@@ -3538,6 +3538,69 @@ mod route_tests {
     }
 
     #[test]
+    fn e5_cone_jet_uses_the_carrier_chart_for_positions_and_derivatives() {
+        let half_angle = std::f64::consts::FRAC_PI_4;
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Cone {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+                ratio: 1.0,
+                half_angle,
+            },
+            uv_scale: [0.5, half_angle.cos() / 4.0],
+        };
+        let pcurve = E5Pcurve::Jet {
+            surface: 7,
+            degree: 5,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![6, 6],
+            points: vec![[0.0, 4.0], [std::f64::consts::PI, 4.0]],
+            first_derivatives: vec![[std::f64::consts::PI, 4.0], [std::f64::consts::PI, 4.0]],
+            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
+            range: [0.0, 1.0],
+        };
+
+        let (geometry, range, endpoints) =
+            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cone jet");
+        assert_eq!(range, [0.0, 1.0]);
+        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected NURBS pcurve");
+        };
+        assert_eq!(
+            control_points.first(),
+            Some(&Point2::new(0.0, half_angle.cos()))
+        );
+        assert_eq!(
+            control_points.last(),
+            Some(&Point2::new(std::f64::consts::FRAC_PI_2, half_angle.cos()))
+        );
+        let first_control = control_points.get(1).expect("first derivative control");
+        assert!((first_control.u - std::f64::consts::PI / 10.0).abs() < 1e-12);
+        assert!((first_control.v - half_angle.cos() * 1.2).abs() < 1e-12);
+        let last_control = control_points.get(4).expect("last derivative control");
+        assert!((last_control.u - 2.0 * std::f64::consts::PI / 5.0).abs() < 1e-12);
+        assert!((last_control.v - half_angle.cos() * 0.8).abs() < 1e-12);
+        let expected = [
+            Point3::new(
+                2.0 + half_angle.tan() * half_angle.cos(),
+                0.0,
+                half_angle.cos(),
+            ),
+            Point3::new(
+                0.0,
+                2.0 + half_angle.tan() * half_angle.cos(),
+                half_angle.cos(),
+            ),
+        ];
+        assert!(endpoints[0].distance(expected[0]) < 1e-12);
+        assert!(endpoints[1].distance(expected[1]) < 1e-12);
+    }
+
+    #[test]
     fn e5_pcurve_on_surface_rejects_nonfinite_scaled_line() {
         let surface = crate::families::e5::records::E5Surface {
             pos: 0,

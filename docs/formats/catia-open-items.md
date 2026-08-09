@@ -584,22 +584,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 6. E5 `0D 03`
 
-### E5-01. `0xa0` circle branch
-
-**Question.** Which field selects the circle branch of an `0xa0` wrapper?
-
-**Known.** `catia.md` §9 "Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <payload>`, stride" and `catia.md` §9 "Classes: `0x01` body" defines the admitted `0xa0` wrapper and analytic circle primitive.
-
-**Need.** We must know the selector to choose the correct circle arc.
-
-### E5-02. `0xa0` co-parametric mapping
-
-**Question.** What is the general parameter mapping from an `0xa0` wrapper to its primitive?
-
-**Known.** For the cone subset, `q_circle = (R/ca_q_scale) * q_ca`.
-
-**Need.** We must know the other mappings to trim the primitive correctly.
-
 ### E5-05. Root orientation signs
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
