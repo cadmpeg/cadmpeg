@@ -97,9 +97,14 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
     values
 }
 
-fn expected(kind: ReferenceKind) -> &'static str {
+fn expected(kind: ReferenceKind, source: &DirectoryEntry) -> &'static str {
     match kind {
-        ReferenceKind::Structure => "structure-definition",
+        ReferenceKind::Structure => match source.entity_type {
+            422 if matches!(source.form, 0..=1) => "type-322-form-0",
+            402 if matches!(source.form, 5001..=9999) => "type-302-matching-form",
+            600..=699 | 10_000..=99_999 => "type-306-or-type-416",
+            _ => "structure-not-permitted",
+        },
         ReferenceKind::LineFont => "type-304",
         ReferenceKind::Level => "type-406-form-1",
         ReferenceKind::View => "type-410-or-type-402-form-3-4-19",
@@ -109,9 +114,16 @@ fn expected(kind: ReferenceKind) -> &'static str {
     }
 }
 
-fn accepts(kind: ReferenceKind, target: &DirectoryEntry) -> bool {
+fn accepts(kind: ReferenceKind, source: &DirectoryEntry, target: &DirectoryEntry) -> bool {
     match kind {
-        ReferenceKind::Structure => true,
+        ReferenceKind::Structure => match source.entity_type {
+            422 if matches!(source.form, 0..=1) => target.entity_type == 322 && target.form == 0,
+            402 if matches!(source.form, 5001..=9999) => {
+                target.entity_type == 302 && target.form == source.form
+            }
+            600..=699 | 10_000..=99_999 => matches!(target.entity_type, 306 | 416),
+            _ => false,
+        },
         ReferenceKind::LineFont => target.entity_type == 304,
         ReferenceKind::Level => target.entity_type == 406 && target.form == 1,
         ReferenceKind::View => {
@@ -180,7 +192,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                         Resolution::EvenSequence
                     } else if target.is_none() {
                         Resolution::Dangling
-                    } else if target.is_some_and(|value| !accepts(candidate.kind, value)) {
+                    } else if target.is_some_and(|value| !accepts(candidate.kind, entry, value)) {
                         Resolution::WrongType
                     } else {
                         Resolution::Resolved
@@ -191,7 +203,7 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                         target: target
                             .map(|value| format!("iges:entity:directory#{}", value.sequence)),
                         resolution,
-                        expected: expected(candidate.kind).into(),
+                        expected: expected(candidate.kind, entry).into(),
                     }
                 })
                 .collect();
@@ -209,6 +221,18 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
         }
     }
     graph
+}
+
+pub(crate) fn resolved_structure_sequence(
+    graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    source: u32,
+) -> Option<u32> {
+    graph.get(&source)?.iter().find_map(|edge| {
+        (edge.kind == ReferenceKind::Structure && edge.resolution == Resolution::Resolved)
+            .then(|| edge.raw_pointer.checked_abs())
+            .flatten()
+            .and_then(|value| u32::try_from(value).ok())
+    })
 }
 
 pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<String> {

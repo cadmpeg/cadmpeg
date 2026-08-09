@@ -3793,6 +3793,105 @@ fn attribute_instance_forms_file() -> Vec<u8> {
     owned_test_file_with_structures(&entities, &[(3, -1), (5, -1)])
 }
 
+fn attribute_instance_ignored_structures_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 0,
+            label: "ATTRDEF".into(),
+            status: "00000000",
+            parameters: "322,4HMETA,1,1,10,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 422,
+            form: 0,
+            label: "BLANK".into(),
+            status: "00000000",
+            parameters: "422,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 422,
+            form: 0,
+            label: "POSITIVE".into(),
+            status: "00000000",
+            parameters: "422,8;".into(),
+        },
+    ];
+    owned_test_file_with_structures(&entities, &[(5, 1)])
+}
+
+fn structure_target_rules_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 1,
+            label: "WRNGATTR".into(),
+            status: "00000000",
+            parameters: "322,1HX,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 422,
+            form: 0,
+            label: "ATTRINST".into(),
+            status: "00000000",
+            parameters: "422;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 302,
+            form: 5001,
+            label: "ASSOCDEF".into(),
+            status: "00000200",
+            parameters: "302,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 5001,
+            label: "ASSOC".into(),
+            status: "00000200",
+            parameters: "402;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 302,
+            form: 5002,
+            label: "OTHERDEF".into(),
+            status: "00000200",
+            parameters: "302,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 5001,
+            label: "BADASSOC".into(),
+            status: "00000200",
+            parameters: "402;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 306,
+            form: 0,
+            label: "MACRODEF".into(),
+            status: "00000200",
+            parameters: "306;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 600,
+            form: 0,
+            label: "MACRO".into(),
+            status: "00000000",
+            parameters: "600;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "BADOWNER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+    ];
+    owned_test_file_with_structures(
+        &entities,
+        &[(3, -1), (7, -5), (11, -9), (15, -13), (17, -1)],
+    )
+}
+
 fn product_property_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -6421,6 +6520,70 @@ fn decode_types_attribute_table_tuple_and_row_major_instances() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_ignores_nonnegative_attribute_instance_structure_values() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(attribute_instance_ignored_structures_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let instances = &native.arenas["attribute_table_instances"];
+
+    assert_eq!(instances.len(), 2);
+    for instance in instances {
+        assert!(instance.fields()["definition"].is_null());
+        assert!(instance.fields()["rows"].as_array().unwrap().is_empty());
+    }
+    for sequence in [3, 5] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        assert!(entity.fields()["references"].as_array().unwrap().is_empty());
+    }
+}
+
+#[test]
+fn decode_validates_structure_targets_by_source_entity() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(structure_target_rules_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let entities = &result.ir.native.namespace("iges").unwrap().arenas["entities"];
+    let reference = |sequence: u32| {
+        let entity = entities
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        entity.fields()["references"][0].clone()
+    };
+
+    let attribute = reference(3);
+    assert_eq!(attribute["resolution"], "wrong_type");
+    assert_eq!(attribute["expected"], "type-322-form-0");
+    let associativity = reference(7);
+    assert_eq!(associativity["resolution"], "resolved");
+    assert_eq!(associativity["expected"], "type-302-matching-form");
+    let wrong_associativity = reference(11);
+    assert_eq!(wrong_associativity["resolution"], "wrong_type");
+    let macro_instance = reference(15);
+    assert_eq!(macro_instance["resolution"], "resolved");
+    assert_eq!(macro_instance["expected"], "type-306-or-type-416");
+    let wrong_owner = reference(17);
+    assert_eq!(wrong_owner["resolution"], "wrong_type");
+    assert_eq!(wrong_owner["expected"], "structure-not-permitted");
+
+    let attribute_instance = result.ir.native.namespace("iges").unwrap().arenas
+        ["attribute_table_instances"]
+        .first()
+        .unwrap();
+    assert!(attribute_instance.fields()["definition"].is_null());
 }
 
 #[test]

@@ -1811,7 +1811,7 @@
               "property_links": [],
               "references": [
                 {
-                  "expected": "structure-definition",
+                  "expected": "type-322-form-0",
                   "kind": "structure",
                   "raw_pointer": -1,
                   "resolution": "resolved",
@@ -2048,7 +2048,7 @@
               "property_links": [],
               "references": [
                 {
-                  "expected": "structure-definition",
+                  "expected": "type-322-form-0",
                   "kind": "structure",
                   "raw_pointer": -1,
                   "resolution": "resolved",

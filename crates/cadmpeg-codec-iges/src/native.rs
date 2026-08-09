@@ -2443,10 +2443,8 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let definition_sequence = entry
-                .structure
-                .checked_neg()
-                .and_then(|value| u32::try_from(value).ok());
+            let definition_sequence =
+                crate::graph::resolved_structure_sequence(references, entry.sequence);
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
             let attribute_count = definition_record

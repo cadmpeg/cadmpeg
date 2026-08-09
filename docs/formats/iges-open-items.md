@@ -152,26 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-06. A blank Directory Structure field gives a link to `#D0`
-
-**Question.** What does a blank or positive Structure field on a Type 422 mean?
-
-**Known.** `iges.md` "Product structure" records that a Type 422 reaches its definition through the negated Structure field. `native.rs:2413-2416` negates and converts. A structure of `0` negates to `0`, `u32::try_from(0)` succeeds, and the record emits `definition: Some("iges:product:attribute-definition#D0")`. Directory sequences start at 1 and are odd, so `D0` cannot exist. A positive structure gives `-n`, the conversion fails, and the link is correctly `None` — the opposite of the intuitive result. Neither parity nor target type is tested.
-
-**Note.** `graph.rs:73` creates a candidate only for `entry.structure < 0`, so the fabricated `#D0` has no backstop. The record also emits `rows: []`, so the instance's attribute values are discarded while it advertises a definition it does not have.
-
-**Need.** We need the meaning of a blank Structure field on a Type 422, and validation of the resolved sequence.
-
-### DR-07. Structure pointers accept every target type
-
-**Question.** Which entities may a Directory Structure field target?
-
-**Known.** `graph.rs:112-125` gives `ReferenceKind::Structure => true`. Every other kind names an exact type. `graph.rs:102` still advertises the expected class as `"structure-definition"`.
-
-**Note.** A Structure field filled with a transformation pointer is reported `Resolved`, increments the resolved counter, and produces an `iges:product:attribute-definition#D{n}` link to a Type 124.
-
-**Need.** We need the set of entities that may carry a Structure pointer, and the target type for each.
-
 ### DR-08. Reference resolution states are counted and never reported
 
 **Question.** Which reference resolution states are findings?
