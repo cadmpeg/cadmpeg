@@ -8627,6 +8627,108 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
     }
 }
 
+#[test]
+fn annotation_plane_keeps_its_neutral_plane_reachable() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=AXIS2_PLACEMENT_3D('',#3,#9,#10);\n#70=PLANE('',#69);\n#71=ANNOTATION_PLANE('',(),#70,());\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode annotation plane");
+    let plane = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#70")
+        .expect("annotation plane surface");
+    assert_eq!(
+        plane
+            .source_object
+            .as_ref()
+            .map(|association| association.object_id.as_str()),
+        Some("#71")
+    );
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:surface#70")
+    }));
+}
+
+#[test]
+fn styled_free_curve_is_a_reachable_source_carrier() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+         #2=CARTESIAN_POINT('',(1.,0.,0.));
+         #7=POLYLINE('',(#1,#2));
+         #10=STYLED_ITEM('',(),#7);",
+    );
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.0 == "step:data:curve#7")
+        .expect("styled polyline carrier");
+    assert_eq!(
+        curve
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#10")
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:curve#7")
+    }));
+}
+
+#[test]
+fn complex_tessellated_face_keeps_exact_support_surface_reachable() {
+    let source = String::from_utf8(
+        include_bytes!("../tests/fixtures/ap242_tessellation.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),$,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+        "#7=COMPLEX_TRIANGULATED_FACE('strip and fan',#6,4,((1.,0.,0.),(0.,1.,0.),(0.,0.,1.),(0.,0.,-1.)),#79,(4,3,2,1),((1,2,3,4)),((1,2,4)));",
+    )
+    .replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#79=PLANE('exact support',#34);\nENDSEC;\nEND-ISO-10303-21;",
+    );
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_bytes()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complex tessellated support");
+    let support = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.0 == "step:data:surface#79")
+        .expect("exact support surface");
+    assert_eq!(
+        support
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#7")
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(!validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::CarrierReachability
+            && finding.entity.as_deref() == Some("step:data:surface#79")
+    }));
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");
