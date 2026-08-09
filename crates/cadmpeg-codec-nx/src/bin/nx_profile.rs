@@ -459,11 +459,13 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
 
 /// Return the target's effective color under the neutral appearance contract.
 ///
-/// A direct color is sufficient when no topology-targeted binding exists. If a
-/// binding exists, it must be the sole binding and agree with the direct color;
-/// without a direct color it must resolve to exactly one appearance with a
-/// normalized base color. Source-carrier bindings and ambiguous target
-/// bindings do not supply a topology color.
+/// An absent direct color is a complete no-assignment state when no
+/// topology-targeted binding exists. A direct color is sufficient when no
+/// topology-targeted binding exists. If a binding exists, it must be the sole
+/// binding and agree with the direct color; without a direct color it must
+/// resolve to exactly one appearance with a normalized base color.
+/// Source-carrier bindings and ambiguous target bindings do not supply a
+/// topology color.
 fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &AppearanceTarget) -> bool {
     let bindings = ir
         .model
@@ -492,13 +494,30 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
 
     // A body appearance is the base for every owned face that has no direct
     // face color or face-scoped binding. Require unique topology ownership so
-    // an ambiguous face cannot inherit from an arbitrary body.
+    // an authored body appearance cannot inherit through an ambiguous face.
     if direct_color.is_none() && bindings.is_empty() {
         if let AppearanceTarget::Face(face_id) = target {
-            return unique_face_body(ir, face_id).is_some_and(|body| {
-                has_effective_color(ir, body.color, &AppearanceTarget::Body(body.id.clone()))
-            });
+            let Some(body) = unique_face_body(ir, face_id) else {
+                let body_appearance_exists = ir.model.bodies.iter().any(|body| {
+                    body.color.is_some()
+                        || ir.model.appearance_bindings.iter().any(|binding| {
+                            binding.target == AppearanceTarget::Body(body.id.clone())
+                        })
+                });
+                return !body_appearance_exists;
+            };
+            let body_target = AppearanceTarget::Body(body.id.clone());
+            let body_appearance_exists = body.color.is_some()
+                || ir
+                    .model
+                    .appearance_bindings
+                    .iter()
+                    .any(|binding| binding.target == body_target);
+            if body_appearance_exists {
+                return has_effective_color(ir, body.color, &body_target);
+            }
         }
+        return true;
     }
 
     match direct_color {
@@ -769,12 +788,12 @@ fn capability_gates(fixtures: &[FixtureEvidence]) -> Vec<Gate> {
                 assertion(
                     "body_appearance",
                     body_colors,
-                    "every decoded body has an effective direct or uniquely bound base color",
+                    "every decoded body has a valid color assignment or no authored color assignment",
                 ),
                 assertion(
                     "face_appearance",
                     face_colors,
-                    "every decoded face has an effective direct or uniquely bound base color",
+                    "every decoded face has a valid color assignment or no authored color assignment",
                 ),
                 assertion(
                     "complete_attributes",
@@ -1179,6 +1198,14 @@ mod tests {
             channels: BTreeMap::new(),
         });
         assert!(!has_effective_color(&ir, None, &target));
+    }
+
+    #[test]
+    fn effective_color_accepts_absent_color_without_an_assignment() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let target = AppearanceTarget::Body(BodyId("body".to_string()));
+
+        assert!(has_effective_color(&ir, None, &target));
     }
 
     #[test]

@@ -50,6 +50,8 @@ decode independently. Body and face appearance evidence accepts a valid direct
 color or one unambiguous topology-targeted binding to an appearance with a
 normalized base color. When both sources exist, their colors must agree;
 source-carrier bindings and ambiguous assignments do not satisfy the gate.
+An absent direct color and absent topology-targeted binding is a complete
+no-assignment state; it does not require a fabricated default color.
 Absence of a design-domain loss cannot substitute for neutral feature evaluation
 and an exact current-body census comparison.
 Higher-level implementation is extra capability until every cumulative gate
