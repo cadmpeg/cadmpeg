@@ -365,13 +365,14 @@ fn resolve_sweep_surface(
 ) -> Option<(SurfaceGeometry, usize, &'static str, bool)> {
     let construction = carriers.sweep(face.surface_attr)?;
     let profile = carriers.curve(construction.profile_attr)?;
-    let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) = &profile.geometry else {
+    let CarrierGeometry::Curve(profile_geometry) = &profile.geometry else {
         return None;
     };
+    let curve = sweep::profile_nurbs(profile_geometry)?;
     let profile_derived = carriers.curve_is_derived(construction.profile_attr);
     match &construction.kind {
         SweepKind::Spun { base, axis } => Some((
-            SurfaceGeometry::Nurbs(sweep::spun_nurbs(curve, *base, *axis)),
+            SurfaceGeometry::Nurbs(sweep::spun_nurbs(&curve, *base, *axis)),
             construction.offset,
             "00_44",
             profile_derived,
@@ -423,7 +424,7 @@ fn resolve_sweep_surface(
             let pad = 1.0e-6_f64.max((v_end - v_start) * 1.0e-3);
             Some((
                 SurfaceGeometry::Nurbs(sweep::swept_nurbs(
-                    curve,
+                    &curve,
                     *direction,
                     v_start - pad,
                     v_end + pad,

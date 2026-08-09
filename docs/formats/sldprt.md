@@ -1052,6 +1052,8 @@ Its marker is at `hdr + 21`, and the values begin one byte after the marker in b
 
 The line direction is unit length. Every axis, normal, and reference direction is unit length; each axis or normal is orthogonal to its paired reference direction. The cone fields satisfy `sin² + cos² = 1`. A torus major radius is nonzero and its minor radius is positive. A negative major radius reverses the native surface parameter frame; neutral geometry uses its absolute magnitude and reverses the face sense. The minor radius can equal or exceed the major-radius magnitude (a spindle torus).
 
+Tags `00 43` and `00 44` use the same compact header. The orientation marker is followed by a nonzero big-endian u16 profile-curve attribute. Tag `00 43` then stores a unit translation direction as three f64 values. It defines the ruled surface `R(u,v) = C(u) + v·D`, where `C` is the selected profile curve and `D` is the stored direction. Tag `00 44` instead stores an axis point and unit axis direction as six f64 values. It defines the complete surface obtained by revolving `C` through `2π` about that axis. A circle or ellipse profile is an exact rational quadratic curve; a NURBS profile retains its degree, knots, poles, weights, and closure in the surface profile direction.
+
 Compact records omit trim intervals, loop membership, edge orientation, and vertex points. Typed topology records contain those relations.
 
 ### 7.2 B-spline and list carriers
