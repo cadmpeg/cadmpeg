@@ -6070,41 +6070,10 @@ pub(crate) fn b5_closed_triangle_stream_over_edges(edges: [u32; 3]) -> Vec<u8> {
 /// each `5d` points through one `05` roster to the two incident `06` records.
 pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
     const SURFACE: u32 = 100;
-    const LOOP: u32 = 400;
-    const FACE: u32 = 500;
-    const VERTICES: [u32; 3] = [600, 601, 602];
-    const ROSTERS: [u32; 3] = [800, 801, 802];
-    const INCIDENCES: [u32; 3] = [700, 701, 702];
     let pcurves = [
         (200u32, [0.0, 0.0], [1.0, 0.0]),
         (201, [1.0, 0.0], [0.0, 1.0]),
         (202, [0.0, 1.0], [0.0, 0.0]),
-    ];
-    let edges = [
-        (
-            300u32,
-            200,
-            VERTICES[0],
-            VERTICES[1],
-            INCIDENCES[0],
-            INCIDENCES[1],
-        ),
-        (
-            301,
-            201,
-            VERTICES[1],
-            VERTICES[2],
-            INCIDENCES[1],
-            INCIDENCES[2],
-        ),
-        (
-            302,
-            202,
-            VERTICES[2],
-            VERTICES[0],
-            INCIDENCES[2],
-            INCIDENCES[0],
-        ),
     ];
 
     let mut bytes = Vec::new();
@@ -6121,6 +6090,53 @@ pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
             ),
         );
     }
+    append_b5_closed_triangle_native_vertex_chain(
+        &mut bytes,
+        SURFACE,
+        pcurves.map(|(id, _, _)| id),
+    );
+    bytes
+}
+
+/// Append the native endpoint and face chain shared by analytic and freeform
+/// support carriers in the object-stream topology fixtures.
+fn append_b5_closed_triangle_native_vertex_chain(
+    bytes: &mut Vec<u8>,
+    surface: u32,
+    pcurves: [u32; 3],
+) {
+    const LOOP: u32 = 400;
+    const FACE: u32 = 500;
+    const VERTICES: [u32; 3] = [600, 601, 602];
+    const ROSTERS: [u32; 3] = [800, 801, 802];
+    const INCIDENCES: [u32; 3] = [700, 701, 702];
+    let edges = [
+        (
+            300u32,
+            pcurves[0],
+            VERTICES[0],
+            VERTICES[1],
+            INCIDENCES[0],
+            INCIDENCES[1],
+        ),
+        (
+            301,
+            pcurves[1],
+            VERTICES[1],
+            VERTICES[2],
+            INCIDENCES[1],
+            INCIDENCES[2],
+        ),
+        (
+            302,
+            pcurves[2],
+            VERTICES[2],
+            VERTICES[0],
+            INCIDENCES[2],
+            INCIDENCES[0],
+        ),
+    ];
+
     for (id, pcurve, start_vertex, end_vertex, start_incidence, end_incidence) in edges {
         let mut payload = vec![0x85];
         for reference in [
@@ -6133,33 +6149,33 @@ pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
             payload.extend_from_slice(&b5_object_ref(reference));
         }
         payload.push(0x2a);
-        append_b5_record(&mut bytes, 0x5e, id, &payload);
+        append_b5_record(bytes, 0x5e, id, &payload);
     }
 
     let mut loop_payload = vec![0x87];
-    for ((pcurve, _, _), (edge, _, _, _, _, _)) in pcurves.into_iter().zip(edges) {
+    for (pcurve, (edge, _, _, _, _, _)) in pcurves.into_iter().zip(edges) {
         loop_payload.extend_from_slice(&b5_object_ref(pcurve));
         loop_payload.extend_from_slice(&b5_object_ref(edge));
     }
-    loop_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    loop_payload.extend_from_slice(&b5_object_ref(surface));
     loop_payload.extend_from_slice(&[0x83, 0x05, 0x05, 0x03]);
     for _ in 0..pcurves.len() {
         loop_payload.extend_from_slice(&[0x01, 0x00, 0xff, 0xff, 0x01, 0x00]);
     }
     loop_payload.push(0x01);
-    append_b5_record(&mut bytes, 0x62, LOOP, &loop_payload);
+    append_b5_record(bytes, 0x62, LOOP, &loop_payload);
 
     let mut face_payload = vec![0x82];
-    face_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    face_payload.extend_from_slice(&b5_object_ref(surface));
     face_payload.extend_from_slice(&b5_object_ref(LOOP));
     face_payload.push(0x05);
-    append_b5_record(&mut bytes, 0x5f, FACE, &face_payload);
+    append_b5_record(bytes, 0x5f, FACE, &face_payload);
 
     for (vertex, roster) in VERTICES.into_iter().zip(ROSTERS) {
         let mut payload = vec![0x81];
         payload.extend_from_slice(&b5_object_ref(roster));
         payload.push(0x04);
-        append_b5_record(&mut bytes, 0x5d, vertex, &payload);
+        append_b5_record(bytes, 0x5d, vertex, &payload);
     }
     for (roster, incidence_ids) in ROSTERS.into_iter().zip([
         [INCIDENCES[0], INCIDENCES[2]],
@@ -6170,11 +6186,15 @@ pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
         for incidence in incidence_ids {
             payload.extend_from_slice(&b5_object_ref(incidence));
         }
-        append_b5_record(&mut bytes, 0x05, roster, &payload);
+        append_b5_record(bytes, 0x05, roster, &payload);
     }
     for ((id, curves), parameters) in INCIDENCES
         .into_iter()
-        .zip([[200, 202], [200, 201], [201, 202]])
+        .zip([
+            [pcurves[0], pcurves[2]],
+            [pcurves[0], pcurves[1]],
+            [pcurves[1], pcurves[2]],
+        ])
         .zip([[0.0, 1.0], [1.0, 0.0], [1.0, 0.0]])
     {
         let mut payload = vec![0x82];
@@ -6186,7 +6206,7 @@ pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
             payload.extend_from_slice(&le_f64(parameter));
             payload.push(0x81);
         }
-        append_b5_record(&mut bytes, 0x06, id, &payload);
+        append_b5_record(bytes, 0x06, id, &payload);
     }
 
     for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
@@ -6195,6 +6215,60 @@ pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
             bytes.extend_from_slice(&le_f32(value));
         }
     }
+}
+
+/// Build an elided-pole freeform surface with one external grid allocation and
+/// the complete native endpoint chain required to transfer its face.
+pub(crate) fn a8_elided_surface_stream_with_native_vertex_chain() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
+    bytes.extend_from_slice(&a8_surface_tail());
+    let payload_len = u32::try_from(bytes.len() - 11).expect("small A8 payload");
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+
+    append_b5_record(
+        &mut bytes,
+        0x21,
+        200,
+        &b5_linear_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [0.0, 0.0],
+            [1.0, 0.0],
+        ),
+    );
+    for u in 0..3 {
+        for v in 0..3 {
+            for coordinate in [f64::from(u) * 0.5, f64::from(v) * 0.5, 0.0] {
+                bytes.extend_from_slice(&le_f64(coordinate));
+            }
+        }
+    }
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        201,
+        &b5_analytic_line_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [1.0, 0.0],
+            [-1.0, 1.0],
+            [0.0, 1.0],
+        ),
+    );
+    append_b5_record(
+        &mut bytes,
+        0x18,
+        202,
+        &b5_analytic_line_pcurve_payload(
+            u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+            [0.0, 1.0],
+            [0.0, -1.0],
+            [0.0, 1.0],
+        ),
+    );
+    append_b5_closed_triangle_native_vertex_chain(&mut bytes, SURFACE, [200, 201, 202]);
     bytes
 }
 
@@ -6210,6 +6284,47 @@ fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     };
     assert_eq!(surface.control_points.len(), 9);
     assert_eq!(surface.control_points[8], Point3::new(8.0, 2.0, 2.0));
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_an_elided_a8_surface_with_native_topology() {
+    let stream = a8_elided_surface_stream_with_native_vertex_chain();
+    let graph = crate::families::b5::graph::parse(&stream).expect("generated A8 topology");
+    assert!(graph.complete);
+    assert_eq!(graph.faces.len(), 1);
+    assert_eq!(graph.loops.len(), 1);
+    assert_eq!(graph.pcurves.len(), 3);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
+    assert_eq!(
+        graph.logical_vertex_points,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode elided A8 surface topology");
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+        panic!("NURBS surface");
+    };
+    assert_eq!(surface.control_points[8], Point3::new(1.0, 1.0, 0.0));
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 3);
+    assert!(result.report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
