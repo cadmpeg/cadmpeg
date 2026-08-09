@@ -19364,6 +19364,40 @@ fn knit_surface_feature_definition(scan: &ContainerScan, feature_id: u32) -> IrF
     }
 }
 
+/// Select the neutral plane carried by a Draft feature's class-209 entity.
+///
+/// The class is a neutral-plane carrier only when it has one unambiguous
+/// feature-owned surface row and that row is a plane. The table class is not
+/// part of the rule: Draft records use more than one enclosing table class.
+fn draft_neutral_plane_selection(scan: &ContainerScan, feature_id: u32) -> FaceSelection {
+    let Some((table, entry)) = exactly_one(
+        scan.features
+            .entity_tables
+            .iter()
+            .filter(|table| table.feature_id == Some(feature_id))
+            .flat_map(|table| {
+                table
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.class_id == 209)
+                    .map(move |entry| (table, entry))
+            }),
+    ) else {
+        return FaceSelection::Unresolved;
+    };
+    if !table.surface_ids.contains(&entry.entity_id) {
+        return FaceSelection::Unresolved;
+    }
+    let Some(surface) = crate::surface::unique_surface_row(&scan.surfaces.rows, entry.entity_id)
+        .filter(|surface| {
+            surface.feature_id == feature_id && surface.kind == crate::surface::SurfaceKind::Plane
+        })
+    else {
+        return FaceSelection::Unresolved;
+    };
+    FaceSelection::Native(format!("creo:visibgeom:surface#{}", surface.id))
+}
+
 fn feature_surface_transitions(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
@@ -19896,7 +19930,7 @@ fn schema_feature_definition(
     if schema_class == 927 {
         return IrFeatureDefinition::Draft {
             faces: FaceSelection::Unresolved,
-            neutral_plane: FaceSelection::Unresolved,
+            neutral_plane: draft_neutral_plane_selection(scan, feature_id),
             parting_tool: None,
             pull_direction: None,
             pull_plane: None,

@@ -2215,6 +2215,18 @@ The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
 non-modeling annotation container.
+
+For a root schema class `927` Draft feature, the sole class-`209` entry across
+the feature-owned generated-entity tables supplies the neutral plane when its
+entity identifier is in that table's materialized-surface roster, resolves to
+exactly one `srf_array` row, that row is a plane, and its `feat_id` equals the
+Draft feature identifier. The enclosing table class is not part of this rule.
+The neutral-plane selection uses the native
+`creo:visibgeom:surface#<surface-id>` identity. Missing, duplicate,
+unmaterialized, foreign-owned, non-plane, or otherwise ambiguous class-`209`
+carriers leave the neutral plane unresolved. Class-`224` and class-`230`
+entries do not by themselves define the drafted-face selection.
+
 `Cross Section` and its German operation-family name `Querschnitt` are
 non-modeling cross-section definitions. A current-state `Body` or `Körper`
 record with no recipe, root feature-definition class, or feature reference name

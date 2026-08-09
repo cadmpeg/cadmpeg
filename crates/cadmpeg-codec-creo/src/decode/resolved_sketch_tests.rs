@@ -3422,6 +3422,112 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 }
 
 #[test]
+fn draft_neutral_plane_requires_one_owned_class_209_plane() {
+    let entry = |entity_id, class_id| crate::feature::FeatureEntityTableEntry {
+        entity_id,
+        class_id,
+        source_entity_id: None,
+        related_entity_id: None,
+        related_entity_state: None,
+        prefixed: true,
+        offset: entity_id as usize,
+        end_offset: entity_id as usize,
+    };
+    let table = |entries: Vec<crate::feature::FeatureEntityTableEntry>, surface_ids| {
+        crate::feature::FeatureEntityTable {
+            feature_id: Some(225),
+            table_class_id: 29,
+            entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+            entries,
+            surface_ids,
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        }
+    };
+    let row = |id, kind: crate::surface::SurfaceKind, feature_id| crate::surface::SurfaceRow {
+        id,
+        type_byte: kind.canonical_type_byte(),
+        kind,
+        feature_id,
+        reversed: false,
+        boundary_type: 0,
+        next_surface: 0,
+        offset: id as usize,
+    };
+    let mut scan = crate::container::scan_bytes(Vec::new());
+    scan.features
+        .entity_tables
+        .push(table(vec![entry(226, 209)], vec![226]));
+    scan.surfaces
+        .rows
+        .push(row(226, crate::surface::SurfaceKind::Plane, 225));
+    assert_eq!(
+        draft_neutral_plane_selection(&scan, 225),
+        FaceSelection::Native("creo:visibgeom:surface#226".to_string())
+    );
+
+    scan.features.entity_tables[0].surface_ids.clear();
+    assert_eq!(
+        draft_neutral_plane_selection(&scan, 225),
+        FaceSelection::Unresolved
+    );
+    scan.features.entity_tables[0].surface_ids.push(226);
+    scan.features
+        .entity_tables
+        .push(table(vec![entry(227, 209)], vec![227]));
+    scan.surfaces
+        .rows
+        .push(row(227, crate::surface::SurfaceKind::Plane, 225));
+    assert_eq!(
+        draft_neutral_plane_selection(&scan, 225),
+        FaceSelection::Unresolved
+    );
+}
+
+#[test]
+fn draft_neutral_plane_rejects_foreign_or_non_plane_surface_rows() {
+    let table = crate::feature::FeatureEntityTable {
+        feature_id: Some(225),
+        table_class_id: 64,
+        entry_ids: vec![226],
+        entries: vec![crate::feature::FeatureEntityTableEntry {
+            entity_id: 226,
+            class_id: 209,
+            source_entity_id: None,
+            related_entity_id: None,
+            related_entity_state: None,
+            prefixed: true,
+            offset: 0,
+            end_offset: 0,
+        }],
+        surface_ids: vec![226],
+        non_surface_entity_ids: Vec::new(),
+        offset: 0,
+    };
+    for (kind, owner) in [
+        (crate::surface::SurfaceKind::Cylinder, 225),
+        (crate::surface::SurfaceKind::Plane, 224),
+    ] {
+        let mut scan = crate::container::scan_bytes(Vec::new());
+        scan.features.entity_tables.push(table.clone());
+        scan.surfaces.rows.push(crate::surface::SurfaceRow {
+            id: 226,
+            type_byte: kind.canonical_type_byte(),
+            kind,
+            feature_id: owner,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        });
+        assert_eq!(
+            draft_neutral_plane_selection(&scan, 225),
+            FaceSelection::Unresolved
+        );
+    }
+}
+
+#[test]
 fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
     let plane = |origin, normal| PlaneEquation { origin, normal };
     let mut planes = BTreeMap::from([
