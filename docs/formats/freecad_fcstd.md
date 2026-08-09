@@ -4,8 +4,9 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Support envelope
 
-The primary envelope is a ZIP archive containing `Document.xml` with document `SchemaVersion=4`
-and `FileVersion=1`. The application graph may contain core App, Part, PartDesign, Sketcher,
+The primary write envelope is a ZIP archive containing `Document.xml` with document
+`SchemaVersion=4` and `FileVersion=1`. The decode envelope accepts document schemas 2, 3, and 4.
+The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
@@ -23,9 +24,9 @@ used by decoded documents before encoding. This permits general extension-object
 parametric core objects without requiring a source archive; unsupported semantics must be supplied
 as named records or rejected, never silently approximated.
 
-Schema versions 2 and 3, pre-schema-4 object layouts, and earlier property encodings are separate
-legacy envelopes. A decoder must identify their governing version before refusing a layout it does
-not support.
+Schema 2 has a `Features` declaration section and a `FeatureData` value section. Schema 3 and
+schema 4 have an `Objects` declaration section and an `ObjectData` value section. The section and
+record names are part of the schema grammar and are not interchangeable.
 
 Recovery directories, unpacked project trees, backups, and unrelated ZIP archives are not FCStd
 documents.
@@ -45,6 +46,16 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
+In schema 2, `Features.Count` equals the number of `Feature` declarations. Each declaration has a
+unique `name` and a `type`. `FeatureData.Count` equals the number of `Feature` value records. Each
+value record has a unique `name`. Declaration and value-record name sets are equal. Declaration
+order is object order.
+
+In schemas 3 and 4, `Objects.Count` equals the number of `Object` declarations. Each declaration
+has a unique `name` and a `type`. `ObjectData.Count` equals the number of `Object` value records.
+Each value record has a unique `name`. Declaration and value-record name sets are equal.
+Declaration order is object order.
+
 The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
 enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
 declarations, in the same order and with the same names. Each `ObjectDeps.Count` equals its number
@@ -54,11 +65,19 @@ elements.
 
 ## 3. Version dispatch
 
-`ProgramVersion` is metadata. Parsing dispatch is selected by container layout, document schema and
-file version, object type, property type, value tag, and side-entry form. Unsupported combinations
-are reported using those structural attributes.
+`SchemaVersion` alone selects the object envelope. `ProgramVersion` is metadata. An absent
+`FileVersion` has value zero. `FileVersion` does not select the object or property-container
+envelope. It selects versioned side-entry details such as string tables and complex geometry.
+Property runtime type and value tag select a property-value grammar.
 
-Schema 4 link properties use a closed runtime-type and value-tag grammar. All runtime types in this
+Document properties and object properties use the same `Properties` container in schemas 2, 3,
+and 4. `Properties.Count` equals the number of `Property` records. An optional
+`TransientCount` equals the number of `_Property` records. Each record has a `name` and `type`.
+A `Property` contains its runtime-type-specific value XML. A `_Property` has no persisted value.
+Status and dynamic-property metadata are optional record attributes. Property container dispatch
+does not depend on `SchemaVersion`, `FileVersion`, or `ProgramVersion`.
+
+Link properties use a closed runtime-type and value-tag grammar. All runtime types in this
 grammar have the `App::` prefix. `PropertyLink` and its
 `Child`, `Global`, and `Hidden` variants contain one `Link` with a `value` object name.
 `PropertyLinkList` and its three variants contain one `LinkList`; `count` equals the number of

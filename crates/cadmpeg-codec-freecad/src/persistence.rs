@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Generic schema-4 object and property graph recovery.
+//! Generic `FreeCAD` object and property graph recovery.
 
 use std::collections::{HashMap, HashSet};
 
@@ -29,31 +29,56 @@ pub struct Graph {
     pub properties: Vec<PropertyRecord>,
 }
 
-/// Recover the schema-4 persistence graph without interpreting geometry.
+/// Recover the persistence graph without interpreting geometry.
 pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("Document.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid Document.xml: {error}")))?;
     let root = xml.root_element();
+    let schema = root
+        .attribute("SchemaVersion")
+        .or_else(|| root.attribute("schemaVersion"))
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            CodecError::Malformed("Document element has no SchemaVersion attribute".into())
+        })?;
+    let (declarations_tag, data_tag, record_tag) = match schema.as_str() {
+        "2" => ("Features", "FeatureData", "Feature"),
+        "3" | "4" => ("Objects", "ObjectData", "Object"),
+        _ => {
+            return Err(CodecError::NotImplemented(format!(
+                "FCStd SchemaVersion={schema} persistence layout"
+            )));
+        }
+    };
     let objects_node = root
         .children()
-        .find(|node| node.has_tag_name("Objects"))
-        .ok_or_else(|| CodecError::Malformed("Document.xml has no Objects section".into()))?;
+        .find(|node| node.has_tag_name(declarations_tag))
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("Document.xml has no {declarations_tag} section"))
+        })?;
     let data_node = root
         .children()
-        .find(|node| node.has_tag_name("ObjectData"))
-        .ok_or_else(|| CodecError::Malformed("Document.xml has no ObjectData section".into()))?;
+        .find(|node| node.has_tag_name(data_tag))
+        .ok_or_else(|| CodecError::Malformed(format!("Document.xml has no {data_tag} section")))?;
 
     let declared_count = objects_node
         .attribute("Count")
         .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::Malformed("Objects Count is missing or invalid".into()))?;
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("{declarations_tag} Count is missing or invalid"))
+        })?;
     if declared_count > MAX_OBJECTS {
         return Err(CodecError::Malformed("object count limit exceeded".into()));
     }
+    if schema == "2" && objects_node.attribute("Dependencies").is_some() {
+        return Err(CodecError::Malformed(
+            "schema 2 Features cannot carry object dependencies".into(),
+        ));
+    }
 
-    let dependencies_enabled = objects_node.attribute("Dependencies").is_some();
+    let dependencies_enabled = schema != "2" && objects_node.attribute("Dependencies").is_some();
     let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
@@ -115,7 +140,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
     let mut data_by_name = HashMap::new();
     for node in data_node
         .children()
-        .filter(|node| node.has_tag_name("Object"))
+        .filter(|node| node.has_tag_name(record_tag))
     {
         let name = required_attr(node, "name")?;
         if data_by_name.insert(name.clone(), node).is_some() {
@@ -124,12 +149,22 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             )));
         }
     }
+    let data_count = data_node
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::Malformed(format!("{data_tag} Count is missing or invalid")))?;
+    if data_count != data_by_name.len() {
+        return Err(CodecError::Malformed(format!(
+            "{data_tag} Count={data_count} but {} records were found",
+            data_by_name.len()
+        )));
+    }
 
     let mut objects = Vec::new();
     let mut object_names = HashSet::new();
     for (order, node) in objects_node
         .children()
-        .filter(|node| node.has_tag_name("Object"))
+        .filter(|node| node.has_tag_name(record_tag))
         .enumerate()
     {
         let name = required_attr(node, "name")?;
@@ -177,7 +212,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
 
     if declared_count != objects.len() {
         return Err(CodecError::Malformed(format!(
-            "Objects Count={declared_count} but {} declarations were found",
+            "{declarations_tag} Count={declared_count} but {} declarations were found",
             objects.len()
         )));
     }
@@ -187,9 +222,9 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         ));
     }
     if data_by_name.len() != objects.len() {
-        return Err(CodecError::Malformed(
-            "object declarations and ObjectData identities disagree".into(),
-        ));
+        return Err(CodecError::Malformed(format!(
+            "object declarations and {data_tag} identities disagree"
+        )));
     }
     let declared_names = objects
         .iter()

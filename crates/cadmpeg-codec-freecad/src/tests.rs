@@ -6050,8 +6050,13 @@ Co 1001000 +2 1 +2 3 *
 }
 
 #[test]
-fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
-    let bytes = archive("<Document SchemaVersion=\"3\" FileVersion=\"1\"/>");
+fn schema_three_uses_the_object_envelope_and_defaults_file_version() {
+    let document = r#"<Document SchemaVersion="3">
+<Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Legacy"/></Property></Properties>
+<Objects Count="1"><Object type="App::FeaturePython" name="Thing"/></Objects>
+<ObjectData Count="1"><Object name="Thing"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Thing"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let bytes = archive(document);
     let summary = FcstdCodec
         .inspect(
             &mut Cursor::new(&bytes),
@@ -6059,12 +6064,80 @@ fn legacy_layout_is_inspectable_but_explicitly_refused_for_decode() {
         )
         .expect("legacy inspection");
     assert!(summary.notes.iter().any(|note| note == "SchemaVersion=3"));
-    let error = FcstdCodec
+    assert!(summary.notes.iter().any(|note| note == "FileVersion=0"));
+    let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect_err("legacy decode must fail");
-    assert!(error
-        .to_string()
-        .contains("FCStd SchemaVersion=3 FileVersion=1 persistence layout"));
+        .expect("schema-three decode");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(objects.len(), 1);
+    assert_eq!(objects[0].type_name, "App::FeaturePython");
+    assert_eq!(properties.len(), 2);
+    assert_eq!(
+        properties[1].links[0].object.as_deref(),
+        Some(objects[0].id.as_str())
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn schema_two_uses_the_feature_envelope_and_common_property_grammar() {
+    let document = r#"<Document SchemaVersion="2" ProgramVersion="0.13">
+<Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Document"/></Property></Properties>
+<Features Count="2"><Feature type="App::Feature" name="First"/><Feature type="App::FeaturePython" name="Second"/></Features>
+<FeatureData Count="2"><Feature name="First"><Properties Count="0"/></Feature><Feature name="Second"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="First"/></Property></Properties></Feature></FeatureData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("schema-two decode");
+    let namespace = result.ir.native.namespace("fcstd").expect("namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    assert_eq!(
+        objects
+            .iter()
+            .map(|object| object.name.as_str())
+            .collect::<Vec<_>>(),
+        ["First", "Second"]
+    );
+    assert_eq!(properties.len(), 2);
+    assert_eq!(
+        properties[1].links[0].object.as_deref(),
+        Some(objects[0].id.as_str())
+    );
+    assert!(objects.iter().all(|object| object.persistent_id.is_none()));
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn legacy_schema_dispatch_rejects_wrong_envelopes_and_inconsistent_counts() {
+    let cases = [
+        r#"<Document SchemaVersion="2"><Objects Count="0"/><ObjectData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="3"><Features Count="0"/><FeatureData Count="0"/></Document>"#,
+        r#"<Document SchemaVersion="2"><Features Count="1"><Feature type="App::Feature" name="A"/></Features><FeatureData Count="0"><Feature name="A"/></FeatureData></Document>"#,
+        r#"<Document SchemaVersion="2"><Features Count="1"><Feature type="App::Feature" name="A"/></Features><FeatureData Count="1"><Feature name="B"/></FeatureData></Document>"#,
+    ];
+    for document in cases {
+        assert!(matches!(
+            FcstdCodec.decode(
+                &mut Cursor::new(archive(document)),
+                &DecodeOptions::default()
+            ),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }
 
 #[test]
@@ -6502,11 +6575,11 @@ fn rejects_interleaved_new_string_hasher_payload() {
 #[test]
 fn rejects_inconsistent_object_dependency_envelopes() {
     let cases = [
-        r#"<Document><Objects Count="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
-        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
-        r#"<Document><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="1"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
-        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
-        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="B" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="1"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document SchemaVersion="4"><Objects Count="2" Dependencies="1"><ObjectDeps Name="B" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
     ];
 
     for document in cases {

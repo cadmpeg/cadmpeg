@@ -14,57 +14,7 @@ Each item has an identifier. Use the identifier in commit messages and in code c
 
 This document uses ASD-STE100 Simplified Technical English. Record names, field names, and token values are technical names. They keep their source spelling.
 
-## 1. Legacy persistence
-
-### LP-01. Schema 2 object grammar
-
-**Question.** What object grammar does `Document.xml` use when `SchemaVersion=2`?
-
-**Known.** `freecad_fcstd.md` §1 "Schema versions 2 and 3" identifies schema 2 as a legacy envelope. `freecad_fcstd.md` §2 "`Document.xml` is the authoritative application object and property graph." states that `Document.xml` is the authoritative application object and property graph.
-
-**Need.** We must know the grammar to decode and validate each schema 2 object boundary and value.
-
-### LP-02. Schema 2 property grammar
-
-**Question.** What property grammar does `Document.xml` use when `SchemaVersion=2`?
-
-**Known.** `freecad_fcstd.md` §1 "Schema versions 2 and 3" states that earlier property encodings belong to separate legacy envelopes. `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." states that property type and value tag select parsing dispatch.
-
-**Need.** We must know the grammar to decode and validate each schema 2 property boundary and value.
-
-### LP-03. Schema 3 object grammar
-
-**Question.** What object grammar does `Document.xml` use when `SchemaVersion=3`?
-
-**Known.** `freecad_fcstd.md` §1 "Schema versions 2 and 3" identifies schema 3 as a legacy envelope. `freecad_fcstd.md` §2 "`Document.xml` is the authoritative application object and property graph." states that `Document.xml` is the authoritative application object and property graph.
-
-**Need.** We must know the grammar to decode and validate each schema 3 object boundary and value.
-
-### LP-04. Schema 3 property grammar
-
-**Question.** What property grammar does `Document.xml` use when `SchemaVersion=3`?
-
-**Known.** `freecad_fcstd.md` §1 "Schema versions 2 and 3" states that earlier property encodings belong to separate legacy envelopes. `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." states that property type and value tag select parsing dispatch.
-
-**Need.** We must know the grammar to decode and validate each schema 3 property boundary and value.
-
-### LP-05. Legacy object-layout dispatch
-
-**Question.** Which version fields and type fields select each pre-schema-4 object layout?
-
-**Known.** `freecad_fcstd.md` §1 "Schema versions 2 and 3" states that a decoder must identify the governing version before it refuses an unsupported layout. `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." lists the structural attributes that select parsing dispatch.
-
-**Need.** We must know the selection rule to choose the correct object grammar before object decoding starts.
-
-### LP-06. Legacy property-encoding dispatch
-
-**Question.** Which version fields, property types, and value tags select each property encoding before schema 4?
-
-**Known.** `freecad_fcstd.md` §3 "`ProgramVersion` is metadata." states that document schema, file version, property type, and value tag select parsing dispatch.
-
-**Need.** We must know the selection rule to choose the correct property grammar before property decoding starts.
-
-## 2. Sketch geometry
+## 1. Sketch geometry
 
 ### SG-02. Conic conventions without a FreeCAD-saved witness
 

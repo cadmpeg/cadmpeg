@@ -1148,7 +1148,7 @@ impl Codec for FcstdCodec {
         };
         let scan = container::scan(ctx, root)?;
         if !options.container_only
-            && (scan.document.schema_version != "4" || scan.document.file_version != "1")
+            && !matches!(scan.document.schema_version.as_str(), "2" | "3" | "4")
         {
             return Err(CodecError::NotImplemented(format!(
                 "FCStd SchemaVersion={} FileVersion={} persistence layout",
