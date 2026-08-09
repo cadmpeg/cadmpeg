@@ -448,6 +448,44 @@ fn b2_revolution_profile_requires_one_exact_circle_interval() {
 }
 
 #[test]
+fn b2_revolution_profile_identity_disambiguates_equal_intervals() {
+    let mut first = b2_circle_stream();
+    first[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
+    first[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    first[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let mut second = b2_circle_stream();
+    second[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    second[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let second_pos = first.len();
+    let mut stream = first;
+    stream.extend_from_slice(&second);
+    stream.extend_from_slice(&b2_revolution_stream());
+
+    let resolved_revolutions = crate::families::b2::records::b2_resolved_revolutions(&stream);
+    let [resolved] = resolved_revolutions.as_slice() else {
+        panic!("one identity-bound revolution profile");
+    };
+    assert_eq!(resolved.profile.record_id, 0x1234);
+    assert_eq!(resolved.profile.pos, second_pos);
+}
+
+#[test]
+fn b2_revolution_profile_identity_mismatch_does_not_fall_back_to_interval() {
+    let mut identity_mismatch = b2_circle_stream();
+    identity_mismatch[32..40].copy_from_slice(&10.0f64.to_le_bytes());
+    identity_mismatch[40..48].copy_from_slice(&20.0f64.to_le_bytes());
+    let mut interval_match = b2_circle_stream();
+    interval_match[6..8].copy_from_slice(&0x9999u16.to_le_bytes());
+    interval_match[32..40].copy_from_slice(&(-4.0f64).to_le_bytes());
+    interval_match[40..48].copy_from_slice(&9.0f64.to_le_bytes());
+    let mut stream = identity_mismatch;
+    stream.extend_from_slice(&interval_match);
+    stream.extend_from_slice(&b2_revolution_stream());
+
+    assert!(crate::families::b2::records::b2_resolved_revolutions(&stream).is_empty());
+}
+
+#[test]
 fn b2_line_profile_parser_reads_exact_origin_direction_and_range() {
     let b2 = b2_line_profile_stream();
     for (family, header) in [

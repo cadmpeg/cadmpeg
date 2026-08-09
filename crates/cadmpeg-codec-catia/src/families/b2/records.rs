@@ -1850,7 +1850,8 @@ pub(crate) fn b2_revolutions_from_records(
     out
 }
 
-/// Bind revolution profiles by exact, unique stored parameter interval.
+/// Bind revolution profiles by direct allocation identity, then by an exact,
+/// unique stored parameter interval when no identity target is present.
 #[must_use]
 #[cfg(test)]
 pub fn b2_resolved_revolutions(data: &[u8]) -> Vec<B2ResolvedRevolution> {
@@ -1867,12 +1868,31 @@ pub(crate) fn b2_resolved_revolutions_from_records(
         .into_iter()
         .enumerate()
         .filter_map(|(revolution_index, revolution)| {
-            let mut profiles = circles.iter().filter(|circle| {
-                circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
-                    && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
-            });
-            let profile = profiles.next()?.clone();
-            profiles.next().is_none().then_some(B2ResolvedRevolution {
+            let identity_profiles = circles
+                .iter()
+                .filter(|circle| circle.record_id == u32::from(revolution.profile_allocation_id));
+            let identity_profiles = identity_profiles.collect::<Vec<_>>();
+            let profile = match identity_profiles.as_slice() {
+                [profile]
+                    if profile.range[0].to_bits() == revolution.profile_range[0].to_bits()
+                        && profile.range[1].to_bits() == revolution.profile_range[1].to_bits() =>
+                {
+                    (*profile).clone()
+                }
+                [] => {
+                    let mut interval_profiles = circles.iter().filter(|circle| {
+                        circle.range[0].to_bits() == revolution.profile_range[0].to_bits()
+                            && circle.range[1].to_bits() == revolution.profile_range[1].to_bits()
+                    });
+                    let profile = interval_profiles.next()?;
+                    interval_profiles
+                        .next()
+                        .is_none()
+                        .then(|| (*profile).clone())?
+                }
+                _ => return None,
+            };
+            Some(B2ResolvedRevolution {
                 revolution_index,
                 revolution,
                 profile,
