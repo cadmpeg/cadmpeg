@@ -32,16 +32,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the bit assignments to validate an extent and to write its flags.
 
-### CR-03. E5 record-stream location
-
-**Question.** Which field selects the byte range that holds the E5 record stream?
-
-**Known.** `catia.md` §3.3 "`FINJPL  ` (two trailing spaces) marks named stream blocks" gives a coherence rule: ten records that walk by their declared strides make a candidate, a coherent preamble wins, and storage type `0x0000008e` breaks equal-count ties. That rule is a decoder procedure. It names no field. `container::count_e5_records` searches forward for the next `e5 0d 03` marker and accepts a gap of any length before it, so the count is not a stride walk. The one validity test for each counted record is that a `u16le` size read at a fixed offset keeps the record in bounds.
-
-**Need.** A coherent candidate makes `container::identify_variant` select `Variant::E5Stream`. That variant is applicable to one route, so the standard FBB route is not offered. We must know the field to select the stream without a count.
-
-**Note.** `container::e5_record_stream_in_segments` takes the segment with the largest count through `max_by_key`, which keeps the last maximum. Two segments with equal counts and no `0x0000008e` type resolve by segment order. The specification sentence is a transcription of the function's doc comment.
-
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics

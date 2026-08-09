@@ -384,9 +384,11 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 
 /// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.
 ///
-/// A candidate must contain at least ten stride-valid records. The preamble wins when
-/// coherent; otherwise the segment with the largest valid walk wins, with storage type
-/// `0x0000_008e` breaking ties.
+/// The candidate range is the complete preamble or complete FINJPL segment. A
+/// candidate must contain at least ten stride-valid records. The preamble wins
+/// when coherent; otherwise the segment with the largest valid walk wins, with
+/// storage type `0x0000_008e` breaking ties. An unresolved tie rejects E5
+/// selection.
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
     let segments = finjpl_segments(data, 0, data.len());
@@ -409,7 +411,7 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
         .position(|bytes| bytes == FINJPL_MARKER)
         .map_or(data.len(), |relative| directory_length + relative);
     let preamble = directory_length..first_finjpl;
-    if count_e5_records(&data[preamble.clone()]) >= 10 {
+    if coherent_e5_record_count(&data[preamble.clone()]) >= 10 {
         return Some(preamble);
     }
 
@@ -417,7 +419,7 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
         .iter()
         .filter(|segment| segment.range.start >= directory_length)
         .filter_map(|segment| {
-            let count = count_e5_records(&data[segment.range.clone()]);
+            let count = coherent_e5_record_count(&data[segment.range.clone()]);
             (count >= 10).then_some((
                 count,
                 segment.type_word == 0x0000_008e,
@@ -437,7 +439,7 @@ fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Opti
     (best.len() == 1).then(|| best.pop().expect("one candidate remains").2)
 }
 
-fn count_e5_records(data: &[u8]) -> usize {
+fn coherent_e5_record_count(data: &[u8]) -> usize {
     e5_record_spans(data).len()
 }
 

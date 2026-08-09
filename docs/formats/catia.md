@@ -71,7 +71,9 @@ The inner sub-container stores fragmented named streams and a stream directory. 
 
 ### 3.3 FINJPL segments
 
-`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. The four bytes after the marker are the big-endian type word. When the following bytes are `<name_length:u32be> 00 <printable-ASCII name>`, they define the segment's primary name. Every segment ends at the next `FINJPL  ` marker or the containing body boundary, and the complete bounded bytes are retained under their offset, type, family, and optional primary name. An E5 stream candidate is coherent when at least ten records walk by their declared strides. A coherent preamble wins; otherwise the segment with the largest valid walk wins, with storage type `0x0000008e` breaking equal-count ties.
+`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. The four bytes after the marker are the big-endian type word. When the following bytes are `<name_length:u32be> 00 <printable-ASCII name>`, they define the segment's primary name. Every segment ends at the next `FINJPL  ` marker or the containing body boundary, and the complete bounded bytes are retained under their offset, type, family, and optional primary name.
+
+E5 selection has no field selector. Let `P = u32be(file+0x0c)`, and let `M` be the first `FINJPL  ` marker at or after `P`, or EOF when no marker exists. The preamble candidate is `[P,M)`. A candidate is coherent when its complete range contains at least ten records in one declared-stride walk; the walk may cross only complete `05 08 01` vertex rows between records. If the preamble is coherent, select `[P,M)`. Otherwise select the unique candidate segment with the largest coherent walk. A segment with type `0x0000008e` wins an equal-count tie. Any remaining tie or absent candidate leaves the E5 range unselected.
 
 Each length-closed `7C08` object graph retains the identity of the FINJPL segment that completely contains its framed extent. A graph before the first FINJPL marker has no segment identity. Segment containment is physical scope; references can cross segment boundaries.
 
