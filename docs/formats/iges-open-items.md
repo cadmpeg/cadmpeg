@@ -210,14 +210,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need one angular equality rule.
 
-### GE-11. Undeclared resource limits
-
-**Question.** What bounds does the format place on entity size and nesting?
-
-**Known.** IGES declares none. The codec declares eight: `MAX_SPLINE_SEGMENTS = 100_000` and `MAX_SPLINE_SURFACE_POLES = 1_000_000` (`splines.rs:18-19`), `MAX_COPIOUS_TUPLES = 1_000_000` (`copious.rs:16`), 100000 composite children, degree 1024, and depth 64 (`composite.rs:19-21`), `MAX_TRANSFORM_DEPTH = 64` (`geometry.rs:15`), and `MAX_SURFACE_POLES = 1_000_000` (`surfaces.rs:18`). Each emits a loss that names its limit.
-
-**Need.** The limits are defensible and recorded only in the source. `iges.md` "Product structure" records the analogous occurrence limits, so the omission is inconsistent. This document must hold them so that a refusal at a limit is a known result.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** What does a PROP3 polynomial flag that disagrees with the weights mean, and what slack does the declared parameter range have?
