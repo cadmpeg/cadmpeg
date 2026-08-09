@@ -55,13 +55,16 @@ payloads.
 
 The decoder groups related Parasolid `partition` and `deltas` body streams by
 site, excluding ghost and ResolvedFeatures sections. It decodes each site,
-selects the richest result by face, body, and point counts, and merges
-alternate sites as configuration-specific bodies. Attribute-id references
-resolve into the `CadIr` topology and geometry arenas. Parasolid model lengths
-use metres; `CadIr` geometry uses the document’s IR units and decoded
-coordinates are expressed in millimetres. Provenance and exactness annotations
-identify source streams, record offsets, and derived entities such as
-reconstructed pcurves and periodic seams.
+selects the active configuration's source partition when identified, and
+merges alternate sites as configuration-specific bodies. A sole non-ghost
+partition is active when no configuration supplies a source index. Multiple
+unselected partitions retain site-qualified model identities and leave active
+geometry identity unresolved. Attribute-id references resolve into the
+`CadIr` topology and geometry arenas. Parasolid model lengths use metres;
+`CadIr` geometry uses the document’s IR units and decoded coordinates are
+expressed in millimetres. Provenance and exactness annotations identify source
+streams, record offsets, and derived entities such as reconstructed pcurves and
+periodic seams.
 
 Typed transfer covers analytic carriers, NURBS, swept and spun surfaces that
 resolve to NURBS, constant-radius rolling-ball blends, and validated
