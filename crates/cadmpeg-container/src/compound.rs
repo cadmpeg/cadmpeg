@@ -1178,7 +1178,6 @@ fn validate_root(directory: &[DirectoryEntry]) -> Result<(), CodecError> {
         .ok_or_else(|| CodecError::Malformed("empty CFB directory".into()))?;
     if root.object_type != 5
         || root.name != "Root Entry"
-        || root.color != 1
         || root.left != NO_STREAM
         || root.right != NO_STREAM
     {
@@ -1200,7 +1199,7 @@ fn validate_sibling_tree(directory: &[DirectoryEntry], root: u32) -> Result<(), 
     if root_entry.color != 1 {
         return malformed("CFB sibling-tree root is not black");
     }
-    visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new()).map(|_| ())
+    visit_sibling_tree(directory, root, None, None, false, &mut BTreeSet::new())
 }
 
 fn visit_sibling_tree(
@@ -1210,9 +1209,9 @@ fn visit_sibling_tree(
     upper: Option<&str>,
     parent_red: bool,
     seen: &mut BTreeSet<u32>,
-) -> Result<usize, CodecError> {
+) -> Result<(), CodecError> {
     if id == NO_STREAM {
-        return Ok(1);
+        return Ok(());
     }
     let entry = directory
         .get(id as usize)
@@ -1229,12 +1228,8 @@ fn visit_sibling_tree(
     if red && parent_red {
         return malformed("CFB sibling tree contains adjacent red nodes");
     }
-    let left = visit_sibling_tree(directory, entry.left, lower, Some(&entry.name), red, seen)?;
-    let right = visit_sibling_tree(directory, entry.right, Some(&entry.name), upper, red, seen)?;
-    if left != right {
-        return malformed("CFB sibling tree has unequal black height");
-    }
-    Ok(left + usize::from(!red))
+    visit_sibling_tree(directory, entry.left, lower, Some(&entry.name), red, seen)?;
+    visit_sibling_tree(directory, entry.right, Some(&entry.name), upper, red, seen)
 }
 
 fn cfb_name_cmp(left: &str, right: &str) -> Ordering {
@@ -1448,6 +1443,21 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
             .expect("synthetic CFB fits the decode policy");
         assert!(CompoundSnapshot::new(&ctx, root).is_err());
+    }
+
+    #[test]
+    fn accepts_non_semantic_directory_color_variants() {
+        let mut file = fixture();
+        let directory = sector_mut(&mut file, 0);
+        directory[67] = 0;
+        directory[2 * 128 + 67] = 1;
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::default();
+        let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy)
+            .expect("synthetic CFB fits the decode policy");
+        let snapshot = CompoundSnapshot::new(&ctx, root)
+            .expect("root color and black-height metadata do not govern traversal");
+        assert!(snapshot.stream("Store/Large").is_some());
     }
 
     pub(crate) fn fixture() -> Vec<u8> {
