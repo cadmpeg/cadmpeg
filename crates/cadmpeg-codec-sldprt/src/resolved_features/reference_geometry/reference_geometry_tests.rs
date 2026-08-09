@@ -1,7 +1,7 @@
 //! Tests for the `reference_geometry` module.
 
 use super::super::curves::{sketch_plane_frames, SketchPlaneUAxisSource};
-use super::super::CLASS_MARKER;
+use super::super::{CLASS_MARKER, NAME_MARKER};
 use super::{
     angled_reference_plane_frame, classed_offset_plane_sources, compact_offset_plane_source,
     compact_reference_plane_frame, constraint_midplane_frame, constraint_reference_plane_frame,
@@ -10,7 +10,7 @@ use super::{
     offset_plane_reference_frame_matches, offset_plane_reference_source,
     offset_reference_plane_frame_pair, plane_intersection_axis_frame,
     plane_intersection_axis_sources, reconcile_reference_plane_frame_with_source,
-    reference_plane_frame_key, select_reference_plane_frame_source,
+    reference_plane_frame_key, resolved_reference_point, select_reference_plane_frame_source,
     sketch_block_identity_normalization_origin, sketch_block_record_origin,
     structured_offset_plane_sources, FIXED_REFERENCE_PLANE_FRAME_LEN,
     MINIMAL_REFERENCE_PLANE_FRAME_LEN,
@@ -22,6 +22,161 @@ use crate::records::{
 use cadmpeg_ir::features::{FeatureDefinition, FeatureId, Length, PrincipalPlane};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashSet};
+
+const REFERENCE_POINT_NAME_END: usize = NAME_MARKER.len() + 1 + 12;
+
+fn reference_point_lane(layout: usize, form: u16, point: [f64; 3]) -> FeatureInputLane {
+    let name = "Point1";
+    let name_end = REFERENCE_POINT_NAME_END;
+    let point_start = name_end + layout;
+    let mut payload = vec![0; point_start + 34];
+    payload[..NAME_MARKER.len()].copy_from_slice(NAME_MARKER);
+    payload[NAME_MARKER.len()] = name.encode_utf16().count() as u8;
+    for (index, code_unit) in name.encode_utf16().enumerate() {
+        let start = NAME_MARKER.len() + 1 + index * 2;
+        payload[start..start + 2].copy_from_slice(&code_unit.to_le_bytes());
+    }
+    payload[name_end..name_end + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0xc0]);
+    payload[name_end + 8..name_end + 12].copy_from_slice(&2080_u32.to_le_bytes());
+    for (index, value) in point.into_iter().enumerate() {
+        let start = point_start + index * 8;
+        payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    payload[point_start + 24..point_start + 26].copy_from_slice(&form.to_le_bytes());
+    FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            object_id: Some(2080),
+            value: name.into(),
+        }],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    }
+}
+
+fn reference_point_history() -> FeatureHistory {
+    FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![Feature {
+            id: "point".into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some("2080".into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: "Point1".into(),
+            kind: "3DPoint".into(),
+            input_class: Some("moRefPoint_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }],
+    }
+}
+
+#[test]
+fn solved_reference_point_layouts_project_to_a_datum_point() {
+    for (layout, form) in [(243, 4), (259, 5)] {
+        let lane = reference_point_lane(layout, form, [0.125, -0.25, 0.0]);
+        let mut histories = vec![reference_point_history()];
+        super::enrich_history_reference_points(&mut histories, &[lane]);
+        assert_eq!(
+            histories[0].features[0].properties.get("Position"),
+            Some(&"125mm,-250mm,0mm".to_string())
+        );
+        assert!(matches!(
+            crate::history::project_features(&histories)[0].definition,
+            FeatureDefinition::DatumPoint {
+                position: Point3 {
+                    x: 125.0,
+                    y: -250.0,
+                    z: 0.0
+                }
+            }
+        ));
+    }
+
+    let mut lanes = [
+        reference_point_lane(243, 5, [0.125, -0.25, 0.0]),
+        reference_point_lane(259, 5, [0.5, -0.25, 0.0]),
+    ];
+    lanes[1].id = "lane-2".into();
+    lanes[1].names[0].parent = "lane-2".into();
+    let mut histories = vec![reference_point_history()];
+    super::enrich_history_reference_points(&mut histories, &lanes);
+    assert!(!histories[0].features[0].properties.contains_key("Position"));
+}
+
+#[test]
+fn solved_reference_point_requires_one_complete_layout() {
+    let mut lane = reference_point_lane(259, 5, [0.125, -0.25, 0.5]);
+    let name = lane.names[0].clone();
+    let end = lane.native_payload.len();
+    assert_eq!(
+        resolved_reference_point(&lane.native_payload, &name, end),
+        Some(Point3::new(125.0, -250.0, 500.0))
+    );
+    assert_eq!(
+        resolved_reference_point(&lane.native_payload, &name, end - 1),
+        None
+    );
+
+    lane.native_payload[REFERENCE_POINT_NAME_END + 8..REFERENCE_POINT_NAME_END + 12]
+        .copy_from_slice(&2081_u32.to_le_bytes());
+    assert_eq!(
+        resolved_reference_point(&lane.native_payload, &name, end),
+        None
+    );
+    lane.native_payload[REFERENCE_POINT_NAME_END + 8..REFERENCE_POINT_NAME_END + 12]
+        .copy_from_slice(&2080_u32.to_le_bytes());
+    lane.native_payload[REFERENCE_POINT_NAME_END + 259..REFERENCE_POINT_NAME_END + 259 + 8]
+        .copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(
+        resolved_reference_point(&lane.native_payload, &name, end),
+        None
+    );
+
+    let mut lane = reference_point_lane(243, 5, [0.0, 0.0, 3.0]);
+    lane.native_payload
+        .resize(REFERENCE_POINT_NAME_END + 259 + 34, 0);
+    let second = REFERENCE_POINT_NAME_END + 259;
+    for (index, value) in [3.0_f64, f64::from_bits(5), 0.0].into_iter().enumerate() {
+        let start = second + index * 8;
+        lane.native_payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    lane.native_payload[second + 24..second + 26].copy_from_slice(&5_u16.to_le_bytes());
+    assert_eq!(
+        resolved_reference_point(
+            &lane.native_payload,
+            &lane.names[0],
+            lane.native_payload.len()
+        ),
+        None
+    );
+}
+
 #[test]
 fn sketch_block_terminal_identity_carries_its_origin() {
     let mut payload = vec![0; 100];

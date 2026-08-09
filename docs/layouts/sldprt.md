@@ -1002,6 +1002,54 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
 
+## `reference_point_short_solved_cache`
+
+Spec §2 · layout: byte offsets · size: 277 B
+
+Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `object_header` | `bytes[8]` | little | spec | At name-end +0, the object header is `00 00 00 00 00 00 00 c0` |
+| 8 | 4 | `object_id` | `u32` | little | spec | name-end +8 stores the feature object ID as u32 LE |
+| 12 | 4 | `zero_after_id` | `bytes[4]` | little | spec | name-end +12 stores four zero bytes |
+| 227 | 16 | `zero_before_position` | `bytes[16]` | little | spec | At name-end +227 or +243, sixteen zero bytes precede the position |
+| 243 | 24 | `position` | `f64[3]` | little | spec | At name-end +243 or +259, three finite f64 LE values store xyz in metres |
+| 267 | 2 | `construction_form` | `u16` | little | spec | At name-end +267 or +283, a u16 LE construction form is `4` or `5` |
+| 269 | 8 | `zero_trailer` | `bytes[8]` | little | spec | At name-end +269 or +285, eight zero bytes terminate the solved-position cache |
+
+Unstated regions:
+
+- `16..227` (211 B): Native reference-point construction state; the solved datum position does not depend on its construction family.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
+
+## `reference_point_long_solved_cache`
+
+Spec §2 · layout: byte offsets · size: 293 B
+
+Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `object_header` | `bytes[8]` | little | spec | At name-end +0, the object header is `00 00 00 00 00 00 00 c0` |
+| 8 | 4 | `object_id` | `u32` | little | spec | name-end +8 stores the feature object ID as u32 LE |
+| 12 | 4 | `zero_after_id` | `bytes[4]` | little | spec | name-end +12 stores four zero bytes |
+| 243 | 16 | `zero_before_position` | `bytes[16]` | little | spec | At name-end +227 or +243, sixteen zero bytes precede the position |
+| 259 | 24 | `position` | `f64[3]` | little | spec | At name-end +243 or +259, three finite f64 LE values store xyz in metres |
+| 283 | 2 | `construction_form` | `u16` | little | spec | At name-end +267 or +283, a u16 LE construction form is `4` or `5` |
+| 285 | 8 | `zero_trailer` | `bytes[8]` | little | spec | At name-end +269 or +285, eight zero bytes terminate the solved-position cache |
+
+Unstated regions:
+
+- `16..243` (227 B): Native reference-point construction state; the solved datum position does not depend on its construction family.
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
+
 ## `display_lists_scene_source_binding`
 
 Spec §8 · layout: byte offsets · size: 16 B

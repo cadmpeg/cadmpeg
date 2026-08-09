@@ -1,4 +1,4 @@
-//! Reference plane and reference axis frames.
+//! Reference-plane, reference-axis, and reference-point geometry.
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::{
@@ -486,6 +486,131 @@ pub(crate) fn enrich_history_reference_planes(
                 .remove(REFERENCE_PLANE_U_AXIS_SOURCE_PROPERTY);
         }
     }
+}
+
+/// Add solved model-space positions to reference-point history records.
+pub(crate) fn enrich_history_reference_points(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut candidates = BTreeMap::<(usize, usize), Vec<Point3>>::new();
+    for lane in lanes {
+        let mut starts =
+            histories
+                .iter()
+                .enumerate()
+                .flat_map(|(history_index, history)| {
+                    history.features.iter().enumerate().filter_map(
+                        move |(feature_index, feature)| {
+                            feature_object_name(feature, lane)
+                                .map(|name| (name.offset, history_index, feature_index))
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+        starts.sort_by_key(|start| start.0);
+        for (index, &(_, history_index, feature_index)) in starts.iter().enumerate() {
+            let feature = &histories[history_index].features[feature_index];
+            if feature.input_class.as_deref() != Some("moRefPoint_c")
+                || feature.properties.contains_key("Position")
+            {
+                continue;
+            }
+            let Some(name) = feature_object_name(feature, lane) else {
+                continue;
+            };
+            let record_end = starts
+                .get(index + 1)
+                .and_then(|next| usize::try_from(next.0).ok())
+                .unwrap_or(lane.native_payload.len());
+            if let Some(point) = resolved_reference_point(&lane.native_payload, name, record_end) {
+                candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(point);
+            }
+        }
+    }
+
+    for ((history_index, feature_index), mut points) in candidates {
+        points.sort_by_key(reference_point_key);
+        points.dedup_by_key(|point| reference_point_key(point));
+        let [point] = points.as_slice() else {
+            continue;
+        };
+        histories[history_index].features[feature_index]
+            .properties
+            .insert(
+                "Position".into(),
+                format!("{}mm,{}mm,{}mm", point.x, point.y, point.z),
+            );
+    }
+}
+
+fn resolved_reference_point(
+    payload: &[u8],
+    name: &FeatureInputName,
+    record_end: usize,
+) -> Option<Point3> {
+    const HEADER_PREFIX: [u8; 8] = [0, 0, 0, 0, 0, 0, 0, 0xc0];
+    const POSITION_OFFSETS: [usize; 2] = [243, 259];
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let object_id = name.object_id?;
+    let name_start = usize::try_from(name.offset).ok()?;
+    let name_end = name_start
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let header = payload.get(name_end..name_end.checked_add(16)?)?;
+    if header[..HEADER_PREFIX.len()] != HEADER_PREFIX
+        || header[8..12] != object_id.to_le_bytes()
+        || header[12..16] != [0; 4]
+    {
+        return None;
+    }
+
+    let mut points = POSITION_OFFSETS
+        .into_iter()
+        .filter_map(|relative| {
+            let start = name_end.checked_add(relative)?;
+            let end = start.checked_add(34)?;
+            if end > record_end
+                || payload.get(start.checked_sub(16)?..start) != Some(&[0; 16])
+                || !matches!(
+                    u16::from_le_bytes(payload.get(start + 24..start + 26)?.try_into().ok()?),
+                    4 | 5
+                )
+                || payload.get(start + 26..end) != Some(&[0; 8])
+            {
+                return None;
+            }
+            let scalar = |offset: usize| {
+                let native = f64::from_le_bytes(
+                    payload
+                        .get(start + offset..start + offset + 8)?
+                        .try_into()
+                        .ok()?,
+                );
+                let value = native * NATIVE_TO_IR;
+                value.is_finite().then_some(value)
+            };
+            Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
+        })
+        .collect::<Vec<_>>();
+    points.sort_by_key(reference_point_key);
+    points.dedup_by_key(|point| reference_point_key(point));
+    let [point] = points.as_slice() else {
+        return None;
+    };
+    Some(*point)
+}
+
+fn reference_point_key(point: &Point3) -> [u64; 3] {
+    [
+        (point.x + 0.0).to_bits(),
+        (point.y + 0.0).to_bits(),
+        (point.z + 0.0).to_bits(),
+    ]
 }
 
 pub(super) fn select_reference_plane_frame_source<'a>(

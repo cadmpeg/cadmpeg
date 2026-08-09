@@ -3824,6 +3824,142 @@ source = "spec"
 anchor = "class name `sgCircleDim` at marker +110"
 
 [[record]]
+name = "reference_point_short_solved_cache"
+kind = "byte"
+section = "2"
+anchor = "The short solved-point layout ends at name-end +277"
+size = 277
+endianness = "little"
+note = "Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state."
+
+[[record.field]]
+name = "object_header"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "At name-end +0, the object header is `00 00 00 00 00 00 00 c0`"
+
+[[record.field]]
+name = "object_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "name-end +8 stores the feature object ID as u32 LE"
+
+[[record.field]]
+name = "zero_after_id"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "name-end +12 stores four zero bytes"
+
+[[record.field]]
+name = "zero_before_position"
+offset = 227
+type = "bytes[16]"
+source = "spec"
+anchor = "At name-end +227 or +243, sixteen zero bytes precede the position"
+
+[[record.field]]
+name = "position"
+offset = 243
+type = "f64[3]"
+source = "spec"
+anchor = "At name-end +243 or +259, three finite f64 LE values store xyz in metres"
+
+[[record.field]]
+name = "construction_form"
+offset = 267
+type = "u16"
+source = "spec"
+anchor = "At name-end +267 or +283, a u16 LE construction form is `4` or `5`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 269
+type = "bytes[8]"
+source = "spec"
+anchor = "At name-end +269 or +285, eight zero bytes terminate the solved-position cache"
+
+[[record.gap]]
+offset = 16
+size = 211
+note = "Native reference-point construction state; the solved datum position does not depend on its construction family."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "const POSITION_OFFSETS: [usize; 2] = [243, 259];"
+note = "The parser evaluates both fixed solved-position layouts and requires one distinct result."
+
+[[record]]
+name = "reference_point_long_solved_cache"
+kind = "byte"
+section = "2"
+anchor = "The long solved-point layout ends at name-end +293"
+size = 293
+endianness = "little"
+note = "Offsets begin at the byte after the UTF-16LE feature name. Unlisted bytes belong to the native construction state."
+
+[[record.field]]
+name = "object_header"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "At name-end +0, the object header is `00 00 00 00 00 00 00 c0`"
+
+[[record.field]]
+name = "object_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "name-end +8 stores the feature object ID as u32 LE"
+
+[[record.field]]
+name = "zero_after_id"
+offset = 12
+type = "bytes[4]"
+source = "spec"
+anchor = "name-end +12 stores four zero bytes"
+
+[[record.field]]
+name = "zero_before_position"
+offset = 243
+type = "bytes[16]"
+source = "spec"
+anchor = "At name-end +227 or +243, sixteen zero bytes precede the position"
+
+[[record.field]]
+name = "position"
+offset = 259
+type = "f64[3]"
+source = "spec"
+anchor = "At name-end +243 or +259, three finite f64 LE values store xyz in metres"
+
+[[record.field]]
+name = "construction_form"
+offset = 283
+type = "u16"
+source = "spec"
+anchor = "At name-end +267 or +283, a u16 LE construction form is `4` or `5`"
+
+[[record.field]]
+name = "zero_trailer"
+offset = 285
+type = "bytes[8]"
+source = "spec"
+anchor = "At name-end +269 or +285, eight zero bytes terminate the solved-position cache"
+
+[[record.gap]]
+offset = 16
+size = 227
+note = "Native reference-point construction state; the solved datum position does not depend on its construction family."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "const POSITION_OFFSETS: [usize; 2] = [243, 259];"
+note = "The parser evaluates both fixed solved-position layouts and requires one distinct result."
+
+[[record]]
 name = "display_lists_scene_source_binding"
 kind = "byte"
 section = "8"
