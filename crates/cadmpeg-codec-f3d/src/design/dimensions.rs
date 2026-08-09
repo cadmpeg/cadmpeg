@@ -2515,11 +2515,12 @@ pub(crate) fn spatial_counted_offset_dimension_definition(
         .iter()
         .find(|candidate| &candidate.id == sketch)?;
     let mut matching_profiles = spatial.profiles.iter().filter(|profile| {
-        profile.boundary.len() == result_ids.len()
-            && profile
-                .boundary
-                .iter()
-                .all(|use_| result_ids.contains(&use_.entity))
+        let boundary = profile
+            .boundary
+            .iter()
+            .map(|use_| &use_.entity)
+            .collect::<HashSet<_>>();
+        boundary.len() == profile.boundary.len() && boundary == result_ids
     });
     let normal = matching_profiles.next()?.normal;
     let normal_length = normal.norm();

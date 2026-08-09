@@ -16679,6 +16679,20 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         &by_record,
     )
     .is_none());
+    let mut repeated_boundary = sketch.clone();
+    repeated_boundary.profiles[0].boundary[1] = repeated_boundary.profiles[0].boundary[0].clone();
+    assert!(spatial_counted_offset_dimension_definition(
+        "Linear Dimension-1",
+        Some(0x20),
+        &operands,
+        &parameter,
+        3.0,
+        -3.0,
+        &sketch_id,
+        std::slice::from_ref(&repeated_boundary),
+        &by_record,
+    )
+    .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
     assert!(spatial_counted_offset_dimension_definition(
