@@ -1646,12 +1646,17 @@ fn append_text_curve(
         } => {
             let basis_id = CurveId(format!("{}:basis", id.0));
             let basis_geometry = append_text_curve(basis, basis_id.clone(), association, transfer);
+            let parameter_range = topology_transfer::normalize_occt_curve_range(
+                &basis_geometry,
+                Some(*parameter_range),
+            )
+            .unwrap_or(*parameter_range);
             transfer.procedural.push(ProceduralCurve {
                 id: ProceduralCurveId(format!("{}:construction", id.0)),
                 curve: id.clone(),
                 definition: ProceduralCurveDefinition::Subset {
                     source: basis_id,
-                    parameter_range: *parameter_range,
+                    parameter_range,
                     sense: true,
                 },
                 cache_fit_tolerance: None,

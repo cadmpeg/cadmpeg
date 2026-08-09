@@ -301,7 +301,7 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 
 #[test]
 fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
-    let fixtures: [(&str, &[u8]); 11] = [
+    let fixtures: [(&str, &[u8]); 12] = [
         (
             "external_component.FCStd",
             include_bytes!(concat!(
@@ -328,6 +328,13 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
             include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd"
+            )),
+        ),
+        (
+            "sketch_conics.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/sketch_conics.FCStd"
             )),
         ),
         (
@@ -405,6 +412,77 @@ fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
         assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
         assert_valid_document(&first.ir);
     }
+}
+
+#[test]
+fn transfers_application_saved_rotated_conics_and_profile_chain() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/sketch_conics.FCStd"
+    ));
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("application-saved conic fixture");
+    let entities = &result.ir.model.sketch_entities;
+    assert_eq!(entities.len(), 7);
+    assert!(matches!(
+        entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Arc {
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
+            ..
+        } if (start - 0.65).abs() < 1.0e-12 && (end - 1.83).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[3].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_angle: Some(cadmpeg_ir::features::Angle(start)),
+            end_angle: Some(cadmpeg_ir::features::Angle(end)),
+            ..
+        } if (angle - 0.53).abs() < 1.0e-12
+            && (start - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
+            && (end - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[4].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_angle: None,
+            end_angle: None,
+            ..
+        } if (angle - 0.71).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[5].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+            major_angle: cadmpeg_ir::features::Angle(angle),
+            start_parameter: Some(start),
+            end_parameter: Some(end),
+            ..
+        } if (angle - 0.47).abs() < 1.0e-12
+            && (start + 0.63).abs() < 1.0e-12
+            && (end - 0.88).abs() < 1.0e-12
+    ));
+    assert!(matches!(
+        entities[6].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+            axis_angle: cadmpeg_ir::features::Angle(angle),
+            start_parameter: Some(start),
+            end_parameter: Some(end),
+            ..
+        } if (angle - 0.67).abs() < 1.0e-12
+            && (start + 2.1).abs() < 1.0e-12
+            && (end - 2.4).abs() < 1.0e-12
+    ));
+    assert!(result
+        .ir
+        .model
+        .shells
+        .iter()
+        .any(|shell| shell.wire_edges.len() == 3));
+    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(&result.ir).is_empty());
 }
 
 #[test]
@@ -3395,6 +3473,51 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn retains_overlapping_native_product_membership_with_one_neutral_parent() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3"><Object type="App::Part" name="First"/><Object type="App::Part" name="Second"/><Object type="Part::Feature" name="Member"/></Objects>
+<ObjectData Count="3">
+ <Object name="First"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Second"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Member"/></LinkList></Property></Properties></Object>
+ <Object name="Member"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[("Document.xml", document)])),
+            &DecodeOptions::default(),
+        )
+        .expect("overlapping product membership");
+    let nodes = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let member_id = "fcstd:native:object#Member";
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node.members.iter().any(|member| member == member_id))
+            .count(),
+        2
+    );
+    let member = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.native_ref.as_deref() == Some(member_id))
+        .expect("member occurrence");
+    assert!(matches!(
+        &member.parent,
+        cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+            if occurrence.0.contains("First")
+    ));
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn rejects_populated_link_arrays_when_element_count_is_zero() {
     let decode = |array_property: &str, entry: Option<(&str, Vec<u8>)>| {
         let document = format!(
@@ -4124,6 +4247,63 @@ fn rejects_malformed_registered_gui_property_values() {
         )
         .expect_err("mismatched GUI value tag");
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn accepts_and_validates_gui_custom_enumerations() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="2"><Property name="Pattern" type="App::PropertyEnumeration"><Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/><Enum value="Cross"/></CustomEnumList></Property><Property name="ChildViewProvider" type="App::PropertyPersistentObject"><String value=""/><PersistentObject><State value="retained"/></PersistentObject></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("custom GUI enumeration");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    let enumeration = properties
+        .iter()
+        .find(|property| property.name == "Pattern")
+        .expect("enumeration");
+    let persistent = properties
+        .iter()
+        .find(|property| property.name == "ChildViewProvider")
+        .expect("persistent object");
+    assert_eq!(enumeration.values.len(), 4);
+    assert_eq!(persistent.values[0].tag, "String");
+    assert_eq!(persistent.values[1].tag, "PersistentObject");
+    assert_eq!(persistent.values[2].tag, "State");
+
+    for invalid in [
+        br#"<Integer value="1"/><CustomEnumList count="0"/>"#.as_slice(),
+        br#"<Integer value="1" CustomEnum="true"/><CustomEnumList count="2"><Enum value="None"/></CustomEnumList>"#.as_slice(),
+    ] {
+        let gui = [
+            br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Model"><Properties Count="1"><Property name="Pattern" type="App::PropertyEnumeration">"#.as_slice(),
+            invalid,
+            br#"</Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#.as_slice(),
+        ]
+        .concat();
+        assert!(FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document),
+                    ("GuiDocument.xml", &gui),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .is_err());
+    }
 }
 
 #[test]
@@ -6623,6 +6803,40 @@ fn preserves_forward_declared_feature_dependencies() {
     assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
     assert!(second.ordinal < first.ordinal);
     assert_valid_document(&result.ir);
+}
+
+#[test]
+fn retains_native_dependency_cycles_as_a_stable_acyclic_feature_projection() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="1"><Dep Name="First"/></ObjectDeps>
+<Object type="PartDesign::Feature" name="First"/><Object type="PartDesign::Feature" name="Second"/>
+</Objects><ObjectData Count="2"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("cyclic native dependency graph");
+    let features = &result.ir.model.features;
+    assert_eq!(features.len(), 2);
+    assert_eq!(features[0].ordinal, 0);
+    assert_eq!(features[1].ordinal, 1);
+    assert!(features[0].dependencies.is_empty());
+    assert_eq!(features[1].dependencies, [features[0].id.clone()]);
+    let objects = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    assert_eq!(objects[0].dependencies, [objects[1].id.clone()]);
+    assert_eq!(objects[1].dependencies, [objects[0].id.clone()]);
+    assert_valid_document(&result.ir);
+    assert!(crate::validate_native(&result.ir).is_empty());
 }
 
 #[test]

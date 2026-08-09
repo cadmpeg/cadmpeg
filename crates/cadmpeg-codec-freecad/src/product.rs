@@ -165,11 +165,7 @@ pub(crate) fn transfer_neutral(
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| record.kind != "occurrence") {
         for member in &record.members {
-            if parent_by_object.insert(member, &record.object).is_some() {
-                return Err(CodecError::Malformed(format!(
-                    "product object {member} has multiple direct containers"
-                )));
-            }
+            parent_by_object.entry(member).or_insert(&record.object);
         }
     }
 

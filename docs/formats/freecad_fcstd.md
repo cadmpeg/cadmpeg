@@ -136,6 +136,8 @@ opaque span with its declared length and digest. No byte may be both typed and o
 
 Part shape properties reference text or binary B-rep entries. Shape records retain native table
 indices, locations, geometry carriers, topology, tolerances, flags, parameter ranges, and pcurves.
+An OCCT parabola edge parameter `u` maps to the STEP parabola parameter `t = u / (2f)`, where `f`
+is the focal distance. A two-dimensional parabola pcurve retains the OCCT parameter `u`.
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
@@ -168,6 +170,8 @@ bits. XML and stream counts must agree.
 A newly encoded element map likewise uses a compatibility marker followed by a second XML element,
 inline or side-entry. A side entry begins with `BeginElementMap v1`. The stream then carries a map
 id, an ordered postfix dictionary, a positive map-node count, and contiguous one-based map nodes.
+The optional XML count is retained as native metadata and does not frame the map stream. The
+stream's map, child, and name counts delimit its records.
 Each node contains ordered indexed-name groups. A group contains child-map descriptors followed by
 one persistent-name chain per transient indexed element. Chains terminate with `0`; each name
 encodes a literal or dictionary-derived base, a postfix-dictionary index, and persistent string-id
@@ -254,6 +258,8 @@ Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet an
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing. A neutral sheet record binds those cell identities to the owning
 feature and retains ordered non-default column widths, row heights, and inclusive merged ranges.
+Only positive row and column spans define a neutral merged range. Nonpositive span attributes remain
+native cell metadata and do not create a neutral range.
 Dimension counts must match their records; names, addresses, ownership, merged anchors, duplicate
 cells, and overlapping merged ranges are validated.
 
@@ -265,8 +271,10 @@ container membership resolves to component or occurrence ids, and each link-arra
 its own occurrence with a stable array index, scale, local transform, and transform resolved through
 its containing components exactly once. Local prototypes resolve to component ids; cross-document
 links keep the document token and target object without attempting to open the document. Missing
-local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
-container cycles are validation errors; external targets remain intentionally unresolved.
+local targets, invalid array counts, non-finite transforms, and container cycles are validation
+errors; external targets remain intentionally unresolved. The native graph retains every direct
+container membership. When multiple containers name the same object, the first container in source
+order supplies the single parent required by the neutral occurrence graph.
 
 The exact source attribute distinguishes an external file path from a document identity. Neutral
 references keep that path or identity separately from the target object and mark resolution as
@@ -415,9 +423,9 @@ determines opacity. The effective body display fields mirror this object-level a
 `ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
 color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
 transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
-the persistent Face element-map group. Their count must equal the group's indexed face count. If
-persistent face identity is absent, the material list remains native and the legacy object color
-remains the neutral fallback.
+the persistent Face element-map group only when their count equals the group's indexed face count.
+If persistent face identity is absent or the counts differ, the material list remains native and
+the legacy object color remains the neutral fallback.
 Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
 higher-precedence presentation layers. They are not inferred from the corresponding object color.
 Each list contains a little-endian count followed by packed-color records. A count of one applies
@@ -616,7 +624,9 @@ feature dependencies are the stable union of all declared object dependencies an
 link-property operands in source order. PartDesign body dependency records describe structural
 membership and do not duplicate the body's neutral child relations. A declared dependency can
 target a later declaration. Neutral feature ordinals use a stable dependency order and use source
-order as the tie-break rule.
+order as the tie-break rule. If the native graph contains a dependency or parent cycle, the native
+graph retains it. The neutral graph uses the stable maximal subset whose targets precede their
+consumers.
 
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path

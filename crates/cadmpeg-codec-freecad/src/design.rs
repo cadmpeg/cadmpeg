@@ -90,7 +90,12 @@ pub(crate) fn transfer(
         &properties_by_owner,
         &parent_by_member,
         &source_order,
-    )?;
+    );
+    let ordinal_by_feature = objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+        .map(|object| (feature_id(object), feature_ordinals[object.id.as_str()]))
+        .collect::<HashMap<_, _>>();
 
     for object in objects {
         if !is_design_object(&object.type_name) {
@@ -392,20 +397,27 @@ pub(crate) fn transfer(
                     .cloned()
                     .map(|feature| (feature, declared))
             })
-            .filter(|(dependency, declared)| {
-                *declared
-                    || source_order
-                        .get(dependency)
-                        .is_some_and(|order| *order < object.order)
+            .filter(|(dependency, _)| {
+                ordinal_by_feature
+                    .get(dependency)
+                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
             })
             .map(|(dependency, _)| dependency)
             .collect();
+        let parent = parent_by_member
+            .get(object.id.as_str())
+            .filter(|parent| {
+                ordinal_by_feature
+                    .get(*parent)
+                    .is_some_and(|ordinal| *ordinal < feature_ordinals[object.id.as_str()])
+            })
+            .cloned();
         ir.model.features.push(Feature {
             id,
             ordinal: feature_ordinals[object.id.as_str()],
             name: Some(object.name.clone()),
             suppressed: bool_property(&owned, "Suppressed"),
-            parent: parent_by_member.get(object.id.as_str()).cloned(),
+            parent,
             dependencies,
             source_properties: feature_state(&owned),
             source_tag: Some(object.type_name.clone()),
@@ -425,7 +437,7 @@ fn feature_ordinals<'a>(
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     source_order: &HashMap<FeatureId, usize>,
-) -> Result<HashMap<&'a str, u64>, CodecError> {
+) -> HashMap<&'a str, u64> {
     let design_objects = objects
         .iter()
         .filter(|object| is_design_object(&object.type_name))
@@ -482,17 +494,20 @@ fn feature_ordinals<'a>(
                     .all(|dependency| emitted.contains(dependency))
             })
             .min_by_key(|object| object.order);
-        let Some(next) = next else {
-            return Err(CodecError::Malformed(
-                "design feature dependencies contain a cycle".into(),
-            ));
-        };
+        let next = next.unwrap_or_else(|| {
+            design_objects
+                .iter()
+                .copied()
+                .filter(|object| !emitted.contains(object.id.as_str()))
+                .min_by_key(|object| object.order)
+                .expect("the loop has at least one un-emitted design object")
+        });
         let ordinal = source_ordinals[ordinals.len()];
         emitted.insert(next.id.as_str());
         ordinals.insert(next.id.as_str(), ordinal);
     }
 
-    Ok(ordinals)
+    ordinals
 }
 
 /// Wrap an operation in its shape-refinement and boolean-tolerance controls.
@@ -721,16 +736,14 @@ fn spreadsheet_dimensions(
 fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange>, CodecError> {
     let rows = cell
         .attribute("rowSpan")
-        .map_or(Ok(1_u32), str::parse::<u32>)
+        .map_or(Ok(1_i32), str::parse::<i32>)
         .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid row span".into()))?;
     let columns = cell
         .attribute("colSpan")
-        .map_or(Ok(1_u32), str::parse::<u32>)
+        .map_or(Ok(1_i32), str::parse::<i32>)
         .map_err(|_| CodecError::Malformed("spreadsheet cell has invalid column span".into()))?;
-    if rows == 0 || columns == 0 {
-        return Err(CodecError::Malformed(
-            "spreadsheet cell has a zero span".into(),
-        ));
+    if rows < 1 || columns < 1 {
+        return Ok(None);
     }
     if rows == 1 && columns == 1 {
         return Ok(None);
@@ -738,7 +751,7 @@ fn merged_range(cell: roxmltree::Node<'_, '_>) -> Result<Option<SpreadsheetRange
     let start = cell
         .attribute("address")
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell has no address".into()))?;
-    let end = offset_cell_address(start, rows - 1, columns - 1)
+    let end = offset_cell_address(start, (rows - 1) as u32, (columns - 1) as u32)
         .ok_or_else(|| CodecError::Malformed("spreadsheet cell span is out of range".into()))?;
     Ok(Some(SpreadsheetRange {
         start: start.to_owned(),
@@ -4504,6 +4517,17 @@ pub(crate) fn census(
 #[cfg(test)]
 mod profile_tests {
     use super::*;
+
+    #[test]
+    fn ignores_nonpositive_spans_in_the_neutral_spreadsheet_projection() {
+        for xml in [
+            r#"<Cell address="A1" rowSpan="0" colSpan="2"/>"#,
+            r#"<Cell address="A1" rowSpan="2" colSpan="-7"/>"#,
+        ] {
+            let document = roxmltree::Document::parse(xml).expect("cell XML");
+            assert_eq!(merged_range(document.root_element()).unwrap(), None);
+        }
+    }
 
     fn entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
         SketchEntity {

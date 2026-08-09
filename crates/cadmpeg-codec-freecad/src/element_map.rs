@@ -56,12 +56,13 @@ pub(crate) fn parse(
             node
         };
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
+        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(data_node));
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
                 CodecError::Malformed(format!("StringHasher references missing entry {name}"))
             })?
         } else {
-            node_text_bytes(text, data_node)
+            inline_bytes.as_deref().unwrap_or_default()
         };
         let declared_count = if source_entry.is_some() {
             let header_count = string_table_header_count(bytes)?;
@@ -123,28 +124,22 @@ pub(crate) fn parse(
             .map(|count| parse_usize(count, "ElementMap count"))
             .transpose()?;
         let source_entry = map_node.attribute("file").filter(|name| !name.is_empty());
+        let inline_bytes = source_entry.is_none().then(|| node_text_bytes(map_node));
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
                 CodecError::Malformed(format!("ElementMap references missing entry {name}"))
             })?
         } else {
-            node_text_bytes(&property.raw_xml, map_node)
+            inline_bytes.as_deref().unwrap_or_default()
         };
         let parsed = parse_element_map(bytes, source_entry.is_some())?;
-        let actual_count = parsed.maps.last().map_or(0, |node| {
-            node.groups
-                .iter()
-                .flat_map(|group| &group.names)
-                .filter(|chain| !chain.is_empty())
-                .count()
-        });
-        if declared_count.is_some_and(|declared| declared != actual_count) {
-            return Err(CodecError::Malformed(format!(
-                "ElementMap for {} declares {} entries but contains {actual_count}",
-                property.id,
-                declared_count.unwrap_or_default(),
-            )));
-        }
+        let actual_count = parsed
+            .maps
+            .iter()
+            .flat_map(|node| &node.groups)
+            .flat_map(|group| &group.names)
+            .flat_map(|chain| chain.iter())
+            .count();
         let declared_count = declared_count.unwrap_or(actual_count);
         maps.push(ElementMapRecord {
             id: crate::native::native_child_id("element-map", &property.id, "map"),
@@ -218,10 +213,11 @@ fn owning_property(node: roxmltree::Node<'_, '_>, properties: &[PropertyRecord])
         .map(|property| property.id.clone())
 }
 
-fn node_text_bytes<'a>(text: &'a str, node: roxmltree::Node<'_, '_>) -> &'a [u8] {
+fn node_text_bytes(node: roxmltree::Node<'_, '_>) -> Vec<u8> {
     node.children()
-        .find(roxmltree::Node::is_text)
-        .map_or(&[], |child| text[child.range()].as_bytes())
+        .filter_map(|child| child.is_text().then(|| child.text()).flatten())
+        .flat_map(str::bytes)
+        .collect()
 }
 
 fn parse_count(node: roxmltree::Node<'_, '_>, kind: &str) -> Result<usize, CodecError> {
@@ -698,6 +694,15 @@ mod tests {
         )
         .expect("parse absolute element map");
         assert_eq!(map.map_id, 1);
+    }
+
+    #[test]
+    fn joins_inline_text_and_cdata_sections() {
+        let xml = roxmltree::Document::parse("<Table>\n<![CDATA[1.c value\n]]>\n</Table>")
+            .expect("inline table XML");
+        let bytes = node_text_bytes(xml.root_element());
+        let table = parse_string_table(&bytes, 1, false).expect("inline string table");
+        assert_eq!(table[0].payload, "value");
     }
 
     #[test]

@@ -857,6 +857,12 @@ impl<'a> Builder<'a> {
                         .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
                 })
             });
+        let param_range = curve
+            .as_ref()
+            .and_then(|curve| ir.model.curves.iter().find(|item| item.id == *curve))
+            .map_or(param_range, |curve| {
+                normalize_occt_curve_range(&curve.geometry, param_range)
+            });
         ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
@@ -1656,6 +1662,26 @@ fn edge_endpoint_uses(
     })
 }
 
+pub(crate) fn normalize_occt_curve_range(
+    geometry: &CurveGeometry,
+    range: Option<[f64; 2]>,
+) -> Option<[f64; 2]> {
+    let focal_distance = match geometry {
+        CurveGeometry::Parabola { focal_distance, .. } => *focal_distance,
+        CurveGeometry::Transformed { basis, .. } => {
+            return normalize_occt_curve_range(basis, range);
+        }
+        _ => return range,
+    };
+    if !focal_distance.is_finite() || focal_distance <= 0.0 {
+        return range;
+    }
+    range.map(|[start, end]| {
+        let scale = 2.0 * focal_distance;
+        [start / scale, end / scale]
+    })
+}
+
 fn dot(left: Vector3, right: Vector3) -> f64 {
     left.x * right.x + left.y * right.y + left.z * right.z
 }
@@ -1741,5 +1767,20 @@ mod tests {
             .collect::<Vec<_>>();
         close_radial_rings(&mut coedges);
         assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
+    }
+
+    #[test]
+    fn occt_parabola_ranges_convert_to_step_parameters() {
+        let geometry = CurveGeometry::Parabola {
+            vertex: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 4.0,
+        };
+        assert_eq!(
+            normalize_occt_curve_range(&geometry, Some([-2.0, 4.0])),
+            Some([-0.25, 0.5])
+        );
+        assert_eq!(normalize_occt_curve_range(&geometry, None), None);
     }
 }

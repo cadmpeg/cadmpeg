@@ -334,7 +334,7 @@ pub(crate) fn transfer(
         properties,
         payloads,
         element_maps,
-    )?;
+    );
     transfer_neutral_presentation(ir, &graph)?;
     Ok(graph)
 }
@@ -736,15 +736,18 @@ fn validate_gui_property(
     let Some(expected_tag) = gui_value_tag(type_name) else {
         return Ok(());
     };
-    let mut roots = property.children().filter(roxmltree::Node::is_element);
-    let root = roots.next().ok_or_else(|| {
+    let roots = property
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let root = roots.first().copied().ok_or_else(|| {
         CodecError::Malformed(format!(
             "GUI property {property_name} requires one {expected_tag} value"
         ))
     })?;
-    if !root.has_tag_name(expected_tag) || roots.next().is_some() {
+    if !root.has_tag_name(expected_tag) {
         return Err(CodecError::Malformed(format!(
-            "GUI property {property_name} requires exactly one {expected_tag} value"
+            "GUI property {property_name} requires a leading {expected_tag} value"
         )));
     }
     let scalar = |attribute: &str| {
@@ -768,6 +771,10 @@ fn validate_gui_property(
                     "GUI property {property_name} has an invalid integer"
                 ))
             })?;
+            if type_name == "App::PropertyEnumeration" {
+                validate_gui_enumeration(&roots, property_name)?;
+                return Ok(());
+            }
         }
         "Float" => {
             let value = scalar("value")?.parse::<f64>().map_err(|_| {
@@ -786,6 +793,14 @@ fn validate_gui_property(
                 "value"
             };
             scalar(attribute)?;
+            if type_name == "App::PropertyPersistentObject" {
+                if roots.len() != 2 || !roots[1].has_tag_name("PersistentObject") {
+                    return Err(CodecError::Malformed(format!(
+                        "GUI property {property_name} has an invalid persistent-object envelope"
+                    )));
+                }
+                return Ok(());
+            }
             if expected_tag == "MaterialList" {
                 let version = root
                     .attribute("version")
@@ -835,6 +850,48 @@ fn validate_gui_property(
             }
         }
         _ => unreachable!("closed GUI value-tag registry"),
+    }
+    if roots.len() != 1 {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires exactly one {expected_tag} value"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_gui_enumeration(
+    roots: &[roxmltree::Node<'_, '_>],
+    property_name: &str,
+) -> Result<(), CodecError> {
+    let custom = roots[0].attribute("CustomEnum").is_some();
+    if !custom && roots.len() == 1 {
+        return Ok(());
+    }
+    if !custom || roots.len() != 2 || !roots[1].has_tag_name("CustomEnumList") {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} has an invalid custom enumeration envelope"
+        )));
+    }
+    let values = roots[1]
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .collect::<Vec<_>>();
+    let count = roots[1]
+        .attribute("count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} has an invalid custom enumeration count"
+            ))
+        })?;
+    if values.len() != count
+        || values
+            .iter()
+            .any(|value| !value.has_tag_name("Enum") || value.attribute("value").is_none())
+    {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} custom enumeration count or value is invalid"
+        )));
     }
     Ok(())
 }
@@ -1129,7 +1186,7 @@ fn transfer_shape_appearances(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
-) -> Result<(), CodecError> {
+) {
     for provider in &graph.providers {
         let Some(object_id) = provider.object.as_deref() else {
             continue;
@@ -1162,12 +1219,11 @@ fn transfer_shape_appearances(
             let Some(_) = group else {
                 continue;
             };
+            if mapped_count == 0 {
+                continue;
+            }
             if materials.len() != mapped_count {
-                return Err(CodecError::Malformed(format!(
-                    "{} ShapeAppearance count {} does not match {mapped_count} mapped faces",
-                    provider.name,
-                    materials.len()
-                )));
+                continue;
             }
         }
         for (index, material) in materials.iter().enumerate() {
@@ -1205,7 +1261,6 @@ fn transfer_shape_appearances(
             }
         }
     }
-    Ok(())
 }
 
 fn displayed_shape_bodies(
