@@ -78,6 +78,8 @@ pub enum SldprtLossCode {
     GeometryPcurveAmbiguous,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
+    /// `DisplayLists` tessellation does not resolve to its B-rep face owners.
+    TessellationFaceOwnershipUnresolved,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// Body-component overlap tied and no body assignment was selected.
@@ -127,6 +129,7 @@ impl SldprtLossCode {
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
         Self::AppearanceFaceColorUnresolved,
+        Self::TessellationFaceOwnershipUnresolved,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
         Self::TopologyFaceOwnerAmbiguous,
@@ -169,6 +172,7 @@ impl SldprtLossCode {
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
+            Self::TessellationFaceOwnershipUnresolved => "tessellation.face-ownership-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
@@ -205,6 +209,7 @@ impl SldprtLossCode {
             | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossKind::PcurveOmitted,
             Self::AppearanceFaceColorUnresolved => LossKind::MaterialNotTransferred,
+            Self::TessellationFaceOwnershipUnresolved => LossKind::ReferenceGraphNotClosed,
             Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
             _ => LossKind::FeatureHistoryRetained,
         }
@@ -264,6 +269,7 @@ mod tests {
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
                 "appearance.face-color-unresolved",
+                "tessellation.face-ownership-unresolved",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",
                 "topology.face-owner-ambiguous",

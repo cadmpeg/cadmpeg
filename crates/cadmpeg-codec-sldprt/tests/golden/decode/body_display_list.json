@@ -374,6 +374,11 @@
         "severity": "warning"
       },
       {
+        "code": "reference_graph_not_closed",
+        "message": "1 DisplayLists tessellation table(s) do not resolve to B-rep face ownership. Geometry and native channels are retained without fabricating body or face references.",
+        "severity": "warning"
+      },
+      {
         "code": "feature_history_retained",
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"

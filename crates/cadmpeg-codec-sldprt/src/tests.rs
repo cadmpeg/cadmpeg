@@ -8963,6 +8963,12 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir.model.tessellations[0].strip_lengths, vec![3]);
     assert_eq!(result.ir.model.tessellations[0].normals.len(), 3);
     assert_eq!(result.ir.model.tessellations[0].channels.len(), 6);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::report::LossKind::ReferenceGraphNotClosed
+            && loss.message.starts_with(
+                "1 DisplayLists tessellation table(s) do not resolve to B-rep face ownership.",
+            )
+    }));
     assert!(result
         .ir
         .native_unknowns("sldprt")

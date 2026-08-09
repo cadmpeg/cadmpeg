@@ -116,6 +116,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            append_tessellation_losses(&ir, &mut report);
             append_design_losses(&ir, &mut report);
             return decode_result(ctx, ir, report, annotations, unknowns);
         }
@@ -125,6 +126,22 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let mut report = build_container_report(&scan, false);
     append_design_losses(&ir, &mut report);
     decode_result(ctx, ir, report, annotations, unknowns)
+}
+
+fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeReport) {
+    let unresolved = ir
+        .model
+        .tessellations
+        .iter()
+        .filter(|mesh| mesh.body.is_none() || mesh.faces.is_empty())
+        .count();
+    if unresolved > 0 {
+        report
+            .losses
+            .push(SldprtLossCode::TessellationFaceOwnershipUnresolved.note(format!(
+                "{unresolved} DisplayLists tessellation table(s) do not resolve to B-rep face ownership. Geometry and native channels are retained without fabricating body or face references."
+            )));
+    }
 }
 
 fn decode_result(
