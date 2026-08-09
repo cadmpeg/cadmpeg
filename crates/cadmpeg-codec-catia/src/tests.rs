@@ -2289,7 +2289,19 @@ fn object_graph_ambiguous_3c_stream() -> Vec<u8> {
     object_graph_from_records(&[object_graph_record(
         &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
         &[
-            0x3b, 0x83, 0x81, 0x85, 0x80, 0x86, 0xd1, 0x09, 0x3c, 0x82, 1, 0, 0, 0, 0x0d, 0xfe,
+            0x3c, 0x80, 0x01, 0x00, 0x00, 0x00, 0x81, 0x80, 0x80, 0x00, 0x00, 0x00, 0x80, 0x2f,
+            0x69, 0x00, 0x00, 0xfe,
+        ],
+    )])
+}
+
+fn object_graph_bulk_table_stream() -> Vec<u8> {
+    object_graph_from_records(&[object_graph_record(
+        &[0x1c, 0x01, 0x82, 0x80, 0xff, 0xff, 0xff, 0xff, 0x83],
+        &[
+            0x3c, 0x80, 0x03, 0x00, 0x00, 0x00, 0x81, 0x91, 0x80, 0x2f, 0x69, 0x00, 0x00, 0x81,
+            0xd2, 0x00, 0x80, 0x31, 0x69, 0x00, 0x00, 0x81, 0x80, 0x01, 0x14, 0x00, 0x00, 0x80,
+            0x33, 0x69, 0x00, 0x00, 0x3a, 0x85, 0xfe,
         ],
     )])
 }
@@ -11598,8 +11610,48 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_and_null_handles() {
 }
 
 #[test]
-fn outer_object_graph_rejects_an_unresolved_3c_bulk_header() {
+fn outer_object_graph_rejects_an_ambiguous_3c_bulk_row_id() {
     assert!(crate::object_graph::parse(&object_graph_ambiguous_3c_stream()).is_none());
+}
+
+#[test]
+fn object_graph_payload_decodes_3c_bulk_table_rows() {
+    use crate::object_graph::{BulkTableRow, PayloadField};
+
+    let graph = crate::object_graph::parse(&object_graph_bulk_table_stream()).expect("bulk table");
+    assert_eq!(
+        graph.records[0].payload.fields,
+        [
+            PayloadField::BulkTable {
+                count: 0,
+                table_count: 3,
+                rows: vec![
+                    BulkTableRow {
+                        row_id: 17,
+                        handle: 0x692f,
+                        offset: 6,
+                    },
+                    BulkTableRow {
+                        row_id: 257,
+                        handle: 0x6931,
+                        offset: 13,
+                    },
+                    BulkTableRow {
+                        row_id: 5121,
+                        handle: 0x6933,
+                        offset: 21,
+                    },
+                ],
+                offset: 0,
+            },
+            PayloadField::Scalar {
+                tag: 0x3a,
+                value: 5,
+                offset: 32,
+            },
+            PayloadField::Terminator,
+        ]
+    );
 }
 
 #[test]

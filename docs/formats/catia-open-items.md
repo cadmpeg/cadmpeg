@@ -218,14 +218,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
-### DI-26. `7C0A` payload `0x3c` form
-
-**Question.** What does a `0x3c` byte introduce in a `7C0A` payload, and which field gives its extent?
-
-**Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" enumerates the assigned payload forms and gives "bytes outside those assigned forms remain literals; they do not create references." `0x3c` is not an assigned form. `object_graph::decode_payload` reads `3c <atom> <u32le>` as a bulk-table header when the `u32le` is not more than the payload byte length, and reads the `0x3c` byte as a literal atom when it is more.
-
-**Need.** The two branches consume different byte counts, so the token boundary of every field after the `0x3c` byte changes. A different boundary makes or removes an object reference. We must know the extent field to walk the payload.
-
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-01. `a5 03 32` header type codes
