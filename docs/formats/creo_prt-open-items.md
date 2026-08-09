@@ -625,14 +625,6 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the values to construct the complete material.
 
-### TP-18. `MdlStatus` prefix meanings
-
-**Question.** What stored-name state does each `MdlStatus` prefix `o`, `x`, `y`, and `z` represent?
-
-**Known.** `creo_prt.md` §6 "Operation names end in" states that the prefix is not part of the operation-family name and does not select the current same-ID state. Byte order selects the current state.
-
-**Need.** We must know the prefix meanings to preserve the native state semantics.
-
 ## 5. Packed persistence data
 
 ### PP-01. Packed `VisibGeom` records

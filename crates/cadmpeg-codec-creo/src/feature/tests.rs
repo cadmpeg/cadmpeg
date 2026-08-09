@@ -3529,6 +3529,34 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
 }
 
 #[test]
+fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
+    let payload = b"\xe3oExtrude id 7\0\xe3xExtrude id 7\0\xe3yExtrude id 7\0\xe3zExtrude ID 7\0";
+
+    let states = operation_states(payload);
+    assert_eq!(states.len(), 4);
+    for (state, (prefix, expected_name)) in states.iter().zip([
+        (b'o', "oExtrude id 7"),
+        (b'x', "xExtrude id 7"),
+        (b'y', "yExtrude id 7"),
+        (b'z', "zExtrude ID 7"),
+    ]) {
+        assert_eq!(state.feature_id, 7);
+        assert_eq!(state.kind, "Extrude");
+        assert_eq!(state.stored_name_prefix, Some(prefix));
+        assert_eq!(state.state_offset + 1, state.offset);
+        assert_eq!(state.stored_name.as_deref(), Some(expected_name));
+    }
+    assert_eq!(states[3].identifier_keyword.as_deref(), Some("ID"));
+
+    let current_operations = operations(payload);
+    let [current] = current_operations.as_slice() else {
+        panic!("one current operation");
+    };
+    assert_eq!(current, &states[3]);
+    assert_eq!(current.stored_name_prefix, Some(b'z'));
+}
+
+#[test]
 fn binds_depdb_recipe_records_to_compact_feature_ids() {
     let payload = b"\xe3K\xc3\xb6rper ID 247\0\xe3\
             \xf7\x3b\x80\xf7\x83\x95\xf6\x20Drehen 1\0\xf6\0protrevolve\0\
