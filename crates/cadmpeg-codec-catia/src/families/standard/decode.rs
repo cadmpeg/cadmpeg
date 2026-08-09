@@ -4587,6 +4587,7 @@ fn bind_ordered_standard_curve_branches(
     bind_ordered_standard_curve_branches_with_focus(supports, candidates, None);
 }
 
+#[cfg(test)]
 fn bind_ordered_standard_curve_branches_for_group(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
@@ -4596,6 +4597,289 @@ fn bind_ordered_standard_curve_branches_for_group(
     bind_ordered_standard_curve_branches_with_focus(supports, candidates, Some(&focused_edges));
 }
 
+/// Apply the ranked-family phases to one branch group without materializing a
+/// full candidate matrix for every group. The focused helper above is kept for
+/// the standalone tests and for the general all-edge binding path; the mesh
+/// solver supplies one group at a time and only needs the line/B-spline phases.
+fn bind_standard_curve_branch_group(
+    supports: &[crate::families::standard::records::StandardCurveSupport],
+    candidates: &mut [Vec<[usize; 2]>],
+    group: &[usize],
+    all_candidates: &[Vec<[usize; 2]>],
+    assignment: &[Option<[usize; 2]>],
+) {
+    if supports.len() != all_candidates.len()
+        || supports.len() != assignment.len()
+        || candidates.len() != group.len()
+        || group.len() < 2
+    {
+        return;
+    }
+    let is_ranked_family =
+        |geometry: &crate::families::standard::records::StandardCurveGeometry| {
+            matches!(
+                geometry,
+                crate::families::standard::records::StandardCurveGeometry::Line
+                    | crate::families::standard::records::StandardCurveGeometry::Bspline
+            )
+        };
+    let same_ranked_family =
+        |left: &crate::families::standard::records::StandardCurveGeometry,
+         right: &crate::families::standard::records::StandardCurveGeometry| {
+            is_ranked_family(left) && std::mem::discriminant(left) == std::mem::discriminant(right)
+        };
+    let normalize = |pairs: &[[usize; 2]]| {
+        let mut pairs = pairs
+            .iter()
+            .copied()
+            .map(|mut pair| {
+                pair.sort_unstable();
+                pair
+            })
+            .collect::<Vec<_>>();
+        pairs.sort_unstable();
+        pairs.dedup();
+        pairs
+    };
+    let positions = group
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(position, edge)| (edge, position))
+        .collect::<HashMap<_, _>>();
+    if group.windows(2).any(|edges| edges[0] >= edges[1]) {
+        return;
+    }
+    if group.iter().any(|edge| *edge >= supports.len()) {
+        return;
+    }
+    let mut faces = supports[group[0]].faces;
+    faces.sort_unstable();
+    if group.iter().any(|edge| {
+        *edge >= supports.len() || !is_ranked_family(&supports[*edge].geometry) || {
+            let mut candidate_faces = supports[*edge].faces;
+            candidate_faces.sort_unstable();
+            candidate_faces != faces
+        }
+    }) {
+        return;
+    }
+
+    let fixed_relations =
+        |normalized: &[Vec<[usize; 2]>], excluded: &HashSet<usize>, vertices: &HashSet<usize>| {
+            (0..supports.len())
+                .filter_map(|edge| {
+                    if excluded.contains(&edge) {
+                        return None;
+                    }
+                    let pair = if let Some(position) = positions.get(&edge) {
+                        (normalized[*position].len() == 1).then_some(normalized[*position][0])
+                    } else {
+                        assignment[edge].or_else(|| {
+                            all_candidates[edge]
+                                .first()
+                                .copied()
+                                .filter(|_| all_candidates[edge].len() == 1)
+                        })
+                    }?;
+                    if !supports[edge].faces.iter().any(|face| faces.contains(face))
+                        || !pair.iter().all(|point| vertices.contains(point))
+                    {
+                        return None;
+                    }
+                    let mut pair = pair;
+                    pair.sort_unstable();
+                    Some(pair)
+                })
+                .collect::<HashSet<_>>()
+        };
+
+    let mut grouped = vec![false; group.len()];
+    let mut normalized = candidates
+        .iter()
+        .map(|pairs| normalize(pairs))
+        .collect::<Vec<_>>();
+    for first_position in 0..group.len() {
+        if grouped[first_position] || normalized[first_position].len() < 4 {
+            continue;
+        }
+        let first = group[first_position];
+        let edges = (first_position..group.len())
+            .filter(|position| {
+                let edge = group[*position];
+                !grouped[*position]
+                    && same_ranked_family(&supports[edge].geometry, &supports[first].geometry)
+                    && {
+                        let mut candidate_faces = supports[edge].faces;
+                        candidate_faces.sort_unstable();
+                        candidate_faces == faces
+                    }
+                    && normalized[*position] == normalized[first_position]
+            })
+            .map(|position| group[position])
+            .collect::<Vec<_>>();
+        let branch_count = edges.len();
+        if branch_count < 2 {
+            continue;
+        }
+        let vertices = normalized[first_position]
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<HashSet<_>>();
+        let excluded = edges.iter().copied().collect::<HashSet<_>>();
+        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
+        let relation = normalized[first_position]
+            .iter()
+            .copied()
+            .filter(|pair| !fixed_relations.contains(pair))
+            .collect::<Vec<_>>();
+        let Some(sides) = bipartite_relation_sides(relation.iter().copied()) else {
+            continue;
+        };
+        let ranked_side = match [
+            sides[0].len() == branch_count,
+            sides[1].len() == branch_count,
+        ] {
+            [true, true] => None,
+            [true, false] => Some(0),
+            [false, true] => Some(1),
+            [false, false] => continue,
+        };
+        if sides[0]
+            .len()
+            .checked_mul(sides[1].len())
+            .is_none_or(|count| relation.len() != count)
+        {
+            continue;
+        }
+        let cross_relations = sides[0]
+            .iter()
+            .flat_map(|left| {
+                sides[1].iter().map(move |right| {
+                    let mut pair = [*left, *right];
+                    pair.sort_unstable();
+                    pair
+                })
+            })
+            .collect::<HashSet<_>>();
+        if relation.iter().copied().collect::<HashSet<_>>() != cross_relations
+            || normalized[first_position]
+                .iter()
+                .any(|pair| !cross_relations.contains(pair) && !fixed_relations.contains(pair))
+        {
+            continue;
+        }
+        for (rank, edge) in edges.into_iter().enumerate() {
+            let position = positions[&edge];
+            candidates[position] = ranked_side.map_or_else(
+                || vec![[sides[0][rank], sides[1][rank]]],
+                |side| {
+                    normalized[first_position]
+                        .iter()
+                        .copied()
+                        .filter(|pair| pair.contains(&sides[side][rank]))
+                        .collect()
+                },
+            );
+            grouped[position] = true;
+        }
+    }
+
+    normalized = candidates.iter().map(|pairs| normalize(pairs)).collect();
+    for first_position in 0..group.len() {
+        if grouped[first_position] || normalized[first_position].len() < 2 {
+            continue;
+        }
+        let first = group[first_position];
+        let edges = group
+            .iter()
+            .enumerate()
+            .filter(|(position, edge)| {
+                !grouped[*position]
+                    && same_ranked_family(&supports[**edge].geometry, &supports[first].geometry)
+                    && {
+                        let mut candidate_faces = supports[**edge].faces;
+                        candidate_faces.sort_unstable();
+                        candidate_faces == faces
+                    }
+                    && normalized[*position].len() >= 2
+            })
+            .map(|(_, edge)| *edge)
+            .collect::<Vec<_>>();
+        let branch_count = edges.len();
+        if edges.first() != Some(&first) || branch_count < 2 {
+            continue;
+        }
+        let vertices = edges
+            .iter()
+            .flat_map(|edge| normalized[positions[edge]].iter().flatten().copied())
+            .collect::<HashSet<_>>();
+        let excluded = edges.iter().copied().collect::<HashSet<_>>();
+        let fixed_relations = fixed_relations(&normalized, &excluded, &vertices);
+        let anchored = edges
+            .iter()
+            .map(|edge| {
+                let position = positions[edge];
+                let relation = normalized[position]
+                    .iter()
+                    .copied()
+                    .filter(|pair| !fixed_relations.contains(pair))
+                    .collect::<Vec<_>>();
+                let anchor = relation
+                    .first()?
+                    .iter()
+                    .copied()
+                    .find(|point| relation.iter().all(|pair| pair.contains(point)))?;
+                let mut opposite = relation
+                    .iter()
+                    .map(|pair| if pair[0] == anchor { pair[1] } else { pair[0] })
+                    .collect::<Vec<_>>();
+                opposite.sort_unstable();
+                opposite.dedup();
+                (opposite.len() == relation.len()).then_some((anchor, opposite))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(anchored) = anchored else {
+            continue;
+        };
+        let anchors = anchored
+            .iter()
+            .map(|(anchor, _)| *anchor)
+            .collect::<Vec<_>>();
+        if anchors.len() != branch_count
+            || anchors.windows(2).any(|pair| pair[0] == pair[1])
+            || anchored
+                .iter()
+                .any(|(_, opposite)| opposite != &anchored[0].1)
+            || anchored[0].1.len() != branch_count
+            || anchors.iter().any(|anchor| anchored[0].1.contains(anchor))
+        {
+            continue;
+        }
+        let diagonal = edges
+            .iter()
+            .enumerate()
+            .map(|(rank, edge)| {
+                let mut pair = [anchors[rank], anchored[0].1[rank]];
+                pair.sort_unstable();
+                let position = positions[edge];
+                normalized[position]
+                    .contains(&pair)
+                    .then_some((position, pair))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(diagonal) = diagonal else {
+            continue;
+        };
+        for (position, pair) in diagonal {
+            candidates[position] = vec![pair];
+            grouped[position] = true;
+        }
+    }
+}
+
+#[cfg(test)]
 fn bind_ordered_standard_curve_branches_with_focus(
     supports: &[crate::families::standard::records::StandardCurveSupport],
     candidates: &mut [Vec<[usize; 2]>],
@@ -5113,14 +5397,6 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         faces,
     } in groups
     {
-        let mut group_constrained = candidates.to_vec();
-        for (edge, pair) in assignment.iter().copied().enumerate() {
-            if !group.contains(&edge) {
-                if let Some(pair) = pair {
-                    group_constrained[edge] = vec![pair];
-                }
-            }
-        }
         let frontiers = faces.map(|face| {
             let complete = supports.iter().enumerate().all(|(edge, support)| {
                 group.contains(&edge)
@@ -5149,21 +5425,32 @@ fn standard_curve_branch_candidates_after_partial_assignment(
         if left != right || left.len() != group.len().saturating_mul(2) {
             continue;
         }
-        for &edge in group {
-            group_constrained[edge].retain(|pair| pair.iter().all(|point| left.contains(point)));
-        }
-        bind_ordered_standard_curve_branches_for_group(supports, &mut group_constrained, group);
-        if group.iter().copied().any(|edge| {
-            assignment[edge].is_some_and(|assigned| {
-                !group_constrained[edge]
+        let mut group_constrained = group
+            .iter()
+            .map(|edge| {
+                let mut candidates = candidates[*edge].clone();
+                candidates.retain(|pair| pair.iter().all(|point| left.contains(point)));
+                candidates
+            })
+            .collect::<Vec<_>>();
+        bind_standard_curve_branch_group(
+            supports,
+            &mut group_constrained,
+            group,
+            candidates,
+            assignment,
+        );
+        if group.iter().enumerate().any(|(position, edge)| {
+            assignment[*edge].is_some_and(|assigned| {
+                !group_constrained[position]
                     .iter()
                     .any(|candidate| missing_edge::same_unordered_pair(*candidate, assigned))
             })
         }) {
             return None;
         }
-        for &edge in group {
-            constrained[edge].clone_from(&group_constrained[edge]);
+        for (position, edge) in group.iter().enumerate() {
+            constrained[*edge].clone_from(&group_constrained[position]);
         }
     }
     Some(constrained)
@@ -6919,15 +7206,16 @@ mod route_tests {
     };
     use crate::families::standard::decode::{
         analytic_surface_uv, bind_ordered_standard_curve_branches,
-        bind_ordered_standard_curve_branches_for_group, build_standard_edge_curve,
-        circle_axis_from_endpoints, circular_ranges_are_nonoverlapping_or_coincident,
-        combine_propagated_endpoint_pairs, corroborate_successor_endpoint_points,
-        emit_standard_topology, include_native_endpoint_pairs, intersection_line_direction,
-        merge_native_endpoint_evidence, native_support_circle_param_range, plane_intersection_line,
-        point_on_known_surface, point_on_standard_face, point_on_surface,
-        resolve_standard_endpoint_pairs, resolve_standard_limit_curve_binding,
-        retry_rejected_mesh_solution, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_curve_branch_assignment_is_ranked,
+        bind_ordered_standard_curve_branches_for_group, bind_standard_curve_branch_group,
+        build_standard_edge_curve, circle_axis_from_endpoints,
+        circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
+        corroborate_successor_endpoint_points, emit_standard_topology,
+        include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
+        native_support_circle_param_range, plane_intersection_line, point_on_known_surface,
+        point_on_standard_face, point_on_surface, resolve_standard_endpoint_pairs,
+        resolve_standard_limit_curve_binding, retry_rejected_mesh_solution,
+        standard_circle_endpoint_candidates, standard_circle_param_range,
+        standard_curve_branch_assignment_is_ranked,
         standard_curve_branch_candidates_after_partial_assignment, standard_curve_branch_groups,
         standard_limit_curve_bindings, standard_native_support_endpoint_pair,
         standard_object_evidence_from_streams, standard_pcurve_geometry,
@@ -8275,6 +8563,43 @@ mod route_tests {
         )
         .is_none());
         assert!(budget.exhausted());
+    }
+
+    #[test]
+    fn standard_branch_group_binding_ignores_empty_unrelated_domains() {
+        let supports = [
+            StandardCurveSupport {
+                pos: 10,
+                tag: 10,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Line,
+            },
+            StandardCurveSupport {
+                pos: 11,
+                tag: 11,
+                faces: [0, 1],
+                geometry: StandardCurveGeometry::Line,
+            },
+            StandardCurveSupport {
+                pos: 12,
+                tag: 12,
+                faces: [8, 9],
+                geometry: StandardCurveGeometry::Line,
+            },
+        ];
+        let domain = vec![[0, 2], [0, 3], [1, 2], [1, 3]];
+        let all_candidates = [domain.clone(), domain, Vec::new()];
+        let mut group_candidates = all_candidates[..2].to_vec();
+
+        bind_standard_curve_branch_group(
+            &supports,
+            &mut group_candidates,
+            &[0, 1],
+            &all_candidates,
+            &[None, None, None],
+        );
+
+        assert_eq!(group_candidates, [vec![[0, 2]], vec![[1, 3]]]);
     }
 
     #[test]
