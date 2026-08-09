@@ -6333,6 +6333,38 @@ fn duplicate_face_uses_emit_one_face() {
         .unwrap();
 
     assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
+}
+
+#[test]
+fn decode_withholds_non_equivalent_face_uses_with_same_owner() {
+    let mut body = triangle_body();
+    let first_bridge = body
+        .windows(2)
+        .position(|w| w == [0x00, 0x0e])
+        .expect("bridge");
+    body[first_bridge + 8..first_bridge + 10].copy_from_slice(&700u16.to_be_bytes());
+    body.extend(bridge_owned(11, 20, 200, 700));
+    body.extend(owned_triangle(200, 701, 2.0));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#210");
+    assert!(
+        result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code == LossKind::TopologyGaugeSubstituted
+                && loss.message.contains("non-equivalent bridge uses")),
+        "losses: {:?}",
+        result.report.losses
+    );
 }
 
 #[test]

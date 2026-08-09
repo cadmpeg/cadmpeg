@@ -56,25 +56,6 @@ The decoder records no loss for a deleted face. A site with no body records keep
 
 **Need.** We must know the owner to construct the final body membership. Until we know it, the decoder must report the unclaimed faces as a loss.
 
-### BC-07. Two bridges with one owner
-
-**Question.** What do two face-use bridges denote when both name the same owner entity?
-
-**Known.** `sldprt.md` §4 defines `00 0e.ref0` as the owner/use discriminator. `sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." states that a full deltas bridge denotes a face of the final state. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:557` sorts the faces by bridge attribute and keeps the first face for each owner:
-
-```rust
-faces.sort_by_key(|f| f.bridge_attr);
-let mut face_owners = HashSet::new();
-faces.retain(|face| {
-    t.bridges.get(&face.bridge_attr).and_then(|bridge| bridge.owner)
-        .is_none_or(|owner| face_owners.insert(owner))
-});
-```
-
-The discarded face keeps no loss record. Its loops, coedges, and edges do not enter the graph.
-
-**Need.** We must know what the second bridge denotes to keep or to discard it correctly. The lower bridge attribute is not a defined selector.
-
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV

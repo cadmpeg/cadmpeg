@@ -78,6 +78,8 @@ pub enum SldprtLossCode {
     TopologyBodyHierarchyDerived,
     /// Body-component overlap tied and no body assignment was selected.
     TopologyBodyAssignmentAmbiguous,
+    /// One face owner has multiple non-equivalent face-use bridges.
+    TopologyFaceOwnerAmbiguous,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -119,6 +121,7 @@ impl SldprtLossCode {
         Self::GeometryEdgeSupportCurveUntyped,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
+        Self::TopologyFaceOwnerAmbiguous,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -157,6 +160,7 @@ impl SldprtLossCode {
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
+            Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
@@ -179,9 +183,9 @@ impl SldprtLossCode {
     const fn shared_code(self) -> LossKind {
         match self {
             Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
-            Self::TopologyBodyHierarchyDerived | Self::TopologyBodyAssignmentAmbiguous => {
-                LossKind::TopologyGaugeSubstituted
-            }
+            Self::TopologyBodyHierarchyDerived
+            | Self::TopologyBodyAssignmentAmbiguous
+            | Self::TopologyFaceOwnerAmbiguous => LossKind::TopologyGaugeSubstituted,
             Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
@@ -243,6 +247,7 @@ mod tests {
                 "geometry.edge-support-curve-untyped",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",
+                "topology.face-owner-ambiguous",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",

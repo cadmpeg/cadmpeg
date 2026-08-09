@@ -856,6 +856,8 @@ Roster entries name same-site nodes by attribute and node class, mixing topology
 
 A deltas change set can re-create a body's faces under new attributes. A deltas bridge with a full record denotes a face of the final stored state; the partition faces it supersedes do not persist. The partition base plus deltas-only bridges therefore overcounts the final face set by the superseded partition faces. A partition without bridges takes its face membership entirely from the deltas stream.
 
+For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
+
 ## 5. Entity records and face families
 
 Top-level entity families: `00 51` entity, `00 52` wrapper/container, `00 53` color/property/helper, `00 54` metadata. Common header: `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, `disc u16 BE`.

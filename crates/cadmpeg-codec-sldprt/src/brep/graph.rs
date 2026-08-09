@@ -289,6 +289,8 @@ pub struct Stats {
     pub source_entity_records: usize,
     /// Schema-33103 body heads whose maximum face-component overlap was tied.
     pub ambiguous_body_assignments: usize,
+    /// Face owners with multiple non-equivalent bridge uses.
+    pub ambiguous_face_owners: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
@@ -330,6 +332,7 @@ fn id_closed_vertex(edge: u16) -> String {
 }
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
+#[derive(Clone, PartialEq, Eq)]
 struct WalkedFace {
     bridge_attr: u16,
     surface_attr: u16,
@@ -638,15 +641,40 @@ fn decode_graph(
     }
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
-    let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, t)).collect();
-    faces.sort_by_key(|f| f.bridge_attr);
-    let mut face_owners = HashSet::new();
-    faces.retain(|face| {
-        t.bridges
-            .get(&face.bridge_attr)
-            .and_then(|bridge| bridge.owner)
-            .is_none_or(|owner| face_owners.insert(owner))
-    });
+    // A bridge owner identifies the canonical face entity, not an additional
+    // face identity. Equivalent bridge payloads are duplicate uses; distinct
+    // payloads have no source selector and must remain unresolved together.
+    let mut faces = Vec::new();
+    let mut owned_faces = HashMap::<u16, Vec<(&topology::Record, WalkedFace)>>::new();
+    for bridge in t.bridges.values() {
+        let face = walk_face(bridge, t);
+        if let Some(owner) = bridge.owner {
+            owned_faces.entry(owner).or_default().push((bridge, face));
+        } else {
+            faces.push(face);
+        }
+    }
+    let mut ambiguous_face_owners = 0;
+    for mut uses in owned_faces.into_values() {
+        uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
+        let Some((first_bridge, first_face)) = uses.first() else {
+            continue;
+        };
+        let equivalent = uses.iter().skip(1).all(|(bridge, face)| {
+            bridge.refs == first_bridge.refs
+                && bridge.marker == first_bridge.marker
+                && face.surface_attr == first_face.surface_attr
+                && face.marker == first_face.marker
+                && face.loops == first_face.loops
+        });
+        if equivalent {
+            faces.push(first_face.clone());
+        } else {
+            ambiguous_face_owners += 1;
+        }
+    }
+    faces.sort_by_key(|face| face.bridge_attr);
+    out.stats.ambiguous_face_owners += ambiguous_face_owners;
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
     // the ring walk. The ring order supplies a boundary edge's second endpoint;
@@ -1238,7 +1266,10 @@ fn decode_graph(
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
-        return Brep::default();
+        return Brep {
+            stats: out.stats,
+            ..Brep::default()
+        };
     }
     out.stats.synthetic_body_grouping = body_records.is_empty();
 
@@ -3570,6 +3601,34 @@ mod tests {
 
         assert!(decoded.faces.is_empty());
         assert!(!decoded.stats.synthetic_body_grouping);
+    }
+
+    #[test]
+    fn ambiguous_face_owner_stats_survive_when_all_uses_are_withheld() {
+        let bridge = |attr, surface, offset| super::Record {
+            attr,
+            refs: vec![0, 0, 0, 0, surface],
+            marker: Some(0x2b),
+            xyz_m: None,
+            xyz_offset: None,
+            owner: Some(700),
+            offset,
+        };
+        let mut tables = super::topology::Tables::default();
+        tables.bridges.insert(10, bridge(10, 100, 20));
+        tables.bridges.insert(11, bridge(11, 200, 10));
+        let decoded = super::decode_graph(
+            &super::CarrierIndex::default(),
+            &tables,
+            super::entity::Facts {
+                entity_count: 1,
+                ..Default::default()
+            },
+            "empty",
+        );
+
+        assert!(decoded.faces.is_empty());
+        assert_eq!(decoded.stats.ambiguous_face_owners, 1);
     }
 
     #[test]
