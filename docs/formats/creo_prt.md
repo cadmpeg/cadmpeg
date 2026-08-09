@@ -2241,21 +2241,25 @@ such section. This join assigns the canonical feature owner and preserves the
 stored `feat_defs_<id>` schema identifier. A partial, competing, or reused set
 does not assign an owner.
 
-DEPDB also stores an internal sketch-datum chain. A procedural recipe feature
+`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an
+internal sketch-datum chain. A procedural recipe feature
 `F` immediately followed in feature-state order by a non-recipe feature
 `F + 1` owns the unique section definition whose `gsec3d_ptr.sketch_plane`
 entity is `F + 2`. The intermediate feature is the section datum. When more
 than one definition selects the same sketch-plane entity, the chain does not
 select a regeneration snapshot and none of those definitions acquires the
-owner. When the definition is contained by a class-926 row, `F` depends on
-that saved-section history feature.
+owner. A definition is eligible for this join only while its byte offset lies
+inside the complete source range that contains it. When the definition is
+contained by an `AllFeatur` row, `F` depends on that row's saved-section
+history feature; the row context does not replace the section-definition
+identifier or select the modeling operation.
 
 In `DEPDB_DATA`, `gsec2d_ptr 00 e0 0a name 00 S2D<digits> 00` begins a
 labelled section definition. Its labelled table records define the positional
 table classes used by following unlabeled `S2D` definitions. The next labelled
 `gsec2d_ptr`, unlabeled `S2D`, or feature-definition record ends its body.
 
-The same labelled section-definition form may occur inside a class-926
+The same labelled section-definition form may occur inside a complete bounded
 `AllFeatur` feature row. The containing row identifies the saved-section
 history node. It does not replace the section-definition identifier or identify
 the modeling operation that consumes the section. The definition body is

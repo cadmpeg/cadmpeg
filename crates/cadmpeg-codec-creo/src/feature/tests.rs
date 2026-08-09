@@ -991,7 +991,7 @@ fn binds_unique_depdb_section_from_recipe_datum_plane_chain() {
         operation(248, None, 20),
     ];
 
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut definition),
         &operations,
         &[(0, usize::MAX)],
@@ -1020,7 +1020,7 @@ fn depdb_owner_binding_preserves_stored_definition_identifier() {
         operation(248, None, 20),
     ];
 
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut definition),
         &operations,
         &[(0, usize::MAX)],
@@ -1098,7 +1098,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
         operation(248, None, 20),
     ];
-    bind_depdb_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
+    bind_section_owners(&mut repeated, &consecutive, &[(0, usize::MAX)]);
     assert!(repeated
         .iter()
         .all(|definition| definition.owner_feature_id.is_none()));
@@ -1110,7 +1110,7 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         operation(900, None, 15),
         operation(248, None, 20),
     ];
-    bind_depdb_section_owners(
+    bind_section_owners(
         std::slice::from_mut(&mut separated),
         &operations,
         &[(0, usize::MAX)],
@@ -1132,7 +1132,35 @@ fn withholds_depdb_owner_for_repeated_plane_or_nonconsecutive_datum() {
         offset: 0,
     });
     let mut definitions = [claimed, candidate];
-    bind_depdb_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
+    bind_section_owners(&mut definitions, &consecutive, &[(0, usize::MAX)]);
+    assert_eq!(definitions[1].owner_feature_id, None);
+}
+
+#[test]
+fn section_owner_binding_does_not_cross_source_range_boundaries() {
+    let mut in_range = pending_replay(&[]);
+    in_range.offset = 100;
+    in_range.section_3d = Some(FeatureSection3d {
+        sketch_plane_entity_id: Some(249),
+        sketch_plane_flip: None,
+        reference_plane_entity_ids: Vec::new(),
+        reference_plane_rows: Vec::new(),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: 0,
+    });
+    let mut outside = in_range.clone();
+    outside.offset = 200;
+    let mut definitions = [in_range, outside];
+    let operations = [
+        operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+        operation(248, None, 20),
+    ];
+
+    bind_section_owners(&mut definitions, &operations, &[(100, 150)]);
+
+    assert_eq!(definitions[0].owner_feature_id, Some(247));
     assert_eq!(definitions[1].owner_feature_id, None);
 }
 

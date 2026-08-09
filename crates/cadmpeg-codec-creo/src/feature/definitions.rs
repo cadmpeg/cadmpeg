@@ -6248,16 +6248,17 @@ fn unique_trimmed_external_ids(definition: &FeatureDefinition) -> BTreeSet<u32> 
         .unwrap_or_default()
 }
 
-/// Bind a DEPDB section through the consecutive recipe, internal datum, and
-/// sketch-plane identifier chain. Repeated definitions for one plane remain
-/// unowned because the current regeneration snapshot is not established.
-pub fn bind_depdb_section_owners(
+/// Bind bounded section definitions through the consecutive recipe, internal
+/// datum, and sketch-plane identifier chain. Repeated definitions for one
+/// plane remain unowned because the current regeneration snapshot is not
+/// established.
+pub fn bind_section_owners(
     definitions: &mut [FeatureDefinition],
     operations: &[FeatureOperation],
-    depdb_ranges: &[(usize, usize)],
+    section_ranges: &[(usize, usize)],
 ) {
-    let in_depdb = |offset: usize| {
-        depdb_ranges
+    let in_section_range = |offset: usize| {
+        section_ranges
             .iter()
             .any(|(start, end)| offset >= *start && offset < *end)
     };
@@ -6267,17 +6268,16 @@ pub fn bind_depdb_section_owners(
         .collect::<BTreeSet<_>>();
     let mut definitions_per_plane = BTreeMap::new();
     for plane_id in definitions.iter().filter_map(|definition| {
-        (definition.owner_feature_id.is_none() && in_depdb(definition.offset))
+        (definition.owner_feature_id.is_none() && in_section_range(definition.offset))
             .then_some(definition.section_3d.as_ref()?.sketch_plane_entity_id?)
     }) {
         *definitions_per_plane.entry(plane_id).or_insert(0usize) += 1;
     }
     let mut ordered_operations = operations.iter().collect::<Vec<_>>();
     ordered_operations.sort_by_key(|operation| operation.offset);
-    for definition in definitions
-        .iter_mut()
-        .filter(|definition| definition.owner_feature_id.is_none())
-    {
+    for definition in definitions.iter_mut().filter(|definition| {
+        definition.owner_feature_id.is_none() && in_section_range(definition.offset)
+    }) {
         let Some(plane_id) = definition
             .section_3d
             .as_ref()

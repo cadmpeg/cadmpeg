@@ -18,7 +18,7 @@ mod tests;
 pub use definitions::equation_table;
 pub(crate) use definitions::saved_entity_offset;
 pub use definitions::{
-    bind_definition_owners, bind_depdb_section_owners, bind_replay_definition_owners,
+    bind_definition_owners, bind_replay_definition_owners, bind_section_owners,
     bind_trimmed_definition_owners, definition_revolution_extents, definitions, depdb_definitions,
     depdb_section_definition, placement_instructions, positional_replay_definitions, BinaryFlag,
     DimensionUnit, FeatureBoundedCurveSegment, FeatureCenteredLineSegment, FeatureCircleSegment,

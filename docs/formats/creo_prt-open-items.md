@@ -318,11 +318,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SP-03. Section-to-datum joins
 
-**Question.** Which fields join a section definition to its sketch datum when the defined owner and generated-datum joins do not select one datum?
+**Question.** Which additional fields join a section definition to its sketch datum when no unique bounded-source owner chain or generated-datum parent remains?
 
-**Known.** `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
+**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" defines the recipe, consecutive datum, and `gsec3d_ptr.sketch_plane` join. The definition is eligible only inside its complete source range. The same section-plane entity used by multiple definitions remains ambiguous. `creo_prt.md` §6 "`dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly" through `creo_prt.md` §6 "n      = sketch_plane.normal" define the unique generated-datum parent-table join and the `ActDatums` geometric identifiers.
 
-**Need.** We must know the join to place the sketch in model space.
+**Need.** We must define a transfer for definitions that have no unique bounded-source chain and no unique generated-datum parent without inferring a feature owner or model-space frame.
 
 ### SP-04. Other relation equations
 
@@ -467,7 +467,7 @@ the `var_arr` solver-variable identity.
 
 **Question.** Which field selects the current regeneration snapshot when several section definitions select the same internal sketch-plane entity?
 
-**Known.** `creo_prt.md` §6 "DEPDB also stores an internal sketch-datum chain." states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
+**Known.** `creo_prt.md` §6 "`DEPDB_DATA` and each complete bounded `AllFeatur` feature row store an" states that the immediate feature-state chain does not select a snapshot when more than one definition uses that entity.
 
 **Need.** We must know the selector to bind the feature to one section definition.
 

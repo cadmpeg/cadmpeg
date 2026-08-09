@@ -2023,7 +2023,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
     let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
-    feature::bind_depdb_section_owners(
+    feature::bind_section_owners(
         &mut feature_definitions,
         &feature_operations,
         &section_owner_ranges,
@@ -2458,7 +2458,7 @@ mod feature_row_definition_tests {
             Some(249)
         );
 
-        feature::bind_depdb_section_owners(
+        feature::bind_section_owners(
             &mut definitions,
             &[
                 operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
