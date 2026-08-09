@@ -27,6 +27,7 @@ use super::typed_relations::{legacy_terminal_indexed_profile_line, marker_curve_
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_ir::features::{FeatureDefinition, Length, PathRef, PatternKind, PatternSeed};
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::SketchId;
 use std::collections::{HashMap, HashSet};
@@ -479,6 +480,109 @@ pub(crate) fn bind_pattern_inputs(
                 seed_slots.extend(seeds.iter().cloned().map(PatternSeed::Feature));
             }
         }
+    }
+}
+
+fn mirror_plane_from_surface(geometry: &SurfaceGeometry) -> Option<(Point3, Vector3)> {
+    match geometry {
+        SurfaceGeometry::Plane { origin, normal, .. } => Some((*origin, normal.unit()?)),
+        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+            let (origin, normal) = mirror_plane_from_surface(basis)?;
+            Some((
+                transform.apply_point(origin),
+                transform.apply_normal(normal)?,
+            ))
+        }
+        _ => None,
+    }
+}
+
+/// Bind mirror planes selected by persistent feature-local face identity.
+pub(crate) fn bind_mirror_surface_planes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    face_identities: &[(String, u32, u32)],
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+) {
+    let mirror_native_refs = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.input_class.as_deref() == Some("moMirrorPattern_c"))
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut faces_by_identity = HashMap::<(u32, u32), Vec<&str>>::new();
+    for (face, source, local) in face_identities {
+        let candidates = faces_by_identity.entry((*source, *local)).or_default();
+        if !candidates.contains(&face.as_str()) {
+            candidates.push(face);
+        }
+    }
+    let faces_by_id = faces
+        .iter()
+        .map(|face| (face.id.0.as_str(), face))
+        .collect::<HashMap<_, _>>();
+    let surfaces_by_id = surfaces
+        .iter()
+        .map(|surface| (surface.id.0.as_str(), surface))
+        .collect::<HashMap<_, _>>();
+
+    for feature in features {
+        let FeatureDefinition::Pattern {
+            pattern: slot @ PatternKind::Unresolved { .. },
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        if !mirror_native_refs.contains(native_ref) {
+            continue;
+        }
+        let mut candidates = Vec::new();
+        for selection in lanes
+            .iter()
+            .filter(|lane| !is_supplemental_config_lane(lane))
+            .flat_map(|lane| &lane.surface_selections)
+            .filter(|selection| selection.feature_ref == native_ref)
+        {
+            let Some(component) = selection.components.last() else {
+                continue;
+            };
+            let source = u32::from_le_bytes(
+                component.type_signature[4..8]
+                    .try_into()
+                    .expect("four-byte feature source ID slice"),
+            );
+            let Some(local) = component.local_id else {
+                continue;
+            };
+            let Some([face_id]) = faces_by_identity.get(&(source, local)).map(Vec::as_slice) else {
+                continue;
+            };
+            let Some(surface) = faces_by_id
+                .get(face_id)
+                .and_then(|face| surfaces_by_id.get(face.surface.0.as_str()))
+            else {
+                continue;
+            };
+            let Some(plane) = mirror_plane_from_surface(&surface.geometry) else {
+                continue;
+            };
+            if !candidates.contains(&plane) {
+                candidates.push(plane);
+            }
+        }
+        let [(origin, normal)] = candidates.as_slice() else {
+            continue;
+        };
+        *slot = PatternKind::Mirror {
+            plane_origin: *origin,
+            plane_normal: *normal,
+        };
     }
 }
 

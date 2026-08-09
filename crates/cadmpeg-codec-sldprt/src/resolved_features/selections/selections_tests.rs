@@ -1392,6 +1392,16 @@ fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
     assert_eq!(path[1].local_id, Some(4));
     assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
     assert!(surface_reference_matches_at(&payload, marker, &path));
+
+    payload[..4].copy_from_slice(&3u32.to_le_bytes());
+    assert_eq!(
+        mirror_surface_component_path_at(&payload, marker)
+            .expect("one root slot")
+            .len(),
+        2
+    );
+    payload[..4].copy_from_slice(&4u32.to_le_bytes());
+    assert!(mirror_surface_component_path_at(&payload, marker).is_none());
 }
 
 #[test]

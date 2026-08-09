@@ -2295,14 +2295,18 @@ fn build_geometry_ir(
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
-    let face_producers = brep
+    let face_identities = brep
         .face_atoms
         .iter()
         .filter_map(|atom| {
             atom.target
                 .clone()
-                .map(|target| (target, atom.feature_source_id))
+                .map(|target| (target, atom.feature_source_id, atom.local_face_id))
         })
+        .collect::<Vec<_>>();
+    let face_producers = face_identities
+        .iter()
+        .map(|(target, source, _)| (target.clone(), *source))
         .collect::<Vec<_>>();
     let body_modifiers = brep
         .body_modifiers
@@ -2331,6 +2335,14 @@ fn build_geometry_ir(
         &ir.model.surfaces,
         &ir.model.edges,
         &ir.model.curves,
+    );
+    crate::resolved_features::bindings::bind_mirror_surface_planes(
+        &mut ir.model.features,
+        &histories,
+        &native.feature_input_lanes,
+        &face_identities,
+        &ir.model.faces,
+        &ir.model.surfaces,
     );
     crate::resolved_features::holes::project_profiled_hole_constructions(
         &mut ir.model.features,
@@ -3554,6 +3566,40 @@ fn sync_active_configuration_face_selections(ir: &mut CadIr) {
             *face = resolved_face;
         }
     }
+    let resolved = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Pattern {
+                seeds,
+                pattern: pattern @ cadmpeg_ir::features::PatternKind::Mirror { .. },
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.id.clone(), seeds.clone(), pattern.clone()))
+        })
+        .collect::<Vec<_>>();
+    let configuration = &mut ir.model.configurations[configuration_index];
+    for (feature, resolved_seeds, resolved_pattern) in resolved {
+        let Some(state) = configuration.feature_states.get_mut(&feature) else {
+            continue;
+        };
+        let cadmpeg_ir::features::FeatureDefinition::Pattern { seeds, pattern } =
+            &mut state.definition
+        else {
+            continue;
+        };
+        if *seeds == resolved_seeds
+            && matches!(
+                pattern,
+                cadmpeg_ir::features::PatternKind::Unresolved { .. }
+            )
+        {
+            *pattern = resolved_pattern;
+        }
+    }
 }
 
 fn stamp_feature_baseline(ir: &mut CadIr) {
@@ -3920,7 +3966,8 @@ mod design_loss_tests {
         multiply_projected_sketch_relation_records,
         sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
         spatial_sketch_constraint_has_complete_neutral_semantics,
-        unbound_feature_input_operation_objects, unprojected_sketch_relation_records, Brep,
+        sync_active_configuration_face_selections, unbound_feature_input_operation_objects,
+        unprojected_sketch_relation_records, Brep,
     };
     use crate::container::{Block, CompoundStream, ContainerScan};
     use crate::native::SldprtNative;
@@ -3934,8 +3981,8 @@ mod design_loss_tests {
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
         ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
         Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PmiDimensionSubtype,
-        RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
+        ParameterId, ParameterPmi, ParameterValue, PathRef, PatternKind, PatternSeed,
+        PmiDimensionSubtype, RadiusSpec, RuledSurfaceMode, SurfaceContinuity,
     };
     use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
@@ -4196,6 +4243,70 @@ mod design_loss_tests {
         ] {
             assert!(report.losses.iter().any(|loss| loss.message == expected));
         }
+    }
+
+    #[test]
+    fn active_configuration_inherits_face_resolved_mirror_plane() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("mirror".into());
+        let seed = PatternSeed::Feature(FeatureId("seed".into()));
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Pattern {
+                seeds: vec![seed.clone()],
+                pattern: PatternKind::Mirror {
+                    plane_origin: Point3::new(1.0, 2.0, 3.0),
+                    plane_normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+            },
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Configuration".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            parameter_values: BTreeMap::new(),
+            suppressed_features: Vec::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::from([(
+                feature_id.clone(),
+                ConfigurationFeatureState {
+                    suppressed: false,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: FeatureDefinition::Pattern {
+                        seeds: vec![seed],
+                        pattern: PatternKind::Unresolved { form: None },
+                    },
+                },
+            )]),
+            native_ref: None,
+        });
+
+        sync_active_configuration_face_selections(&mut ir);
+
+        assert!(matches!(
+            ir.model.configurations[0].feature_states[&feature_id].definition,
+            FeatureDefinition::Pattern {
+                pattern: PatternKind::Mirror { .. },
+                ..
+            }
+        ));
     }
 
     #[test]

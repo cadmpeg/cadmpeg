@@ -1130,8 +1130,20 @@ pub(super) fn mirror_surface_component_path_at(
     ))
     .ok()
     .filter(|count| (1..=64).contains(count))?;
-    compact_mixed_component_path(payload, marker + 18, count, false)
-        .map(|(components, _)| components)
+    let candidates = [
+        compact_mixed_component_path(payload, marker + 18, count, false),
+        (count > 1)
+            .then(|| compact_mixed_component_path(payload, marker + 18, count - 1, false))
+            .flatten(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|(_, end)| !component_path_continues(payload, *end, false));
+    let candidates = distinct_candidates(candidates);
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.0.clone())
 }
 
 fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
