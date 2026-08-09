@@ -1469,14 +1469,10 @@ pub(crate) fn validate_configuration_edits(
                 "retained F3D configuration edit changes entry identity: {name}"
             )));
         }
-        if before.payload != after.payload {
+        if before.payload != after.payload || before.variant_order != after.variant_order {
             edits.insert(
                 name.to_owned(),
-                serde_json::to_vec(&after.payload).map_err(|error| {
-                    CodecError::Malformed(format!(
-                        "cannot encode retained F3D configuration {name}: {error}"
-                    ))
-                })?,
+                crate::design::configurations::encode_configuration_payload(after)?,
             );
         }
     }

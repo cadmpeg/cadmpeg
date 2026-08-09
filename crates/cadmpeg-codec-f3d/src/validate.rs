@@ -670,6 +670,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
+    validate_configurations(&ctx, &mut findings);
     validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
@@ -730,6 +731,67 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(&ctx, &mut findings);
     findings
+}
+
+/// Validate native configuration identities, JSON shapes, and authored order.
+fn validate_configurations(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let mut configuration_ids = HashSet::new();
+    let mut entry_names = HashSet::new();
+    for configuration in &ctx.native.design_configurations {
+        let valid_name = match configuration.kind {
+            records::DesignConfigurationKind::Table => {
+                configuration.entry_name.ends_with(".dsgcfg")
+            }
+            records::DesignConfigurationKind::Rule => {
+                configuration.entry_name.ends_with(".dsgcfgrule")
+            }
+        };
+        let unique_id = configuration_ids.insert(configuration.id.as_str());
+        let unique_entry_name = entry_names.insert(configuration.entry_name.as_str());
+        let valid = valid_name
+            && configuration.id == ids::configuration_entry_id(&configuration.entry_name)
+            && unique_id
+            && unique_entry_name
+            && crate::design::configurations::validate_configuration_payload(
+                &configuration.entry_name,
+                configuration.kind,
+                &configuration.payload,
+            )
+            .is_ok()
+            && crate::design::configurations::validate_configuration_variant_order(configuration)
+                .is_ok();
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "Fusion Design configuration has an invalid identity, payload, or variant order"
+                        .into(),
+                entity: Some(configuration.id.clone()),
+            });
+        }
+    }
+    let nonempty_tables = ctx
+        .native
+        .design_configurations
+        .iter()
+        .filter(|configuration| configuration.kind == records::DesignConfigurationKind::Table)
+        .filter(|configuration| {
+            configuration
+                .payload
+                .get("configurations")
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|variants| !variants.is_empty())
+        })
+        .collect::<Vec<_>>();
+    if nonempty_tables.len() > 1 {
+        findings.push(Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: "Fusion Design configurations have no single authored table order".into(),
+            entity: nonempty_tables.first().map(|table| table.id.clone()),
+        });
+    }
 }
 
 /// Validate authored Design timeline order and its exact type and scope joins.

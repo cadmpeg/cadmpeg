@@ -4321,6 +4321,9 @@ pub struct DesignConfiguration {
     pub entry_name: String,
     /// Native configuration entry family.
     pub kind: DesignConfigurationKind,
+    /// Variant names in serialized object-member order.
+    #[serde(default)]
+    pub variant_order: Vec<String>,
     /// Complete decoded JSON payload, including unrecognized fields.
     pub payload: serde_json::Value,
 }

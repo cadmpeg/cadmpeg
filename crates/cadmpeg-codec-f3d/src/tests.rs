@@ -6114,7 +6114,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide","extension":{"future":7}}"#;
+    let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_configuration(
@@ -6136,31 +6136,62 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         native.design_configurations[0].kind,
         crate::records::DesignConfigurationKind::Table
     );
-    assert_eq!(native.design_configurations[0].payload["active"], "wide");
+    assert_eq!(
+        native.design_configurations[0].variant_order,
+        ["Small", "Medium", "Large"]
+    );
+    assert_eq!(native.design_configurations[0].payload["active"], "Medium");
     assert_eq!(
         native.design_configurations[0].payload["extension"]["future"],
         7
     );
-    assert_eq!(decoded.ir.model.configurations.len(), 1);
-    let wide = &decoded.ir.model.configurations[0];
-    assert_eq!(wide.name, "wide");
-    assert!(wide.active);
-    assert_eq!(wide.properties["parameter:width"], "25 mm");
-    assert_eq!(wide.properties["suppressed:slot"], "true");
+    assert_eq!(decoded.ir.model.configurations.len(), 3);
+    let mut authored = decoded
+        .ir
+        .model
+        .configurations
+        .iter()
+        .map(|configuration| (configuration.name.as_str(), configuration.ordinal))
+        .collect::<Vec<_>>();
+    authored.sort_by_key(|(_, ordinal)| *ordinal);
+    assert_eq!(authored, [("Small", 0), ("Medium", 1), ("Large", 2)]);
+    let medium = decoded
+        .ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "Medium")
+        .expect("active medium configuration");
+    assert!(medium.active);
+    assert_eq!(medium.properties["parameter:width"], "25 mm");
+    assert_eq!(medium.properties["suppressed:slot"], "true");
     assert_eq!(
-        wide.native_ref.as_deref(),
+        medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id.as_str())
     );
+    let mut invalid_order = decoded.ir.clone();
+    update_f3d_native(&mut invalid_order, |native| {
+        native.design_configurations[0].variant_order.pop();
+    });
+    assert!(crate::validate::validate_native(&invalid_order)
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("invalid identity, payload, or variant order")));
 
     let mut retained = decoded.ir.clone();
     update_f3d_native(&mut retained, |native| {
-        native.design_configurations[0].payload["active"] = "narrow".into();
-        native.design_configurations[0].payload["configurations"]["narrow"] =
+        native.design_configurations[0].payload["active"] = "Narrow".into();
+        native.design_configurations[0].payload["configurations"]["Narrow"] =
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
+        native.design_configurations[0]
+            .variant_order
+            .push("Narrow".into());
     });
     retained.model.configurations = crate::design::configurations::project_configurations(
         &f3d_native(&retained).design_configurations,
-    );
+    )
+    .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     F3dCodec
@@ -6191,7 +6222,13 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less configuration encode");
     let mut inconsistent = source_less.clone();
-    inconsistent.model.configurations[0].active = false;
+    inconsistent
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name == "Medium")
+        .expect("active medium configuration")
+        .active = false;
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &inconsistent,

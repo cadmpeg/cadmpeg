@@ -282,7 +282,10 @@
                     ]
                   }
                 }
-              }
+              },
+              "variant_order": [
+                "wide"
+              ]
             }
           ],
           "design_construction_operand_groups": [],

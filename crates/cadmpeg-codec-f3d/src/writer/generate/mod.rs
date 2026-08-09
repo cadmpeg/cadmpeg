@@ -93,11 +93,6 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
-            crate::design::configurations::validate_configuration_payload(
-                &configuration.entry_name,
-                configuration.kind,
-                &configuration.payload,
-            )?;
             let valid_name = match configuration.kind {
                 crate::records::DesignConfigurationKind::Table => {
                     configuration.entry_name.ends_with(".dsgcfg")
@@ -112,14 +107,13 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                     configuration.entry_name
                 )));
             }
+            let payload =
+                crate::design::configurations::encode_configuration_payload(configuration)?;
             archive
                 .start_file(&configuration.entry_name, options)
                 .map_err(|error| {
                     CodecError::Malformed(format!("cannot create F3D configuration entry: {error}"))
                 })?;
-            let payload = serde_json::to_vec(&configuration.payload).map_err(|error| {
-                CodecError::Malformed(format!("cannot encode F3D configuration JSON: {error}"))
-            })?;
             archive.write_all(&payload)?;
         }
     }

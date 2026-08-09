@@ -1573,7 +1573,7 @@ fn finish_model_decode<'a>(
     );
     native.design_configurations = crate::design::configurations::decode_configurations(scan)?;
     ir.model.configurations =
-        crate::design::configurations::project_configurations(&native.design_configurations);
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
     (ir.model.features, ir.model.parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {
@@ -2120,7 +2120,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     );
     native.design_configurations = crate::design::configurations::decode_configurations(&scan)?;
     ir.model.configurations =
-        crate::design::configurations::project_configurations(&native.design_configurations);
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
     (ir.model.features, ir.model.parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
             &crate::design::feature_project::ProjectInputs {

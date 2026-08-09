@@ -29,15 +29,8 @@ pub(crate) fn validate_configuration_projection(
     target: &CadIr,
     native: &F3dNative,
 ) -> Result<(), CodecError> {
-    for configuration in &native.design_configurations {
-        crate::design::configurations::validate_configuration_payload(
-            &configuration.entry_name,
-            configuration.kind,
-            &configuration.payload,
-        )?;
-    }
     let mut projected =
-        crate::design::configurations::project_configurations(&native.design_configurations);
+        crate::design::configurations::project_configurations(&native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
         &mut projected,
         &target.model.parameters,
