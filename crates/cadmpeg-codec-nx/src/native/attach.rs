@@ -2922,6 +2922,15 @@ fn attach_feature_operations(
             .map_or(0, Vec::len);
         let block_op = block_boolean_op(&BlockBooleanEvidence {
             has_complete_projection: block_projection.is_some(),
+            has_complete_primitive_construction: block_constructions_by_operation
+                .get(label.id.as_str())
+                .is_some_and(|construction| {
+                    block_construction_payloads_by_operation
+                        .get(label.id.as_str())
+                        .is_some_and(|payloads| {
+                            payloads.len() == 1 && payloads[0].construction == construction.id
+                        })
+                }),
             outputs: &outputs,
             outputs_are_proven: block_outputs_are_proven,
             body_reference_count: block_body_reference_count,
@@ -4959,6 +4968,7 @@ fn block_placement(
 
 struct BlockBooleanEvidence<'a> {
     has_complete_projection: bool,
+    has_complete_primitive_construction: bool,
     outputs: &'a [BodyId],
     outputs_are_proven: bool,
     body_reference_count: usize,
@@ -4977,6 +4987,7 @@ fn block_boolean_op(evidence: &BlockBooleanEvidence<'_>) -> BooleanOp {
     if evidence.body_reference_count > 1
         && evidence.native_primary_body.is_none()
         && evidence.offset_store_primary_body.is_none()
+        && !evidence.has_complete_primitive_construction
     {
         return BooleanOp::Unresolved;
     }
@@ -9765,6 +9776,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: true,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: true,
                 body_reference_count: 0,
@@ -9781,6 +9793,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: true,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: true,
                 body_reference_count: 1,
@@ -9794,6 +9807,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: false,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: false,
                 body_reference_count: 0,
@@ -9811,6 +9825,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: true,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: false,
                 body_reference_count: 1,
@@ -9826,6 +9841,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: true,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: false,
                 body_reference_count: 1,
@@ -9840,6 +9856,7 @@ mod tests {
         assert_eq!(
             super::block_boolean_op(&super::BlockBooleanEvidence {
                 has_complete_projection: true,
+                has_complete_primitive_construction: false,
                 outputs: std::slice::from_ref(&body),
                 outputs_are_proven: false,
                 body_reference_count: 2,
@@ -9849,6 +9866,21 @@ mod tests {
                 history: &offset_without_prior,
             }),
             BooleanOp::Unresolved
+        );
+
+        assert_eq!(
+            super::block_boolean_op(&super::BlockBooleanEvidence {
+                has_complete_projection: true,
+                has_complete_primitive_construction: true,
+                outputs: std::slice::from_ref(&body),
+                outputs_are_proven: false,
+                body_reference_count: 2,
+                provisional_feature: Some(&provisional),
+                native_primary_body: None,
+                offset_store_primary_body: None,
+                history: &offset_without_prior,
+            }),
+            BooleanOp::NewBody
         );
     }
 
