@@ -3619,6 +3619,7 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
         owner_entity_id: "0_172".into(),
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![175, 217],
         resolved_members: Vec::new(),
         member_offsets: vec![25, 40],
@@ -14345,6 +14346,7 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         owner_entity_id: "0_172".into(),
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![member],
         resolved_members: vec![operand],
         member_offsets: vec![25],
@@ -14628,6 +14630,7 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         owner_entity_id: "Sketch_42".into(),
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![103, 104],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),
@@ -15016,6 +15019,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         owner_entity_id: "0_1".into(),
         auxiliary_references: vec![0],
         auxiliary_reference_offsets: vec![80],
+        rectangular_counted_reference_count: None,
         members: vec![1, 2, 3, 4],
         resolved_members: Vec::new(),
         member_offsets: vec![25, 40, 55, 70],
@@ -17541,6 +17545,7 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         owner_entity_id: String::new(),
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![20],
         resolved_members: Vec::new(),
         member_offsets: vec![0],
@@ -22356,6 +22361,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
     assert_eq!(parsed.member_relation_ordinals, [3, 1, 0, 0]);
     assert_eq!(parsed.auxiliary_references, [464, 470, 467, 473]);
+    assert_eq!(parsed.rectangular_reference_count, Some(0));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
         decode_pattern_definition(&record, &parsed)

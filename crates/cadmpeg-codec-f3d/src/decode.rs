@@ -4848,6 +4848,7 @@ mod tests {
             owner_entity_id: "0_1".into(),
             auxiliary_references: Vec::new(),
             auxiliary_reference_offsets: Vec::new(),
+            rectangular_counted_reference_count: None,
             members: Vec::new(),
             resolved_members: Vec::new(),
             member_offsets: Vec::new(),

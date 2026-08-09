@@ -10346,6 +10346,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         owner_reference_offset: 0,
         auxiliary_references: Vec::new(),
         auxiliary_reference_offsets: Vec::new(),
+        rectangular_counted_reference_count: None,
         members: vec![100, 600],
         resolved_members: Vec::new(),
         member_offsets: Vec::new(),

@@ -4533,6 +4533,11 @@ pub struct SketchRelation {
     /// Payload offsets parallel to `auxiliary_references`, relative to the record.
     #[serde(default)]
     pub auxiliary_reference_offsets: Vec<u32>,
+    /// Serialized count of the rectangular class's reference run. Zero selects
+    /// seed-to-final spans; a nonzero count selects adjacent spacing. `None`
+    /// for other relation classes and native data that did not retain it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rectangular_counted_reference_count: Option<u32>,
     /// Record indices of the entities related by this relation.
     pub members: Vec<u32>,
     /// Member records resolved to typed sketch identities where available.
@@ -4676,7 +4681,7 @@ pub enum SketchPatternDefinition {
         /// Evaluated instance count.
         evaluated_count: u32,
     },
-    /// A rectangular-pattern relation's auxiliary operands, one per direction.
+    /// A rectangular-pattern relation's two direction clauses.
     Rectangular {
         /// The two pattern direction clauses in record order.
         directions: [SketchPatternDirection; 2],
@@ -4707,9 +4712,8 @@ pub struct SketchPatternDirection {
     /// Unit direction vector in sketch coordinates.
     pub direction: [f64; 3],
     /// Evaluated source distance along this direction, in source units. The
-    /// owning relation form determines whether it is adjacent spacing or a
-    /// seed-to-final span; projection resolves that distinction from the
-    /// complete instance geometry.
+    /// owning relation's [`SketchRelation::rectangular_counted_reference_count`]
+    /// gives its meaning.
     pub evaluated_distance: f64,
     /// Record index of the distance parameter value record.
     pub distance_parameter: u32,
