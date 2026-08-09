@@ -288,16 +288,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-54. Selection of the design asset folder
-
-**Question.** Which manifest member names the design asset folder?
-
-**Known.** `f3d.md` §1.3 states that a document can hold sibling asset folders with independent GUIDs and asset types, and that the manifest holds the asset-folder name run with the design folder first in the counted run. `scan` in `container.rs` does not read that run. It takes the folder of the first archive entry whose name holds `Breps.BlobParts` and keeps it.
-
-The value filters the Design stream for the occurrence binder, the recipe and parameter decoders, two body binders, and the T-spline reader. A document whose first B-rep-bearing entry belongs to another asset folder makes every one of those passes match no stream, and the decode then reports an empty design model with no error. A document with no B-rep leaves the value absent and the filter widens to every folder whose name holds `Design`.
-
-**Need.** The manifest run is the stored authority and is not read. The two regimes above differ and neither is stated.
-
 ### DR-55. Localized names of the edge-treatment families
 
 **Question.** Which localized scope-kind names does the edge-treatment group-retention rule cover?

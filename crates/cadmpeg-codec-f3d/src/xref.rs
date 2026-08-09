@@ -223,7 +223,7 @@ pub fn docstruct(scan: &ContainerScan) -> Option<Docstruct> {
 /// outgoing XREF, and no B-rep streams. Its model is the placement of its
 /// XREF targets.
 pub fn is_assembly(scan: &ContainerScan, table: Option<&XrefTable>) -> bool {
-    scan.breps.is_empty()
+    crate::container::design_breps(scan).next().is_none()
         && table.is_some_and(|table| !table.references.is_empty())
         && docstruct(scan).is_some_and(|docstruct| docstruct.doc_type == "assembly-design")
 }
@@ -327,14 +327,10 @@ pub fn bind_component_insert_features(
 /// Expand container references through their occurrence records in the active
 /// Design `BulkStream` and retain each occurrence-local placement matrix.
 fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
-    let streams = scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    });
+    let streams = scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM));
     let mut streams = streams
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
         .map(|bytes| {

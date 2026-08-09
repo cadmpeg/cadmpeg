@@ -90,6 +90,7 @@ pub mod f3z;
 pub mod history;
 mod history_records;
 mod ids;
+mod manifest;
 pub mod materials;
 mod metastream;
 mod native;

@@ -21,14 +21,11 @@ use std::collections::HashMap;
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
 pub fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         decode_stream(bytes, &entry.name, &mut out);
     }
@@ -41,7 +38,7 @@ pub fn decode_parameters(scan: &ContainerScan) -> Result<Vec<DesignParameter>, C
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
@@ -309,8 +306,7 @@ pub fn decode_parameter_owners(
             continue;
         };
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && parameter
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -574,8 +570,7 @@ pub fn decode_parameter_companions(
             continue;
         };
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && owner.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {

@@ -74,8 +74,7 @@ pub fn decode_dimension_recipe_records(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -626,8 +625,7 @@ pub fn decode_dimension_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -869,8 +867,7 @@ pub fn decode_dimension_null_locus_pairs(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))
@@ -1065,8 +1062,7 @@ pub fn decode_dimension_annotation_frames(
     let mut decoded_offsets = HashSet::new();
     for stream in streams {
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1398,8 +1394,7 @@ pub fn decode_dimension_locus_groups(
         })
     }) {
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && companion
                     .id
                     .starts_with(&ids::native_scope_prefix(&entry.name))

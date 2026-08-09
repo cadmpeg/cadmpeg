@@ -32,7 +32,7 @@ pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(start) = bytes
@@ -102,8 +102,7 @@ pub fn decode_body_bounds(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -439,14 +438,11 @@ pub fn decode_design_body_bindings(
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         for binding in body_bindings(bytes) {
             let source_bodies = body_keys
@@ -521,14 +517,11 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM
-            && entry.name.contains("Design")
-            && scan
-                .asset_folder
-                .as_ref()
-                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         let hidden_by_entity = browser_node_hidden_flags(bytes);
         for binding in body_bindings(bytes) {

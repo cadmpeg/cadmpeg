@@ -72,8 +72,7 @@ pub fn decode_edge_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -146,8 +145,7 @@ pub fn decode_edge_identity_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -277,8 +275,7 @@ pub fn decode_face_operands(
             continue;
         }
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -340,8 +337,7 @@ pub fn decode_face_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -508,8 +504,7 @@ pub fn bind_sketch_profiles(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -558,8 +553,7 @@ pub fn decode_extrude_selection_groups(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -633,8 +627,7 @@ pub fn decode_construction_operand_groups(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1156,8 +1149,7 @@ pub fn bind_construction_operand_trailing_records(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1221,8 +1213,7 @@ pub fn bind_construction_operand_paths(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1408,8 +1399,7 @@ pub fn decode_construction_operand_identities(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1788,8 +1778,7 @@ pub fn decode_extrude_selection_members(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -1830,8 +1819,7 @@ pub fn decode_entity_selection_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -2095,8 +2083,7 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;
@@ -2135,8 +2122,7 @@ pub fn decode_body_recipe_operands(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;

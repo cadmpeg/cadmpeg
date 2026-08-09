@@ -42,13 +42,7 @@ struct ManifestJson {
 /// Whether a scanned archive is a `.f3z`: it carries the two archive-level
 /// JSON members and at least one `.f3d` document member.
 pub fn is_f3z(scan: &ContainerScan) -> bool {
-    let has = |name: &str| scan.entries.iter().any(|entry| entry.name == name);
-    has(MANIFEST_ENTRY)
-        && has(DESIGN_DESCRIPTION_ENTRY)
-        && scan
-            .entries
-            .iter()
-            .any(|entry| is_f3d_member(&entry.name) && !entry.name.contains('/'))
+    scan.is_multi_document()
 }
 
 /// Decode a scanned `.f3z` archive into one merged document.

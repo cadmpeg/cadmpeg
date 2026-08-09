@@ -55,7 +55,7 @@ pub fn decode_parameter_scopes(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
@@ -2439,8 +2439,7 @@ pub fn bind_mirror_constructions(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;

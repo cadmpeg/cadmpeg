@@ -406,7 +406,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::PROTEIN)
+        .filter(|entry| scan.is_design_asset_entry(entry, role::PROTEIN))
     {
         let payload = scan.entry_bytes(&entry.name)?;
         let Some(instance) = instance_properties(payload) else {
@@ -732,7 +732,7 @@ pub(crate) fn decode_design_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let body_map = decode_body_map(bytes);
@@ -823,7 +823,7 @@ fn decode_body_appearance_overrides(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let body_map = decode_body_map(bytes);
@@ -868,7 +868,7 @@ fn decode_face_appearance_assignments(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         out.extend(face_appearance_assignments(bytes));
@@ -1254,7 +1254,7 @@ fn decode_design_object_types(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
@@ -1299,9 +1299,11 @@ fn decode_act_channels(
     scan: &ContainerScan,
 ) -> Result<std::collections::HashMap<u64, BTreeMap<String, String>>, CodecError> {
     let mut out = std::collections::HashMap::new();
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_act_stream(entry))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut position = 0usize;
         while position + 4 <= bytes.len() {

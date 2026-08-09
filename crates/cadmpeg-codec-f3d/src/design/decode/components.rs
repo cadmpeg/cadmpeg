@@ -21,7 +21,7 @@ pub fn decode_component_occurrences(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = ids::native_scope(&entry.name);

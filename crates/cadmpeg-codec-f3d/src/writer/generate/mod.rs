@@ -8,6 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 
+use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
@@ -78,14 +79,20 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     archive
         .start_file("Manifest.dat", options)
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
-    archive.write_all(b"cadmpeg-generated-f3d")?;
+    archive.write_all(&manifest::generated_top_level()?)?;
     archive
         .start_file("Properties.dat", options)
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D properties: {error}")))?;
     archive.write_all(&0u32.to_le_bytes())?;
     archive
+        .start_file(format!("{DESIGN_FOLDER}/Manifest.dat"), options)
+        .map_err(|error| {
+            CodecError::Malformed(format!("cannot create F3D asset manifest: {error}"))
+        })?;
+    archive.write_all(&manifest::generated_design_asset()?)?;
+    archive
         .start_file(
-            "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
+            format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
             options,
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
@@ -128,7 +135,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     }
     if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &attributes)? {
         archive
-            .start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
+            .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
                 CodecError::Malformed(format!("cannot create F3D Design BulkStream: {error}"))
             })?;
@@ -137,7 +144,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     if let Some(design_bindings) = design_bindings {
         if let Some(meta_stream) = encode_design_metastream(design_bindings)? {
             archive
-                .start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
+                .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
                 .map_err(|error| {
                     CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
                 })?;
@@ -148,9 +155,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         let protein = crate::materials::encode_protein(appearance)?;
         archive
             .start_file(
-                format!(
-                    "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"
-                ),
+                format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),
                 options,
             )
             .map_err(|error| {

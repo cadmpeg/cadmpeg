@@ -1357,9 +1357,7 @@ fn model_brep_candidates(
         if !seen.insert(binding.blob_name.as_str()) {
             continue;
         }
-        let matches = scan
-            .breps
-            .iter()
+        let matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(binding.blob_name.as_str()))
             .collect::<Vec<_>>();
         match matches.as_slice() {
@@ -1385,10 +1383,10 @@ fn model_brep_candidates(
             None
         };
         if let Some(legacy) = legacy {
-            candidates.extend_from_slice(legacy);
+            candidates.extend(legacy.into_iter().cloned());
         } else if let Some(fallback) = container::select_fallback_brep(scan) {
             candidates.push((*fallback).clone());
-        } else if !scan.breps.is_empty() {
+        } else if container::design_breps(scan).next().is_some() {
             return Err(CodecError::Malformed(
                 "Design body map is absent and BREP selection is ambiguous".to_string(),
             ));
@@ -2441,7 +2439,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     } else {
         apply_sketch_only_classification(
             &mut report,
-            scan.breps.len(),
+            container::design_breps(&scan).count(),
             container::text_brep_names(&scan).len(),
             native.design_body_bindings.len() + native.design_body_members.len(),
             ir.model.sketch_entities.len() + ir.model.spatial_sketch_entities.len(),
@@ -2759,7 +2757,7 @@ fn xref_parse_loss(error: &CodecError) -> LossNote {
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
 fn apply_mesh_body_classification(report: &mut DecodeReport, scan: &ContainerScan, bodies: usize) {
-    if !scan.breps.is_empty() {
+    if container::design_breps(scan).next().is_some() {
         return;
     }
     report.losses.retain(|loss| {
@@ -3129,7 +3127,7 @@ fn populate_annotations(
     let appearance_stream = scan
         .entries
         .iter()
-        .find(|entry| entry.role == container::role::PROTEIN)
+        .find(|entry| scan.is_design_asset_entry(entry, container::role::PROTEIN))
         .map(|entry| annotations.stream(crate::ids::native_scope(&entry.name)));
     if let Some(stream) = appearance_stream {
         for appearance in &ir.model.appearances {
@@ -3698,7 +3696,7 @@ fn extend_related_design_records(
     let stream_lengths: std::collections::HashMap<String, usize> = scan
         .entries
         .iter()
-        .filter(|entry| entry.role == container::role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, container::role::BULKSTREAM))
         .map(|entry| {
             scan.entry_bytes(&entry.name)
                 .map(|bytes| (crate::ids::native_scope(&entry.name), bytes.len()))
@@ -3825,8 +3823,8 @@ fn source_and_tolerances(
     primary_model_brep: &BrepFacts,
 ) -> (SourceMeta, Tolerances) {
     let mut attributes = std::collections::BTreeMap::new();
-    if let Some(folder) = &scan.asset_folder {
-        attributes.insert("asset_folder".to_string(), folder.clone());
+    if let Some(folder) = scan.design_asset_folder() {
+        attributes.insert("asset_folder".to_string(), folder.to_owned());
     }
     attributes.insert(
         "zip_entry_count".to_string(),
@@ -4033,8 +4031,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     let mut unknowns = Vec::new();
 
     let mut attributes = std::collections::BTreeMap::new();
-    if let Some(folder) = &scan.asset_folder {
-        attributes.insert("asset_folder".to_string(), folder.clone());
+    if let Some(folder) = scan.design_asset_folder() {
+        attributes.insert("asset_folder".to_string(), folder.to_owned());
     }
     attributes.insert(
         "zip_entry_count".to_string(),
@@ -4091,7 +4089,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
 /// decode-failure note. Each remaining state gets its own loss description.
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
-    let brep_count = scan.breps.len();
+    let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_breps = container::text_brep_names(scan);
 

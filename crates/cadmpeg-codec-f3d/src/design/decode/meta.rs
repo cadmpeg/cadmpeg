@@ -22,7 +22,7 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
     {
         let meta = crate::metastream::parse(scan.entry_bytes(&entry.name)?, &entry.name)?;
         out.extend(meta.types.into_iter().map(|mut design_type| {
@@ -157,7 +157,7 @@ pub fn decode_feature_timelines(
     for meta_entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::METASTREAM))
     {
         let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let timeline_types = meta

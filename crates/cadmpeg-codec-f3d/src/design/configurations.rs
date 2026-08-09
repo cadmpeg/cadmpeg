@@ -77,7 +77,7 @@ pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfigura
     let configurations = scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::DESIGN_CONFIG)
+        .filter(|entry| scan.is_design_asset_entry(entry, role::DESIGN_CONFIG))
         .map(|entry| {
             let bytes = scan.entry_bytes(&entry.name)?;
             let payload: serde_json::Value = serde_json::from_slice(bytes).map_err(|error| {

@@ -13,7 +13,7 @@
 //! none may be added, so every fixture is hand-built here to exercise a real
 //! decode path that can fail if the code regresses.
 
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Read, Seek, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
@@ -51,6 +51,25 @@ fn with_scan<T>(bytes: &[u8], f: impl FnOnce(&container::ContainerScan<'_>) -> T
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let scan = container::scan(&ctx, root).unwrap();
     f(&scan)
+}
+
+fn write_synthetic_manifests<W: Write + Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    options: zip::write::SimpleFileOptions,
+) {
+    zip.start_file("Manifest.dat", options).unwrap();
+    zip.write_all(&crate::manifest::generated_top_level().unwrap())
+        .unwrap();
+    zip.start_file(
+        format!(
+            "{}/Manifest.dat",
+            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+        ),
+        options,
+    )
+    .unwrap();
+    zip.write_all(&crate::manifest::generated_design_asset().unwrap())
+        .unwrap();
 }
 
 /// Build a synthetic ASM `BinaryFile8` BREP stream: a spec-shaped header
@@ -5799,8 +5818,7 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
 fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
@@ -5811,8 +5829,7 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
 fn malformed_tspline_cage_degrades_to_a_loss_note() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(&synthetic_geometry_smbh()).unwrap();
@@ -5842,8 +5859,7 @@ fn malformed_tspline_cage_degrades_to_a_loss_note() {
 fn malformed_paramesh_reports_its_entry_and_parser_failure() {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     let entry = "FusionAssetName[Active]/ParaMeshGeometry.BlobParts/broken.paramesh";
     zip.start_file(entry, stored).unwrap();
     zip.write_all(b"not a paramesh container").unwrap();
@@ -5864,8 +5880,7 @@ fn f3d_with_deflated_smbh(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file(
         "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
         deflated,
@@ -5938,8 +5953,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
 fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(smbh).unwrap();
@@ -5978,6 +5992,7 @@ fn form_dispatcher_binds_the_legacy_single_cage_gate() {
 
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut archive, stored);
     archive.start_file(stream, stored).unwrap();
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
@@ -6055,6 +6070,7 @@ fn form_dispatcher_binds_a_unique_long_cage_list() {
 
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut archive, stored);
     archive.start_file(stream, stored).unwrap();
     archive.write_all(&bulk).unwrap();
     let archive = archive.finish().unwrap().into_inner();
@@ -9838,6 +9854,7 @@ fn design_feature_timeline_decodes_variable_width_local_references() {
     fn archive(meta: &[u8], bulk: &[u8]) -> Vec<u8> {
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        write_synthetic_manifests(&mut zip, stored);
         zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
             .unwrap();
         zip.write_all(bulk).unwrap();
@@ -12478,8 +12495,7 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
         .collect::<Vec<_>>();
 
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file(
         "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
         stored,
@@ -13174,8 +13190,7 @@ fn synthetic_f3d(include_smbh: bool) -> Vec<u8> {
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
 
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
 
     if include_smbh {
         zip.start_file(format!("{folder}/Breps.BlobParts/Body1.smbh"), deflated)
@@ -13210,8 +13225,7 @@ fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let folder = "FusionAssetName[Active]";
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     for name in ["first", "second"] {
         let mut smb = synthetic_smbh();
         smb[39..47].copy_from_slice(&2u64.to_le_bytes());
@@ -13224,6 +13238,64 @@ fn synthetic_legacy_multi_brep_f3d() -> Vec<u8> {
         zip.start_file(format!("{folder}/Design1/{stream}"), stored)
             .unwrap();
         zip.write_all(b"legacy-design").unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
+fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
+    const DESIGN_GUID: &str = "10000000-0000-4000-8000-000000000001";
+    const SIBLING_GUID: &str = "20000000-0000-4000-8000-000000000002";
+    const SECONDARY_GUID: &str = "30000000-0000-4000-8000-000000000003";
+
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(
+        &crate::manifest::encode_top_level(DESIGN_GUID, &["Simulation", "DesignAsset"]).unwrap(),
+    )
+    .unwrap();
+    zip.start_file("Simulation/Manifest.dat", stored).unwrap();
+    zip.write_all(
+        &crate::manifest::encode_asset_header(
+            "Simulation",
+            SIBLING_GUID,
+            SECONDARY_GUID,
+            "SimulationAssetType",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    zip.start_file("Simulation/FusionDesignSegmentType1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(b"sibling Design-name decoy").unwrap();
+    zip.start_file("Simulation/Breps.BlobParts/BREP.sibling.smbh", stored)
+        .unwrap();
+    zip.write_all(&synthetic_smbh()).unwrap();
+    zip.start_file("DesignAsset[Active]/Manifest.dat", stored)
+        .unwrap();
+    zip.write_all(&crate::manifest::encode_design_asset("DesignAsset", DESIGN_GUID).unwrap())
+        .unwrap();
+    zip.start_file(
+        "DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(b"selected Design stream").unwrap();
+    zip.start_file(
+        "DesignAsset[Active]/FusionNonDesignSegmentType1/BulkStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(b"selected-folder name decoy").unwrap();
+    if include_design_brep {
+        let mut design_brep = synthetic_geometry_smbh();
+        design_brep[39..47].copy_from_slice(&2u64.to_le_bytes());
+        zip.start_file(
+            "DesignAsset[Active]/Breps.BlobParts/BREP.design.smb",
+            stored,
+        )
+        .unwrap();
+        zip.write_all(&design_brep).unwrap();
     }
     zip.finish().unwrap().into_inner()
 }
@@ -13988,6 +14060,87 @@ fn legacy_design_segment_selects_its_complete_brep_set() {
         assert!(selected[0].name.ends_with("BREP.first.smb"));
         assert!(selected[1].name.ends_with("BREP.second.smb"));
     });
+}
+
+#[test]
+fn manifest_selects_design_asset_independently_of_brep_order() {
+    let f3d = synthetic_multi_asset_f3d(true);
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        assert_eq!(scan.breps.len(), 2);
+        let design_breps = container::design_breps(scan).collect::<Vec<_>>();
+        assert_eq!(design_breps.len(), 1);
+        assert!(design_breps[0].name.ends_with("BREP.design.smb"));
+        assert!(container::select_history_brep(scan).is_none());
+        assert_eq!(
+            container::select_fallback_brep(scan).map(|brep| brep.name.as_str()),
+            Some("DesignAsset[Active]/Breps.BlobParts/BREP.design.smb")
+        );
+        let streams = scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            streams,
+            ["DesignAsset[Active]/FusionDesignSegmentType1/BulkStream.dat"]
+        );
+    });
+}
+
+#[test]
+fn manifest_selects_brep_less_design_asset() {
+    let f3d = synthetic_multi_asset_f3d(false);
+    with_scan(&f3d, |scan| {
+        assert_eq!(scan.design_asset_folder(), Some("DesignAsset[Active]"));
+        assert_eq!(scan.breps.len(), 1);
+        assert_eq!(container::design_breps(scan).count(), 0);
+        assert!(container::select_fallback_brep(scan).is_none());
+        assert!(container::select_history_brep(scan).is_none());
+    });
+}
+
+#[test]
+fn decode_uses_manifest_selected_geometry_not_the_first_brep_asset() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(synthetic_multi_asset_f3d(true)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded.report.geometry_transferred);
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("asset_folder"))
+            .map(String::as_str),
+        Some("DesignAsset[Active]")
+    );
+    assert!(decoded
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| !body.id.0.contains("BREP.sibling")));
+}
+
+#[test]
+fn decode_does_not_use_a_sibling_brep_for_a_brep_less_design_asset() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(synthetic_multi_asset_f3d(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == LossCode::MissingGeometryStream
+            && loss.message == "no ASM BREP stream (.smb/.smbh) was found in the container"
+    }));
 }
 
 #[test]
@@ -20328,8 +20481,7 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
     ]);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
         .unwrap();
     zip.write_all(&synthetic_geometry_smbh()).unwrap();
@@ -25226,8 +25378,7 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bulk).unwrap();
@@ -25467,8 +25618,7 @@ fn redirections_json(own_name: &str, targets: &[(&str, &str)]) -> String {
 fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
     let properties = format!(
         r#"{{"docstruct":{{"version":"1.0.0","type":"{doc_type}","subtype":"synthetic","attributes":{{}}}}}}"#
@@ -25654,8 +25804,8 @@ fn brep_less_part_reports_an_absent_stream_not_a_failed_decode() {
 #[test]
 fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
     let archive = f3d_with_text_brep(&[
-        "Fusion[Active]/Breps.BlobParts/BREP0.sat",
-        "Fusion[Active]/Breps.BlobParts/BREP1.sat",
+        "FusionAssetName[Active]/Breps.BlobParts/BREP0.sat",
+        "FusionAssetName[Active]/Breps.BlobParts/BREP1.sat",
     ]);
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
@@ -25722,7 +25872,7 @@ fn a_text_carrier_with_geometry_decodes_through_the_shared_brep_path() {
         zip.start_file(name, stored).unwrap();
         zip.write_all(&bytes).unwrap();
     }
-    zip.start_file("Fusion[Active]/Breps.BlobParts/BREP0.sat", stored)
+    zip.start_file("FusionAssetName[Active]/Breps.BlobParts/BREP0.sat", stored)
         .unwrap();
     zip.write_all(text.as_bytes()).unwrap();
     let archive = zip.finish().unwrap().into_inner();
@@ -25787,8 +25937,7 @@ fn ambiguous_brep_selection_reports_the_streams_that_are_present() {
 fn synthetic_ambiguous_multi_brep_f3d() -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    zip.start_file("Manifest.dat", stored).unwrap();
-    zip.write_all(b"synthetic-manifest").unwrap();
+    write_synthetic_manifests(&mut zip, stored);
     for name in ["first", "second"] {
         let mut smb = synthetic_smbh();
         smb[39..47].copy_from_slice(&2u64.to_le_bytes()); // no history partition

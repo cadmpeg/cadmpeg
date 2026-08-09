@@ -1924,8 +1924,7 @@ pub(crate) fn bind_loft_sketch_selections(
             continue;
         };
         let Some(entry) = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && stream == ids::native_scope(&entry.name)
         }) else {
             continue;

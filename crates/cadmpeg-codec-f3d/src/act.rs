@@ -136,9 +136,11 @@ pub fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
     let mut root_components = Vec::new();
     let mut table_references = Vec::new();
     let mut non_root_component_links = 0usize;
-    for entry in scan.entries.iter().filter(|entry| {
-        entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
-    }) {
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_act_stream(entry))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
         let meta_name = sibling_meta_name(&entry.name).ok_or_else(|| {
             CodecError::Malformed(format!(

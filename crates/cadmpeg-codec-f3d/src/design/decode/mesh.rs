@@ -174,7 +174,7 @@ pub(crate) fn decode_mesh_bodies(
     let design_streams = scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
         .map(|entry| {
             scan.entry_bytes(&entry.name)
                 .map(|bytes| (ids::native_scope(&entry.name), indexed_records(bytes)))
@@ -188,7 +188,7 @@ pub(crate) fn decode_mesh_bodies(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::PARAMESH)
+        .filter(|entry| scan.is_design_asset_entry(entry, role::PARAMESH))
     {
         let container = match scan
             .entry_bytes(&entry.name)

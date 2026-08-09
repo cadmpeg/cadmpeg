@@ -83,7 +83,7 @@ pub fn decode_sketch_placements(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         record_offsets.insert(
             ids::native_scope(&entry.name),
@@ -100,8 +100,7 @@ pub fn decode_sketch_placements(
             continue;
         };
         let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
+            scan.is_design_stream(entry, role::BULKSTREAM)
                 && scope.id.starts_with(&ids::native_scope_prefix(&entry.name))
         });
         let Some(entry) = entry else {
@@ -458,7 +457,7 @@ pub fn decode_persistent_references(
         .entries
         .iter()
         .enumerate()
-        .filter(|(_, entry)| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|(_, entry)| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         for &(name, kind) in &[
@@ -537,7 +536,7 @@ pub fn decode_lost_edge_references(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut cursor = 0;
@@ -845,7 +844,7 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         // Modules come from the type table of this stream's own `MetaStream`.
@@ -1035,7 +1034,7 @@ fn decode_headers_for_indices(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1075,7 +1074,7 @@ pub fn decode_sketch_relations(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
@@ -1320,7 +1319,7 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1422,7 +1421,7 @@ pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, Code
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2152,7 +2151,7 @@ pub fn decode_sketch_curve_identities(
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -2330,7 +2329,7 @@ pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+        .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;

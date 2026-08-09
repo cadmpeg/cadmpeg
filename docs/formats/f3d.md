@@ -123,13 +123,30 @@ Each table variant has a stable neutral identity formed from the complete table-
 
 ### 1.3 `Manifest.dat` grammar
 
-Both manifests are flat sequences of `u32`-length-prefixed strings. An ASCII field stores a byte count followed by that many bytes. A UTF-16LE field stores a code-unit count followed by twice that many bytes.
+Both manifests use `u32`-length-prefixed strings. An ASCII field stores a byte count followed by that many bytes. A UTF-16LE field stores a code-unit count followed by twice that many bytes.
 
-The **top-level manifest** carries a document version tag (`3-2-0-0`), the `FusionDocType` marker, the `.f3d` extension, a display name and description, document and asset UUIDs, capability tokens, and an asset-folder UUID.
+The **top-level manifest** starts with LP-ASCII `3-2-0-0`, LP-ASCII `FusionDocType`, LP-UTF16 `.f3d`, an LP-UTF16 display name, an LP-UTF16 description, a document GUID, and a document-asset GUID. Each GUID is a 36-code-unit hyphenated hexadecimal LP-UTF16 string.
 
-After the second document UUID, the top-level manifest continues with `u32 1234`, `u32 20`, `u32 27`, `u32 0x2A344000`, and a `u32` segment-entry count, followed by that many segment-registry entries. Each entry is a `u32`-length-prefixed name and a `u32` value; the seven entries are `Application` 1, `CAM` 4, `ParaMesh` 8, `SimCommon` 30005, `SimFEACSObjects` 2, `SimFluidDynamics` 2, and `SimStructuralAttributes` 10002. After the last entry (`SimStructuralAttributes`, `u32 10002`) the tail is: `u32 0`, `u8 0`, a `u32`-length-prefixed UTF-16LE asset-folder UUID, `u32 asset_folder_count`, that many `u32`-length-prefixed UTF-16LE asset-folder base names, `u32 0`, `u8 1`, a `u32`-length-prefixed UTF-16LE `NA_EXPORT`, then end of file. The design folder is first in the counted run. Its per-asset manifest first GUID equals the top-level asset-folder UUID; sibling asset folders carry independent GUIDs and asset types. A single-asset document ends at `NA_EXPORT` with no trailing bytes.
+Two generation-header forms follow the document-asset GUID. The current form is `u32 1234`, three generation u32 values, and a u32 capability-registry count. The legacy form is a first u32 other than `1234`, one further generation u32, and a u32 capability-registry count. The count can be zero. Each registry entry is a nonempty unique LP-ASCII name and a u32 value. A generation extension follows the registry and ends immediately before the asset-folder tail.
 
-The **per-asset manifest** carries two asset GUIDs, `FusionAssetType`, the asset type `Neutron3DAssetType`, a `physicalChangeGuid`, and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
+The asset-folder tail is the unique suffix that consumes the end of the manifest with this grammar:
+
+```
+LP-UTF16  asset_folder_guid       36-code-unit hyphenated hexadecimal GUID
+u32       asset_folder_count      nonzero
+repeat asset_folder_count:
+  LP-UTF16 asset_folder_base      one archive-path component
+u32       terminal_word           0
+terminal:
+  end of file
+  or u8 0, nonempty LP-UTF16 document_display_name, end of file
+  or u8 1, end of file
+  or u8 1, LP-UTF16 `NA_EXPORT`, end of file
+```
+
+Each listed base resolves to exactly one archive folder: either `<base>` or `<base>[Active]`. That folder contains `Manifest.dat`. A **per-asset manifest** starts with its LP-UTF16 base name, a first asset GUID, a second asset GUID, and an LP-ASCII asset type. The unique listed folder whose first asset GUID equals `asset_folder_guid` and whose asset type is `FusionAssetType` is the Design asset folder. Folder-run order, archive-entry order, and B-rep presence do not select the Design asset. A sibling folder can also declare `FusionAssetType`; its independent first asset GUID prevents selection.
+
+After this prefix, a Design per-asset manifest carries the `Neutron3DAssetType` token, a `physicalChangeGuid`, and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
 
 ### 1.4 External references
 
