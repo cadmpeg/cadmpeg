@@ -283,6 +283,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moMoveCopyBody_c" => operation_class(FeatureClass::MoveBody),
         "VarFillet_c" => operation_class(FeatureClass::Fillet),
         "moRefPoint_c" => operation_class(FeatureClass::ReferencePoint),
+        "moCoordSys_c" => operation_class(FeatureClass::CoordinateSystem),
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
         "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
@@ -595,6 +596,7 @@ pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
         "Move Face" => FeatureClass::MoveFace,
         "VarFillet" => FeatureClass::Fillet,
         "3DPoint" => FeatureClass::ReferencePoint,
+        "Coordinate System" => FeatureClass::CoordinateSystem,
         _ => return None,
     })
 }
@@ -661,6 +663,7 @@ mod tests {
             ("moBlendRefSurface_c", FeatureClass::Loft),
             ("moExtruRefSurface_c", FeatureClass::Extrude),
             ("moCirPattern_c", FeatureClass::Pattern),
+            ("moCoordSys_c", FeatureClass::CoordinateSystem),
         ] {
             assert_eq!(
                 classify(&feature("Feature", "localized", "localized", Some(class))),
@@ -683,6 +686,7 @@ mod tests {
             ("SurfaceCut", FeatureClass::CutWithSurface),
             ("Body-Move/Copy", FeatureClass::MoveBody),
             ("3DPoint", FeatureClass::ReferencePoint),
+            ("Coordinate System", FeatureClass::CoordinateSystem),
         ] {
             assert_eq!(
                 classify(&feature("Feature", "localized", kind, None)),

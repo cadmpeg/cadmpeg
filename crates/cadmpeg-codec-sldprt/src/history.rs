@@ -6927,7 +6927,7 @@ fn project_definition(
     }
     if class == Some(FeatureClass::CoordinateSystem) {
         return project_datum_coordinate_system(feature)
-            .unwrap_or_else(|| native_definition(feature));
+            .unwrap_or(FeatureDefinition::DatumCoordinateSystemUnresolved);
     }
     if class == Some(FeatureClass::EquationCurve) {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));

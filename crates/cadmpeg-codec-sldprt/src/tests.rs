@@ -15298,6 +15298,26 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
 }
 
 #[test]
+fn incomplete_coordinate_system_projects_as_typed_unresolved() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Fixture" Type="Coordinate System" id="28"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumCoordinateSystemUnresolved
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_reference_coordinate_system() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};
