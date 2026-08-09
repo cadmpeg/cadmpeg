@@ -80,7 +80,7 @@ fn decode_with_occurrence_limits(
     }
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
-    let references = graph::build(&directory);
+    let mut references = graph::build(&directory);
     let mut source_fidelity = SourceFidelity::default();
     source_fidelity.retained_records.push(RetainedSourceRecord {
         id: crate::SOURCE_IMAGE_ID.into(),
@@ -107,7 +107,7 @@ fn decode_with_occurrence_limits(
         &scan,
         &directory,
         &parameters,
-        &references,
+        &mut references,
         &global,
         native::ProductOccurrenceLimits::new(
             product_occurrence_output_limit,
@@ -125,7 +125,7 @@ fn decode_with_occurrence_limits(
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
-    losses.extend(graph::losses(&references, &scan));
+    losses.extend(graph::losses(&references, &scan, &parameters));
     if product_occurrence_expansion.output_truncated {
         losses.push(LossNote {
             code: cadmpeg_ir::LossKind::DecodeDiagnostic,

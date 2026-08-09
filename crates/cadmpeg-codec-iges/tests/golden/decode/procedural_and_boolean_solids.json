@@ -4150,7 +4150,9 @@
               "level": 0,
               "line_font": 0,
               "line_weight": 0,
-              "links": [],
+              "links": [
+                "iges:entity:directory#15"
+              ],
               "parameter_bytes": [
                 49,
                 56,
@@ -4264,7 +4266,16 @@
                 }
               ],
               "property_links": [],
-              "references": [],
+              "references": [
+                {
+                  "expected": "type-180-form-0-or-1",
+                  "kind": "parameter",
+                  "parameter_index": 1,
+                  "raw_pointer": 15,
+                  "resolution": "resolved",
+                  "target": "iges:entity:directory#15"
+                }
+              ],
               "reserved": [
                 [
                   32,
@@ -5424,7 +5435,8 @@
       "entity.182.form.0=1",
       "parameter_records=9",
       "parameter_tokens=59",
-      "external_references=0"
+      "external_references=0",
+      "references.resolved=1"
     ]
   },
   "source_fidelity": {

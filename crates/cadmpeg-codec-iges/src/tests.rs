@@ -6718,6 +6718,109 @@ fn decode_validates_structure_targets_by_source_entity() {
 }
 
 #[test]
+fn decode_validates_selected_component_parameter_pointer() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "BOOL".into(),
+            status: "00000200",
+            parameters: "180,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "POINT".into(),
+            status: "00000200",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "GOOD".into(),
+            status: "00000200",
+            parameters: "182,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "EVEN".into(),
+            status: "00000200",
+            parameters: "182,2,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "WRONG".into(),
+            status: "00000200",
+            parameters: "182,3,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "MISSING".into(),
+            status: "00000200",
+            parameters: "182,99,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 182,
+            form: 0,
+            label: "NEGATIVE".into(),
+            status: "00000200",
+            parameters: "182,-1,0,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let selected = &native.arenas["selected_components"];
+    let component = |sequence| {
+        selected
+            .iter()
+            .find(|component| {
+                component.id() == format!("iges:solid:selected-component#D{sequence}")
+            })
+            .unwrap()
+    };
+    assert_eq!(
+        component(5).fields()["boolean_tree"],
+        "iges:solid:boolean-tree#D1"
+    );
+    assert!([7, 9, 11, 13]
+        .into_iter()
+        .all(|sequence| component(sequence).fields()["boolean_tree"].is_null()));
+
+    for (sequence, resolution) in [
+        (5, "resolved"),
+        (7, "even_sequence"),
+        (9, "wrong_type"),
+        (11, "dangling"),
+        (13, "out_of_range"),
+    ] {
+        let entity = native.arenas["entities"]
+            .iter()
+            .find(|entity| entity.id() == format!("iges:entity:directory#{sequence}"))
+            .unwrap();
+        let reference = &entity.fields()["references"][0];
+        assert_eq!(reference["kind"], "parameter");
+        assert_eq!(reference["parameter_index"], 1);
+        assert_eq!(reference["expected"], "type-180-form-0-or-1");
+        assert_eq!(reference["resolution"], resolution);
+    }
+
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+            .count(),
+        4
+    );
+}
+
+#[test]
 fn decode_links_product_names_and_reference_designators_to_owners() {
     let result = IgesCodec
         .decode(

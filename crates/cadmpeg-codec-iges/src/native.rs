@@ -5,7 +5,7 @@ use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::global::Global;
-use crate::graph::ReferenceEdge;
+use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
@@ -1283,7 +1283,7 @@ pub(crate) fn store(
     scan: &CardScan,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
-    references: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    references: &mut BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
     limits: ProductOccurrenceLimits,
 ) -> Result<ProductOccurrenceExpansion, CodecError> {
@@ -1310,7 +1310,8 @@ pub(crate) fn store(
         .iter()
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
-    let entities = directory
+    let parameter_resolver = ParameterResolver::new(directory);
+    let mut entities = directory
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
@@ -1794,6 +1795,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 boolean_tree: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "type-180-form-0-or-1",
+                            |target| target.entity_type == 180 && matches!(target.form, 0 | 1),
+                        )
+                    })
                     .map(|sequence| format!("iges:solid:boolean-tree#D{sequence}")),
                 selection_point: [
                     record.and_then(|record| record.number(2)),
@@ -3642,6 +3652,20 @@ pub(crate) fn store(
         truncated: !issues.is_empty(),
         issues,
     }];
+    parameter_resolver.append_to(references);
+    for entity in &mut entities {
+        entity.links = references
+            .get(&entity.directory_sequence)
+            .into_iter()
+            .flatten()
+            .filter_map(ReferenceEdge::target)
+            .map(str::to_owned)
+            .collect();
+        entity.references = references
+            .get(&entity.directory_sequence)
+            .cloned()
+            .unwrap_or_default();
+    }
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
