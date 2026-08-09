@@ -291,6 +291,8 @@ pub struct Stats {
     pub ambiguous_body_assignments: usize,
     /// Face owners with multiple non-equivalent bridge uses.
     pub ambiguous_face_owners: usize,
+    /// Canonical faces that no explicit body record claims.
+    pub unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
@@ -1037,6 +1039,10 @@ fn decode_graph(
         }
     }
     if !body_records.is_empty() {
+        out.stats.unclaimed_faces += faces
+            .iter()
+            .filter(|face| !bridge_group.contains_key(&face.bridge_attr))
+            .count();
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
     let mut surface_ids_by_carrier = HashMap::<u16, u16>::new();

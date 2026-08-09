@@ -40,22 +40,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify the superseded face to prevent duplicate faces in the final body.
 
-### BC-04. Unclaimed face disposition
-
-**Question.** Which body owns a canonical face when the site has body records and no body record claims that face?
-
-**Known.** `sldprt.md` §6 "The disc04-root layout uses" defines interval ownership. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:901` deletes each face that no body record claims:
-
-```rust
-if !body_records.is_empty() {
-    faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
-}
-```
-
-The decoder records no loss for a deleted face. A site with no body records keeps all faces and reports `TopologyBodyHierarchyDerived`. One recognized body record changes the disposition from a reported loss to a silent deletion.
-
-**Need.** We must know the owner to construct the final body membership. Until we know it, the decoder must report the unclaimed faces as a loss.
-
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV

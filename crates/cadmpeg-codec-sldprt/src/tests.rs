@@ -6318,6 +6318,28 @@ fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
 }
 
 #[test]
+fn decode_reports_and_withholds_faces_without_body_membership() {
+    let mut body = owned_triangle(0, 700, 0.0);
+    body.extend(owned_triangle(200, 701, 2.0));
+    body.extend(entity51(2, 500, 0x0017, &[10, 0, 0, 0, 0, 0]));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces[0].id.0, "sldprt:brep:face#10");
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.code == LossKind::TopologyNotTransferred
+            && loss
+                .message
+                .contains("not claimed by an explicit body relation")
+    }));
+}
+
+#[test]
 fn deltas_cannot_add_a_superseded_face_to_partition_membership() {
     let partition = triangle_body();
     let deltas = owned_triangle(200, 900, 10.0);

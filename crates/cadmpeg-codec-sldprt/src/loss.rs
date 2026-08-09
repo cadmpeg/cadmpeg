@@ -80,6 +80,8 @@ pub enum SldprtLossCode {
     TopologyBodyAssignmentAmbiguous,
     /// One face owner has multiple non-equivalent face-use bridges.
     TopologyFaceOwnerAmbiguous,
+    /// A canonical face has no explicit body relation.
+    TopologyFaceUnclaimed,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -122,6 +124,7 @@ impl SldprtLossCode {
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
         Self::TopologyFaceOwnerAmbiguous,
+        Self::TopologyFaceUnclaimed,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -161,6 +164,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
+            Self::TopologyFaceUnclaimed => "topology.face-unclaimed",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
@@ -186,6 +190,7 @@ impl SldprtLossCode {
             Self::TopologyBodyHierarchyDerived
             | Self::TopologyBodyAssignmentAmbiguous
             | Self::TopologyFaceOwnerAmbiguous => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyFaceUnclaimed => LossKind::TopologyNotTransferred,
             Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
@@ -248,6 +253,7 @@ mod tests {
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",
                 "topology.face-owner-ambiguous",
+                "topology.face-unclaimed",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",

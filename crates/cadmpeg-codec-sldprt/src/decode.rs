@@ -2012,6 +2012,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.ambiguous_body_assignments += source.stats.ambiguous_body_assignments;
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
+    target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 
@@ -2839,6 +2840,12 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         losses.push(SldprtLossCode::TopologyFaceOwnerAmbiguous.note(format!(
             "{} face owner(s) have non-equivalent bridge uses; all uses for each owner remain unresolved.",
             s.ambiguous_face_owners
+        )));
+    }
+    if s.unclaimed_faces > 0 {
+        losses.push(SldprtLossCode::TopologyFaceUnclaimed.note(format!(
+            "{} canonical face(s) are not claimed by an explicit body relation; the decoder withholds them rather than inventing body membership.",
+            s.unclaimed_faces
         )));
     }
     if s.synthetic_body_grouping {
