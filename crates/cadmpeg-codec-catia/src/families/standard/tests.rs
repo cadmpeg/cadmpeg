@@ -1211,10 +1211,7 @@ fn incidence_component_assigns_canonical_class_members_in_order() {
         edges: &[2],
         ..search
     };
-    assert_eq!(
-        independent.branch_options(None),
-        Some(vec![(2, [3, 4]), (2, [3, 5])])
-    );
+    assert_eq!(independent.branch_options(None), Some(Vec::new()));
 }
 
 #[test]
@@ -2107,49 +2104,8 @@ fn partial_incidence_constraint_joins_every_component_it_can_couple() {
     let active = [true, false, false, true, false, false];
 
     assert_eq!(
-        crate::solve::incidence::join_partial_constraint_components(
-            components, &active, None, None,
-        ),
+        crate::solve::incidence::join_incidence_components_by_coupling(components, &active),
         vec![vec![0, 2, 3, 5], vec![1], vec![4]],
-    );
-}
-
-#[test]
-fn partial_incidence_predecessors_join_only_their_class_components() {
-    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
-    let predecessors = [None, None, None, Some(0), None, None];
-
-    assert_eq!(
-        crate::solve::incidence::join_partial_constraint_components(
-            components,
-            &[false; 6],
-            Some(&predecessors),
-            None,
-        ),
-        vec![vec![0, 2, 3, 5], vec![1], vec![4]],
-    );
-}
-
-#[test]
-fn partial_incidence_dependencies_join_their_component_barriers() {
-    let components = vec![vec![0, 2], vec![1], vec![3, 5], vec![4]];
-    let dependencies = [
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        vec![1],
-        Vec::new(),
-    ];
-
-    assert_eq!(
-        crate::solve::incidence::join_partial_constraint_components(
-            components,
-            &[false; 6],
-            None,
-            Some(&dependencies),
-        ),
-        vec![vec![0, 2], vec![1, 4], vec![3, 5]],
     );
 }
 
@@ -2167,6 +2123,51 @@ fn incidence_components_order_by_endpoint_branch_width() {
         .expect("valid component edges");
 
     assert_eq!(components, vec![vec![3], vec![1], vec![0, 2]]);
+}
+
+#[test]
+fn incidence_components_order_prerequisites_without_joining_domains() {
+    let choices = vec![vec![[0, 0], [1, 1]], vec![[2, 2], [3, 3]], vec![[4, 4]]];
+    let mut components = vec![vec![0], vec![1], vec![2]];
+    let dependencies = [Vec::new(), vec![0], Vec::new()];
+
+    crate::solve::incidence::order_incidence_components_by_constraints(
+        &mut components,
+        &choices,
+        None,
+        Some(&dependencies),
+    )
+    .expect("acyclic component prerequisites");
+
+    assert_eq!(components, vec![vec![2], vec![0], vec![1]]);
+}
+
+#[test]
+fn incidence_components_reject_prerequisite_cycles() {
+    let choices = vec![vec![[0, 0]], vec![[1, 1]]];
+    let mut components = vec![vec![0], vec![1]];
+    let predecessors = [Some(1), Some(0)];
+
+    assert!(
+        crate::solve::incidence::order_incidence_components_by_constraints(
+            &mut components,
+            &choices,
+            Some(&predecessors),
+            None,
+        )
+        .is_none()
+    );
+
+    let mut component = vec![vec![0, 1]];
+    assert!(
+        crate::solve::incidence::order_incidence_components_by_constraints(
+            &mut component,
+            &choices,
+            Some(&predecessors),
+            None,
+        )
+        .is_none()
+    );
 }
 
 #[test]
