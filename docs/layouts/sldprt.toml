@@ -3960,6 +3960,255 @@ contains = "const POSITION_OFFSETS: [usize; 2] = [243, 259];"
 note = "The parser evaluates both fixed solved-position layouts and requires one distinct result."
 
 [[record]]
+name = "coordinate_system_component_point"
+kind = "byte"
+section = "2"
+anchor = "The 151-byte component-point record begins `2f 80 02 00 00 00 00 00 00 00`"
+size = 151
+endianness = "little"
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "begins `2f 80 02 00 00 00 00 00 00 00`"
+
+[[record.field]]
+name = "zero_header"
+offset = 10
+type = "bytes[35]"
+source = "spec"
+anchor = "followed by 35 zero bytes"
+
+[[record.field]]
+name = "sentinel"
+offset = 45
+type = "bytes[16]"
+source = "spec"
+anchor = "sixteen `ff` bytes"
+
+[[record.field]]
+name = "zero_before_source"
+offset = 61
+type = "bytes[8]"
+source = "spec"
+anchor = "and eight zero bytes"
+
+[[record.field]]
+name = "source_id"
+offset = 69
+type = "u32"
+source = "spec"
+anchor = "Record +69 stores a nonzero u32 LE source ID"
+
+[[record.field]]
+name = "source_stamp"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "+73 stores a nonzero non-sentinel u32 LE source stamp"
+
+[[record.field]]
+name = "zero_selector"
+offset = 77
+type = "u16"
+source = "spec"
+anchor = "+77 stores u16 zero"
+
+[[record.field]]
+name = "one_selector"
+offset = 79
+type = "u16"
+source = "spec"
+anchor = "+79 stores u16 `1`"
+
+[[record.field]]
+name = "zero_before_object"
+offset = 81
+type = "bytes[6]"
+source = "spec"
+anchor = "+81 stores six zero bytes"
+
+[[record.field]]
+name = "object_id"
+offset = 87
+type = "u32"
+source = "spec"
+anchor = "+87 stores a nonzero u32 LE object ID"
+
+[[record.field]]
+name = "zero_before_handles"
+offset = 91
+type = "bytes[12]"
+source = "spec"
+anchor = "+91 stores twelve zero bytes"
+
+[[record.field]]
+name = "handles"
+offset = 103
+type = "bytes[8]"
+source = "spec"
+anchor = "Record +103 stores `c7 cf ff ff c7 cf ff ff`"
+
+[[record.field]]
+name = "zero_before_generation"
+offset = 111
+type = "u32"
+source = "spec"
+anchor = "+111 stores u32 zero"
+
+[[record.field]]
+name = "generation"
+offset = 115
+type = "u32"
+source = "spec"
+anchor = "+115 stores the u32 LE generation word `5000`, `7000`, or `10000`"
+
+[[record.field]]
+name = "zero_before_origin"
+offset = 119
+type = "bytes[8]"
+source = "spec"
+anchor = "+119 stores eight zero bytes"
+
+[[record.field]]
+name = "origin"
+offset = 127
+type = "f64[3]"
+source = "spec"
+anchor = "Three finite f64 LE values at +127, +135, and +143 store the solved origin in metres"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "fn coordinate_system_origin(record: &[u8])"
+note = "The parser requires exactly one complete component-point record."
+
+[[record]]
+name = "coordinate_system_line_axis"
+kind = "byte"
+section = "2"
+anchor = "Each line-axis record is 113 bytes"
+size = 113
+endianness = "little"
+
+[[record.field]]
+name = "handles"
+offset = 0
+type = "bytes[8]"
+source = "spec"
+anchor = "Record +0 stores `c7 cf ff ff c7 cf ff ff`"
+
+[[record.field]]
+name = "zero_before_generation"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "+8 stores u32 zero"
+
+[[record.field]]
+name = "generation"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "+12 stores the same generation word as the component-point record"
+
+[[record.field]]
+name = "zero_before_scalar"
+offset = 16
+type = "bytes[16]"
+source = "spec"
+anchor = "+16 stores sixteen zero bytes"
+
+[[record.field]]
+name = "carrier_scalar"
+offset = 32
+type = "f64"
+source = "spec"
+anchor = "Record +32 stores a positive finite f64 carrier scalar"
+
+[[record.field]]
+name = "line_point"
+offset = 40
+type = "f64[3]"
+source = "spec"
+anchor = "Three finite f64 LE values at +40 store a point on the selected line"
+
+[[record.field]]
+name = "direction"
+offset = 64
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 LE values at +64 store a unit direction"
+
+[[record.field]]
+name = "separator"
+offset = 88
+type = "u8"
+source = "spec"
+anchor = "Byte +88 is zero"
+
+[[record.field]]
+name = "repeated_direction"
+offset = 89
+type = "f64[3]"
+source = "spec"
+anchor = "The same direction is repeated as three f64 LE values at +89"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "fn coordinate_system_line_axes("
+note = "The parser requires two ordered records with the component-point generation word."
+
+[[record]]
+name = "coordinate_system_xy_tail"
+kind = "byte"
+section = "2"
+anchor = "The 29 bytes immediately after the second line-axis record complete the frame"
+size = 29
+endianness = "little"
+
+[[record.field]]
+name = "x_reversed"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags"
+
+[[record.field]]
+name = "y_reversed"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags"
+
+[[record.field]]
+name = "z_reversed"
+offset = 2
+type = "u8"
+source = "spec"
+anchor = "The complete X/Y form has a zero Z flag"
+
+[[record.field]]
+name = "origin"
+offset = 3
+type = "f64[3]"
+source = "spec"
+anchor = "Three finite f64 LE values at +3 store the origin in metres"
+
+[[record.field]]
+name = "terminator"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "The final u16 token is nonzero"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "const FRAME_TAIL_LEN: usize = 29;"
+note = "The parser requires the tail immediately after the second line-axis record."
+
+[[record]]
 name = "display_lists_scene_source_binding"
 kind = "byte"
 section = "8"

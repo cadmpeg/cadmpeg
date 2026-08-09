@@ -1050,6 +1050,69 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
 
+## `coordinate_system_component_point`
+
+Spec §2 · layout: byte offsets · size: 151 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 10 | `prefix` | `bytes[10]` | little | spec | begins `2f 80 02 00 00 00 00 00 00 00` |
+| 10 | 35 | `zero_header` | `bytes[35]` | little | spec | followed by 35 zero bytes |
+| 45 | 16 | `sentinel` | `bytes[16]` | little | spec | sixteen `ff` bytes |
+| 61 | 8 | `zero_before_source` | `bytes[8]` | little | spec | and eight zero bytes |
+| 69 | 4 | `source_id` | `u32` | little | spec | Record +69 stores a nonzero u32 LE source ID |
+| 73 | 4 | `source_stamp` | `u32` | little | spec | +73 stores a nonzero non-sentinel u32 LE source stamp |
+| 77 | 2 | `zero_selector` | `u16` | little | spec | +77 stores u16 zero |
+| 79 | 2 | `one_selector` | `u16` | little | spec | +79 stores u16 `1` |
+| 81 | 6 | `zero_before_object` | `bytes[6]` | little | spec | +81 stores six zero bytes |
+| 87 | 4 | `object_id` | `u32` | little | spec | +87 stores a nonzero u32 LE object ID |
+| 91 | 12 | `zero_before_handles` | `bytes[12]` | little | spec | +91 stores twelve zero bytes |
+| 103 | 8 | `handles` | `bytes[8]` | little | spec | Record +103 stores `c7 cf ff ff c7 cf ff ff` |
+| 111 | 4 | `zero_before_generation` | `u32` | little | spec | +111 stores u32 zero |
+| 115 | 4 | `generation` | `u32` | little | spec | +115 stores the u32 LE generation word `5000`, `7000`, or `10000` |
+| 119 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | +119 stores eight zero bytes |
+| 127 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +127, +135, and +143 store the solved origin in metres |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires exactly one complete component-point record.
+
+## `coordinate_system_line_axis`
+
+Spec §2 · layout: byte offsets · size: 113 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `handles` | `bytes[8]` | little | spec | Record +0 stores `c7 cf ff ff c7 cf ff ff` |
+| 8 | 4 | `zero_before_generation` | `u32` | little | spec | +8 stores u32 zero |
+| 12 | 4 | `generation` | `u32` | little | spec | +12 stores the same generation word as the component-point record |
+| 16 | 16 | `zero_before_scalar` | `bytes[16]` | little | spec | +16 stores sixteen zero bytes |
+| 32 | 8 | `carrier_scalar` | `f64` | little | spec | Record +32 stores a positive finite f64 carrier scalar |
+| 40 | 24 | `line_point` | `f64[3]` | little | spec | Three finite f64 LE values at +40 store a point on the selected line |
+| 64 | 24 | `direction` | `f64[3]` | little | spec | Three f64 LE values at +64 store a unit direction |
+| 88 | 1 | `separator` | `u8` | little | spec | Byte +88 is zero |
+| 89 | 24 | `repeated_direction` | `f64[3]` | little | spec | The same direction is repeated as three f64 LE values at +89 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires two ordered records with the component-point generation word.
+
+## `coordinate_system_xy_tail`
+
+Spec §2 · layout: byte offsets · size: 29 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `x_reversed` | `u8` | little | spec | Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags |
+| 1 | 1 | `y_reversed` | `u8` | little | spec | Bytes +0, +1, and +2 are Boolean X, Y, and Z direction-reversal flags |
+| 2 | 1 | `z_reversed` | `u8` | little | spec | The complete X/Y form has a zero Z flag |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +3 store the origin in metres |
+| 27 | 2 | `terminator` | `u16` | little | spec | The final u16 token is nonzero |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires the tail immediately after the second line-axis record.
+
 ## `display_lists_scene_source_binding`
 
 Spec §8 · layout: byte offsets · size: 16 B

@@ -10384,9 +10384,10 @@ pub(crate) fn enrich_history_parameters_values_only(
 
 /// The shared native-lane enrichment prefix, declared once for both codec
 /// directions. Runs the ordered extrusion-termination, combine, sweep-path,
-/// sketch-block, parameter, reference-plane, reference-point, PMI,
-/// evaluated-parameter, reference-axis, and revolution-input enrichments; the
-/// read path additionally applies hole-construction enrichment (selected by `mode`).
+/// sketch-block, parameter, reference-plane, reference-point,
+/// coordinate-system, PMI, evaluated-parameter, reference-axis, and
+/// revolution-input enrichments; the read path additionally applies
+/// hole-construction enrichment (selected by `mode`).
 pub(crate) fn enrich_history_semantic(
     histories: &mut [FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
@@ -10409,6 +10410,9 @@ pub(crate) fn enrich_history_semantic(
     }
     crate::resolved_features::reference_geometry::enrich_history_reference_planes(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_reference_points(histories, lanes);
+    crate::resolved_features::reference_geometry::enrich_history_coordinate_systems(
+        histories, lanes,
+    );
     crate::pmi::enrich_history_parameters(histories, pmi_dimensions);
     apply_evaluated_parameters(histories);
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);

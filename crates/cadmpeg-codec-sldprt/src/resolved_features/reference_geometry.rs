@@ -1,4 +1,4 @@
-//! Reference-plane, reference-axis, and reference-point geometry.
+//! Reference-plane, reference-axis, reference-point, and coordinate-system geometry.
 
 use super::compact_reference_planes::principal_sketch_frame;
 use super::curves::{
@@ -610,6 +610,244 @@ fn reference_point_key(point: &Point3) -> [u64; 3] {
         (point.x + 0.0).to_bits(),
         (point.y + 0.0).to_bits(),
         (point.z + 0.0).to_bits(),
+    ]
+}
+
+/// Add solved model-space frames to complete coordinate-system history records.
+pub(crate) fn enrich_history_coordinate_systems(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut candidates =
+        BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3, Vector3)>>::new();
+    for lane in lanes {
+        let mut starts =
+            histories
+                .iter()
+                .enumerate()
+                .flat_map(|(history_index, history)| {
+                    history.features.iter().enumerate().filter_map(
+                        move |(feature_index, feature)| {
+                            feature_object_name(feature, lane)
+                                .map(|name| (name.offset, history_index, feature_index))
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
+            let feature = &histories[history_index].features[feature_index];
+            if feature.input_class.as_deref() != Some("moCoordSys_c")
+                || feature.properties.contains_key("Origin")
+                || feature.properties.contains_key("XAxis")
+                || feature.properties.contains_key("YAxis")
+                || feature.properties.contains_key("ZAxis")
+            {
+                continue;
+            }
+            let end = starts
+                .get(index + 1)
+                .and_then(|next| usize::try_from(next.0).ok())
+                .unwrap_or(lane.native_payload.len());
+            let Ok(start) = usize::try_from(start) else {
+                continue;
+            };
+            let Some(record) = lane.native_payload.get(start..end) else {
+                continue;
+            };
+            if let Some(frame) = resolved_coordinate_system(record) {
+                candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(frame);
+            }
+        }
+    }
+
+    for ((history_index, feature_index), mut frames) in candidates {
+        frames.sort_by_key(coordinate_system_frame_key);
+        frames.dedup_by_key(|frame| coordinate_system_frame_key(frame));
+        let [(origin, x_axis, y_axis, z_axis)] = frames.as_slice() else {
+            continue;
+        };
+        let feature = &mut histories[history_index].features[feature_index];
+        feature.properties.insert(
+            "Origin".into(),
+            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+        );
+        for (name, axis) in [("XAxis", x_axis), ("YAxis", y_axis), ("ZAxis", z_axis)] {
+            feature
+                .properties
+                .insert(name.into(), format!("{},{},{}", axis.x, axis.y, axis.z));
+        }
+    }
+}
+
+fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
+    const AXIS_RECORD_LEN: usize = 113;
+    const FRAME_TAIL_LEN: usize = 29;
+
+    let (origin, generation, origin_end) = coordinate_system_origin(record)?;
+    let axes = coordinate_system_line_axes(record, generation, origin_end);
+    let [(first_offset, mut x_axis), (last_offset, mut y_axis)] = axes.as_slice() else {
+        return None;
+    };
+    if first_offset >= last_offset {
+        return None;
+    }
+
+    let tail = last_offset.checked_add(AXIS_RECORD_LEN)?;
+    let bytes = record.get(tail..tail.checked_add(FRAME_TAIL_LEN)?)?;
+    let flips = bytes.get(..3)?;
+    if flips.iter().any(|value| !matches!(value, 0 | 1))
+        || flips[2] != 0
+        || bytes.get(27..29) == Some(&[0, 0])
+    {
+        return None;
+    }
+    let tail_origin = Point3::new(
+        finite_f64(bytes, 3)? * 1000.0,
+        finite_f64(bytes, 11)? * 1000.0,
+        finite_f64(bytes, 19)? * 1000.0,
+    );
+    if reference_point_key(&tail_origin) != reference_point_key(&origin) {
+        return None;
+    }
+
+    if flips[0] == 1 {
+        x_axis = Vector3::new(-x_axis.x, -x_axis.y, -x_axis.z);
+    }
+    if flips[1] == 1 {
+        y_axis = Vector3::new(-y_axis.x, -y_axis.y, -y_axis.z);
+    }
+    let x_axis = x_axis.unit()?;
+    let projection = x_axis.dot(y_axis);
+    let y_axis = Vector3::new(
+        y_axis.x - projection * x_axis.x,
+        y_axis.y - projection * x_axis.y,
+        y_axis.z - projection * x_axis.z,
+    )
+    .unit()?;
+    let z_axis = x_axis.cross(y_axis).unit()?;
+    Some((origin, x_axis, y_axis, z_axis))
+}
+
+fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
+    const PREFIX: &[u8] = &[0x2f, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
+    const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    const GENERATIONS: [u32; 3] = [5000, 7000, 10000];
+
+    let candidates = record
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == PREFIX)
+        .filter_map(|(prefix, _)| {
+            if record.get(prefix + 10..prefix + 45) != Some(&[0; 35])
+                || record.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])
+                || record.get(prefix + 61..prefix + 69) != Some(&[0; 8])
+                || record.get(prefix + 77..prefix + 79) != Some(&[0; 2])
+                || record.get(prefix + 79..prefix + 81) != Some(&1u16.to_le_bytes())
+                || record.get(prefix + 81..prefix + 87) != Some(&[0; 6])
+                || record.get(prefix + 91..prefix + 103) != Some(&[0; 12])
+                || record.get(prefix + 103..prefix + 111) != Some(HANDLES)
+                || record.get(prefix + 111..prefix + 115) != Some(&[0; 4])
+                || record.get(prefix + 119..prefix + 127) != Some(&[0; 8])
+            {
+                return None;
+            }
+            let source = u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
+            let stamp = u32::from_le_bytes(record.get(prefix + 73..prefix + 77)?.try_into().ok()?);
+            let object = u32::from_le_bytes(record.get(prefix + 87..prefix + 91)?.try_into().ok()?);
+            let generation =
+                u32::from_le_bytes(record.get(prefix + 115..prefix + 119)?.try_into().ok()?);
+            if source == 0
+                || stamp == 0
+                || stamp == u32::MAX
+                || object == 0
+                || !GENERATIONS.contains(&generation)
+            {
+                return None;
+            }
+            Some((
+                Point3::new(
+                    finite_f64(record, prefix + 127)? * 1000.0,
+                    finite_f64(record, prefix + 135)? * 1000.0,
+                    finite_f64(record, prefix + 143)? * 1000.0,
+                ),
+                generation,
+                prefix.checked_add(151)?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+fn coordinate_system_line_axes(
+    record: &[u8],
+    generation: u32,
+    origin_end: usize,
+) -> Vec<(usize, Vector3)> {
+    const PREFIX: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    record
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter(|(prefix, bytes)| *prefix >= origin_end && *bytes == PREFIX)
+        .filter_map(|(prefix, _)| {
+            if record.get(prefix + 8..prefix + 12) != Some(&[0; 4])
+                || record.get(prefix + 12..prefix + 16) != Some(&generation.to_le_bytes())
+                || record.get(prefix + 16..prefix + 32) != Some(&[0; 16])
+                || record.get(prefix + 88) != Some(&0)
+            {
+                return None;
+            }
+            let scalar = finite_f64(record, prefix + 32)?;
+            finite_f64(record, prefix + 40)?;
+            finite_f64(record, prefix + 48)?;
+            finite_f64(record, prefix + 56)?;
+            let direction = Vector3::new(
+                finite_f64(record, prefix + 64)?,
+                finite_f64(record, prefix + 72)?,
+                finite_f64(record, prefix + 80)?,
+            );
+            let repeated = Vector3::new(
+                finite_f64(record, prefix + 89)?,
+                finite_f64(record, prefix + 97)?,
+                finite_f64(record, prefix + 105)?,
+            );
+            let repeated_matches = (direction.x - repeated.x).abs() <= 1.0e-12
+                && (direction.y - repeated.y).abs() <= 1.0e-12
+                && (direction.z - repeated.z).abs() <= 1.0e-12;
+            (scalar > 0.0 && (direction.norm() - 1.0).abs() <= 1.0e-9 && repeated_matches)
+                .then_some((prefix, direction))
+        })
+        .collect()
+}
+
+fn finite_f64(bytes: &[u8], offset: usize) -> Option<f64> {
+    let value = f64::from_le_bytes(bytes.get(offset..offset.checked_add(8)?)?.try_into().ok()?);
+    value.is_finite().then_some(value)
+}
+
+fn coordinate_system_frame_key(
+    (origin, x_axis, y_axis, z_axis): &(Point3, Vector3, Vector3, Vector3),
+) -> [u64; 12] {
+    let bits = |value: f64| (value + 0.0).to_bits();
+    [
+        bits(origin.x),
+        bits(origin.y),
+        bits(origin.z),
+        bits(x_axis.x),
+        bits(x_axis.y),
+        bits(x_axis.z),
+        bits(y_axis.x),
+        bits(y_axis.y),
+        bits(y_axis.z),
+        bits(z_axis.x),
+        bits(z_axis.y),
+        bits(z_axis.z),
     ]
 }
 
