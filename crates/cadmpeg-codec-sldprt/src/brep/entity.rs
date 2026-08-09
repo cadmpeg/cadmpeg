@@ -34,9 +34,18 @@ pub struct ShellRecord {
 pub struct FaceColor {
     pub face_attr: u16,
     pub color_attr: u16,
+    pub face_seq: u32,
+    pub stream_order: usize,
     pub color: Color,
     pub offset: usize,
     pub target: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FaceColorVersion {
+    pub face_attr: u16,
+    pub seq: u32,
+    pub stream_order: usize,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -50,6 +59,10 @@ pub struct Facts {
     pub cluster_bodies: Vec<BodyRecord>,
     /// Schema-33103 body heads whose maximum face-component overlap was tied.
     pub ambiguous_body_assignments: usize,
+    /// Face-color links whose current framed records conflict.
+    pub unresolved_face_colors: usize,
+    /// Version of every face record that can carry a linked color.
+    pub face_color_versions: Vec<FaceColorVersion>,
     pub face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub face_atoms: Vec<super::attrib::FaceAtom>,
@@ -65,6 +78,7 @@ struct EntityRecord {
     disc: u16,
     refs: Vec<u16>,
     offset: usize,
+    end: usize,
 }
 
 const CLASS_ROOT_INDEX_PREFIX: &[u8] = b"CI\x10index_map_offset\0\0\0\x01\x01dCCZ\0\0\0\x14";
@@ -92,7 +106,7 @@ fn slot_count(disc: u16, flo: u8) -> Option<usize> {
     }
 }
 
-fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<Vec<u16>> {
+fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<(Vec<u16>, usize)> {
     if prefixed {
         if body.get(at) != Some(&1) {
             return None;
@@ -104,12 +118,13 @@ fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<Vec<u16>
             p = p.checked_add(3)?;
         }
         if !out.is_empty() && body.get(p) == Some(&0) {
-            return Some(out);
+            return Some((out, p.checked_add(1)?));
         }
     }
-    (0..count)
+    let refs = (0..count)
         .map(|index| u16_be(body, at + index * 2))
-        .collect()
+        .collect::<Option<Vec<_>>>()?;
+    Some((refs, at.checked_add(count.checked_mul(2)?)?))
 }
 
 fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
@@ -146,7 +161,7 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
             };
             count
         };
-        let Some(refs) = refs(body, p + 12, count, prefixed) else {
+        let Some((refs, end)) = refs(body, p + 12, count, prefixed) else {
             continue;
         };
         out.push(EntityRecord {
@@ -156,6 +171,7 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
             disc,
             refs,
             offset: off,
+            end,
         });
     }
     out
@@ -239,6 +255,52 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
     ))
 }
 
+#[derive(Clone, Copy)]
+struct FramedColor {
+    color: Color,
+    offset: usize,
+    parent_seq: u32,
+}
+
+fn linked_colors(body: &[u8], entities: &[EntityRecord]) -> HashMap<(u16, u16), Vec<FramedColor>> {
+    let mut colors = HashMap::<(u16, u16), Vec<FramedColor>>::new();
+    for parent in entities {
+        let mut linked_faces = parent.refs.iter().copied().collect::<HashSet<_>>();
+        linked_faces.insert(parent.attr);
+        let mut at = parent.end;
+        while let Some((color_attr, color, end)) = color_record(body, at) {
+            let framed = FramedColor {
+                color,
+                offset: at,
+                parent_seq: parent.seq,
+            };
+            for face_attr in linked_faces.iter().copied().filter(|attr| *attr > 1) {
+                colors
+                    .entry((face_attr, color_attr))
+                    .or_default()
+                    .push(framed);
+            }
+            at = end;
+        }
+    }
+    colors
+}
+
+fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
+    let current_seq = candidates
+        .iter()
+        .map(|candidate| candidate.parent_seq)
+        .max()?;
+    let mut current = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| candidate.parent_seq == current_seq);
+    let first = current.next()?;
+    current
+        .all(|candidate| candidate.color == first.color)
+        .then_some(first)
+}
+
 pub fn scan(body: &[u8]) -> Facts {
     scan_with_framing(body, false)
 }
@@ -251,46 +313,63 @@ fn scan_with_framing(body: &[u8], prefixed: bool) -> Facts {
     let entities = scan_entities(body, prefixed);
     let entity_attrs = entities.iter().map(|record| record.attr).collect();
     let class_roots = class_root_attrs(body, &entity_attrs);
-    let mut colors = HashMap::new();
-    for off in 0..body.len().saturating_sub(31) {
-        if let Some((attr, color, _end)) = color_record(body, off) {
-            colors.insert(attr, (color, off));
-        }
-    }
-    let mut face_colors = HashMap::new();
+    let linked_colors = linked_colors(body, &entities);
+    let mut face_colors = Vec::new();
+    let mut face_color_versions = Vec::new();
+    let mut unresolved_face_colors = 0;
     for face in &entities {
-        if face.disc == 0x0015 || face.disc == 0x001f {
-            if let Some(color_attr) = face.refs.get(5).copied() {
-                if let Some((color, offset)) = colors.get(&color_attr) {
-                    face_colors.insert(
-                        face.attr,
-                        FaceColor {
-                            face_attr: face.attr,
-                            color_attr,
-                            color: *color,
-                            offset: *offset,
-                            target: None,
+        let framed = match face.disc {
+            0x0014 => {
+                face_color_versions.push(FaceColorVersion {
+                    face_attr: face.attr,
+                    seq: face.seq,
+                    stream_order: 0,
+                });
+                color_record(body, face.end).map(|(color_attr, color, _end)| {
+                    (
+                        color_attr,
+                        FramedColor {
+                            color,
+                            offset: face.end,
+                            parent_seq: face.seq,
                         },
-                    );
+                    )
+                })
+            }
+            0x0015 | 0x001f => {
+                face_color_versions.push(FaceColorVersion {
+                    face_attr: face.attr,
+                    seq: face.seq,
+                    stream_order: 0,
+                });
+                let Some(color_attr) = face.refs.get(5).copied().filter(|attr| *attr > 1) else {
+                    continue;
+                };
+                match linked_colors.get(&(face.attr, color_attr)) {
+                    Some(candidates) => match current_linked_color(candidates) {
+                        Some(color) => Some((color_attr, color)),
+                        None => {
+                            unresolved_face_colors += 1;
+                            None
+                        }
+                    },
+                    None => None,
                 }
             }
-        }
-        if face.disc == 0x0014 {
-            let at =
-                face.offset + 2 + usize::from(body.get(face.offset + 2) == Some(&0xff)) + 12 + 12;
-            if let Some((color_attr, color, _end)) = color_record(body, at) {
-                face_colors.insert(
-                    face.attr,
-                    FaceColor {
-                        face_attr: face.attr,
-                        color_attr,
-                        color,
-                        offset: at,
-                        target: None,
-                    },
-                );
-            }
-        }
+            _ => continue,
+        };
+        let Some((color_attr, framed)) = framed else {
+            continue;
+        };
+        face_colors.push(FaceColor {
+            face_attr: face.attr,
+            color_attr,
+            face_seq: face.seq,
+            stream_order: 0,
+            color: framed.color,
+            offset: framed.offset,
+            target: None,
+        });
     }
     let (bodies, ambiguous_body_assignments) = bodies(&entities);
     Facts {
@@ -301,7 +380,9 @@ fn scan_with_framing(body: &[u8], prefixed: bool) -> Facts {
         }),
         cluster_bodies: cluster_chain_bodies(&entities, None),
         ambiguous_body_assignments,
-        face_colors: face_colors.into_values().collect(),
+        unresolved_face_colors,
+        face_color_versions,
+        face_colors,
         face_atoms: super::attrib::scan(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
     }
@@ -2915,6 +2996,45 @@ fn reachable_refs(by_attr: &HashMap<u16, &EntityRecord>, root: &EntityRecord) ->
 mod tests {
     use super::*;
 
+    fn bare_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&seq.to_be_bytes());
+        bytes.extend_from_slice(&disc.to_be_bytes());
+        for reference in refs {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes
+    }
+
+    fn prefixed_entity(attr: u16, seq: u32, disc: u16, refs: [u16; 6]) -> Vec<u8> {
+        let mut bytes = vec![0, 0x51];
+        bytes.extend_from_slice(&1_u32.to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&seq.to_be_bytes());
+        bytes.extend_from_slice(&disc.to_be_bytes());
+        for reference in refs {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.push(0);
+        bytes
+    }
+
+    fn color(attr: u16, rgb: [f64; 3], prefixed: bool) -> Vec<u8> {
+        let mut bytes = vec![0, 0x53];
+        if prefixed {
+            bytes.push(0xff);
+        }
+        bytes.extend_from_slice(&3_u32.to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        for channel in rgb {
+            bytes.extend_from_slice(&channel.to_be_bytes());
+        }
+        bytes
+    }
+
     fn record(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {
         EntityRecord {
             attr,
@@ -2923,6 +3043,7 @@ mod tests {
             disc,
             refs: refs.to_vec(),
             offset: usize::from(attr),
+            end: usize::from(attr) + 26,
         }
     }
 
@@ -3975,7 +4096,76 @@ mod tests {
         }
         bytes.push(0);
 
-        assert_eq!(refs(&bytes, 0, 6, true), Some((2_u16..=8).collect()));
+        assert_eq!(refs(&bytes, 0, 6, true), Some(((2_u16..=8).collect(), 22)));
+    }
+
+    #[test]
+    fn face_color_requires_the_adjacent_record_boundary() {
+        let mut bytes = bare_entity(700, 1, 0x15, [0, 0, 0, 0, 0, 900]);
+        bytes.extend_from_slice(&[0xaa, 0xbb]);
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+
+        let facts = scan(&bytes);
+
+        assert!(facts.face_colors.is_empty());
+        assert_eq!(facts.unresolved_face_colors, 0);
+    }
+
+    #[test]
+    fn prefixed_face_color_uses_the_terminated_face_boundary() {
+        let mut bytes = prefixed_entity(700, 4, 0x15, [0, 0, 0, 0, 0, 900]);
+        bytes.extend(color(900, [0.25, 0.5, 0.75], true));
+
+        let facts = scan_deltas(&bytes);
+
+        assert_eq!(facts.face_colors.len(), 1);
+        assert_eq!(facts.face_colors[0].face_attr, 700);
+        assert_eq!(facts.face_colors[0].color_attr, 900);
+        assert_eq!(facts.face_colors[0].face_seq, 4);
+    }
+
+    #[test]
+    fn unrelated_adjacent_color_does_not_replace_the_referenced_color() {
+        let mut bytes = bare_entity(700, 1, 0x15, [0, 0, 0, 0, 0, 900]);
+        bytes.extend(color(901, [0.25, 0.5, 0.75], false));
+
+        let facts = scan(&bytes);
+
+        assert!(facts.face_colors.is_empty());
+        assert_eq!(facts.unresolved_face_colors, 0);
+    }
+
+    #[test]
+    fn referenced_color_uses_a_framed_inline_face_link() {
+        let mut bytes = bare_entity(700, 1, 0x15, [0, 0, 0, 0, 0, 900]);
+        bytes.extend(bare_entity(701, 2, 0x15, [0, 0, 0, 0, 700, 901]));
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+
+        let facts = scan(&bytes);
+
+        assert_eq!(facts.face_colors.len(), 1);
+        assert_eq!(facts.face_colors[0].face_attr, 700);
+        assert_eq!(facts.face_colors[0].color_attr, 900);
+    }
+
+    #[test]
+    fn inline_face_link_frames_a_contiguous_color_run() {
+        let mut bytes = bare_entity(700, 1, 0x15, [0, 0, 0, 0, 0, 900]);
+        bytes.extend(bare_entity(701, 2, 0x15, [0, 0, 0, 0, 700, 901]));
+        bytes.extend(color(900, [0.25, 0.5, 0.75], false));
+        bytes.extend(color(901, [0.75, 0.5, 0.25], false));
+
+        let facts = scan(&bytes);
+
+        assert_eq!(facts.face_colors.len(), 2);
+        assert!(facts
+            .face_colors
+            .iter()
+            .any(|color| color.face_attr == 700 && color.color_attr == 900));
+        assert!(facts
+            .face_colors
+            .iter()
+            .any(|color| color.face_attr == 701 && color.color_attr == 901));
     }
 
     #[test]

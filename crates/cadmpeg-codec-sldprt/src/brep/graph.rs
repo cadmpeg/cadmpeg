@@ -293,6 +293,8 @@ pub struct Stats {
     pub source_entity_records: usize,
     /// Schema-33103 body heads whose maximum face-component overlap was tied.
     pub ambiguous_body_assignments: usize,
+    /// Face-color bindings withheld because current records conflict.
+    pub unresolved_face_colors: usize,
     /// Face owners with multiple non-equivalent bridge uses.
     pub ambiguous_face_owners: usize,
     /// Canonical faces that no explicit body record claims.
@@ -558,7 +560,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         })
         .collect::<Vec<_>>();
     let final_state_refs = entity::scan_final_bridge_selector(&entity_streams);
-    for (payload, header) in ordered {
+    for (stream_order, (payload, header)) in ordered.into_iter().enumerate() {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
         carriers.merge_missing(scan_carriers(body));
@@ -573,6 +575,12 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         } else {
             entity::scan(body)
         };
+        for color in &mut scanned_facts.face_colors {
+            color.stream_order = stream_order;
+        }
+        for version in &mut scanned_facts.face_color_versions {
+            version.stream_order = stream_order;
+        }
         if !initialized || !is_deltas {
             if initialized {
                 tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
@@ -586,11 +594,16 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                     facts.cluster_bodies = scanned_facts.cluster_bodies;
                 }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
+                facts
+                    .face_color_versions
+                    .append(&mut scanned_facts.face_color_versions);
                 facts.face_atoms.append(&mut scanned_facts.face_atoms);
                 facts
                     .body_modifiers
                     .append(&mut scanned_facts.body_modifiers);
                 facts.entity_count += scanned_facts.entity_count;
+                facts.ambiguous_body_assignments += scanned_facts.ambiguous_body_assignments;
+                facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
@@ -599,11 +612,16 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         } else {
             tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
             facts.face_colors.append(&mut scanned_facts.face_colors);
+            facts
+                .face_color_versions
+                .append(&mut scanned_facts.face_color_versions);
             facts.face_atoms.append(&mut scanned_facts.face_atoms);
             facts
                 .body_modifiers
                 .append(&mut scanned_facts.body_modifiers);
             facts.entity_count += scanned_facts.entity_count;
+            facts.ambiguous_body_assignments += scanned_facts.ambiguous_body_assignments;
+            facts.unresolved_face_colors += scanned_facts.unresolved_face_colors;
         }
     }
     decode_graph(&carriers, &tables, facts, stream)
@@ -640,6 +658,60 @@ fn unique_body_modifiers(modifiers: Vec<attrib::BodyModifier>) -> Vec<attrib::Bo
     out
 }
 
+fn unique_face_colors(
+    colors: Vec<entity::FaceColor>,
+    versions: Vec<entity::FaceColorVersion>,
+) -> (Vec<entity::FaceColor>, usize) {
+    let mut current_versions = HashMap::<u16, (u32, usize)>::new();
+    for version in versions {
+        current_versions
+            .entry(version.face_attr)
+            .and_modify(|current| {
+                *current = (*current).max((version.seq, version.stream_order));
+            })
+            .or_insert((version.seq, version.stream_order));
+    }
+
+    let mut by_face = HashMap::<u16, Vec<entity::FaceColor>>::new();
+    for color in colors {
+        if current_versions.get(&color.face_attr) == Some(&(color.face_seq, color.stream_order)) {
+            by_face.entry(color.face_attr).or_default().push(color);
+        }
+    }
+
+    let mut unresolved = 0;
+    let mut selected = Vec::new();
+    for candidates in by_face.into_values() {
+        let first = &candidates[0];
+        if candidates.iter().all(|candidate| {
+            candidate.color_attr == first.color_attr && candidate.color == first.color
+        }) {
+            selected.push(first.clone());
+        } else {
+            unresolved += 1;
+        }
+    }
+
+    let mut by_color = HashMap::<u16, Vec<entity::FaceColor>>::new();
+    for color in selected {
+        by_color.entry(color.color_attr).or_default().push(color);
+    }
+    let mut out = Vec::new();
+    for candidates in by_color.into_values() {
+        let first = &candidates[0];
+        if candidates
+            .iter()
+            .all(|candidate| candidate.color == first.color)
+        {
+            out.extend(candidates);
+        } else {
+            unresolved += candidates.len();
+        }
+    }
+    out.sort_by_key(|color| (color.face_attr, color.offset));
+    (out, unresolved)
+}
+
 fn decode_graph(
     carriers: &CarrierIndex,
     t: &topology::Tables,
@@ -650,14 +722,17 @@ fn decode_graph(
     let class_root_bodies = entity_facts.class_root_bodies;
     let cluster_bodies = entity_facts.cluster_bodies;
     let body_modifiers = unique_body_modifiers(entity_facts.body_modifiers);
+    let (face_colors, conflicting_face_colors) =
+        unique_face_colors(entity_facts.face_colors, entity_facts.face_color_versions);
 
     let mut out = Brep {
-        face_colors: entity_facts.face_colors,
+        face_colors,
         face_atoms: entity_facts.face_atoms,
         body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
             ambiguous_body_assignments: entity_facts.ambiguous_body_assignments,
+            unresolved_face_colors: entity_facts.unresolved_face_colors + conflicting_face_colors,
             ..Stats::default()
         },
         ..Brep::default()
@@ -4091,6 +4166,105 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 
 #[cfg(test)]
 mod tests {
+    use super::unique_face_colors;
+    use crate::brep::entity;
+    use cadmpeg_ir::topology::Color;
+
+    fn face_color(
+        face_attr: u16,
+        color_attr: u16,
+        face_seq: u32,
+        rgb: [f32; 3],
+    ) -> entity::FaceColor {
+        entity::FaceColor {
+            face_attr,
+            color_attr,
+            face_seq,
+            stream_order: 0,
+            color: Color {
+                r: rgb[0],
+                g: rgb[1],
+                b: rgb[2],
+                a: 1.0,
+            },
+            offset: usize::from(face_attr),
+            target: None,
+        }
+    }
+
+    fn face_color_version(
+        face_attr: u16,
+        seq: u32,
+        stream_order: usize,
+    ) -> entity::FaceColorVersion {
+        entity::FaceColorVersion {
+            face_attr,
+            seq,
+            stream_order,
+        }
+    }
+
+    #[test]
+    fn current_uncolored_face_version_removes_an_older_color() {
+        let colors = vec![face_color(700, 900, 1, [0.25, 0.5, 0.75])];
+
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 1, 0), face_color_version(700, 2, 0)],
+        );
+
+        assert!(resolved.is_empty());
+        assert_eq!(unresolved, 0);
+    }
+
+    #[test]
+    fn later_stream_replaces_an_equal_sequence_face_color() {
+        let old = face_color(700, 900, 2, [0.25, 0.5, 0.75]);
+        let mut current = face_color(700, 901, 2, [0.75, 0.5, 0.25]);
+        current.stream_order = 1;
+
+        let (resolved, unresolved) = unique_face_colors(
+            vec![old, current],
+            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 1)],
+        );
+
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].color_attr, 901);
+        assert_eq!(unresolved, 0);
+    }
+
+    #[test]
+    fn conflicting_current_face_colors_remain_unresolved() {
+        let colors = vec![
+            face_color(700, 900, 2, [0.25, 0.5, 0.75]),
+            face_color(700, 901, 2, [0.75, 0.5, 0.25]),
+        ];
+
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 2, 0), face_color_version(700, 2, 0)],
+        );
+
+        assert!(resolved.is_empty());
+        assert_eq!(unresolved, 1);
+    }
+
+    #[test]
+    fn conflicting_reuse_of_one_color_identity_remains_unresolved() {
+        let colors = vec![
+            face_color(700, 900, 2, [0.25, 0.5, 0.75]),
+            face_color(701, 900, 2, [0.75, 0.5, 0.25]),
+        ];
+
+        let (resolved, unresolved) = unique_face_colors(
+            colors,
+            vec![face_color_version(700, 2, 0), face_color_version(701, 2, 0)],
+        );
+
+        assert!(resolved.is_empty());
+        assert_eq!(unresolved, 2);
+    }
+
     #[test]
     fn intersection_uv_converts_length_parameters_and_exact_endpoints() {
         let surface = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {

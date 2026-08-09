@@ -2030,6 +2030,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.ambiguous_body_assignments += source.stats.ambiguous_body_assignments;
+    target.stats.unresolved_face_colors += source.stats.unresolved_face_colors;
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
@@ -2843,6 +2844,12 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         losses.push(SldprtLossCode::TopologyBodyAssignmentAmbiguous.note(format!(
             "{} schema-33103 body head(s) have tied face-component overlap; their component assignments remain unresolved.",
             s.ambiguous_body_assignments
+        )));
+    }
+    if s.unresolved_face_colors > 0 {
+        losses.push(SldprtLossCode::AppearanceFaceColorUnresolved.note(format!(
+            "{} face-color binding(s) were withheld because the current face and link records do not select one consistent framed color record.",
+            s.unresolved_face_colors
         )));
     }
     if s.ambiguous_face_owners > 0 {

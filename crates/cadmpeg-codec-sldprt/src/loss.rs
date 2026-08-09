@@ -76,6 +76,8 @@ pub enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// A derived pcurve parameter has multiple geometric candidates.
     GeometryPcurveAmbiguous,
+    /// Current face records carry conflicting or incoherent color bindings.
+    AppearanceFaceColorUnresolved,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// Body-component overlap tied and no body assignment was selected.
@@ -124,6 +126,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryPcurveAmbiguous,
+        Self::AppearanceFaceColorUnresolved,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
         Self::TopologyFaceOwnerAmbiguous,
@@ -165,6 +168,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
+            Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
@@ -200,6 +204,7 @@ impl SldprtLossCode {
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
             Self::GeometryPcurveAmbiguous => LossKind::PcurveOmitted,
+            Self::AppearanceFaceColorUnresolved => LossKind::MaterialNotTransferred,
             Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
             _ => LossKind::FeatureHistoryRetained,
         }
@@ -258,6 +263,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "geometry.pcurve-ambiguous",
+                "appearance.face-color-unresolved",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",
                 "topology.face-owner-ambiguous",

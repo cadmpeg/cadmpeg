@@ -112,7 +112,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What fixed slot count does each bare inline entity family outside the canonical face families use in each Parasolid schema?
 
-**Known.** `sldprt.md` §5 "Top-level entity families:" defines the common entity header. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
+**Known.** `sldprt.md` §5 "Top-level entity families include" defines the common entity header. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
 
 **Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
 
@@ -185,26 +185,6 @@ The decoder has a second and different idea of the active stream, `container::se
 The decoder tests offsets `+8` and `+40`. It accepts the table only when exactly one offset frames a complete descriptor sequence with consistent strip totals and vertex counts. If both offsets frame, tessellation remains unresolved.
 
 **Need.** We must know the offset to distinguish a valid table from two structurally valid candidates without withholding tessellation.
-
-### AL-03. Color record framing
-
-**Question.** What frames a `00 53` color record, and what does a second record for one attribute denote?
-
-**Known.** `sldprt.md` §5 names `00 53` as a color, property, or helper record. It gives no field grammar. `sldprt.md` §5 states that top-level tag bytes inside slots are data and not record delimiters.
-
-`crates/cadmpeg-codec-sldprt/src/brep/entity.rs:141` accepts a record at any byte offset when the tag is `00 53`, the low byte of the flags is `3`, the attribute is more than `1`, and three big-endian f64 values are finite and inside `0.0..=1.0`:
-
-```rust
-if attr <= 1 || ![r, g, b].iter().all(|value| value.is_finite() && (0.0..=1.0).contains(value)) {
-    return None;
-}
-```
-
-The range test is the acceptance rule, not a decoded invariant. `entity.rs:182` inserts each hit into a map keyed by attribute, so a second hit for one attribute replaces the first. The decoder records no loss.
-
-The disc-`0x0014` path reads its color at a computed offset and does not use this scan.
-
-**Need.** We must know the framing to find the records without a scan of every offset. A normalized knot vector or a unit direction after the same two tag bytes must not become a color.
 
 ## 5. Design intent
 

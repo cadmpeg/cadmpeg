@@ -868,7 +868,7 @@ For bridges whose owner field is greater than one, the owner identifies the cano
 
 ## 5. Entity records and face families
 
-Top-level entity families: `00 51` entity, `00 52` wrapper/container, `00 53` color/property/helper, `00 54` metadata. Common header: `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, `disc u16 BE`.
+Top-level entity families include `00 51` entities, `00 52` wrappers and containers, `00 53` color/property/helper records, and `00 54` metadata. A `00 51` header is `flags u32 BE`, `attr u16 BE`, `seq u32 BE`, and `disc u16 BE`.
 
 `flo` is the low byte of `flags`. An optional `ff` byte can occur between the `00 51` tag and `flags`; it shifts every following field by one byte. Entity-family bodies have fixed slot counts keyed by `(schema, disc, flo)`, so `00 51` and `00 52` byte values inside slots are data rather than record delimiters.
 
@@ -881,6 +881,22 @@ Face records use these families:
 | disc20/flo=1 | `00 51`, `disc == 0x0020`, `flo == 1`, six-u16 prefix |
 
 The bridge owner field `00 0e.ref0` joins the topology bridge to an entity-family face attribute.
+
+A face-color record is an inline child of a framed `00 51` link record:
+
+```
+00 53
+[ff]?
+flags      u32 BE       ; low byte = 3
+attr       u16 BE       ; color identity within the site
+red        f64 BE       ; finite, 0.0 through 1.0
+green      f64 BE       ; finite, 0.0 through 1.0
+blue       f64 BE       ; finite, 0.0 through 1.0
+```
+
+The first color record begins at the exact end of the preceding `00 51` bare slot frame or prefixed terminated slot frame. Its length is 32 bytes without `ff` and 33 bytes with `ff`. Its exact end can frame another `00 53`; one link can therefore own a contiguous color-record run. A disc14 face binds its direct color child. For disc15 and disc1f faces, `refs[5]` is nonsentinel and equals one color attribute in the run. The run's parent link is the face itself or contains the face attribute in its reference slots. A `00 53` byte sequence that is neither at a parsed entity boundary nor at the exact end of a framed color in that run is not a face color. A run whose parent does not link the referencing face is not that face's color.
+
+Partition and deltas face records share face identity. The current face record is the record with the greatest sequence, with a deltas record selecting between equal partition and deltas sequences. An uncolored current record removes an older color. For one face-color link, the greatest parent-link sequence is current. Equivalent current color records coalesce. Conflicting current records for one face, or conflicting RGB values for one color attribute, select no color binding.
 
 A stream declares its attribute families inline. A `00 4f` name record carries a big-endian u32 byte length, a u16 node id, and that many printable ASCII bytes. The `00 50` definition record of a family begins at the byte following its name record; four bytes in, it carries the u16 node id that instances of the family name. Attribute definitions are stream-local, so an instance binds only to a definition declared in the same stream.
 
@@ -1141,7 +1157,7 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 | `moLengthUserUnits_c` | +0 | bytes[3] | `ff fe ff` |
 | | +3 | u8 | UTF-16 code-unit count `n` |
 | | +4 | bytes[2n] | linear-unit name, UTF-16LE |
-- **Per-face appearance** is generation-specific. A disc14 face is followed by an adjacent `00 53 flo=3` color record. A schema-33103 disc15 face stores the color-record attribute in slot 5. The color record stores RGB as three f64 BE values at body +6 and an inline `00 51` face link. An optional `ff` byte after `00 53` shifts the body by one byte.
+- **Per-face appearance** uses the inline `00 53` child defined in §5.
 - **XML / UnQLite** carry OPC parts, document/feature metadata, unit metadata (`SW_UnitsLinear=0` = millimetres), and MessagePack UI data: auxiliary, not the exact B-rep.
 
 ---
