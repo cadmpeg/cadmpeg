@@ -79,10 +79,12 @@ fn opens_record(buf: &[u8], at: usize) -> bool {
     buf.get(at) == Some(&0) && buf.get(at + 1).is_some_and(|tag| NODE_TAGS.contains(tag))
 }
 
-/// Read the attribute-family names keyed by their name-record node id, with the
-/// end offset of each name record.
-fn names(buf: &[u8]) -> HashMap<u16, (String, usize)> {
-    let mut out = HashMap::new();
+/// Map definition-record node ids to the supported family names.
+///
+/// A family candidate requires the exact supported name and the adjacent
+/// definition record. Duplicate definition identities must agree.
+fn definitions(buf: &[u8]) -> HashMap<u16, &'static str> {
+    let mut found = HashMap::<u16, Option<&'static str>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x4f) else {
             continue;
@@ -91,44 +93,56 @@ fn names(buf: &[u8]) -> HashMap<u16, (String, usize)> {
         let Some(node) = u16_be(buf, p + 4) else {
             continue;
         };
-        let len = len as usize;
-        if !(1..64).contains(&len) {
+        if node <= 1 {
             continue;
         }
-        let Some(text) = buf.get(p + 6..p + 6 + len) else {
+        let Some(data) = p.checked_add(6) else {
             continue;
         };
-        if !text.iter().all(|byte| (0x20..0x7f).contains(byte)) {
-            continue;
-        }
-        let Ok(name) = std::str::from_utf8(text) else {
+        let Some(len) =
+            cadmpeg_core::cursor::bounded_len(u64::from(len), 1, buf.len().saturating_sub(data))
+        else {
             continue;
         };
-        out.entry(node)
-            .or_insert_with(|| (name.to_owned(), p + 6 + len));
-    }
-    out
-}
-
-/// Map definition-record node ids to their family name. A definition record
-/// follows its name record with no gap.
-fn definitions(buf: &[u8]) -> HashMap<u16, String> {
-    let mut out = HashMap::new();
-    for (name, end) in names(buf).into_values() {
+        let Some(end) = data.checked_add(len) else {
+            continue;
+        };
+        let Some(text) = buf.get(data..end) else {
+            continue;
+        };
+        let family = if text == ATOM_ID.as_bytes() {
+            ATOM_ID
+        } else if text == LAST_BODY_MODIFIER.as_bytes() {
+            LAST_BODY_MODIFIER
+        } else {
+            continue;
+        };
         let Some(p) = record_body(buf, end, 0x50) else {
             continue;
         };
-        let Some(node) = u16_be(buf, p + 4) else {
+        let Some(definition) = u16_be(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        out.entry(node).or_insert(name);
+        match found.entry(definition) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(family));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get().is_some_and(|previous| previous != family) {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
     }
-    out
+    found
+        .into_iter()
+        .filter_map(|(node, family)| family.map(|family| (node, family)))
+        .collect()
 }
 
 /// Read integer payload lists keyed by their node id.
 fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
-    let mut out: HashMap<u16, Vec<u32>> = HashMap::new();
+    let mut found = HashMap::<u16, Option<Vec<u32>>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x52) else {
             continue;
@@ -136,26 +150,53 @@ fn integer_lists(buf: &[u8]) -> HashMap<u16, Vec<u32>> {
         let Some(count) = u32_be(buf, p) else {
             continue;
         };
-        let Some(node) = u16_be(buf, p + 4) else {
+        let Some(node) = u16_be(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        let count = count as usize;
-        if !(1..64).contains(&count) {
+        let Some(data) = p.checked_add(6) else {
+            continue;
+        };
+        let Some(count) =
+            cadmpeg_core::cursor::bounded_len(u64::from(count), 4, buf.len().saturating_sub(data))
+        else {
+            continue;
+        };
+        if count != 1 && !ATOM_WIDTHS.contains(&count) {
             continue;
         }
         let mut values = Vec::with_capacity(count);
         for index in 0..count {
-            let Some(value) = u32_be(buf, p + 6 + index * 4) else {
+            let Some(value) = index
+                .checked_mul(4)
+                .and_then(|delta| data.checked_add(delta))
+                .and_then(|at| u32_be(buf, at))
+            else {
                 values.clear();
                 break;
             };
             values.push(value);
         }
         if values.len() == count {
-            out.entry(node).or_insert(values);
+            match found.entry(node) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(values));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    if entry
+                        .get()
+                        .as_ref()
+                        .is_some_and(|previous| *previous != values)
+                    {
+                        *entry.get_mut() = None;
+                    }
+                }
+            }
         }
     }
-    out
+    found
+        .into_iter()
+        .filter_map(|(node, values)| values.map(|values| (node, values)))
+        .collect()
 }
 
 /// Return one distinct integer-list payload referenced by an instance.
@@ -200,12 +241,11 @@ fn atom_payload<'a>(
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
 pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
     let definitions = definitions(buf);
-    if !definitions.values().any(|name| name == ATOM_ID) {
+    if !definitions.values().any(|name| *name == ATOM_ID) {
         return Vec::new();
     }
     let lists = integer_lists(buf);
-    let mut out: Vec<FaceAtom> = Vec::new();
-    let mut seen = HashMap::new();
+    let mut found = HashMap::<u16, Option<FaceAtom>>::new();
     for off in 0..buf.len() {
         let Some(p) = record_body(buf, off, 0x51) else {
             continue;
@@ -216,7 +256,7 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
         let Some(definition) = u16_be(buf, p + 10) else {
             continue;
         };
-        if definitions.get(&definition).map(String::as_str) != Some(ATOM_ID) {
+        if definitions.get(&definition).copied() != Some(ATOM_ID) {
             continue;
         }
         let Some(face_attr) = u16_be(buf, p + 12) else {
@@ -228,17 +268,28 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
         let Some(values) = atom_payload(buf, p + 14, &lists) else {
             continue;
         };
-        if seen.insert(face_attr, off).is_some() {
-            continue;
-        }
-        out.push(FaceAtom {
+        let atom = FaceAtom {
             face_attr,
             feature_source_id: values[ATOM_FEATURE],
             local_face_id: values[ATOM_LOCAL],
             offset: off,
             target: None,
-        });
+        };
+        match found.entry(face_attr) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(atom));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry.get().as_ref().is_some_and(|previous| {
+                    previous.feature_source_id != atom.feature_source_id
+                        || previous.local_face_id != atom.local_face_id
+                }) {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
     }
+    let mut out = found.into_values().flatten().collect::<Vec<_>>();
     out.sort_by_key(|atom| atom.face_attr);
     out
 }
@@ -246,7 +297,7 @@ pub fn scan(buf: &[u8]) -> Vec<FaceAtom> {
 /// Decode every body-level last-modifier binding carried by one stream body.
 pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
     let definitions = definitions(buf);
-    if !definitions.values().any(|name| name == LAST_BODY_MODIFIER) {
+    if !definitions.values().any(|name| *name == LAST_BODY_MODIFIER) {
         return Vec::new();
     }
     let lists = integer_lists(buf);
@@ -261,7 +312,7 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
         let Some(definition) = u16_be(buf, p + 10) else {
             continue;
         };
-        if definitions.get(&definition).map(String::as_str) != Some(LAST_BODY_MODIFIER) {
+        if definitions.get(&definition).copied() != Some(LAST_BODY_MODIFIER) {
             continue;
         }
         let Some(body_attr) = u16_be(buf, p + 12).filter(|attr| *attr > 1) else {
@@ -303,18 +354,27 @@ pub fn scan_body_modifiers(buf: &[u8]) -> Vec<BodyModifier> {
 mod tests {
     use super::*;
 
-    /// Serialize one attribute family, one payload list, and one instance.
-    fn stream(payload: &[u32], face_attr: u16) -> Vec<u8> {
-        let mut out = vec![0x00, 0x4f];
-        out.extend((ATOM_ID.len() as u32).to_be_bytes());
-        out.extend(15_u16.to_be_bytes());
-        out.extend(ATOM_ID.as_bytes());
+    fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
+        out.extend([0x00, 0x4f]);
+        out.extend((family.len() as u32).to_be_bytes());
+        out.extend(name_node.to_be_bytes());
+        out.extend(family.as_bytes());
         out.extend([0x00, 0x50]);
         out.extend(2_u32.to_be_bytes());
-        out.extend(16_u16.to_be_bytes());
+        out.extend(definition.to_be_bytes());
+    }
+
+    /// Serialize one attribute family, one payload list, and one instance.
+    fn stream(payload: &[u32], face_attr: u16) -> Vec<u8> {
+        stream_with_list_node(payload, face_attr, 300)
+    }
+
+    fn stream_with_list_node(payload: &[u32], face_attr: u16, list_node: u16) -> Vec<u8> {
+        let mut out = Vec::new();
+        append_definition(&mut out, ATOM_ID, 15, 16);
         out.extend([0x00, 0x52]);
         out.extend((payload.len() as u32).to_be_bytes());
-        out.extend(300_u16.to_be_bytes());
+        out.extend(list_node.to_be_bytes());
         for value in payload {
             out.extend(value.to_be_bytes());
         }
@@ -325,19 +385,14 @@ mod tests {
         out.extend(302_u16.to_be_bytes());
         out.extend(16_u16.to_be_bytes());
         out.extend(face_attr.to_be_bytes());
-        out.extend(300_u16.to_be_bytes());
+        out.extend(list_node.to_be_bytes());
         out
     }
 
     /// Serialize one body-modifier family, one scalar list, and one instance.
     fn body_modifier_stream(payloads: &[&[u32]], body_attr: u16) -> Vec<u8> {
-        let mut out = vec![0x00, 0x4f];
-        out.extend((LAST_BODY_MODIFIER.len() as u32).to_be_bytes());
-        out.extend(15_u16.to_be_bytes());
-        out.extend(LAST_BODY_MODIFIER.as_bytes());
-        out.extend([0x00, 0x50]);
-        out.extend(2_u32.to_be_bytes());
-        out.extend(16_u16.to_be_bytes());
+        let mut out = Vec::new();
+        append_definition(&mut out, LAST_BODY_MODIFIER, 15, 16);
         for (index, payload) in payloads.iter().enumerate() {
             out.extend([0x00, 0x52]);
             out.extend((payload.len() as u32).to_be_bytes());
@@ -377,6 +432,52 @@ mod tests {
     fn stream_without_the_family_declaration_yields_nothing() {
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body[8] = b'X';
+        assert!(scan(&body).is_empty());
+    }
+
+    #[test]
+    fn conflicting_definition_identity_is_withheld() {
+        let mut body = Vec::new();
+        append_definition(&mut body, ATOM_ID, 15, 16);
+        append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
+        assert!(!definitions(&body).contains_key(&16));
+    }
+
+    #[test]
+    fn unsupported_and_truncated_integer_lists_are_not_candidates() {
+        let mut body = Vec::new();
+        body.extend([0x00, 0x52]);
+        body.extend(2_u32.to_be_bytes());
+        body.extend(300_u16.to_be_bytes());
+        body.extend(1_u32.to_be_bytes());
+        body.extend(2_u32.to_be_bytes());
+        body.extend([0x00, 0x52]);
+        body.extend(5_u32.to_be_bytes());
+        body.extend(301_u16.to_be_bytes());
+        body.extend(1_u32.to_be_bytes());
+        assert!(integer_lists(&body).is_empty());
+    }
+
+    #[test]
+    fn conflicting_integer_list_identity_is_withheld() {
+        let mut body = Vec::new();
+        for value in [2_u32, 3] {
+            body.extend([0x00, 0x52]);
+            body.extend(1_u32.to_be_bytes());
+            body.extend(300_u16.to_be_bytes());
+            body.extend(value.to_be_bytes());
+        }
+        assert!(!integer_lists(&body).contains_key(&300));
+    }
+
+    #[test]
+    fn conflicting_face_identity_is_withheld() {
+        let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
+        body.extend(stream_with_list_node(
+            &[74, 76, 1_390_698_820, 0, 4],
+            333,
+            310,
+        ));
         assert!(scan(&body).is_empty());
     }
 
