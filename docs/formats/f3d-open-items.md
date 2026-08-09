@@ -296,20 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-44. Selection scope of an edge-treatment transition chain
-
-**Question.** Which feature families and which member counts may take the complete transition edge chain as one group's selection?
-
-**Known.** `f3d.md` §3.1 gives two rules. An executed edge-treatment group with one selection operand resolves a connected source-edge chain from its exact ASM transition. A group of `n` compact persistent members whose transition deletes exactly `n` edges selects the complete deleted-edge set.
-
-`resolved_edge_group_with_transition_chain` in `design/edge_resolve.rs` holds a third rule that neither paragraph gives. A group of one member with one identity operand takes the whole chain, with no test of the feature family and no `allow_edge_treatment_transition_chain` bit. `resolved_edge_group` reaches that code for `RuledSurface`, `Loft`, `SurfacePatch`, `EdgeFlange`, and `Hem`; the `RuledSurface` projector requires one member in every edge group, so the one-member shape is the usual shape there.
-
-The same function holds a fourth rule for a group of more than one full-layout member. Its final test compares each operand's transition candidates against the chain. `history.rs` computes the transition candidates once for each `(history, current state, previous state)` triple and copies the same vector into every identity operand of the scope, so that test compares a vector with itself and cannot fail. `radius_edge_identity_group_candidates` holds the same defect: its per-member test ends in a disjunct that the chain's own construction makes true for every operand.
-
-**Note.** `f3d.md` §3.1 conditions the sole-group fixed-radius form on the transition assigning the radius to a nonempty chain "for every member". The code does not hold that condition.
-
-**Need.** Two of the four rules have no per-member evidence. Three single-member `RuledSurface` groups take one chain and give three byte-distinct selections one neutral value. A variable-radius `Fillet` that names two edges takes every edge the transition deleted. The member count and the family that bound each rule settle the item.
-
 ### DR-45. Face set of an Extrude to-shape target
 
 **Question.** Which faces of a whole-body recipe target define the shape an Extrude terminates on?
