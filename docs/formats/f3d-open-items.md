@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-46. Join from a `Chamfer` dimensional specification to its edge group
-
-**Question.** Which stored field joins a `Chamfer` dimensional specification to one construction-operand group?
-
-**Known.** `f3d.md` §3.1 "Within a scope of the Chamfer family," states that the groups in scope-reference order pair one to one with the specifications in increasing owner-local order. `project_chamfer` in `design/feature_project.rs` implements that rule with a positional zip of the two sorted lists.
-
-The `Fillet` family has a stored join for the same relation. `DesignFilletRadiusLaw` carries the parameter record index of each radius, and `project_fillet_arm` joins on it.
-
-**Need.** The `Chamfer` join is positional and the `Fillet` join is not. Either the `Chamfer` record holds an equivalent stored index that the decoder does not read, or the positional rule is the format's rule. A scope whose owner-local order does not follow the scope-reference order separates the two.
-
 ### DR-47. Recipe-kind conditioning of a recipe-backed linear dimension
 
 **Question.** Does the recipe kind of a dimension companion's records restrict the candidate family of a recipe-backed linear dimension?
