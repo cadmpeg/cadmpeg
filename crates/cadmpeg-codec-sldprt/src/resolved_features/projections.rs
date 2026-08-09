@@ -388,8 +388,10 @@ pub(crate) fn project_compact_body_selections(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, mode } = &mut feature.definition else {
-            continue;
+        let (bodies, mode) = match &mut feature.definition {
+            FeatureDefinition::DeleteBody { bodies, mode } => (bodies, Some(mode)),
+            FeatureDefinition::MoveBody { bodies, .. } => (bodies, None),
+            _ => continue,
         };
         if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
             *bodies = cadmpeg_ir::features::BodySelection::Local {
@@ -401,9 +403,12 @@ pub(crate) fn project_compact_body_selections(
                 native: compact_body_selection_value(&selection.local_body_ids),
             };
         }
-        if matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
+        if mode
+            .as_deref()
+            .is_some_and(|mode| matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved))
+        {
             if let Some(native_mode) = selection.mode {
-                *mode = native_mode;
+                *mode.expect("delete-body mode") = native_mode;
             }
         }
     }

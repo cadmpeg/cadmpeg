@@ -9434,7 +9434,11 @@ fn project_move_face(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_move_body(feature: &Feature) -> Option<FeatureDefinition> {
-    let bodies = BodySelection::Native(feature.properties.get("Bodies")?.clone());
+    let bodies = feature
+        .properties
+        .get("Bodies")
+        .cloned()
+        .map_or(BodySelection::Unresolved, BodySelection::Native);
     let translation = parse_point3_mm(feature.properties.get("Translation")?)?;
     let translation = Vector3::new(translation.x, translation.y, translation.z);
     let rotation = match feature.parameters.get("Rotation") {
@@ -10511,6 +10515,7 @@ pub(crate) fn enrich_history_semantic(
         histories, lanes,
     );
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
+    crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);

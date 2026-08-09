@@ -43,11 +43,7 @@ pub(super) fn compact_body_selections(
     let state_token = compact_body_state_token(lane);
     let mut result = Vec::new();
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
-        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-            != NativeClassKind::DeleteBody
-        {
-            continue;
-        }
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
         let Some(start) = usize::try_from(name.offset).ok() else {
             continue;
         };
@@ -65,11 +61,34 @@ pub(super) fn compact_body_selections(
                 })
                 .flatten()
         });
-        let Some((offset, local_body_ids)) = lane
-            .native_payload
-            .get(start..end)
-            .and_then(|payload| compact_body_selection_vector(payload, start, next_token))
-        else {
+        let selection = if kind == NativeClassKind::DeleteBody {
+            lane.native_payload
+                .get(start..end)
+                .and_then(|payload| compact_body_selection_vector(payload, start, next_token))
+        } else if kind == NativeClassKind::Operation(FeatureClass::MoveBody) {
+            let data_classes = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moMoveCopyBodyData_c"
+                        && usize::try_from(class.offset)
+                            .is_ok_and(|offset| (start..end).contains(&offset))
+                })
+                .collect::<Vec<_>>();
+            match data_classes.as_slice() {
+                [class] => super::direct_edits::move_body_translation_record(
+                    &lane.native_payload,
+                    start,
+                    end,
+                    class.offset,
+                )
+                .map(|record| (record.selection_offset, record.local_body_ids)),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let Some((offset, local_body_ids)) = selection else {
             continue;
         };
         result.push(FeatureInputBodySelection {
@@ -80,12 +99,20 @@ pub(super) fn compact_body_selections(
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
             local_body_ids,
-            body_state_ids: state_token.map_or_else(Vec::new, |token| {
-                compact_body_state_ids(&lane.native_payload, start, offset, token)
-            }),
-            mode: state_token.and_then(|token| {
-                compact_body_retention_mode(&lane.native_payload, start, offset, token)
-            }),
+            body_state_ids: if kind == NativeClassKind::DeleteBody {
+                state_token.map_or_else(Vec::new, |token| {
+                    compact_body_state_ids(&lane.native_payload, start, offset, token)
+                })
+            } else {
+                Vec::new()
+            },
+            mode: if kind == NativeClassKind::DeleteBody {
+                state_token.and_then(|token| {
+                    compact_body_retention_mode(&lane.native_payload, start, offset, token)
+                })
+            } else {
+                None
+            },
         });
     }
     result
@@ -1898,7 +1925,7 @@ pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option
     if payload.get(offset..offset + 4)? != 11000u32.to_le_bytes()
         || payload.get(offset + 4..offset + 12)? != [0; 8]
     {
-        return None;
+        return super::direct_edits::move_body_selection_at(payload, offset);
     }
     let count = usize::try_from(u32::from_le_bytes(
         payload.get(offset + 12..offset + 16)?.try_into().ok()?,
