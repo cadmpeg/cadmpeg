@@ -170,6 +170,32 @@ fn a8_surface_header_identifies_an_elided_pole_grid() {
     let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
     assert_eq!(headers.len(), 1);
     assert!(headers[0].poles_elided);
+    let tail = headers[0]
+        .parameter_tail
+        .as_ref()
+        .expect("elided parameter tail");
+    assert_eq!((tail.u_control, tail.v_control), (0x21, 0x05));
+    assert_eq!(tail.u_range, [0.0, 1.0]);
+    assert_eq!(tail.v_range, [0.0, 1.0]);
+    assert_eq!(tail.u_affine, [1.0, 0.0]);
+    assert_eq!(tail.v_affine, [1.0, 0.0]);
+    assert_eq!(tail.flags, [0x01, 0x01, 0x01]);
+    assert_eq!(tail.continuation, [0.0; 8]);
+}
+
+#[test]
+fn a8_surface_header_retains_an_inline_parameter_tail() {
+    let headers =
+        crate::families::a5a8::records::a8_surface_headers(&a8_inline_tail_surface_stream());
+    let [header] = headers.as_slice() else {
+        panic!("one inline-tail header");
+    };
+    assert!(!header.poles_elided);
+    let tail = header
+        .parameter_tail
+        .as_ref()
+        .expect("inline parameter tail");
+    assert_eq!(tail.v_range[1], 1.0);
 }
 
 #[test]

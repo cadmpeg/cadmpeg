@@ -38,6 +38,32 @@ pub struct FreeformSurface {
     pub geometry: SurfaceGeometry,
 }
 
+/// The fixed parameterization program carried by an `a8 <flag> 34` surface.
+///
+/// The two control bytes are retained as encoded because their compact
+/// subprograms are not part of the fixed elided form's scalar map. The eight
+/// f64 lanes have one stable meaning: the active U/V limits followed by the
+/// affine map from the source parameter to each active parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub struct A8SurfaceParameterTail {
+    /// U-side control byte.
+    pub u_control: u8,
+    /// V-side control byte.
+    pub v_control: u8,
+    /// Active U parameter interval.
+    pub u_range: [f64; 2],
+    /// Active V parameter interval.
+    pub v_range: [f64; 2],
+    /// U affine map `(coefficient, shift)`.
+    pub u_affine: [f64; 2],
+    /// V affine map `(coefficient, shift)`.
+    pub v_affine: [f64; 2],
+    /// Extrapolation control flags.
+    pub flags: [u8; 3],
+    /// Eight continuation scalars following the flags.
+    pub continuation: [f64; 8],
+}
+
 impl FreeformSurface {
     /// Return the inline persistent object id when this is an A8 carrier.
     #[must_use]
@@ -217,13 +243,13 @@ pub(crate) fn a8_nested_b5_run_start(
     (child_start < frame_end).then_some(child_start)
 }
 
-fn valid_a8_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
-    let Some(end) = at.checked_add(141) else {
-        return false;
-    };
-    let Some(tail) = data.get(at..end) else {
-        return false;
-    };
+fn parse_a8_surface_tail(
+    data: &[u8],
+    at: usize,
+    v_knots: &[f64],
+) -> Option<A8SurfaceParameterTail> {
+    let end = at.checked_add(141)?;
+    let tail = data.get(at..end)?;
     if tail[0] != 0x05
         || tail[2] != 0x05
         || tail[1] % 4 != 1
@@ -232,42 +258,24 @@ fn valid_a8_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
         || !tail[71..135].iter().all(|byte| *byte == 0)
         || tail[135..141] != [0x01, 0x00, 0x01, 0x00, 0x07, 0x07]
     {
-        return false;
+        return None;
     }
     let read_f64 = |offset: usize| -> Option<f64> {
         Some(f64::from_le_bytes(
             tail.get(offset..offset + 8)?.try_into().ok()?,
         ))
     };
-    let Some(zero_u) = read_f64(4) else {
-        return false;
-    };
-    let Some(positive_u) = read_f64(12) else {
-        return false;
-    };
-    let Some(zero_v) = read_f64(20) else {
-        return false;
-    };
-    let Some(v_span) = read_f64(28) else {
-        return false;
-    };
-    let Some(one_u) = read_f64(36) else {
-        return false;
-    };
-    let Some(zero_w) = read_f64(44) else {
-        return false;
-    };
-    let Some(one_v) = read_f64(52) else {
-        return false;
-    };
-    let Some(zero_x) = read_f64(60) else {
-        return false;
-    };
-    let Some((&v_last, &v_first)) = v_knots.last().zip(v_knots.first()) else {
-        return false;
-    };
+    let zero_u = read_f64(4)?;
+    let positive_u = read_f64(12)?;
+    let zero_v = read_f64(20)?;
+    let v_span = read_f64(28)?;
+    let one_u = read_f64(36)?;
+    let zero_w = read_f64(44)?;
+    let one_v = read_f64(52)?;
+    let zero_x = read_f64(60)?;
+    let (&v_last, &v_first) = v_knots.last().zip(v_knots.first())?;
     let expected_v_span = v_last - v_first;
-    zero_u == 0.0
+    (zero_u == 0.0
         && positive_u.is_finite()
         && positive_u > 0.0
         && zero_v == 0.0
@@ -277,7 +285,17 @@ fn valid_a8_surface_tail(data: &[u8], at: usize, v_knots: &[f64]) -> bool {
         && one_u == 1.0
         && zero_w == 0.0
         && one_v == 1.0
-        && zero_x == 0.0
+        && zero_x == 0.0)
+        .then_some(A8SurfaceParameterTail {
+            u_control: tail[1],
+            v_control: tail[3],
+            u_range: [zero_u, positive_u],
+            v_range: [zero_v, v_span],
+            u_affine: [one_u, zero_w],
+            v_affine: [one_v, zero_x],
+            flags: [tail[68], tail[69], tail[70]],
+            continuation: [0.0; 8],
+        })
 }
 
 fn valid_a5_surface_tail(data: &[u8], at: usize, end: usize) -> bool {
@@ -343,7 +361,7 @@ fn a8_surface_suffix_start(data: &[u8], at: usize, end: usize, v_knots: &[f64]) 
     }
     let tail_end = at.checked_add(141)?;
     (tail_end <= end
-        && valid_a8_surface_tail(data, at, v_knots)
+        && parse_a8_surface_tail(data, at, v_knots).is_some()
         && closed_a8_child_run(data, tail_end, end))
     .then_some(tail_end)
 }
@@ -424,6 +442,8 @@ pub struct A8SurfaceHeader {
     pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
+    /// Decoded range, affine-map, and continuation program, when present.
+    pub parameter_tail: Option<A8SurfaceParameterTail>,
     /// The fixed 141-byte surface tail begins immediately after the mode byte,
     /// so no inline pole or weight grid is present.
     pub poles_elided: bool,
@@ -1430,9 +1450,28 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
         return None;
     }
     let tail_end = at.checked_add(141)?;
-    let poles_elided = tail_end <= end
-        && valid_a8_surface_tail(data, at, &v_distinct)
-        && closed_a8_child_run(data, tail_end, end);
+    let elided_tail = (tail_end <= end && closed_a8_child_run(data, tail_end, end))
+        .then(|| parse_a8_surface_tail(data, at, &v_distinct))
+        .flatten();
+    let poles_elided = elided_tail.is_some();
+    let inline_tail = || {
+        let poles = crate::nurbs_surface_control_count(
+            usize::try_from(u_count).ok()?,
+            usize::try_from(v_count).ok()?,
+        )?;
+        let pole_bytes = poles.checked_mul(24)?;
+        let weight_bytes = if mode == 0x05 {
+            poles.checked_mul(8)?
+        } else {
+            0
+        };
+        let tail_start = at.checked_add(pole_bytes)?.checked_add(weight_bytes)?;
+        let tail_end = tail_start.checked_add(141)?;
+        (tail_end <= end && closed_a8_child_run(data, tail_end, end))
+            .then(|| parse_a8_surface_tail(data, tail_start, &v_distinct))
+            .flatten()
+    };
+    let parameter_tail = elided_tail.or_else(inline_tail);
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -1446,6 +1485,7 @@ fn parse_a8_surface_header(data: &[u8], frame: A8Frame) -> Option<ParsedA8Surfac
             u_count,
             v_count,
             rational: mode == 0x05,
+            parameter_tail,
             poles_elided,
         },
         pole_start: at,
