@@ -761,14 +761,15 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
 #[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="4" Dependencies="1">
+ <ObjectDeps Name="Sketch" Count="0"/>
+ <ObjectDeps Name="Revolution" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+ <ObjectDeps Name="Fillet" Count="1"><Dep Name="Revolution"/></ObjectDeps>
+ <ObjectDeps Name="Chamfer" Count="1"><Dep Name="Fillet"/></ObjectDeps>
  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
  <Object type="PartDesign::Revolution" name="Revolution" id="2"/>
  <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
  <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
- <ObjectDeps Name="Revolution"><Dep Name="Sketch"/></ObjectDeps>
- <ObjectDeps Name="Fillet"><Dep Name="Revolution"/></ObjectDeps>
- <ObjectDeps Name="Chamfer"><Dep Name="Fillet"/></ObjectDeps>
 </Objects>
 <ObjectData Count="4">
  <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
@@ -981,12 +982,13 @@ fn transfers_non_default_revolution_branches() {
 #[test]
 fn transfers_part_and_partdesign_analytic_primitives() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="3" Dependencies="1">
+ <ObjectDeps Name="Box" Count="0"/>
+ <ObjectDeps Name="AddCylinder" Count="1"><Dep Name="Box"/></ObjectDeps>
+ <ObjectDeps Name="CutCone" Count="1"><Dep Name="AddCylinder"/></ObjectDeps>
  <Object type="Part::Box" name="Box" id="1"/>
  <Object type="PartDesign::AdditiveCylinder" name="AddCylinder" id="2"/>
  <Object type="PartDesign::SubtractiveCone" name="CutCone" id="3"/>
- <ObjectDeps Name="AddCylinder"><Dep Name="Box"/></ObjectDeps>
- <ObjectDeps Name="CutCone"><Dep Name="AddCylinder"/></ObjectDeps>
 </Objects>
 <ObjectData Count="3">
  <Object name="Box"><Properties Count="3">
@@ -3117,10 +3119,11 @@ fn reports_attributable_native_design_blockers() {
 #[test]
 fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2">
+<Objects Count="2" Dependencies="1">
+ <ObjectDeps Name="Sheet" Count="0"/>
+ <ObjectDeps Name="Pad" Count="1"><Dep Name="Sheet"/></ObjectDeps>
  <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
  <Object type="PartDesign::Pad" name="Pad" id="2"/>
- <ObjectDeps Name="Pad"><Dep Name="Sheet"/></ObjectDeps>
 </Objects>
 <ObjectData Count="2">
  <Object name="Sheet"><Properties Count="3"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
@@ -3666,13 +3669,17 @@ fn transfers_grounded_assembly_state_with_resolved_component() {
 #[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="5" Dependencies="1">
+ <ObjectDeps Name="Mesh" Count="1"><Dep Name="Points"/></ObjectDeps>
+ <ObjectDeps Name="Points" Count="0"/>
+ <ObjectDeps Name="Analysis" Count="0"/>
+ <ObjectDeps Name="Toolpath" Count="0"/>
+ <ObjectDeps Name="Local" Count="0"/>
  <Object type="Mesh::Feature" name="Mesh" id="1"/>
  <Object type="Points::Feature" name="Points" id="2"/>
  <Object type="Fem::FemAnalysis" name="Analysis" id="3"/>
  <Object type="Path::FeaturePython" name="Toolpath" id="4"/>
  <Object type="LocalType" name="Local" id="5"/>
- <ObjectDeps Name="Mesh"><Dep Name="Points"/></ObjectDeps>
 </Objects>
 <ObjectData Count="5">
  <Object name="Mesh"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Points"/></Property></Properties></Object>
@@ -4572,13 +4579,15 @@ fn transfers_partdesign_mixed_extrusion_side_controls() {
 #[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="4">
+<Objects Count="4" Dependencies="1">
+  <ObjectDeps Name="Body" Count="0"/>
+  <ObjectDeps Name="Sketch" Count="0"/>
+  <ObjectDeps Name="Pad" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+  <ObjectDeps Name="Pocket" Count="2"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
   <Object type="PartDesign::Body" name="Body" id="1"/>
   <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
   <Object type="PartDesign::Pad" name="Pad" id="2"/>
   <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
-  <ObjectDeps Name="Pad"><Dep Name="Sketch"/></ObjectDeps>
-  <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
 </Objects>
 <ObjectData Count="4">
   <Object name="Body"><Properties Count="2">
@@ -5120,7 +5129,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 20);
+    assert_eq!(namespace.version, 21);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -5690,7 +5699,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Properties Count="1"><Property name="Label" type="App::PropertyString"><String value="Demo"/></Property></Properties>
 <Objects Count="2" Dependencies="1">
-<ObjectDeps Name="Body" Count="1"><Dep Name="Sketch"/></ObjectDeps>
+<ObjectDeps Name="Body" Count="1" AllowPartial="2"><Dep Name="Sketch"/></ObjectDeps>
 <ObjectDeps Name="Sketch" Count="0"/>
 <Object type="PartDesign::Body" name="Body" id="1" Touched="1"/>
 <Object type="PartDesign::Feature" name="Sketch" id="2"/>
@@ -5727,6 +5736,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .arena_as::<crate::native::ExtensionRecord>("extensions")
         .expect("extensions");
     assert_eq!(objects.len(), 2);
+    assert_eq!(objects[0].dependency_allow_partial, Some(2));
+    assert_eq!(objects[1].dependency_allow_partial, None);
     assert_eq!(extensions.len(), 1);
     assert_eq!(extensions[0].owner, "fcstd:native:object#Body");
     let extension_value = properties
@@ -5970,6 +5981,18 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(crate::validate_native(&corrupted)
         .iter()
         .any(|finding| finding.message.contains("invalid logical entry or owner")));
+
+    let mut corrupted = result.ir.clone();
+    let mut invalid_objects = objects.clone();
+    invalid_objects[0].dependency_allow_partial = Some(0);
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("objects", &invalid_objects)
+        .expect("replace objects");
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding.message.contains("invalid partial-load capability")));
 }
 
 #[test]
@@ -5988,6 +6011,24 @@ fn rejects_interleaved_new_string_hasher_payload() {
         .expect_err("interleaved string table must fail");
 
     assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn rejects_inconsistent_object_dependency_envelopes() {
+    let cases = [
+        r#"<Document><Objects Count="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document><Objects Count="1" Dependencies="1"><ObjectDeps Name="A" Count="1"/><Object type="App::Feature" name="A"/></Objects><ObjectData Count="1"><Object name="A"/></ObjectData></Document>"#,
+        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="A" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+        r#"<Document><Objects Count="2" Dependencies="1"><ObjectDeps Name="B" Count="0"/><ObjectDeps Name="A" Count="0"/><Object type="App::Feature" name="A"/><Object type="App::Feature" name="B"/></Objects><ObjectData Count="2"><Object name="A"/><Object name="B"/></ObjectData></Document>"#,
+    ];
+
+    for document in cases {
+        assert!(matches!(
+            crate::persistence::parse(document.as_bytes()),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    }
 }
 
 #[test]

@@ -13,6 +13,12 @@ use crate::native::{
 const MAX_OBJECTS: usize = 1_000_000;
 const MAX_PROPERTY_VALUE_XML_BYTES: usize = 16 * 1024 * 1024;
 
+struct DependencyInfo {
+    dependencies: Vec<String>,
+    allow_partial: Option<i64>,
+    order: usize,
+}
+
 /// Recovered persistence graph.
 pub struct Graph {
     /// Declared objects.
@@ -39,18 +45,71 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         .find(|node| node.has_tag_name("ObjectData"))
         .ok_or_else(|| CodecError::Malformed("Document.xml has no ObjectData section".into()))?;
 
-    let mut dependency_map = HashMap::<String, Vec<String>>::new();
-    for node in objects_node
+    let declared_count = objects_node
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::Malformed("Objects Count is missing or invalid".into()))?;
+    if declared_count > MAX_OBJECTS {
+        return Err(CodecError::Malformed("object count limit exceeded".into()));
+    }
+
+    let dependencies_enabled = objects_node.attribute("Dependencies").is_some();
+    let dependency_nodes = objects_node
         .children()
         .filter(|node| node.has_tag_name("ObjectDeps"))
+        .collect::<Vec<_>>();
+    if (!dependencies_enabled && !dependency_nodes.is_empty())
+        || (dependencies_enabled && dependency_nodes.len() != declared_count)
     {
+        return Err(CodecError::Malformed(
+            "ObjectDeps records do not match the Objects dependency envelope".into(),
+        ));
+    }
+    let mut dependency_map = HashMap::<String, DependencyInfo>::new();
+    for (order, node) in dependency_nodes.into_iter().enumerate() {
         let name = required_attr(node, "Name")?;
         let dependencies = node
             .children()
             .filter(|child| child.has_tag_name("Dep"))
             .map(|child| required_attr(child, "Name"))
             .collect::<Result<Vec<_>, _>>()?;
-        dependency_map.insert(name, dependencies);
+        let dependency_count = node
+            .attribute("Count")
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed("ObjectDeps Count is missing or invalid".into())
+            })?;
+        if dependency_count != dependencies.len() {
+            return Err(CodecError::Malformed(format!(
+                "ObjectDeps {name} Count={dependency_count} but {} dependencies were found",
+                dependencies.len()
+            )));
+        }
+        let allow_partial = node
+            .attribute("AllowPartial")
+            .map(str::parse::<i64>)
+            .transpose()
+            .map_err(|_| CodecError::Malformed("ObjectDeps AllowPartial is invalid".into()))?;
+        if allow_partial.is_some_and(|value| value <= 0) {
+            return Err(CodecError::Malformed(
+                "ObjectDeps AllowPartial must be positive".into(),
+            ));
+        }
+        if dependency_map
+            .insert(
+                name.clone(),
+                DependencyInfo {
+                    dependencies,
+                    allow_partial,
+                    order,
+                },
+            )
+            .is_some()
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate ObjectDeps name {name}"
+            )));
+        }
     }
 
     let mut data_by_name = HashMap::new();
@@ -88,6 +147,16 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
             .collect();
+        let dependency = dependency_map.remove(&name);
+        if dependencies_enabled
+            && dependency
+                .as_ref()
+                .is_none_or(|dependency| dependency.order != order)
+        {
+            return Err(CodecError::Malformed(format!(
+                "ObjectDeps order does not match object {name}"
+            )));
+        }
         objects.push(ObjectRecord {
             id,
             name: name.clone(),
@@ -95,7 +164,10 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             persistent_id: node.attribute("id").and_then(|value| value.parse().ok()),
             view_type: node.attribute("ViewType").map(str::to_owned),
             attributes,
-            dependencies: dependency_map.remove(&name).unwrap_or_default(),
+            dependencies: dependency
+                .as_ref()
+                .map_or_else(Vec::new, |dependency| dependency.dependencies.clone()),
+            dependency_allow_partial: dependency.and_then(|dependency| dependency.allow_partial),
             order,
             raw_xml,
             byte_start: data_node.map(|data| data.range().start as u64),
@@ -103,18 +175,16 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         });
     }
 
-    let declared_count = objects_node
-        .attribute("Count")
-        .and_then(|value| value.parse::<usize>().ok())
-        .ok_or_else(|| CodecError::Malformed("Objects Count is missing or invalid".into()))?;
     if declared_count != objects.len() {
         return Err(CodecError::Malformed(format!(
             "Objects Count={declared_count} but {} declarations were found",
             objects.len()
         )));
     }
-    if declared_count > MAX_OBJECTS {
-        return Err(CodecError::Malformed("object count limit exceeded".into()));
+    if !dependency_map.is_empty() {
+        return Err(CodecError::Malformed(
+            "ObjectDeps names do not match object declarations".into(),
+        ));
     }
     if data_by_name.len() != objects.len() {
         return Err(CodecError::Malformed(

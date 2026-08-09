@@ -60,7 +60,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 20;
+pub const VERSION: u32 = 21;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -453,6 +453,8 @@ pub struct ObjectRecord {
     pub attributes: BTreeMap<String, String>,
     /// Ordered dependency identities.
     pub dependencies: Vec<String>,
+    /// Positive partial-load capability from the dependency record.
+    pub dependency_allow_partial: Option<i64>,
     /// Source-order index.
     pub order: usize,
     /// Exact object-data XML, when present.

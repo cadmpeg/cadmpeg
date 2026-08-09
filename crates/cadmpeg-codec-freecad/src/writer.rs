@@ -238,6 +238,7 @@ fn validate_declarations(
                         && expected.view_type == written.view_type
                         && expected.attributes == written.attributes
                         && expected.dependencies == written.dependencies
+                        && expected.dependency_allow_partial == written.dependency_allow_partial
                         && expected.order == written.order
                 })
         })

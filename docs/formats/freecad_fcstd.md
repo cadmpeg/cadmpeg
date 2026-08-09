@@ -45,6 +45,13 @@ decompression.
 presentation graph. Other entries acquire meaning only from typed references in either graph;
 unreferenced entries remain named archive records.
 
+The presence of the `Objects` section's `Dependencies` attribute enables dependency records. An
+enabled section contains exactly `Objects.Count` `ObjectDeps` elements before the object
+declarations, in the same order and with the same names. Each `ObjectDeps.Count` equals its number
+of `Dep` children. `ObjectDeps` names are unique. An optional `AllowPartial` is a positive integer
+and remains attached to its object. A section without `Dependencies` contains no `ObjectDeps`
+elements.
+
 ## 3. Version dispatch
 
 `ProgramVersion` is metadata. Parsing dispatch is selected by container layout, document schema and

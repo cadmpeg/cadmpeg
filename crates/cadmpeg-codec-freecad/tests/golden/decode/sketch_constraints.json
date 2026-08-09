@@ -4589,8 +4589,8 @@
     },
     "native": {
       "__elided": "native arenas are pinned by digest, not by value",
-      "__serialized_len": 1875599,
-      "__sha256": "8a294f99560347296a848d9c70f0223d0c2b5554a62bae5c5eae45514f62c762"
+      "__serialized_len": 1875855,
+      "__sha256": "58ac5fc48f374ebb32065565a18c25e0d6542aae627d41d3afe5cb55ebdf1e05"
     },
     "source": {
       "attributes": {

@@ -160,16 +160,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 5. Persistence graph
 
-### PG-01. `ObjectDeps` framing and uniqueness
-
-**Question.** What count, ordering, and uniqueness invariants govern the `ObjectDeps` records when the `Objects` section enables dependency records?
-
-**Known.** For a non-export document, FreeCAD's `Document::writeObjects` writes `Dependencies="1"` and calls `writeObjectDeps`. That function writes one `ObjectDeps` record for each object, and its `Count` attribute equals the number of child `Dep` records. `Document::readObjects` consumes the declared object count as the dependency-record count and consumes each record's declared dependency count when dependency records are enabled.
-
-**Conflict.** `persistence.rs` `parse_document` does not inspect the `Dependencies` attribute and ignores each `ObjectDeps` `Count` and `AllowPartial` attribute. It does not require one dependency record per object when the records are enabled, and it accepts stray records when they are not enabled. A duplicate `Name` silently replaces the earlier dependency vector in `dependency_map`, and dependency records with no matching object remain unreported.
-
-**Need.** The current schema must validate dependency-record count, child count, object coverage, name uniqueness, and `AllowPartial` retention before it builds the object graph.
-
 ### PG-02. Link-property value dispatch
 
 **Question.** Which value tag and attribute names carry the object, document, and subelement fields for each `PropertyLink` and `PropertyXLink` runtime type?
