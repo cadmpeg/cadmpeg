@@ -195,6 +195,11 @@
         "severity": "info"
       },
       {
+        "code": "integrity_failure",
+        "message": "container.integrity-failure: CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x66d82b63",
+        "severity": "error"
+      },
+      {
         "code": "decode_diagnostic",
         "message": "container.scan-diagnostic: object at 177 has nil object UUID",
         "severity": "warning"

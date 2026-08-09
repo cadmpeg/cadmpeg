@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use crate::chunks::{ArchiveVersion, BoundedReader, FramingError};
 use crate::container::{Record, Table};
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper, read_uuid_list};
 use crate::wire::Uuid;
 
 const MAX_STRING_BYTES: usize = 1 << 20;
@@ -623,9 +623,9 @@ pub(crate) fn standard_scale(value: i32) -> Option<f64> {
         20 => 0.352_777_777_777_777_8,
         21 => 4.233_333_333_333_333,
         22 => 1_852_000.0,
-        23 => 149_597_870_700_000.0,
-        24 => 9.460_730_472e18,
-        25 => 3.085_677_581_491_367e19,
+        23 => 149_597_870_000_000.0,
+        24 => 9.460_730_472_580_8e18,
+        25 => 3.085_677_58e19,
         _ => return None,
     })
 }
@@ -748,9 +748,6 @@ pub(crate) fn parse_rendering_attributes(
             "rendering attributes must be an anonymous chunk",
         ));
     }
-    if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push(warning);
-    }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = payload.i32()?;
     let _minor = payload.i32()?;
@@ -769,6 +766,7 @@ pub(crate) fn parse_rendering_attributes(
         payload.position(),
     )?;
     let count = count_bytes;
+    let mut children = Vec::with_capacity(count);
     for _ in 0..count {
         let material =
             crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
@@ -803,9 +801,13 @@ pub(crate) fn parse_rendering_attributes(
             material_payload.skip(16 + 4)?;
         }
         finish(&material_payload, "rendering material reference")?;
+        children.push(material.range());
         payload.skip(material.next_offset - payload.position())?;
     }
     finish(&payload, "rendering attributes")?;
+    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+        warnings.push(warning);
+    }
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(start..reader.position())
 }
@@ -815,7 +817,6 @@ fn begin_direct_object<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     label: &str,
-    warnings: &mut Vec<String>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = crate::chunks::chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
@@ -823,9 +824,6 @@ fn begin_direct_object<'a>(
             reader,
             format!("{label} must be an object chunk"),
         ));
-    }
-    if let Some(warning) = checksum_warning(data, &chunk)? {
-        warnings.push(warning);
     }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let version = (payload.i32()?, payload.i32()?);
@@ -837,7 +835,7 @@ fn skip_model_attributes(
     payload: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
-) -> Result<(), FramingError> {
+) -> Result<Range<usize>, FramingError> {
     let chunk = crate::chunks::chunk_at(data, payload.position(), payload.end(), archive, false)?;
     if chunk.typecode != MODEL_ATTRIBUTES || chunk.short {
         return Err(structural(
@@ -848,7 +846,8 @@ fn skip_model_attributes(
     if let Some(warning) = checksum_warning(data, &chunk)? {
         warnings.push(warning);
     }
-    payload.skip(chunk.next_offset - payload.position())
+    payload.skip(chunk.next_offset - payload.position())?;
+    Ok(chunk.range())
 }
 
 fn read_segments(payload: &mut BoundedReader<'_>) -> Result<(), FramingError> {
@@ -888,7 +887,8 @@ pub(crate) fn parse_direct_linetype<'a>(
     warnings: &mut Vec<String>,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(data, reader, archive, "embedded linetype", warnings)?;
+        begin_direct_object(data, reader, archive, "embedded linetype")?;
+    let mut children = Vec::new();
     if (archive.value() < 60 && version != (1, 1))
         || (archive.value() >= 60 && (version.0 != 2 || !(1..=3).contains(&version.1)))
     {
@@ -905,7 +905,12 @@ pub(crate) fn parse_direct_linetype<'a>(
             uuid(&mut payload)?;
         }
     } else {
-        skip_model_attributes(data, &mut payload, archive, warnings)?;
+        children.push(skip_model_attributes(
+            data,
+            &mut payload,
+            archive,
+            warnings,
+        )?);
         read_segments(&mut payload)?;
         let mut terminated = false;
         while payload.remaining() > 0 {
@@ -952,6 +957,9 @@ pub(crate) fn parse_direct_linetype<'a>(
         }
     }
     finish(&payload, "embedded linetype")?;
+    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+        warnings.push(warning);
+    }
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(EmbeddedDescriptor {
         source: SourceRange {
@@ -969,14 +977,19 @@ pub(crate) fn parse_direct_section_style<'a>(
     warnings: &mut Vec<String>,
 ) -> Result<EmbeddedDescriptor, FramingError> {
     let (chunk, mut payload, version) =
-        begin_direct_object(data, reader, archive, "embedded section style", warnings)?;
+        begin_direct_object(data, reader, archive, "embedded section style")?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
         return Err(structural(
             &payload,
             "unsupported embedded section-style version",
         ));
     }
-    skip_model_attributes(data, &mut payload, archive, warnings)?;
+    let mut children = vec![skip_model_attributes(
+        data,
+        &mut payload,
+        archive,
+        warnings,
+    )?];
     let mut terminated = false;
     while payload.remaining() > 0 {
         let item = payload.u8()?;
@@ -1000,7 +1013,11 @@ pub(crate) fn parse_direct_section_style<'a>(
                 let _ = payload.i32()?;
             }
             11 => {
-                parse_direct_linetype(data, &mut payload, archive, warnings)?;
+                children.push(
+                    parse_direct_linetype(data, &mut payload, archive, warnings)?
+                        .source
+                        .range,
+                );
             }
             _ => {
                 return Err(structural(
@@ -1017,6 +1034,9 @@ pub(crate) fn parse_direct_section_style<'a>(
         ));
     }
     finish(&payload, "embedded section style")?;
+    if let Some(warning) = checksum_warning_excluding(data, &chunk, &children)? {
+        warnings.push(warning);
+    }
     reader.skip(chunk.next_offset - reader.position())?;
     Ok(EmbeddedDescriptor {
         source: SourceRange {
@@ -1031,6 +1051,21 @@ fn checksum_warning(
     chunk: &crate::chunks::Chunk,
 ) -> Result<Option<String>, FramingError> {
     match crate::chunks::verify_checksum(data, chunk)? {
+        crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
+            "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
+            chunk.header_start, chunk.typecode
+        ))),
+        _ => Ok(None),
+    }
+}
+
+fn checksum_warning_excluding(
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    children: &[Range<usize>],
+) -> Result<Option<String>, FramingError> {
+    let ranges = crate::chunks::direct_checksum_ranges(&chunk.body, children)?;
+    match crate::chunks::verify_checksum_ranges(data, chunk, &ranges)? {
         crate::chunks::ChecksumStatus::Mismatch { expected, actual } => Ok(Some(format!(
             "CRC mismatch at offset {} for typecode {:#x}: expected {expected:#x}, got {actual:#x}",
             chunk.header_start, chunk.typecode
@@ -1182,15 +1217,7 @@ fn parse_layer(
             match item {
                 28 => {
                     layer.no_clipping_planes = Some(reader.bool()?);
-                    let count = reader.i32()?;
-                    let bytes = crate::chunks::checked_count_bytes(
-                        count,
-                        16,
-                        reader.remaining(),
-                        MAX_ARRAY_ITEMS,
-                        reader.position(),
-                    )?;
-                    reader.skip(bytes)?;
+                    read_uuid_list(&mut reader, archive)?;
                 }
                 29 => {
                     reader.skip(4)?;

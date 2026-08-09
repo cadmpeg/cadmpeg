@@ -230,10 +230,10 @@ fn localizer(
             message: format!("unsupported localizer version {major}.{minor}"),
         });
     }
-    let kind = value.i32()?;
-    if !(0..=6).contains(&kind) {
-        return Err(malformed(value.position() - 4, "invalid localizer type"));
-    }
+    let kind = match value.i32()? {
+        value @ 0..=6 => value,
+        _ => 0,
+    };
     let offset = value.position();
     let point = scale_point(point(&mut value)?, scale, offset)?;
     let vector = vector(&mut value)?.0;

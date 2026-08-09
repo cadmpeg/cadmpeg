@@ -50,6 +50,12 @@ pub(crate) fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
     long_chunk(typecode, &payload)
 }
 
+fn nested_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut payload = body.to_vec();
+    payload.extend(0_u32.to_le_bytes());
+    long_chunk(typecode, &payload)
+}
+
 pub(crate) fn short_chunk(typecode: u32, value: i64) -> Vec<u8> {
     let mut bytes = (typecode | 0x8000_0000).to_le_bytes().to_vec();
     bytes.extend(value.to_le_bytes());
@@ -71,7 +77,7 @@ pub(crate) fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u
     let class_end = short_chunk(0x0002_7fff, 0);
     let class = long_chunk(0x0002_7ffa, &[uuid, class_data, class_end].concat());
     let object_end = short_chunk(0x0200_007f, 0);
-    crc_chunk(
+    nested_crc_chunk(
         0x2000_8070 | 0x0000_8000,
         &[object_type, class, object_end].concat(),
     )
@@ -273,10 +279,10 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
         body.extend(3_u32.to_le_bytes());
         payload.extend(crc_chunk(0x4000_8000, &body));
     }
-    if major == 3 && minor >= 5 {
+    if major == 3 && minor >= 5 && mapping {
         payload.extend([0_u8; 3]);
     }
-    if major == 3 && minor >= 6 {
+    if major == 3 && minor >= 6 && mapping {
         payload.push(1);
         let mut body = 1_i32.to_le_bytes().to_vec();
         body.extend(0_i32.to_le_bytes());
@@ -287,7 +293,7 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
         body.extend([0_u32, 1].into_iter().flat_map(u32::to_le_bytes));
         payload.extend(crc_chunk(0x4000_8000, &body));
     }
-    if major == 3 && minor >= 7 {
+    if major == 3 && minor >= 7 && mapping {
         payload.push(1);
         let doubles = vertices
             .iter()
@@ -300,7 +306,7 @@ pub(crate) fn mesh_payload(major: u8, minor: u8, bad_vertex_crc: bool, mapping: 
         body.extend(mesh_buffer(&doubles));
         payload.extend(crc_chunk(0x4000_8000, &body));
     }
-    if major == 3 && minor >= 8 {
+    if major == 3 && minor >= 8 && mapping {
         payload.extend([0.0_f64; 6].into_iter().flat_map(f64::to_le_bytes));
     }
     payload
@@ -546,8 +552,8 @@ fn brep_payload_with_topology(singular_seam: bool, malformed: bool) -> Vec<u8> {
             .into_iter()
             .flat_map(f64::to_le_bytes),
     );
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
+    payload.extend(crc_chunk(0x4000_8000, &[0]));
+    payload.extend(crc_chunk(0x4000_8000, &[0]));
     payload.extend(0_i32.to_le_bytes());
 
     let sides = [[0_i32, 1, 0, 1], [1_i32, 0, 0, -1]]
