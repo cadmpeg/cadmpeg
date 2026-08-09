@@ -80,7 +80,7 @@ pub(crate) fn single_target_cycle(
     }
 }
 
-fn array_base_type(entity_type: i64, form: i64) -> bool {
+pub(crate) fn array_base_type(entity_type: i64, form: i64) -> bool {
     matches!(
         entity_type,
         100 | 104

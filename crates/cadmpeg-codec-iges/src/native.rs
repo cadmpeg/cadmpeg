@@ -4,6 +4,7 @@
 use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
 use crate::entities::geometry::{resolve_transform, Affine};
+use crate::entities::structure::array_base_type;
 use crate::global::Global;
 use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
@@ -2133,10 +2134,28 @@ pub(crate) fn store(
         .filter(|entry| entry.entity_type == 132 && entry.form == 0)
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
-            let optional_link = |index| {
+            let optional_entity_link = |index| {
                 record
                     .and_then(|record| record.integer(index))
                     .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_any(entry.sequence, index, sequence)
+                    })
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+            };
+            let optional_template_link = |index| {
+                record
+                    .and_then(|record| record.integer(index))
+                    .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve_type(
+                            entry.sequence,
+                            index,
+                            sequence,
+                            312,
+                            &[0, 1],
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}"))
             };
             NativeConnectPoint {
@@ -2147,21 +2166,33 @@ pub(crate) fn store(
                     record.and_then(|record| record.number(2)),
                     record.and_then(|record| record.number(3)),
                 ],
-                display_geometry: optional_link(4),
+                display_geometry: optional_entity_link(4),
                 type_flag: record.and_then(|record| record.integer(5)),
                 function_flag: record.and_then(|record| record.integer(6)),
                 function_identifier: record
                     .and_then(|record| record.string(7))
                     .map(<[u8]>::to_vec),
-                identifier_display_template: optional_link(8),
+                identifier_display_template: optional_template_link(8),
                 function_name: record
                     .and_then(|record| record.string(9))
                     .map(<[u8]>::to_vec),
-                name_display_template: optional_link(10),
+                name_display_template: optional_template_link(10),
                 identifier: record.and_then(|record| record.integer(11)),
                 function_code: record.and_then(|record| record.integer(12)),
                 swap_flag: record.and_then(|record| record.integer(13)),
-                owner: optional_link(14),
+                owner: record
+                    .and_then(|record| record.integer(14))
+                    .filter(|sequence| *sequence != 0)
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            14,
+                            sequence,
+                            "type-320-or-type-420",
+                            |target| matches!(target.entity_type, 320 | 420),
+                        )
+                    })
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             }
@@ -2180,6 +2211,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 base: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "array-base-entity",
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 scale: record.and_then(|record| record.number(2)),
                 origin: [
@@ -2214,6 +2254,15 @@ pub(crate) fn store(
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 base: record
                     .and_then(|record| record.integer(1))
+                    .and_then(|sequence| {
+                        parameter_resolver.resolve(
+                            entry.sequence,
+                            1,
+                            sequence,
+                            "array-base-entity",
+                            |target| array_base_type(target.entity_type, target.form),
+                        )
+                    })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 location_count: record.and_then(|record| record.integer(2)),
                 center: [
