@@ -1789,6 +1789,7 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             _ => native(),
         }
     } else if kind.contains("Arc") {
+        let frame_angle = number("AngleXU").unwrap_or(0.0);
         match (
             number("CenterX"),
             number("CenterY"),
@@ -1796,12 +1797,17 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             number("StartAngle").or_else(|| number("FirstParameter")),
             number("EndAngle").or_else(|| number("LastParameter")),
         ) {
-            (Some(x), Some(y), Some(radius), Some(start), Some(end)) if radius > 0.0 => {
+            (Some(x), Some(y), Some(radius), Some(start), Some(end))
+                if radius > 0.0
+                    && [x, y, radius, start, end, frame_angle]
+                        .into_iter()
+                        .all(f64::is_finite) =>
+            {
                 SketchGeometry::Arc {
                     center: Point2::new(x, y),
                     radius: Length(radius),
-                    start_angle: cadmpeg_ir::features::Angle(start),
-                    end_angle: cadmpeg_ir::features::Angle(end),
+                    start_angle: cadmpeg_ir::features::Angle(start + frame_angle),
+                    end_angle: cadmpeg_ir::features::Angle(end + frame_angle),
                 }
             }
             _ => native(),

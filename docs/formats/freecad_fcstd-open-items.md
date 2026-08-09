@@ -142,16 +142,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 4. Sketch geometry
 
-### SG-01. Circular-arc frame rotation `AngleXU`
-
-**Question.** Which arc segment does a `Part::GeomArcOfCircle` carrier select when its `AngleXU` attribute is not zero?
-
-**Known.** FreeCAD's reader (`GeomArcOfCircle::Restore` in FreeCAD source `src/Mod/Part/App/Geometry.cpp`) rotates the reference frame by `AngleXU` around the normal before it applies `StartAngle` and `EndAngle`. In that frame, an endpoint at parameter `t` sits at the global angle `t + AngleXU`. FreeCAD's writer (`GeomArcOfCircle::Save`) computes `AngleXU` from the circle's stored X axis. The reader accepts a carrier without the attribute and then uses zero. `freecad_fcstd.md` §11 "Sketch point, line, circle, circular-arc, ellipse, and elliptical-arc carriers" does not name `AngleXU` for circular arcs.
-
-**Conflict.** The decoder reads `CenterX`, `CenterY`, `Radius`, `StartAngle`, and `EndAngle`, and it does not read `AngleXU`. A carrier with a non-zero `AngleXU` decodes to a different segment of the same circle. Both arc endpoints move by the rotation angle. Profile chaining then fails, or it joins the wrong entities, and no loss note reports the cause.
-
-**Need.** The decoder must apply the rotation to both angle bounds, or it must keep the carrier as a named native geometry record with a blocking note. We must also learn how often saved documents carry a non-zero value. Sketcher creates arcs with default axes, and a transformation of the geometry can rotate the stored X axis.
-
 ### SG-02. Conic conventions without a FreeCAD-saved witness
 
 **Question.** Do FreeCAD-saved documents give the elliptical-arc, hyperbola, and parabola carriers the parameterization that the decoder applies?
@@ -166,7 +156,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `corpus/freecad_fcstd/author_fixtures.py` authors fixtures through the FreeCAD Python API on a machine with a FreeCAD installation. The current build machine has no FreeCAD installation. `corpus/freecad_fcstd-fixture-charter.md` states that a synthetic parser input establishes no ladder score. No current fixture carries an arc with a non-zero sweep that a profile chain consumes.
 
-**Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-01 and SG-02, and they can support format-support claims because FreeCAD wrote them.
+**Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-02, and they can support format-support claims because FreeCAD wrote them.
 
 ## 5. Persistence graph
 

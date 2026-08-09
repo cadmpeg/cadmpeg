@@ -484,7 +484,7 @@ fn transfers_full_and_bounded_sketch_conics() {
  <Geometry type="Part::GeomArcOfHyperbola"><ArcOfHyperbola CenterX="2" CenterY="3" AngleXU="0.5" MajorRadius="7" MinorRadius="4" StartAngle="-1" EndAngle="1.5"/></Geometry>
  <Geometry type="Part::GeomParabola"><Parabola CenterX="3" CenterY="4" AngleXU="0.75" Focal="2"/></Geometry>
  <Geometry type="Part::GeomArcOfParabola"><ArcOfParabola CenterX="4" CenterY="5" AngleXU="1" Focal="2.5" StartAngle="-2" EndAngle="3"/></Geometry>
- <Geometry type="Part::GeomArcOfCircle"><ArcOfCircle CenterX="0" CenterY="0" Radius="4" StartAngle="0.2" EndAngle="1.2"/></Geometry>
+ <Geometry type="Part::GeomArcOfCircle"><ArcOfCircle CenterX="0" CenterY="0" Radius="4" AngleXU="0.6" StartAngle="0.2" EndAngle="1.2"/></Geometry>
  <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="1" AngleXU="0.3" MajorRadius="6" MinorRadius="2" StartAngle="0.4" EndAngle="1.4"/></Geometry>
 </GeometryList></Property></Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -530,7 +530,11 @@ fn transfers_full_and_bounded_sketch_conics() {
     ));
     assert!(matches!(
         entities[4].geometry,
-        cadmpeg_ir::sketches::SketchGeometry::Arc { .. }
+        cadmpeg_ir::sketches::SketchGeometry::Arc {
+            start_angle: cadmpeg_ir::features::Angle(start),
+            end_angle: cadmpeg_ir::features::Angle(end),
+            ..
+        } if (start - 0.8).abs() < 1e-12 && (end - 1.8).abs() < 1e-12
     ));
     assert!(matches!(
         entities[5].geometry,

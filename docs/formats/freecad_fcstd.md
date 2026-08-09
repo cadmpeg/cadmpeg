@@ -403,9 +403,11 @@ counts, all eight topology families, and polygon and triangulation counts.
 Sketch point, line, circle, circular-arc, ellipse, and elliptical-arc carriers transfer only when
 all family-required numeric fields are present and finite. Ellipse orientation may be carried as a
 major-axis angle or a two-component major-axis direction. Bounded ellipses additionally require
-both parameter bounds. Missing radii, coordinates, orientation, or bounds leave the carrier as a
-named native geometry record; the decoder does not synthesize zero coordinates or full-curve
-bounds.
+both parameter bounds. A circular arc's `AngleXU` rotates its reference X axis
+counterclockwise in the sketch plane. Its global start and end angles are `StartAngle + AngleXU`
+and `EndAngle + AngleXU`; an absent `AngleXU` is zero. Missing radii, coordinates, orientation, or
+bounds leave the carrier as a named native geometry record; the decoder does not synthesize zero
+coordinates or full-curve bounds.
 
 Sketch B-splines retain degree, periodic state, ordered poles, rational weights, and distinct knot
 values with their positive multiplicities. The neutral NURBS knot vector expands each value by its
