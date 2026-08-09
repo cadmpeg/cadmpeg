@@ -1730,6 +1730,67 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
 }
 
 #[test]
+fn disconnected_source_shell_is_classified_without_repairing_topology() {
+    let mut source =
+        String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#30=OPEN_SHELL('',(#29));",
+                "#30=OPEN_SHELL('',(#29,#129));",
+            );
+    source = source.replace(
+        "ENDSEC;\nEND-ISO-10303-21;",
+        "#103=CARTESIAN_POINT('',(20.,0.,0.));\n\
+#104=CARTESIAN_POINT('',(30.,0.,0.));\n\
+#105=CARTESIAN_POINT('',(20.,10.,0.));\n\
+#106=VERTEX_POINT('',#103);\n\
+#107=VERTEX_POINT('',#104);\n\
+#108=VERTEX_POINT('',#105);\n\
+#109=DIRECTION('',(1.,0.,0.));\n\
+#110=DIRECTION('',(-1.,1.,0.));\n\
+#111=DIRECTION('',(0.,-1.,0.));\n\
+#112=VECTOR('',#109,10.);\n\
+#113=VECTOR('',#110,14.142135623730951);\n\
+#114=VECTOR('',#111,10.);\n\
+#115=LINE('',#103,#112);\n\
+#116=LINE('',#104,#113);\n\
+#117=LINE('',#105,#114);\n\
+#119=EDGE_CURVE('',#106,#107,#115,.T.);\n\
+#120=EDGE_CURVE('',#107,#108,#116,.T.);\n\
+#121=EDGE_CURVE('',#108,#106,#117,.T.);\n\
+#122=ORIENTED_EDGE('',*,*,#119,.T.);\n\
+#123=ORIENTED_EDGE('',*,*,#120,.T.);\n\
+#124=ORIENTED_EDGE('',*,*,#121,.T.);\n\
+#125=EDGE_LOOP('',(#122,#123,#124));\n\
+#126=FACE_OUTER_BOUND('',#125,.T.);\n\
+#129=ADVANCED_FACE('',(#126),#28,.T.);\n\
+ENDSEC;\nEND-ISO-10303-21;",
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode disconnected source shell");
+
+    assert_eq!(decoded.ir.model.faces.len(), 2);
+    let source_loss = decoded
+        .report
+        .losses
+        .iter()
+        .find(|loss| loss.code == cadmpeg_ir::LossKind::SourceTopologyInvalid)
+        .expect("source topology loss");
+    assert_eq!(source_loss.severity, cadmpeg_ir::Severity::Warning);
+    assert!(source_loss.message.contains("OPEN_SHELL #30"));
+    assert!(source_loss
+        .message
+        .contains("2 disconnected face component(s)"));
+
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::ShellTopology
+            && finding.entity.as_deref() == Some("step:data:shell#30")
+    }));
+}
+
+#[test]
 fn implicit_plane_uses_the_outer_loop_and_composes_oriented_face_reversal() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")

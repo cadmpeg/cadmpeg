@@ -102,6 +102,32 @@ pub(super) fn decode(
     let oriented = oriented_defs(exchange);
     let shells = shell_defs(exchange);
     let point_positions = carrier_index;
+    for diagnostic in source_invalid_shells(exchange, &shells, &edges, &oriented) {
+        let provenance =
+            exchange
+                .records
+                .get(&diagnostic.shell)
+                .map(|record| cadmpeg_ir::LossProvenance {
+                    format: "step".into(),
+                    stream: String::new(),
+                    offset: record.span.start as u64,
+                    tag: Some(diagnostic.shell_type.to_ascii_lowercase()),
+                });
+        let note = LossNote::new(
+            LossKind::SourceTopologyInvalid,
+            format!(
+                "source {} #{} contains {} disconnected face component(s) across {} face(s); topology retained as decoded",
+                diagnostic.shell_type,
+                diagnostic.shell,
+                diagnostic.components,
+                diagnostic.face_count,
+            ),
+        );
+        result.losses.push(match provenance {
+            Some(provenance) => note.with_provenance(provenance),
+            None => note,
+        });
+    }
     for (vertex_id, vertex) in exchange.entities("VERTEX_POINT") {
         let Some(point_id) = named_reference(vertex, "VERTEX_POINT", 1, 0) else {
             result.warnings.push(format!(
@@ -2753,6 +2779,173 @@ struct ShellDef {
     base: u64,
     forward: bool,
     typed: BTreeSet<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum SourceTopologyKey {
+    Edge(u64),
+    Point(u64),
+    Vertex(u64),
+}
+
+struct SourceShellDiagnostic {
+    shell: u64,
+    shell_type: &'static str,
+    face_count: usize,
+    components: usize,
+}
+
+fn source_invalid_shells(
+    exchange: &Exchange,
+    shell_definitions: &BTreeMap<u64, ShellDef>,
+    edge_definitions: &BTreeMap<u64, EdgeDef>,
+    oriented_definitions: &BTreeMap<u64, OrientedDef>,
+) -> Vec<SourceShellDiagnostic> {
+    let root_types = [
+        "SHELL_BASED_SURFACE_MODEL",
+        "FACE_BASED_SURFACE_MODEL",
+        "FACETED_BREP",
+        "MANIFOLD_SOLID_BREP",
+        "BREP_WITH_VOIDS",
+    ];
+    let mut shell_steps = BTreeSet::new();
+    for (_, root) in exchange.entities_any(&root_types) {
+        let Some(references) = root_shell_steps(root, exchange) else {
+            continue;
+        };
+        for reference in references {
+            let shell = if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+                Some(reference)
+            } else {
+                shell_definitions
+                    .get(&reference)
+                    .map(|definition| definition.base)
+            };
+            if let Some(shell) = shell {
+                shell_steps.insert(shell);
+            }
+        }
+    }
+
+    shell_steps
+        .into_iter()
+        .filter_map(|shell| {
+            let record = exchange.records.get(&shell)?;
+            let shell_type = most_specific(
+                record,
+                &[
+                    "OPEN_SHELL",
+                    "CLOSED_SHELL",
+                    "CONNECTED_FACE_SUB_SET",
+                    "CONNECTED_FACE_SET",
+                ],
+            )?;
+            let faces = source_shell_faces(record, shell_type)?;
+            if faces.len() < 2 {
+                return None;
+            }
+            let face_keys = faces
+                .into_iter()
+                .map(|face| {
+                    source_face_topology_keys(
+                        face,
+                        exchange,
+                        edge_definitions,
+                        oriented_definitions,
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let components = source_face_components(&face_keys);
+            (components > 1).then_some(SourceShellDiagnostic {
+                shell,
+                shell_type,
+                face_count: face_keys.len(),
+                components,
+            })
+        })
+        .collect()
+}
+
+fn source_shell_faces(record: &RawRecord, shell_type: &str) -> Option<Vec<u64>> {
+    match shell_type {
+        "OPEN_SHELL" | "CLOSED_SHELL" => named_refs(record, shell_type, 1),
+        "CONNECTED_FACE_SUB_SET" | "CONNECTED_FACE_SET" => {
+            connected_set_members(record, shell_type)
+        }
+        _ => None,
+    }
+}
+
+fn source_face_topology_keys(
+    face_step: u64,
+    exchange: &Exchange,
+    edge_definitions: &BTreeMap<u64, EdgeDef>,
+    oriented_definitions: &BTreeMap<u64, OrientedDef>,
+) -> Option<BTreeSet<SourceTopologyKey>> {
+    let face = exchange.records.get(&face_step)?;
+    let face_info = face_attributes(face, exchange, &mut BTreeSet::new())?;
+    let mut keys = BTreeSet::new();
+    for bound_step in face_info.bounds {
+        let bound = exchange.records.get(&bound_step)?;
+        let bound_type = most_specific(bound, &["FACE_OUTER_BOUND", "FACE_BOUND"])?;
+        let loop_step = named_reference(bound, bound_type, 1, 0)?;
+        let loop_record = exchange.records.get(&loop_step)?;
+        if has_type(loop_record, "VERTEX_LOOP") {
+            keys.insert(SourceTopologyKey::Vertex(named_reference(
+                loop_record,
+                "VERTEX_LOOP",
+                1,
+                0,
+            )?));
+            continue;
+        }
+        if has_type(loop_record, "POLY_LOOP") {
+            for point in named_refs(loop_record, "POLY_LOOP", 1)? {
+                keys.insert(SourceTopologyKey::Point(point));
+            }
+            continue;
+        }
+        if !has_type(loop_record, "EDGE_LOOP") {
+            return None;
+        }
+        for oriented_step in named_refs(loop_record, "EDGE_LOOP", 1)? {
+            let oriented = oriented_definitions.get(&oriented_step)?;
+            let edge = edge_definitions.get(&oriented.edge)?;
+            keys.insert(SourceTopologyKey::Edge(oriented.edge));
+            keys.insert(SourceTopologyKey::Vertex(edge.start));
+            keys.insert(SourceTopologyKey::Vertex(edge.end));
+        }
+    }
+    (!keys.is_empty()).then_some(keys)
+}
+
+fn source_face_components(face_keys: &[BTreeSet<SourceTopologyKey>]) -> usize {
+    let mut faces_by_key = BTreeMap::<SourceTopologyKey, Vec<usize>>::new();
+    for (face, keys) in face_keys.iter().enumerate() {
+        for &key in keys {
+            faces_by_key.entry(key).or_default().push(face);
+        }
+    }
+    let mut remaining = (0..face_keys.len()).collect::<BTreeSet<_>>();
+    let mut components = 0;
+    while let Some(&start) = remaining.first() {
+        components += 1;
+        let mut pending = vec![start];
+        remaining.remove(&start);
+        while let Some(face) = pending.pop() {
+            for key in &face_keys[face] {
+                let Some(neighbors) = faces_by_key.get(key) else {
+                    continue;
+                };
+                for &neighbor in neighbors {
+                    if remaining.remove(&neighbor) {
+                        pending.push(neighbor);
+                    }
+                }
+            }
+        }
+    }
+    components
 }
 
 fn shell_defs(exchange: &Exchange) -> BTreeMap<u64, ShellDef> {
