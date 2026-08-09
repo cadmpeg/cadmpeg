@@ -3195,7 +3195,7 @@ fn finish_decode(
             code: cadmpeg_ir::report::LossKind::AttributesNotTransferred,
             severity: Severity::Warning,
             message: format!(
-                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven neutral binding ({} packet(s) transferred), while other visualization fields remain native.",
+                "CATIA native data retains {} visualization value block(s), {value_field_count} encoded field(s), and {value_selection_count} schema-selected presentation value(s); {} display-color packet(s) remain without a proven typed face or body target ({} packet(s) transferred), while other visualization fields remain native.",
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets,
                 appearance_transfer.transferred_packets,
