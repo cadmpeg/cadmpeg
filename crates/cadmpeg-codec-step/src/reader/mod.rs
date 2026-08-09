@@ -12,7 +12,7 @@ use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::SourceObjectAssociation;
+use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
 use crate::parse::{self, Exchange, ParseDiagnostic, Value};
 
@@ -428,6 +428,7 @@ fn decode_exchange_mode(
     let mut opaque_ids = BTreeMap::new();
     let mut typed_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
+    let mut source_fidelity = SourceFidelity::default();
     if retain_opaque {
         opaque_ids = exchange
             .records
@@ -544,7 +545,7 @@ fn decode_exchange_mode(
                 links: Vec::new(),
             });
         }
-        ir.set_native_unknowns_owned("step", opaque);
+        source_fidelity.attach_native_unknown_records(&mut ir, "step", opaque)?;
     }
     if let Some(source) = &mut ir.source {
         source
@@ -591,7 +592,7 @@ fn decode_exchange_mode(
         "step_admit_ir_entities",
     )?;
     Ok((
-        DecodeResult::new(ir, report, cadmpeg_ir::SourceFidelity::default()),
+        DecodeResult::new(ir, report, source_fidelity),
         opaque_offsets,
     ))
 }

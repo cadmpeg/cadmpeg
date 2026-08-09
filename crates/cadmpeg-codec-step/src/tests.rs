@@ -1567,17 +1567,17 @@ fn codec_inspects_edition3_sections_and_external_references() {
         .expect("decode signature fixture");
     let unknowns = decoded
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP native namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown arena");
     let signature_unknown = unknowns
         .iter()
         .find(|record| record.id.0 == "step:signature#0")
         .expect("retained signature");
     assert_eq!(
-        signature_unknown.data.as_deref(),
+        decoded
+            .source_fidelity
+            .retained_record(&signature_unknown.id.0)
+            .and_then(|record| record.data.as_deref()),
         Some(&bytes[signature.clone()])
     );
     assert_eq!(
@@ -1801,21 +1801,16 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
         .expect("decode parsed STEP document");
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "step");
-    let unknowns = result
-        .ir
-        .native
-        .namespace("step")
-        .unwrap()
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
-        .unwrap();
+    let unknowns = result.ir.native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
     assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
+    let retained = result
+        .source_fidelity
+        .retained_record(&unknowns[0].id.0)
+        .expect("opaque payload is retained in source fidelity");
     assert_eq!(
-        unknowns[0].data.as_deref(),
-        Some(
-            &bytes
-                [unknowns[0].offset as usize..(unknowns[0].offset + unknowns[0].byte_len) as usize]
-        )
+        retained.data.as_deref(),
+        Some(&bytes[retained.offset as usize..(retained.offset + retained.byte_len) as usize])
     );
     assert!(unknowns[0]
         .links
@@ -3716,10 +3711,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .expect("decode unowned pcurve");
     let unknowns = decoded
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
@@ -3731,7 +3723,10 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .iter()
         .find(|record| record.id.0 == "step:data:line#71")
         .expect("unowned pcurve line is retained");
-    assert!(line
+    assert!(decoded
+        .source_fidelity
+        .retained_record(&line.id.0)
+        .expect("unowned pcurve line payload is retained")
         .data
         .as_deref()
         .is_some_and(|data| data.starts_with(b"#71=LINE")));
@@ -3913,10 +3908,7 @@ fn a_protected_unowned_pcurve_stays_opaque() {
         .any(|loss| loss.message.contains("protected_pcurves=1")));
     let unknowns = decoded
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown arena");
     assert!(unknowns
         .iter()
@@ -7702,10 +7694,7 @@ fn direct_area_and_volume_unit_subtypes_scale_validation_measures() {
         .any(|loss| { loss.message.contains("unit scale did not resolve") }));
     let unknowns = result
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP native namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown records");
     for id in [44, 53, 55, 56] {
         assert!(
@@ -8523,10 +8512,7 @@ fn composite_presentation_text_does_not_depend_on_set_order() {
     }));
     let unknowns = result
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP native namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown records");
     for id in [1, 2, 3] {
         assert!(
@@ -8562,10 +8548,7 @@ fn presentation_graph_search_does_not_hide_unmodeled_tessellated_carriers() {
 
     let unknowns = result
         .ir
-        .native
-        .namespace("step")
-        .expect("STEP native namespace")
-        .arena_as::<cadmpeg_ir::UnknownRecord>("unknowns")
+        .native_unknowns("step")
         .expect("STEP unknown records");
     for id in [11, 12, 13] {
         assert!(
