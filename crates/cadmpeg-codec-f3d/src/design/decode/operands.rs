@@ -2355,7 +2355,9 @@ fn parse_body_recipe_operand_frame(
         nested_record_index_offset: u64::try_from(cursor + 1).ok()?,
         recipe_id: recipe.id.clone(),
         resolved_face_slot: None,
+        resolved_body_state_id: None,
         resolved_body_slot: None,
+        resolved_body_face_slots: Vec::new(),
         next_record_index: header.record_index.checked_add(4)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })

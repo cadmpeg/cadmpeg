@@ -3193,25 +3193,11 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             reference.preceding_body_slots.clear();
         }
         operand.resolved_face_slot = None;
+        operand.resolved_body_state_id = None;
         operand.resolved_body_slot = None;
-        let stream = crate::ids::native_stream(&operand.id);
-        let mut matching_scopes = scopes.iter().filter(|scope| {
-            scope.record_index == operand.scope_record_index
-                && crate::ids::native_stream(&scope.id) == stream
-        });
-        let Some(scope) = matching_scopes.next() else {
-            continue;
-        };
-        if matching_scopes.next().is_some() {
-            continue;
-        }
-        let (Some(state_id), Some(previous_state_id)) =
-            (scope.history_state_id, scope.previous_history_state_id)
-        else {
-            continue;
-        };
+        operand.resolved_body_face_slots.clear();
         let Some((history, state, previous)) =
-            unique_history_state_pair(histories, state_id, previous_state_id)
+            body_recipe_operand_history_pair(operand, scopes, histories)
         else {
             continue;
         };
@@ -3225,7 +3211,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         let Some(topology) = &previous.topology else {
             continue;
         };
-        if face_changes_across_state_chain(state, previous_state_id, &states).is_none() {
+        if face_changes_across_state_chain(state, previous.state_id, &states).is_none() {
             continue;
         }
         let Some(source) = historical_brep_source(&previous.id) else {
@@ -3325,7 +3311,145 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 .and_then(|identity| resolved_by_identity.get(&identity).copied())
                 .flatten();
         }
+        let Some(body_slot) = operand.resolved_body_slot else {
+            continue;
+        };
+        let Some((_, _, previous)) = body_recipe_operand_history_pair(operand, scopes, histories)
+        else {
+            continue;
+        };
+        let Some(topology) = previous.topology.as_ref() else {
+            continue;
+        };
+        let Some(faces) = complete_body_face_slots(topology, body_slot) else {
+            continue;
+        };
+        operand.resolved_body_state_id = Some(previous.state_id);
+        operand.resolved_body_face_slots = faces;
     }
+}
+
+fn body_recipe_operand_history_pair<'a>(
+    operand: &crate::records::DesignBodyRecipeOperand,
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &'a [AsmHistory],
+) -> Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)> {
+    let stream = crate::ids::native_stream(&operand.id)?;
+    let mut matching_scopes = scopes.iter().filter(|scope| {
+        scope.record_index == operand.scope_record_index
+            && crate::ids::native_stream(&scope.id) == Some(stream)
+    });
+    let scope = matching_scopes.next()?;
+    if matching_scopes.next().is_some() {
+        return None;
+    }
+    let state_id = scope.history_state_id?;
+    let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
+    let (history, state, previous) =
+        unique_history_state_pair(histories, state_id, previous_state_id)?;
+    Some((history, state, previous))
+}
+
+fn complete_body_face_slots(topology: &AsmHistoricalTopology, body: i64) -> Option<Vec<i64>> {
+    fn occurrence_counts(slots: &[i64]) -> HashMap<i64, usize> {
+        let mut counts = HashMap::with_capacity(slots.len());
+        for &slot in slots {
+            *counts.entry(slot).or_default() += 1;
+        }
+        counts
+    }
+
+    struct RelationIndex<'a> {
+        members_by_owner: HashMap<i64, Option<&'a [i64]>>,
+        owner_by_member: HashMap<i64, Option<i64>>,
+    }
+
+    fn relation_index(relations: &[AsmHistoricalRelation]) -> RelationIndex<'_> {
+        let mut members_by_owner = HashMap::with_capacity(relations.len());
+        let mut owner_by_member = HashMap::new();
+        for relation in relations {
+            members_by_owner
+                .entry(relation.owner_ref)
+                .and_modify(|members| *members = None)
+                .or_insert(Some(relation.member_refs.as_slice()));
+            for &member in &relation.member_refs {
+                owner_by_member
+                    .entry(member)
+                    .and_modify(|owner| *owner = None)
+                    .or_insert(Some(relation.owner_ref));
+            }
+        }
+        RelationIndex {
+            members_by_owner,
+            owner_by_member,
+        }
+    }
+
+    let body_counts = occurrence_counts(&topology.bodies);
+    let region_counts = occurrence_counts(&topology.regions);
+    let shell_counts = occurrence_counts(&topology.shells);
+    let face_counts = occurrence_counts(&topology.faces);
+    let body_regions = relation_index(&topology.body_regions);
+    let region_shells = relation_index(&topology.region_shells);
+    let shell_faces = relation_index(&topology.shell_faces);
+
+    if body_counts.get(&body).copied() != Some(1) {
+        return None;
+    }
+    let regions = body_regions
+        .members_by_owner
+        .get(&body)
+        .copied()
+        .flatten()?;
+    if regions.is_empty() {
+        return None;
+    }
+    let mut seen_regions = HashSet::new();
+    let mut seen_shells = HashSet::new();
+    let mut seen_faces = HashSet::new();
+    for &region in regions {
+        if !seen_regions.insert(region)
+            || region_counts.get(&region).copied() != Some(1)
+            || body_regions.owner_by_member.get(&region).copied().flatten() != Some(body)
+        {
+            return None;
+        }
+        let shells = region_shells
+            .members_by_owner
+            .get(&region)
+            .copied()
+            .flatten()?;
+        if shells.is_empty() {
+            return None;
+        }
+        for &shell in shells {
+            if !seen_shells.insert(shell)
+                || shell_counts.get(&shell).copied() != Some(1)
+                || region_shells.owner_by_member.get(&shell).copied().flatten() != Some(region)
+            {
+                return None;
+            }
+            let faces = shell_faces
+                .members_by_owner
+                .get(&shell)
+                .copied()
+                .flatten()?;
+            if faces.is_empty() {
+                return None;
+            }
+            for &face in faces {
+                if !seen_faces.insert(face)
+                    || face_counts.get(&face).copied() != Some(1)
+                    || shell_faces.owner_by_member.get(&face).copied().flatten() != Some(shell)
+                {
+                    return None;
+                }
+            }
+        }
+    }
+    let mut faces = seen_faces.into_iter().collect::<Vec<_>>();
+    faces.sort_unstable();
+    (!faces.is_empty()).then_some(faces)
 }
 
 fn active_brep_face_matches_source(face: &cadmpeg_ir::ids::FaceId, source: &str) -> bool {
@@ -7009,7 +7133,9 @@ mod tests {
             nested_record_index_offset: 0,
             recipe_id: "recipe".into(),
             resolved_face_slot: None,
+            resolved_body_state_id: None,
             resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
             next_record_index: 4,
             next_byte_offset: 0,
         };
@@ -7091,6 +7217,175 @@ mod tests {
     }
 
     #[test]
+    fn body_recipe_history_resolves_the_complete_input_body_boundary() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let mut scope = crate::records::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+            "Extrude",
+            10,
+        );
+        scope.history_state_id = Some(2);
+        let candidate = FaceId("f3d:brep:entity#10".into());
+        let mut operands = vec![crate::records::DesignBodyRecipeOperand {
+            id: "f3d:Design/BulkStream.dat:design-body-recipe-operand#21".into(),
+            scope_record_index: 10,
+            owner: crate::records::DesignBodyRecipeOperandOwner::Group {
+                group_record_index: 20,
+                group_member_ordinal: 0,
+            },
+            record_index: 21,
+            byte_offset: 0,
+            class_tag: "365".into(),
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            references: vec![crate::records::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 0,
+                form: 33,
+                form_offset: 0,
+                candidate_faces: vec![candidate.clone()],
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            }],
+            nested_record_index: 24,
+            nested_record_index_offset: 0,
+            recipe_id: "recipe".into(),
+            resolved_face_slot: None,
+            resolved_body_state_id: None,
+            resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
+            next_record_index: 25,
+            next_byte_offset: 0,
+        }];
+        let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+            owner_ref,
+            member_refs,
+        };
+        let topology = AsmHistoricalTopology {
+            bodies: vec![1, 4],
+            regions: vec![2, 5],
+            shells: vec![3, 6],
+            faces: vec![10, 11, 12, 20],
+            surfaces: vec![100, 101, 102, 200],
+            body_regions: vec![relation(1, vec![2]), relation(4, vec![5])],
+            region_shells: vec![relation(2, vec![3]), relation(5, vec![6])],
+            shell_faces: vec![relation(3, vec![10, 11, 12]), relation(6, vec![20])],
+            shell_wire_edges: vec![relation(3, Vec::new()), relation(6, Vec::new())],
+            shell_free_vertices: vec![relation(3, Vec::new()), relation(6, Vec::new())],
+            face_loops: vec![
+                relation(10, Vec::new()),
+                relation(11, Vec::new()),
+                relation(12, Vec::new()),
+                relation(20, Vec::new()),
+            ],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 101,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 12,
+                    carrier: 102,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 200,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let state = |state_id, topology, transition| AsmDeltaState {
+            id: format!("f3d:Breps.BlobParts/BREP.input:asm-delta-state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition,
+        };
+        let previous = state(1, topology.clone(), None);
+        let current = state(
+            2,
+            topology,
+            Some(AsmHistoricalTransition {
+                previous_state_id: Some(1),
+                records: AsmHistoricalEntityDelta::default(),
+                topology: AsmHistoricalTopologyDelta::default(),
+            }),
+        );
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![current, previous],
+        };
+
+        bind_body_recipe_operand_history_candidates(
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        );
+
+        assert_eq!(
+            operands[0].references[0].preceding_candidate_faces,
+            [candidate]
+        );
+        assert_eq!(operands[0].references[0].preceding_body_slots, [1]);
+        assert_eq!(operands[0].resolved_face_slot, Some(10));
+        assert_eq!(operands[0].resolved_body_state_id, Some(1));
+        assert_eq!(operands[0].resolved_body_slot, Some(1));
+        assert_eq!(operands[0].resolved_body_face_slots, [10, 11, 12]);
+    }
+
+    #[test]
+    fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
+        let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+            owner_ref,
+            member_refs,
+        };
+        let topology = AsmHistoricalTopology {
+            bodies: vec![1],
+            regions: vec![2],
+            shells: vec![3],
+            faces: vec![10, 11],
+            body_regions: vec![relation(1, vec![2])],
+            region_shells: vec![relation(2, vec![3])],
+            shell_faces: vec![relation(3, vec![10, 11])],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(complete_body_face_slots(&topology, 1), Some(vec![10, 11]));
+
+        let mut incomplete = topology.clone();
+        incomplete.shell_faces[0].member_refs.clear();
+        assert_eq!(complete_body_face_slots(&incomplete, 1), None);
+
+        let mut ambiguous = topology;
+        ambiguous.shell_faces.push(relation(4, vec![10]));
+        assert_eq!(complete_body_face_slots(&ambiguous, 1), None);
+    }
+
+    #[test]
     fn direct_body_recipe_selection_resolves_compact_coil_target() {
         use cadmpeg_ir::features::BodySelection;
         use cadmpeg_ir::ids::{BodyId, FaceId, RegionId, ShellId};
@@ -7162,7 +7457,9 @@ mod tests {
             nested_record_index_offset: 0,
             recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#23".into(),
             resolved_face_slot: None,
+            resolved_body_state_id: None,
             resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
             next_record_index: 24,
             next_byte_offset: 0,
         };

@@ -88,7 +88,7 @@ use crate::design::edge_resolve::{
     resolved_edge_candidate_intersection, resolved_edge_candidate_intersection_with_deleted_proofs,
 };
 use crate::design::face_resolve::{
-    resolved_face_group, resolved_historical_split_face_target_group,
+    resolved_body_recipe_shape, resolved_face_group, resolved_historical_split_face_target_group,
 };
 use crate::design::feature_project::{
     project_combine, project_extrude, project_parameter_design,
@@ -18852,7 +18852,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     target_shape_group.member_offsets = vec![1026];
     target_shape_group.role = 0x0000_0005_0000_0000;
     target_shape_group.extrude_role = None;
-    let target_shape_operand = DesignBodyRecipeOperand {
+    let mut target_shape_operand = DesignBodyRecipeOperand {
         id: "f3d:Design/BulkStream.dat:body-recipe-operand#201".into(),
         scope_record_index: scope.record_index,
         owner: DesignBodyRecipeOperandOwner::Group {
@@ -18882,11 +18882,13 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         nested_record_index_offset: 0,
         recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#205".into(),
         resolved_face_slot: None,
+        resolved_body_state_id: None,
         resolved_body_slot: None,
+        resolved_body_face_slots: Vec::new(),
         next_record_index: 205,
         next_byte_offset: 0,
     };
-    let target_shape = project_extrude(
+    let unresolved_target_shape = project_extrude(
         &scope,
         &[(0, &taper)],
         &[body_group.clone(), target_shape_group.clone()],
@@ -18896,22 +18898,94 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
     )
     .expect("typed target-shape Extrude");
     assert!(matches!(
-        target_shape,
+        unresolved_target_shape,
         FeatureDefinition::Extrude {
             extent: ExtrudeExtent::OneSided {
                 side: ExtrudeSide {
                     termination: Termination::ToShape {
-                        target: FaceSelection::Resolved { faces, ref native },
+                        target: FaceSelection::Native(ref native),
                     },
                     ..
                 },
             },
             ..
-        } if faces == [
-            FaceId("f3d:brep:entity#12".into()),
-            FaceId("f3d:brep:entity#19".into()),
-        ] && native == &target_shape_group.id
+        } if native == &target_shape_group.id
     ));
+
+    target_shape_operand.resolved_body_state_id = Some(7);
+    target_shape_operand.resolved_body_slot = Some(3);
+    target_shape_operand.resolved_body_face_slots = vec![12, 19, 27];
+    let target_shape = project_extrude(
+        &scope,
+        &[(0, &taper)],
+        &[body_group.clone(), target_shape_group.clone()],
+        &[],
+        std::slice::from_ref(&placement),
+        std::slice::from_ref(&target_shape_operand),
+    )
+    .expect("resolved target-shape Extrude");
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let feature_key = feature
+        .0
+        .split_once('#')
+        .map_or(feature.0.as_str(), |(_, key)| key);
+    let prefix = crate::ids::history_input_prefix(feature_key, 7);
+    assert!(matches!(
+        target_shape,
+        FeatureDefinition::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: Termination::ToShape {
+                        target: FaceSelection::Historical {
+                            ref state,
+                            ref faces,
+                            ref native,
+                        },
+                    },
+                    ..
+                },
+            },
+            ..
+        } if state == &crate::design::edge_resolve::feature_input_topology_id(&feature, 7)
+            && faces == &[
+                crate::ids::history_input_face_id(&prefix, 12),
+                crate::ids::history_input_face_id(&prefix, 19),
+                crate::ids::history_input_face_id(&prefix, 27),
+            ]
+            && native == &target_shape_group.id
+    ));
+
+    let mut multi_target_group = target_shape_group.clone();
+    multi_target_group.members.push(202);
+    multi_target_group.member_offsets.push(1030);
+    let mut second_target_operand = target_shape_operand.clone();
+    second_target_operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#202".into();
+    second_target_operand.owner = DesignBodyRecipeOperandOwner::Group {
+        group_record_index: multi_target_group.record_index,
+        group_member_ordinal: 1,
+    };
+    second_target_operand.record_index = 202;
+    second_target_operand.resolved_body_slot = Some(4);
+    second_target_operand.resolved_body_face_slots = vec![30, 31];
+    let operands = [target_shape_operand.clone(), second_target_operand.clone()];
+    assert!(matches!(
+        resolved_body_recipe_shape(&scope, &multi_target_group, &operands),
+        Some(FaceSelection::Historical { faces, .. })
+            if faces == [
+                crate::ids::history_input_face_id(&prefix, 12),
+                crate::ids::history_input_face_id(&prefix, 19),
+                crate::ids::history_input_face_id(&prefix, 27),
+                crate::ids::history_input_face_id(&prefix, 30),
+                crate::ids::history_input_face_id(&prefix, 31),
+            ]
+    ));
+    second_target_operand.resolved_body_state_id = Some(8);
+    assert!(resolved_body_recipe_shape(
+        &scope,
+        &multi_target_group,
+        &[target_shape_operand.clone(), second_target_operand],
+    )
+    .is_none());
 
     set_extrude_extent(&mut scope, DesignExtrudeExtent::OneSidedDistance);
     set_extrude_operation(&mut scope, DesignExtrudeOperation::NewBody);

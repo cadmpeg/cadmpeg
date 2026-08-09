@@ -3515,9 +3515,15 @@ pub struct DesignBodyRecipeOperand {
     /// Unique input-state face selected by this operand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_face_slot: Option<i64>,
+    /// Exact ASM input state containing the resolved body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_body_state_id: Option<i64>,
     /// Unique input-state body containing every reference's candidate faces.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_body_slot: Option<i64>,
+    /// Complete boundary-face set of the resolved body in its input state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_body_face_slots: Vec<i64>,
     /// Identity of the indexed record immediately following this operand.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this operand.

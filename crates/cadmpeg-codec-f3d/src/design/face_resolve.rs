@@ -92,19 +92,35 @@ pub(crate) fn resolved_direct_face_selection(
     })
 }
 
-/// Resolve the active faces carried by an Extrude target-shape body recipe.
-///
-/// The native target is a whole-body recipe rather than a face recipe. Its
-/// persistent Design references still identify the active boundary faces that
-/// define the target shape, so retain that exact set alongside the native
-/// group identity.
+/// Resolve the complete input-state body boundaries selected by an Extrude
+/// target-shape group. Persistent-reference candidate faces identify each
+/// body; they do not define a partial target boundary.
 pub(crate) fn resolved_body_recipe_shape(
+    scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
+    if crate::design::design_feature_family(&scope.kind)
+        != Some(crate::design::DesignFeatureFamily::Extrude)
+        || group.scope_record_index != scope.record_index
+        || group.role != 0x0000_0005_0000_0000
+        || group.extrude_role.is_some()
+        || group.extrude_face_role.is_some()
+        || group.members.is_empty()
+    {
+        return None;
+    }
     let stream = native_stream(&group.id)?;
+    if native_stream(&scope.id) != Some(stream) {
+        return None;
+    }
     let mut faces = Vec::new();
+    let mut state_id = None;
+    let mut member_records = HashSet::new();
     for (ordinal, record_index) in group.members.iter().enumerate() {
+        if !member_records.insert(*record_index) {
+            return None;
+        }
         let ordinal = u32::try_from(ordinal).ok()?;
         let mut matches = operands.iter().filter(|operand| {
             native_stream(&operand.id) == Some(stream)
@@ -113,21 +129,26 @@ pub(crate) fn resolved_body_recipe_shape(
                 && operand.record_index == *record_index
         });
         let operand = matches.next()?;
-        if matches.next().is_some() || operand.references.is_empty() {
+        if matches.next().is_some()
+            || operand.references.is_empty()
+            || operand.resolved_body_slot.is_none()
+            || operand.resolved_body_face_slots.is_empty()
+        {
             return None;
         }
-        for reference in &operand.references {
-            for face in &reference.candidate_faces {
-                if !faces.contains(face) {
-                    faces.push(face.clone());
-                }
+        let operand_state_id = operand.resolved_body_state_id?;
+        match state_id {
+            None => state_id = Some(operand_state_id),
+            Some(expected) if expected == operand_state_id => {}
+            Some(_) => return None,
+        }
+        for face in &operand.resolved_body_face_slots {
+            if !faces.contains(face) {
+                faces.push(*face);
             }
         }
     }
-    (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
-        faces,
-        native: group.id.clone(),
-    })
+    historical_face_selection_in_state(scope, group, state_id?, faces)
 }
 
 pub(crate) fn resolved_profile_face_group(
@@ -644,9 +665,21 @@ fn historical_face_selection(
     group: &DesignConstructionOperandGroup,
     faces: Vec<i64>,
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let previous_state_id = scope.previous_history_state_id?;
+    historical_face_selection_in_state(scope, group, previous_state_id, faces)
+}
+
+fn historical_face_selection_in_state(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    previous_state_id: i64,
+    faces: Vec<i64>,
+) -> Option<cadmpeg_ir::features::FaceSelection> {
     use cadmpeg_ir::features::FaceSelection;
 
-    let previous_state_id = scope.previous_history_state_id?;
+    if faces.is_empty() {
+        return None;
+    }
     let feature = neutral_feature_id(scope);
     let feature_key = feature
         .0

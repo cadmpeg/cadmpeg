@@ -11102,7 +11102,9 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
             nested_record_index_offset: byte_offset + 38,
             recipe_id,
             resolved_face_slot: None,
+            resolved_body_state_id: None,
             resolved_body_slot: None,
+            resolved_body_face_slots: Vec::new(),
             next_record_index: operand_record_index + 4,
             next_byte_offset: byte_offset + 300,
         });

@@ -6131,7 +6131,8 @@ pub(crate) fn project_extrude(
                 }
                 ([], [target]) if effective_side_one_offset.is_none() => (
                     ExtentShape::OneSided(Termination::ToShape {
-                        target: resolved_body_recipe_shape(target, body_recipe_operands)?,
+                        target: resolved_body_recipe_shape(scope, target, body_recipe_operands)
+                            .unwrap_or_else(|| FaceSelection::Native(target.id.clone())),
                     }),
                     prologue.direction_reversed(),
                 ),
