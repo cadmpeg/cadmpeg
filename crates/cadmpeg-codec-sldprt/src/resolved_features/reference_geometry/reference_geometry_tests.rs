@@ -975,13 +975,44 @@ fn named_reference_plane_data_classes_anchor_frame_lengths() {
         fixed[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     fixed[48] = 1;
-    let (payload, root) = payload_for("moFixedRefPlnData_c", &fixed);
+    for class in ["moFacePtRefPlnData_c", "moFixedRefPlnData_c"] {
+        let (payload, root) = payload_for(class, &fixed);
+        assert_eq!(
+            constraint_reference_plane_frame(&payload, root, class),
+            Some((
+                Point3::new(12.5, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            )),
+            "{class}"
+        );
+    }
+
+    let mut matrix = [0; 121];
+    for (offset, value) in [
+        (0, 0.0125_f64),
+        (24, 1.0),
+        (49, 0.0),
+        (57, 0.0),
+        (65, 1.0),
+        (73, 1.0),
+        (81, 0.0),
+        (89, 0.0),
+        (97, 0.0),
+        (105, 1.0),
+        (113, 0.0),
+    ] {
+        matrix[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    matrix[48] = 1;
+    let class = "moConstraintCoincLineAtAnglePlaneRefplaneData_c";
+    let (payload, root) = payload_for(class, &matrix);
     assert_eq!(
-        constraint_reference_plane_frame(&payload, root, "moFixedRefPlnData_c"),
+        constraint_reference_plane_frame(&payload, root, class),
         Some((
             Point3::new(12.5, 0.0, 0.0),
             Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(0.0, 1.0, 0.0),
         ))
     );
 

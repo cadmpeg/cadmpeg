@@ -1724,7 +1724,12 @@ pub(super) fn constraint_reference_plane_frame(
 ) -> Option<(Point3, Vector3, Vector3)> {
     let body = class_offset.checked_add(6 + class_name.len())?;
     match class_name {
-        "moConstraintPerpPlnTanOneCylinderRefplaneData_c" | "moFixedRefPlnData_c" => {
+        "moConstraintCoincLineAtAnglePlaneRefplaneData_c" => matrix_reference_plane_frame(
+            payload.get(body..body + MATRIX_REFERENCE_PLANE_FRAME_LEN)?,
+        ),
+        "moConstraintPerpPlnTanOneCylinderRefplaneData_c"
+        | "moFacePtRefPlnData_c"
+        | "moFixedRefPlnData_c" => {
             fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
         }
         "moDefaultRefPlnData_c" | "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => {
