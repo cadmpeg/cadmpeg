@@ -51,7 +51,8 @@
           {
             "definition": {
               "definition": "sketch",
-              "space": "unresolved"
+              "sketch": "nx:feature-history:sketch#0000000000-0000000001",
+              "space": "planar"
             },
             "dependencies": [
               "nx:feature-history:feature#0000000000-0000000003",
@@ -700,6 +701,19 @@
             "id": "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0",
             "native_ref": "nx:feature-history:sketch-point-use#0000000000-0000000000-0-0-1-0",
             "sketch": "nx:feature-history:sketch#0000000000-0000000000"
+          },
+          {
+            "construction": false,
+            "geometry": {
+              "kind": "point",
+              "position": {
+                "u": 57.149999999999686,
+                "v": 3745382.3999999794
+              }
+            },
+            "id": "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000",
+            "native_ref": "nx:feature-history:sketch-point-group#0000000000-0000000001-0000000000",
+            "sketch": "nx:feature-history:sketch#0000000000-0000000001"
           }
         ],
         "sketches": [
@@ -707,6 +721,14 @@
             "id": "nx:feature-history:sketch#0000000000-0000000000",
             "name": "SKETCH",
             "native_ref": "nx:feature-history:operation-label#0000000000-0000000000",
+            "placement": {
+              "kind": "unresolved"
+            }
+          },
+          {
+            "id": "nx:feature-history:sketch#0000000000-0000000001",
+            "name": "SKETCH",
+            "native_ref": "nx:feature-history:operation-label#0000000000-0000000001",
             "placement": {
               "kind": "unresolved"
             }
@@ -6075,7 +6097,13 @@
           "nx:feature-history:sketch#0000000000-0000000000": {
             "entity": "derived"
           },
+          "nx:feature-history:sketch#0000000000-0000000001": {
+            "entity": "derived"
+          },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
+            "entity": "derived"
+          },
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
             "entity": "derived"
           },
           "nx:feature-history:sketch-fixed-point#0000000000-0000000001-0000000001": {
@@ -6427,6 +6455,11 @@
             "stream": 0,
             "tag": "SKETCH"
           },
+          "nx:feature-history:sketch#0000000000-0000000001": {
+            "offset": 350,
+            "stream": 0,
+            "tag": "SKETCH"
+          },
           "nx:feature-history:sketch-construction-payload#0000000000-0000000001-fixed-pair-0000000000": {
             "offset": 1594,
             "stream": 0,
@@ -6439,6 +6472,11 @@
           },
           "nx:feature-history:sketch-entity#point-0000000000-0000000000-0-0-1-0": {
             "offset": 321,
+            "stream": 0,
+            "tag": "SKETCH_POINT"
+          },
+          "nx:feature-history:sketch-entity#point-0000000000-0000000001-0000000000": {
+            "offset": 1557,
             "stream": 0,
             "tag": "SKETCH_POINT"
           },

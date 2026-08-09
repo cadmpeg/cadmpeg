@@ -1112,7 +1112,9 @@ fn attach_feature_operations(
     let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
     let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
     let sketch_mixed_pairs = features.feature_sketch_payload_mixed_pairs.as_slice();
+    let sketch_payload_scalars = features.feature_sketch_payload_scalars.as_slice();
     let sketch_fixed_points = features.feature_sketch_fixed_points.as_slice();
+    let sketch_points = features.feature_sketch_points.as_slice();
     let block_constructions = features.feature_block_constructions.as_slice();
     let block_construction_payloads = features.feature_block_construction_payloads.as_slice();
     let block_dimensions = features.feature_block_dimensions.as_slice();
@@ -3085,13 +3087,17 @@ fn attach_feature_operations(
         let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
         let sketch = (label.value == "SKETCH")
             .then(|| {
-                attach_solved_sketch_points(
+                attach_sketch_points(
                     ir,
                     label,
-                    sketch_point_uses_by_operation
-                        .get(label.id.as_str())
-                        .map_or([].as_slice(), Vec::as_slice),
-                    sketch_point_groups,
+                    &SketchPointSources {
+                        point_uses: sketch_point_uses_by_operation
+                            .get(label.id.as_str())
+                            .map_or([].as_slice(), Vec::as_slice),
+                        point_groups: sketch_point_groups,
+                        points: sketch_points,
+                        payload_scalars: sketch_payload_scalars,
+                    },
                     annotations,
                     stream,
                 )
@@ -3297,21 +3303,58 @@ fn native_primary_body_references<'a>(
         .collect()
 }
 
-fn attach_solved_sketch_points(
+fn attach_sketch_points(
     ir: &mut CadIr,
     label: &crate::native::features::FeatureOperationLabel,
-    point_uses: &[&crate::native::features::FeatureSketchPointUse],
-    point_groups: &[crate::native::features::FeatureSketchPointGroup],
+    sources: &SketchPointSources<'_>,
     annotations: &mut AnnotationBuilder,
     stream: cadmpeg_ir::annotations::StreamHandle,
 ) -> Option<SketchId> {
-    if point_uses.is_empty() {
+    let operation_groups = sources
+        .point_groups
+        .iter()
+        .filter(|group| group.operation_label == label.id)
+        .collect::<Vec<_>>();
+    if operation_groups.is_empty() {
         return None;
     }
-    let groups = point_groups
-        .iter()
-        .map(|group| (group.id.as_str(), group))
-        .collect::<BTreeMap<_, _>>();
+    let mut groups_by_id =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
+    for group in &operation_groups {
+        if groups_by_id.insert(group.id.as_str(), group).is_some() {
+            return None;
+        }
+    }
+    let mut point_uses_by_group =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
+    for point_use in sources.point_uses {
+        if point_use.operation_label != label.id
+            || point_uses_by_group
+                .insert(point_use.sketch_point_group.as_str(), point_use)
+                .is_some()
+        {
+            return None;
+        }
+    }
+    if point_uses_by_group
+        .keys()
+        .any(|group| !groups_by_id.contains_key(group))
+    {
+        return None;
+    }
+    let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
+    for point in sources.points {
+        if points_by_id.insert(point.id.as_str(), point).is_some() {
+            return None;
+        }
+    }
+    let mut scalars_by_id =
+        BTreeMap::<&str, &crate::native::features::FeatureSketchPayloadScalar>::new();
+    for scalar in sources.payload_scalars {
+        if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
+            return None;
+        }
+    }
     let operation_key = label
         .id
         .strip_prefix("nx:feature-history:operation-label#")
@@ -3319,10 +3362,8 @@ fn attach_solved_sketch_points(
     let sketch_id = SketchId(format!("nx:feature-history:sketch#{operation_key}"));
     let mut entities = Vec::new();
     let mut represented_groups = BTreeSet::new();
-    for point_use in point_uses {
-        let group = groups.get(point_use.sketch_point_group.as_str())?;
-        if group.operation_label != label.id
-            || !represented_groups.insert(group.id.as_str())
+    for group in operation_groups {
+        if !represented_groups.insert(group.id.as_str())
             || group
                 .coordinates
                 .iter()
@@ -3330,19 +3371,73 @@ fn attach_solved_sketch_points(
         {
             return None;
         }
+        let point_use = point_uses_by_group.get(group.id.as_str()).copied();
+        let source_offsets = if let Some(point_use) = point_use {
+            point_use.source_offsets.clone()
+        } else {
+            group
+                .points
+                .iter()
+                .map(|point_id| {
+                    let point = points_by_id.get(point_id.as_str()).copied()?;
+                    if point.operation_label != label.id
+                        || point.name != group.name
+                        || point
+                            .coordinates
+                            .iter()
+                            .zip(group.coordinates)
+                            .any(|(first, second)| first.to_bits() != second.to_bits())
+                    {
+                        return None;
+                    }
+                    let scalar_fields = point
+                        .scalar_fields
+                        .iter()
+                        .map(|scalar_id| scalars_by_id.get(scalar_id.as_str()).copied())
+                        .collect::<Option<Vec<_>>>()?;
+                    if scalar_fields.len() != 2
+                        || scalar_fields.iter().zip(group.coordinates).any(
+                            |(scalar, coordinate)| {
+                                scalar.operation_label != label.id
+                                    || scalar.value.to_bits() != coordinate.to_bits()
+                            },
+                        )
+                    {
+                        return None;
+                    }
+                    Some(
+                        scalar_fields
+                            .into_iter()
+                            .map(|scalar| scalar.source_offset)
+                            .collect::<Vec<_>>(),
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect()
+        };
+        let source_offset = source_offsets.iter().copied().min()?;
+        let native_ref =
+            point_use.map_or_else(|| group.id.clone(), |point_use| point_use.id.clone());
         let entity_key = point_use
-            .id
+            .map_or(group.id.as_str(), |point_use| point_use.id.as_str())
             .strip_prefix("nx:feature-history:sketch-point-use#")
-            .unwrap_or(point_use.id.as_str());
+            .or_else(|| {
+                group
+                    .id
+                    .strip_prefix("nx:feature-history:sketch-point-group#")
+            })
+            .unwrap_or(group.id.as_str());
         entities.push((
-            point_use.source_offsets.iter().copied().min()?,
+            source_offset,
             SketchEntity {
                 id: SketchEntityId(format!(
                     "nx:feature-history:sketch-entity#point-{entity_key}"
                 )),
                 sketch: sketch_id.clone(),
                 construction: false,
-                native_ref: Some(point_use.id.clone()),
+                native_ref: Some(native_ref),
                 geometry_ref: None,
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Point {
@@ -3350,6 +3445,14 @@ fn attach_solved_sketch_points(
                 },
             },
         ));
+    }
+    entities.sort_by(|(first_offset, first), (second_offset, second)| {
+        first_offset
+            .cmp(second_offset)
+            .then_with(|| first.id.0.cmp(&second.id.0))
+    });
+    if entities.is_empty() {
+        return None;
     }
     for (source_offset, entity) in &entities {
         annotations
@@ -3373,6 +3476,13 @@ fn attach_solved_sketch_points(
         native_ref: Some(label.id.clone()),
     });
     Some(sketch_id)
+}
+
+struct SketchPointSources<'a> {
+    point_uses: &'a [&'a crate::native::features::FeatureSketchPointUse],
+    point_groups: &'a [crate::native::features::FeatureSketchPointGroup],
+    points: &'a [crate::native::features::FeatureSketchPoint],
+    payload_scalars: &'a [crate::native::features::FeatureSketchPayloadScalar],
 }
 
 fn records_by_operation<'a, T>(
@@ -7566,11 +7676,15 @@ mod tests {
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut annotations = AnnotationBuilder::new();
         let stream = annotations.stream("nx:container");
-        let sketch = super::attach_solved_sketch_points(
+        let sketch = super::attach_sketch_points(
             &mut ir,
             &label,
-            &[&point_use],
-            std::slice::from_ref(&group),
+            &super::SketchPointSources {
+                point_uses: &[&point_use],
+                point_groups: std::slice::from_ref(&group),
+                points: &[],
+                payload_scalars: &[],
+            },
             &mut annotations,
             stream,
         )
@@ -7586,17 +7700,94 @@ mod tests {
         let mut rejected_ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let mut rejected_annotations = AnnotationBuilder::new();
         let rejected_stream = rejected_annotations.stream("nx:container");
-        assert!(super::attach_solved_sketch_points(
+        assert!(super::attach_sketch_points(
             &mut rejected_ir,
             &label,
-            &[&point_use, &point_use],
-            &[group],
+            &super::SketchPointSources {
+                point_uses: &[&point_use, &point_use],
+                point_groups: &[group],
+                points: &[],
+                payload_scalars: &[],
+            },
             &mut rejected_annotations,
             rejected_stream,
         )
         .is_none());
         assert!(rejected_ir.model.sketches.is_empty());
         assert!(rejected_ir.model.sketch_entities.is_empty());
+    }
+
+    #[test]
+    fn named_sketch_points_project_without_an_external_named_point() {
+        let label = crate::native::features::FeatureOperationLabel {
+            id: "nx:feature-history:operation-label#section-8".to_string(),
+            section_link: "section".to_string(),
+            ordinal: 8,
+            value: "SKETCH".to_string(),
+            object_indices: [None; 4],
+            raw_object_indices: Default::default(),
+            source_offset: 40,
+        };
+        let point = crate::native::features::FeatureSketchPoint {
+            id: "point".to_string(),
+            operation_label: label.id.clone(),
+            named_record: "named-record".to_string(),
+            name: "Point1".to_string(),
+            scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
+            coordinates: [12.5, -3.0],
+        };
+        let group = crate::native::features::FeatureSketchPointGroup {
+            id: "point-group".to_string(),
+            operation_label: label.id.clone(),
+            name: point.name.clone(),
+            points: vec![point.id.clone()],
+            coordinates: point.coordinates,
+        };
+        let scalar = |id: &str, ordinal: u32, value: f64, source_offset: u64| {
+            crate::native::features::FeatureSketchPayloadScalar {
+                id: id.to_string(),
+                operation_label: label.id.clone(),
+                construction_payload: "payload".to_string(),
+                ordinal,
+                field_code: 100,
+                value,
+                raw_value: [0; 8],
+                payload_offset: ordinal as u64,
+                source_offset,
+            }
+        };
+        let scalars = [
+            scalar("scalar-1", 0, 12.5, 51),
+            scalar("scalar-2", 1, -3.0, 59),
+        ];
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let mut annotations = AnnotationBuilder::new();
+        let stream = annotations.stream("nx:container");
+        let sketch = super::attach_sketch_points(
+            &mut ir,
+            &label,
+            &super::SketchPointSources {
+                point_uses: &[],
+                point_groups: std::slice::from_ref(&group),
+                points: std::slice::from_ref(&point),
+                payload_scalars: &scalars,
+            },
+            &mut annotations,
+            stream,
+        )
+        .expect("a complete named payload point projects a sketch");
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert_eq!(ir.model.sketch_entities.len(), 1);
+        assert_eq!(
+            ir.model.sketch_entities[0].native_ref.as_deref(),
+            Some("point-group")
+        );
+        assert!(matches!(
+            ir.model.sketch_entities[0].geometry,
+            SketchGeometry::Point {
+                position: Point2 { u: 12.5, v: -3.0 }
+            }
+        ));
     }
 
     #[test]
