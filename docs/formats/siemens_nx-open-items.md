@@ -208,15 +208,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles and cardinality rules to transfer the complete inline body state.
 
-### PS-26. Boundary pcurve completion without a chart
-
-**Question.** Which serialized witness establishes the boundary pcurve of an EDGE whose supports carry no chart and no analytic isocurve relation?
-
-**Known.** `siemens_nx.md` §5.3 "An EDGE may carry null curve reference `1` with a finite tolerance. With a null" defines chart-certified transfer for a null carrier and states that transfer does not synthesize a model-space line between the vertices. `siemens_nx.md` §5.3 "A null `EDGE.curve` may instead have a non-null owning `FIN.curve`. The FIN" defines the FIN-carrier case. Neither defines a boundary pcurve for a plane or quadric support that has no chart.
-
-**Need.** We must know the witness to construct the boundary pcurve from the file. Endpoint inversion alone fixes only the two ends, so the interior of the interval carries no evidence, and a straight parameter-space chart on a plane asserts a straight model-space edge.
-
-
 ### PS-27. Unresolved EDGE end vertex
 
 **Question.** What is the correct reading of an EDGE whose end vertex does not resolve to a decoded POINT?
