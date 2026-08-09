@@ -263,7 +263,7 @@ anchor = "`00 0f` | loop head | ≥14 | none"
 tag = "00 10"
 name = "edge-use"
 payload_bytes = 28
-note = "magic at body +8"
+note = "bare magic at body +8; deltas magic at body +9 with post-magic [01][hi][lo] or [hi][lo][01] cells"
 section = "4"
 anchor = "`00 10` | edge-use | 28 | at body +8"
 
@@ -271,7 +271,7 @@ anchor = "`00 10` | edge-use | 28 | at body +8"
 tag = "00 11"
 name = "oriented coedge"
 payload_bytes = 21
-note = "no magic"
+note = "bare body has no magic; deltas refs are nine [hi][lo][01] cells and the marker follows"
 section = "4"
 anchor = "`00 11` | oriented coedge | 21 | none"
 

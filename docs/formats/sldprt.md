@@ -843,6 +843,8 @@ Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a
 
 Post-magic `00 10` reference cells appear as `[01][hi][lo]` or `[hi][lo][01]` triples. Partition and deltas streams in the same outer block share a site namespace. Prefixed and tripled references encode the same u16 attribute values as bare references.
 
+The post-magic cell order has no discriminator byte. A valid `00 10` interpretation has a zero or a curve-carrier attribute in `refs[3]`; a valid `00 11` interpretation has a loop attribute in `refs[1]`, a same-loop next coedge in `refs[3]`, a vertex-use attribute in `refs[4]`, and an edge-use attribute in `refs[6]`. The frame is the unique interpretation that satisfies these reference invariants. If more than one interpretation satisfies them, the record has no selected topology interpretation.
+
 A deltas stream groups its records into change sets. Each change set carries a **change roster**:
 
 ```

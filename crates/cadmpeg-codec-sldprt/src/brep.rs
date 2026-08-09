@@ -178,6 +178,10 @@ impl CarrierIndex {
         self.curves.get(&attr)
     }
 
+    pub(crate) fn curve_attrs(&self) -> HashSet<u16> {
+        self.curves.keys().copied().collect()
+    }
+
     pub(crate) fn surface(&self, attr: u16) -> Option<&Carrier> {
         self.surfaces.get(&attr)
     }

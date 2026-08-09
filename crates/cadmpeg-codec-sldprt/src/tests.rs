@@ -985,6 +985,20 @@ fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
+fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+    let mut b = vec![0x00, 0x10];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    be16(&mut b, 0);
+    b.extend_from_slice(&[1, 0, 0]);
+    b.extend_from_slice(&MAGIC);
+    for reference in [0x0101, 0x0102, curve_attr] {
+        be16(&mut b, reference);
+        b.push(1);
+    }
+    b
+}
+
 /// Vertex-use `00 12`: `refs[4]` = world-point attr; magic at body+16.
 fn vertex_use(attr: u16, point_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x12];
@@ -1067,6 +1081,17 @@ fn prefixed_edge_triangle_body() -> Vec<u8> {
     let mut b = tripled_triangle_body();
     b.extend(prefixed_line_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
     b.extend(prefixed_edge_use(40, 70));
+    b
+}
+
+fn suffix_prefixed_edge_triangle_body() -> Vec<u8> {
+    let mut b = tripled_triangle_body();
+    b.extend(prefixed_line_carrier(
+        0x0103,
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+    ));
+    b.extend(suffix_prefixed_edge_use(40, 0x0103));
     b
 }
 
@@ -7013,6 +7038,21 @@ fn decode_recovers_tripled_deltas_topology() {
 fn decode_resolves_prefixed_deltas_edge_curve() {
     use cadmpeg_ir::geometry::CurveGeometry;
     let mut cur = Cursor::new(sldprt_with_body(&prefixed_edge_triangle_body()));
+    let result = SldprtCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Line { .. })));
+}
+
+#[test]
+fn decode_resolves_suffix_prefixed_edge_curve_with_high_byte_one() {
+    use cadmpeg_ir::geometry::CurveGeometry;
+    let mut cur = Cursor::new(sldprt_with_body(&suffix_prefixed_edge_triangle_body()));
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();

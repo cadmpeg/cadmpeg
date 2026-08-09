@@ -492,14 +492,15 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     for (payload, header) in bodies {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        carriers.merge_missing(scan_carriers(body));
+        let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if is_deltas {
-            topology::scan_deltas(body)
+            topology::scan_deltas_with_curve_attrs(body, &curve_attrs)
         } else {
-            topology::scan(body)
+            topology::scan_with_curve_attrs(body, &curve_attrs)
         };
         let mut scanned_facts = entity::scan(body);
         if !initialized || !is_deltas {
-            carriers.merge_missing(scan_carriers(body));
             if initialized {
                 tables.merge_deltas(scanned_tables);
                 if facts.bodies.is_empty() {
@@ -520,7 +521,6 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 initialized = true;
             }
         } else {
-            carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
             facts.face_atoms.append(&mut scanned_facts.face_atoms);
@@ -535,7 +535,8 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
 
 fn decode_body(body: &[u8], stream: &str) -> Brep {
     let carriers = scan_carriers(body);
-    let t = topology::scan(body);
+    let curve_attrs = carriers.curve_attrs();
+    let t = topology::scan_with_curve_attrs(body, &curve_attrs);
     let entity_facts = entity::scan(body);
     decode_graph(&carriers, &t, entity_facts, stream)
 }

@@ -153,7 +153,7 @@ The discarded face keeps no loss record. Its loops, coedges, and edges do not en
 
 **Question.** Which coedge anchors the stored edge direction in a prefixed deltas edge-use record?
 
-**Known.** `sldprt.md` §4.1 "canonical coedge = same-site coedge with attr == 00 10.refs[0]" defines the anchor. `sldprt.md` §4.1 "The `00 10.refs[0]` coedge anchors the stored edge direction." states the rule. `crates/cadmpeg-codec-sldprt/src/brep/topology.rs:156` fills all six references for the bare form. The prefixed deltas form at `topology.rs:185` fills `refs[3]` only, so `refs[0]` is not available for that form.
+**Known.** `sldprt.md` §4.1 "canonical coedge = same-site coedge with attr == 00 10.refs[0]" defines the anchor. `sldprt.md` §4.1 "The `00 10.refs[0]` coedge anchors the stored edge direction." states the rule. `parse_edge_use_candidates` in `crates/cadmpeg-codec-sldprt/src/brep/topology.rs` fills all six references for the bare form. Its prefixed deltas branch fills `refs[3]` only, so `refs[0]` is not available for that form.
 
 **Conflict.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:571` does not use `refs[0]` for the bare form either. It sorts the faces by bridge attribute and takes the direction from the coedge that the walk reaches first:
 
@@ -226,20 +226,6 @@ The decoder does not test that one parameter only is inside the limit. `derive_c
 `brep.rs:263` then refuses the record when a value is not finite or its magnitude is more than `1e6`. `sldprt.md` states no coordinate magnitude limit. The frame invariants at `brep.rs:102` are exact and come from `sldprt.md` §7.1.
 
 **Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
-
-### GC-15. Prefixed-triple record framing
-
-**Question.** Which field states that a coedge or edge-use record uses the prefixed deltas triple form?
-
-**Known.** `sldprt.md` §4.2 "Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]`" defines the tripled form. It gives no discriminator between the adjacent form and the tripled form.
-
-`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:208` selects the adjacent form when the byte at `p + 20` is `0x2b` or `0x2d`, and the tripled form otherwise. In a tripled record that byte is the high byte of the sixth reference, so an edge-use attribute in `0x2b00..=0x2dff` selects the wrong form. The nine references then become interleaved byte pairs and the marker byte reads as a valid sense.
-
-`crates/cadmpeg-codec-sldprt/src/brep/topology.rs:169` selects the edge-use triple order by testing whether the first payload byte is `0x01`. In a `[hi][lo][01]` record a first reference in `256..=511` has that byte set, so the parser takes the `[01][hi][lo]` branch and reads `refs[3]`, the support-curve carrier, from the wrong position.
-
-Neither site collects both readings and compares them. The loop-candidate gate at `topology.rs:416` tests the first coedge of a ring only.
-
-**Need.** We must know the discriminator. Attribute values in those ranges are ordinary in a part with many entities.
 
 ### GC-16. Chart entry stride
 
