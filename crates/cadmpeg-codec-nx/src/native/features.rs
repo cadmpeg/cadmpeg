@@ -51,10 +51,17 @@ pub(crate) fn feature_operation_chronological_labels(
             sections.push((label.section_link.as_str(), vec![label]));
         }
     }
+    sections.sort_by(|(left_link, left), (right_link, right)| {
+        left.iter()
+            .map(|label| label.source_offset)
+            .min()
+            .cmp(&right.iter().map(|label| label.source_offset).min())
+            .then_with(|| left_link.cmp(right_link))
+    });
     sections
         .into_iter()
         .flat_map(|(_, mut section)| {
-            section.reverse();
+            section.sort_by_key(|label| std::cmp::Reverse(label.source_offset));
             section
         })
         .collect()
@@ -10871,7 +10878,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset: u64::from(ordinal),
+            source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {
@@ -11248,6 +11255,41 @@ mod tests {
                 "newest-first",
                 "oldest-second",
                 "newest-second"
+            ]
+        );
+    }
+
+    #[test]
+    fn operation_history_uses_serialized_offsets_for_section_and_member_order() {
+        let label =
+            |section: &str, ordinal, value: &str, source_offset| super::FeatureOperationLabel {
+                id: format!("{section}-{ordinal}"),
+                section_link: section.to_string(),
+                ordinal,
+                value: value.to_string(),
+                object_indices: [None; 4],
+                raw_object_indices: std::array::from_fn(|_| vec![0xff]),
+                source_offset,
+            };
+        let labels = [
+            label("first", 1, "oldest-first", 210),
+            label("second", 1, "oldest-second", 110),
+            label("first", 0, "newest-first", 200),
+            label("second", 0, "newest-second", 100),
+        ];
+
+        let values = super::feature_operation_chronological_labels(&labels)
+            .into_iter()
+            .map(|label| label.value.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            values,
+            [
+                "oldest-second",
+                "newest-second",
+                "oldest-first",
+                "newest-first"
             ]
         );
     }

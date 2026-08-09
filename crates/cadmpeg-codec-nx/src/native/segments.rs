@@ -896,7 +896,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset: ordinal as u64,
+            source_offset: 2 - u64::from(ordinal),
         };
         let labels = [label(2, "UNITE"), label(1, "EXTRUDE"), label(0, "EXTRUDE")];
         let reference = |operation: &str, body_object_index| FeatureBodyReference {
@@ -949,7 +949,7 @@ mod tests {
             value: "UNITE".to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset: u64::from(ordinal),
+            source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1), label(0)];
         let boolean = |ordinal: usize, target: u32, tools: Vec<u32>| FeatureBooleanOperation {
@@ -1676,7 +1676,7 @@ mod tests {
             value: value.to_string(),
             object_indices: [None; 4],
             raw_object_indices: std::array::from_fn(|_| vec![0xff]),
-            source_offset: ordinal as u64,
+            source_offset: 1 - u64::from(ordinal),
         };
         let labels = [label(1, "UNITE"), label(0, "EXTRUDE")];
         let references = [FeatureBodyReference {

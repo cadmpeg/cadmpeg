@@ -466,14 +466,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the class grammars to transfer the remaining fast-load state as typed data.
 
-### OM-31. Feature-history construction-order evidence
-
-**Question.** Which serialized field establishes the construction order of feature-history operations, inside one record area and between record areas?
-
-**Known.** `siemens_nx.md` §7.1 "Within one feature-history record area, operation records are stored in reverse" and `siemens_nx.md` §7.1 "Neutral feature ordinals and dependency precedence reverse the operation order" define the reversed order inside one area and the serialized order between areas. Neutral feature ordinals, dependency precedence, body lineage, and terminal-body selection all derive their order from that reversal. An operation label carries a name, four object-index lanes, and a source offset. It carries no sequence number, no timestamp, and no predecessor reference.
-
-**Need.** We must know the field to order operations when one record area holds records of more than one construction generation, or when the serialized area order is not the construction order. Record order is the only current witness, so a file that stores areas or records in another order gives a reversed history with no diagnostic.
-
 ### OM-32. All-terminal body-lineage mappings
 
 **Question.** Which serialized state separates a complete body mapping in which every emitted body is terminal from a mapping whose terminal status is unresolved?
