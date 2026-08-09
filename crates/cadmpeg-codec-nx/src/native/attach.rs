@@ -1195,6 +1195,7 @@ fn attach_feature_operations(
     let body_references = native_primary_body_references(
         body_references,
         body_data_block_uses,
+        body_segment_uses,
         input_blocks,
         data_blocks,
     );
@@ -3290,14 +3291,14 @@ fn native_result_body_identity(
 }
 
 /// Return primary body fields that are proven to use the segment-object
-/// namespace. An operation with any resolved offset-store input selects that
-/// namespace before its primary body ordinal is resolved; missing or
-/// ambiguous offset-store body relations must not fall back to integer-equal
-/// segment aliases. An operation with zero or multiple body fields has no
-/// primary-body writer.
+/// namespace. An offset-store field may enter that namespace only when the
+/// feature extractor has also retained one unique segment alias use for the
+/// same field. Missing or ambiguous relations remain offset-store-local. An
+/// operation with zero or multiple body fields has no primary-body writer.
 fn native_primary_body_references<'a>(
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
+    segment_uses: &[crate::native::features::FeatureBodySegmentUse],
     inputs: &[crate::native::features::FeatureInputBlock],
     data_blocks: &[crate::native::om::DataBlock],
 ) -> BTreeMap<&'a str, u32> {
@@ -3308,11 +3309,16 @@ fn native_primary_body_references<'a>(
         .collect::<BTreeSet<_>>();
     let offset_store_operations =
         crate::native::features::feature_input_store_operations(inputs, data_blocks);
+    let bridged_segment_references = segment_uses
+        .iter()
+        .map(|use_| use_.feature_body_reference.as_str())
+        .collect::<BTreeSet<_>>();
     unique_references
         .into_iter()
         .filter(|(_, reference)| {
-            !offset_store_references.contains(reference.id.as_str())
-                && !offset_store_operations.contains(reference.operation_label.as_str())
+            bridged_segment_references.contains(reference.id.as_str())
+                || (!offset_store_references.contains(reference.id.as_str())
+                    && !offset_store_operations.contains(reference.operation_label.as_str()))
         })
         .map(|(operation, reference)| (operation, reference.body_object_index))
         .collect()
@@ -8317,9 +8323,9 @@ mod tests {
     }
 
     #[test]
-    fn native_primary_body_references_exclude_unresolved_offset_store_namespaces() {
+    fn native_primary_body_references_retain_only_proven_body_namespaces() {
         use crate::native::features::{
-            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureInputBlock,
+            FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBodySegmentUse, FeatureInputBlock,
         };
         use crate::native::om::{DataBlock, DataBlockRole};
 
@@ -8421,10 +8427,19 @@ mod tests {
             ),
         ];
 
-        let native =
-            super::native_primary_body_references(&references, &data_block_uses, &inputs, &blocks);
+        let native = super::native_primary_body_references(
+            &references,
+            &data_block_uses,
+            &[FeatureBodySegmentUse {
+                id: "segment-use#exact".to_string(),
+                feature_body_reference: references[1].id.clone(),
+                segment_body_binding: "binding#exact".to_string(),
+            }],
+            &inputs,
+            &blocks,
+        );
         assert_eq!(native.get("operation#segment"), Some(&10));
-        assert!(!native.contains_key("operation#exact"));
+        assert_eq!(native.get("operation#exact"), Some(&99));
         assert!(!native.contains_key("operation#missing"));
         assert!(!native.contains_key("operation#ambiguous"));
         assert!(!native.contains_key("operation#duplicate"));

@@ -3571,6 +3571,12 @@ pub fn feature_body_reference_occurrences(
 }
 
 /// Join object-index primary body fields to exactly one segment body alias pair.
+///
+/// A field resolved in an offset store enters the segment namespace only when
+/// its operation has one resolved offset store, the field has one retained
+/// data-block use, and that field's identity matches one unique segment alias.
+/// A primary-index match, a missing or duplicate data-block use, a missing or
+/// ambiguous store, or a duplicate segment alias remains unresolved.
 pub fn feature_body_segment_uses(
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -3579,25 +3585,54 @@ pub fn feature_body_segment_uses(
     bindings: &[SegmentBodyBinding],
 ) -> Vec<FeatureBodySegmentUse> {
     let unique_references = unique_feature_body_references(references);
-    let offset_store_references = data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
+    let offset_store_reference_counts =
+        data_block_uses
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
+                *counts
+                    .entry(use_.feature_body_reference.as_str())
+                    .or_default() += 1;
+                counts
+            });
     let offset_store_operations = feature_input_store_operations(inputs, blocks);
+    let single_offset_store_operations = feature_input_store_sections(inputs, blocks)
+        .into_iter()
+        .filter_map(|(operation_label, sections)| (sections.len() == 1).then_some(operation_label))
+        .collect::<BTreeSet<_>>();
     references
         .iter()
         .filter(|reference| {
             unique_references
                 .get(reference.operation_label.as_str())
                 .is_some_and(|unique| unique.id == reference.id)
-                && !offset_store_references.contains(reference.id.as_str())
-                && !offset_store_operations.contains(reference.operation_label.as_str())
         })
         .filter_map(|reference| {
-            let binding = crate::native::segments::unique_segment_body_binding(
-                reference.body_object_index,
-                bindings,
-            )?;
+            let offset_store_reference_count = offset_store_reference_counts
+                .get(reference.id.as_str())
+                .copied();
+            let has_offset_store_reference = offset_store_reference_count.is_some();
+            let is_offset_store_operation =
+                offset_store_operations.contains(reference.operation_label.as_str());
+            if is_offset_store_operation && !has_offset_store_reference {
+                return None;
+            }
+            if has_offset_store_reference
+                && (offset_store_reference_count != Some(1)
+                    || !single_offset_store_operations.contains(reference.operation_label.as_str()))
+            {
+                return None;
+            }
+            let binding = if has_offset_store_reference {
+                crate::native::segments::unique_segment_body_alias_binding(
+                    reference.body_object_index,
+                    bindings,
+                )?
+            } else {
+                crate::native::segments::unique_segment_body_binding(
+                    reference.body_object_index,
+                    bindings,
+                )?
+            };
             Some(FeatureBodySegmentUse {
                 id: reference
                     .id
@@ -3611,10 +3646,9 @@ pub fn feature_body_segment_uses(
 
 /// Return operations with at least one resolved input field in an offset store.
 ///
-/// The operation selects the namespace before its primary body ordinal is
-/// resolved. A missing ordinal or multiple selected stores therefore remains
-/// unresolved in the offset-store namespace; it does not become a
-/// segment-object reference through integer equality.
+/// This set identifies operations whose body fields must be resolved in the
+/// offset-store namespace. The one-store requirement for a segment bridge is
+/// checked separately from this broader namespace classification.
 pub(crate) fn feature_input_store_operations(
     inputs: &[FeatureInputBlock],
     blocks: &[crate::native::om::DataBlock],
@@ -10671,7 +10705,142 @@ mod tests {
     }
 
     #[test]
-    fn feature_body_segment_uses_exclude_offset_store_indices() {
+    fn feature_body_segment_uses_bridge_unique_offset_store_aliases() {
+        use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
+        use crate::native::om::{DataBlock, DataBlockRole};
+        use crate::native::segments::SegmentBodyBinding;
+
+        let reference = FeatureBodyReference {
+            id: "reference#0".into(),
+            operation_label: "operation#0".into(),
+            body_object_index: 11,
+            raw_body_object_index: vec![11],
+            source_offset: 90,
+        };
+        let data_block_use = FeatureBodyDataBlockUse {
+            id: "data-block-use#0".into(),
+            feature_body_reference: reference.id.clone(),
+            data_block: "block#11".into(),
+        };
+        let input = FeatureInputBlock {
+            id: "input#0".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 0,
+            object_index: 3,
+            raw_object_index: vec![3],
+            data_block: "block#3".into(),
+            source_offset: 80,
+        };
+        let blocks = [
+            DataBlock {
+                id: "block#3".into(),
+                section_ordinal: 2,
+                block_ordinal: 3,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 1,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+            DataBlock {
+                id: "block#11".into(),
+                section_ordinal: 2,
+                block_ordinal: 11,
+                role: DataBlockRole::Column,
+                section_offset: 0,
+                byte_len: 1,
+                sha256: String::new(),
+                source_entry: String::new(),
+                source_offset: 0,
+            },
+        ];
+        let binding = SegmentBodyBinding {
+            id: "binding#0".into(),
+            stream_link: "stream#0".into(),
+            stream_ordinal: 0,
+            stream_kind: "partition".into(),
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 40,
+        };
+        let uses = feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            std::slice::from_ref(&binding),
+        );
+        assert_eq!(uses.len(), 1);
+        assert_eq!(uses[0].segment_body_binding, "binding#0");
+
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            &[data_block_use.clone(), data_block_use.clone()],
+            std::slice::from_ref(&input),
+            &blocks,
+            std::slice::from_ref(&binding),
+        )
+        .is_empty());
+
+        let second_input = FeatureInputBlock {
+            id: "input#1".into(),
+            operation_label: reference.operation_label.clone(),
+            input_slot: 1,
+            object_index: 4,
+            raw_object_index: vec![4],
+            data_block: "block#4".into(),
+            source_offset: 81,
+        };
+        let second_block = DataBlock {
+            id: "block#4".into(),
+            section_ordinal: 3,
+            block_ordinal: 4,
+            role: DataBlockRole::Column,
+            section_offset: 0,
+            byte_len: 1,
+            sha256: String::new(),
+            source_entry: String::new(),
+            source_offset: 0,
+        };
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            &[input.clone(), second_input],
+            &[blocks[0].clone(), blocks[1].clone(), second_block],
+            std::slice::from_ref(&binding),
+        )
+        .is_empty());
+
+        let mut duplicate_alias = binding.clone();
+        duplicate_alias.id = "binding#1".into();
+        duplicate_alias.body_object_index = 20;
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            &[binding.clone(), duplicate_alias],
+        )
+        .is_empty());
+
+        let mut primary_collision = binding.clone();
+        primary_collision.id = "binding#2".into();
+        primary_collision.body_object_index = 11;
+        primary_collision.body_alias_object_index = 12;
+        assert!(feature_body_segment_uses(
+            std::slice::from_ref(&reference),
+            std::slice::from_ref(&data_block_use),
+            std::slice::from_ref(&input),
+            &blocks,
+            &[binding, primary_collision],
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn feature_body_segment_uses_reject_primary_index_offset_collision() {
         use super::{feature_body_segment_uses, FeatureBodyDataBlockUse, FeatureBodyReference};
         use crate::native::segments::SegmentBodyBinding;
 
@@ -10692,13 +10861,13 @@ mod tests {
             stream_link: "stream#0".into(),
             stream_ordinal: 0,
             stream_kind: "partition".into(),
-            body_object_index: 10,
-            body_alias_object_index: 11,
+            body_object_index: 11,
+            body_alias_object_index: 12,
             stream_role: 19,
             source_offset: 40,
         };
         assert!(
-            feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding])
+            feature_body_segment_uses(&[reference], &[data_block_use], &[], &[], &[binding],)
                 .is_empty()
         );
     }

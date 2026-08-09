@@ -258,14 +258,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field roles to construct the complete OM schema registry.
 
-### OM-07. Offset-store body to segment-image relation
-
-**Question.** How does a primary feature body field that resolves to an offset-store block identify a segment body-image object-index pair?
-
-**Known.** `siemens_nx.md` §2 "A partition or plain cached-body wrapper word begins" and `siemens_nx.md` §2 "A primary feature body field whose operation does not select an offset-store" define segment body-image tuples and prohibit a relation based only on equal integer values across namespaces. They also define primary-body fields and body selection.
-
-**Need.** We must know the cross-store relation to attach the feature output and lineage to the correct body image.
-
 ### OM-08. Other feature-history object relations
 
 **Question.** What relation does each feature-history object index that is not a primary-body writer or Boolean tool use?

@@ -149,6 +149,29 @@ pub(crate) fn unique_segment_body_binding(
     matches.next().is_none().then_some(binding)
 }
 
+/// Return one segment body binding whose alias identity is unique.
+///
+/// The alias lane is a distinct identity from the stream body's primary
+/// object index. Callers use this function only when another native field
+/// carries the alias identity and must not silently accept a primary-index
+/// collision from a different body.
+pub(crate) fn unique_segment_body_alias_binding(
+    object_index: u32,
+    bindings: &[SegmentBodyBinding],
+) -> Option<&SegmentBodyBinding> {
+    if bindings
+        .iter()
+        .any(|binding| binding.body_object_index == object_index)
+    {
+        return None;
+    }
+    let mut matches = bindings
+        .iter()
+        .filter(|binding| binding.body_alias_object_index == object_index);
+    let binding = matches.next()?;
+    matches.next().is_none().then_some(binding)
+}
+
 /// Unambiguous terminal status of one segment-bound body image.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentBodyLineageStatus {

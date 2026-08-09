@@ -129,14 +129,14 @@ can cross a 12-byte row boundary. The body-image binding is valid only when the
 wrapper word resolves to the exact compressed stream position and both aliases
 are non-zero.
 
-A primary feature body field whose operation does not select an offset-store
-namespace reuses a segment body image when its index equals either alias of
-exactly one partition or plain cached-body tuple. The relation retains the
-primary field and segment binding identities; those records retain the
-operation, stream classification and ordinal, indices, and token offsets. A
-field resolved to an offset-store block cannot reuse a segment image by integer
-equality. No relation transfers when an object-namespace index matches zero or
-multiple segment bindings.
+A primary feature body field in the object namespace reuses a segment body
+image when its index equals either alias of exactly one partition or plain
+cached-body tuple. The relation retains the primary field and segment binding
+identities; those records retain the operation, stream classification and
+ordinal, indices, and token offsets. A field resolved to an offset-store block
+can reuse a segment image only under the exact unique alias join defined for
+offset-store body fields. No relation transfers when an object-namespace index
+matches zero or multiple segment bindings.
 
 A deltas stream applies to the nearest preceding partition stream in segment
 order with the same Parasolid schema token. Non-history compressed streams do
@@ -230,7 +230,9 @@ Boolean kind.
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 reference_index ff`. The index uses the operation-header encoding and
 retains its exact token and offset. The operation-selected namespace determines
-whether it addresses an offset-store block or an object identity. Operations
+whether it addresses an offset-store block or an object identity. An
+offset-store primary field may also retain the exact segment-alias bridge
+defined for its body image. Operations
 sharing an object-namespace index form one ordered body lineage. Operations
 selecting the same exact offset-store block identity form one ordered native
 body lineage within that store. An operation depends on the preceding
@@ -239,10 +241,10 @@ preceding operation in each tool-body lineage, preserving tool order and
 omitting duplicate dependencies. A wrapped body operand that resolves to an
 offset-store block participates in that block's tool lineage. A Boolean with no
 primary-body field uses its target identity for the primary-body lineage in the
-target's selected namespace. When the object-namespace primary body has a
-segment body-image binding, every surviving neutral body from that image is an
-output of the operation. An offset-store primary body or unbound
-object-namespace primary body retains its native relation but has no neutral
+target's selected namespace. When a primary body has a segment body-image
+binding, every surviving neutral body from that image is an output of the
+operation. An offset-store primary body without that binding, or an unbound
+object-namespace primary body, retains its native relation but has no neutral
 output. A Boolean whose complete target and tool participant set resolves to
 one offset store has no segment-image writer or consumption effect; equal
 integer values in the two namespaces do not establish a cross-store relation.
@@ -1338,7 +1340,7 @@ When an operation-header input and a slot in any of the three row grammars resol
 
 A feature input has a column target when exactly one linked or target-index row in a complete composite table addresses the input block in row slot zero. The relation retains the input, operation and header slot, row grammar and identity, composite table, target block and token offset, row mode, and all three post-marker field indices, resolved blocks, and token offsets. For a linked row it also retains the leading compact value and offset, discriminator, and flag; these fields are absent for a target-index row. Zero or multiple complete-table target rows, or a missing or duplicate grammar-specific row, leave the input without a column target. Trailing-lane and ordinary index-row reuse cannot establish a column target.
 
-A primary feature body field addresses a data block when all resolved header inputs of the same operation select one offset store and that store contains the field's serialized index as a block ordinal. The relation retains the exact primary field and addressed block. Inputs selecting zero or multiple stores, or a missing block ordinal, leave the field unresolved in the offset-store namespace. An offset-store block relation is distinct from equality with a segment body-image object index.
+A primary feature body field addresses a data block when all resolved header inputs of the same operation select one offset store and that store contains the field's serialized index as a block ordinal. The relation retains the exact primary field and addressed block. Inputs selecting zero or multiple stores, or a missing block ordinal, leave the field unresolved in the offset-store namespace. A unique primary field with one resolved offset store also binds to a segment body-image tuple when its decoded object identity equals exactly one `body_alias_object_index` in the segment body-binding set. This alias join is a second retained relation; equality with a `body_object_index`, zero alias matches, multiple alias matches, multiple primary fields, or an operation with missing or ambiguous offset-store inputs does not bind a segment image.
 
 An offset-store object frame is `object_id:compact_index, 00 72 01 c0 20 02 01 c0 45 04 00 80 86 02 01 02 80 a4`. The compact index is non-null and uses the same direct and extended forms. Its value is a persistent object ID. The frame and discriminator lie within one bounded data block; non-overlapping frame order, exact compact-index token, and compact-index byte offset are retained.
 
