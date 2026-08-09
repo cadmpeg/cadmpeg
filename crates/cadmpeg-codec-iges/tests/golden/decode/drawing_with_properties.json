@@ -2205,14 +2205,12 @@
                 210.0,
                 297.0
               ],
-              "size_property": "iges:presentation:drawing-size#D5",
               "source_entity": "iges:entity:directory#11",
               "units_flag": 2,
               "units_name": [
                 77,
                 77
               ],
-              "units_property": "iges:presentation:drawing-units#D7",
               "views": [
                 {
                   "origin": [

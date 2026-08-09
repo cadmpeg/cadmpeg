@@ -829,8 +829,6 @@ struct NativeDrawing {
     views: Vec<NativeDrawingView>,
     annotations: Vec<Option<String>>,
     name_property: Option<String>,
-    size_property: Option<String>,
-    units_property: Option<String>,
     name: Option<Vec<u8>>,
     size: Option<[Option<f64>; 2]>,
     units_flag: Option<i64>,
@@ -3054,10 +3052,6 @@ pub(crate) fn store(
                     .collect(),
                 name_property: name_property
                     .map(|sequence| format!("iges:product:property#D{sequence}")),
-                size_property: size_property
-                    .map(|sequence| format!("iges:presentation:drawing-size#D{sequence}")),
-                units_property: units_property
-                    .map(|sequence| format!("iges:presentation:drawing-units#D{sequence}")),
                 name: name_property
                     .and_then(|sequence| by_directory.get(&sequence))
                     .and_then(|record| record.string(2))

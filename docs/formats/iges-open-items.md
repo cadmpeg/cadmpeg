@@ -152,16 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-02. Two drawing property links name an arena that does not exist
-
-**Question.** Which arena holds Type 406 Form 16 and Form 17 properties?
-
-**Known.** `native.rs:3057-3060` emits `iges:presentation:drawing-size#D{n}` and `iges:presentation:drawing-units#D{n}`. No struct in the crate constructs an identity with either prefix. Forms 16 and 17 are admitted by the envelope (`profile.rs:28`) and excluded from every typed arena: `properties` filters `2 | 3 | 5..=15 | 18..=36` (`native.rs:2514`) and `product_properties` filters `7 | 15` (`native.rs:2485`).
-
-**Note.** The committed snapshot `tests/golden/decode/drawing_with_properties.json` holds both dead identities. They are the only unresolvable arena references in the golden corpus, which is why nothing detected them.
-
-**Need.** The values are inlined in the same record, so no data is lost. We need either the arena that these identities name, or their removal.
-
 ### DR-03. Occurrence expansion truncates at depth 64 with no signal
 
 **Question.** What does the product occurrence expansion do when nesting passes its depth limit?
