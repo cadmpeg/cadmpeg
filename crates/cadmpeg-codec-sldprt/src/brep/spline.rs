@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! B-spline/list carrier tables.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -12,6 +12,19 @@ use super::{f64_be, u16_be, u32_be, Carrier, CarrierGeometry, LEN_TO_MM};
 struct Arrays {
     f64s: HashMap<u16, Vec<f64>>,
     u16s: HashMap<u16, Vec<u16>>,
+    compact: HashMap<u16, Vec<CompactArray>>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompactArray {
+    offset: usize,
+    count: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ArraySpan {
+    start: usize,
+    count: usize,
 }
 
 #[derive(Debug)]
@@ -45,6 +58,7 @@ struct SurfaceDescriptor {
 // five terminal array references.
 const SURFACE_DESCRIPTOR_BODY_LEN: usize = 42;
 const SURFACE_DESCRIPTOR_REFS_OFFSET: usize = 32;
+const MAX_ARRAY_VALUES: usize = 1_000_000;
 
 fn logical_byte(bytes: &[u8], at: usize) -> Option<bool> {
     match bytes.get(at) {
@@ -139,9 +153,23 @@ fn array_body(bytes: &[u8], off: usize, tag: u8) -> Option<usize> {
     Some(p)
 }
 
-fn scan_arrays(bytes: &[u8]) -> Arrays {
+fn scan_arrays(bytes: &[u8], compact_attrs: Option<&HashSet<u16>>) -> Arrays {
     let mut arrays = Arrays::default();
     for off in 0..bytes.len().saturating_sub(9) {
+        if bytes.get(off) == Some(&0) {
+            let count = usize::from(bytes[off + 1]);
+            if count > 0 {
+                if let Some(attr) = u16_be(bytes, off + 2)
+                    .filter(|attr| compact_attrs.is_some_and(|attrs| attrs.contains(attr)))
+                {
+                    arrays
+                        .compact
+                        .entry(attr)
+                        .or_default()
+                        .push(CompactArray { offset: off, count });
+                }
+            }
+        }
         let tag = match bytes.get(off..off + 2) {
             Some([0x00, tag @ (0x2d | 0x7f | 0x80)]) => *tag,
             _ => continue,
@@ -155,7 +183,7 @@ fn scan_arrays(bytes: &[u8]) -> Arrays {
         let Some(attr) = u16_be(bytes, p + 4) else {
             continue;
         };
-        if attr <= 1 || count > 1_000_000 {
+        if attr <= 1 || count > MAX_ARRAY_VALUES {
             continue;
         }
         let values_at = p + 6;
@@ -174,15 +202,66 @@ fn scan_arrays(bytes: &[u8]) -> Arrays {
             else {
                 continue;
             };
-            // The native surface format can reserve one physical knot slot
-            // beyond the descriptor's distinct-knot count. Its bits are not
-            // semantic data, so defer finite-value checks to the typed
-            // carrier reader after it applies the descriptor and
-            // multiplicity bounds.
+            // The native surface format can reserve physical knot slots beyond
+            // the descriptor's distinct-knot count. Their bits are not
+            // semantic data when the matching multiplicities are zero, so
+            // defer finite-value checks until descriptor binding.
             arrays.f64s.entry(attr).or_insert(values);
         }
     }
     arrays
+}
+
+fn compact_f64_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<f64>> {
+    let mut candidates = arrays
+        .f64s
+        .get(&attr)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
+    for compact in arrays.compact.get(&attr).into_iter().flatten() {
+        let Some(values) = (0..compact.count)
+            .map(|index| f64_be(bytes, compact.offset + 4 + index * 8))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !candidates.contains(&values) {
+            candidates.push(values);
+        }
+    }
+    candidates
+}
+
+fn compact_u16_arrays(bytes: &[u8], arrays: &Arrays, attr: u16) -> Vec<Vec<u16>> {
+    let mut candidates = arrays
+        .u16s
+        .get(&attr)
+        .cloned()
+        .into_iter()
+        .collect::<Vec<_>>();
+    for compact in arrays.compact.get(&attr).into_iter().flatten() {
+        let Some(values) = (0..compact.count)
+            .map(|index| u16_be(bytes, compact.offset + 4 + index * 2))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !candidates.contains(&values) {
+            candidates.push(values);
+        }
+    }
+    candidates
+}
+
+fn exact_f64_array(bytes: &[u8], arrays: &Arrays, attr: u16, count: usize) -> Option<Vec<f64>> {
+    let mut candidates = compact_f64_arrays(bytes, arrays, attr)
+        .into_iter()
+        .filter(|values| values.len() == count);
+    let selected = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == selected)
+        .then_some(selected)
 }
 
 fn scan_curve_descriptors(bytes: &[u8]) -> HashMap<u16, CurveDescriptor> {
@@ -300,40 +379,132 @@ fn array_span(bytes: &[u8], tag: u8, attr: u16) -> Option<(usize, usize)> {
     None
 }
 
-fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Option<()> {
-    let (start, count) = array_span(bytes, tag, attr)?;
-    if count != values.len() {
+fn array_spans(bytes: &[u8], arrays: &Arrays, tag: u8, attr: u16) -> Vec<ArraySpan> {
+    let mut spans = Vec::new();
+    for off in 0..bytes.len().saturating_sub(9) {
+        let Some(p) = array_body(bytes, off, tag) else {
+            continue;
+        };
+        let Some(count) = u32_be(bytes, p).and_then(|value| usize::try_from(value).ok()) else {
+            continue;
+        };
+        if count <= MAX_ARRAY_VALUES && u16_be(bytes, p + 4) == Some(attr) {
+            spans.push(ArraySpan {
+                start: p + 6,
+                count,
+            });
+        }
+    }
+    spans.extend(
+        arrays
+            .compact
+            .get(&attr)
+            .into_iter()
+            .flatten()
+            .map(|array| ArraySpan {
+                start: array.offset + 4,
+                count: array.count,
+            }),
+    );
+    spans.sort_by_key(|span| (span.start, span.count));
+    spans.dedup();
+    spans
+}
+
+fn f64_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<f64>> {
+    (0..span.count)
+        .map(|index| f64_be(bytes, span.start + index * 8))
+        .collect()
+}
+
+fn u16_values(bytes: &[u8], span: ArraySpan) -> Option<Vec<u16>> {
+    (0..span.count)
+        .map(|index| u16_be(bytes, span.start + index * 2))
+        .collect()
+}
+
+fn unique_control_span(
+    bytes: &[u8],
+    arrays: &Arrays,
+    attr: u16,
+    old_values: &[f64],
+) -> Option<ArraySpan> {
+    let spans = array_spans(bytes, arrays, 0x2d, attr)
+        .into_iter()
+        .filter(|span| span.count == old_values.len())
+        .collect::<Vec<_>>();
+    if spans.len() == 1 {
+        return Some(spans[0]);
+    }
+    let mut matching = spans.into_iter().filter(|&span| {
+        f64_values(bytes, span).is_some_and(|values| {
+            values.iter().zip(old_values).all(|(native, expected)| {
+                let scale = native.abs().max(expected.abs()).max(1.0);
+                (native - expected).abs() <= 16.0 * f64::EPSILON * scale
+            })
+        })
+    });
+    let selected = matching.next()?;
+    matching.next().is_none().then_some(selected)
+}
+
+fn unique_surface_knot_span(
+    bytes: &[u8],
+    arrays: &Arrays,
+    knot_attr: u16,
+    multiplicity_attr: u16,
+    declared_count: usize,
+    old_values: &[f64],
+    old_multiplicities: &[u16],
+) -> Option<ArraySpan> {
+    if old_values.len() != declared_count || old_multiplicities.len() != declared_count {
+        return None;
+    }
+    let knot_spans = array_spans(bytes, arrays, 0x80, knot_attr);
+    let multiplicity_spans = array_spans(bytes, arrays, 0x7f, multiplicity_attr);
+    let mut pairs = Vec::new();
+    for knot_span in knot_spans {
+        let Some(knots) = f64_values(bytes, knot_span) else {
+            continue;
+        };
+        for multiplicity_span in multiplicity_spans
+            .iter()
+            .copied()
+            .filter(|span| span.count == knot_span.count)
+        {
+            let Some(multiplicities) = u16_values(bytes, multiplicity_span) else {
+                continue;
+            };
+            let Some((knots, multiplicities)) =
+                surface_knot_arrays(&knots, &multiplicities, declared_count)
+            else {
+                continue;
+            };
+            if knots == old_values && multiplicities == old_multiplicities {
+                pairs.push((knot_span, multiplicity_span));
+            }
+        }
+    }
+    pairs.sort_by_key(|(knots, multiplicities)| (knots.start, knots.count, multiplicities.start));
+    pairs.dedup();
+    (pairs.len() == 1).then_some(pairs[0].0)
+}
+
+fn patch_f64_span(bytes: &mut [u8], span: ArraySpan, values: &[f64]) -> Option<()> {
+    if values.len() > span.count {
         return None;
     }
     for (index, value) in values.iter().enumerate() {
         bytes
-            .get_mut(start + index * 8..start + (index + 1) * 8)?
+            .get_mut(span.start + index * 8..span.start + (index + 1) * 8)?
             .copy_from_slice(&value.to_be_bytes());
     }
     Some(())
 }
 
-/// Patch a surface knot array while retaining its optional terminal
-/// zero-multiplicity slot. The descriptor count names the real entries; the
-/// f64 bits in the extra physical slot are not semantic data.
-fn patch_surface_knot_array(
-    bytes: &mut [u8],
-    tag: u8,
-    attr: u16,
-    values: &[f64],
-    multiplicities: &[u16],
-) -> Option<()> {
+fn patch_f64_array(bytes: &mut [u8], tag: u8, attr: u16, values: &[f64]) -> Option<()> {
     let (start, count) = array_span(bytes, tag, attr)?;
-    if multiplicities.len() != count {
-        return None;
-    }
-    let exact = count == values.len() && multiplicities.iter().all(|&value| value != 0);
-    let terminal = count == values.len().checked_add(1)?
-        && multiplicities.last() == Some(&0)
-        && multiplicities[..values.len()]
-            .iter()
-            .all(|&value| value != 0);
-    if !exact && !terminal {
+    if count != values.len() {
         return None;
     }
     for (index, value) in values.iter().enumerate() {
@@ -433,8 +604,12 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let arrays = scan_arrays(bytes);
     let descriptors = scan_surface_descriptors(bytes);
+    let compact_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect();
+    let arrays = scan_arrays(bytes, Some(&compact_attrs));
     let mut p = wrapper_offset + 2;
     if bytes.get(p) == Some(&0xff) {
         p += 1;
@@ -453,31 +628,34 @@ pub(crate) fn patch_nurbs_surface(
     {
         return None;
     }
-    let u_mult_native = arrays.u16s.get(&descriptor.refs[1])?;
-    let v_mult_native = arrays.u16s.get(&descriptor.refs[2])?;
-    let u_unique_native = arrays.f64s.get(&descriptor.refs[3])?;
-    let v_unique_native = arrays.f64s.get(&descriptor.refs[4])?;
-    let (u_unique_native, u_mult) =
-        surface_knot_arrays(u_unique_native, u_mult_native, descriptor.u_knot_count)?;
-    let (v_unique_native, v_mult) =
-        surface_knot_arrays(v_unique_native, v_mult_native, descriptor.v_knot_count)?;
-    if u_mult != old_u_mult
-        || v_mult != old_v_mult
-        || u_unique_native.len() != old_u.len()
-        || v_unique_native.len() != old_v.len()
-        || u_unique_native != old_u.as_slice()
-        || v_unique_native != old_v.as_slice()
-    {
-        return None;
-    }
+    let old_poles = homogeneous_poles(&old.control_points, old.weights.as_deref(), scale)?;
     let poles = homogeneous_poles(&new.control_points, new.weights.as_deref(), scale)?;
-    patch_f64_array(bytes, 0x2d, control_attr, &poles)?;
-    patch_surface_knot_array(bytes, 0x80, u_knot_attr, &new_u, u_mult_native)?;
-    patch_surface_knot_array(bytes, 0x80, v_knot_attr, &new_v, v_mult_native)
+    let control_span = unique_control_span(bytes, &arrays, control_attr, &old_poles)?;
+    let u_knot_span = unique_surface_knot_span(
+        bytes,
+        &arrays,
+        u_knot_attr,
+        descriptor.refs[1],
+        descriptor.u_knot_count,
+        &old_u,
+        &old_u_mult,
+    )?;
+    let v_knot_span = unique_surface_knot_span(
+        bytes,
+        &arrays,
+        v_knot_attr,
+        descriptor.refs[2],
+        descriptor.v_knot_count,
+        &old_v,
+        &old_v_mult,
+    )?;
+    patch_f64_span(bytes, control_span, &poles)?;
+    patch_f64_span(bytes, u_knot_span, &new_u)?;
+    patch_f64_span(bytes, v_knot_span, &new_v)
 }
 
 pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
-    let arrays = scan_arrays(bytes);
+    let arrays = scan_arrays(bytes, None);
     let descriptors = scan_curve_descriptors(bytes);
     let mut out = HashMap::new();
     for off in 0..bytes.len().saturating_sub(6) {
@@ -586,33 +764,60 @@ fn surface_knot_arrays<'a>(
     multiplicities: &'a [u16],
     declared_count: usize,
 ) -> Option<(&'a [f64], &'a [u16])> {
-    if declared_count == 0 || unique.len() != multiplicities.len() {
+    if declared_count == 0 || unique.len() != multiplicities.len() || unique.len() < declared_count
+    {
         return None;
     }
-    if unique.len() == declared_count {
-        return multiplicities
+    (multiplicities[..declared_count]
+        .iter()
+        .all(|&value| value != 0)
+        && multiplicities[declared_count..]
             .iter()
-            .all(|&value| value != 0)
-            .then_some((unique, multiplicities));
+            .all(|&value| value == 0))
+    .then_some((&unique[..declared_count], &multiplicities[..declared_count]))
+}
+
+fn surface_knot_values(
+    bytes: &[u8],
+    arrays: &Arrays,
+    knot_attr: u16,
+    multiplicity_attr: u16,
+    declared_count: usize,
+) -> Option<(Vec<f64>, Vec<u16>)> {
+    let mut resolved = Vec::<(Vec<f64>, Vec<u16>)>::new();
+    let mut multiplicities_by_count = HashMap::<usize, Vec<Vec<u16>>>::new();
+    for multiplicities in compact_u16_arrays(bytes, arrays, multiplicity_attr) {
+        multiplicities_by_count
+            .entry(multiplicities.len())
+            .or_default()
+            .push(multiplicities);
     }
-    if unique.len() == declared_count.checked_add(1)?
-        && multiplicities.last() == Some(&0)
-        && multiplicities[..declared_count]
-            .iter()
-            .all(|&value| value != 0)
-    {
-        // The final f64 slot is physically present but semantically excluded
-        // by the zero multiplicity. Native writers do not have to initialize
-        // that slot; only the descriptor count and multiplicity roster bind
-        // the usable knot values.
-        return Some((&unique[..declared_count], &multiplicities[..declared_count]));
+    for unique in compact_f64_arrays(bytes, arrays, knot_attr) {
+        let Some(multiplicity_candidates) = multiplicities_by_count.get(&unique.len()) else {
+            continue;
+        };
+        for multiplicities in multiplicity_candidates {
+            let Some((unique, multiplicities)) =
+                surface_knot_arrays(&unique, multiplicities, declared_count)
+            else {
+                continue;
+            };
+            let candidate = (unique.to_vec(), multiplicities.to_vec());
+            if !resolved.contains(&candidate) {
+                resolved.push(candidate);
+            }
+        }
     }
-    None
+    (resolved.len() == 1).then(|| resolved.pop()).flatten()
 }
 
 pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
-    let arrays = scan_arrays(bytes);
     let descriptors = scan_surface_descriptors(bytes);
+    let compact_attrs = descriptors
+        .values()
+        .flat_map(|descriptor| descriptor.refs)
+        .collect();
+    let arrays = scan_arrays(bytes, Some(&compact_attrs));
     let mut out = HashMap::new();
     for off in 0..bytes.len().saturating_sub(1) {
         if bytes.get(off..off + 2) != Some(&[0x00, 0x7c]) {
@@ -631,35 +836,33 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {
             continue;
         };
-        let Some(control) = arrays.f64s.get(&descriptor.refs[0]) else {
-            continue;
-        };
-        let Some(u_mult) = arrays.u16s.get(&descriptor.refs[1]) else {
-            continue;
-        };
-        let Some(v_mult) = arrays.u16s.get(&descriptor.refs[2]) else {
-            continue;
-        };
-        let Some(u_unique) = arrays.f64s.get(&descriptor.refs[3]) else {
-            continue;
-        };
-        let Some(v_unique) = arrays.f64s.get(&descriptor.refs[4]) else {
-            continue;
-        };
-        let Some((u_unique, u_mult)) =
-            surface_knot_arrays(u_unique, u_mult, descriptor.u_knot_count)
-        else {
-            continue;
-        };
-        let Some((v_unique, v_mult)) =
-            surface_knot_arrays(v_unique, v_mult, descriptor.v_knot_count)
-        else {
-            continue;
-        };
         let Some(expected_poles) = descriptor.u_count.checked_mul(descriptor.v_count) else {
             continue;
         };
         let Some(expected_control_values) = expected_poles.checked_mul(descriptor.dimension) else {
+            continue;
+        };
+        let Some(control) =
+            exact_f64_array(bytes, &arrays, descriptor.refs[0], expected_control_values)
+        else {
+            continue;
+        };
+        let Some((u_unique, u_mult)) = surface_knot_values(
+            bytes,
+            &arrays,
+            descriptor.refs[3],
+            descriptor.refs[1],
+            descriptor.u_knot_count,
+        ) else {
+            continue;
+        };
+        let Some((v_unique, v_mult)) = surface_knot_values(
+            bytes,
+            &arrays,
+            descriptor.refs[4],
+            descriptor.refs[2],
+            descriptor.v_knot_count,
+        ) else {
             continue;
         };
         if control.len() != expected_control_values {
@@ -679,10 +882,10 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
         else {
             continue;
         };
-        let Some(u_multiplicity_sum) = multiplicity_sum(u_mult) else {
+        let Some(u_multiplicity_sum) = multiplicity_sum(&u_mult) else {
             continue;
         };
-        let Some(v_multiplicity_sum) = multiplicity_sum(v_mult) else {
+        let Some(v_multiplicity_sum) = multiplicity_sum(&v_mult) else {
             continue;
         };
         if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
@@ -725,8 +928,8 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
             continue;
         }
         let (Some(u_knots), Some(v_knots)) = (
-            expanded_knots(u_unique, u_mult, u_expected),
-            expanded_knots(v_unique, v_mult, v_expected),
+            expanded_knots(&u_unique, &u_mult, u_expected),
+            expanded_knots(&v_unique, &v_mult, v_expected),
         ) else {
             continue;
         };

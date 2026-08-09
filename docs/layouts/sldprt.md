@@ -322,7 +322,7 @@ Cross-checked against code:
 
 Spec §7.2 · layout: byte offsets · size: 42 B
 
-Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have one physical entry beyond its distinct-knot count when the matching final multiplicity is zero; that f64 slot is ignored.
+Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have trailing physical entries beyond its distinct-knot count when every matching trailing multiplicity is zero; those f64 slots are ignored.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -352,12 +352,28 @@ Cross-checked against code:
 
 Spec §7.2 · layout: byte offsets · size: 6 B
 
-Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include one physical entry beyond the descriptor count when its matching final multiplicity is zero; the extra f64 slot is ignored.
+Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include trailing physical entries beyond the descriptor count when every matching trailing multiplicity is zero; the extra f64 slots are ignored.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `count` | `u32` | big | spec | value_count u32 BE |
 | 4 | 2 | `attr` | `u16` | big | spec | attr u16 BE |
+
+## `bspline_compact_array_header`
+
+Spec §7.2 · layout: byte offsets · size: 4 B
+
+Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `zero` | `u8` | big | spec | 00 count:u8 |
+| 1 | 1 | `count` | `u8` | big | spec | count:u8 |
+| 2 | 2 | `attr` | `u16` | big | spec | attr u16 BE |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/brep/spline.rs` — The decoder indexes compact records by referenced attribute and resolves their element width from the descriptor role.
 
 ## `intersection_composite`
 

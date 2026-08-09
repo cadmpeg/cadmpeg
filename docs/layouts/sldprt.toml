@@ -831,7 +831,7 @@ section = "7.2"
 anchor = "descriptor body is 42 bytes"
 size = 42
 endianness = "big"
-note = "Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have one physical entry beyond its distinct-knot count when the matching final multiplicity is zero; that f64 slot is ignored."
+note = "Body-relative after the two-byte tag and optional marker. Offsets are relative to the descriptor attribute at +0; the terminal array references occupy +32..+41. A referenced knot array may have trailing physical entries beyond its distinct-knot count when every matching trailing multiplicity is zero; those f64 slots are ignored."
 
 [[record.field]]
 name = "attr"
@@ -964,7 +964,7 @@ section = "7.2"
 anchor = "00 2d marker [ff?] value_count u32 BE attr u16 BE f64[value_count] BE ; poles / homogeneous control grid"
 size = 6
 endianness = "big"
-note = "Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include one physical entry beyond the descriptor count when its matching final multiplicity is zero; the extra f64 slot is ignored."
+note = "Shared header of `00 2d` (poles, f64 elements), `00 7f` (knot multiplicities, u16 elements), and `00 80` (unique knot values, f64 elements). Offsets are relative to the byte after the tag and the marker. Element data follows at +6. A surface knot array may include trailing physical entries beyond the descriptor count when every matching trailing multiplicity is zero; the extra f64 slots are ignored."
 
 [[record.field]]
 name = "count"
@@ -979,6 +979,41 @@ offset = 4
 type = "u16"
 source = "spec"
 anchor = "attr u16 BE"
+
+[[record]]
+name = "bspline_compact_array_header"
+kind = "byte"
+section = "7.2"
+anchor = "00 count:u8 attr u16 BE values[count]"
+size = 4
+endianness = "big"
+note = "Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities."
+
+[[record.field]]
+name = "zero"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "00 count:u8"
+
+[[record.field]]
+name = "count"
+offset = 1
+type = "u8"
+source = "spec"
+anchor = "count:u8"
+
+[[record.field]]
+name = "attr"
+offset = 2
+type = "u16"
+source = "spec"
+anchor = "attr u16 BE"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
+contains = "struct CompactArray"
+note = "The decoder indexes compact records by referenced attribute and resolves their element width from the descriptor role."
 
 # --- §7.3 Intersection carriers --------------------------------------------
 

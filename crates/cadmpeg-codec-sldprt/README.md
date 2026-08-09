@@ -68,11 +68,12 @@ periodic seams.
 
 Typed transfer covers analytic carriers, NURBS, swept and spun surfaces that
 resolve to NURBS, recursive offset surfaces, constant-radius rolling-ball
-blends, and validated surface-intersection curves. Variable-radius blends and
-other unsupported families remain opaque. Procedural constructions retain
-typed and opaque support surfaces even when no topological face owns the
-support. The decode report records opaque carriers, synthetic body grouping,
-trim reconstruction limits, and appearance ambiguity.
+blends, variable-radius blend result faces through solved NURBS carriers, and
+validated surface-intersection curves. Other unsupported families remain
+opaque. Procedural constructions retain typed and opaque support surfaces even
+when no topological face owns the support. The decode report records opaque
+carriers, synthetic body grouping, trim reconstruction limits, and appearance
+ambiguity.
 
 ## Encode
 

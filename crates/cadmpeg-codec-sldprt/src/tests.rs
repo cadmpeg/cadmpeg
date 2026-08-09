@@ -844,6 +844,62 @@ fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u
     )
 }
 
+fn compact_f64_array(attr: u16, values: &[f64]) -> Vec<u8> {
+    let mut bytes = vec![
+        0,
+        u8::try_from(values.len()).expect("compact f64 array count"),
+    ];
+    be16(&mut bytes, attr);
+    for value in values {
+        bef64(&mut bytes, *value);
+    }
+    bytes
+}
+
+fn compact_u16_array(attr: u16, values: &[u16]) -> Vec<u8> {
+    let mut bytes = vec![
+        0,
+        u8::try_from(values.len()).expect("compact u16 array count"),
+    ];
+    be16(&mut bytes, attr);
+    for value in values {
+        be16(&mut bytes, *value);
+    }
+    bytes
+}
+
+fn compact_counted_nurbs_surface_carrier(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    bridge_attr: u16,
+) -> Vec<u8> {
+    let mut bytes = nurbs_surface_carrier(wrapper_attr, descriptor_attr, bridge_attr);
+    let arrays = bytes
+        .windows(3)
+        .position(|window| window == [0x00, 0x2d, 0x2b])
+        .expect("first long array");
+    bytes.truncate(arrays);
+    bytes.extend(compact_f64_array(
+        descriptor_attr + 1,
+        &[0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.5],
+    ));
+    for attr in [descriptor_attr + 2, descriptor_attr + 3] {
+        bytes.extend(compact_u16_array(attr, &[2, 2, 0, 0]));
+    }
+    for attr in [descriptor_attr + 4, descriptor_attr + 5] {
+        bytes.extend(compact_f64_array(
+            attr,
+            &[
+                0.0,
+                1.0,
+                f64::from_bits(0x7ff8_0000_0000_0001),
+                f64::from_bits(0x7ff8_0000_0000_0002),
+            ],
+        ));
+    }
+    bytes
+}
+
 fn nurbs_surface_carrier_with_terminal_knot_slot(
     wrapper_attr: u16,
     descriptor_attr: u16,
@@ -8308,6 +8364,120 @@ fn faces_decode_nurbs_surface() {
     assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
     assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
     assert_eq!(nurbs.control_points.len(), 4);
+}
+
+#[test]
+fn faces_decode_compact_counted_nurbs_surface_arrays() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = triangle_body();
+    body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let SurfaceGeometry::Nurbs(surface) = &result.ir.model.surfaces[0].geometry else {
+        panic!("compact counted NURBS surface");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+    assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.control_points.len(), 4);
+    assert_eq!(surface.control_points[3].z, 500.0);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
+    let carrier = crate::brep::spline::scan_surface_carriers(&bytes)
+        .remove(&180)
+        .expect("compact NURBS carrier");
+    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(old)) = carrier.geometry
+    else {
+        panic!("compact NURBS surface");
+    };
+    let mut new = old.clone();
+    new.control_points[3].z = 750.0;
+    new.u_knots[2..].fill(2.0);
+    new.v_knots[2..].fill(3.0);
+    let dirty_slots = [
+        f64::from_bits(0x7ff8_0000_0000_0001).to_be_bytes(),
+        f64::from_bits(0x7ff8_0000_0000_0002).to_be_bytes(),
+    ];
+
+    crate::brep::patch_nurbs_surface(&mut bytes, 0, &old, &new, 0.001)
+        .expect("compact NURBS patch");
+
+    let patched = crate::brep::spline::scan_surface_carriers(&bytes)
+        .remove(&180)
+        .expect("patched compact NURBS carrier");
+    let crate::brep::CarrierGeometry::Surface(SurfaceGeometry::Nurbs(patched)) = patched.geometry
+    else {
+        panic!("patched compact NURBS surface");
+    };
+    assert_eq!(patched, new);
+    for dirty in dirty_slots {
+        assert_eq!(
+            bytes
+                .windows(dirty.len())
+                .filter(|window| *window == dirty)
+                .count(),
+            2
+        );
+    }
+}
+
+#[test]
+fn conflicting_compact_counted_surface_array_is_rejected() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = triangle_body();
+    body.extend(compact_counted_nurbs_surface_carrier(180, 181, 10));
+    body.extend(compact_f64_array(182, &[1.0; 12]));
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
+}
+
+#[test]
+fn short_compact_surface_knot_array_is_rejected_without_panicking() {
+    let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);
+    let multiplicity_attr = 183u16.to_be_bytes();
+    let header = bytes
+        .windows(4)
+        .position(|window| window == [0, 4, multiplicity_attr[0], multiplicity_attr[1]])
+        .expect("u multiplicity header");
+    bytes[header + 1] = 1;
+
+    assert!(!crate::brep::spline::scan_surface_carriers(&bytes).contains_key(&180));
 }
 
 #[test]

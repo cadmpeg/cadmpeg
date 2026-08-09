@@ -42,14 +42,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the grammar to construct the edge curve.
 
-### GC-05. Variable-radius blend carriers
-
-**Question.** Which record carries non-constant-radius blend geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §7.4 "A `00 38` surface carrier defines a circular rolling-ball blend between two support surfaces:" defines the `00 38` constant-radius rolling-ball surface. Its two offsets have one common nonzero magnitude.
-
-**Need.** We must know the other carrier to construct a variable-radius blend surface.
-
 ### GC-06. Surface-intersection surface carriers
 
 **Question.** Which record carries surface-intersection surface geometry, and what is its payload grammar?
