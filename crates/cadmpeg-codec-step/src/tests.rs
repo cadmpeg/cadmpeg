@@ -670,6 +670,19 @@ fn parser_checks_edition_three_syntax_before_local_reference_substitution() {
 }
 
 #[test]
+fn parser_resolves_cyclic_local_references_to_null_values() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<cycle>=#10;ENDSEC;REFERENCE;#10=<#cycle>;ENDSEC;DATA;#1=ITEM(#10);ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("cyclic reference");
+
+    assert!(diagnostics.is_empty());
+    assert_eq!(exchange.anchors[0].value, crate::parse::Value::Omitted);
+    assert_eq!(
+        exchange.records[&1].partials[0].parameters,
+        vec![crate::parse::Value::Omitted]
+    );
+}
+
+#[test]
 fn parser_requires_numeric_reference_left_hand_sides() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;<external>=<part.step#root>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("resource reference name");
