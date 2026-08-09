@@ -96,6 +96,17 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     }
 }
 
+/// Return whether `kind` is a localized spelling of an edge-treatment family.
+///
+/// Canonical Fillet and Chamfer scopes require every selection to use a
+/// counted construction-operand group. Their localized spellings do not.
+pub(crate) fn is_localized_edge_treatment_kind(kind: &str) -> bool {
+    matches!(
+        design_feature_family(kind),
+        Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+    ) && !matches!(kind, "Fillet" | "Chamfer")
+}
+
 pub(crate) const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"body_recipe_data", ConstructionRecipeKind::Body),
     (b"face_recipe_data", ConstructionRecipeKind::Face),

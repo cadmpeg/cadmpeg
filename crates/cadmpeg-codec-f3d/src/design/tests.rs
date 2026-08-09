@@ -18,13 +18,14 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::operands::{
     assign_extrude_face_roles, bind_edge_operand_candidates, bind_extrude_selection_geometry,
     bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
-    decode_fillet_radius_groups, face_recipe_program_kind, has_typed_edge_treatment_group,
-    parse_body_recipe_operand, parse_construction_operand_dual_transform,
-    parse_construction_operand_flag, parse_construction_operand_group,
-    parse_construction_operand_identity, parse_construction_operand_path,
-    parse_construction_operand_transform, parse_construction_tracking_path, parse_edge_operand,
-    parse_entity_selection_operand, parse_extrude_selection_group, parse_extrude_selection_member,
-    parse_face_operand, parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
+    construction_operand_group_is_retained, decode_fillet_radius_groups, face_recipe_program_kind,
+    has_typed_edge_treatment_group, parse_body_recipe_operand,
+    parse_construction_operand_dual_transform, parse_construction_operand_flag,
+    parse_construction_operand_group, parse_construction_operand_identity,
+    parse_construction_operand_path, parse_construction_operand_transform,
+    parse_construction_tracking_path, parse_edge_operand, parse_entity_selection_operand,
+    parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+    parse_sketch_profile, ConstructionOperandGroupParse, FaceRecipeProgramKind,
 };
 use crate::design::decode::parameters::{
     bind_parameter_companion_payloads, design_parameter_discriminator, parse_design_parameter,
@@ -106,7 +107,7 @@ use crate::design::profile_select::{
 use crate::design::sketch_project::{
     project_sketch_design, project_spatial_sketch_constraints, project_spatial_sketch_design,
 };
-use crate::design::{design_feature_family, DesignFeatureFamily};
+use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
 use crate::ids::{
     neutral_dimension_constraint_id, neutral_sketch_curve_id, neutral_sketch_id,
     neutral_sketch_point_id, neutral_spatial_sketch_id,
@@ -384,6 +385,12 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("Chanfrein"),
         Some(DesignFeatureFamily::Chamfer)
     );
+    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+        assert!(is_localized_edge_treatment_kind(token));
+    }
+    for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
+        assert!(!is_localized_edge_treatment_kind(token));
+    }
     for token in ["C-Pattern", "Réseau C"] {
         assert_eq!(
             design_feature_family(token),
@@ -448,6 +455,18 @@ fn feature_family_tokens_are_localized() {
         design_feature_family("Pipe"),
         Some(DesignFeatureFamily::Pipe)
     );
+}
+
+#[test]
+fn localized_edge_treatment_group_retention_is_language_independent() {
+    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+        assert!(!construction_operand_group_is_retained(Some(token), false));
+        assert!(construction_operand_group_is_retained(Some(token), true));
+    }
+    for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
+        assert!(construction_operand_group_is_retained(Some(token), false));
+    }
+    assert!(construction_operand_group_is_retained(None, false));
 }
 
 #[test]

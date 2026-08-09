@@ -288,14 +288,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-55. Localized names of the edge-treatment families
-
-**Question.** Which localized scope-kind names does the edge-treatment group-retention rule cover?
-
-**Known.** `f3d.md` §3.1 names `Congé` and `Chanfrein` as the localized forms that do not require every selection to use a counted group. `extend_related_design_records` in `decode.rs` matches those two strings. `design_feature_family` in `design/mod.rs` is the crate's localization map and holds `Fillet`, `Congé`, `Abrundung`, and `Arredondamento` for one family and `Chamfer` and `Chanfrein` for the other.
-
-**Need.** A German or Portuguese `Fillet` scope keeps construction-operand groups that the French document drops, so the decode output depends on the authoring language. The complete localized name set settles the rule for both documents.
-
 ### DR-56. Mask width of a sketch-relation state word
 
 **Question.** Which class member gives the width of a sketch-relation's stored state mask?

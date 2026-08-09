@@ -3526,9 +3526,11 @@ fn extend_related_design_records(
         let kind = scopes
             .get(&(stream.to_owned(), group.scope_record_index))
             .copied();
-        !matches!(kind, Some("Congé" | "Chanfrein"))
-            || identified_groups.contains(&(stream.to_owned(), group.record_index))
-            || identity_member_groups.contains(&(stream.to_owned(), group.record_index))
+        crate::design::decode::operands::construction_operand_group_is_retained(
+            kind,
+            identified_groups.contains(&(stream.to_owned(), group.record_index))
+                || identity_member_groups.contains(&(stream.to_owned(), group.record_index)),
+        )
     });
     native.design_fillet_radius_groups =
         crate::design::decode::operands::decode_fillet_radius_groups(

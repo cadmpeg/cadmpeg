@@ -3583,6 +3583,19 @@ pub(crate) fn has_typed_edge_treatment_group(kind: &str) -> bool {
     )
 }
 
+/// Apply the selection-identity completeness rule to a parsed group candidate.
+///
+/// A localized edge-treatment reference table can contain selections that do
+/// not use counted groups. Such a reference is a group only when its parsed
+/// candidate also resolves through one of the selection-identity grammars.
+pub(crate) fn construction_operand_group_is_retained(
+    scope_kind: Option<&str>,
+    has_selection_identity: bool,
+) -> bool {
+    !scope_kind.is_some_and(crate::design::is_localized_edge_treatment_kind)
+        || has_selection_identity
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
