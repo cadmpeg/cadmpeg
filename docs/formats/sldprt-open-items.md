@@ -116,13 +116,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:78` gives three families an explicit slot count and gives every other family the count `6`:
+The decoder uses an explicit `(disc, flo) -> slot count` table for the bare entity families consumed by its body-layout recognizers. A family absent from that table remains unresolved. Prefixed records do not use the table because their zero terminator frames the reference run.
 
-```rust
-_ => 6,
-```
-
-The table has no schema dimension. The count bounds bare u16 references only. A wrong bare count changes every reference the layout recognizers chain through. The decoder has no branch that refuses an unlisted bare family.
+**Note.** The table has no schema dimension. A wrong bare count changes every reference the layout recognizers chain through.
 
 `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs:78` and `attrib.rs:126` accept a `00 4f` name length and a `00 52` list count in the range `1..64`. `sldprt.md` states no bound for either. Both modules scan every byte offset for the tags, which is the practice this item names.
 

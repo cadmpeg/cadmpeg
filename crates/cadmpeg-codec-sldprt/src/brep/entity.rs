@@ -75,12 +75,20 @@ impl EntityRecord {
     }
 }
 
-fn slot_count(disc: u16, flo: u8) -> usize {
+fn slot_count(disc: u16, flo: u8) -> Option<usize> {
     match (disc, flo) {
-        (0x0018 | 0x0025 | 0x0020, 1) => 6,
-        (0x001d | 0x001e, 2) => 7,
-        (0x0020 | 0x0027 | 0x0024, 4) => 9,
-        _ => 6,
+        (0x0018 | 0x0025 | 0x0020, 1) => Some(6),
+        (0x001d | 0x001e, 2) => Some(7),
+        (0x0020 | 0x0027 | 0x0024, 4) => Some(9),
+        (0x0026, 3) => Some(6),
+        (
+            0x0004 | 0x000c | 0x000e | 0x000f | 0x0010 | 0x0011 | 0x0012 | 0x0013 | 0x0014 | 0x0015
+            | 0x0016 | 0x0017 | 0x0018 | 0x0019 | 0x001a | 0x001b | 0x001c | 0x001d | 0x001e
+            | 0x001f | 0x0020 | 0x0021 | 0x0022 | 0x0023 | 0x0024 | 0x0025 | 0x0026 | 0x0027
+            | 0x0028 | 0x002a | 0x002c | 0x002e,
+            1 | 2 | 4,
+        ) => Some(6),
+        _ => None,
     }
 }
 
@@ -130,7 +138,15 @@ fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
         if attr <= 1 || seq == 0 || !(1..=0x20).contains(&flo) {
             continue;
         }
-        let Some(refs) = refs(body, p + 12, slot_count(disc, flo), prefixed) else {
+        let count = if prefixed {
+            0
+        } else {
+            let Some(count) = slot_count(disc, flo) else {
+                continue;
+            };
+            count
+        };
+        let Some(refs) = refs(body, p + 12, count, prefixed) else {
             continue;
         };
         out.push(EntityRecord {
@@ -3960,6 +3976,34 @@ mod tests {
         bytes.push(0);
 
         assert_eq!(refs(&bytes, 0, 6, true), Some((2_u16..=8).collect()));
+    }
+
+    #[test]
+    fn unknown_bare_entity_families_do_not_invent_six_reference_slots() {
+        let mut header = vec![0x00, 0x51];
+        header.extend(3u32.to_be_bytes());
+        header.extend(2u16.to_be_bytes());
+        header.extend(1u32.to_be_bytes());
+        header.extend(0x9999u16.to_be_bytes());
+
+        let mut bare = header.clone();
+        for reference in 2u16..=7 {
+            bare.extend(reference.to_be_bytes());
+        }
+        bare.extend([0; 16]);
+        assert!(scan_entities(&bare, false).is_empty());
+
+        let mut prefixed = header;
+        for reference in 2u16..=8 {
+            prefixed.push(1);
+            prefixed.extend(reference.to_be_bytes());
+        }
+        prefixed.push(0);
+        prefixed.extend([0; 16]);
+        assert_eq!(
+            scan_entities(&prefixed, true)[0].refs,
+            (2u16..=8).collect::<Vec<_>>()
+        );
     }
 
     #[test]
