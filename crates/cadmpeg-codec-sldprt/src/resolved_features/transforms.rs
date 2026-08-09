@@ -235,40 +235,17 @@ fn affine_sketch_frame_marker_transform(
     })
 }
 
-pub(super) fn select_marker_transforms_by_frame(
+pub(super) fn marker_transforms_with_frame_fallback(
     candidates: &[MarkerTransform],
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Vec<MarkerTransform> {
-    if let [candidate] = candidates {
-        return vec![*candidate];
-    }
-    let frame = sketch_frame_marker_transform(sketch, quantum);
     if candidates.is_empty() {
-        return frame.into_iter().collect();
-    }
-    let Some(frame) = frame else {
-        return candidates.to_vec();
-    };
-    if candidates.contains(&frame) {
-        return vec![frame];
-    }
-    if frame.affine_matrix.is_some() {
-        return candidates.to_vec();
-    }
-    let oriented = candidates
-        .iter()
-        .copied()
-        .filter(|candidate| {
-            candidate.swap == frame.swap
-                && candidate.u_sign == frame.u_sign
-                && candidate.v_sign == frame.v_sign
-        })
-        .collect::<Vec<_>>();
-    if oriented.is_empty() {
-        candidates.to_vec()
+        sketch_frame_marker_transform(sketch, quantum)
+            .into_iter()
+            .collect()
     } else {
-        oriented
+        candidates.to_vec()
     }
 }
 

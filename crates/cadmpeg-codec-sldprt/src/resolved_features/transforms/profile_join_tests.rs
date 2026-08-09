@@ -9,17 +9,17 @@ use super::{
     implicit_circle_marker, inferred_point_coordinates_by_index, input_owned_edge_selections,
     legacy_terminal_profile_indexed_endpoints, line_endpoint_markers, line_reference_direction,
     linear_pattern_display_directions, marker_entities, marker_owns_constraint, marker_point_locus,
-    marker_relation_is_inactive, owned_relation_parameters, profile_loci_by_marker,
-    project_compact_edge_selections, project_dimensioned_sketch_geometry,
+    marker_relation_is_inactive, marker_transforms_with_frame_fallback, owned_relation_parameters,
+    profile_loci_by_marker, project_compact_edge_selections, project_dimensioned_sketch_geometry,
     project_dissected_sketches, project_marker_backed_sketches, project_marker_dimensioned_circles,
     project_relation_bindings, project_relation_point_geometry,
     project_relation_solved_line_geometry, project_relation_solved_point_geometry,
     relation_constraint_is_inactive, relation_operand_loci, relation_operand_marker,
     relation_owner_markers, relation_parameter_by_display_name, resolve_connected_marker_arcs,
-    resolved_marker_locus, select_marker_transforms_by_frame, single_marker_line_entity,
-    sketch_frame_marker_transform, type_display_relation_parameters,
-    typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
-    typed_relation_definition, unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
+    resolved_marker_locus, single_marker_line_entity, sketch_frame_marker_transform,
+    type_display_relation_parameters, typed_marker_relation_definition,
+    typed_marker_relation_definition_in_sketch, typed_relation_definition,
+    unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
     unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
     unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
     unique_profile_distance_locus, unique_profile_line_angle_entity,
@@ -6101,23 +6101,23 @@ fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
         ..transform
     };
     assert_eq!(
-        select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
-        vec![transform]
+        marker_transforms_with_frame_fallback(&[other, transform], &sketch, 1.0e-8),
+        vec![other, transform]
     );
     let translated = MarkerTransform {
         translation: (17, 23),
         ..transform
     };
     assert_eq!(
-        select_marker_transforms_by_frame(&[other, translated], &sketch, 1.0e-8),
-        vec![translated]
+        marker_transforms_with_frame_fallback(&[other, translated], &sketch, 1.0e-8),
+        vec![other, translated]
     );
     assert_eq!(
-        select_marker_transforms_by_frame(&[other], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(&[other], &sketch, 1.0e-8),
         vec![other]
     );
     assert_eq!(
-        select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
+        marker_transforms_with_frame_fallback(&[], &sketch, 1.0e-8),
         vec![transform]
     );
 }

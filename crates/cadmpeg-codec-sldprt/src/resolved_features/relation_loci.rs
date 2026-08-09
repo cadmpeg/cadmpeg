@@ -3,8 +3,8 @@
 use super::markers::marker_is_geometry_locus;
 use super::relation_geometry::{relation_operand_geometry_ref, solver_line_geometry_ref};
 use super::transforms::{
-    compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities, quantize,
-    select_marker_transforms_by_frame, sketch_entity_loci, MarkerTransform,
+    compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
+    marker_transforms_with_frame_fallback, quantize, sketch_entity_loci, MarkerTransform,
 };
 use super::typed_relations::{
     line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
@@ -2526,7 +2526,7 @@ pub(super) fn marker_transform_candidates_by_feature(
                 .iter()
                 .find(|candidate| candidate.id == **sketch)
                 .map_or(candidates.clone(), |sketch| {
-                    select_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                    marker_transforms_with_frame_fallback(&candidates, sketch, QUANTUM)
                 });
             if !candidates.is_empty() {
                 result.insert(feature.to_string(), candidates);

@@ -7,8 +7,8 @@ use super::markers::{inline_arc_coordinates, marker_native_code, sketch_marker_p
 use super::relation_geometry::{implicit_circle_marker, owned_relation_parameters};
 use super::relation_loci::{marker_transform_candidates_by_feature, same_dimension_length};
 use super::transforms::{
-    dimensioned_circle_surface_transforms, dimensioned_circle_transform, quantize,
-    select_marker_transforms_by_frame,
+    dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+    marker_transforms_with_frame_fallback, quantize,
 };
 use super::typed_relations::marker_curve_endpoint_markers;
 use super::{LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_ANGLE_TOLERANCE};
@@ -376,7 +376,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .map_or(candidates.clone(), |sketch| {
-                    select_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                    marker_transforms_with_frame_fallback(&candidates, sketch, QUANTUM)
                 });
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))

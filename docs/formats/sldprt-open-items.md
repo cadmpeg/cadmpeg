@@ -308,17 +308,6 @@ Equal cardinality is the only link between the group and the class. `sldprt.md` 
 
 **Need.** We must select one transform to bind each remaining marker to profile geometry.
 
-**Note.** A second narrowing stage resolves the case this item records as unresolved. `crates/cadmpeg-codec-sldprt/src/resolved_features/transforms.rs:254` keeps only the candidates whose axis swap and axis signs equal those of the placement frame:
-
-```rust
-let oriented = candidates.iter().copied().filter(|candidate| {
-    candidate.swap == frame.swap && candidate.u_sign == frame.u_sign && candidate.v_sign == frame.v_sign
-}).collect::<Vec<_>>();
-if oriented.is_empty() { candidates.to_vec() } else { oriented }
-```
-
-`sldprt.md` §2 states that placement supplies the transform only when the anchors do not determine one, and that a transform-dependent marker stays unresolved. Frame orientation is not a listed precedence rule. This stage runs after the cascade this item names, and also on the surface-derived path at `resolved_features/dimensions.rs:379`.
-
 ### DI-11. Ambiguous linked reference markers
 
 **Question.** Which profile entity does a reference marker select when its linked loci do not identify one entity?
