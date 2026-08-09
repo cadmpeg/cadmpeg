@@ -1266,6 +1266,25 @@ fn owned_triangle(base: u16, owner: u16, x: f64) -> Vec<u8> {
     b
 }
 
+fn untyped_triangle(x: f64) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend(bridge(10, 20, 999));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
+    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
+    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
+    body.extend(edge_use(40, 999));
+    body.extend(edge_use(41, 0));
+    body.extend(edge_use(42, 0));
+    body.extend(vertex_use(50, 60));
+    body.extend(vertex_use(51, 61));
+    body.extend(vertex_use(52, 62));
+    body.extend(world_point(60, [x, 0.0, 0.0]));
+    body.extend(world_point(61, [x + 1.0, 0.0, 0.0]));
+    body.extend(world_point(62, [x, 1.0, 0.0]));
+    body
+}
+
 /// A `.sldprt` whose partition block carries `triangle_body`.
 fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
     let mut f = outer_header();
@@ -6344,6 +6363,95 @@ fn decode_merges_colliding_configuration_sites_with_disjoint_identities() {
     assert_eq!(ids.len(), result.ir.model.points.len());
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
+}
+
+#[test]
+fn merged_opaque_geometry_retains_its_owning_site() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &untyped_triangle(0.0),
+        ),
+    ));
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-1-Partition",
+        &parasolid_with_body(
+            "partition body",
+            "SCH_SW_33103_11000",
+            &untyped_triangle(10.0),
+        ),
+    ));
+    let expected_records = container::scan_bytes(&source)
+        .blocks
+        .iter()
+        .map(|block| cadmpeg_ir::ids::UnknownId(format!("sldprt:file:block#{}", block.offset)))
+        .collect::<std::collections::BTreeSet<_>>();
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    let surface_bindings = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| {
+            let SurfaceGeometry::Unknown {
+                record: Some(record),
+            } = &surface.geometry
+            else {
+                panic!("site surface is not bound to opaque source bytes");
+            };
+            (surface.id.0.clone(), record.clone())
+        })
+        .collect::<Vec<_>>();
+    let curve_bindings = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| {
+            let CurveGeometry::Unknown {
+                record: Some(record),
+            } = &curve.geometry
+            else {
+                panic!("site curve is not bound to opaque source bytes");
+            };
+            (curve.id.0.clone(), record.clone())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(surface_bindings.len(), 2);
+    assert_eq!(curve_bindings.len(), 2);
+    assert_eq!(
+        surface_bindings
+            .iter()
+            .map(|(_, record)| record.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected_records
+    );
+    assert_eq!(
+        curve_bindings
+            .iter()
+            .map(|(_, record)| record.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected_records
+    );
+    let unknowns = result.ir.native_unknowns("sldprt").unwrap();
+    for (geometry, record) in surface_bindings.into_iter().chain(curve_bindings) {
+        assert!(unknowns
+            .iter()
+            .find(|unknown| unknown.id == record)
+            .is_some_and(|unknown| unknown.links.contains(&geometry)));
+    }
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]
@@ -21923,23 +22031,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
 fn face_on_untyped_surface_keeps_topology() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    let mut body = Vec::new();
-    body.extend(bridge(10, 20, 999));
-    body.extend(loop_head(20, 30, 10));
-    body.extend(coedge(30, 20, 31, 50, 0, 40, false));
-    body.extend(coedge(31, 20, 32, 51, 0, 41, false));
-    body.extend(coedge(32, 20, 30, 52, 0, 42, false));
-    body.extend(edge_use(40, 0));
-    body.extend(edge_use(41, 0));
-    body.extend(edge_use(42, 0));
-    body.extend(vertex_use(50, 60));
-    body.extend(vertex_use(51, 61));
-    body.extend(vertex_use(52, 62));
-    body.extend(world_point(60, [0.0, 0.0, 0.0]));
-    body.extend(world_point(61, [1.0, 0.0, 0.0]));
-    body.extend(world_point(62, [0.0, 1.0, 0.0]));
-
-    let f = sldprt_with_body(&body);
+    let f = sldprt_with_body(&untyped_triangle(0.0));
     let mut cur = Cursor::new(f);
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())

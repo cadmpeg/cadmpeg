@@ -187,11 +187,11 @@ The values `64`, `50_000`, `100_000`, and `1_000_000` are not in `sldprt.md` or 
 let score = (decoded.faces.len(), decoded.bodies.len(), decoded.points.len());
 ```
 
-The other sites are merged in and are not refused. `crates/cadmpeg-codec-sldprt/src/decode.rs:2561` then writes the selected site's block identifier onto every untyped surface and curve in the merged model, including the untyped records of the other sites. That identifier is the only route back to the defining bytes.
+The other sites are merged into the model. Each untyped surface and curve retains the outer block or compound-stream identity of its own site.
 
 The decoder has a second and different idea of the active stream, `container::select_active_parasolid`, which uses `swConfigurationName`. `decode.rs:2637` uses that one for the `active_parasolid_block` attribute. The two are not reconciled.
 
-**Need.** We must know the field to select the primary site. An untyped carrier must point at the block that holds its bytes.
+**Need.** We must know the field to select the primary site.
 
 ### CM-14. Configuration body membership
 

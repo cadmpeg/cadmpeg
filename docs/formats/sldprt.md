@@ -784,6 +784,8 @@ The schema identifier has the form `SCH_<modeller>_<schema>_<format>`. Partition
 
 An attribute id is **not** globally unique. A **site** is one validated outer block (identified by its marker offset). Partition and deltas streams in the same outer block share a site namespace; streams in different outer blocks are distinct sites.
 
+An untyped surface or curve belongs to the retained outer block or compound stream that contains its site. Merging sites qualifies model entity identities but does not change this document-global source-record identity.
+
 Compact analytic records, `00 11` coedges, `00 12` vertex-uses, and `00 1d` points use `(site_id, attr)` identity because their attributes can repeat across sites. Bridges (`00 0e`), loop heads (`00 0f`), and edge-uses (`00 10`) carry globally unique attributes, but their references to site-scoped families remain in the referring record's site. Partition and deltas records in one site share an attribute namespace.
 
 ---

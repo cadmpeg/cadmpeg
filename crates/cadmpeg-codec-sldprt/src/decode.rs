@@ -1942,6 +1942,7 @@ fn try_decode_brep(
         return None;
     }
     let (_, selected, _, mut decoded) = decoded_sites.swap_remove(selected_site);
+    bind_opaque_geometry(&mut decoded, &streams[selected].origin.unknown_id());
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(&streams[selected].origin.name()) {
         configuration_bodies.push((
@@ -1951,6 +1952,7 @@ fn try_decode_brep(
     }
     for (site, first, _, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site);
+        bind_opaque_geometry(&mut alternate, &streams[first].origin.unknown_id());
         if let Some(index) = configuration_index(&streams[first].origin.name()) {
             configuration_bodies.push((
                 index,
@@ -1972,6 +1974,23 @@ fn try_decode_brep(
         },
         report,
     ))
+}
+
+fn bind_opaque_geometry(brep: &mut Brep, source: &UnknownId) {
+    for surface in &mut brep.surfaces {
+        if let SurfaceGeometry::Unknown { record } = &mut surface.geometry {
+            if record.is_none() {
+                *record = Some(source.clone());
+            }
+        }
+    }
+    for curve in &mut brep.curves {
+        if let cadmpeg_ir::geometry::CurveGeometry::Unknown { record } = &mut curve.geometry {
+            if record.is_none() {
+                *record = Some(source.clone());
+            }
+        }
+    }
 }
 
 fn merge_brep(target: &mut Brep, mut source: Brep) {
@@ -2578,38 +2597,35 @@ fn build_geometry_ir(
             links: Vec::new(),
         });
     }
-    let partition_id = origin.unknown_id();
-    let opaque_surfaces = ir
-        .model
-        .surfaces
-        .iter_mut()
-        .filter_map(|surface| match &mut surface.geometry {
-            SurfaceGeometry::Unknown { record } => {
-                *record = Some(partition_id.clone());
-                Some(surface.id.0.clone())
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let opaque_curves = ir
-        .model
-        .curves
-        .iter_mut()
-        .filter_map(|curve| match &mut curve.geometry {
-            cadmpeg_ir::geometry::CurveGeometry::Unknown { record } => {
-                *record = Some(partition_id.clone());
-                Some(curve.id.0.clone())
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    if !opaque_surfaces.is_empty() || !opaque_curves.is_empty() {
-        let partition = unknowns
+    let mut opaque_links = BTreeMap::<String, Vec<String>>::new();
+    for surface in &ir.model.surfaces {
+        if let SurfaceGeometry::Unknown {
+            record: Some(record),
+        } = &surface.geometry
+        {
+            opaque_links
+                .entry(record.0.clone())
+                .or_default()
+                .push(surface.id.0.clone());
+        }
+    }
+    for curve in &ir.model.curves {
+        if let cadmpeg_ir::geometry::CurveGeometry::Unknown {
+            record: Some(record),
+        } = &curve.geometry
+        {
+            opaque_links
+                .entry(record.0.clone())
+                .or_default()
+                .push(curve.id.0.clone());
+        }
+    }
+    for (record_id, links) in opaque_links {
+        let source = unknowns
             .iter_mut()
-            .find(|record| record.id == partition_id)
-            .expect("active partition block is retained");
-        partition.links.extend(opaque_surfaces);
-        partition.links.extend(opaque_curves);
+            .find(|record| record.id.0 == record_id)
+            .expect("opaque geometry source is retained");
+        source.links.extend(links);
     }
     preserve_source_image(scan, &mut annotations, &mut unknowns);
     stamp_local_digests(&mut ir);
