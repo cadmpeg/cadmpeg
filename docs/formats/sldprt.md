@@ -1060,13 +1060,15 @@ A coaxial circle on a circular cylinder or cone is a constant-axial-coordinate p
 
 A spherical pole-closing edge collapses to the pole `center + radius·axis`. That pole is an existing boundary vertex of the three-circle patch; the seam does not add a point or vertex. Its spatial carrier is degenerate at the pole. Its pcurve is `v = π/2` over the azimuth interval `[0, 2π]`; every parameter value maps to the same pole vertex.
 
-A NURBS surface boundary that shares a complete control row, knot vector, degree, and rational weight vector with its NURBS edge curve is isoparametric. A degree-one clamped surface column with equal endpoint weights is affine; a collinear spatial line has an exact affine pcurve obtained by projecting its origin and unit direction onto that column.
+A NURBS edge is isoparametric when it equals the exact surface isocurve at either endpoint of one active parameter domain. The edge and isocurve have the same degree, complete knot vector, periodic state, control points, and rational weight vector. The pcurve fixes that endpoint parameter and varies in the other surface parameter.
+
+A NURBS surface axis that has degree one, two poles, a clamped knot vector, and equal weights at corresponding endpoint poles is affine. A NURBS edge with the other axis's degree, knot vector, periodic state, and weight vector is an interior isocurve when one common interpolation factor reproduces all its control points from the corresponding endpoint-pole pairs. That factor uniquely fixes the affine surface parameter. A degenerate affine axis or matches in both parameter axes leave the pcurve unresolved.
 
 A quadratic rational NURBS edge on a cylinder has a polar-NURBS pcurve when every Bézier span satisfies the homogeneous polynomial identity `X² + Y² = R²W²` in the cylinder radial frame. Its axial control channel is the projection of the same spatial poles onto the cylinder axis. The pcurve shares the edge curve's degree, knots, weights, and parameter; its stored range is the interval whose evaluated endpoints coincide with the edge vertices.
 
-A NURBS surface that is degree one and clamped in `u`, with equal weights at corresponding poles of its two control rows, is ruled in `u`. A spatial line coincident with a fixed-`v` ruling has an affine pcurve: `v` is the common row parameter and `u(t)` is the line parameter projected onto the evaluated ruling vector.
+A NURBS surface is ruled in one parameter when that parameter axis has degree one, two poles, a clamped knot vector, and equal weights at corresponding endpoint poles. A spatial line coincident with a ruling at a fixed value of the other parameter has an affine pcurve. The fixed parameter is the common endpoint-isocurve parameter. The varying parameter is the spatial line parameter projected onto the evaluated ruling vector.
 
-The fixed `v` is selected only when the ruling inverse has one parameter candidate across the complete `v` knot domain. Exact boundary-row matches are candidates alongside interior rulings. Multiple candidates leave the pcurve unresolved; residual magnitude does not select one candidate.
+The fixed parameter is selected only when the ruling inverse has one parameter candidate across the complete active knot domain. Both parameter axes are tested. Exact boundary matches are candidates alongside interior rulings. Multiple parameters or matches in both axes leave the pcurve unresolved; residual magnitude does not select one candidate.
 
 ### 7.3 Surface-intersection curve carriers
 

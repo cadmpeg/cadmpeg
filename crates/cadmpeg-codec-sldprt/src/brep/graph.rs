@@ -9,10 +9,12 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
-use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
+use cadmpeg_ir::eval::{
+    nurbs_curve_parameter_domain, nurbs_curve_point, nurbs_surface_isocurve, nurbs_surface_point,
+};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
 };
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
@@ -2721,19 +2723,6 @@ fn derive_nurbs_isoparametric_pcurves(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
-    let same_points = |a: &[cadmpeg_ir::math::Point3], b: &[cadmpeg_ir::math::Point3]| {
-        a.len() == b.len()
-            && a.iter().zip(b).all(|(a, b)| {
-                (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9 && (a.z - b.z).abs() < 1e-9
-            })
-    };
-    let same_weights = |a: Option<&[f64]>, b: Option<&[f64]>| match (a, b) {
-        (None, None) => true,
-        (Some(a), Some(b)) => {
-            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-12)
-        }
-        _ => false,
-    };
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -2761,157 +2750,21 @@ fn derive_nurbs_isoparametric_pcurves(
         else {
             continue;
         };
-        let (u_min, u_max) = (
-            *surface.u_knots.first().unwrap_or(&0.0),
-            *surface.u_knots.last().unwrap_or(&1.0),
-        );
-        let (v_min, v_max) = (
-            *surface.v_knots.first().unwrap_or(&0.0),
-            *surface.v_knots.last().unwrap_or(&1.0),
-        );
-        let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-        if uc == 0 || vc == 0 {
-            continue;
-        }
-        let row = |u: usize| {
-            (0..vc)
-                .map(|v| surface.control_points[u * vc + v])
-                .collect::<Vec<_>>()
+        let resolution = match curve {
+            CurveGeometry::Nurbs(curve) => nurbs_isocurve_pcurve(surface, curve),
+            CurveGeometry::Line { origin, direction } => resolve_axis_candidates([
+                ruled_surface_line_pcurve(surface, SurfaceParameterAxis::U, *origin, *direction),
+                ruled_surface_line_pcurve(surface, SurfaceParameterAxis::V, *origin, *direction),
+            ]),
+            _ => InverseResolution::NoMatch,
         };
-        let column = |v: usize| {
-            (0..uc)
-                .map(|u| surface.control_points[u * vc + v])
-                .collect::<Vec<_>>()
-        };
-        let row_weights = |u: usize| {
-            surface
-                .weights
-                .as_ref()
-                .map(|weights| &weights[u * vc..(u + 1) * vc])
-        };
-        let column_weights = |v: usize| {
-            surface
-                .weights
-                .as_ref()
-                .map(|weights| (0..uc).map(|u| weights[u * vc + v]).collect::<Vec<_>>())
-        };
-        let geometry = match curve {
-            CurveGeometry::Nurbs(curve) => {
-                if curve.degree == surface.v_degree
-                    && curve.knots == surface.v_knots
-                    && same_points(&curve.control_points, &row(0))
-                    && same_weights(curve.weights.as_deref(), row_weights(0))
-                {
-                    PcurveGeometry::Line {
-                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                    }
-                } else if curve.degree == surface.v_degree
-                    && curve.knots == surface.v_knots
-                    && same_points(&curve.control_points, &row(uc - 1))
-                    && same_weights(curve.weights.as_deref(), row_weights(uc - 1))
-                {
-                    PcurveGeometry::Line {
-                        origin: cadmpeg_ir::math::Point2::new(u_max, v_min),
-                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
-                    }
-                } else if curve.degree == surface.u_degree
-                    && curve.knots == surface.u_knots
-                    && same_points(&curve.control_points, &column(0))
-                    && same_weights(curve.weights.as_deref(), column_weights(0).as_deref())
-                {
-                    PcurveGeometry::Line {
-                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    }
-                } else if curve.degree == surface.u_degree
-                    && curve.knots == surface.u_knots
-                    && same_points(&curve.control_points, &column(vc - 1))
-                    && same_weights(curve.weights.as_deref(), column_weights(vc - 1).as_deref())
-                {
-                    PcurveGeometry::Line {
-                        origin: cadmpeg_ir::math::Point2::new(u_min, v_max),
-                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                    }
-                } else {
-                    continue;
-                }
+        let geometry = match resolution {
+            InverseResolution::Unique(geometry) => geometry,
+            InverseResolution::Ambiguous => {
+                out.stats.ambiguous_pcurve_parameters += 1;
+                continue;
             }
-            CurveGeometry::Line { origin, direction }
-                if surface.u_degree == 1 && surface.u_knots == [u_min, u_min, u_max, u_max] =>
-            {
-                let line_pcurve = |v_index: usize, v: f64| {
-                    let points = column(v_index);
-                    let weights_equal = surface.weights.as_ref().is_none_or(|weights| {
-                        (weights[v_index] - weights[(uc - 1) * vc + v_index]).abs() < 1e-12
-                    });
-                    if points.len() != 2 || !weights_equal || u_min == u_max {
-                        return None;
-                    }
-                    let delta = [
-                        points[1].x - points[0].x,
-                        points[1].y - points[0].y,
-                        points[1].z - points[0].z,
-                    ];
-                    let squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
-                    if squared <= f64::EPSILON {
-                        return None;
-                    }
-                    let relative = [
-                        origin.x - points[0].x,
-                        origin.y - points[0].y,
-                        origin.z - points[0].z,
-                    ];
-                    let project = |value: [f64; 3]| {
-                        (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / squared
-                    };
-                    let offset = project(relative);
-                    let rate = project([direction.x, direction.y, direction.z]);
-                    let residual = |value: [f64; 3], factor: f64| {
-                        ((value[0] - factor * delta[0]).powi(2)
-                            + (value[1] - factor * delta[1]).powi(2)
-                            + (value[2] - factor * delta[2]).powi(2))
-                        .sqrt()
-                    };
-                    if residual(relative, offset) > 1e-6
-                        || residual([direction.x, direction.y, direction.z], rate) > 1e-9
-                        || rate == 0.0
-                    {
-                        return None;
-                    }
-                    let domain = u_max - u_min;
-                    Some(PcurveGeometry::Line {
-                        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
-                        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
-                    })
-                };
-                let mut boundary_candidates = Vec::new();
-                if let Some(geometry) = line_pcurve(0, v_min) {
-                    boundary_candidates.push(geometry);
-                }
-                if let Some(geometry) = line_pcurve(vc - 1, v_max) {
-                    boundary_candidates.push(geometry);
-                }
-                match boundary_candidates.len() {
-                    1 => boundary_candidates.pop().expect("one boundary pcurve"),
-                    0 => {
-                        match ruled_surface_line_pcurve(surface, *origin, *direction, u_min, u_max)
-                        {
-                            InverseResolution::Unique(geometry) => geometry,
-                            InverseResolution::Ambiguous => {
-                                out.stats.ambiguous_pcurve_parameters += 1;
-                                continue;
-                            }
-                            InverseResolution::NoMatch => continue,
-                        }
-                    }
-                    _ => {
-                        out.stats.ambiguous_pcurve_parameters += 1;
-                        continue;
-                    }
-                }
-            }
-            _ => continue,
+            InverseResolution::NoMatch => continue,
         };
         let id = PcurveId(format!(
             "sldprt:brep:pcurve#nurbs-isoparametric:{}",
@@ -2952,48 +2805,337 @@ fn derive_nurbs_isoparametric_pcurves(
     }
 }
 
-fn ruled_surface_line_pcurve(
+fn resolve_axis_candidates<T, const N: usize>(
+    candidates: [InverseResolution<T>; N],
+) -> InverseResolution<T> {
+    let mut unique = None;
+    for candidate in candidates {
+        match candidate {
+            InverseResolution::NoMatch => {}
+            InverseResolution::Ambiguous => return InverseResolution::Ambiguous,
+            InverseResolution::Unique(value) if unique.is_none() => unique = Some(value),
+            InverseResolution::Unique(_) => return InverseResolution::Ambiguous,
+        }
+    }
+    unique.map_or(InverseResolution::NoMatch, InverseResolution::Unique)
+}
+
+fn nurbs_boundary_pcurve(
     surface: &cadmpeg_ir::geometry::NurbsSurface,
-    line_origin: cadmpeg_ir::math::Point3,
-    line_direction: cadmpeg_ir::math::Vector3,
-    u_min: f64,
-    u_max: f64,
+    curve: &cadmpeg_ir::geometry::NurbsCurve,
+    fixed_axis: SurfaceParameterAxis,
 ) -> InverseResolution<PcurveGeometry> {
-    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
-    if uc != 2
-        || surface.u_degree != 1
-        || surface.u_knots != [u_min, u_min, u_max, u_max]
-        || u_min == u_max
-        || surface
-            .weights
-            .as_ref()
-            .is_some_and(|weights| (0..vc).any(|v| (weights[v] - weights[vc + v]).abs() > 1e-12))
+    let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
+        SurfaceParameterAxis::U => (
+            surface.u_degree as usize,
+            surface.u_count as usize,
+            &surface.u_knots,
+        ),
+        SurfaceParameterAxis::V => (
+            surface.v_degree as usize,
+            surface.v_count as usize,
+            &surface.v_knots,
+        ),
+    };
+    let (varying_degree, varying_knots) = match fixed_axis {
+        SurfaceParameterAxis::U => (surface.v_degree as usize, &surface.v_knots),
+        SurfaceParameterAxis::V => (surface.u_degree as usize, &surface.u_knots),
+    };
+    let (Some(&fixed_min), Some(&fixed_max), Some(&varying_min)) = (
+        fixed_knots.get(fixed_degree),
+        fixed_knots.get(fixed_count),
+        varying_knots.get(varying_degree),
+    ) else {
+        return InverseResolution::NoMatch;
+    };
+    if !fixed_min.is_finite()
+        || !fixed_max.is_finite()
+        || fixed_min >= fixed_max
+        || !varying_min.is_finite()
     {
         return InverseResolution::NoMatch;
     }
-    let row = |u: usize| &surface.control_points[u * vc..(u + 1) * vc];
-    let row_weights = |u: usize| {
+    let tolerance = inverse_coordinate_tolerance(
         surface
+            .control_points
+            .iter()
+            .copied()
+            .chain(curve.control_points.iter().copied()),
+    );
+    let same_curve = |candidate: &cadmpeg_ir::geometry::NurbsCurve| {
+        candidate.degree == curve.degree
+            && candidate.knots == curve.knots
+            && candidate.periodic == curve.periodic
+            && candidate.control_points.len() == curve.control_points.len()
+            && candidate
+                .control_points
+                .iter()
+                .zip(&curve.control_points)
+                .all(|(candidate, actual)| {
+                    (candidate.x - actual.x).powi(2)
+                        + (candidate.y - actual.y).powi(2)
+                        + (candidate.z - actual.z).powi(2)
+                        <= tolerance * tolerance
+                })
+            && match (candidate.weights.as_deref(), curve.weights.as_deref()) {
+                (None, None) => true,
+                (Some(candidate), Some(actual)) => {
+                    candidate.len() == actual.len()
+                        && candidate
+                            .iter()
+                            .zip(actual)
+                            .all(|(candidate, actual)| (candidate - actual).abs() <= 1e-12)
+                }
+                _ => false,
+            }
+    };
+    let mut candidates = [fixed_min, fixed_max]
+        .into_iter()
+        .filter(|parameter| parameter.is_finite())
+        .filter(|parameter| {
+            nurbs_surface_isocurve(surface, fixed_axis, *parameter)
+                .is_some_and(|candidate| same_curve(&candidate))
+        });
+    let Some(fixed) = candidates.next() else {
+        return InverseResolution::NoMatch;
+    };
+    if candidates.next().is_some() {
+        return InverseResolution::Ambiguous;
+    }
+    InverseResolution::Unique(match fixed_axis {
+        SurfaceParameterAxis::U => PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(fixed, varying_min),
+            direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        },
+        SurfaceParameterAxis::V => PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(varying_min, fixed),
+            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        },
+    })
+}
+
+fn nurbs_isocurve_pcurve(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    curve: &cadmpeg_ir::geometry::NurbsCurve,
+) -> InverseResolution<PcurveGeometry> {
+    let axis_candidate = |fixed_axis| {
+        let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
+        if surface.control_points.len() != uc.saturating_mul(vc)
+            || surface
+                .weights
+                .as_ref()
+                .is_some_and(|weights| weights.len() != surface.control_points.len())
+        {
+            return InverseResolution::NoMatch;
+        }
+        let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
+            SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+            SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
+        };
+        let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
+            SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
+            SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
+        };
+        if curve.degree != varying_degree
+            || curve.knots != *varying_knots
+            || curve.periodic != varying_periodic
+            || curve.control_points.len() != varying_count
+        {
+            return InverseResolution::NoMatch;
+        }
+        let (Some(&fixed_min), Some(&fixed_max)) = (fixed_knots.get(1), fixed_knots.get(2)) else {
+            return nurbs_boundary_pcurve(surface, curve, fixed_axis);
+        };
+        if fixed_degree != 1
+            || fixed_count != 2
+            || fixed_periodic
+            || fixed_knots.as_slice() != [fixed_min, fixed_min, fixed_max, fixed_max]
+            || !fixed_min.is_finite()
+            || !fixed_max.is_finite()
+            || fixed_min >= fixed_max
+        {
+            return nurbs_boundary_pcurve(surface, curve, fixed_axis);
+        }
+        let pole_indices = |varying: usize| match fixed_axis {
+            SurfaceParameterAxis::U => (varying, vc + varying),
+            SurfaceParameterAxis::V => (varying * vc, varying * vc + 1),
+        };
+        let expected_weights = surface.weights.as_ref().map(|weights| {
+            (0..varying_count)
+                .map(|varying| weights[pole_indices(varying).0])
+                .collect::<Vec<_>>()
+        });
+        if surface.weights.as_ref().is_some_and(|weights| {
+            (0..varying_count).any(|varying| {
+                let (a, b) = pole_indices(varying);
+                (weights[a] - weights[b]).abs() > 1e-12
+            })
+        }) || match (curve.weights.as_deref(), expected_weights.as_deref()) {
+            (None, None) => false,
+            (Some(actual), Some(expected)) => {
+                actual.len() != expected.len()
+                    || actual
+                        .iter()
+                        .zip(expected)
+                        .any(|(actual, expected)| (actual - expected).abs() > 1e-12)
+            }
+            _ => true,
+        } {
+            return InverseResolution::NoMatch;
+        }
+        let mut delta_squared = 0.0;
+        let mut relative_dot_delta = 0.0;
+        for (varying, point) in curve.control_points.iter().enumerate() {
+            let (a_index, b_index) = pole_indices(varying);
+            let a = surface.control_points[a_index];
+            let b = surface.control_points[b_index];
+            let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
+            let relative = [point.x - a.x, point.y - a.y, point.z - a.z];
+            delta_squared += delta.iter().map(|value| value * value).sum::<f64>();
+            relative_dot_delta += relative
+                .iter()
+                .zip(delta)
+                .map(|(relative, delta)| relative * delta)
+                .sum::<f64>();
+        }
+        let tolerance = inverse_coordinate_tolerance(
+            surface
+                .control_points
+                .iter()
+                .copied()
+                .chain(curve.control_points.iter().copied()),
+        );
+        if delta_squared <= f64::EPSILON {
+            let all_equal = (0..varying_count).all(|varying| {
+                let a = surface.control_points[pole_indices(varying).0];
+                let point = curve.control_points[varying];
+                (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
+                    <= tolerance * tolerance
+            });
+            return if all_equal {
+                InverseResolution::Ambiguous
+            } else {
+                InverseResolution::NoMatch
+            };
+        }
+        let factor = relative_dot_delta / delta_squared;
+        let residual_squared = (0..varying_count)
+            .map(|varying| {
+                let (a_index, b_index) = pole_indices(varying);
+                let a = surface.control_points[a_index];
+                let b = surface.control_points[b_index];
+                let point = curve.control_points[varying];
+                (point.x - (a.x + factor * (b.x - a.x))).powi(2)
+                    + (point.y - (a.y + factor * (b.y - a.y))).powi(2)
+                    + (point.z - (a.z + factor * (b.z - a.z))).powi(2)
+            })
+            .fold(0.0_f64, f64::max);
+        let parameter_tolerance =
+            INVERSE_PARAMETER_TOLERANCE * (1.0 + (fixed_max - fixed_min).abs());
+        if !factor.is_finite()
+            || factor < -parameter_tolerance
+            || factor > 1.0 + parameter_tolerance
+            || residual_squared > tolerance * tolerance
+        {
+            return InverseResolution::NoMatch;
+        }
+        let fixed = fixed_min + factor.clamp(0.0, 1.0) * (fixed_max - fixed_min);
+        let Some(varying_degree) = usize::try_from(varying_degree).ok() else {
+            return InverseResolution::NoMatch;
+        };
+        let (Some(&varying_min), Some(&varying_max)) = (
+            varying_knots.get(varying_degree),
+            varying_knots.get(varying_count),
+        ) else {
+            return InverseResolution::NoMatch;
+        };
+        if !varying_min.is_finite() || !varying_max.is_finite() || varying_min >= varying_max {
+            return InverseResolution::NoMatch;
+        }
+        InverseResolution::Unique(match fixed_axis {
+            SurfaceParameterAxis::U => PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(fixed, varying_min),
+                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            },
+            SurfaceParameterAxis::V => PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(varying_min, fixed),
+                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            },
+        })
+    };
+    resolve_axis_candidates([
+        axis_candidate(SurfaceParameterAxis::U),
+        axis_candidate(SurfaceParameterAxis::V),
+    ])
+}
+
+fn ruled_surface_line_pcurve(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    fixed_axis: SurfaceParameterAxis,
+    line_origin: cadmpeg_ir::math::Point3,
+    line_direction: cadmpeg_ir::math::Vector3,
+) -> InverseResolution<PcurveGeometry> {
+    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
+    if surface.control_points.len() != uc.saturating_mul(vc)
+        || surface
             .weights
             .as_ref()
-            .map(|weights| &weights[u * vc..(u + 1) * vc])
+            .is_some_and(|weights| weights.len() != surface.control_points.len())
+    {
+        return InverseResolution::NoMatch;
+    }
+    let (varying_degree, varying_count, varying_knots, varying_periodic) = match fixed_axis {
+        SurfaceParameterAxis::U => (surface.v_degree, vc, &surface.v_knots, surface.v_periodic),
+        SurfaceParameterAxis::V => (surface.u_degree, uc, &surface.u_knots, surface.u_periodic),
     };
-    let evaluate_rows = |parameter: f64| {
+    let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
+        SurfaceParameterAxis::U => (surface.u_degree, uc, &surface.u_knots),
+        SurfaceParameterAxis::V => (surface.v_degree, vc, &surface.v_knots),
+    };
+    let (Some(&varying_min), Some(&varying_max)) = (varying_knots.get(1), varying_knots.get(2))
+    else {
+        return InverseResolution::NoMatch;
+    };
+    if varying_degree != 1
+        || varying_count != 2
+        || varying_periodic
+        || varying_knots.as_slice() != [varying_min, varying_min, varying_max, varying_max]
+        || !varying_min.is_finite()
+        || !varying_max.is_finite()
+        || varying_min >= varying_max
+        || surface.weights.as_ref().is_some_and(|weights| {
+            (0..fixed_count).any(|fixed| {
+                let (a, b) = match fixed_axis {
+                    SurfaceParameterAxis::U => (fixed * vc, fixed * vc + 1),
+                    SurfaceParameterAxis::V => (fixed, vc + fixed),
+                };
+                (weights[a] - weights[b]).abs() > 1e-12
+            })
+        })
+    {
+        return InverseResolution::NoMatch;
+    }
+    let Some(fixed_degree) = usize::try_from(fixed_degree).ok() else {
+        return InverseResolution::NoMatch;
+    };
+    let (Some(&fixed_min), Some(&fixed_max)) =
+        (fixed_knots.get(fixed_degree), fixed_knots.get(fixed_count))
+    else {
+        return InverseResolution::NoMatch;
+    };
+    if !fixed_min.is_finite() || !fixed_max.is_finite() || fixed_min >= fixed_max {
+        return InverseResolution::NoMatch;
+    }
+    let evaluate_ruling = |fixed: f64| {
+        let parameters = |varying| match fixed_axis {
+            SurfaceParameterAxis::U => (fixed, varying),
+            SurfaceParameterAxis::V => (varying, fixed),
+        };
+        let (u0, v0) = parameters(varying_min);
+        let (u1, v1) = parameters(varying_max);
         Some((
-            nurbs_curve_point(
-                surface.v_degree,
-                &surface.v_knots,
-                row(0),
-                row_weights(0),
-                parameter,
-            )?,
-            nurbs_curve_point(
-                surface.v_degree,
-                &surface.v_knots,
-                row(1),
-                row_weights(1),
-                parameter,
-            )?,
+            nurbs_surface_point(surface, u0, v0)?,
+            nurbs_surface_point(surface, u1, v1)?,
         ))
     };
     let direction_squared = line_direction.x * line_direction.x
@@ -3017,20 +3159,10 @@ fn ruled_surface_line_pcurve(
             + (relative[2] - along * line_direction.z).powi(2)
     };
     let objective = |parameter: f64| {
-        let (a, b) = evaluate_rows(parameter)?;
+        let (a, b) = evaluate_ruling(parameter)?;
         Some(perpendicular_squared(a).max(perpendicular_squared(b)))
     };
-    let Some(v_degree) = usize::try_from(surface.v_degree).ok() else {
-        return InverseResolution::NoMatch;
-    };
-    let (Some(&v_min), Some(&v_max)) = (surface.v_knots.get(v_degree), surface.v_knots.get(vc))
-    else {
-        return InverseResolution::NoMatch;
-    };
-    if !v_min.is_finite() || !v_max.is_finite() || v_min >= v_max {
-        return InverseResolution::NoMatch;
-    }
-    let Some(candidates) = sampled_parameter_minima(&surface.v_knots, [v_min, v_max], objective)
+    let Some(candidates) = sampled_parameter_minima(fixed_knots, [fixed_min, fixed_max], objective)
     else {
         return InverseResolution::NoMatch;
     };
@@ -3043,14 +3175,14 @@ fn ruled_surface_line_pcurve(
                 .copied()
                 .chain(std::iter::once(line_origin)),
         ),
-        [v_min, v_max],
+        [fixed_min, fixed_max],
     );
-    let v = match resolution {
-        InverseResolution::Unique(v) => v,
+    let fixed = match resolution {
+        InverseResolution::Unique(fixed) => fixed,
         InverseResolution::NoMatch => return InverseResolution::NoMatch,
         InverseResolution::Ambiguous => return InverseResolution::Ambiguous,
     };
-    let Some((a, b)) = evaluate_rows(v) else {
+    let Some((a, b)) = evaluate_ruling(fixed) else {
         return InverseResolution::NoMatch;
     };
     let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
@@ -3070,10 +3202,16 @@ fn ruled_surface_line_pcurve(
     if rate == 0.0 {
         return InverseResolution::NoMatch;
     }
-    let domain = u_max - u_min;
-    InverseResolution::Unique(PcurveGeometry::Line {
-        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
-        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+    let domain = varying_max - varying_min;
+    InverseResolution::Unique(match fixed_axis {
+        SurfaceParameterAxis::U => PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(fixed, varying_min + offset * domain),
+            direction: cadmpeg_ir::math::Point2::new(0.0, rate * domain),
+        },
+        SurfaceParameterAxis::V => PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(varying_min + offset * domain, fixed),
+            direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+        },
     })
 }
 
@@ -3892,10 +4030,9 @@ mod tests {
         };
         let geometry = match super::ruled_surface_line_pcurve(
             &surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::V,
             cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            0.0,
-            1.0,
         ) {
             super::InverseResolution::Unique(geometry) => geometry,
             super::InverseResolution::NoMatch => panic!("interior ruling did not match"),
@@ -3908,6 +4045,92 @@ mod tests {
         assert!((origin.v - 0.5).abs() < 1e-12);
         assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
         assert!(direction.v.abs() < 1e-12);
+    }
+
+    #[test]
+    fn interior_linear_axis_rational_nurbs_isocurve_has_exact_pcurve() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![-0.1, -0.1, 0.9, 0.9],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, -1.0),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, -1.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 3.0),
+                cadmpeg_ir::math::Point3::new(2.0, 0.0, -1.0),
+                cadmpeg_ir::math::Point3::new(2.0, 0.0, 3.0),
+            ],
+            weights: Some(vec![1.0, 1.0, 2.0, 2.0, 1.0, 1.0]),
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let curve = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: surface.u_knots.clone(),
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(2.0, 0.0, 0.0),
+            ],
+            weights: Some(vec![1.0, 2.0, 1.0]),
+            periodic: false,
+        };
+        let geometry = match super::nurbs_isocurve_pcurve(&surface, &curve) {
+            super::InverseResolution::Unique(geometry) => geometry,
+            super::InverseResolution::NoMatch => panic!("interior isocurve did not match"),
+            super::InverseResolution::Ambiguous => panic!("interior isocurve was ambiguous"),
+        };
+        let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected isoparametric line pcurve");
+        };
+        assert!(origin.u.abs() < 1e-12);
+        assert!((origin.v - 0.15).abs() < 1e-12);
+        assert!((direction.u - 1.0).abs() < 1e-12);
+        assert!(direction.v.abs() < 1e-12);
+    }
+
+    #[test]
+    fn v_linear_surface_line_has_axis_symmetric_inverse() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 2,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 3,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.5, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let geometry = match super::ruled_surface_line_pcurve(
+            &surface,
+            cadmpeg_ir::geometry::SurfaceParameterAxis::U,
+            cadmpeg_ir::math::Point3::new(0.5, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        ) {
+            super::InverseResolution::Unique(geometry) => geometry,
+            super::InverseResolution::NoMatch => panic!("transposed ruling did not match"),
+            super::InverseResolution::Ambiguous => panic!("transposed ruling was ambiguous"),
+        };
+        let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected affine line pcurve");
+        };
+        assert!((origin.u - 0.5).abs() < 1e-8);
+        assert!(origin.v.abs() < 1e-12);
+        assert!(direction.u.abs() < 1e-12);
+        assert!((direction.v - 1.0).abs() < 1e-12);
     }
 
     #[test]
@@ -3934,10 +4157,9 @@ mod tests {
         assert!(matches!(
             super::ruled_surface_line_pcurve(
                 &surface,
+                cadmpeg_ir::geometry::SurfaceParameterAxis::V,
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
                 cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                0.0,
-                1.0,
             ),
             super::InverseResolution::Ambiguous
         ));
