@@ -2010,6 +2010,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.source_entity_records += source.stats.source_entity_records;
+    target.stats.ambiguous_body_assignments += source.stats.ambiguous_body_assignments;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 
@@ -2826,6 +2827,12 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
                 s.unknown_curve_edges
             )),
         );
+    }
+    if s.ambiguous_body_assignments > 0 {
+        losses.push(SldprtLossCode::TopologyBodyAssignmentAmbiguous.note(format!(
+            "{} schema-33103 body head(s) have tied face-component overlap; their component assignments remain unresolved.",
+            s.ambiguous_body_assignments
+        )));
     }
     if s.synthetic_body_grouping {
         losses.push(

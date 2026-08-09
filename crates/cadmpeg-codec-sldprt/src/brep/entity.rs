@@ -46,6 +46,8 @@ pub struct Facts {
     pub bodies: Vec<BodyRecord>,
     /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
     pub cluster_bodies: Vec<BodyRecord>,
+    /// Schema-33103 body heads whose maximum face-component overlap was tied.
+    pub ambiguous_body_assignments: usize,
     pub face_colors: Vec<FaceColor>,
     /// Per-face producing-feature identities carried by Parasolid attributes.
     pub face_atoms: Vec<super::attrib::FaceAtom>,
@@ -219,10 +221,12 @@ pub fn scan(body: &[u8]) -> Facts {
             }
         }
     }
+    let (bodies, ambiguous_body_assignments) = bodies(&entities);
     Facts {
         entity_count: entities.len(),
-        bodies: bodies(&entities),
+        bodies,
         cluster_bodies: cluster_chain_bodies(&entities),
+        ambiguous_body_assignments,
         face_colors: face_colors.into_values().collect(),
         face_atoms: super::attrib::scan(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
@@ -319,7 +323,7 @@ fn cluster_chain_bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
 }
 
 /// Decode explicit `MANIFOLD_SOLID_BREP` entity-51 records.
-fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
+fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     let mut by_attr = HashMap::new();
     for record in entities {
         if by_attr
@@ -404,7 +408,7 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         });
     }
     bind_schema_32001_faces(entities, &mut out);
-    bind_schema_33103_faces(entities, &mut out);
+    let ambiguous_body_assignments = bind_schema_33103_faces(entities, &mut out);
     if out.is_empty() {
         out.extend(disc14_bodies(&by_attr));
     }
@@ -493,7 +497,7 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         out.extend(disc1c_compact_disc04_face_root_body(&by_attr));
     }
     out.sort_by_key(|record| record.attr);
-    out
+    (out, ambiguous_body_assignments)
 }
 
 fn disc1c_compact_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
@@ -2621,7 +2625,7 @@ fn face_from_face_use(
     None
 }
 
-fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) {
+fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord]) -> usize {
     let faces = entities
         .iter()
         .filter(|record| record.disc == 0x0015 && record.flo() == 1)
@@ -2631,7 +2635,7 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
         .map(|record| record.attr)
         .collect::<HashSet<_>>();
     if face_attrs.is_empty() {
-        return;
+        return 0;
     }
 
     let by_attr = faces
@@ -2640,7 +2644,7 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
         .collect::<HashMap<_, _>>();
     let mut unseen = face_attrs.clone();
     let mut components = Vec::new();
-    while let Some(start) = unseen.iter().next().copied() {
+    while let Some(start) = unseen.iter().min().copied() {
         let mut component = HashSet::new();
         let mut pending = vec![start];
         while let Some(attr) = pending.pop() {
@@ -2666,6 +2670,7 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
         .collect::<Vec<_>>();
     heads.sort_by_key(|record| record.offset);
     let mut assigned = HashSet::new();
+    let mut ambiguous = 0;
     for (index, head) in heads.iter().enumerate() {
         let Some(cluster) = head.refs.first() else {
             continue;
@@ -2673,7 +2678,7 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
         if *cluster <= 1 {
             continue;
         }
-        let Some(body) = bodies.iter_mut().find(|body| {
+        let Some(body_index) = bodies.iter().position(|body| {
             entities
                 .iter()
                 .any(|record| record.attr == body.attr && record.refs.first() == Some(cluster))
@@ -2681,29 +2686,37 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
             continue;
         };
         let interval_end = heads.get(index + 1).map_or(usize::MAX, |next| next.offset);
-        let Some((component_index, component)) = components
+        let candidates = components
             .iter()
             .enumerate()
             .filter(|(component_index, _)| !assigned.contains(component_index))
-            .max_by_key(|(_, component)| {
-                component
+            .map(|(component_index, component)| {
+                let overlap = component
                     .iter()
                     .filter_map(|attr| by_attr.get(attr))
                     .filter(|face| face.offset >= head.offset && face.offset < interval_end)
-                    .count()
+                    .count();
+                (component_index, overlap)
             })
-        else {
+            .collect::<Vec<_>>();
+        let Some(max_overlap) = candidates.iter().map(|(_, overlap)| *overlap).max() else {
             continue;
         };
-        let overlap = component
-            .iter()
-            .filter_map(|attr| by_attr.get(attr))
-            .filter(|face| face.offset >= head.offset && face.offset < interval_end)
-            .count();
-        if overlap == 0 {
+        if max_overlap == 0 {
             continue;
         }
+        let best = candidates
+            .iter()
+            .filter(|(_, overlap)| *overlap == max_overlap)
+            .collect::<Vec<_>>();
+        let [candidate] = best.as_slice() else {
+            ambiguous += 1;
+            continue;
+        };
+        let component_index = candidate.0;
+        let component = &components[component_index];
         assigned.insert(component_index);
+        let body = &mut bodies[body_index];
         body.refs.extend(component.iter().copied());
         body.refs.sort_unstable();
         body.refs.dedup();
@@ -2717,6 +2730,7 @@ fn bind_schema_33103_faces(entities: &[EntityRecord], bodies: &mut [BodyRecord])
             shell.refs.dedup();
         }
     }
+    ambiguous
 }
 
 fn body_regions<'a>(
@@ -2793,6 +2807,39 @@ mod tests {
             refs: refs.to_vec(),
             offset: usize::from(attr),
         }
+    }
+
+    #[test]
+    fn schema_33103_tied_component_overlap_remains_unassigned() {
+        let mut head = record(20, 0x13, [7, 1, 1, 1, 1, 1]);
+        head.flags = 2;
+        let entities = vec![
+            record(10, 0x17, [7, 1, 1, 1, 1, 1]),
+            head,
+            record(100, 0x15, [101, 1, 1, 1, 1, 1]),
+            record(101, 0x15, [100, 1, 1, 1, 1, 1]),
+            record(200, 0x15, [201, 1, 1, 1, 1, 1]),
+            record(201, 0x15, [200, 1, 1, 1, 1, 1]),
+        ];
+        let mut bodies = vec![BodyRecord {
+            attr: 10,
+            kind: BodyKind::Solid,
+            refs: vec![10],
+            offset: 10,
+            regions: vec![RegionRecord {
+                attr: 10,
+                offset: 10,
+                shells: vec![ShellRecord {
+                    attr: 10,
+                    offset: 10,
+                    refs: vec![10],
+                }],
+            }],
+        }];
+
+        assert_eq!(bind_schema_33103_faces(&entities, &mut bodies), 1);
+        assert_eq!(bodies[0].refs, [10]);
+        assert_eq!(bodies[0].regions[0].shells[0].refs, [10]);
     }
 
     #[test]

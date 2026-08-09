@@ -56,14 +56,6 @@ The decoder records no loss for a deleted face. A site with no body records keep
 
 **Need.** We must know the owner to construct the final body membership. Until we know it, the decoder must report the unclaimed faces as a loss.
 
-### BC-05. Head-to-component assignment order
-
-**Question.** Which component does a schema-33103 head select when two unassigned components have equal face overlap in its section interval?
-
-**Known.** `sldprt.md` §6 defines the maximum-overlap rule and the one-to-one assignment. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:2684` selects the component with `max_by_key` and refuses a zero overlap. It has no rule for equal overlap. `Vec::max_by_key` selects the last of the equal elements. The component order comes from `HashSet` iteration at `entity.rs:2640`, so two runs of the same binary can give different assignments.
-
-**Need.** We must know the tie rule to bind each head to one component. The assignment must also be stable between runs.
-
 ### BC-06. Multi-region disc14 sites
 
 **Question.** How many bodies does a disc14 partition with more than one `0x1a` region contain, and which region gives each body its identity?

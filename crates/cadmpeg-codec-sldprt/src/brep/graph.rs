@@ -287,6 +287,8 @@ fn shell_face_components(out: &Brep, native_shell_id: &str) -> Vec<Vec<FaceId>> 
 pub struct Stats {
     /// Framed top-level model entity records across the selected stream site.
     pub source_entity_records: usize,
+    /// Schema-33103 body heads whose maximum face-component overlap was tied.
+    pub ambiguous_body_assignments: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
@@ -624,6 +626,7 @@ fn decode_graph(
         body_modifiers,
         stats: Stats {
             source_entity_records: entity_facts.entity_count,
+            ambiguous_body_assignments: entity_facts.ambiguous_body_assignments,
             ..Stats::default()
         },
         ..Brep::default()

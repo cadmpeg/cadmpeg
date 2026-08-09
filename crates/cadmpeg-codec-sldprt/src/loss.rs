@@ -76,6 +76,8 @@ pub enum SldprtLossCode {
     GeometryEdgeSupportCurveUntyped,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
+    /// Body-component overlap tied and no body assignment was selected.
+    TopologyBodyAssignmentAmbiguous,
     /// Parasolid B-rep geometry was not transferred (no resolved stream).
     GeometryParasolidNotTransferred,
     /// B-rep topology graph was not built for this file.
@@ -116,6 +118,7 @@ impl SldprtLossCode {
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::TopologyBodyHierarchyDerived,
+        Self::TopologyBodyAssignmentAmbiguous,
         Self::GeometryParasolidNotTransferred,
         Self::TopologyGraphNotTransferred,
         Self::MaterialMetadataNotTransferred,
@@ -153,6 +156,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
+            Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::GeometryParasolidNotTransferred => "geometry.parasolid-not-transferred",
             Self::TopologyGraphNotTransferred => "topology.graph-not-transferred",
             Self::MaterialMetadataNotTransferred => "material.metadata-not-transferred",
@@ -175,7 +179,9 @@ impl SldprtLossCode {
     const fn shared_code(self) -> LossKind {
         match self {
             Self::ContainerNoParasolidStream => LossKind::MissingGeometryStream,
-            Self::TopologyBodyHierarchyDerived => LossKind::TopologyGaugeSubstituted,
+            Self::TopologyBodyHierarchyDerived | Self::TopologyBodyAssignmentAmbiguous => {
+                LossKind::TopologyGaugeSubstituted
+            }
             Self::TopologyGraphNotTransferred => LossKind::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
@@ -236,6 +242,7 @@ mod tests {
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
                 "topology.body-hierarchy-derived",
+                "topology.body-assignment-ambiguous",
                 "geometry.parasolid-not-transferred",
                 "topology.graph-not-transferred",
                 "material.metadata-not-transferred",
