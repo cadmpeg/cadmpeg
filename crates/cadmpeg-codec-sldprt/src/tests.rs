@@ -6296,6 +6296,28 @@ fn deltas_full_record_overrides_partition_record() {
 }
 
 #[test]
+fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
+    let partition = triangle_body();
+    let deltas = bridge_owned(10, 120, 200, 700);
+    let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
+    let deltas_payload = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &deltas);
+    let partition_header = crate::parasolid::stream_header(&partition_payload).unwrap();
+    let deltas_header = crate::parasolid::stream_header(&deltas_payload).unwrap();
+
+    let decoded = crate::brep::decode_bodies(
+        &[
+            (&deltas_payload, &deltas_header),
+            (&partition_payload, &partition_header),
+        ],
+        "precedence",
+    );
+
+    assert_eq!(decoded.faces.len(), 1);
+    assert_eq!(decoded.faces[0].id.0, "sldprt:brep:face#10");
+    assert_eq!(decoded.faces[0].surface.0, "sldprt:brep:surf#10");
+}
+
+#[test]
 fn deltas_cannot_add_a_superseded_face_to_partition_membership() {
     let partition = triangle_body();
     let deltas = owned_triangle(200, 900, 10.0);

@@ -36,7 +36,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which field or relation identifies the partition face that a deltas face supersedes?
 
-**Known.** `sldprt.md` §4.2 "A deltas stream groups its records into change sets." states that change-roster membership does not identify persistence. `sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." states that a full deltas bridge is part of the final state and can supersede a partition face.
+**Known.** `sldprt.md` §4.2 "A deltas stream groups its records into change sets." states that change-roster membership does not identify persistence. `sldprt.md` §4.2 "A deltas change set can re-create subordinate topology and geometry records under new attributes." states that deltas can carry alternate topology, but it does not identify the partition face that a deltas face supersedes.
 
 **Need.** We must identify the superseded face to prevent duplicate faces in the final body.
 
@@ -211,26 +211,6 @@ _ => 6,
 The table has no schema dimension. The count is load-bearing: `refs()` uses it to select between the prefixed-triple form and the bare u16 form, and to bound the read. A wrong count changes every reference the layout recognizers chain through. The decoder has no branch that refuses an unlisted family.
 
 `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs:78` and `attrib.rs:126` accept a `00 4f` name length and a `00 52` list count in the range `1..64`. `sldprt.md` states no bound for either. Both modules scan every byte offset for the tags, which is the practice this item names.
-
-### CM-06. Partition and deltas precedence
-
-**Question.** Which record takes precedence when partition and deltas streams contain records with the same site, attribute, and sequence?
-
-**Known.** `sldprt.md` §3.2 "An attribute id is **not** globally unique." defines the shared site namespace. `sldprt.md` §4.2 "A deltas stream groups its records into change sets." through `sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." define deltas change sets and final-state faces, but do not define equal-key precedence.
-
-**Need.** We must know the precedence to select one final record.
-
-**Note.** The decoder answers this question. `crates/cadmpeg-codec-sldprt/src/decode.rs:1869` sorts the partition stream before the deltas stream. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:494` then keeps the first non-empty body set, and `brep.rs:206` merges only the carriers that the partition index does not have. The partition record wins.
-
-`crates/cadmpeg-codec-sldprt/src/brep.rs:377` states a source for that choice:
-
-> the first (partition-order) wins, matching the "weak deltas must not overwrite a stronger partition record" rule ([spec §4.2](...))
-
-`sldprt.md` §4.2 does not contain that rule. The quoted sentence is not in the specification. Remove the citation or replace it with the decided rule.
-
-The same comment is also wrong about the code below it. `CarrierIndex::insert` at `brep.rs:166` uses `HashMap::insert`, so inside one stream body the carrier at the higher offset wins, not the first.
-
-`sldprt.md` §4.2 "A deltas change set can re-create a body's faces under new attributes." states the opposite direction for bridges: a full deltas bridge denotes a face of the final state, and the partition faces it supersedes do not persist.
 
 ### CM-07. `moTransRefPlaneData_c` gap
 

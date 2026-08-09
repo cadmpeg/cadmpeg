@@ -531,14 +531,17 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 
 /// Decode related partition and deltas streams as one record source.
 ///
-/// Input order determines override order for topology records with the same
-/// attribute id. `stream` names the combined provenance source.
+/// Partition records are the base set. Deltas records fill missing subordinate
+/// records and point updates, but do not replace a same-identity partition
+/// topology or carrier record. `stream` names the combined provenance source.
 pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut initialized = false;
-    for (payload, header) in bodies {
+    let mut ordered = bodies.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|(_, header)| header.description.to_ascii_lowercase().contains("deltas"));
+    for (payload, header) in ordered {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
         carriers.merge_missing(scan_carriers(body));

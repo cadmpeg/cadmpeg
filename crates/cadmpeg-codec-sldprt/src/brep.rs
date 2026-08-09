@@ -412,9 +412,10 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
 }
 
 /// Scan the whole stream body for compact analytic carriers, keyed by attribute
-/// id. When two carriers share an attr (a partition base and a deltas variant),
-/// the first (partition-order) wins, matching the "weak deltas must not
-/// overwrite a stronger partition record" rule ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#42-deltas-encodings)).
+/// id. A later occurrence in one stream replaces an earlier occurrence at the
+/// same identity. Cross-stream precedence is applied by [`CarrierIndex::merge_missing`]:
+/// the partition carrier remains authoritative and a deltas carrier fills only
+/// an absent identity.
 pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     let mut out = CarrierIndex::default();
     let mut i = 0usize;
