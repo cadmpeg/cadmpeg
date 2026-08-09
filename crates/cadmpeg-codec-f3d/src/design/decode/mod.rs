@@ -6,6 +6,7 @@ pub mod canvas;
 pub mod components;
 pub mod dimension_frames;
 pub mod mesh;
+pub mod meta;
 pub mod operands;
 pub mod parameters;
 pub mod patch;

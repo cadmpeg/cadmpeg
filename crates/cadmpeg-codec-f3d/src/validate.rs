@@ -670,6 +670,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
+    validate_feature_timelines(&ctx, &mut findings);
     validate_parameter_scopes(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
@@ -729,6 +730,244 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(&ctx, &mut findings);
     findings
+}
+
+/// Validate authored Design timeline order and its exact type and scope joins.
+fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    let mut type_ordinals = HashMap::<&str, u32>::new();
+    let mut timeline_ordinals = HashMap::<&str, u32>::new();
+    let mut entity_type_counts = HashMap::<(&str, u64), usize>::new();
+    let mut expected = HashMap::<(&str, u64), (String, u32, bool, &str)>::new();
+    let mut design_types = native.design_types.iter().collect::<Vec<_>>();
+    design_types.sort_by_key(|design_type| {
+        (
+            ids::native_stream(&design_type.id).unwrap_or_default(),
+            design_type.byte_offset,
+        )
+    });
+    for design_type in design_types {
+        let Some(meta_stream) = ids::native_stream(&design_type.id) else {
+            continue;
+        };
+        let Some(segment) = ids::design_segment(&design_type.id) else {
+            continue;
+        };
+        let type_ordinal = type_ordinals.entry(meta_stream).or_default();
+        let class_tag = type_ordinal.checked_add(256).map(|tag| tag.to_string());
+        *type_ordinal = type_ordinal.saturating_add(1);
+        for entity_id in &design_type.entity_ids {
+            *entity_type_counts.entry((segment, *entity_id)).or_default() += 1;
+        }
+        if !design_type
+            .type_guid
+            .eq_ignore_ascii_case(crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID)
+        {
+            continue;
+        }
+        let source_ordinal = timeline_ordinals.entry(segment).or_default();
+        for entity_id in &design_type.entity_ids {
+            let valid_type = design_type.version
+                == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION
+                && design_type.module == records::DESIGN_MODULE_FUSION
+                && class_tag.as_deref().is_some_and(valid_dynamic_class_tag);
+            let Some(class_tag) = class_tag.clone() else {
+                continue;
+            };
+            if expected
+                .insert(
+                    (segment, *entity_id),
+                    (
+                        class_tag,
+                        *source_ordinal,
+                        valid_type,
+                        design_type.id.as_str(),
+                    ),
+                )
+                .is_some()
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion Design feature-timeline type repeats an entity identity"
+                        .into(),
+                    entity: Some(design_type.id.clone()),
+                });
+            }
+            *source_ordinal = source_ordinal.saturating_add(1);
+        }
+    }
+
+    let mut actual = native.design_feature_timelines.iter().collect::<Vec<_>>();
+    actual.sort_by_key(|timeline| {
+        (
+            ids::design_segment(&timeline.id).unwrap_or_default(),
+            timeline.source_ordinal,
+        )
+    });
+    let mut actual_records = HashSet::<(&str, u64)>::new();
+    let mut item_records = HashSet::<(&str, u64)>::new();
+    for timeline in actual {
+        let Some(segment) = ids::design_segment(&timeline.id) else {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design feature timeline has no Design segment identity".into(),
+                entity: Some(timeline.id.clone()),
+            });
+            continue;
+        };
+        let expected_type = expected.get(&(segment, timeline.record_index));
+        let frame_end = timeline.byte_offset.checked_add(timeline.frame_length);
+        let offsets_valid = timeline.item_record_indices.len()
+            == timeline.item_record_index_offsets.len()
+            && timeline.item_record_index_offsets.windows(2).all(|pair| {
+                pair[0]
+                    .checked_add(11)
+                    .is_some_and(|minimum| pair[1] >= minimum)
+            })
+            && frame_end.is_some_and(|end| {
+                timeline.context_record_index_offset > timeline.byte_offset
+                    && timeline
+                        .context_record_index_offset
+                        .checked_add(10)
+                        .is_some_and(|after_context| after_context <= timeline.item_count_offset)
+                    && timeline
+                        .item_count_offset
+                        .checked_add(4)
+                        .is_some_and(|after_count| after_count <= end)
+                    && timeline
+                        .item_record_index_offsets
+                        .first()
+                        .is_none_or(|offset| {
+                            timeline.item_count_offset.checked_add(5) == Some(*offset)
+                        })
+                    && timeline.item_record_index_offsets.iter().all(|offset| {
+                        offset
+                            .checked_add(10)
+                            .is_some_and(|after_reference| after_reference <= end)
+                    })
+            });
+        let expected_id = ids::native_design_feature_timeline_id_in_stream(
+            design_stream(&timeline.id),
+            timeline.byte_offset,
+        );
+        let unique_record = actual_records.insert((segment, timeline.record_index));
+        let record_valid =
+            expected_type.is_some_and(|(class_tag, source_ordinal, valid_type, _)| {
+                *valid_type
+                    && timeline.class_tag == *class_tag
+                    && timeline.source_ordinal == *source_ordinal
+            }) && timeline.id == expected_id
+                && timeline.record_index != 0
+                && entity_type_counts.get(&(segment, timeline.record_index)) == Some(&1)
+                && timeline.context_record_index != 0
+                && entity_type_counts.get(&(segment, timeline.context_record_index)) == Some(&1)
+                && unique_record
+                && offsets_valid;
+        let mut items_valid = true;
+        for item in &timeline.item_record_indices {
+            items_valid &= *item != 0
+                && entity_type_counts.get(&(segment, *item)) == Some(&1)
+                && item_records.insert((segment, *item));
+        }
+        if !record_valid || !items_valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design feature timeline has an invalid typed frame".into(),
+                entity: Some(timeline.id.clone()),
+            });
+        }
+    }
+    for ((segment, entity_id), (_, _, _, type_id)) in &expected {
+        if !actual_records.contains(&(*segment, *entity_id)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design feature-timeline type has no decoded record".into(),
+                entity: Some((*type_id).to_owned()),
+            });
+        }
+    }
+
+    let mut scope_positions = HashMap::<&str, u64>::new();
+    match crate::design::feature_project::authored_scope_ordinals(
+        &native.design_parameter_scopes,
+        &native.design_feature_timelines,
+    ) {
+        Ok(authored) => {
+            for scope in &native.design_parameter_scopes {
+                let stream = design_stream(&scope.id);
+                let Some(position) = authored.get(&(stream, scope.record_index)) else {
+                    continue;
+                };
+                scope_positions.insert(scope.id.as_str(), *position);
+            }
+        }
+        Err(_) => {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design scopes have no complete authored order".into(),
+                entity: native
+                    .design_parameter_scopes
+                    .first()
+                    .map(|scope| scope.id.clone()),
+            });
+        }
+    }
+
+    let bound_histories = history::bind_scope_histories(
+        &native.design_parameter_scopes,
+        &native.design_body_bindings,
+        &native.asm_histories,
+    );
+    let scope_history = |scope: &records::DesignParameterScope| {
+        if native.asm_histories.is_empty() {
+            Some("")
+        } else {
+            bound_histories.get(&scope.id).map(String::as_str)
+        }
+    };
+    let mut states = HashMap::<(&str, &str, i64), Option<(&str, u64)>>::new();
+    for scope in &native.design_parameter_scopes {
+        let (Some(segment), Some(history_id), Some(state_id), Some(position)) = (
+            ids::design_segment(&scope.id),
+            scope_history(scope),
+            scope.history_state_id,
+            scope_positions.get(scope.id.as_str()).copied(),
+        ) else {
+            continue;
+        };
+        states
+            .entry((segment, history_id, state_id))
+            .and_modify(|position| *position = None)
+            .or_insert(Some((scope.id.as_str(), position)));
+    }
+    for scope in &native.design_parameter_scopes {
+        let (Some(segment), Some(history_id), Some(previous), Some(position)) = (
+            ids::design_segment(&scope.id),
+            scope_history(scope),
+            scope.previous_history_state_id,
+            scope_positions.get(scope.id.as_str()).copied(),
+        ) else {
+            continue;
+        };
+        if states
+            .get(&(segment, history_id, previous))
+            .is_some_and(|predecessor| {
+                predecessor.is_some_and(|(id, value)| id != scope.id && value >= position)
+            })
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design history edge runs forward in its feature timeline".into(),
+                entity: Some(scope.id.clone()),
+            });
+        }
+    }
 }
 
 /// Validate exact Canvas frames and their Design scope and object joins.

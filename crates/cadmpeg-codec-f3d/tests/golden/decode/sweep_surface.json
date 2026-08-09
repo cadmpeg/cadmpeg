@@ -538,6 +538,7 @@
           "design_extrude_selection_groups": [],
           "design_extrude_selection_members": [],
           "design_face_operands": [],
+          "design_feature_timelines": [],
           "design_fillet_radius_groups": [],
           "design_material_assignments": [],
           "design_parameter_companions": [],

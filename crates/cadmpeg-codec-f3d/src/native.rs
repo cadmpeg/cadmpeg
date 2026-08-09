@@ -40,11 +40,11 @@ use crate::records::{
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
     DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignType, LostEdgeReference, PersistentDesignLink, PersistentReference,
-    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
-    SketchSurface, SketchText, XrefDesign, XrefReference,
+    DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, DesignType, LostEdgeReference, PersistentDesignLink,
+    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
+    SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceSidedness, MeshSurfaceSentinel,
@@ -113,6 +113,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_extrude_selection_groups",
     "design_extrude_selection_members",
     "design_face_operands",
+    "design_feature_timelines",
     "design_fillet_radius_groups",
     "design_material_assignments",
     "design_parameter_companions",
@@ -570,6 +571,18 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(row.arena, &model.design_extrude_selection_members)
         },
         len: |model| model.design_extrude_selection_members.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "design_feature_timelines",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| {
+            namespace.set_arena(row.arena, &model.design_feature_timelines)
+        },
+        len: |model| model.design_feature_timelines.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1108,6 +1121,9 @@ pub struct F3dNative {
     /// Face-selection operands recovered from Extrude construction groups.
     #[serde(default)]
     pub design_face_operands: Vec<DesignFaceOperand>,
+    /// Counted Design scope lists in authored feature order.
+    #[serde(default)]
+    pub design_feature_timelines: Vec<DesignFeatureTimeline>,
     /// Counted construction-operand groups owned by feature parameter scopes.
     #[serde(default)]
     pub design_construction_operand_groups: Vec<DesignConstructionOperandGroup>,
@@ -1262,6 +1278,7 @@ impl Default for F3dNative {
             design_edge_operands: Vec::new(),
             design_edge_identity_operands: Vec::new(),
             design_face_operands: Vec::new(),
+            design_feature_timelines: Vec::new(),
             design_construction_operand_groups: Vec::new(),
             design_construction_operand_identities: Vec::new(),
             design_extrude_selection_groups: Vec::new(),
@@ -1339,6 +1356,7 @@ impl F3dNative {
             design_entity_selection_operands: namespace
                 .arena_as("design_entity_selection_operands")?,
             design_face_operands: namespace.arena_as("design_face_operands")?,
+            design_feature_timelines: namespace.arena_as("design_feature_timelines")?,
             design_construction_operand_groups: namespace
                 .arena_as("design_construction_operand_groups")?,
             design_construction_operand_identities: namespace

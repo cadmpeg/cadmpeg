@@ -230,7 +230,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 64);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 65);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -9696,7 +9696,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
 #[test]
 fn design_type_table_attributes_each_entry_to_its_own_type() {
-    use crate::design::decode::sketch::parse_design_type_table;
+    use crate::design::decode::meta::parse_design_type_table;
 
     let first = "11111111-1111-1111-1111-111111111111";
     let second = "22222222-2222-2222-2222-222222222222";
@@ -9779,6 +9779,183 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
     trailing.push(0);
     assert!(parse_design_type_table(&trailing).is_none());
     assert!(parse_design_type_table(&bytes[..bytes.len() - 1]).is_none());
+}
+
+#[test]
+fn design_feature_timeline_decodes_variable_width_local_references() {
+    fn lp_ascii(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        out.extend_from_slice(value.as_bytes());
+    }
+    fn local_reference(out: &mut Vec<u8>, target: u64, inline_type: bool) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        if inline_type {
+            lp_ascii(out, "11111111-2222-3333-4444-555555555555");
+        }
+        out.extend_from_slice(&[0, 0]);
+    }
+    fn archive(meta: &[u8], bulk: &[u8]) -> Vec<u8> {
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(meta).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&35_u64.to_le_bytes());
+    lp_ascii(&mut bulk, "Timeline");
+    bulk.extend_from_slice(&[0, 0]);
+    local_reference(&mut bulk, 17, false);
+    bulk.extend_from_slice(&2_u32.to_le_bytes());
+    local_reference(&mut bulk, 101, false);
+    local_reference(&mut bulk, 102, true);
+    let meta = design_metastream_with_records(
+        &[(
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+            "",
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION,
+            "Fusion",
+            &[35],
+        )],
+        &[(35, 0)],
+    );
+    let decoded = with_scan(&archive(&meta, &bulk), |scan| {
+        crate::design::decode::meta::decode_feature_timelines(scan)
+    })
+    .expect("exact feature timeline");
+    let [timeline] = decoded.as_slice() else {
+        panic!("expected one timeline record");
+    };
+    assert_eq!(timeline.record_index, 35);
+    assert_eq!(timeline.context_record_index, 17);
+    assert_eq!(timeline.item_record_indices, [101, 102]);
+    assert_eq!(timeline.frame_length, bulk.len() as u64);
+    assert_eq!(
+        timeline.item_record_index_offsets.len(),
+        timeline.item_record_indices.len()
+    );
+    for (record_index, offset) in timeline
+        .item_record_indices
+        .iter()
+        .zip(&timeline.item_record_index_offsets)
+    {
+        assert_eq!(
+            u64::from_le_bytes(
+                bulk[*offset as usize..*offset as usize + 8]
+                    .try_into()
+                    .expect("timeline target")
+            ),
+            *record_index
+        );
+    }
+
+    let mut duplicate = bulk.clone();
+    let second_offset = timeline.item_record_index_offsets[1] as usize;
+    duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
+    let error = with_scan(&archive(&meta, &duplicate), |scan| {
+        crate::design::decode::meta::decode_feature_timelines(scan)
+    })
+    .expect_err("duplicate timeline items must be rejected");
+    assert!(error.to_string().contains("does not match its exact frame"));
+}
+
+#[test]
+fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
+    let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
+    let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::DesignType {
+        id: id.into(),
+        byte_offset: 0,
+        type_guid: type_guid.into(),
+        type_guid_offset: 4,
+        base_type_guid: None,
+        base_type_guid_offset: None,
+        version: if type_guid == crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID {
+            crate::design::decode::meta::FEATURE_TIMELINE_TYPE_VERSION
+        } else {
+            1
+        },
+        version_offset: 44,
+        module: crate::records::DESIGN_MODULE_FUSION.into(),
+        entity_id_offsets: vec![100; entities.len()],
+        entity_ids: entities,
+    };
+    let mut native = crate::native::F3dNative {
+        design_types: vec![
+            design_type(
+                &format!("{meta_stream}:design-type#0"),
+                crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+                vec![35],
+            ),
+            design_type(
+                &format!("{meta_stream}:design-type#1"),
+                "11111111-2222-3333-4444-555555555555",
+                vec![17, 101],
+            ),
+        ],
+        design_feature_timelines: vec![crate::records::DesignFeatureTimeline {
+            id: crate::ids::native_design_feature_timeline_id(bulk_entry, 200),
+            byte_offset: 200,
+            class_tag: "256".into(),
+            record_index: 35,
+            source_ordinal: 0,
+            frame_length: 60,
+            context_record_index: 17,
+            context_record_index_offset: 220,
+            item_count_offset: 240,
+            item_record_indices: vec![101],
+            item_record_index_offsets: vec![245],
+        }],
+        ..crate::native::F3dNative::default()
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    let findings = crate::validate::validate_native(&ir);
+    assert!(
+        !findings.iter().any(|finding| {
+            finding.message.contains("feature timeline")
+                || finding.message.contains("feature-timeline")
+        }),
+        "{findings:#?}"
+    );
+
+    let mut duplicate_type_owner = native.clone();
+    duplicate_type_owner.design_types[1].entity_ids.push(35);
+    duplicate_type_owner.design_types[1]
+        .entity_id_offsets
+        .push(108);
+    duplicate_type_owner
+        .store(ir.native.namespace_mut("f3d"))
+        .unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref()
+            == Some(duplicate_type_owner.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
+
+    let mut invalid_offsets = native.clone();
+    invalid_offsets.design_feature_timelines[0].item_record_index_offsets[0] = 244;
+    invalid_offsets
+        .store(ir.native.namespace_mut("f3d"))
+        .unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref() == Some(invalid_offsets.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
+
+    native.design_feature_timelines[0].item_record_indices[0] = 102;
+    native.store(ir.native.namespace_mut("f3d")).unwrap();
+    assert!(crate::validate::validate_native(&ir).iter().any(|finding| {
+        finding.entity.as_deref() == Some(native.design_feature_timelines[0].id.as_str())
+            && finding.message == "Fusion Design feature timeline has an invalid typed frame"
+    }));
 }
 
 #[test]
@@ -12397,11 +12574,20 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
     zip.finish().unwrap().into_inner()
 }
 
-/// Build one Design `MetaStream` segment holding `types`, each entry a
-/// `(type GUID, base type GUID, version, module, entity ids)` tuple. An empty
-/// base GUID marks a root type. The segment carries the modern header shape
-/// and empty named-entity and record indexes, and closes on its own end.
+/// Build one Design `MetaStream` segment with an empty primary record index.
 pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Vec<u8> {
+    design_metastream_with_records(types, &[])
+}
+
+/// Build one Design `MetaStream` segment holding `types`, each entry a
+/// `(type GUID, base type GUID, version, module, entity ids)` tuple, and the
+/// ordered primary `(entity id, BulkStream offset)` record index. An empty base
+/// GUID marks a root type. The segment carries the modern header shape and
+/// closes on its own end.
+fn design_metastream_with_records(
+    types: &[(&str, &str, u32, &str, &[u64])],
+    records: &[(u64, u64)],
+) -> Vec<u8> {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
@@ -12430,9 +12616,16 @@ pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Ve
             out.extend_from_slice(&entity_id.to_le_bytes());
         }
     }
-    // Empty named-entity list, record index, and secondary index, then the
-    // next-entity counter, the flag, and an empty property block.
-    out.extend_from_slice(&[0; 12]);
+    // Empty named-entity list, the primary record index, and an empty secondary
+    // index, then the next-entity counter, the flag, and an empty property
+    // block.
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&(records.len() as u32).to_le_bytes());
+    for (entity_id, bulk_offset) in records {
+        out.extend_from_slice(&entity_id.to_le_bytes());
+        out.extend_from_slice(&bulk_offset.to_le_bytes());
+    }
+    out.extend_from_slice(&0_u32.to_le_bytes());
     out.extend_from_slice(&[0; 16]);
     out
 }

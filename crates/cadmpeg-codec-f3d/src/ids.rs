@@ -626,6 +626,20 @@ native_record_id!(
     "design-parameter-scope"
 );
 native_record_id!(
+    /// The native ordered Design feature-timeline record key.
+    native_design_feature_timeline_id,
+    "design-feature-timeline"
+);
+
+/// The native ordered Design feature-timeline key in an already encoded
+/// `f3d:` stream scope.
+pub(crate) fn native_design_feature_timeline_id_in_stream(
+    stream: &str,
+    offset: impl std::fmt::Display,
+) -> String {
+    format!("{stream}:design-feature-timeline#{offset}")
+}
+native_record_id!(
     /// The native design Canvas image-plane binding key.
     native_design_canvas_image_id,
     "design-canvas-image"
@@ -784,9 +798,10 @@ native_record_id!(
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_identity_key_component, design_segment, native_design_type_id, native_scope,
-        neutral_face_appearance_binding_id, neutral_sketch_text_id, neutral_sketch_text_record_id,
-        same_native_occurrence, SCHEME_PREFIX,
+        decode_identity_key_component, design_segment, native_design_feature_timeline_id_in_stream,
+        native_design_type_id, native_scope, neutral_face_appearance_binding_id,
+        neutral_sketch_text_id, neutral_sketch_text_record_id, same_native_occurrence,
+        SCHEME_PREFIX,
     };
 
     #[test]
@@ -821,6 +836,10 @@ mod tests {
             crate::writer::patch::records::native_stream(&id, ":design-type#")
                 .expect("writer stream"),
             entry
+        );
+        assert_eq!(
+            native_design_feature_timeline_id_in_stream(&native_scope(entry), 20),
+            "f3d:Simulation%20Case/Design%3A1/MetaStream%2520.dat:design-feature-timeline#20"
         );
     }
 

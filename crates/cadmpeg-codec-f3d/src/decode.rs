@@ -1486,7 +1486,7 @@ fn finish_model_decode<'a>(
         crate::design::decode::sketch::decode_persistent_references(scan)?;
     native.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
     native.design_material_assignments = crate::materials::decode_design_assignments(scan)?;
-    native.design_types = crate::design::decode::sketch::decode_types(scan)?;
+    native.design_types = crate::design::decode::meta::decode_types(scan)?;
     native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
     native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     native.design_record_headers =
@@ -1580,6 +1580,7 @@ fn finish_model_decode<'a>(
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -1592,7 +1593,7 @@ fn finish_model_decode<'a>(
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     bind_mesh_feature_definitions(
         &mut ir.model.features,
         &native.design_parameter_scopes,
@@ -2029,7 +2030,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.lost_edge_references =
         crate::design::decode::sketch::decode_lost_edge_references(&scan)?;
     native.design_material_assignments = crate::materials::decode_design_assignments(&scan)?;
-    native.design_types = crate::design::decode::sketch::decode_types(&scan)?;
+    native.design_types = crate::design::decode::meta::decode_types(&scan)?;
     native.design_parameters = crate::design::decode::parameters::decode_parameters(&scan)?;
     native.design_entity_headers = crate::design::decode::sketch::decode_entity_headers(&scan)?;
     native.design_record_headers =
@@ -2126,6 +2127,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -2138,7 +2140,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     crate::design::feature_project::bind_form_cages(
         &scan,
         &native.design_parameter_scopes,
@@ -3257,6 +3259,7 @@ fn extend_related_design_records(
         &native.design_component_occurrences,
         &native.construction_recipes,
     )?;
+    native.design_feature_timelines = crate::design::decode::meta::decode_feature_timelines(scan)?;
     native.design_canvas_images =
         crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(

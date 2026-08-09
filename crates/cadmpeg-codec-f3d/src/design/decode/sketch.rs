@@ -1,23 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Parse sketch placements, `MetaStream` types, headers, relations, and geometry.
+//! Parse Design sketch placements, headers, relations, and geometry.
 
-use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
-};
+use crate::bytes::{lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference};
 use crate::container::{role, ContainerScan};
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::records::{
     DesignEntityHeader, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignType, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchSurface, SketchText, DESIGN_MODULE_SKETCH,
 };
 use cadmpeg_core::le::{f64_at, f64s_at, take_f32, u32_at, u64_at as read_u64, utf16le_at};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Color;
 use std::collections::HashMap;
+
+use super::meta::{decode_types, stream_types_by_class_tag};
 
 /// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
 /// the record index carried at header offset seven.
@@ -594,182 +594,6 @@ pub fn decode_lost_edge_references(
         }
     }
     Ok(out)
-}
-
-/// Skip a `u32`-counted run of fixed-width elements at `at`, returning the
-/// offset past it.
-fn skip_counted_run(bytes: &[u8], at: usize, stride: usize) -> Option<usize> {
-    let count = usize::try_from(u32_at(bytes, at)?).ok()?;
-    let end = count
-        .checked_mul(stride)
-        .and_then(|size| at.checked_add(4)?.checked_add(size))?;
-    (end <= bytes.len()).then_some(end)
-}
-
-/// Parse one Design `MetaStream` segment ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)) into its type table.
-///
-/// The stream is a segment header, a type table, a named-entity list, two
-/// record indexes, and an optional trailing property block, in that order. Each
-/// type-table entry is an LP-ASCII type GUID, an LP-ASCII base type GUID that is
-/// empty for a root type, a u32 type version, an LP-ASCII add-in name, and a
-/// u32-counted run of u64 design-entity ids. The whole stream must close on its
-/// own end, which pins the header shape; a stream that does not is rejected
-/// whole rather than parsed in part. Returned entries carry no `id`.
-pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignType>> {
-    // Header: short segment type name, segment id, asset GUID, serializer
-    // magic and its magic-gated integer group, full segment type name, add-in
-    // name, and the segment type code.
-    let (_, at) = lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic)?;
-    let at = at.checked_add(4)?;
-    let (_, at) = lp_utf16_bounded(bytes, at, 0..=256)?;
-    let magic = u32_at(bytes, at)?;
-    let at = at.checked_add(if magic == 1234 { 16 } else { 8 })?;
-    let (_, at) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)?;
-    let (_, at) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-    let mut at = at.checked_add(8)?;
-    let count = u32_at(bytes, at)?;
-    at = at.checked_add(4)?;
-    let mut out = Vec::new();
-    for _ in 0..count {
-        let entry_at = at;
-        let type_guid_offset = at.checked_add(4)?;
-        let (type_guid, next) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
-            .filter(|(guid, _)| is_guid_relaxed(guid))?;
-        at = next;
-        let base_type_guid_offset = at.checked_add(4)?;
-        let (base_type_guid, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)
-            .filter(|(guid, _)| guid.is_empty() || is_guid_relaxed(guid))?;
-        at = next;
-        let version_offset = at;
-        let version = u32_at(bytes, at)?;
-        at = at.checked_add(4)?;
-        let (module, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-        at = next;
-        let id_count = usize::try_from(u32_at(bytes, at)?).ok()?;
-        let ids_at = at.checked_add(4)?;
-        let ids_end = id_count
-            .checked_mul(8)
-            .and_then(|size| ids_at.checked_add(size))?;
-        let raw_ids = bytes.get(ids_at..ids_end)?;
-        at = ids_end;
-        out.push(DesignType {
-            id: String::new(),
-            byte_offset: entry_at as u64,
-            type_guid,
-            type_guid_offset: type_guid_offset as u64,
-            base_type_guid_offset: (!base_type_guid.is_empty())
-                .then_some(base_type_guid_offset as u64),
-            base_type_guid: (!base_type_guid.is_empty()).then_some(base_type_guid),
-            version,
-            version_offset: version_offset as u64,
-            module,
-            entity_ids: raw_ids
-                .chunks_exact(8)
-                .map(|raw| {
-                    u64::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    )
-                })
-                .collect(),
-            entity_id_offsets: (0..id_count)
-                .map(|index| (ids_at + index * 8) as u64)
-                .collect(),
-        });
-    }
-    // The named-entity list, the record index, and the secondary index. A
-    // legacy segment may end at any of the trailing next-entity counter, the
-    // flag, or the property block.
-    at = skip_counted_run(bytes, at, 8)?;
-    at = skip_counted_run(bytes, at, 16)?;
-    at = skip_counted_run(bytes, at, 16)?;
-    if bytes.len() - at >= 8 {
-        at += 8;
-    }
-    if bytes.len() - at >= 4 {
-        at += 4;
-    }
-    if bytes.len() - at >= 4 {
-        let properties = u32_at(bytes, at)?;
-        at = at.checked_add(4)?;
-        for _ in 0..properties {
-            let (_, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-            at = next.checked_add(4)?;
-        }
-    }
-    (at == bytes.len()).then_some(out)
-}
-
-/// Decode the type table of every design `MetaStream` entry in `scan`
-/// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)). A stream that does not close on its own end contributes
-/// nothing.
-pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError> {
-    let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
-    {
-        let Some(types) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
-            continue;
-        };
-        out.extend(types.into_iter().map(|mut design_type| {
-            design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
-            design_type
-        }));
-    }
-    Ok(out)
-}
-
-/// Type GUID and record version of the types registered by the design
-/// `MetaStream` beside `bulk_entry_name`, keyed by the design entity ids those
-/// types own. A record carries neither of its own: its class tag selects a
-/// type-table entry, that entry's version fixes the member sequence the record
-/// was written under, and that entry's GUID is the type's only identity that
-/// holds across segments, since a class tag is `256` plus a segment-local index.
-pub fn stream_types_by_entity<'a>(
-    types: &'a [DesignType],
-    bulk_entry_name: &str,
-) -> HashMap<u64, (&'a str, u32)> {
-    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
-        return HashMap::new();
-    };
-    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
-    types
-        .iter()
-        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
-        .flat_map(|design_type| {
-            design_type.entity_ids.iter().map(|entity_id| {
-                (
-                    *entity_id,
-                    (design_type.type_guid.as_str(), design_type.version),
-                )
-            })
-        })
-        .collect()
-}
-
-/// Type GUID and record version keyed by the three-digit dynamic class tag.
-/// A tag is `256` plus its zero-based position in the segment-local type table.
-fn stream_types_by_class_tag<'a>(
-    types: &'a [DesignType],
-    bulk_entry_name: &str,
-) -> HashMap<u32, (&'a str, u32)> {
-    let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
-        return HashMap::new();
-    };
-    let meta_scope = ids::native_scope(&format!("{prefix}MetaStream.dat"));
-    types
-        .iter()
-        .filter(|design_type| native_stream(&design_type.id) == Some(meta_scope.as_str()))
-        .enumerate()
-        .filter_map(|(ordinal, design_type)| {
-            Some((
-                u32::try_from(ordinal).ok()?.checked_add(256)?,
-                (design_type.type_guid.as_str(), design_type.version),
-            ))
-        })
-        .collect()
 }
 
 /// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five

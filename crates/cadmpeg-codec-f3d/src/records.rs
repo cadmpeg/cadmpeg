@@ -4373,6 +4373,34 @@ pub struct DesignType {
     pub entity_id_offsets: Vec<u64>,
 }
 
+/// Counted Design timeline-item list that carries authored feature order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct DesignFeatureTimeline {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of this record in its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Design entity identity of the timeline record.
+    pub record_index: u64,
+    /// Zero-based position in the `MetaStream` timeline-record list.
+    pub source_ordinal: u32,
+    /// Complete top-level record length.
+    pub frame_length: u64,
+    /// Same-segment context record referenced before the scope list.
+    pub context_record_index: u64,
+    /// Byte offset of `context_record_index`.
+    pub context_record_index_offset: u64,
+    /// Byte offset of the timeline-item count.
+    pub item_count_offset: u64,
+    /// Design record indices in authored timeline order.
+    pub item_record_indices: Vec<u64>,
+    /// Byte offsets parallel to `item_record_indices`.
+    pub item_record_index_offsets: Vec<u64>,
+}
+
 /// Self-validating entity-bound header in the Design `BulkStream`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]

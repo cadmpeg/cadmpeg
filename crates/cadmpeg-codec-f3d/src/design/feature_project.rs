@@ -30,11 +30,11 @@ use crate::records::{
     DesignCoilSection, DesignCoilSectionPlacement, DesignConstructionOperandGroup,
     DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignExtrudeExtent,
     DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw, DesignFixedExtrudeDistance,
-    DesignParameter, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignSketchPlacement, DesignSolidPrimitive,
-    DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, SketchCurveGeometry,
-    SketchCurveIdentity,
+    DesignFaceOperand, DesignFeatureTimeline, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+    DesignFixedExtrudeDistance, DesignParameter, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignSketchPlacement,
+    DesignSolidPrimitive, DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport,
+    SketchCurveGeometry, SketchCurveIdentity,
 };
 use cadmpeg_core::le::{u32_at, u64_at as read_u64};
 use cadmpeg_core::CodecError;
@@ -50,6 +50,7 @@ pub struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) scopes: &'a [DesignParameterScope],
+    pub(crate) timelines: &'a [DesignFeatureTimeline],
     pub(crate) construction_groups: &'a [DesignConstructionOperandGroup],
     pub(crate) fillet_radius_groups: &'a [DesignFilletRadiusGroup],
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
@@ -63,6 +64,155 @@ pub struct ProjectInputs<'a> {
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
 }
 
+/// Authored construction ordinal of every decoded parameter scope.
+pub(crate) fn authored_scope_ordinals<'a>(
+    scopes: &'a [DesignParameterScope],
+    timelines: &[DesignFeatureTimeline],
+) -> Result<HashMap<(&'a str, u32), u64>, CodecError> {
+    let mut out = HashMap::with_capacity(scopes.len());
+    let Some(first_scope) = scopes.first() else {
+        return Ok(out);
+    };
+    let stream = native_stream(&first_scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    if scopes
+        .iter()
+        .any(|scope| native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM) != stream)
+    {
+        return Err(CodecError::NotImplemented(
+            "independent Design scope streams have no shared authored timeline order".into(),
+        ));
+    }
+
+    let mut stream_timelines = timelines
+        .iter()
+        .filter(|timeline| native_stream(&timeline.id).unwrap_or(ids::DEFAULT_STREAM) == stream)
+        .collect::<Vec<_>>();
+    stream_timelines.sort_by_key(|timeline| timeline.source_ordinal);
+    if stream_timelines.is_empty() {
+        let first_family = design_feature_family(&first_scope.kind);
+        let homogeneous = scopes.iter().all(|scope| {
+            first_family.map_or_else(
+                || scope.kind == first_scope.kind,
+                |family| design_feature_family(&scope.kind) == Some(family),
+            )
+        });
+        let mut ordered = scopes.iter().collect::<Vec<_>>();
+        ordered.sort_by_key(|scope| scope.feature_ordinal);
+        let complete_ordinals = ordered.iter().enumerate().all(|(ordinal, scope)| {
+            u32::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| ordinal.checked_add(1))
+                == Some(scope.feature_ordinal)
+        });
+        if !homogeneous || !complete_ordinals {
+            return Err(CodecError::NotImplemented(
+                "Design scopes have no complete authored timeline order".into(),
+            ));
+        }
+        for (ordinal, scope) in ordered.into_iter().enumerate() {
+            let ordinal = u64::try_from(ordinal)
+                .map_err(|_| CodecError::Malformed("Design feature ordinal exceeds u64".into()))?;
+            if out
+                .insert(
+                    (
+                        native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM),
+                        scope.record_index,
+                    ),
+                    ordinal,
+                )
+                .is_some()
+            {
+                return Err(CodecError::Malformed(
+                    "Design scope record identity is not unique".into(),
+                ));
+            }
+        }
+        return Ok(out);
+    }
+
+    if !stream_timelines
+        .iter()
+        .enumerate()
+        .all(|(ordinal, timeline)| u32::try_from(ordinal).ok() == Some(timeline.source_ordinal))
+    {
+        return Err(CodecError::Malformed(
+            "Design timeline-record ordinals are not contiguous".into(),
+        ));
+    }
+    if stream_timelines
+        .iter()
+        .filter(|timeline| !timeline.item_record_indices.is_empty())
+        .count()
+        > 1
+    {
+        return Err(CodecError::NotImplemented(
+            "multiple nonempty Design timelines have no shared authored order".into(),
+        ));
+    }
+    let mut item_ordinals = HashMap::<u64, u64>::new();
+    let mut next_ordinal = 0_u64;
+    for timeline in stream_timelines {
+        for item in &timeline.item_record_indices {
+            if *item == 0 || item_ordinals.insert(*item, next_ordinal).is_some() {
+                return Err(CodecError::Malformed(
+                    "Design timeline item identity is not unique".into(),
+                ));
+            }
+            next_ordinal = next_ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("Design feature ordinal exceeds u64".into())
+            })?;
+        }
+    }
+    for scope in scopes {
+        let ordinal = item_ordinals
+            .get(&u64::from(scope.record_index))
+            .copied()
+            .ok_or_else(|| {
+                CodecError::Malformed(
+                    "Design parameter scope is absent from its feature timeline".into(),
+                )
+            })?;
+        if out.insert((stream, scope.record_index), ordinal).is_some() {
+            return Err(CodecError::Malformed(
+                "Design scope record identity is not unique".into(),
+            ));
+        }
+    }
+    Ok(out)
+}
+
+fn ensure_feature_dependencies_precede(
+    features: &[cadmpeg_ir::features::Feature],
+) -> Result<(), CodecError> {
+    let ordinals = features
+        .iter()
+        .map(|feature| (feature.id.clone(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    if ordinals.len() != features.len() {
+        return Err(CodecError::Malformed(
+            "projected Design feature identity is not unique".into(),
+        ));
+    }
+    let mut unique_ordinals = HashSet::with_capacity(features.len());
+    for feature in features {
+        if !unique_ordinals.insert(feature.ordinal) {
+            return Err(CodecError::Malformed(
+                "projected Design feature ordinal is not unique".into(),
+            ));
+        }
+        if feature.dependencies.iter().any(|dependency| {
+            ordinals
+                .get(dependency)
+                .is_some_and(|ordinal| *ordinal >= feature.ordinal)
+        }) {
+            return Err(CodecError::Malformed(
+                "Design feature dependency does not precede its authored timeline position".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Project parameter scopes and their document- or scope-owned parameters into
 /// the neutral construction history.
 // Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
@@ -72,6 +222,7 @@ pub struct ProjectInputs<'a> {
     clippy::too_many_arguments,
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag; a context struct would hide those inputs."
 )]
+#[cfg(test)]
 pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
@@ -85,10 +236,38 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
+    let mut timelines = Vec::<DesignFeatureTimeline>::new();
+    for scope in scopes {
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        let timeline = timelines
+            .iter_mut()
+            .find(|timeline| native_stream(&timeline.id) == Some(stream));
+        if let Some(timeline) = timeline {
+            timeline
+                .item_record_indices
+                .push(u64::from(scope.record_index));
+            timeline.item_record_index_offsets.push(0);
+        } else {
+            timelines.push(DesignFeatureTimeline {
+                id: ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                byte_offset: 0,
+                class_tag: "256".into(),
+                record_index: 1,
+                source_ordinal: 0,
+                frame_length: 0,
+                context_record_index: 1,
+                context_record_index_offset: 0,
+                item_count_offset: 0,
+                item_record_indices: vec![u64::from(scope.record_index)],
+                item_record_index_offsets: vec![0],
+            });
+        }
+    }
     project_parameter_design_with_edge_identities(&ProjectInputs {
         native,
         owners,
         scopes,
+        timelines: &timelines,
         construction_groups,
         fillet_radius_groups,
         edge_operands,
@@ -101,15 +280,19 @@ pub fn project_parameter_design(
         body_bindings: &[],
         histories: &[],
     })
+    .expect("test projection has a synthetic exact timeline")
 }
 
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub fn project_parameter_design_with_edge_identities(
     inputs: &ProjectInputs<'_>,
-) -> (
-    Vec<cadmpeg_ir::features::Feature>,
-    Vec<cadmpeg_ir::features::DesignParameter>,
-) {
+) -> Result<
+    (
+        Vec<cadmpeg_ir::features::Feature>,
+        Vec<cadmpeg_ir::features::DesignParameter>,
+    ),
+    CodecError,
+> {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
         Length, ParameterId, ParameterValue, PatternForm, PatternKind, PrimitiveSolid,
@@ -120,6 +303,7 @@ pub fn project_parameter_design_with_edge_identities(
         native,
         owners,
         scopes,
+        timelines,
         construction_groups,
         edge_operands,
         edge_identity_operands,
@@ -132,6 +316,8 @@ pub fn project_parameter_design_with_edge_identities(
         histories,
         ..
     } = inputs;
+
+    let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
 
     let scope_ids = scopes
         .iter()
@@ -935,7 +1121,7 @@ pub fn project_parameter_design_with_edge_identities(
             };
             Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
-                ordinal: scope.byte_offset,
+                ordinal: source_ordinals[&(native_scope, scope.record_index)],
                 name: Some(format!("{} {}", scope.kind, scope.feature_ordinal)),
                 suppressed: Some(
                     matches!(
@@ -1043,7 +1229,6 @@ pub fn project_parameter_design_with_edge_identities(
         }
     }
     features.sort_by_key(|feature| feature.id.clone());
-    assign_feature_ordinals(&mut features);
 
     let unresolved_owner_parameter_ids = native
         .iter()
@@ -1259,9 +1444,9 @@ pub fn project_parameter_design_with_edge_identities(
                 .cloned(),
         );
     }
-    assign_feature_ordinals(&mut features);
+    ensure_feature_dependencies_precede(&features)?;
     parameters.sort_by_key(|parameter| parameter.id.clone());
-    (features, parameters)
+    Ok((features, parameters))
 }
 
 pub(crate) fn project_combine(
@@ -3585,37 +3770,6 @@ fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignPa
         for (index, ordinal) in order.into_iter().zip(ordinals) {
             parameters[index].ordinal = ordinal;
         }
-    }
-}
-
-fn assign_feature_ordinals(features: &mut [cadmpeg_ir::features::Feature]) {
-    let indices = features
-        .iter()
-        .enumerate()
-        .map(|(index, feature)| (feature.id.clone(), index))
-        .collect::<HashMap<_, _>>();
-    let mut assigned = HashSet::new();
-    let mut order = Vec::with_capacity(features.len());
-    while order.len() < features.len() {
-        let candidate = features
-            .iter()
-            .enumerate()
-            .filter(|(_, feature)| !assigned.contains(&feature.id))
-            .filter(|(_, feature)| {
-                feature.dependencies.iter().all(|dependency| {
-                    !indices.contains_key(dependency) || assigned.contains(dependency)
-                })
-            })
-            .min_by_key(|(_, feature)| (feature.ordinal, feature.id.clone()))
-            .map(|(index, feature)| (index, feature.id.clone()));
-        let Some((index, id)) = candidate else {
-            return;
-        };
-        assigned.insert(id);
-        order.push(index);
-    }
-    for (ordinal, index) in order.into_iter().enumerate() {
-        features[index].ordinal = ordinal as u64;
     }
 }
 

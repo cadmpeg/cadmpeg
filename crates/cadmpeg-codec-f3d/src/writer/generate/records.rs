@@ -221,6 +221,7 @@ pub(crate) fn encode_design_bulkstream(
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
+                timelines: &native.design_feature_timelines,
                 construction_groups: &native.design_construction_operand_groups,
                 fillet_radius_groups: &native.design_fillet_radius_groups,
                 edge_operands: &native.design_edge_operands,
@@ -233,7 +234,7 @@ pub(crate) fn encode_design_bulkstream(
                 body_bindings: &native.design_body_bindings,
                 histories: &native.asm_histories,
             },
-        );
+        )?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),

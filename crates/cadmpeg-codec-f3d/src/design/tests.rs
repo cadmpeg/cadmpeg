@@ -126,12 +126,13 @@ use crate::records::{
     DesignDirectFaceOperation, DesignDraftOperation, DesignEdgeIdentityOperand, DesignEntityHeader,
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudePrologue, DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFaceOperand,
-    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFixedChamferParameters,
-    DesignFixedExtrudeDistance, DesignFixedExtrudeParameters, DesignFixedExtrudeScalar,
-    DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecipeReference, DesignRecordHeader, DesignRuledSurfaceCorner, DesignRuledSurfaceMethod,
-    DesignScaleOperation, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignFaceRecipeNode, DesignFaceRecipeStructure, DesignFeatureTimeline,
+    DesignFixedChamferParameters, DesignFixedExtrudeDistance, DesignFixedExtrudeParameters,
+    DesignFixedExtrudeScalar, DesignFixedFilletParameters, DesignHoleConstruction, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
+    DesignRuledSurfaceCorner, DesignRuledSurfaceMethod, DesignScaleOperation,
+    DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
     DesignSurfaceExtendMethod, DesignSurfaceExtendOperation, DesignSurfaceOffsetOperation,
     DesignSurfaceOffsetSupport, DesignSurfaceStitchOperation, DesignThreadConstruction,
     DesignThreadForm, DesignTopologyRecipeSide, LostEdgeReference, PersistentSubentityTag,
@@ -865,6 +866,155 @@ fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
         .0
         .chars()
         .any(char::is_whitespace));
+}
+
+#[test]
+fn feature_projection_uses_timeline_items_not_scope_byte_order() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut earlier = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#900"),
+        "Extrude",
+        100,
+    );
+    earlier.byte_offset = 900;
+    earlier.history_state_id = Some(7);
+    let mut later = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#100"),
+        "Fillet",
+        200,
+    );
+    later.byte_offset = 100;
+    later.previous_history_state_id = Some(7);
+    let scopes = [later.clone(), earlier.clone()];
+    let timeline = |items| DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+        byte_offset: 10,
+        class_tag: "256".into(),
+        record_index: 35,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 17,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: items,
+        item_record_index_offsets: vec![0; 3],
+    };
+    let authored = timeline(vec![100, 150, 200]);
+    let project = |timeline: &DesignFeatureTimeline| {
+        project_parameter_design_with_edge_identities(
+            &crate::design::feature_project::ProjectInputs {
+                native: &[],
+                owners: &[],
+                scopes: &scopes,
+                timelines: std::slice::from_ref(timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                placements: &[],
+                body_bindings: &[],
+                histories: &[],
+            },
+        )
+    };
+    let (features, _) = project(&authored).expect("exact authored order");
+    let earlier_feature = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&earlier.id))
+        .expect("earlier feature");
+    let later_feature = features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(&later.id))
+        .expect("later feature");
+    assert_eq!(earlier_feature.ordinal, 0);
+    assert_eq!(later_feature.ordinal, 2);
+    assert_eq!(later_feature.dependencies, [earlier_feature.id.clone()]);
+
+    let unrelated = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
+        item_record_indices: vec![9000],
+        item_record_index_offsets: vec![0],
+        ..authored.clone()
+    };
+    let ordinals = crate::design::feature_project::authored_scope_ordinals(
+        &scopes,
+        &[unrelated, authored.clone()],
+    )
+    .expect("an unrelated timeline does not shift this stream");
+    assert_eq!(ordinals[&(stream, 100)], 0);
+    assert_eq!(ordinals[&(stream, 200)], 2);
+
+    let mut reversed = timeline(vec![200, 150, 100]);
+    reversed.item_record_index_offsets = vec![0; reversed.item_record_indices.len()];
+    let error = project(&reversed).expect_err("forward history edge must be rejected");
+    assert!(error
+        .to_string()
+        .contains("dependency does not precede its authored timeline position"));
+
+    let second = DesignFeatureTimeline {
+        source_ordinal: 1,
+        record_index: 36,
+        item_record_indices: vec![300],
+        item_record_index_offsets: vec![0],
+        ..authored.clone()
+    };
+    let error = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &[],
+            owners: &[],
+            scopes: &scopes,
+            timelines: &[authored, second],
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect_err("independent nonempty timelines have no total order");
+    assert!(error
+        .to_string()
+        .contains("multiple nonempty Design timelines"));
+}
+
+#[test]
+fn timeline_less_feature_family_uses_complete_family_ordinals() {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut first = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#100"),
+        "Extrude",
+        100,
+    );
+    first.feature_ordinal = 1;
+    let mut second = DesignParameterScope::empty(
+        &format!("{stream}:design-parameter-scope#200"),
+        "Extrude",
+        200,
+    );
+    second.feature_ordinal = 2;
+    let scopes = [second.clone(), first.clone()];
+    let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
+        .expect("complete family ordinals carry exact order");
+    assert_eq!(ordinals[&(stream, first.record_index)], 0);
+    assert_eq!(ordinals[&(stream, second.record_index)], 1);
+
+    let mut mixed = second;
+    mixed.kind = "Fillet".into();
+    let error = crate::design::feature_project::authored_scope_ordinals(&[first, mixed], &[])
+        .expect_err("mixed families have no timeline-independent total order");
+    assert!(error
+        .to_string()
+        .contains("no complete authored timeline order"));
 }
 
 #[test]
@@ -8904,6 +9054,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &parameters,
         owners: &owners,
         scopes: &[],
+        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
         fillet_radius_groups: &[],
         edge_operands: &[],
@@ -9116,6 +9267,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
         native: &parameters,
         owners: &owners,
         scopes: &target_scopes,
+        timelines: &[],
         construction_groups: &groups,
         fillet_radius_groups: &[],
         edge_operands: &[],
@@ -9181,6 +9333,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         native: &[],
         owners: &[],
         scopes: &[],
+        timelines: &[],
         construction_groups: &[],
         fillet_radius_groups: &[],
         edge_operands: &[],
@@ -9494,6 +9647,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             native: &parameters,
             owners: &owners,
             scopes: &[],
+            timelines: &[],
             construction_groups: &groups,
             fillet_radius_groups: &[],
             edge_operands: &[],
@@ -10229,11 +10383,28 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         crate::ids::neutral_feature_id(&second_plane),
     ];
     let plane_scopes = vec![first_plane, second_plane, compact_split_scope.clone()];
+    let plane_timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:Design/BulkStream.dat", 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: plane_scopes
+            .iter()
+            .map(|scope| u64::from(scope.record_index))
+            .collect(),
+        item_record_index_offsets: vec![0; plane_scopes.len()],
+    };
     let (plane_features, _) = project_parameter_design_with_edge_identities(
         &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &plane_scopes,
+            timelines: std::slice::from_ref(&plane_timeline),
             construction_groups: &split_groups,
             fillet_radius_groups: &[],
             edge_operands: &[],
@@ -10246,7 +10417,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             body_bindings: &[],
             histories: &[],
         },
-    );
+    )
+    .expect("exact synthetic feature timeline");
     let plane_split = plane_features
         .iter()
         .find(|feature| feature.source_tag.as_deref() == Some("SplitFace"))
@@ -21750,19 +21922,45 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         variant: Some(0),
         companion_record_index: record_index + 1,
     };
-    let (features, parameters) = project_parameter_design(
-        &[
-            parameter(44, 45, "10 mm", "Width"),
-            parameter(54, 55, "Width / 2", "Depth"),
-        ],
-        &[owner(44, 45, 12), owner(54, 55, 22)],
-        &[successor, predecessor],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let parameters = [
+        parameter(44, 45, "10 mm", "Width"),
+        parameter(54, 55, "Width / 2", "Depth"),
+    ];
+    let owners = [owner(44, 45, 12), owner(54, 55, 22)];
+    let scopes = [successor, predecessor];
+    let timeline = DesignFeatureTimeline {
+        id: crate::ids::native_design_feature_timeline_id_in_stream("f3d:native", 0),
+        byte_offset: 0,
+        class_tag: "256".into(),
+        record_index: 1,
+        source_ordinal: 0,
+        frame_length: 0,
+        context_record_index: 1,
+        context_record_index_offset: 0,
+        item_count_offset: 0,
+        item_record_indices: vec![12, 22],
+        item_record_index_offsets: vec![0, 0],
+    };
+    let (features, parameters) = project_parameter_design_with_edge_identities(
+        &crate::design::feature_project::ProjectInputs {
+            native: &parameters,
+            owners: &owners,
+            scopes: &scopes,
+            timelines: std::slice::from_ref(&timeline),
+            construction_groups: &[],
+            fillet_radius_groups: &[],
+            edge_operands: &[],
+            edge_identity_operands: &[],
+            entity_selection_operands: &[],
+            curve_identities: &[],
+            face_operands: &[],
+            body_recipe_operands: &[],
+            placements: &[],
+            body_bindings: &[],
+            histories: &[],
+        },
+    )
+    .expect("authored cross-family timeline");
     let predecessor = features
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))

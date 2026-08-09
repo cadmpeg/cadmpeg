@@ -60,8 +60,7 @@ pub fn decode_parameter_scopes(
         let bytes = scan.entry_bytes(&entry.name)?;
         let stream = ids::native_scope(&entry.name);
         let records = IndexedRecordOffsets::build(bytes);
-        let stream_types =
-            crate::design::decode::sketch::stream_types_by_entity(types, &entry.name);
+        let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records) {
             let Some(mut scope) = parse_parameter_scope(bytes, &records, &header) else {
