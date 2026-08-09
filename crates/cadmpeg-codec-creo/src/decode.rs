@@ -3714,15 +3714,35 @@ fn section_equation_coordinate_equalities(
     equations
         .rows
         .iter()
-        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
         .filter_map(|equation| {
-            let [Some(first), Some(second)] = equation.arguments.as_slice() else {
-                return None;
+            let (first, second, auxiliary) = match equation.function_id {
+                2 if equation.arguments.len() == 2 => {
+                    let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                        return None;
+                    };
+                    (*first, *second, None)
+                }
+                13 if equation.arguments.len() == 3 => {
+                    let [Some(first), Some(second), Some(auxiliary)] =
+                        equation.arguments.as_slice()
+                    else {
+                        return None;
+                    };
+                    (*first, *second, Some(*auxiliary))
+                }
+                _ => return None,
             };
-            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
-            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+            let first = variables.rows.get(usize::try_from(first).ok()?)?;
+            let second = variables.rows.get(usize::try_from(second).ok()?)?;
+            if let Some(auxiliary) = auxiliary {
+                let auxiliary = variables.rows.get(usize::try_from(auxiliary).ok()?)?;
+                if auxiliary.variable_type != 7 || auxiliary.value != Some(0.0) {
+                    return None;
+                }
+            }
             if first.variable_type != second.variable_type
                 || !matches!(first.variable_type, 1 | 2)
+                || auxiliary.is_some() && first.variable_type != 2
                 || ambiguous_point_ids.contains(&first.key)
                 || ambiguous_point_ids.contains(&second.key)
                 || first.key == second.key

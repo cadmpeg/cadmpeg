@@ -6626,6 +6626,67 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
 }
 
 #[test]
+fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x0d\xf8\x03\x00\x01\x02\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 3,
+            entity_ref: None,
+            rows: vec![row(2, 1, Some(4.5)), row(2, 2, None), row(7, 3, Some(0.0))],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition).get(&2),
+        Some(&[None, Some(4.5)])
+    );
+
+    let mut nonzero_auxiliary = definition;
+    nonzero_auxiliary
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[2]
+        .value = Some(1.0);
+    assert_eq!(
+        resolved_section_coordinates(&nonzero_auxiliary).get(&2),
+        None
+    );
+}
+
+#[test]
 fn equation_function_thirty_five_solves_point_on_reference_line() {
     let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
         variable_type,

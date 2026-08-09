@@ -1500,6 +1500,11 @@ type-2 coordinates of two distinct reference points. The seventh row has type
 `4`; the final two rows have type `5` and scalar value zero. The target point
 lies on the infinite line through the two reference points. A complete line
 equation is required before a missing target coordinate is solved.
+Function `13` has three argument slots. The first two rows have the same
+coordinate type `2` and identify distinct point keys. The final row has type
+`7` and scalar value zero. The equation asserts equality of the selected
+ordinates. An incomplete auxiliary row, a nonzero auxiliary value, a mixed
+coordinate type, or an ambiguous point key leaves the equation native.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
