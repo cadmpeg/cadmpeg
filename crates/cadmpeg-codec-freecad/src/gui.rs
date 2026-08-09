@@ -747,14 +747,15 @@ fn transfer_topology_colors(
         return Ok(());
     };
     // FreeCAD uses a single list entry as a uniform color for every mapped subelement.
-    if group.names.is_empty() {
+    let mapped_count = group.names.len().saturating_sub(1);
+    if mapped_count == 0 {
         return Ok(());
     }
-    if count != 1 && group.names.len() != count {
+    if count != 1 && mapped_count != count {
         return Err(CodecError::Malformed(format!(
             "{provider_name} {} color count {count} does not match {} mapped subelements",
             kind.name(),
-            group.names.len()
+            mapped_count
         )));
     }
     for (index, bytes) in bytes[4..].chunks_exact(4).enumerate() {
@@ -769,7 +770,7 @@ fn transfer_topology_colors(
             .into_iter()
             .flat_map(|groups| groups.iter().flatten());
         let indexed_names = (count != 1)
-            .then_some(&group.names[index])
+            .then_some(&group.names[index + 1])
             .into_iter()
             .flat_map(|names| names.iter());
         let mut emitted_appearance = false;

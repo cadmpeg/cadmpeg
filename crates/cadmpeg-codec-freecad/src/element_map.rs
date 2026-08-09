@@ -206,24 +206,22 @@ pub(crate) fn bind_topology(
         };
         for group in &mut root.groups {
             let ids = topology_ids(ir, payload_id, &group.indexed_name);
-            let populated_positions = group
-                .names
-                .iter()
-                .enumerate()
-                .filter_map(|(position, names)| (!names.is_empty()).then_some(position))
-                .collect::<Vec<_>>();
-            if populated_positions.is_empty()
-                || !ids.len().is_multiple_of(populated_positions.len())
-            {
-                continue;
-            }
-            let name_count = populated_positions.len();
-            for (position, id) in ids.into_iter().enumerate() {
-                let slot = populated_positions[position % name_count];
-                for name in &mut group.names[slot] {
-                    name.topology_ids.push(id.clone());
-                }
-            }
+            bind_group_occurrences(group, &ids);
+        }
+    }
+}
+
+fn bind_group_occurrences(group: &mut ElementMapGroup, ids: &[String]) {
+    let source_count = group.names.len().saturating_sub(1);
+    if source_count == 0 {
+        return;
+    }
+    for (position, id) in ids.iter().enumerate() {
+        // IndexedName position zero is reserved. Each complete one-based
+        // sequence describes another placed occurrence of the source shape.
+        let slot = position % source_count + 1;
+        for name in &mut group.names[slot] {
+            name.topology_ids.push(id.clone());
         }
     }
 }
@@ -781,5 +779,27 @@ mod tests {
         )
         .expect("parse absolute element map");
         assert_eq!(map.map_id, 1);
+    }
+
+    #[test]
+    fn topology_binding_preserves_empty_indexed_name_slots() {
+        let mapped_name = || ElementMappedName {
+            encoded: ";stable.0".into(),
+            resolved: Some("stable".into()),
+            string_ids: Vec::new(),
+            topology_ids: Vec::new(),
+        };
+        let mut group = ElementMapGroup {
+            indexed_name: "Edge".into(),
+            children: Vec::new(),
+            names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
+        };
+        let ids = (1..=4)
+            .map(|index| format!("edge-{index}"))
+            .collect::<Vec<_>>();
+
+        bind_group_occurrences(&mut group, &ids);
+
+        assert_eq!(group.names[1][0].topology_ids, ["edge-1", "edge-3"]);
     }
 }

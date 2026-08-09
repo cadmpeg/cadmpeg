@@ -208,7 +208,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `freecad_fcstd.md` §7 "A newly encoded element map likewise uses a compatibility marker" states that group order and name position establish the transient `Face1`, `Edge1`, and `Vertex1` indices. Those positions connect persistent names to every placed neutral occurrence. The source index belongs to the B-rep topology map, not to persistent identity.
 
-**Conflict.** `element_map.rs` `bind_topology` gathers all neutral ids of one kind in arena traversal order. It assigns occurrence `position` to persistent-name slot `position % populated_name_count`. No source topology index is carried through this join, and no check proves that arena order equals the B-rep indexed-map order for each placement. A different traversal or a missing occurrence can attach a valid persistent name to the wrong face, edge, or vertex.
+**Conflict.** `element_map.rs` `bind_topology` gathers all neutral ids of one kind in arena traversal order. It assigns the Nth id to one-based name position N and repeats the complete sequence for placed occurrences. No source topology index is carried through this join, and no check proves that arena order equals the B-rep indexed-map order for each placement. A different traversal or a missing occurrence can attach a valid persistent name to the wrong face, edge, or vertex.
 
 **Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.
 

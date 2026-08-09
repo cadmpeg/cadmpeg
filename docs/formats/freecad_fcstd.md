@@ -123,10 +123,12 @@ Each node contains ordered indexed-name groups. A group contains child-map descr
 one persistent-name chain per transient indexed element. Chains terminate with `0`; each name
 encodes a literal or dictionary-derived base, a postfix-dictionary index, and persistent string-id
 references. The final node owns the shape. Group order and name position establish `Face1`,
-`Edge1`, `Vertex1`, and the corresponding other topology-kind indices. These transient positions
-are connected to persistent names and to every placed neutral occurrence; they are never exposed
-as persistent identity by themselves. Counts, indices, dictionary references, string references,
-property ownership, and neutral topology links are validated without synthesizing missing names.
+`Edge1`, `Vertex1`, and the corresponding other topology-kind indices. Name position zero is
+reserved; the transient element with one-based index N uses name position N. Each placed root
+repeats the same one-based position sequence. These transient positions are connected to
+persistent names and to every placed neutral occurrence; they are never exposed as persistent
+identity by themselves. Counts, indices, dictionary references, string references, property
+ownership, and neutral topology links are validated without synthesizing missing names.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

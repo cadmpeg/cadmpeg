@@ -5247,12 +5247,15 @@ a.c PersistentSource
 <ElementMap2 count="5">
 41 PostfixCount 0 MapCount 1
 ElementMap 1 41 3
-Face ChildCount 0 NameCount 1
+Face ChildCount 0 NameCount 2
+0
 ;FaceStable.0.a 0
-Edge ChildCount 0 NameCount 2
+Edge ChildCount 0 NameCount 3
+0
 ;EdgeStable1.0.a 0
 ;EdgeStable2.0.a 0
-Vertex ChildCount 0 NameCount 2
+Vertex ChildCount 0 NameCount 3
+0
 ;VertexStable1.0.a 0
 ;VertexStable2.0.a 0
 EndMap
@@ -5319,11 +5322,11 @@ Co 1001000 +2 0 *
     assert_eq!(maps.len(), 1);
     assert_eq!(maps[0].hasher_index, Some(0));
     let groups = &maps[0].maps[0].groups;
-    assert_eq!(groups[0].names[0][0].topology_ids.len(), 1);
-    assert_eq!(groups[1].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[0].names[1][0].topology_ids.len(), 1);
     assert_eq!(groups[1].names[1][0].topology_ids.len(), 1);
-    assert_eq!(groups[2].names[0][0].topology_ids.len(), 1);
+    assert_eq!(groups[1].names[2][0].topology_ids.len(), 1);
     assert_eq!(groups[2].names[1][0].topology_ids.len(), 1);
+    assert_eq!(groups[2].names[2][0].topology_ids.len(), 1);
     assert!(result.ir.model.appearance_bindings.iter().any(|binding| {
         matches!(
             binding.target,
