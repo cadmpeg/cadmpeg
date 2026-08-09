@@ -23006,12 +23006,26 @@ fn ordered_planar_face_loops<'a>(
     Some(ordered)
 }
 
+fn face_boundary_plane(
+    loops: &[&crate::topology::Loop],
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<PlaneEquation> {
+    topology_bound_plane(loops.iter().flat_map(|lp| {
+        lp.half_edges
+            .iter()
+            .filter_map(|half_edge| incidence.get(half_edge))
+            .filter_map(|binding| solved_vertices.get(&binding.start_vertex_id).copied())
+    }))
+}
+
 fn ordered_face_loops<'a>(
     loops: Vec<&'a crate::topology::Loop>,
     plane: Option<PlaneEquation>,
     incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Option<Vec<&'a crate::topology::Loop>> {
+    let plane = plane.or_else(|| face_boundary_plane(&loops, incidence, solved_vertices));
     if let Some(plane) = plane {
         ordered_planar_face_loops(loops, plane, incidence, solved_vertices)
     } else {
@@ -34468,7 +34482,8 @@ fn build_report(
         severity: Severity::Blocking,
         message: "Native curve half-edges and closed loops were decoded. Components with complete \
                   solved boundaries and unique face orientations transfer as \
-                  body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components \
+                  body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use \
+                  strict containment in a placed or boundary-proven plane. Remaining components \
                   require face-instance partitioning, surface parameter bindings, curve geometry, \
                   or vertex coordinates."
             .to_string(),

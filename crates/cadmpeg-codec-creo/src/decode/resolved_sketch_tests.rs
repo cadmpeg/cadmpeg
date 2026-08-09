@@ -15356,6 +15356,65 @@ fn planar_loop_containment_selects_one_outer_boundary() {
 }
 
 #[test]
+fn planar_loop_containment_derives_plane_from_solved_boundary_vertices() {
+    let make_loop = |first_curve: u32| crate::topology::Loop {
+        face_id: 9,
+        half_edges: (0_u32..4)
+            .map(|index| HalfEdgeId {
+                curve_id: first_curve + index,
+                side: 0,
+            })
+            .collect(),
+    };
+    let outer = make_loop(1);
+    let inner = make_loop(5);
+    let incidences = (1..=8)
+        .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: vertex,
+                side: 0,
+            },
+            start_vertex_id: vertex,
+            end_vertex_id: Some(if vertex % 4 == 0 {
+                vertex - 3
+            } else {
+                vertex + 1
+            }),
+        })
+        .collect::<Vec<_>>();
+    let incidence = incidences
+        .iter()
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let points = BTreeMap::from([
+        (1, [-2.0, -2.0, 4.0]),
+        (2, [2.0, -2.0, 4.0]),
+        (3, [2.0, 2.0, 4.0]),
+        (4, [-2.0, 2.0, 4.0]),
+        (5, [-1.0, -1.0, 4.0]),
+        (6, [1.0, -1.0, 4.0]),
+        (7, [1.0, 1.0, 4.0]),
+        (8, [-1.0, 1.0, 4.0]),
+    ]);
+
+    let ordered = ordered_face_loops(vec![&inner, &outer], None, &incidence, &points)
+        .expect("boundary vertices prove a unique plane");
+    assert_eq!(ordered[0].half_edges[0].curve_id, 1);
+    assert_eq!(ordered[1].half_edges[0].curve_id, 5);
+
+    let non_planar = points
+        .into_iter()
+        .map(|(id, mut point)| {
+            if id == 8 {
+                point[2] += 1.0;
+            }
+            (id, point)
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert!(ordered_face_loops(vec![&outer, &inner], None, &incidence, &non_planar).is_none());
+}
+
+#[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {
     let surface = NurbsSurface {
         u_degree: 3,

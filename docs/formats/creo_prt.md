@@ -1403,7 +1403,7 @@ neither carrier equation and does not assign native parameter semantics.
 
 ## 5. Topology and section records
 
-Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. Shells follow connected components of face references.
+Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Shells follow connected components of face references.
 
 Use the following order to select a body count:
 

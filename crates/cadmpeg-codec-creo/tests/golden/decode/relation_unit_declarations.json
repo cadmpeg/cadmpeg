@@ -626,7 +626,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
+        "message": "Native curve half-edges and closed loops were decoded. Components with complete solved boundaries and unique face orientations transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; multi-loop faces use strict containment in a placed or boundary-proven plane. Remaining components require face-instance partitioning, surface parameter bindings, curve geometry, or vertex coordinates.",
         "severity": "blocking"
       },
       {
