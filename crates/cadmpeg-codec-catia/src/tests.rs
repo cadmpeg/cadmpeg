@@ -6065,6 +6065,139 @@ pub(crate) fn b5_closed_triangle_stream_over_edges(edges: [u32; 3]) -> Vec<u8> {
     bytes
 }
 
+/// Build the closed-triangle object stream with the complete native endpoint
+/// chain: `5e` edges reference `5d` vertices and `06` endpoint incidences;
+/// each `5d` points through one `05` roster to the two incident `06` records.
+pub(crate) fn b5_closed_triangle_stream_with_native_vertex_chain() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+    const LOOP: u32 = 400;
+    const FACE: u32 = 500;
+    const VERTICES: [u32; 3] = [600, 601, 602];
+    const ROSTERS: [u32; 3] = [800, 801, 802];
+    const INCIDENCES: [u32; 3] = [700, 701, 702];
+    let pcurves = [
+        (200u32, [0.0, 0.0], [1.0, 0.0]),
+        (201, [1.0, 0.0], [0.0, 1.0]),
+        (202, [0.0, 1.0], [0.0, 0.0]),
+    ];
+    let edges = [
+        (
+            300u32,
+            200,
+            VERTICES[0],
+            VERTICES[1],
+            INCIDENCES[0],
+            INCIDENCES[1],
+        ),
+        (
+            301,
+            201,
+            VERTICES[1],
+            VERTICES[2],
+            INCIDENCES[1],
+            INCIDENCES[2],
+        ),
+        (
+            302,
+            202,
+            VERTICES[2],
+            VERTICES[0],
+            INCIDENCES[2],
+            INCIDENCES[0],
+        ),
+    ];
+
+    let mut bytes = Vec::new();
+    append_b5_record(&mut bytes, 0x27, SURFACE, &b5_plane_payload([0.0; 3]));
+    for (id, start, end) in pcurves {
+        append_b5_record(
+            &mut bytes,
+            0x21,
+            id,
+            &b5_linear_pcurve_payload(
+                u16::try_from(SURFACE).expect("support surface id fits a `u16`"),
+                start,
+                end,
+            ),
+        );
+    }
+    for (id, pcurve, start_vertex, end_vertex, start_incidence, end_incidence) in edges {
+        let mut payload = vec![0x85];
+        for reference in [
+            pcurve,
+            start_vertex,
+            end_vertex,
+            start_incidence,
+            end_incidence,
+        ] {
+            payload.extend_from_slice(&b5_object_ref(reference));
+        }
+        payload.push(0x2a);
+        append_b5_record(&mut bytes, 0x5e, id, &payload);
+    }
+
+    let mut loop_payload = vec![0x87];
+    for ((pcurve, _, _), (edge, _, _, _, _, _)) in pcurves.into_iter().zip(edges) {
+        loop_payload.extend_from_slice(&b5_object_ref(pcurve));
+        loop_payload.extend_from_slice(&b5_object_ref(edge));
+    }
+    loop_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    loop_payload.extend_from_slice(&[0x83, 0x05, 0x05, 0x03]);
+    for _ in 0..pcurves.len() {
+        loop_payload.extend_from_slice(&[0x01, 0x00, 0xff, 0xff, 0x01, 0x00]);
+    }
+    loop_payload.push(0x01);
+    append_b5_record(&mut bytes, 0x62, LOOP, &loop_payload);
+
+    let mut face_payload = vec![0x82];
+    face_payload.extend_from_slice(&b5_object_ref(SURFACE));
+    face_payload.extend_from_slice(&b5_object_ref(LOOP));
+    face_payload.push(0x05);
+    append_b5_record(&mut bytes, 0x5f, FACE, &face_payload);
+
+    for (vertex, roster) in VERTICES.into_iter().zip(ROSTERS) {
+        let mut payload = vec![0x81];
+        payload.extend_from_slice(&b5_object_ref(roster));
+        payload.push(0x04);
+        append_b5_record(&mut bytes, 0x5d, vertex, &payload);
+    }
+    for (roster, incidence_ids) in ROSTERS.into_iter().zip([
+        [INCIDENCES[0], INCIDENCES[2]],
+        [INCIDENCES[1], INCIDENCES[0]],
+        [INCIDENCES[2], INCIDENCES[1]],
+    ]) {
+        let mut payload = vec![0x82];
+        for incidence in incidence_ids {
+            payload.extend_from_slice(&b5_object_ref(incidence));
+        }
+        append_b5_record(&mut bytes, 0x05, roster, &payload);
+    }
+    for ((id, curves), parameters) in INCIDENCES
+        .into_iter()
+        .zip([[200, 202], [200, 201], [201, 202]])
+        .zip([[0.0, 1.0], [1.0, 0.0], [1.0, 0.0]])
+    {
+        let mut payload = vec![0x82];
+        for curve in curves {
+            payload.extend_from_slice(&b5_object_ref(curve));
+        }
+        payload.push(0x82);
+        for parameter in parameters {
+            payload.extend_from_slice(&le_f64(parameter));
+            payload.push(0x81);
+        }
+        append_b5_record(&mut bytes, 0x06, id, &payload);
+    }
+
+    for point in [[0.0f32, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 #[test]
 fn decode_geometry_fallback_transfers_an_external_a8_pole_grid() {
     let file = object_main_catpart(&a8_elided_surface_stream());
@@ -21077,6 +21210,41 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
         .pcurves
         .iter()
         .all(|pcurve| pcurve.parameter_range == Some([0.0, 1.0])));
+    assert!(result.report.losses.iter().all(|loss| {
+        !matches!(
+            loss.code.category(),
+            cadmpeg_ir::report::LossCategory::Geometry | cadmpeg_ir::report::LossCategory::Topology
+        ) || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_float_packed_stream_transfers_a_complete_native_vertex_chain() {
+    let stream = b5_closed_triangle_stream_with_native_vertex_chain();
+    let graph = crate::families::b5::graph::parse(&stream).expect("generated B5 topology");
+    assert!(graph.complete);
+    assert_eq!(graph.vertex_incidence_links.len(), 3);
+    assert_eq!(graph.parameter_incidences.len(), 3);
+    assert_eq!(graph.edges.len(), 3);
+    assert_eq!(graph.edge_parameter_incidences.len(), 3);
+    assert_eq!(graph.logical_vertex_refs, [600, 601, 602]);
+    assert_eq!(
+        graph.logical_vertex_points,
+        vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+    );
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode complete native vertex chain");
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
     assert!(result.report.losses.iter().all(|loss| {
         !matches!(
             loss.code.category(),
