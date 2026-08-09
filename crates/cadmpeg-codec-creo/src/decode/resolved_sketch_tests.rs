@@ -6687,6 +6687,84 @@ fn equation_function_thirteen_transfers_zero_auxiliary_same_coordinate() {
 }
 
 #[test]
+fn equation_function_thirty_three_solves_unique_equal_line_length_coordinate() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x21\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 9,
+            entity_ref: None,
+            rows: vec![
+                row(1, 1, Some(0.0)),
+                row(2, 1, Some(0.0)),
+                row(1, 2, Some(0.0)),
+                row(2, 2, Some(4.0)),
+                row(1, 3, Some(0.0)),
+                row(2, 3, Some(0.0)),
+                row(1, 4, None),
+                row(2, 4, Some(4.0)),
+                row(7, 5, Some(0.0)),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition).get(&4),
+        Some(&[Some(0.0), Some(4.0)])
+    );
+
+    let mut ambiguous = definition.clone();
+    ambiguous.variables.as_mut().expect("variables").rows[7].value = Some(0.0);
+    assert_eq!(
+        resolved_section_coordinates(&ambiguous).get(&4),
+        Some(&[None, Some(0.0)])
+    );
+
+    let mut nonzero_auxiliary = definition;
+    nonzero_auxiliary
+        .variables
+        .as_mut()
+        .expect("variables")
+        .rows[8]
+        .value = Some(1.0);
+    assert_eq!(
+        resolved_section_coordinates(&nonzero_auxiliary).get(&4),
+        Some(&[None, Some(4.0)])
+    );
+}
+
+#[test]
 fn equation_function_thirty_five_solves_point_on_reference_line() {
     let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
         variable_type,

@@ -331,6 +331,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations. Complete `eqtn_arr` function-0, function-2, function-3, and function-35 rows define radial endpoint, scalar equality, unsigned coordinate distance, radius binding, and point-on-line equations when their positional row grammars are complete.
 Function-13 rows with two type-2 point ordinates and a zero type-7 auxiliary
 row define a same-coordinate equation.
+Function-33 rows with four type-1/type-2 coordinate pairs identifying two
+endpoint pairs and a zero type-7 auxiliary row define equality of the two
+squared endpoint-pair lengths.
 
 **Need.** We must know each equation to solve the section geometry.
 

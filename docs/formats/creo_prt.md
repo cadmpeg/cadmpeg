@@ -1505,6 +1505,14 @@ coordinate type `2` and identify distinct point keys. The final row has type
 `7` and scalar value zero. The equation asserts equality of the selected
 ordinates. An incomplete auxiliary row, a nonzero auxiliary value, a mixed
 coordinate type, or an ambiguous point key leaves the equation native.
+Function `33` has nine argument slots. The first eight slots are four type-1 and
+type-2 coordinate pairs. The first two pairs identify one endpoint pair and the
+next two pairs identify the other. The final row has type `7` and scalar value
+zero. The equation asserts equality of the squared Euclidean lengths of
+the two endpoint pairs. A missing coordinate is solved only when the resulting
+quadratic has one finite root that satisfies the complete equation system; two
+roots, no root, an incomplete auxiliary row, or an ambiguous point key leaves
+the equation native.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table

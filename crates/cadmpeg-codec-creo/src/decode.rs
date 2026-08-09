@@ -3365,6 +3365,8 @@ pub(crate) fn resolved_section_coordinates(
     ));
     let radial_constraints =
         section_equation_radial_constraints(definition, &points, &ambiguous_point_ids);
+    let equal_length_constraints =
+        section_equation_equal_length_constraints(definition, &ambiguous_point_ids);
     let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
     for (first, second, coordinate, delta) in signed_dimension_candidates {
         let (key, canonical_delta) = if first <= second {
@@ -3550,7 +3552,26 @@ pub(crate) fn resolved_section_coordinates(
             point, coordinate, value,
         ));
     }
-    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    let mut solved_coordinates =
+        solve_section_coordinate_equations(&equations, &stored_coordinates);
+    for _ in 0..equal_length_constraints.len() {
+        let equal_length_values =
+            section_equal_length_coordinate_values(&equal_length_constraints, &solved_coordinates);
+        let mut added = false;
+        for (variable, value) in equal_length_values {
+            let Some(value) = value else {
+                continue;
+            };
+            equations.push(SectionCoordinateEquation::point_value(
+                variable.0, variable.1, value,
+            ));
+            added = true;
+        }
+        if !added {
+            break;
+        }
+        solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    }
     for constraint in
         section_equation_radial_constraints(definition, &solved_coordinates, &ambiguous_point_ids)
     {
@@ -4145,6 +4166,78 @@ fn section_equation_point_on_line_constraints(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct SectionEqualLengthConstraint {
+    first: [u32; 2],
+    second: [u32; 2],
+}
+
+fn section_equation_equal_length_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<SectionEqualLengthConstraint> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 33 && equation.arguments.len() == 9)
+        .filter_map(|equation| {
+            let mut rows = Vec::with_capacity(equation.arguments.len());
+            for ordinal in &equation.arguments {
+                rows.push(variables.rows.get(usize::try_from((*ordinal)?).ok()?)?);
+            }
+            let [first_u, first_v, second_u, second_v, third_u, third_v, fourth_u, fourth_v, auxiliary] =
+                rows.as_slice()
+            else {
+                return None;
+            };
+            if first_u.variable_type != 1
+                || first_v.variable_type != 2
+                || second_u.variable_type != 1
+                || second_v.variable_type != 2
+                || third_u.variable_type != 1
+                || third_v.variable_type != 2
+                || fourth_u.variable_type != 1
+                || fourth_v.variable_type != 2
+                || auxiliary.variable_type != 7
+                || auxiliary.value != Some(0.0)
+                || first_u.key != first_v.key
+                || second_u.key != second_v.key
+                || third_u.key != third_v.key
+                || fourth_u.key != fourth_v.key
+                || first_u.key == second_u.key
+                || third_u.key == fourth_u.key
+                || [first_u.key, second_u.key, third_u.key, fourth_u.key]
+                    .into_iter()
+                    .any(|point_id| ambiguous_point_ids.contains(&point_id))
+            {
+                return None;
+            }
+            Some(SectionEqualLengthConstraint {
+                first: [first_u.key, second_u.key],
+                second: [third_u.key, fourth_u.key],
+            })
+        })
+        .collect()
+}
+
 type SectionCoordinateVariable = (u32, usize);
 
 #[derive(Clone, Default)]
@@ -4372,6 +4465,152 @@ fn solve_unsigned_dimension_coordinates(
         }
     }
     resolved
+}
+
+fn section_equal_length_coordinate_values(
+    constraints: &[SectionEqualLengthConstraint],
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> BTreeMap<SectionCoordinateVariable, Option<f64>> {
+    let mut candidates = BTreeMap::<SectionCoordinateVariable, Option<f64>>::new();
+    for constraint in constraints {
+        let variables = constraint
+            .first
+            .into_iter()
+            .chain(constraint.second)
+            .flat_map(|point| [(point, 0), (point, 1)])
+            .collect::<BTreeSet<_>>();
+        let missing = variables
+            .iter()
+            .copied()
+            .filter(|variable| {
+                coordinates
+                    .get(&variable.0)
+                    .and_then(|point| point[variable.1])
+                    .is_none()
+            })
+            .collect::<Vec<_>>();
+        let [missing] = missing.as_slice() else {
+            continue;
+        };
+
+        let component = |first: u32, second: u32, coordinate: usize| -> Option<(f64, f64)> {
+            let value = |point: u32| {
+                if (point, coordinate) == *missing {
+                    Some((1.0, 0.0))
+                } else {
+                    coordinates
+                        .get(&point)
+                        .and_then(|coordinates| coordinates.get(coordinate).copied().flatten())
+                        .map(|value| (0.0, value))
+                }
+            };
+            let (first_coefficient, first_value) = value(first)?;
+            let (second_coefficient, second_value) = value(second)?;
+            Some((
+                second_coefficient - first_coefficient,
+                second_value - first_value,
+            ))
+        };
+        let Some((first_u_coefficient, first_u_value)) =
+            component(constraint.first[0], constraint.first[1], 0)
+        else {
+            continue;
+        };
+        let Some((first_v_coefficient, first_v_value)) =
+            component(constraint.first[0], constraint.first[1], 1)
+        else {
+            continue;
+        };
+        let Some((second_u_coefficient, second_u_value)) =
+            component(constraint.second[0], constraint.second[1], 0)
+        else {
+            continue;
+        };
+        let Some((second_v_coefficient, second_v_value)) =
+            component(constraint.second[0], constraint.second[1], 1)
+        else {
+            continue;
+        };
+
+        let square = |coefficient: f64, value: f64| {
+            (
+                coefficient * coefficient,
+                2.0 * coefficient * value,
+                value * value,
+            )
+        };
+        let first_u = square(first_u_coefficient, first_u_value);
+        let first_v = square(first_v_coefficient, first_v_value);
+        let second_u = square(second_u_coefficient, second_u_value);
+        let second_v = square(second_v_coefficient, second_v_value);
+        let quadratic = (
+            second_u.0 + second_v.0 - first_u.0 - first_v.0,
+            second_u.1 + second_v.1 - first_u.1 - first_v.1,
+            second_u.2 + second_v.2 - first_u.2 - first_v.2,
+        );
+        let roots = quadratic_roots(quadratic);
+        let [value] = roots.as_slice() else {
+            continue;
+        };
+        candidates
+            .entry(*missing)
+            .and_modify(|candidate| {
+                if candidate.is_some_and(|candidate| !approximately_equal(candidate, *value)) {
+                    *candidate = None;
+                }
+            })
+            .or_insert(Some(*value));
+    }
+    candidates
+}
+
+fn quadratic_roots((quadratic, linear, constant): (f64, f64, f64)) -> Vec<f64> {
+    let scale = quadratic
+        .abs()
+        .max(linear.abs())
+        .max(constant.abs())
+        .max(1.0);
+    let tolerance = 1e-12 * scale;
+    let mut roots = if quadratic.abs() <= tolerance {
+        if linear.abs() <= tolerance {
+            Vec::new()
+        } else {
+            vec![-constant / linear]
+        }
+    } else {
+        let discriminant = linear * linear - 4.0 * quadratic * constant;
+        let discriminant_tolerance =
+            1e-12 * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
+        if discriminant < -discriminant_tolerance {
+            Vec::new()
+        } else if discriminant.abs() <= discriminant_tolerance {
+            vec![-linear / (2.0 * quadratic)]
+        } else {
+            let root = discriminant.sqrt();
+            vec![
+                (-linear - root) / (2.0 * quadratic),
+                (-linear + root) / (2.0 * quadratic),
+            ]
+        }
+    };
+    roots.retain(|root| {
+        root.is_finite()
+            && (quadratic * root * root + linear * root + constant).abs()
+                <= 1e-9
+                    * (quadratic * root * root)
+                        .abs()
+                        .max((linear * root).abs())
+                        .max(constant.abs())
+                        .max(1.0)
+    });
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|first, second| approximately_equal(*first, *second));
+    roots
+}
+
+fn approximately_equal(first: f64, second: f64) -> bool {
+    let scale = first.abs().max(second.abs()).max(1.0);
+    (first - second).abs() <= 1e-9 * scale
 }
 
 fn solve_section_coordinate_equations(
