@@ -788,6 +788,25 @@ impl Parser<'_> {
                 }
             }
         }
+        // Validate the source occurrence class before local REFERENCES can
+        // replace a forbidden token with an ordinary value.
+        let contains_forbidden_class3_occurrence =
+            !implementation_level.allows_class3_occurrences()
+                && (header
+                    .iter()
+                    .any(|record| record.parameters.iter().any(contains_class3_occurrence))
+                    || anchors.iter().any(|anchor| {
+                        contains_class3_occurrence(&anchor.value)
+                            || anchor
+                                .tags
+                                .iter()
+                                .any(|tag| contains_class3_occurrence(&tag.value))
+                    })
+                    || records.values().any(|record| {
+                        record.partials.iter().any(|partial| {
+                            partial.parameters.iter().any(contains_class3_occurrence)
+                        })
+                    }));
         resolve_local_references(&mut anchors, &mut records, &reference_entries)
             .map_err(|message| ParseError::Syntax { offset: 0, message })?;
         for record in records.values_mut() {
@@ -857,23 +876,6 @@ impl Parser<'_> {
                 return Self::err_at(record.span.start, "unresolved value instance reference");
             }
         }
-        let contains_forbidden_class3_occurrence =
-            !implementation_level.allows_class3_occurrences()
-                && (header
-                    .iter()
-                    .any(|record| record.parameters.iter().any(contains_class3_occurrence))
-                    || anchors.iter().any(|anchor| {
-                        contains_class3_occurrence(&anchor.value)
-                            || anchor
-                                .tags
-                                .iter()
-                                .any(|tag| contains_class3_occurrence(&tag.value))
-                    })
-                    || records.values().any(|record| {
-                        record.partials.iter().any(|partial| {
-                            partial.parameters.iter().any(contains_class3_occurrence)
-                        })
-                    }));
         if contains_forbidden_class3_occurrence {
             return self.err(match implementation_level {
                 ImplementationLevel::LegacyEdition1 | ImplementationLevel::LegacyEdition2 => {

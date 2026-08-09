@@ -660,6 +660,16 @@ fn parser_resolves_local_value_reference_anchors_and_nulls_invalid_targets() {
 }
 
 #[test]
+fn parser_checks_edition_three_syntax_before_local_reference_substitution() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<length>=3.;ENDSEC;REFERENCE;@10=<#length>;ENDSEC;DATA;#1=ITEM(@10);ENDSEC;END-ISO-10303-21;";
+    let error = crate::parse::parse(source).expect_err("class-2 value occurrence");
+
+    assert!(error
+        .to_string()
+        .contains("this implementation level forbids value instances"));
+}
+
+#[test]
 fn parser_requires_numeric_reference_left_hand_sides() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;REFERENCE;<external>=<part.step#root>;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let error = crate::parse::parse(source).expect_err("resource reference name");
