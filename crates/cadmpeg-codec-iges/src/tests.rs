@@ -201,7 +201,7 @@ fn blank_parameter_field_is_an_omitted_value() {
 }
 
 #[test]
-fn predecessor_parameter_back_pointer_is_accepted_as_noncanonical_syntax() {
+fn even_parameter_back_pointer_is_rejected_without_guessing_its_owner() {
     let mut bytes = owned_test_file(&[
         OwnedTestEntity {
             entity_type: 116,
@@ -225,17 +225,67 @@ fn predecessor_parameter_back_pointer_is_accepted_as_noncanonical_syntax() {
     let card_start = marker - 72;
     bytes[card_start + 64..card_start + 72].copy_from_slice(b"       2");
 
-    let result = IgesCodec
+    let error = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert_eq!(result.ir.model.points.len(), 2);
-    assert!(result.report.losses.iter().any(|loss| {
-        loss.code == cadmpeg_ir::LossKind::NoncanonicalSourceSyntax
-            && loss.message.contains("D3")
-            && loss.message.contains("cards 2")
-    }));
-    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
-    assert!(validation.is_ok(), "{validation:#?}");
+        .unwrap_err();
+    assert!(error.to_string().contains(
+        "Parameter Data card P2 back-pointer 2 is not an owning odd Directory Entry sequence"
+    ));
+}
+
+#[test]
+fn zero_parameter_back_pointer_is_not_bound_to_the_first_directory_entry() {
+    let mut bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00010000",
+        parameters: "116,1,2,3,0;".into(),
+    }]);
+    let marker = bytes
+        .windows(8)
+        .position(|window| window == b"P      1")
+        .expect("Parameter Data card");
+    let card_start = marker - 72;
+    bytes[card_start + 64..card_start + 72].copy_from_slice(b"       0");
+
+    let error = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap_err();
+    assert!(error.to_string().contains(
+        "Parameter Data card P1 back-pointer 0 is not an owning odd Directory Entry sequence"
+    ));
+}
+
+#[test]
+fn parameter_card_count_must_equal_the_owned_contiguous_range() {
+    let entity = OwnedTestEntity {
+        entity_type: 116,
+        form: 0,
+        label: "POINT".into(),
+        status: "00010000",
+        parameters: format!("116,1,2,3,0;{}", "comment".repeat(12)),
+    };
+    let canonical = owned_test_file(&[entity]);
+
+    for (declared, expected) in [
+        (1, "declares 1 Parameter Data cards but owns 2"),
+        (3, "declares 3 Parameter Data cards but owns 2"),
+    ] {
+        let mut bytes = canonical.clone();
+        let marker = bytes
+            .windows(8)
+            .position(|window| window == b"D      2")
+            .expect("second Directory Entry card");
+        let card_start = marker - 72;
+        bytes[card_start + 24..card_start + 32]
+            .copy_from_slice(format!("{declared:>8}").as_bytes());
+
+        let error = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_err();
+        assert!(error.to_string().contains(expected), "{error}");
+    }
 }
 
 #[test]

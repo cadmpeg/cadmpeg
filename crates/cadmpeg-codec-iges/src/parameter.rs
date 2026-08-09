@@ -5,7 +5,7 @@ use crate::card::{CardScan, PhysicalLine, Section};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use cadmpeg_core::CodecError;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 /// One typed lexical value in an entity parameter record.
@@ -28,12 +28,10 @@ pub(crate) struct Token {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
-    pub(crate) declared_line_range: Range<u32>,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) tokens: Vec<Token>,
     pub(crate) comment: Vec<u8>,
-    pub(crate) noncanonical_back_pointers: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -284,22 +282,14 @@ pub(crate) fn assemble(
         .map(|entry| (entry.sequence, entry))
         .collect::<BTreeMap<_, _>>();
     let mut owners = BTreeMap::<u32, u32>::new();
-    let mut noncanonical_back_pointers = BTreeSet::new();
     for (sequence, line) in &lines {
         let pointer = back_pointer(line)?;
-        let (owner, noncanonical) = if entries.contains_key(&pointer) {
-            (pointer, false)
-        } else if pointer % 2 == 0 && entries.contains_key(&pointer.saturating_add(1)) {
-            (pointer + 1, true)
-        } else {
+        if pointer == 0 || pointer % 2 == 0 || !entries.contains_key(&pointer) {
             return Err(CodecError::Malformed(format!(
-                "IGES Parameter Data card P{sequence} does not point to a Directory Entry"
+                "IGES Parameter Data card P{sequence} back-pointer {pointer} is not an owning odd Directory Entry sequence"
             )));
-        };
-        owners.insert(*sequence, owner);
-        if noncanonical {
-            noncanonical_back_pointers.insert(*sequence);
         }
+        owners.insert(*sequence, pointer);
     }
     let mut records = Vec::new();
     for entry in directory {
@@ -322,9 +312,6 @@ pub(crate) fn assemble(
                 "Parameter Data line count is zero",
             ));
         }
-        let end = start
-            .checked_add(count)
-            .ok_or_else(|| malformed(entry.sequence, "Parameter Data range overflow"))?;
         let owned = owners
             .iter()
             .filter_map(|(sequence, owner)| (*owner == entry.sequence).then_some(*sequence))
@@ -348,10 +335,13 @@ pub(crate) fn assemble(
         }
         let declared_count = usize::try_from(count)
             .map_err(|_| malformed(entry.sequence, "Parameter Data count overflows usize"))?;
-        if owned.len() < declared_count {
+        if owned.len() != declared_count {
             return Err(malformed(
                 entry.sequence,
-                "declared Parameter Data range contains fewer cards than requested",
+                format!(
+                    "declares {declared_count} Parameter Data cards but owns {} by back-pointer",
+                    owned.len()
+                ),
             ));
         }
         let mut bytes = Vec::new();
@@ -379,22 +369,17 @@ pub(crate) fn assemble(
         }
         records.push(ParameterRecord {
             directory_sequence: entry.sequence,
-            declared_line_range: start..end,
             line_range: actual_start..actual_end,
             comment: bytes[record_end..].to_vec(),
             bytes,
             tokens,
-            noncanonical_back_pointers: noncanonical_back_pointers
-                .range(actual_start..actual_end)
-                .copied()
-                .collect(),
         });
     }
     Ok(records)
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
-    let mut notes = vec![
+    vec![
         format!("parameter_records={}", records.len()),
         format!(
             "parameter_tokens={}",
@@ -410,24 +395,5 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
                 .filter(|record| record.integer(0) == Some(416))
                 .count()
         ),
-    ];
-    let noncanonical_count = records
-        .iter()
-        .map(|record| record.noncanonical_back_pointers.len())
-        .sum::<usize>();
-    if noncanonical_count != 0 {
-        notes.push(format!(
-            "noncanonical_parameter_back_pointers={noncanonical_count}"
-        ));
-    }
-    let noncanonical_range_count = records
-        .iter()
-        .filter(|record| record.line_range != record.declared_line_range)
-        .count();
-    if noncanonical_range_count != 0 {
-        notes.push(format!(
-            "noncanonical_parameter_ranges={noncanonical_range_count}"
-        ));
-    }
-    notes
+    ]
 }

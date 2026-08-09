@@ -32,7 +32,7 @@ The status number consists of four two-digit decimal fields: blank status, subor
 
 ## Parameter Data section
 
-Bytes 1 through 64 of Parameter Data cards form parameter fragments. Bytes 65 through 72 identify the owning odd Directory Entry sequence. Fragments are grouped by that back-pointer and ordered by Parameter Data sequence. The Directory Entry Parameter Data start sequence and card count define the expected contiguous range. A record delimiter terminates the entity's primary parameters.
+Bytes 1 through 64 of Parameter Data cards form parameter fragments. Bytes 65 through 72 identify the owning odd Directory Entry sequence. Zero, an even sequence, and an absent Directory Entry sequence are invalid back-pointers. Fragments are grouped by that back-pointer and ordered by Parameter Data sequence. The Directory Entry Parameter Data start sequence and card count define the exact contiguous range. Every card in that range has the owning Directory Entry sequence, and no card outside the range has that owner. A disagreement is malformed input. A record delimiter terminates the entity's primary parameters.
 
 Tokens retain their exact source spans and lexical bytes. Token classes are integer, real, Hollerith string, Directory Entry pointer, omitted value, parameter delimiter, record delimiter, and retained uninterpreted value. An empty or blank-only Parameter Data field is an omitted value. Entity accessors impose field-specific token types and arity. Pointer interpretation is field-specific; a numeric token is not globally coerced to a pointer.
 

@@ -94,44 +94,6 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
-    losses.extend(
-        parameters
-            .iter()
-            .filter(|record| !record.noncanonical_back_pointers.is_empty())
-            .map(|record| LossNote {
-                code: cadmpeg_ir::LossKind::NoncanonicalSourceSyntax,
-                severity: Severity::Warning,
-                message: format!(
-                    "IGES entity D{} uses an even predecessor Directory sequence in Parameter Data back-pointers for cards {}",
-                    record.directory_sequence,
-                    record
-                        .noncanonical_back_pointers
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                provenance: None,
-            }),
-    );
-    losses.extend(
-        parameters
-            .iter()
-            .filter(|record| record.line_range != record.declared_line_range)
-            .map(|record| LossNote {
-                code: cadmpeg_ir::LossKind::NoncanonicalSourceSyntax,
-                severity: Severity::Warning,
-                message: format!(
-                    "IGES entity D{} declares Parameter Data cards P{}..P{} but owns P{}..P{} by back-pointer",
-                    record.directory_sequence,
-                    record.declared_line_range.start,
-                    record.declared_line_range.end - 1,
-                    record.line_range.start,
-                    record.line_range.end - 1,
-                ),
-                provenance: None,
-            }),
-    );
     if product_occurrences_truncated {
         losses.push(LossNote {
             code: cadmpeg_ir::LossKind::DecodeDiagnostic,

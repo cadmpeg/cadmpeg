@@ -114,16 +114,6 @@ from a conformant file.
 
 ## 1. Physical framing and lexical rules
 
-### PH-02. An even or zero Parameter Data back-pointer
-
-**Question.** Which Directory Entry owns a Parameter Data card whose back-pointer is even or zero?
-
-**Known.** `iges.md` "Physical representation" gives "Directory pointers refer to the odd Directory Entry sequence" and "Zero is a null pointer where the owning field permits null". `parameter.rs:283-292` accepts an even back-pointer `N` and gives the cards to the entry at `N + 1`. Two repairs are equally possible: `N` is the entry's second card, so the owner is `N - 1`; or `N` is an off-by-one index, so the owner is `N + 1`. The code selects the second. `reader.rs:105` then states the selected repair as fact in a loss message.
-
-**Conflict.** Zero satisfies `pointer % 2 == 0`, so a null back-pointer binds the cards to Directory Entry 1. `iges.md` "Physical representation" gives zero as a null pointer.
-
-**Need.** The contiguity test at `parameter.rs:326-350` changes most wrong selections into a hard error whose message names a different defect. We need the producer convention that causes even back-pointers before we keep a repair for it.
-
 ### PH-03. The boundary between entity parameters and the trailing pointer groups
 
 **Question.** Where does an entity's own parameter list stop and its associativity group start?
@@ -137,14 +127,6 @@ The result decides two unrelated things: where an entity's own parameters stop, 
 **Note.** The type and parity filters make an accidental early match hard to construct. The demonstrated defect is the silent removal of a group that holds an unresolvable pointer, not the early split.
 
 **Need.** A Type 402 Form 1 group needs a back pointer in each member (`iges.md` "Product structure"). If one member's group holds a pointer to an absent entry, the membership evidence is lost silently. We need per-entity parameter arity, or a rule that keeps an unresolvable group as a finding.
-
-### PH-05. Disagreement between the declared and the actual Parameter Data card count
-
-**Question.** Is the Directory Entry card count or the set of back-pointers authoritative?
-
-**Known.** `iges.md` "Parameter Data section" gives "The Directory Entry Parameter Data start sequence and card count define the expected contiguous range". `parameter.rs:326-350` uses the declared count as a lower bound only. More owned cards than declared gives a warning and the extra cards are used. Fewer owned cards than declared refuses the file.
-
-**Need.** Both directions are the same producer defect. One is recoverable and one is fatal, for no recorded reason. We need the authority rule.
 
 ### PH-06. Compressed ASCII and Binary detection constants
 
