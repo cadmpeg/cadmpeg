@@ -2339,6 +2339,22 @@ pub(super) fn associate_surface_curve_supports(
         if !retained.contains(&surface_curve_id) {
             continue;
         }
+        if let Some(curve_index) = surface_curve_basis(record)
+            .and_then(|basis| index.curves.get(&basis))
+            .copied()
+        {
+            ir.model.curves[curve_index]
+                .source_object
+                .get_or_insert_with(|| SourceObjectAssociation {
+                    format: "step".into(),
+                    object_id: format!("#{surface_curve_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                });
+        }
         for surface_id in surface_curve_supports(record, exchange, index) {
             let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
                 continue;
