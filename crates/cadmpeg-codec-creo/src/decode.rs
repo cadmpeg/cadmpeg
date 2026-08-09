@@ -12935,6 +12935,16 @@ fn section_skamp_constraints_for_geometry(
                             SketchConstraintDefinition::VerticalLoci { first, second }
                         }
                     }
+                    (33, [item])
+                        if skamp.flags == 34
+                            && item.sense == 10
+                            && unique_bounded_curve_segment(definition, item.entity_id)
+                                .is_some() =>
+                    {
+                        SketchConstraintDefinition::Fixed {
+                            entity: sketch_entity_id(sketch, item.entity_id),
+                        }
+                    }
                     (37, [source, result])
                         if source.sense == 0
                             && result.sense == 0

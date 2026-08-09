@@ -10277,6 +10277,130 @@ fn section_solver_constraints_require_complete_unique_semantics() {
             SketchConstraintDefinition::Native { .. }
         ));
     }
+    let mut fixed_bounded_curve = definition.clone();
+    fixed_bounded_curve
+        .segments
+        .as_mut()
+        .expect("segments")
+        .bounded_curve_rows = vec![crate::feature::FeatureBoundedCurveSegment {
+        directions: [None; 3],
+        point_ids: [1, 2],
+        center_id: None,
+        arc_orientation: Some(1),
+        vertical_horizontal: Some(0),
+        radius_ref: None,
+        radius2_ref: None,
+        external_id: 18,
+        offset: 86,
+    }];
+    fixed_bounded_curve
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count = 6;
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps = vec![crate::feature::FeatureSkamp {
+        id: 20,
+        kind: 33,
+        flags: 34,
+        status: 35,
+        items: vec![crate::feature::FeatureSkampItem {
+            entity_id: 18,
+            sense: 10,
+        }],
+        offset: 87,
+    }];
+    synchronize_skamp_count(&mut fixed_bounded_curve);
+    let fixed_constraints = section_skamp_constraints(
+        &fixed_bounded_curve,
+        &SketchId("creo:model:sketch#917".into()),
+    );
+    assert_eq!(
+        fixed_constraints[0].0.definition,
+        SketchConstraintDefinition::Fixed {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+        }
+    );
+    assert_eq!(fixed_constraints[0].0.active, Some(true));
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .status = 34;
+    let inactive_fixed = section_skamp_constraints(
+        &fixed_bounded_curve,
+        &SketchId("creo:model:sketch#917".into()),
+    );
+    assert_eq!(
+        inactive_fixed[0].0.definition,
+        SketchConstraintDefinition::Fixed {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:18".to_string()),
+        }
+    );
+    assert_eq!(inactive_fixed[0].0.active, Some(false));
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .flags = 0;
+    assert!(matches!(
+        section_skamp_constraints(
+            &fixed_bounded_curve,
+            &SketchId("creo:model:sketch#917".into()),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .flags = 34;
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .sense = 0;
+    assert!(matches!(
+        section_skamp_constraints(
+            &fixed_bounded_curve,
+            &SketchId("creo:model:sketch#917".into()),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
+    fixed_bounded_curve
+        .relations
+        .as_mut()
+        .expect("relations")
+        .skamps[0]
+        .items[0]
+        .sense = 10;
+    fixed_bounded_curve
+        .segments
+        .as_mut()
+        .expect("segments")
+        .bounded_curve_rows
+        .clear();
+    assert!(matches!(
+        section_skamp_constraints(
+            &fixed_bounded_curve,
+            &SketchId("creo:model:sketch#917".into()),
+        )[0]
+        .0
+        .definition,
+        SketchConstraintDefinition::Native { .. }
+    ));
     let point_entity = crate::feature::FeatureSkampItem {
         entity_id: 14,
         sense: 0,

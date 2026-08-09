@@ -1649,6 +1649,12 @@ stored endpoint roles. In the affine section solver, an active type-twelve
 form equates the two endpoint `v` ordinates and an active type-thirteen form
 equates their `u` ordinates. A nonzero sense or a non-arc entity does not
 satisfy either form.
+A one-item type-thirty-three incidence with flags `34` and sense `10` on a
+unique type-12 bounded section curve fixes that curve in sketch coordinates.
+It maps to the neutral fixed-entity constraint. The constraint activity is
+the low bit of the stored status; the bounded-curve identity remains the
+constraint entity for either activity state. Other type-thirty-three flag,
+sense, or entity-family combinations remain native incidences.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. The unary incidence establishes the referenced entity's line
