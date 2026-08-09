@@ -236,6 +236,19 @@ pub(super) fn decode(
         .iter()
         .map(|pcurve| pcurve.id.clone())
         .collect::<BTreeSet<_>>();
+    let topology_root_types = [
+        "SHELL_BASED_SURFACE_MODEL",
+        "FACE_BASED_SURFACE_MODEL",
+        "FACETED_BREP",
+        "MANIFOLD_SOLID_BREP",
+        "BREP_WITH_VOIDS",
+    ];
+    let distinct_root_count = exchange
+        .entities_any(&topology_root_types)
+        .filter_map(|(_, record)| root_key(record, exchange, &shells))
+        .collect::<BTreeSet<_>>()
+        .len();
+    let scope_distinct_roots = distinct_root_count > 1;
     let mut built_roots = BTreeMap::<RootKey, RootBuilt>::new();
     for (id, record) in exchange.entities_any(&[
         "SHELL_BASED_SURFACE_MODEL",
@@ -262,10 +275,7 @@ pub(super) fn decode(
             }
             continue;
         }
-        let scope_root = key
-            .shell_keys
-            .iter()
-            .any(|(shell, _)| result.body_by_shell.contains_key(shell));
+        let scope_root = scope_distinct_roots;
         let outcome = build(
             id,
             record,
@@ -1033,12 +1043,14 @@ struct EdgeDef {
     same: bool,
     parent: Option<u64>,
     pcurve: Option<u64>,
+    seam_edge: bool,
 }
 #[derive(Clone)]
 struct OrientedDef {
     edge: u64,
     forward: bool,
     pcurve: Option<u64>,
+    seam_edge: bool,
 }
 
 fn vertex_defs(exchange: &Exchange) -> BTreeMap<u64, VertexDef> {
@@ -1107,6 +1119,7 @@ fn edge_def_for(
                 same: edge_same_sense(record)?,
                 parent: None,
                 pcurve: None,
+                seam_edge: false,
             })
         }
         "EDGE" => {
@@ -1119,6 +1132,7 @@ fn edge_def_for(
                 same: true,
                 parent: None,
                 pcurve: None,
+                seam_edge: false,
             })
         }
         "SUBEDGE" => {
@@ -1133,6 +1147,7 @@ fn edge_def_for(
                 same: parent_def.same,
                 parent: Some(parent),
                 pcurve: parent_def.pcurve,
+                seam_edge: parent_def.seam_edge,
             })
         }
         "ORIENTED_EDGE" | "SEAM_EDGE" => {
@@ -1160,6 +1175,7 @@ fn edge_def_for(
                 } else {
                     element_def.pcurve
                 },
+                seam_edge: most_specific(record, &["SEAM_EDGE"]).is_some() || element_def.seam_edge,
             })
         }
         _ => None,
@@ -1222,6 +1238,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
                                 .rev()
                                 .find_map(ValueExt::reference)
                         }),
+                    seam_edge: most_specific(r, &["SEAM_EDGE"]).is_some(),
                 },
             ))
         })
@@ -1512,6 +1529,7 @@ fn staged_topology(
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 struct RootKey {
+    root_type: &'static str,
     shell_keys: Vec<(u64, Option<bool>)>,
 }
 
@@ -1557,6 +1575,19 @@ fn root_key(
     exchange: &Exchange,
     shell_definitions: &BTreeMap<u64, ShellDef>,
 ) -> Option<RootKey> {
+    let root_type = if has_type(root, "SHELL_BASED_SURFACE_MODEL") {
+        "SHELL_BASED_SURFACE_MODEL"
+    } else if has_type(root, "FACE_BASED_SURFACE_MODEL") {
+        "FACE_BASED_SURFACE_MODEL"
+    } else if has_type(root, "BREP_WITH_VOIDS") {
+        "BREP_WITH_VOIDS"
+    } else if has_type(root, "FACETED_BREP") {
+        "FACETED_BREP"
+    } else if has_type(root, "MANIFOLD_SOLID_BREP") {
+        "MANIFOLD_SOLID_BREP"
+    } else {
+        return None;
+    };
     let mut shell_keys = Vec::new();
     let mut resolved = 0;
     for shell in root_shell_steps(root, exchange)? {
@@ -1577,7 +1608,10 @@ fn root_key(
         return None;
     }
     shell_keys.sort_unstable();
-    Some(RootKey { shell_keys })
+    Some(RootKey {
+        root_type,
+        shell_keys,
+    })
 }
 
 #[allow(
@@ -2104,19 +2138,37 @@ fn build_one(
                     )?;
                     let edge =
                         require_carrier(edefs.get(&o.edge), failure, o.edge, "edge definition")?;
-                    let explicit_pcurve = surface_step.and_then(|surface_step| {
-                        o.pcurve.and_then(|pcurve_step| {
+                    let seam_edge = o.seam_edge || edge.seam_edge;
+                    let associated = if seam_edge {
+                        let explicit_pcurve = surface_step.and_then(|surface_step| {
+                            let pcurve_step = o.pcurve.or(edge.pcurve)?;
                             let pcurve = exchange.records.get(&pcurve_step)?;
+                            let pcurve_id = PcurveId(format!("step:data:pcurve#{pcurve_step}"));
+                            let edge_candidate = edge.curve.and_then(|curve| {
+                                associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
+                                    .into_iter()
+                                    .find(|candidate| candidate == &pcurve_id)
+                            });
                             (has_type(pcurve, "PCURVE")
                                 && entity_parameter(pcurve, "PCURVE", 1)?.reference()?
                                     == surface_step
-                                && decoded_pcurves
-                                    .contains(&PcurveId(format!("step:data:pcurve#{pcurve_step}"))))
-                            .then_some(PcurveId(format!("step:data:pcurve#{pcurve_step}")))
-                        })
-                    });
-                    let associated = explicit_pcurve.into_iter().collect::<Vec<_>>();
-                    let associated = if associated.is_empty() {
+                                && edge_candidate.is_some())
+                            .then_some(pcurve_id)
+                        });
+                        if let Some(pcurve) = explicit_pcurve {
+                            vec![pcurve]
+                        } else {
+                            losses.push(LossNote {
+                                code: LossKind::ReferenceGraphNotClosed,
+                                severity: Severity::Warning,
+                                message: format!(
+                                    "SEAM_EDGE #{use_step} has no decoded pcurve reference that belongs to its edge curve and face surface; the coedge has no pcurve"
+                                ),
+                                provenance: None,
+                            });
+                            Vec::new()
+                        }
+                    } else {
                         match (surface_step, edge.curve) {
                             (Some(surface_step), Some(curve)) => {
                                 associated_pcurves(curve, surface_step, exchange, decoded_pcurves)
@@ -2134,27 +2186,29 @@ fn build_one(
                                 Vec::new()
                             }
                         }
-                    } else {
-                        associated
                     };
-                    let pcurves = match associated.len() {
-                        0 | 1 => associated,
-                        n => {
-                            let message = match (edge.curve, surface_step) {
-                                (Some(curve), Some(surface)) => format!(
-                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                                _ => format!(
-                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no UV-continuity rule selects one, so the coedge has no pcurve"
-                                ),
-                            };
-                            losses.push(LossNote {
-                                code: LossKind::ReferenceGraphNotClosed,
-                                severity: Severity::Warning,
-                                message,
-                                provenance: None,
-                            });
-                            Vec::new()
+                    let pcurves = if seam_edge {
+                        associated
+                    } else {
+                        match associated.len() {
+                            0 | 1 => associated,
+                            n => {
+                                let message = match (edge.curve, surface_step) {
+                                    (Some(curve), Some(surface)) => format!(
+                                        "curve #{curve} associates {n} pcurves with surface #{surface}; no UV-continuity rule selects one, so the coedge has no pcurve"
+                                    ),
+                                    _ => format!(
+                                        "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no UV-continuity rule selects one, so the coedge has no pcurve"
+                                    ),
+                                };
+                                losses.push(LossNote {
+                                    code: LossKind::ReferenceGraphNotClosed,
+                                    severity: Severity::Warning,
+                                    message,
+                                    provenance: None,
+                                });
+                                Vec::new()
+                            }
                         }
                     };
                     let cid = CoedgeId(format!(

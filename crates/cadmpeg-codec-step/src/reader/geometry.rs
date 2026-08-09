@@ -3266,157 +3266,159 @@ fn decode_pcurve_geometry(
     if depth >= 256 || !active.insert(id) {
         return None;
     }
-    let record = exchange.records.get(&id)?;
-    let mut records = BTreeSet::from([id]);
-    let geometry = if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
-        nurbs_pcurve(record, points, warnings)?
-    } else {
-        let curve_type = entity_type(
-            record,
-            &[
-                "LINE",
-                "CIRCLE",
-                "ELLIPSE",
-                "PARABOLA",
-                "HYPERBOLA",
-                "POLYLINE",
-                "TRIMMED_CURVE",
-                "OFFSET_CURVE_2D",
-            ],
-        )?;
-        match curve_type {
-            "LINE" => {
-                let origin = named_parameter(record, "LINE", 1)?
-                    .reference()
-                    .and_then(|point| points.get(&point).copied())?;
-                let direction = named_parameter(record, "LINE", 2)?
-                    .reference()
-                    .and_then(|vector| vectors.get(&vector).copied())?;
-                PcurveGeometry::Line { origin, direction }
-            }
-            "CIRCLE" => {
-                let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
-                let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let radius = positive(named_parameter(record, "CIRCLE", 2))?;
-                records.insert(placement);
-                PcurveGeometry::Circle {
-                    center,
-                    x_axis,
-                    y_axis,
-                    radius,
+    let result = (|| {
+        let record = exchange.records.get(&id)?;
+        let mut records = BTreeSet::from([id]);
+        let geometry = if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
+            nurbs_pcurve(record, points, warnings)?
+        } else {
+            let curve_type = entity_type(
+                record,
+                &[
+                    "LINE",
+                    "CIRCLE",
+                    "ELLIPSE",
+                    "PARABOLA",
+                    "HYPERBOLA",
+                    "POLYLINE",
+                    "TRIMMED_CURVE",
+                    "OFFSET_CURVE_2D",
+                ],
+            )?;
+            match curve_type {
+                "LINE" => {
+                    let origin = named_parameter(record, "LINE", 1)?
+                        .reference()
+                        .and_then(|point| points.get(&point).copied())?;
+                    let direction = named_parameter(record, "LINE", 2)?
+                        .reference()
+                        .and_then(|vector| vectors.get(&vector).copied())?;
+                    PcurveGeometry::Line { origin, direction }
                 }
-            }
-            "ELLIPSE" => {
-                let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
-                let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
-                let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
-                records.insert(placement);
-                PcurveGeometry::Ellipse {
-                    center,
-                    x_axis,
-                    y_axis,
-                    major_radius,
-                    minor_radius,
+                "CIRCLE" => {
+                    let placement = named_parameter(record, "CIRCLE", 1)?.reference()?;
+                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
+                    let radius = positive(named_parameter(record, "CIRCLE", 2))?;
+                    records.insert(placement);
+                    PcurveGeometry::Circle {
+                        center,
+                        x_axis,
+                        y_axis,
+                        radius,
+                    }
                 }
-            }
-            "PARABOLA" => {
-                let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
-                let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
-                records.insert(placement);
-                PcurveGeometry::Parabola {
-                    vertex,
-                    x_axis,
-                    y_axis,
-                    focal_distance,
+                "ELLIPSE" => {
+                    let placement = named_parameter(record, "ELLIPSE", 1)?.reference()?;
+                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
+                    let major_radius = positive(named_parameter(record, "ELLIPSE", 2))?;
+                    let minor_radius = positive(named_parameter(record, "ELLIPSE", 3))?;
+                    records.insert(placement);
+                    PcurveGeometry::Ellipse {
+                        center,
+                        x_axis,
+                        y_axis,
+                        major_radius,
+                        minor_radius,
+                    }
                 }
-            }
-            "HYPERBOLA" => {
-                let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
-                let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
-                let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
-                let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
-                records.insert(placement);
-                PcurveGeometry::Hyperbola {
-                    center,
-                    x_axis,
-                    y_axis,
-                    major_radius,
-                    minor_radius,
+                "PARABOLA" => {
+                    let placement = named_parameter(record, "PARABOLA", 1)?.reference()?;
+                    let (vertex, x_axis, y_axis) = placements.get(&placement).copied()?;
+                    let focal_distance = positive(named_parameter(record, "PARABOLA", 2))?;
+                    records.insert(placement);
+                    PcurveGeometry::Parabola {
+                        vertex,
+                        x_axis,
+                        y_axis,
+                        focal_distance,
+                    }
                 }
-            }
-            "POLYLINE" => polyline_pcurve(record, points)?,
-            "TRIMMED_CURVE" => {
-                let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
-                let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
-                let (basis, basis_records) = decode_pcurve_geometry(
-                    basis_id,
-                    exchange,
-                    points,
-                    vectors,
-                    placements,
-                    angle_scale,
-                    warnings,
-                    active,
-                    depth + 1,
-                )?;
-                let scale = if matches!(
-                    basis,
-                    PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. }
-                ) {
-                    angle_scale
-                } else {
-                    1.0
-                };
-                let start =
-                    pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)? * scale;
-                let end =
-                    pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)? * scale;
-                records.extend(basis_records);
-                let (parameter_range, same_sense) = ordered_trim_range(start, end, sense)?;
-                PcurveGeometry::Trimmed {
-                    parameter_range,
-                    same_sense,
-                    basis: Box::new(basis),
+                "HYPERBOLA" => {
+                    let placement = named_parameter(record, "HYPERBOLA", 1)?.reference()?;
+                    let (center, x_axis, y_axis) = placements.get(&placement).copied()?;
+                    let major_radius = positive(named_parameter(record, "HYPERBOLA", 2))?;
+                    let minor_radius = positive(named_parameter(record, "HYPERBOLA", 3))?;
+                    records.insert(placement);
+                    PcurveGeometry::Hyperbola {
+                        center,
+                        x_axis,
+                        y_axis,
+                        major_radius,
+                        minor_radius,
+                    }
                 }
-            }
-            "OFFSET_CURVE_2D" => {
-                let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
-                let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
-                if !distance.is_finite()
-                    || named_parameter(record, "OFFSET_CURVE_2D", 3)?
-                        .logical()
-                        .is_none()
-                {
-                    active.remove(&id);
+                "POLYLINE" => polyline_pcurve(record, points)?,
+                "TRIMMED_CURVE" => {
+                    let basis_id = named_parameter(record, "TRIMMED_CURVE", 1)?.reference()?;
+                    let sense = named_parameter(record, "TRIMMED_CURVE", 4)?.logical()?;
+                    let (basis, basis_records) = decode_pcurve_geometry(
+                        basis_id,
+                        exchange,
+                        points,
+                        vectors,
+                        placements,
+                        angle_scale,
+                        warnings,
+                        active,
+                        depth + 1,
+                    )?;
+                    let scale = if matches!(
+                        basis,
+                        PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. }
+                    ) {
+                        angle_scale
+                    } else {
+                        1.0
+                    };
+                    let start =
+                        pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 2)?)?
+                            * scale;
+                    let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
+                        * scale;
+                    records.extend(basis_records);
+                    let (parameter_range, same_sense) = ordered_trim_range(start, end, sense)?;
+                    PcurveGeometry::Trimmed {
+                        parameter_range,
+                        same_sense,
+                        basis: Box::new(basis),
+                    }
+                }
+                "OFFSET_CURVE_2D" => {
+                    let basis_id = named_parameter(record, "OFFSET_CURVE_2D", 1)?.reference()?;
+                    let distance = named_parameter(record, "OFFSET_CURVE_2D", 2)?.number()?;
+                    if !distance.is_finite()
+                        || named_parameter(record, "OFFSET_CURVE_2D", 3)?
+                            .logical()
+                            .is_none()
+                    {
+                        return None;
+                    }
+                    let (basis, basis_records) = decode_pcurve_geometry(
+                        basis_id,
+                        exchange,
+                        points,
+                        vectors,
+                        placements,
+                        angle_scale,
+                        warnings,
+                        active,
+                        depth + 1,
+                    )?;
+                    records.extend(basis_records);
+                    PcurveGeometry::Offset {
+                        distance,
+                        basis: Box::new(basis),
+                    }
+                }
+                _ => {
                     return None;
                 }
-                let (basis, basis_records) = decode_pcurve_geometry(
-                    basis_id,
-                    exchange,
-                    points,
-                    vectors,
-                    placements,
-                    angle_scale,
-                    warnings,
-                    active,
-                    depth + 1,
-                )?;
-                records.extend(basis_records);
-                PcurveGeometry::Offset {
-                    distance,
-                    basis: Box::new(basis),
-                }
             }
-            _ => {
-                active.remove(&id);
-                return None;
-            }
-        }
-    };
+        };
+        Some((geometry, records))
+    })();
     active.remove(&id);
-    Some((geometry, records))
+    result
 }
 
 fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
@@ -4110,6 +4112,28 @@ mod tests {
         assert!(start.abs() < 1.0e-12);
         let expected = (-1.0e300_f64).rem_euclid(std::f64::consts::TAU);
         assert!((end - expected).abs() < expected.abs() * 1.0e-12);
+    }
+
+    #[test]
+    fn pcurve_recursion_releases_active_record_on_cycle() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=TRIMMED_CURVE('',#1,(0.),(1.),.T.,.PARAMETER.);ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = crate::parse::parse(source).expect("cyclic pcurve carrier");
+        let mut active = BTreeSet::new();
+        let mut warnings = Vec::new();
+        let decoded = decode_pcurve_geometry(
+            1,
+            &exchange,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            1.0,
+            &mut warnings,
+            &mut active,
+            0,
+        );
+
+        assert!(decoded.is_none());
+        assert!(active.is_empty());
     }
 
     #[test]

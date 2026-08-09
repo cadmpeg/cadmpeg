@@ -1766,6 +1766,30 @@ fn implicit_plane_uses_the_outer_loop_and_composes_oriented_face_reversal() {
 }
 
 #[test]
+fn nearly_collinear_implicit_face_is_rejected_without_a_fabricated_plane() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#5=CARTESIAN_POINT('',(0.,10.,0.));",
+            "#5=CARTESIAN_POINT('',(20.,0.0000000000002,0.));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#26));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode nearly collinear base face");
+
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(decoded.ir.model.surfaces.is_empty());
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::TopologyNotTransferred
+            && loss.message.contains("implicit face plane")
+    }));
+}
+
+#[test]
 fn base_edges_without_curve_carriers_remain_topological_edges() {
     let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -2738,6 +2762,41 @@ fn seam_edge_preserves_its_explicit_pcurve_reference() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn seam_edge_rejects_an_explicit_pcurve_outside_its_curve() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#22=ORIENTED_EDGE('',*,*,#19,.T.);",
+            "#22=SEAM_EDGE('',*,*,#19,.T.,#75);",
+        )
+        .replace(
+            "#57=SURFACE_CURVE('',#16,(#56),.PCURVE_S1.);",
+            "#57=SEAM_CURVE('',#16,(#56),.PCURVE_S1.);",
+        )
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#72=CARTESIAN_POINT('',(0.,0.));\n#73=LINE('',#72,#53);\n#74=DEFINITIONAL_REPRESENTATION('',(#73),#50);\n#75=PCURVE('',#28,#74);\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode seam edge with an unlisted pcurve");
+
+    assert!(decoded.ir.model.coedges.iter().all(|coedge| {
+        coedge
+            .pcurves
+            .iter()
+            .all(|use_| use_.pcurve.as_str() != "step:data:pcurve#75")
+    }));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+            && loss.message.contains("SEAM_EDGE #22")
+            && loss.message.contains("belongs to its edge curve")
+    }));
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn ambiguous_seam_source() -> String {
     String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
         .expect("fixture is UTF-8")
@@ -3463,6 +3522,16 @@ fn reused_shell_in_a_distinct_root_gets_a_new_owner_scope() {
             .filter(|shell| shell.id.as_str().contains("root-70"))
             .count(),
         2
+    );
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .shells
+            .iter()
+            .filter(|shell| shell.id.as_str().contains("root-31"))
+            .count(),
+        1
     );
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);

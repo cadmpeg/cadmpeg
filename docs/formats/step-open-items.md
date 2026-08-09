@@ -295,28 +295,23 @@ and nondeterministic losses.
 
 ### TP-01. Shared-edge ownership
 
-**Question.** When one STEP edge or vertex is referenced by multiple independent
-shell owners, should CADIR preserve one shared identity, create one occurrence
-identity per owner, or reject the conflicting topology?
-
-**Known.** The decoder uses owner-scoped edge and vertex identities when the
-source ownership is ambiguous. It keeps the per-occurrence rule and reports an
-identity collision when two committed drafts still claim the same destination
-identity.
-
-**Need.** We need a standards-valid shared-edge construction and its ownership
-semantics before changing the current rule.
+**Resolved.** A distinct committed topology root is an ownership boundary. A
+root key includes the root type, resolved shell identities, and shell
+orientations. Aliases with the same key reuse the committed body. When more
+than one key exists, every root scopes its shell, face, edge, and vertex
+identities by the root instance. The scope decision is computed from the full
+root population before construction, so source record order cannot change
+identity. The reader does not invent sharing between independent roots.
 
 ### TP-02. Seam pcurve selection
 
-**Question.** Which same-surface pcurve belongs to each seam coedge when a seam
-curve carries more than one candidate pcurve?
-
-**Known.** The source curve can carry multiple pcurves for one surface and the
-decoder associates one candidate with each coedge use.
-
-**Need.** We need the UV-continuity and orientation rule that selects a
-candidate. Serialized occurrence order is not a sufficient rule.
+**Resolved.** A `SEAM_EDGE` supplies the authoritative pcurve reference. The
+reference must be decoded, belong to the edge's seam-curve pcurve list, and
+use the coedge face surface. The reader binds that one reference and never
+selects a seam branch by endpoint fit or source order. A non-seam oriented edge
+uses endpoint continuity only when one same-surface pcurve is selected, or when
+tied candidates have the same model-space locus. Distinct unresolved
+candidates remain detached and produce a topology loss.
 
 ### TP-03. Non-planar pcurve units
 
@@ -341,42 +336,30 @@ directrix parameter is not a standard analytic length or angle parameter.
 
 ### TP-04. Partial solid and tolerant point carriers
 
-**Question.** Should CADIR gain a tolerant point carrier or a partial-solid
-representation for a solid with one missing mandatory vertex point?
-
-**Known.** Solid roots commit atomically. A missing mandatory point rejects the
-complete solid and reports the failed STEP carrier.
-
-**Need.** We need measured loss rates and an IR design before changing the
-atomic-solid invariant.
+**Resolved.** CADIR has no tolerant-point or partial-solid carrier. A
+`VERTEX_POINT` without a resolvable `CARTESIAN_POINT`, and every solid root
+with a missing mandatory carrier, is rejected atomically. The reader retains
+the source records as opaque data and emits a `TopologyNotTransferred` error;
+it does not infer coordinates or create a partial body. Salvage applies only
+to independent sheet or wire members that are complete.
 
 ### TP-05. Implicit face-plane orientation
 
-**Question.** Which winding rule defines the normal of an implicit face plane,
-and how does it compose with `ORIENTED_FACE` bound reversal?
-
-**Known.** The decoder derives a plane from non-collinear boundary points and
-composes explicit face and bound orientation.
-
-**Current control.** The decoder selects the first explicit
-`FACE_OUTER_BOUND`, or the first bound when no outer bound is present. It
-preserves the ordered loop points, computes the Newell area normal in linear
-time, and reverses it when the effective bound orientation is not forward.
-The effective orientation includes the enclosing `ORIENTED_FACE` reversal. It
-rejects a non-finite or nearly collinear loop using a relative threshold of
-`1e-12`. The synthesized polygon regression covers outer-bound selection and
-oriented-face reversal. The work allowance is linear in the point count.
-
-**Need.** Define the standard-valid behavior for a nearly collinear implicit
-face whose source does not provide a usable surface carrier.
+**Resolved.** A base `FACE` without a surface selects the first explicit
+`FACE_OUTER_BOUND`, or the first bound when no outer role exists. Its ordered
+ring uses the Newell area normal. The effective bound orientation includes the
+enclosing `ORIENTED_FACE` reversal. The reader rejects a non-finite or nearly
+collinear ring with a relative threshold of `1e-12` and rejects the topology
+root instead of fabricating a plane. The work allowance is linear in the point
+count.
 
 ### TP-06. Pcurve recursion and normalization
 
-**Question.** What normalization and recursion guard rules apply to cyclic
-2D curve definitions, 2D `LINE` carriers, and complex `PCURVE` entities?
-
-**Known.** Supported 2D carriers decode as typed pcurves. Unsupported or cyclic
-carriers remain opaque.
-
-**Need.** We need fixtures for cycle handling, 2D line normalization, and
-complex `PCURVE` support before extending the typed domain.
+**Resolved.** A `PCURVE` definition must resolve to exactly one item in its
+`DEFINITIONAL_REPRESENTATION`. The reader decodes supported 2D line, analytic
+conic, polyline, NURBS, trimmed, offset, and affine-replica carriers. A
+recursive carrier returns no typed geometry at depth 256 or when an active
+record repeats. The active-record guard is released on every return path.
+Unsupported or cyclic carriers remain named opaque records and are not
+attached to a coedge. Topology that needs such a carrier records a
+machine-readable pcurve omission loss.
