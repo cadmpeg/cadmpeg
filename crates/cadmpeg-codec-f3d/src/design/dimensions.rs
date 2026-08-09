@@ -846,22 +846,12 @@ fn project_all_dimension_constraints(
             let linear_candidates = if parameter.source_kind.starts_with("Linear Dimension")
                 && design_dimension_unit(parameter)
             {
-                let candidates = recipe_linear_dimension_candidates(
+                recipe_linear_dimension_candidates(
                     entities,
                     &sketch,
                     parameter.evaluated_value * 10.0,
                     &parameter_id,
-                );
-                if records.iter().all(|record| {
-                    record.recipe_kind == crate::records::ConstructionRecipeKind::Edge
-                }) {
-                    candidates
-                        .into_iter()
-                        .filter(|candidate| matches!(candidate, Definition::Distance { .. }))
-                        .collect()
-                } else {
-                    candidates
-                }
+                )
             } else {
                 Vec::default()
             };
@@ -3731,13 +3721,7 @@ pub(crate) fn recipe_linear_dimension_candidates(
                 endpoints.into_iter().any(|end| same_point(*position, end))
             })
         };
-    let mut candidates = line_pairs
-        .iter()
-        .map(|(first, second)| Definition::Distance {
-            entities: vec![first.id.clone(), second.id.clone()],
-            parameter: parameter.clone(),
-        })
-        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
     for first in 0..points.len() {
         for second in first + 1..points.len() {
             let subsumed_by_line_pair = line_pairs.iter().any(|(first_line, second_line)| {
@@ -3758,6 +3742,14 @@ pub(crate) fn recipe_linear_dimension_candidates(
             }
         }
     }
+    candidates.extend(
+        line_pairs
+            .iter()
+            .map(|(first, second)| Definition::Distance {
+                entities: vec![first.id.clone(), second.id.clone()],
+                parameter: parameter.clone(),
+            }),
+    );
     candidates
 }
 

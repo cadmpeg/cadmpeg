@@ -16629,7 +16629,7 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
 }
 
 #[test]
-fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
+fn recipe_backed_dimension_projects_disjoint_mixed_repeated_distance() {
     let stream = "f3d:A";
     let placement = DesignSketchPlacement {
         member_run_head: false,
@@ -16720,12 +16720,26 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         endpoint_refs: Vec::new(),
         geometry: SketchGeometry::Line { start, end },
     };
+    let point = |name: &str, position| SketchEntity {
+        id: SketchEntityId(name.into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point { position },
+    };
     let entities = [
         line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
         line("second", Point2::new(0.0, 2.0), Point2::new(4.0, 2.0)),
         line("third", Point2::new(10.0, 0.0), Point2::new(10.0, 4.0)),
         line("fourth", Point2::new(12.0, 0.0), Point2::new(12.0, 4.0)),
     ];
+    let mut recipe_entities = entities.to_vec();
+    recipe_entities.extend([
+        point("point-first", Point2::new(20.0, 0.0)),
+        point("point-second", Point2::new(20.0, 2.0)),
+    ]);
     let constraints = project_dimension_constraints(
         &crate::design::dimensions::DimensionConstraintInputs {
             placements: std::slice::from_ref(&placement),
@@ -16739,7 +16753,7 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
             recipe_records: &[recipe(1, 31), recipe(0, 30)],
             points: &[],
             curves: &[],
-            entities: &entities,
+            entities: &recipe_entities,
         },
         &[],
     );
@@ -16756,11 +16770,15 @@ fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
     };
     let expected_parameter = neutral_parameter_id_parts(stream, parameter.record_index).0;
     assert_eq!(&projected_parameter.0, &expected_parameter);
-    assert_eq!(measurements.len(), 2);
-    assert!(measurements.iter().all(|measurement| matches!(
-        measurement,
-        cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. }
-    )));
+    assert!(matches!(
+        measurements.as_slice(),
+        [
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Vertical { first, second },
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. },
+            cadmpeg_ir::sketches::SketchDistanceMeasurement::Distance { .. },
+        ] if first == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("point-first".into()))
+            && second == &cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("point-second".into()))
+    ));
 
     let mut radial_parameter = parameter.clone();
     radial_parameter.source_kind = "Radial Dimension-4".into();
