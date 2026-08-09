@@ -3,6 +3,7 @@
 
 use std::collections::{hash_map::Entry, BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_parameter_near_point};
 use cadmpeg_ir::geometry::{
@@ -24,6 +25,8 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::index::{step_instance_id, CarrierIndex};
 use super::opaque_record_id;
 
+const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
+
 pub(super) struct GeometryResult {
     pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
@@ -34,6 +37,132 @@ pub(super) struct GeometryResult {
     pub plane_angle_scale: f64,
     pub length_scales: BTreeMap<u64, f64>,
     pub plane_angle_scales: BTreeMap<u64, f64>,
+}
+
+/// Infer the carrier interval trimmed by each edge's endpoint vertices.
+pub(super) fn infer_edge_parameter_ranges(
+    ir: &mut CadIr,
+    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+) -> Result<(), CodecError> {
+    let points = ir
+        .model
+        .points
+        .iter()
+        .map(|point| (point.id.0.as_str(), point.position))
+        .collect::<HashMap<_, _>>();
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            points
+                .get(vertex.point.0.as_str())
+                .copied()
+                .map(|point| (vertex.id.0.as_str(), point))
+        })
+        .collect::<HashMap<_, _>>();
+    let candidates = ir
+        .model
+        .edges
+        .iter()
+        .enumerate()
+        .filter(|(_, edge)| edge.param_range.is_none())
+        .filter_map(|(index, edge)| {
+            let curve = edge.curve.clone()?;
+            let start = vertices.get(edge.start.0.as_str()).copied()?;
+            let end = vertices.get(edge.end.0.as_str()).copied()?;
+            Some((index, curve, start, end))
+        })
+        .collect::<Vec<_>>();
+    let work = u64::try_from(candidates.len())
+        .unwrap_or(u64::MAX)
+        .saturating_mul(RANGE_INFERENCE_WORK_UNITS);
+    if let Some(ctx) = ctx {
+        ctx.charge_work(work, "step_edge_parameter_inference")?;
+    }
+
+    let model_index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let inferred = candidates
+        .into_iter()
+        .filter_map(|(edge_index, curve, start, end)| {
+            let geometry = &model_index.curves(curve.0.as_str())?.geometry;
+            let start_seed = curve_endpoint_seed(geometry, false, 0.0);
+            let start_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                &model_index,
+                &curve,
+                start,
+                start_seed,
+            )?;
+            let end_seed = curve_endpoint_seed(geometry, true, start_parameter);
+            let end_parameter = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                &model_index,
+                &curve,
+                end,
+                end_seed,
+            )?;
+            edge_parameter_range(geometry, start_parameter, end_parameter)
+                .map(|range| (edge_index, range))
+        })
+        .collect::<Vec<_>>();
+    drop(model_index);
+
+    for (index, range) in inferred {
+        if let Some(edge) = ir.model.edges.get_mut(index) {
+            edge.param_range = Some(range);
+        }
+    }
+    Ok(())
+}
+
+fn curve_endpoint_seed(geometry: &CurveGeometry, upper: bool, fallback: f64) -> f64 {
+    match geometry {
+        CurveGeometry::Nurbs(nurbs) if !nurbs.periodic => {
+            nurbs_curve_parameter_domain(nurbs).map_or(fallback, |[lower, upper_bound]| {
+                if upper {
+                    upper_bound
+                } else {
+                    lower
+                }
+            })
+        }
+        CurveGeometry::Transformed { basis, .. } => curve_endpoint_seed(basis, upper, fallback),
+        _ => fallback,
+    }
+}
+
+fn edge_parameter_range(geometry: &CurveGeometry, start: f64, end: f64) -> Option<[f64; 2]> {
+    if !start.is_finite() || !end.is_finite() {
+        return None;
+    }
+    let periodic_domain = match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        CurveGeometry::Nurbs(nurbs) if nurbs.periodic => nurbs_curve_parameter_domain(nurbs),
+        CurveGeometry::Transformed { basis, .. } => {
+            return edge_parameter_range(basis, start, end);
+        }
+        _ => None,
+    };
+    let Some([lower, upper]) = periodic_domain else {
+        return (end > start).then_some([start, end]);
+    };
+    let period = upper - lower;
+    if !period.is_finite() || period <= 0.0 {
+        return None;
+    }
+    let sweep = (end - start).rem_euclid(period);
+    let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+    if sweep <= 0.0 || sweep > period + tolerance {
+        return None;
+    }
+    let normalized_start = lower + (start - lower).rem_euclid(period);
+    let normalized_start = if (normalized_start - upper).abs() <= tolerance {
+        lower
+    } else {
+        normalized_start
+    };
+    Some([normalized_start, normalized_start + sweep.min(period)])
 }
 
 struct UnitScales {
@@ -4588,6 +4717,32 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
+        let line = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert_eq!(edge_parameter_range(&line, 2.0, 5.0), Some([2.0, 5.0]));
+        assert_eq!(edge_parameter_range(&line, 5.0, 2.0), None);
+        assert_eq!(edge_parameter_range(&line, 2.0, 2.0), None);
+    }
+
+    #[test]
+    fn edge_parameter_range_normalizes_periodic_interval_in_constant_time() {
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+        };
+        let start = 1.5 + 20_000.0 * std::f64::consts::TAU;
+        let end = 0.5 - 20_000.0 * std::f64::consts::TAU;
+        let range = edge_parameter_range(&circle, start, end).expect("periodic interval");
+        assert!((range[0] - 1.5).abs() < 1.0e-10);
+        assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
+    }
 
     #[test]
     fn surface_parameter_units_follow_the_surface_chart() {

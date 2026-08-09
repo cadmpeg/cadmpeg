@@ -174,6 +174,7 @@ fn decode_exchange_mode(
         )?;
     }
     let topology = topology::decode(exchange, &mut ir, &carrier_index);
+    geometry::infer_edge_parameter_ranges(&mut ir, ctx)?;
     let owned_carriers = geometry::topology_owned_carriers(&ir, &carrier_index);
     charge_semantic_stage(
         ctx,

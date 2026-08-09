@@ -1818,18 +1818,32 @@ pub fn model_curve_parameter_near_point(
     point: Point3,
     seed: f64,
 ) -> Option<f64> {
+    let index = crate::index::ModelIndex::new(ir);
+    model_curve_parameter_near_point_in_index(&index, curve_id, point, seed)
+}
+
+/// Invert a model curve using a caller-owned lookup index.
+///
+/// Batch callers must reuse one index so carrier inversion remains linear in
+/// the document population rather than rebuilding the index for every edge.
+pub fn model_curve_parameter_near_point_in_index(
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    point: Point3,
+    seed: f64,
+) -> Option<f64> {
     model_curve_parameter_near_point_with_tolerance(
-        ir,
+        index,
         curve_id,
         point,
         seed,
-        ir.tolerances.linear,
+        index.ir().tolerances.linear,
         0,
     )
 }
 
 fn model_curve_parameter_near_point_with_tolerance(
-    ir: &CadIr,
+    index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
     point: Point3,
     seed: f64,
@@ -1839,7 +1853,6 @@ fn model_curve_parameter_near_point_with_tolerance(
     if depth > 256 {
         return None;
     }
-    let index = crate::index::ModelIndex::new(ir);
     let curve = index.curves(&curve_id.0)?;
     if let Some(procedural) = index
         .ir()
@@ -1856,7 +1869,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                     return None;
                 }
                 return model_curve_parameter_near_point_with_tolerance(
-                    ir,
+                    index,
                     source,
                     basis_point,
                     seed,
@@ -1882,7 +1895,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                 }
                 let source_seed = if *sense { start + seed } else { end - seed };
                 let source_parameter = model_curve_parameter_near_point_with_tolerance(
-                    ir,
+                    index,
                     source,
                     point,
                     source_seed,
@@ -1897,7 +1910,7 @@ fn model_curve_parameter_near_point_with_tolerance(
                 return (parameter.is_finite()
                     && parameter >= 0.0
                     && parameter <= span
-                    && model_curve_point_by_id(&index, curve_id, parameter)
+                    && model_curve_point_by_id(index, curve_id, parameter)
                         .is_some_and(|evaluated| evaluated.distance(point) <= tolerance))
                 .then_some(parameter);
             }
@@ -1937,12 +1950,12 @@ fn model_curve_parameter_near_point_with_tolerance(
         };
         let parameter = match &surface.geometry {
             SurfaceGeometry::Plane { .. } => {
-                let Some(base) = model_surface_point_by_id(&index, support_id, origin.u, origin.v)
+                let Some(base) = model_surface_point_by_id(index, support_id, origin.u, origin.v)
                 else {
                     continue;
                 };
                 let Some(next) = model_surface_point_by_id(
-                    &index,
+                    index,
                     support_id,
                     origin.u + direction.u,
                     origin.v + direction.v,
@@ -2010,7 +2023,7 @@ fn model_curve_parameter_near_point_with_tolerance(
         } else if parameter < range[0] || parameter > range[1] {
             continue;
         }
-        let Some(evaluated) = model_curve_point_by_id(&index, curve_id, parameter) else {
+        let Some(evaluated) = model_curve_point_by_id(index, curve_id, parameter) else {
             continue;
         };
         let distance = ((evaluated.x - point.x).powi(2)
