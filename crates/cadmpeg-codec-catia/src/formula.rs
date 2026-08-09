@@ -771,6 +771,7 @@ fn collect_legacy_parameters(
             if candidates.contains_key(&id) {
                 continue;
             }
+            let value = ParameterValue::String(string.value.clone());
             candidates.insert(
                 id.clone(),
                 FormulaParameterCandidate {
@@ -779,9 +780,9 @@ fn collect_legacy_parameters(
                         owner: None,
                         ordinal: 0,
                         name: name.clone(),
-                        expression: String::new(),
+                        expression: parameter_expression(&value),
                         display: None,
-                        value: Some(ParameterValue::String(string.value.clone())),
+                        value: Some(value),
                         dependencies: Vec::new(),
                         properties: parameter_properties("String", None),
                         pmi: None,
@@ -1191,8 +1192,15 @@ fn parameter_expression(value: &ParameterValue) -> String {
         ParameterValue::Real(value) => value.to_string(),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
-        ParameterValue::String(_) => unreachable!(),
+        ParameterValue::String(value) => string_literal_expression(value).unwrap_or_default(),
     }
+}
+
+fn string_literal_expression(value: &str) -> Option<String> {
+    value
+        .chars()
+        .all(|character| character != '"' && character != '\\' && !character.is_control())
+        .then(|| format!("\"{value}\""))
 }
 
 fn parameter_properties(
@@ -2264,16 +2272,16 @@ impl FormulaExpressionParser<'_, '_> {
         (self.peek()? == b'"').then_some(())?;
         self.at += 1;
         let start = self.at;
-        while let Some(byte) = self.peek() {
-            if byte == b'"' {
+        while let Some(character) = self.source.get(self.at..)?.chars().next() {
+            if character == '"' {
                 let value = self.source.get(start..self.at)?.to_string();
-                self.at += 1;
+                self.at += character.len_utf8();
                 return Some(value);
             }
-            if byte.is_ascii_control() || byte == b'\\' {
+            if character.is_control() || character == '\\' {
                 return None;
             }
-            self.at += 1;
+            self.at += character.len_utf8();
         }
         None
     }
@@ -3008,6 +3016,22 @@ mod parser_tests {
     }
 
     #[test]
+    fn string_parameter_expressions_match_literal_grammar() {
+        let literal = ParameterValue::String("Cilas Evans".to_string());
+        assert_eq!(parameter_expression(&literal), "\"Cilas Evans\"");
+        assert!(string_literal_expression("").is_some_and(|expression| expression == "\"\""));
+        for value in ["quote\"", "backslash\\", "line\n", "control\u{0085}"] {
+            assert!(string_literal_expression(value).is_none(), "{value:?}");
+            assert!(parameter_expression(&ParameterValue::String(value.to_string())).is_empty());
+        }
+        assert_eq!(
+            evaluate_formula_expression("\"Cilas Evans\"", &BTreeMap::new())
+                .and_then(EvaluatedFormulaValue::string),
+            Some("Cilas Evans".to_string())
+        );
+    }
+
+    #[test]
     fn legacy_output_assignment_requires_one_exact_assignment() {
         let value = evaluate_legacy_output_assignment("#1_ = 2 + 3", "#1_")
             .and_then(EvaluatedFormulaValue::scalar)
@@ -3631,6 +3655,7 @@ mod parser_tests {
         for expression in [
             "\"unterminated",
             "\"unsupported\\\\escape\"",
+            "\"control\u{0085}\"",
             "\"text\" + 1",
             "ToString(1.5)",
             "ReplaceSubText(\"text\",\"\",\"x\")",

@@ -4929,6 +4929,7 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
             "Cilas Evans".to_string()
         ))
     );
+    assert_eq!(parameter.expression, "\"Cilas Evans\"");
     assert_eq!(
         decoded
             .report
@@ -5091,6 +5092,7 @@ fn decode_transfers_intrinsically_typed_evaluated_string_and_integer_parameters(
             "Revision-1".to_string()
         ))
     );
+    assert_eq!(string.expression, "\"Revision-1\"");
     assert_eq!(string.properties["value_type"], "String");
     assert_eq!(integer.name, "Search");
     assert_eq!(
@@ -5596,7 +5598,10 @@ fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
             &DecodeOptions::default(),
         )
         .expect("decode mismatched legacy string formula");
-    assert!(mismatched.ir.model.parameters[0].expression.is_empty());
+    assert_eq!(
+        mismatched.ir.model.parameters[0].expression,
+        "\"Cilas Evans\""
+    );
     assert_eq!(
         mismatched
             .report
