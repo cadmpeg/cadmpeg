@@ -363,7 +363,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let has_datum_reference = record
             .partials
             .iter()
-            .any(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
+            .any(|partial| partial.name.as_ref() == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
         let datum_system = if has_datum_reference {
             refs.iter().find_map(|id| {
                 let annotation = &ir.model.pmi[*annotations.get(id)?];
@@ -956,7 +956,7 @@ fn measure_inner(
                 .find(|unit| {
                     exchange.records.get(unit).is_some_and(|record| {
                         record.partials.iter().any(|partial| {
-                            matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
+                            matches!(partial.name.as_ref(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
                         })
                     })
                 });
@@ -1061,12 +1061,12 @@ trait RecordExt {
 
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
+        (self.partials.len() == 1).then(|| self.partials[0].name.as_ref())
     }
     fn display_name(&self) -> String {
         self.partials
             .iter()
-            .map(|partial| partial.name.as_str())
+            .map(|partial| partial.name.as_ref())
             .collect::<Vec<_>>()
             .join("+")
     }

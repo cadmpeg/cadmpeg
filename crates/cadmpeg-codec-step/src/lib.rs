@@ -3512,7 +3512,7 @@ impl Codec for StepCodec {
                     continue;
                 }
                 for partial in &exchange.records[id].partials {
-                    *counts.entry(partial.name.clone()).or_default() += 1;
+                    *counts.entry(partial.name.to_string()).or_default() += 1;
                 }
             }
             let unknown = counts
@@ -3570,7 +3570,7 @@ impl Codec for StepCodec {
         let schema = exchange
             .header
             .iter()
-            .find(|record| record.name == "FILE_SCHEMA")
+            .find(|record| record.name.as_ref() == "FILE_SCHEMA")
             .map_or_else(
                 || "unspecified".into(),
                 |record| {

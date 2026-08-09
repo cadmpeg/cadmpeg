@@ -146,6 +146,36 @@ fn parser_uses_the_decode_session_work_budget() {
 }
 
 #[test]
+fn parser_accounts_for_owned_value_storage() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM(1);ENDSEC;END-ISO-10303-21;";
+    let mut value_storage_limit = None;
+    for max_retained_bytes in 1..=256 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::parse::parse_with_context(source, &ctx)
+            .expect_err("owned value storage must consume retained bytes");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_parse_value_storage" {
+            value_storage_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = value_storage_limit.expect("value storage must have a retained-byte gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert!(limit.additional > 0);
+    assert!(limit.used <= limit.limit);
+}
+
+#[test]
 fn anchor_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
     let mut materialization_limit = None;
@@ -311,7 +341,7 @@ fn parser_reports_recoverable_noncanonical_complex_partial_order() {
         exchange.records[&1]
             .partials
             .iter()
-            .map(|partial| partial.name.as_str())
+            .map(|partial| partial.name.as_ref())
             .collect::<Vec<_>>(),
         ["NAMED_UNIT", "SOLID_ANGLE_UNIT", "SI_UNIT"]
     );
@@ -390,13 +420,13 @@ fn exporting_a_salvaged_noncanonical_unit_repairs_partial_order() {
             record
                 .partials
                 .iter()
-                .any(|partial| partial.name == "SOLID_ANGLE_UNIT")
+                .any(|partial| partial.name.as_ref() == "SOLID_ANGLE_UNIT")
         })
         .expect("exported solid-angle unit");
     assert_eq!(
         unit.partials
             .iter()
-            .map(|partial| partial.name.as_str())
+            .map(|partial| partial.name.as_ref())
             .collect::<Vec<_>>(),
         ["NAMED_UNIT", "SI_UNIT", "SOLID_ANGLE_UNIT"]
     );
@@ -5463,7 +5493,7 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
         .iter()
         .find_map(|(&face_step, record)| {
             let partial = record.partials.first()?;
-            if partial.name != "ADVANCED_FACE" {
+            if partial.name.as_ref() != "ADVANCED_FACE" {
                 return None;
             }
             let crate::parse::Value::List(bounds) = partial.parameters.get(1)? else {
@@ -5480,9 +5510,9 @@ fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
             };
             let first_record = exchange.records.get(&first)?.partials.first()?;
             let second_record = exchange.records.get(&second)?.partials.first()?;
-            let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
+            let (outer, inner) = if first_record.name.as_ref() == "FACE_OUTER_BOUND" {
                 (first, second)
-            } else if second_record.name == "FACE_OUTER_BOUND" {
+            } else if second_record.name.as_ref() == "FACE_OUTER_BOUND" {
                 (second, first)
             } else {
                 return None;
@@ -5647,7 +5677,7 @@ fn ap242_dimension_kinds_emit_concrete_schema_entities() {
             record
                 .partials
                 .first()
-                .is_some_and(|partial| partial.name == "DIMENSIONAL_LOCATION")
+                .is_some_and(|partial| partial.name.as_ref() == "DIMENSIONAL_LOCATION")
         })
         .expect("dimensional location");
     assert_eq!(location.partials[0].parameters.len(), 4);

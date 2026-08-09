@@ -1229,7 +1229,7 @@ fn edge_curve_id_reported(
         && curve.is_some_and(|record| {
             record.partials.iter().any(|partial| {
                 matches!(
-                    partial.name.as_str(),
+                    partial.name.as_ref(),
                     "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
                 )
             })
@@ -1256,7 +1256,7 @@ fn oriented_defs(exchange: &Exchange) -> BTreeMap<u64, OrientedDef> {
                     pcurve: r
                         .partials
                         .iter()
-                        .find(|partial| partial.name == "SEAM_EDGE")
+                        .find(|partial| partial.name.as_ref() == "SEAM_EDGE")
                         .and_then(|partial| {
                             partial
                                 .parameters
@@ -1306,7 +1306,7 @@ fn named_reference(
     record
         .partials
         .iter()
-        .find(|partial| partial.name == name)
+        .find(|partial| partial.name.as_ref() == name)
         .and_then(|partial| {
             partial
                 .parameters
@@ -1343,7 +1343,7 @@ fn named_refs(record: &RawRecord, name: &str, simple_index: usize) -> Option<Vec
     record
         .partials
         .iter()
-        .find(|partial| partial.name == name)
+        .find(|partial| partial.name.as_ref() == name)
         .and_then(|partial| partial.parameters.iter().find_map(refs))
 }
 
@@ -1359,7 +1359,7 @@ fn named_logical(
     record
         .partials
         .iter()
-        .find(|partial| partial.name == name)
+        .find(|partial| partial.name.as_ref() == name)
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
 }
 
@@ -1395,12 +1395,12 @@ fn edge_vertices(record: &RawRecord) -> Option<(u64, u64)> {
     record
         .partials
         .iter()
-        .find(|partial| partial.name == "EDGE")
+        .find(|partial| partial.name.as_ref() == "EDGE")
         .or_else(|| {
             record
                 .partials
                 .iter()
-                .find(|partial| partial.name == "EDGE_CURVE")
+                .find(|partial| partial.name.as_ref() == "EDGE_CURVE")
         })
         .and_then(|partial| {
             let mut references = partial.parameters.iter().filter_map(ValueExt::reference);
@@ -1415,7 +1415,7 @@ fn edge_geometry(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
-        .find(|partial| partial.name == "EDGE_CURVE")
+        .find(|partial| partial.name.as_ref() == "EDGE_CURVE")
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::reference))
 }
 
@@ -1426,7 +1426,7 @@ fn edge_same_sense(record: &RawRecord) -> Option<bool> {
     record
         .partials
         .iter()
-        .find(|partial| partial.name == "EDGE_CURVE")
+        .find(|partial| partial.name.as_ref() == "EDGE_CURVE")
         .and_then(|partial| partial.parameters.iter().find_map(ValueExt::logical))
 }
 
@@ -2738,7 +2738,7 @@ fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
     let curve = exchange.records.get(&curve_step)?;
     if curve.partials.iter().any(|partial| {
         matches!(
-            partial.name.as_str(),
+            partial.name.as_ref(),
             "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
         )
     }) {
@@ -2759,7 +2759,7 @@ fn associated_pcurves(
     };
     if !curve.partials.iter().any(|partial| {
         matches!(
-            partial.name.as_str(),
+            partial.name.as_ref(),
             "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
         )
     }) {
@@ -3186,7 +3186,11 @@ fn direct_face_same_sense(record: &RawRecord, governing: &str) -> Option<bool> {
 }
 
 fn oriented_face_element(record: &RawRecord) -> Option<u64> {
-    if let Some(partial) = record.partials.iter().find(|p| p.name == "ORIENTED_FACE") {
+    if let Some(partial) = record
+        .partials
+        .iter()
+        .find(|p| p.name.as_ref() == "ORIENTED_FACE")
+    {
         return partial
             .parameters
             .iter()
@@ -3205,7 +3209,7 @@ fn oriented_face_orientation(record: &RawRecord) -> Option<bool> {
     record
         .partials
         .iter()
-        .find(|partial| partial.name == "ORIENTED_FACE")
+        .find(|partial| partial.name.as_ref() == "ORIENTED_FACE")
         .into_iter()
         .flat_map(|partial| partial.parameters.iter())
         .find_map(ValueExt::logical)
@@ -3216,7 +3220,7 @@ fn subface_parent(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
-        .find(|partial| partial.name == "SUBFACE")
+        .find(|partial| partial.name.as_ref() == "SUBFACE")
         .into_iter()
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::reference)
@@ -3236,7 +3240,10 @@ fn refs(value: &Value) -> Option<Vec<u64>> {
 }
 
 fn has_type(record: &RawRecord, name: &str) -> bool {
-    record.partials.iter().any(|partial| partial.name == name)
+    record
+        .partials
+        .iter()
+        .any(|partial| partial.name.as_ref() == name)
 }
 
 /// Returns the first partial name present in a subtype-first dispatch chain.
@@ -3303,7 +3310,7 @@ fn entity_parameter<'a>(record: &'a RawRecord, name: &str, index: usize) -> Opti
     record
         .partials
         .iter()
-        .find(|partial| partial.name == name)
+        .find(|partial| partial.name.as_ref() == name)
         .or_else(|| (record.partials.len() == 1).then(|| &record.partials[0]))?
         .parameters
         .get(index)
@@ -3316,10 +3323,12 @@ trait RecordExt {
 }
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
+        (self.partials.len() == 1).then(|| self.partials[0].name.as_ref())
     }
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
+        self.partials
+            .iter()
+            .find(|partial| partial.name.as_ref() == name)
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.partials.first()?.parameters.get(index)

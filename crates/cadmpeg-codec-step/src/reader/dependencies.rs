@@ -161,7 +161,7 @@ trait RecordExt {
 
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
+        (self.partials.len() == 1).then(|| self.partials[0].name.as_ref())
     }
 
     fn parameter(&self, index: usize) -> Option<&Value> {

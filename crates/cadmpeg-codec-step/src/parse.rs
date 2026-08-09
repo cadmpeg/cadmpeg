@@ -7,6 +7,7 @@
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
 use std::collections::{BTreeMap, HashMap};
+use std::mem::size_of;
 use std::ops::Range;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -46,7 +47,7 @@ pub enum Value {
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartialRecord {
     /// Uppercase entity name.
-    pub name: String,
+    pub name: Arc<str>,
     /// Explicit external-mapping parameters.
     pub parameters: Vec<Value>,
 }
@@ -66,7 +67,7 @@ pub struct RawRecord {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeaderRecord {
     /// Header record name.
-    pub name: String,
+    pub name: Arc<str>,
     /// Header record parameters.
     pub parameters: Vec<Value>,
 }
@@ -120,7 +121,7 @@ type EntityUnionCache = Mutex<HashMap<Vec<String>, Arc<[u64]>>>;
 
 #[derive(Debug, Default)]
 struct EntityIndex(
-    OnceLock<HashMap<String, Vec<u64>>>,
+    OnceLock<HashMap<Arc<str>, Vec<u64>>>,
     OnceLock<EntityUnionCache>,
 );
 
@@ -159,15 +160,15 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
-    fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
+    fn entity_ids(&self) -> &HashMap<Arc<str>, Vec<u64>> {
         self.entity_ids.0.get_or_init(|| {
-            let mut entity_ids = HashMap::<String, Vec<u64>>::new();
+            let mut entity_ids = HashMap::<Arc<str>, Vec<u64>>::new();
             for (&id, record) in &self.records {
                 for partial in &record.partials {
-                    if let Some(ids) = entity_ids.get_mut(partial.name.as_str()) {
+                    if let Some(ids) = entity_ids.get_mut(partial.name.as_ref()) {
                         ids.push(id);
                     } else {
-                        entity_ids.insert(partial.name.clone(), vec![id]);
+                        entity_ids.insert(Arc::clone(&partial.name), vec![id]);
                     }
                 }
             }
@@ -233,13 +234,13 @@ impl Exchange {
                 .or_insert_with(|| {
                     let capacity = key
                         .iter()
-                        .filter_map(|name| self.entity_ids().get(name))
+                        .filter_map(|name| self.entity_ids().get(name.as_str()))
                         .map(Vec::len)
                         .sum();
                     let mut ids = Vec::with_capacity(capacity);
                     ids.extend(
                         key.iter()
-                            .filter_map(|name| self.entity_ids().get(name))
+                            .filter_map(|name| self.entity_ids().get(name.as_str()))
                             .flatten()
                             .copied(),
                     );
@@ -317,6 +318,7 @@ fn parse_inner(
         depth: 0,
         diagnostics: Vec::new(),
         budget,
+        name_pool: HashMap::new(),
     };
     parser.current = parser.lex_next()?;
     parser.exchange()
@@ -338,6 +340,7 @@ struct Parser<'input, 'ctx, 'arena> {
     depth: usize,
     diagnostics: Vec<ParseDiagnostic>,
     budget: Option<&'ctx DecodeContext<'arena>>,
+    name_pool: HashMap<String, Arc<str>>,
 }
 
 impl Parser<'_, '_, '_> {
@@ -350,6 +353,7 @@ impl Parser<'_, '_, '_> {
         while !self.peek_name("ENDSEC") {
             let name = self.take_name()?;
             let parameters = self.parameters()?;
+            self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
             self.punct(&TokenKind::Semicolon)?;
             header.push(HeaderRecord { name, parameters });
         }
@@ -366,6 +370,7 @@ impl Parser<'_, '_, '_> {
                 self.punct(&TokenKind::Equals)?;
                 let value = self.value()?;
                 self.punct(&TokenKind::Semicolon)?;
+                self.charge_string_storage(&name, "step_parse_name_storage")?;
                 anchors.push(AnchorEntry { name, value });
             }
             self.next_kind()?;
@@ -384,6 +389,8 @@ impl Parser<'_, '_, '_> {
                     return self.err("expected reference URI");
                 };
                 self.punct(&TokenKind::Semicolon)?;
+                self.charge_string_storage(&name, "step_parse_name_storage")?;
+                self.charge_string_storage(&uri, "step_parse_reference_storage")?;
                 reference_entries.push(ReferenceEntry { name, uri });
             }
             self.next_kind()?;
@@ -394,7 +401,9 @@ impl Parser<'_, '_, '_> {
         while self.peek_name("DATA") {
             self.next_kind()?;
             let parameters = if self.peek(&TokenKind::LParen) {
-                self.parameters()?
+                let parameters = self.parameters()?;
+                self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+                parameters
             } else {
                 Vec::new()
             };
@@ -406,10 +415,15 @@ impl Parser<'_, '_, '_> {
                 if records.insert(id, record).is_some() {
                     return self.err("duplicate instance name");
                 }
+                self.charge_retained(
+                    btree_node_storage::<u64, RawRecord>(),
+                    "step_parse_record_index",
+                )?;
                 ids.push(id);
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
+            self.charge_vec_storage(&ids, "step_parse_section_storage")?;
             data.push(DataSection {
                 parameters,
                 records: ids,
@@ -439,6 +453,15 @@ impl Parser<'_, '_, '_> {
         if !anchors.is_empty() {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
+                self.charge_string_storage(&anchor.name, "step_anchor_binding_storage")?;
+                self.charge_retained(
+                    value_storage_bytes(&anchor.value),
+                    "step_anchor_binding_storage",
+                )?;
+                self.charge_retained(
+                    btree_node_storage::<String, Value>(),
+                    "step_anchor_binding_storage",
+                )?;
                 if anchor_bindings
                     .insert(anchor.name.clone(), anchor.value.clone())
                     .is_some()
@@ -462,6 +485,10 @@ impl Parser<'_, '_, '_> {
                 }
             }
         }
+        self.charge_vec_storage(&header, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&anchors, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&reference_entries, "step_parse_exchange_storage")?;
+        self.charge_vec_storage(&data, "step_parse_exchange_storage")?;
         let mut refs = Vec::new();
         for anchor in &anchors {
             refs.clear();
@@ -526,7 +553,7 @@ impl Parser<'_, '_, '_> {
             {
                 let observed = parts
                     .iter()
-                    .map(|part| part.name.as_str())
+                    .map(|part| part.name.as_ref())
                     .collect::<Vec<_>>()
                     .join(", ");
                 self.diagnostics.push(ParseDiagnostic {
@@ -543,6 +570,11 @@ impl Parser<'_, '_, '_> {
             vec![self.partial()?]
         };
         self.punct(&TokenKind::Semicolon)?;
+        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
+        self.charge_retained(
+            u64::try_from(size_of::<RawRecord>()).unwrap_or(u64::MAX),
+            "step_parse_record_storage",
+        )?;
         Ok(RawRecord {
             id,
             partials,
@@ -553,6 +585,7 @@ impl Parser<'_, '_, '_> {
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {
         let name = self.take_name()?;
         let parameters = self.parameters()?;
+        self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
         Ok(PartialRecord { name, parameters })
     }
 
@@ -588,47 +621,62 @@ impl Parser<'_, '_, '_> {
     }
 
     fn value(&mut self) -> Result<Value, ParseError> {
-        if self.peek(&TokenKind::LParen) {
-            return Ok(Value::List(self.parameters()?));
-        }
-        match self.next_kind()? {
-            TokenKind::Instance(v) => Ok(Value::Reference(v)),
-            TokenKind::Integer(v) => Ok(Value::Integer(v)),
-            TokenKind::Real(v) => Ok(Value::Real(v)),
-            TokenKind::Enumeration(v) => Ok(Value::Enumeration(v)),
-            TokenKind::String(v) => Ok(Value::String(v)),
-            TokenKind::Binary(v) => Ok(Value::Binary(v)),
-            TokenKind::Resource(v) => Ok(Value::Resource(v)),
-            TokenKind::Omitted => Ok(Value::Omitted),
-            TokenKind::Derived => Ok(Value::Derived),
-            TokenKind::Name(name) => {
-                let parameters = self.parameters()?;
-                if parameters.len() != 1 {
-                    return self.err("typed parameter requires one value");
+        let value = if self.peek(&TokenKind::LParen) {
+            let values = self.parameters()?;
+            self.charge_value_vec_storage(&values, "step_parse_collection_storage")?;
+            Value::List(values)
+        } else {
+            match self.next_kind()? {
+                TokenKind::Instance(v) => Value::Reference(v),
+                TokenKind::Integer(v) => Value::Integer(v),
+                TokenKind::Real(v) => Value::Real(v),
+                TokenKind::Enumeration(v) => Value::Enumeration(v),
+                TokenKind::String(v) => Value::String(v),
+                TokenKind::Binary(v) => Value::Binary(v),
+                TokenKind::Resource(v) => Value::Resource(v),
+                TokenKind::Omitted => Value::Omitted,
+                TokenKind::Derived => Value::Derived,
+                TokenKind::Name(name) => {
+                    let parameters = self.parameters()?;
+                    if parameters.len() != 1 {
+                        return self.err("typed parameter requires one value");
+                    }
+                    Value::Typed(
+                        name,
+                        Box::new(
+                            parameters
+                                .into_iter()
+                                .next()
+                                .expect("parameter count was checked"),
+                        ),
+                    )
                 }
-                Ok(Value::Typed(
-                    name,
-                    Box::new(
-                        parameters
-                            .into_iter()
-                            .next()
-                            .expect("parameter count was checked"),
-                    ),
-                ))
+                _ => return self.err("expected parameter value"),
             }
-            _ => self.err("expected parameter value"),
-        }
+        };
+        self.charge_retained(value_node_storage_bytes(&value), "step_parse_value_storage")?;
+        Ok(value)
     }
 
-    fn take_name(&mut self) -> Result<String, ParseError> {
-        match self.next_kind()? {
-            TokenKind::Name(name) => Ok(name),
-            _ => self.err("expected name"),
+    fn take_name(&mut self) -> Result<Arc<str>, ParseError> {
+        let TokenKind::Name(name) = self.next_kind()? else {
+            return self.err("expected name");
+        };
+        if let Some(interned) = self.name_pool.get(&name) {
+            return Ok(Arc::clone(interned));
         }
+        let interned: Arc<str> = Arc::from(name.as_str());
+        self.charge_retained(
+            u64::try_from(size_of::<Arc<str>>() + interned.len() + name.capacity())
+                .unwrap_or(u64::MAX),
+            "step_parse_name_storage",
+        )?;
+        self.name_pool.insert(name, Arc::clone(&interned));
+        Ok(interned)
     }
     fn name(&mut self, expected: &str) -> Result<(), ParseError> {
         let actual = self.take_name()?;
-        if actual == expected {
+        if actual.as_ref() == expected {
             Ok(())
         } else {
             self.err(&format!("expected {expected}, found {actual}"))
@@ -687,6 +735,45 @@ impl Parser<'_, '_, '_> {
         self.budget
             .map_or(Ok(()), |ctx| ctx.charge_collection_items(count, operation))
             .map_err(ParseError::Resource)
+    }
+
+    fn charge_retained(&self, bytes: u64, operation: &'static str) -> Result<(), ParseError> {
+        self.budget
+            .map_or(Ok(()), |ctx| ctx.charge_retained(bytes, operation, None))
+            .map_err(ParseError::Resource)
+    }
+
+    fn charge_string_storage(
+        &self,
+        value: &String,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            u64::try_from(value.capacity()).unwrap_or(u64::MAX),
+            operation,
+        )
+    }
+
+    fn charge_value_vec_storage(
+        &self,
+        values: &Vec<Value>,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            allocation_bytes(values.capacity(), size_of::<Value>()),
+            operation,
+        )
+    }
+
+    fn charge_vec_storage<T>(
+        &self,
+        values: &Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        self.charge_retained(
+            allocation_bytes(values.capacity(), size_of::<T>()),
+            operation,
+        )
     }
     fn current_offset(&self) -> usize {
         self.current
@@ -793,7 +880,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         ));
                     }
                     self.charge_nodes(*nodes)?;
-                    return Ok((value.clone(), *nodes, *nodes));
+                    let cloned = value.clone();
+                    self.charge_storage(value_storage_bytes(&cloned))?;
+                    return Ok((cloned, *nodes, *nodes));
                 }
                 if stack.contains(name) {
                     return Err(AnchorResolveError::Syntax(format!(
@@ -804,6 +893,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 let source_nodes = value_node_count(&self.anchors[name]);
                 self.charge_nodes(source_nodes)?;
                 let source = self.anchors[name].clone();
+                self.charge_storage(value_storage_bytes(&source))?;
                 let resolved = self.resolve(&source, stack, budget, depth + 1);
                 stack.pop();
                 let (value, nodes, _) = resolved?;
@@ -813,7 +903,9 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     ));
                 }
                 self.charge_nodes(nodes)?;
+                self.charge_storage(value_storage_bytes(&value))?;
                 self.memo.insert(name.clone(), (value.clone(), nodes));
+                self.charge_storage(value_storage_bytes(&value))?;
                 Ok((value, nodes, nodes))
             }
             Value::List(values) => {
@@ -843,23 +935,41 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         })?;
                     resolved.push(value);
                 }
-                Ok((Value::List(resolved), nodes, expanded_nodes))
+                let value = Value::List(resolved);
+                self.charge_storage(value_node_storage_bytes(&value))?;
+                self.charge_storage(allocation_bytes(
+                    match &value {
+                        Value::List(values) => values.capacity(),
+                        _ => unreachable!("list value was just constructed"),
+                    },
+                    size_of::<Value>(),
+                ))?;
+                Ok((value, nodes, expanded_nodes))
             }
             Value::Typed(name, value) => {
                 self.charge_nodes(1)?;
                 let (value, nodes, expanded_nodes) =
                     self.resolve(value, stack, budget, depth + 1)?;
-                Ok((
-                    Value::Typed(name.clone(), Box::new(value)),
-                    nodes + 1,
-                    expanded_nodes,
-                ))
+                let typed = Value::Typed(name.clone(), Box::new(value));
+                self.charge_storage(value_node_storage_bytes(&typed))?;
+                Ok((typed, nodes + 1, expanded_nodes))
             }
             value => {
                 self.charge_nodes(1)?;
-                Ok((value.clone(), 1, 0))
+                let cloned = value.clone();
+                self.charge_storage(value_node_storage_bytes(&cloned))?;
+                Ok((cloned, 1, 0))
             }
         }
+    }
+
+    fn charge_storage(&self, bytes: u64) -> Result<(), AnchorResolveError> {
+        if let Some(budget) = self.budget {
+            budget
+                .charge_retained(bytes, "step_anchor_materialization_storage", None)
+                .map_err(AnchorResolveError::Resource)?;
+        }
+        Ok(())
     }
 }
 
@@ -883,6 +993,51 @@ fn value_node_count(value: &Value) -> usize {
         Value::Typed(_, value) => 1usize.saturating_add(value_node_count(value)),
         _ => 1,
     }
+}
+
+fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
+    u64::try_from(capacity)
+        .unwrap_or(u64::MAX)
+        .saturating_mul(u64::try_from(element_size).unwrap_or(u64::MAX))
+}
+
+fn btree_node_storage<K, V>() -> u64 {
+    allocation_bytes(
+        1,
+        size_of::<(K, V)>().saturating_add(3 * size_of::<usize>()),
+    )
+}
+
+fn value_node_storage_bytes(value: &Value) -> u64 {
+    let dynamic = match value {
+        Value::Enumeration(value) | Value::Resource(value) => value.capacity(),
+        Value::String(value) => value.capacity(),
+        Value::Binary(value) => value.data.capacity(),
+        Value::Typed(name, _) => name.capacity(),
+        Value::Reference(_)
+        | Value::Integer(_)
+        | Value::Real(_)
+        | Value::Omitted
+        | Value::Derived
+        | Value::List(_) => 0,
+    };
+    u64::try_from(size_of::<Value>())
+        .unwrap_or(u64::MAX)
+        .saturating_add(u64::try_from(dynamic).unwrap_or(u64::MAX))
+}
+
+fn value_storage_bytes(value: &Value) -> u64 {
+    value_node_storage_bytes(value).saturating_add(match value {
+        Value::List(values) => allocation_bytes(values.capacity(), size_of::<Value>())
+            .saturating_add(
+                values
+                    .iter()
+                    .map(value_storage_bytes)
+                    .fold(0, u64::saturating_add),
+            ),
+        Value::Typed(_, value) => value_storage_bytes(value),
+        _ => 0,
+    })
 }
 
 #[cfg(test)]

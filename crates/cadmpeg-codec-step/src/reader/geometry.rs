@@ -494,7 +494,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if record
             .partials
             .iter()
-            .any(|partial| partial.name == "VERTEX_POINT")
+            .any(|partial| partial.name.as_ref() == "VERTEX_POINT")
         {
             if let Some(id) = vertex_point_reference(record) {
                 point_carriers.insert(id);
@@ -511,7 +511,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if record.partials.iter().any(|partial| {
             matches!(
-                partial.name.as_str(),
+                partial.name.as_ref(),
                 "GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET"
             )
         }) {
@@ -523,7 +523,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if record
             .partials
             .iter()
-            .any(|partial| partial.name == "POLY_LOOP")
+            .any(|partial| partial.name.as_ref() == "POLY_LOOP")
         {
             if let Some(items) = first_named_list(record, &["POLY_LOOP"]) {
                 point_carriers.extend(items.into_iter().filter(|id| points.contains_key(id)));
@@ -1597,7 +1597,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if !face
             .partials
             .iter()
-            .any(|partial| matches!(partial.name.as_str(), "ADVANCED_FACE" | "FACE_SURFACE"))
+            .any(|partial| matches!(partial.name.as_ref(), "ADVANCED_FACE" | "FACE_SURFACE"))
         {
             continue;
         }
@@ -1741,7 +1741,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     for (&id, record) in &exchange.records {
         if record.partials.iter().any(|partial| {
             matches!(
-                partial.name.as_str(),
+                partial.name.as_ref(),
                 "LENGTH_UNIT"
                     | "NAMED_UNIT"
                     | "SI_UNIT"
@@ -1779,7 +1779,7 @@ fn face_surface_reference(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
-        .filter(|partial| matches!(partial.name.as_str(), "ADVANCED_FACE" | "FACE_SURFACE"))
+        .filter(|partial| matches!(partial.name.as_ref(), "ADVANCED_FACE" | "FACE_SURFACE"))
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(Value::reference)
         .next_back()
@@ -1951,7 +1951,7 @@ fn first_named_list(record: &RawRecord, names: &[&str]) -> Option<Vec<u64>> {
     record
         .partials
         .iter()
-        .find(|partial| names.iter().any(|name| partial.name == *name))
+        .find(|partial| names.iter().any(|name| partial.name.as_ref() == *name))
         .and_then(|partial| {
             partial.parameters.iter().find_map(|value| {
                 value.list().and_then(|items| {
@@ -2027,7 +2027,7 @@ fn surface_curve_associated_geometry(record: &RawRecord) -> Vec<u64> {
         .iter()
         .find(|partial| {
             matches!(
-                partial.name.as_str(),
+                partial.name.as_ref(),
                 "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
             )
         })
@@ -3018,7 +3018,7 @@ fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Ve
         .filter(|curve| {
             curve.partials.iter().any(|partial| {
                 matches!(
-                    partial.name.as_str(),
+                    partial.name.as_ref(),
                     "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
                 )
             })
@@ -4078,7 +4078,7 @@ fn curve_carrier_record(id: u64, exchange: &Exchange) -> Option<u64> {
     let record = exchange.records.get(&id)?;
     if record.partials.iter().any(|partial| {
         matches!(
-            partial.name.as_str(),
+            partial.name.as_ref(),
             "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
         )
     }) {
@@ -4182,10 +4182,12 @@ trait RecordExt {
 
 impl RecordExt for RawRecord {
     fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
+        (self.partials.len() == 1).then(|| self.partials[0].name.as_ref())
     }
     fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
-        self.partials.iter().find(|partial| partial.name == name)
+        self.partials
+            .iter()
+            .find(|partial| partial.name.as_ref() == name)
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.partials.first()?.parameters.get(index)

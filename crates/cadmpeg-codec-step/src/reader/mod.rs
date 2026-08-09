@@ -436,7 +436,7 @@ fn decode_exchange_mode(
             let kind = record
                 .partials
                 .iter()
-                .map(|partial| partial.name.as_str())
+                .map(|partial| partial.name.as_ref())
                 .collect::<Vec<_>>()
                 .join("+");
             *counts.entry(kind).or_default() += 1;
@@ -491,7 +491,7 @@ fn decode_exchange_mode(
             let kind = record
                 .partials
                 .iter()
-                .map(|partial| partial.name.as_str())
+                .map(|partial| partial.name.as_ref())
                 .collect::<Vec<_>>()
                 .join("+");
             *counts.entry(kind).or_default() += 1;
@@ -719,7 +719,7 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
             record
                 .partials
                 .iter()
-                .find(|partial| partial.name == "POLY_LOOP")
+                .find(|partial| partial.name.as_ref() == "POLY_LOOP")
                 .and_then(|partial| partial.parameters.get(1))
                 .and_then(|value| match value {
                     Value::List(values) => Some(values.as_slice()),
@@ -755,7 +755,7 @@ fn retain_unowned_pcurves(
             record
                 .partials
                 .iter()
-                .any(|partial| partial.name == "PCURVE")
+                .any(|partial| partial.name.as_ref() == "PCURVE")
         })
         .map(|(&id, _)| id)
         .filter(|id| !owned.contains(&format!("step:data:pcurve#{id}")))
@@ -1053,7 +1053,7 @@ fn schema_name(exchange: &Exchange) -> String {
     if let Some(record) = exchange
         .header
         .iter()
-        .find(|record| record.name == "FILE_SCHEMA")
+        .find(|record| record.name.as_ref() == "FILE_SCHEMA")
     {
         record
             .parameters
