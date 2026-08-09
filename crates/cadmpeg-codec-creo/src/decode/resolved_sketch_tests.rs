@@ -6664,6 +6664,27 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         BTreeMap::from([(42, 5.0)])
     );
 
+    let mut dimension_driven = definition.clone();
+    let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[1];
+    dimension_scalar.value = None;
+    dimension_scalar.guess = None;
+    dimension_scalar.guess_dimension_driven = true;
+    dimension_scalar.dimension_driven = true;
+    assert_eq!(
+        resolved_section_radii(&dimension_driven),
+        BTreeMap::from([(42, 5.0)])
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&dimension_driven).get(&(0, 0)),
+        Some(&5.0)
+    );
+
+    let mut missing_inline = definition.clone();
+    let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[1];
+    missing_scalar.value = None;
+    missing_scalar.guess = None;
+    assert!(resolved_section_radii(&missing_inline).is_empty());
+
     let mut mismatched = definition;
     mismatched
         .dimensions
@@ -7179,6 +7200,27 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
         resolved_section_coordinates(&definition).get(&2),
         Some(&[Some(5.0), None])
     );
+
+    let mut dimension_driven = definition.clone();
+    let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[3];
+    dimension_scalar.value = None;
+    dimension_scalar.guess = None;
+    dimension_scalar.guess_dimension_driven = true;
+    dimension_scalar.dimension_driven = true;
+    assert_eq!(
+        resolved_section_coordinates(&dimension_driven).get(&2),
+        Some(&[Some(5.0), None])
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&dimension_driven).get(&(0, 0)),
+        Some(&5.0)
+    );
+
+    let mut missing_inline = definition.clone();
+    let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[3];
+    missing_scalar.value = None;
+    missing_scalar.guess = None;
+    assert!(!resolved_section_scalar_values(&missing_inline).contains_key(&(0, 0)));
 
     let equation_id = crate::feature::equation_table(&definition.body, 0, definition.body.len())
         .expect("equation table")

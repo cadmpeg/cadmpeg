@@ -3365,10 +3365,18 @@ pub(crate) fn resolved_section_coordinates(
             (sign == 0).then_some((first, second, coordinate, magnitude))
         })
         .collect::<Vec<_>>();
-    unsigned_dimension_candidates.extend(section_equation_unsigned_coordinate_distances(
-        definition,
-        &ambiguous_point_ids,
-    ));
+    unsigned_dimension_candidates.extend(
+        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+            .into_iter()
+            .map(|constraint| {
+                (
+                    constraint.first,
+                    constraint.second,
+                    constraint.coordinate,
+                    constraint.value,
+                )
+            }),
+    );
     let radial_constraints =
         section_equation_radial_constraints(definition, &points, &ambiguous_point_ids);
     let equal_length_constraints =
@@ -4369,6 +4377,10 @@ pub(crate) fn resolved_section_scalar_values(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<(u32, u32), f64> {
     let coordinates = resolved_section_coordinates(definition);
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
     let mut values = BTreeMap::<(u32, u32), Option<f64>>::new();
     for (variable, value) in section_equation_scalar_equalities(definition) {
         values.insert(variable, Some(value));
@@ -4392,6 +4404,14 @@ pub(crate) fn resolved_section_scalar_values(
     }
     for (variable, value) in section_equation_function_sixteen_angle_difference_values(definition) {
         merge_scalar_value_candidate(&mut values, variable, value);
+    }
+    for constraint in
+        section_equation_unsigned_coordinate_distances(definition, &ambiguous_point_ids)
+    {
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
+    }
+    for constraint in section_equation_radius_dimensions(definition) {
+        merge_scalar_value_candidate(&mut values, constraint.scalar, constraint.value);
     }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
@@ -4699,10 +4719,47 @@ fn section_equation_function_forty_three_axis_distance_values(
         .collect()
 }
 
+#[derive(Clone, Copy)]
+struct SectionUnsignedCoordinateDistance {
+    first: u32,
+    second: u32,
+    coordinate: usize,
+    scalar: SectionScalarVariable,
+    value: f64,
+}
+
+#[derive(Clone, Copy)]
+struct SectionRadiusDimension {
+    radius: u32,
+    scalar: SectionScalarVariable,
+    value: f64,
+}
+
+fn section_equation_dimension_scalar_value(
+    scalar: &crate::feature::FeatureVariableRow,
+    dimension_value: f64,
+    strictly_positive: bool,
+) -> Option<f64> {
+    let valid = |value: f64| {
+        value.is_finite()
+            && (strictly_positive && value > 0.0 || !strictly_positive && value >= 0.0)
+    };
+    if !valid(dimension_value) {
+        return None;
+    }
+    match scalar.value {
+        Some(value) if valid(value) && approximately_equal(value, dimension_value) => {
+            Some(dimension_value)
+        }
+        None if scalar.dimension_driven => Some(dimension_value),
+        _ => None,
+    }
+}
+
 fn section_equation_unsigned_coordinate_distances(
     definition: &crate::feature::FeatureDefinition,
     ambiguous_point_ids: &BTreeSet<u32>,
-) -> Vec<(u32, u32, usize, f64)> {
+) -> Vec<SectionUnsignedCoordinateDistance> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -4746,36 +4803,31 @@ fn section_equation_unsigned_coordinate_distances(
                 || ambiguous_point_ids.contains(&first.key)
                 || ambiguous_point_ids.contains(&second.key)
                 || first.key == second.key
-                || dimension.value.is_none()
             {
                 return None;
             }
-            let scalar = dimension.value?;
-            let dimension = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
-            let value = dimension.value?;
-            if dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !matches!(dimension.dimension_type, 1..=5)
-                || !scalar.is_finite()
-                || scalar < 0.0
-                || !value.is_finite()
-                || value < 0.0
+            let dimension_row = dimensions.rows.get(usize::try_from(dimension.key).ok()?)?;
+            if dimension_row.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !matches!(dimension_row.dimension_type, 1..=5)
             {
                 return None;
             }
-            let scale = scalar.abs().max(value.abs()).max(1.0);
-            ((scalar - value).abs() <= 1e-9 * scale).then_some((
-                first.key,
-                second.key,
-                usize::from(first.variable_type == 2),
+            let value =
+                section_equation_dimension_scalar_value(dimension, dimension_row.value?, false)?;
+            Some(SectionUnsignedCoordinateDistance {
+                first: first.key,
+                second: second.key,
+                coordinate: usize::from(first.variable_type == 2),
+                scalar: (dimension.variable_type, dimension.key),
                 value,
-            ))
+            })
         })
         .collect()
 }
 
 fn section_equation_radius_dimensions(
     definition: &crate::feature::FeatureDefinition,
-) -> Vec<(u32, f64)> {
+) -> Vec<SectionRadiusDimension> {
     let Some(variables) = definition
         .variables
         .as_ref()
@@ -4817,17 +4869,10 @@ fn section_equation_radius_dimensions(
                 (0, 3) => (second, first),
                 _ => return None,
             };
-            let scalar_value = scalar.value?;
             let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
             let dimension_value = dimension.value?;
             if dimension.dimension_type != 3
                 || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
-                || !scalar_value.is_finite()
-                || scalar_value <= 0.0
-                || !dimension_value.is_finite()
-                || dimension_value <= 0.0
-                || (scalar_value - dimension_value).abs()
-                    > 1e-9 * scalar_value.abs().max(dimension_value.abs()).max(1.0)
                 || radius.value.is_some_and(|value| {
                     !value.is_finite()
                         || value <= 0.0
@@ -4837,7 +4882,12 @@ fn section_equation_radius_dimensions(
             {
                 return None;
             }
-            Some((radius.key, dimension_value))
+            let value = section_equation_dimension_scalar_value(scalar, dimension_value, true)?;
+            Some(SectionRadiusDimension {
+                radius: radius.key,
+                scalar: (scalar.variable_type, scalar.key),
+                value,
+            })
         })
         .collect()
 }
@@ -6015,8 +6065,11 @@ pub(crate) fn resolved_section_radii(
             candidates.entry(variable.1).or_default().push(value);
         }
     }
-    for (radius_id, value) in section_equation_radius_dimensions(definition) {
-        candidates.entry(radius_id).or_default().push(value);
+    for constraint in section_equation_radius_dimensions(definition) {
+        candidates
+            .entry(constraint.radius)
+            .or_default()
+            .push(constraint.value);
     }
     for relation in definition
         .relations
