@@ -3066,8 +3066,9 @@ The positional datum scalar lane treats `a5` and `9f` as seven-byte opaque
 tokens. Their numeric values are not required by the held-coordinate rule:
 identical raw tokens compare equal and distinct raw tokens compare unequal.
 
-In a named datum outline, paired standalone-zero slots at positions `k` and
-`k+3` identify coordinate axis `k` and plane offset zero.
+In a named datum outline, exactly one pair of standalone-zero slots at
+positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
+Zero pairs or multiple pairs do not define a plane equation.
 Named-outline coordinates use the bounded model-coordinate DICT lane. `5c`
 and `5e..a3` set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
 `a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to

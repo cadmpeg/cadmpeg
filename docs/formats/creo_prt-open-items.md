@@ -503,16 +503,6 @@ the `var_arr` solver-variable identity.
 
 **Need.** We must know the selector semantics to trim a one-sided, symmetric, or two-sided revolution.
 
-### SP-33. Datum outline held-axis selection
-
-**Question.** Which axis holds the plane equation when a named datum outline has multiple paired standalone-zero coordinates?
-
-**Known.** `creo_prt.md` §3.4 "When exactly one coordinate is held constant across both corners" and §6 "`ActDatums` stores datum-plane geometry" require exactly one equal coordinate pair for a positional outline; zero or multiple equal pairs leave that plane unresolved. `creo_prt.md` §8.1 "In a named datum outline" gives paired standalone-zero slots precedence for a named plane at zero offset. `datum.rs` `planes` now rejects positional outlines with multiple held axes. `datum.rs` `named_plane` applies the standalone-zero precedence only when exactly one axis has paired standalone-zero slots, then applies the unique-equal-pair rule to other named outlines.
-
-**Conflict.** The specification does not state whether multiple paired standalone-zero coordinates are a valid named standard-plane form or how to rank them. The decoder withholds a named plane when more than one such axis is present.
-
-**Need.** We must know whether to retain or withhold a named plane when more than one standalone-zero pair is present, and if it is valid, which axis supplies its normal. This affects the model-space normal and every sketch placement that references the datum.
-
 ## 4. Topology and appearance
 
 ### TP-01. DEPDB recipe-to-body binding
