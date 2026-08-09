@@ -1,1 +1,1 @@
-not implemented yet: source-less F3D generation cannot preserve this ACT GUID pool ordering
+not implemented yet: source-less F3D ACT generation requires a retained MetaStream record registry

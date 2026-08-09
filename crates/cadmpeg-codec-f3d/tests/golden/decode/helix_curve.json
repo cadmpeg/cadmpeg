@@ -302,7 +302,9 @@
         "arenas": {
           "act_entities": [],
           "act_guids": [],
+          "act_registry_channels": [],
           "act_root_components": [],
+          "act_table_references": [],
           "asm_bulletin_boards": [],
           "asm_delta_states": [],
           "asm_entity_changes": [],

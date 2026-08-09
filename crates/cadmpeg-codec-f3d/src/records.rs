@@ -5073,33 +5073,35 @@ pub struct BodyVisibility {
     pub visible: bool,
 }
 
-/// One entity in the Fusion ACT change-tracking table.
+/// One Fusion ACT change-version channel group and its optional inline table row.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct ActEntity {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Index of this entity's `ACTTable` entry within the ACT `BulkStream`.
+    /// Record index of this entity's change group. Its inline `ACTTable` row,
+    /// when present, contains the same index.
     pub record_index: u32,
-    /// Byte offset of the table-entry record index, when this entity is in `ACTTable`.
+    /// Byte offset of the inline table row's change-group reference, when
+    /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table_record_index_offset: Option<u64>,
-    /// Byte offset of the channel-group record index, when present.
+    /// Byte offset of the channel-group record index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_record_index_offset: Option<u64>,
-    /// UTF-16LE-decoded design-entity id this table entry tracks.
+    /// UTF-16LE-decoded design-entity key this change group tracks.
     pub entity_id: String,
-    /// Byte offset of the table-entry UTF-16 entity-id code units, when present.
+    /// Byte offset of the inline table row's UTF-16 entity-id code units, when
+    /// present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table_entity_id_offset: Option<u64>,
-    /// Byte offset of the channel-group UTF-16 entity-id code units, when present.
+    /// Byte offset of the channel-group UTF-16 entity-id code units.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_entity_id_offset: Option<u64>,
-    /// Whether this entity is currently present in the `ACTTable`, as opposed to
-    /// referenced only by a channel-group record.
+    /// Whether this entity has an inline keyed row in `ACTTable`.
     pub in_table: bool,
-    /// Source per-file dynamic three-digit ASCII class tag of this entity's channel-group
-    /// record, when it owns one; `None` for table-only entries.
+    /// Source per-file dynamic three-digit ASCII class tag of this entity's
+    /// channel-group record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channel_class_tag: Option<String>,
     /// Named channel/GUID pairs from this entity's channel-group record; each GUID is a
@@ -5128,6 +5130,42 @@ pub struct ActGuid {
     pub guid: String,
 }
 
+/// One reference in the ACT table run between the GUID pool and channel registry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct ActTableReference {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Position in the counted reference run, in source order.
+    pub ordinal: u32,
+    /// Byte offset of the reference-presence marker in the ACT `BulkStream`.
+    pub byte_offset: u64,
+    /// Target ACT record index.
+    pub target_record: u32,
+    /// Byte offset of `target_record`.
+    pub target_record_offset: u64,
+}
+
+/// One named entry in the ACT table's stream-wide channel registry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct ActRegistryChannel {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Position in the counted registry, in source order.
+    pub ordinal: u32,
+    /// Byte offset of the channel-name length prefix in the ACT `BulkStream`.
+    pub byte_offset: u64,
+    /// Stored channel name.
+    pub name: String,
+    /// Byte offset of the ASCII channel-name bytes.
+    pub name_offset: u64,
+    /// Stored registry GUID.
+    pub guid: String,
+    /// Byte offset of the UTF-16 GUID code units.
+    pub guid_offset: u64,
+}
+
 /// ACT link from the document root entity to the instance/component registries.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -5146,6 +5184,13 @@ pub struct ActRootComponent {
     pub instance_root_record: u32,
     /// Byte offset of `instance_root_record`.
     pub instance_root_record_offset: u64,
+    /// Record index of the Design entity tracked by this link. Value `3`
+    /// identifies the document root.
+    #[serde(default)]
+    pub tracked_entity_record: u32,
+    /// Byte offset of `tracked_entity_record`.
+    #[serde(default)]
+    pub tracked_entity_record_offset: u64,
     /// Record index of the components registry root.
     pub components_root_record: u32,
     /// Byte offset of `components_root_record`.

@@ -666,6 +666,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
         .collect::<HashSet<_>>();
+    validate_act(&ctx, &mut findings);
     validate_body_bindings(&ctx, &mut findings);
     validate_body_bounds(&ctx, &mut findings);
     validate_canvas_images(&ctx, &mut findings);
@@ -731,6 +732,276 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     validate_subentity_tags(&ctx, &mut findings);
     validate_history_graphs(&ctx, &mut findings);
     findings
+}
+
+fn act_stream_for_id<'a>(id: &'a str, kind: &str, key: impl std::fmt::Display) -> Option<&'a str> {
+    let stream = ids::native_stream(id)?;
+    (id == format!("{stream}:{kind}#{key}")).then_some(stream)
+}
+
+/// Validate ACT record identity, table/group joins, ordered registries, and the
+/// stored document-root discriminator.
+fn validate_act(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    let native = ctx.native;
+    let mut streams = std::collections::BTreeMap::<&str, &str>::new();
+    let mut record_indices = HashSet::new();
+    for entity in &native.act_entities {
+        let stream = act_stream_for_id(&entity.id, "act-entity", entity.record_index);
+        if let Some(stream) = stream {
+            streams.entry(stream).or_insert(&entity.id);
+        }
+        let unique_index =
+            stream.is_some_and(|stream| record_indices.insert((stream, entity.record_index)));
+        let valid_table = if entity.in_table {
+            entity
+                .table_record_index_offset
+                .zip(entity.table_entity_id_offset)
+                .is_some_and(|(index, key)| index.checked_add(14) == Some(key))
+        } else {
+            entity.table_record_index_offset.is_none() && entity.table_entity_id_offset.is_none()
+        };
+        let valid_group = match entity.channel_class_tag.as_deref() {
+            Some(class_tag) => {
+                valid_dynamic_class_tag(class_tag)
+                    && !entity.channels.is_empty()
+                    && entity.channels.len() <= 8
+                    && entity
+                        .channel_record_index_offset
+                        .zip(entity.channel_entity_id_offset)
+                        .is_some_and(|(index, key)| index < key)
+                    && entity
+                        .channels
+                        .keys()
+                        .eq(entity.channel_guid_offsets.keys())
+                    && entity
+                        .channels
+                        .keys()
+                        .all(|name| !name.is_empty() && name.len() <= 128 && name.is_ascii())
+                    && entity.channels.values().all(|guid| valid_design_guid(guid))
+                    && entity
+                        .channel_entity_id_offset
+                        .is_some_and(|entity_offset| {
+                            entity.channel_guid_offsets.values().all(|guid_offset| {
+                                entity
+                                    .channel_record_index_offset
+                                    .is_some_and(|record_offset| record_offset < *guid_offset)
+                                    && guid_offset
+                                        .checked_add(72)
+                                        .is_some_and(|guid_end| guid_end <= entity_offset)
+                            })
+                        })
+            }
+            None => false,
+        };
+        let valid = stream.is_some()
+            && unique_index
+            && crate::act::is_entity_key(&entity.entity_id)
+            && valid_table
+            && valid_group;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ACT entity has an invalid identity, table membership, or change-group frame"
+                    .into(),
+                entity: Some(entity.id.clone()),
+            });
+        }
+    }
+
+    let mut guid_ordinals = std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
+    let mut guid_offsets = HashSet::new();
+    for guid in &native.act_guids {
+        let stream = act_stream_for_id(&guid.id, "act-guid", guid.byte_offset);
+        if let Some(stream) = stream {
+            streams.entry(stream).or_insert(&guid.id);
+        }
+        let unique_ordinal = stream.is_some_and(|stream| {
+            guid_ordinals
+                .entry(stream)
+                .or_insert_with(|| (HashSet::new(), &guid.id))
+                .0
+                .insert(guid.ordinal)
+        });
+        let unique_offset =
+            stream.is_some_and(|stream| guid_offsets.insert((stream, guid.byte_offset)));
+        let valid = stream.is_some()
+            && unique_offset
+            && unique_ordinal
+            && guid.byte_offset.checked_add(4) == Some(guid.guid_offset)
+            && valid_design_guid(&guid.guid);
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "Fusion ACT GUID-pool entry has an invalid identity, ordinal, offset, or GUID"
+                        .into(),
+                entity: Some(guid.id.clone()),
+            });
+        }
+    }
+
+    let mut table_reference_ordinals =
+        std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
+    let mut table_reference_offsets = HashSet::new();
+    for reference in &native.act_table_references {
+        let stream = act_stream_for_id(&reference.id, "act-table-reference", reference.byte_offset);
+        if let Some(stream) = stream {
+            streams.entry(stream).or_insert(&reference.id);
+        }
+        let unique_ordinal = stream.is_some_and(|stream| {
+            table_reference_ordinals
+                .entry(stream)
+                .or_insert_with(|| (HashSet::new(), &reference.id))
+                .0
+                .insert(reference.ordinal)
+        });
+        let unique_offset = stream
+            .is_some_and(|stream| table_reference_offsets.insert((stream, reference.byte_offset)));
+        let valid = stream.is_some()
+            && unique_ordinal
+            && unique_offset
+            && reference.byte_offset.checked_add(1) == Some(reference.target_record_offset);
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ACT table reference has an invalid identity, ordinal, or offset"
+                    .into(),
+                entity: Some(reference.id.clone()),
+            });
+        }
+    }
+
+    let mut registry_ordinals = std::collections::BTreeMap::<&str, (HashSet<u32>, &str)>::new();
+    let mut registry_offsets = HashSet::new();
+    let mut registry_names = HashSet::new();
+    for channel in &native.act_registry_channels {
+        let stream = act_stream_for_id(&channel.id, "act-registry-channel", channel.byte_offset);
+        if let Some(stream) = stream {
+            streams.entry(stream).or_insert(&channel.id);
+        }
+        let unique_ordinal = stream.is_some_and(|stream| {
+            registry_ordinals
+                .entry(stream)
+                .or_insert_with(|| (HashSet::new(), &channel.id))
+                .0
+                .insert(channel.ordinal)
+        });
+        let unique_offset =
+            stream.is_some_and(|stream| registry_offsets.insert((stream, channel.byte_offset)));
+        let unique_name =
+            stream.is_some_and(|stream| registry_names.insert((stream, channel.name.as_str())));
+        let expected_guid_offset = u64::try_from(channel.name.len())
+            .ok()
+            .and_then(|length| channel.byte_offset.checked_add(8 + length));
+        let valid = stream.is_some()
+            && unique_offset
+            && unique_name
+            && unique_ordinal
+            && channel.byte_offset.checked_add(4) == Some(channel.name_offset)
+            && expected_guid_offset == Some(channel.guid_offset)
+            && !channel.name.is_empty()
+            && channel.name.len() <= 128
+            && channel.name.is_ascii()
+            && valid_design_guid(&channel.guid);
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ACT channel-registry entry has an invalid identity, ordinal, offset, name, or GUID"
+                    .into(),
+                entity: Some(channel.id.clone()),
+            });
+        }
+    }
+
+    let mut root_counts = HashMap::<&str, usize>::new();
+    for root in &native.act_root_components {
+        let stream = act_stream_for_id(&root.id, "act-root-component", root.byte_offset);
+        if let Some(stream) = stream {
+            streams.entry(stream).or_insert(&root.id);
+            *root_counts.entry(stream).or_default() += 1;
+        }
+        let unique_record_index =
+            stream.is_some_and(|stream| record_indices.insert((stream, root.record_index)));
+        let entity_code_units = u64::try_from(root.entity_id.encode_utf16().count()).ok();
+        let display_code_units = u64::try_from(root.display_name.encode_utf16().count()).ok();
+        let expected_tracked_offset = entity_code_units
+            .and_then(|length| length.checked_mul(2))
+            .and_then(|length| root.entity_id_offset.checked_add(length))
+            .and_then(|end| end.checked_add(1));
+        let display_end = display_code_units
+            .and_then(|length| length.checked_mul(2))
+            .and_then(|length| root.display_name_offset.checked_add(length));
+        let components_gap =
+            display_end.and_then(|end| root.components_root_record_offset.checked_sub(end));
+        let valid = stream.is_some()
+            && unique_record_index
+            && valid_dynamic_class_tag(&root.class_tag)
+            && crate::act::is_entity_key(&root.entity_id)
+            && root.tracked_entity_record == 3
+            && root.registry_flag <= 1
+            && root.byte_offset.checked_add(7) == Some(root.record_index_offset)
+            && root.byte_offset.checked_add(22) == Some(root.instance_root_record_offset)
+            && root.byte_offset.checked_add(36) == Some(root.entity_id_offset)
+            && expected_tracked_offset == Some(root.tracked_entity_record_offset)
+            && root.tracked_entity_record_offset.checked_add(10) == Some(root.registry_flag_offset)
+            && root.registry_flag_offset.checked_add(8) == Some(root.display_name_offset)
+            && components_gap.is_some_and(|gap| (2..=9).contains(&gap));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ACT root component has an invalid identity, frame, or tracked-entity reference"
+                    .into(),
+                entity: Some(root.id.clone()),
+            });
+        }
+    }
+
+    for (stream, witness) in streams {
+        if root_counts.get(stream).copied() != Some(1) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ACT stream does not have exactly one document-root component link"
+                    .into(),
+                entity: Some(witness.into()),
+            });
+        }
+    }
+    for (ordinals, witness, family) in guid_ordinals
+        .into_values()
+        .map(|(ordinals, witness)| (ordinals, witness, "GUID pool"))
+        .chain(
+            table_reference_ordinals
+                .into_values()
+                .map(|(ordinals, witness)| (ordinals, witness, "table reference")),
+        )
+        .chain(
+            registry_ordinals
+                .into_values()
+                .map(|(ordinals, witness)| (ordinals, witness, "channel registry")),
+        )
+    {
+        let contiguous = u32::try_from(ordinals.len()).ok().is_some_and(|length| {
+            ordinals
+                .iter()
+                .max()
+                .and_then(|maximum| maximum.checked_add(1))
+                == Some(length)
+        });
+        if !contiguous {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: format!("Fusion ACT {family} ordinals are not contiguous from zero"),
+                entity: Some(witness.into()),
+            });
+        }
+    }
 }
 
 /// Validate native configuration identities, JSON shapes, and authored order.

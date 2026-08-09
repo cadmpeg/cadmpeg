@@ -240,6 +240,19 @@ fn report_unresolved_configuration_rules(
     }
 }
 
+fn report_unretained_act_component_links(report: &mut DecodeReport, count: usize) {
+    if count != 0 {
+        report.losses.push(LossNote {
+            code: LossKind::AssemblyComponentsExternal,
+            severity: Severity::Warning,
+            message: format!(
+                "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
+            ),
+            provenance: None,
+        });
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
     unresolved_body_bindings: usize,
@@ -1826,9 +1839,12 @@ fn finish_model_decode<'a>(
         .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(scan)?;
+    report_unretained_act_component_links(&mut report, act.non_root_component_links);
     native.act_entities = act.entities;
     native.act_guids = act.guids;
+    native.act_registry_channels = act.registry_channels;
     native.act_root_components = act.root_components;
+    native.act_table_references = act.table_references;
     report_unresolved_dimension_companions(&mut report, &native, &ir);
     report_unresolved_configuration_rules(&mut report, &native, &ir);
     if !native.lost_edge_references.is_empty() {
@@ -2367,9 +2383,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(&scan)?;
+    let non_root_act_component_links = act.non_root_component_links;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
+    native.act_registry_channels = act.registry_channels;
     native.act_root_components = act.root_components;
+    native.act_table_references = act.table_references;
     let decoded_materials = materials::decode(&scan)?;
     let has_appearance_assignments = decoded_materials.has_topology_assignments;
     ir.model.appearances = decoded_materials.appearances;
@@ -2405,6 +2424,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &ir.model.features,
     );
     let mut report = build_container_report(&scan, false);
+    report_unretained_act_component_links(&mut report, non_root_act_component_links);
     reconcile_appearance_loss(&mut report, &ir, has_appearance_assignments);
     let mesh_projection = project_mesh_bodies(&scan, &mut ir, &mut report)?;
     bind_mesh_feature_definitions(
@@ -3080,8 +3100,14 @@ fn populate_annotations(
         for entity in &native.act_guids {
             note(&entity.id, "ACTGuid");
         }
+        for entity in &native.act_registry_channels {
+            note(&entity.id, "ACTRegistryChannel");
+        }
         for entity in &native.act_root_components {
             note(&entity.id, "ACTRootComponent");
+        }
+        for entity in &native.act_table_references {
+            note(&entity.id, "ACTTableReference");
         }
         for history in &native.asm_histories {
             note(&history.id, "history_stream");

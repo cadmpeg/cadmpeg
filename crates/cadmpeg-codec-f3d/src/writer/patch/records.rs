@@ -126,11 +126,6 @@ pub(crate) fn patch_act_roots(
     for root in edits {
         for (offset, value, field) in [
             (
-                root.record_index_offset,
-                root.record_index,
-                "ACT root record index",
-            ),
-            (
                 root.instance_root_record_offset,
                 root.instance_root_record,
                 "ACT instance-root reference",

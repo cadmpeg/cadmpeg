@@ -19,13 +19,13 @@ pub(crate) mod preconditions;
 pub(crate) mod records;
 pub(crate) mod smbh;
 use preconditions::{
-    validate_source_less_act, validate_source_less_auxiliary_geometry,
-    validate_source_less_design_bindings, validate_source_less_design_links,
-    validate_source_less_design_ownership, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
+    validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
+    validate_source_less_design_links, validate_source_less_design_ownership,
+    validate_source_less_history_graph, validate_source_less_procedural_carriers,
+    validate_source_less_recipes, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances,
 };
-use records::{encode_act_bulkstream, encode_design_bulkstream, encode_design_metastream};
+use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_planar_triangle_smbh;
 
 /// Write a canonical source-less F3D archive for the currently supported
@@ -49,10 +49,19 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
+    if !native.act_entities.is_empty()
+        || !native.act_guids.is_empty()
+        || !native.act_registry_channels.is_empty()
+        || !native.act_root_components.is_empty()
+        || !native.act_table_references.is_empty()
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D ACT generation requires a retained MetaStream record registry".into(),
+        ));
+    }
     let design_bindings = if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        validate_source_less_act(&native)?;
         let design_bindings = validate_source_less_design_bindings(&native)?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
@@ -134,17 +143,6 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
                 })?;
             archive.write_all(&meta_stream)?;
         }
-    }
-    if let Some(act_stream) = encode_act_bulkstream(&native)? {
-        archive
-            .start_file(
-                "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
-                options,
-            )
-            .map_err(|error| {
-                CodecError::Malformed(format!("cannot create F3D ACT BulkStream: {error}"))
-            })?;
-        archive.write_all(&act_stream)?;
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;

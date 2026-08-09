@@ -58,11 +58,19 @@
     },
     {
       "attributes": {},
-      "compressed_size": 450,
+      "compressed_size": 686,
       "compression": "stored",
       "name": "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
       "role": "bulkstream",
-      "uncompressed_size": 450
+      "uncompressed_size": 686
+    },
+    {
+      "attributes": {},
+      "compressed_size": 1057,
+      "compression": "stored",
+      "name": "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+      "role": "metastream",
+      "uncompressed_size": 1057
     }
   ],
   "format": "f3d",

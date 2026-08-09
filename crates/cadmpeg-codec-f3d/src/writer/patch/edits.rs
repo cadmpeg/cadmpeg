@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::history_records::{AsmBulletinBoard, AsmDeltaState, AsmEntityChange};
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, DesignMaterialAssignment, LostEdgeReference,
-    SketchCurveGeometry,
+    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, DesignMaterialAssignment,
+    LostEdgeReference, SketchCurveGeometry,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -1261,6 +1261,63 @@ pub(crate) fn validate_act_guid_edits(
     Ok(edits)
 }
 
+pub(crate) fn validate_act_registry_channel_edits(
+    native: PatchNatives<'_>,
+) -> Result<BTreeMap<String, Vec<ActGuidEdit>>, CodecError> {
+    let baseline = native
+        .baseline
+        .map(|native| &native.act_registry_channels[..])
+        .unwrap_or_default();
+    let target = native
+        .target
+        .map(|native| &native.act_registry_channels[..])
+        .unwrap_or_default();
+    let baseline_by_id = baseline
+        .iter()
+        .map(|channel| (channel.id.as_str(), channel))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target
+        .iter()
+        .map(|channel| (channel.id.as_str(), channel))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D ACT channel-registry regeneration requires the unchanged entry-id set".into(),
+        ));
+    }
+    let mut edits: BTreeMap<String, Vec<ActGuidEdit>> = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized: ActRegistryChannel = after.clone();
+        normalized.guid.clone_from(&before.guid);
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D ACT channel-registry edit changes fields other than guid: {id}"
+            )));
+        }
+        if after.guid == before.guid {
+            continue;
+        }
+        if after.guid.encode_utf16().count() != before.guid.encode_utf16().count()
+            || !canonical_guid(&after.guid)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT channel-registry GUID {id} must be a same-length canonical GUID"
+            )));
+        }
+        let encoded = after
+            .guid
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>();
+        edits
+            .entry(native_stream(id, ":act-registry-channel#")?)
+            .or_default()
+            .push((after.guid_offset, encoded));
+    }
+    Ok(edits)
+}
+
 pub(crate) fn validate_act_root_edits(
     native: PatchNatives<'_>,
 ) -> Result<BTreeMap<String, Vec<ActRootComponent>>, CodecError> {
@@ -1291,7 +1348,6 @@ pub(crate) fn validate_act_root_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.record_index = before.record_index;
         normalized.instance_root_record = before.instance_root_record;
         normalized.components_root_record = before.components_root_record;
         normalized.registry_flag = before.registry_flag;
@@ -1299,7 +1355,7 @@ pub(crate) fn validate_act_root_edits(
         normalized.display_name.clone_from(&before.display_name);
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D ACT root edit changes fields outside fixed numeric graph links: {id}"
+                "F3D ACT root edit changes fields outside supported graph links and fixed-length strings: {id}"
             )));
         }
         if after == before {

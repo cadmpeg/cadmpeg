@@ -32,9 +32,9 @@ use crate::history_records::{
     AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, BodyVisibility, ConstructionRecipe, CreationTimestamp,
-    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignBodyRecipeOperand,
-    DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
+    ActEntity, ActGuid, ActRegistryChannel, ActRootComponent, ActTableReference, BodyVisibility,
+    ConstructionRecipe, CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
+    DesignBodyRecipeOperand, DesignCanvasImage, DesignComponentOccurrence, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
@@ -82,7 +82,9 @@ pub const F3D_NATIVE_VERSION: u32 = 11;
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
     "act_guids",
+    "act_registry_channels",
     "act_root_components",
+    "act_table_references",
     "asm_bulletin_boards",
     "asm_delta_states",
     "asm_entity_changes",
@@ -348,6 +350,16 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "act_registry_channels",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_registry_channels),
+        len: |model| model.act_registry_channels.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "act_root_components",
         tag: None,
         exactness: (),
@@ -355,6 +367,16 @@ pub(crate) const F3D_FAMILIES: &[F3dFamilyRow] = &[
         note: None,
         emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_root_components),
         len: |model| model.act_root_components.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "act_table_references",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |model, row, namespace| namespace.set_arena(row.arena, &model.act_table_references),
+        len: |model| model.act_table_references.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1076,9 +1098,15 @@ pub struct F3dNative {
     /// Fusion ACT stream-wide asset/change-version GUID pool.
     #[serde(default)]
     pub act_guids: Vec<ActGuid>,
+    /// Fusion ACT stream-wide named channel registry.
+    #[serde(default)]
+    pub act_registry_channels: Vec<ActRegistryChannel>,
     /// Fusion ACT document-root-to-registry links.
     #[serde(default)]
     pub act_root_components: Vec<ActRootComponent>,
+    /// Fusion ACT table references between the GUID pool and channel registry.
+    #[serde(default)]
+    pub act_table_references: Vec<ActTableReference>,
     /// Native Design-join keys stored on ASM bodies.
     #[serde(default)]
     pub body_native_keys: Vec<BodyNativeKey>,
@@ -1263,7 +1291,9 @@ impl Default for F3dNative {
             version: F3D_NATIVE_VERSION,
             act_entities: Vec::new(),
             act_guids: Vec::new(),
+            act_registry_channels: Vec::new(),
             act_root_components: Vec::new(),
+            act_table_references: Vec::new(),
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_types: Vec::new(),
@@ -1336,7 +1366,9 @@ impl F3dNative {
             version: namespace.version,
             act_entities: namespace.arena_as("act_entities")?,
             act_guids: namespace.arena_as("act_guids")?,
+            act_registry_channels: namespace.arena_as("act_registry_channels")?,
             act_root_components: namespace.arena_as("act_root_components")?,
+            act_table_references: namespace.arena_as("act_table_references")?,
             body_native_keys: namespace.arena_as("body_native_keys")?,
             body_visibilities: namespace.arena_as("body_visibilities")?,
             design_types: namespace.arena_as("design_types")?,

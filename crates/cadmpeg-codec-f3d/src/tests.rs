@@ -230,7 +230,7 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 65);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 67);
     assert_eq!(
         catalogue_names,
         crate::native::F3D_ARENA_NAMES
@@ -10778,14 +10778,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
 }
 
 #[test]
-fn generated_source_less_writes_act_table_channels_and_root_component() {
-    use std::collections::BTreeMap;
+fn generated_source_less_rejects_act_without_segment_metadata() {
+    use crate::records::ActEntity;
 
-    use crate::records::{ActEntity, ActGuid, ActRootComponent};
-
-    let appearance_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let physical_guid = "cccccccc-1111-2222-3333-dddddddddddd";
-    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.act_entities = vec![ActEntity {
@@ -10797,144 +10792,21 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
         table_entity_id_offset: None,
         channel_entity_id_offset: None,
         in_table: true,
-        channel_class_tag: Some("261".into()),
-        channels: BTreeMap::from([
-            ("Appearance".into(), appearance_guid.into()),
-            ("PhysicalMaterial".into(), physical_guid.into()),
-        ]),
-        channel_guid_offsets: BTreeMap::new(),
+        channel_class_tag: None,
+        channels: Default::default(),
+        channel_guid_offsets: Default::default(),
     }];
-    native.act_guids = [standalone_guid, appearance_guid, physical_guid]
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, guid)| ActGuid {
-            id: format!("generated:act-guid#{ordinal}"),
-            byte_offset: 0,
-            guid_offset: 0,
-            ordinal: u32::try_from(ordinal).unwrap(),
-            guid: guid.into(),
-        })
-        .collect();
-    native.act_root_components = vec![ActRootComponent {
-        id: "generated:act-root#0".into(),
-        byte_offset: 0,
-        record_index: 9,
-        record_index_offset: 0,
-        class_tag: "267".into(),
-        instance_root_record: 12,
-        instance_root_record_offset: 0,
-        components_root_record: 7,
-        components_root_record_offset: 0,
-        registry_flag: 1,
-        registry_flag_offset: 0,
-        entity_id: "0_3".into(),
-        entity_id_offset: 0,
-        display_name: "Generated Design".into(),
-        display_name_offset: 0,
-    }];
-
     drop(native);
-    let mut encoded = Vec::new();
-    F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect("source-less ACT encode");
-    let round_trip = F3dCodec
-        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
-        .expect("source-less ACT round trip");
-    let native = f3d_native(&round_trip.ir);
-    assert_eq!(native.act_entities.len(), 1);
-    assert!(native.act_entities[0].in_table);
-    assert_eq!(native.act_entities[0].record_index, 7);
-    assert_eq!(native.act_entities[0].entity_id, "0_985");
-    assert_eq!(
-        native.act_entities[0]
-            .channels
-            .get("Appearance")
-            .map(String::as_str),
-        Some(appearance_guid)
-    );
-    assert_eq!(native.act_guids.len(), 3);
-    assert!(native
-        .act_guids
-        .iter()
-        .any(|guid| guid.guid == standalone_guid));
-    assert_eq!(native.act_root_components.len(), 1);
-    assert_eq!(native.act_root_components[0].instance_root_record, 12);
-    assert_eq!(native.act_root_components[0].components_root_record, 7);
-    assert_eq!(
-        native.act_root_components[0].display_name,
-        "Generated Design"
-    );
-}
-
-#[test]
-fn generated_source_less_rejects_lossy_act_layouts() {
-    use std::collections::BTreeMap;
-
-    use crate::records::{ActEntity, ActGuid};
-
-    let channel_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
-    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
-    let mut source_less = cadmpeg_ir::examples::unit_cube();
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.act_entities = vec![ActEntity {
-            id: "generated:act-entity#0".into(),
-            record_index: 7,
-            table_record_index_offset: None,
-            channel_record_index_offset: None,
-            entity_id: "0_985".into(),
-            table_entity_id_offset: None,
-            channel_entity_id_offset: None,
-            in_table: true,
-            channel_class_tag: Some("261".into()),
-            channels: BTreeMap::from([("Appearance".into(), channel_guid.into())]),
-            channel_guid_offsets: BTreeMap::new(),
-        }];
-        native.act_guids = [channel_guid, standalone_guid]
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, guid)| ActGuid {
-                id: format!("generated:act-guid#{ordinal}"),
-                byte_offset: 0,
-                guid_offset: 0,
-                ordinal: ordinal as u32,
-                guid: guid.into(),
-            })
-            .collect();
-    }
     let error = F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
             ir: &source_less,
             fidelity: None,
         })
         .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("ACT GUID order must not be normalized");
+        .expect_err("ACT generation without its record registry must fail atomically");
     assert!(error
         .to_string()
-        .contains("cannot preserve this ACT GUID pool ordering"));
-
-    {
-        let mut native = f3d_native_mut(&mut source_less);
-        native.act_guids.clear();
-        native.act_entities[0].in_table = false;
-        native.act_entities[0].channels.clear();
-        native.act_entities[0].channel_class_tag = None;
-    }
-    let error = F3dCodec
-        .plan(cadmpeg_ir::codec::EncodeInput {
-            ir: &source_less,
-            fidelity: None,
-        })
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unemitted ACT entities must not disappear");
-    assert!(error
-        .to_string()
-        .contains("has neither a table row nor channels"));
+        .contains("requires a retained MetaStream record registry"));
 }
 
 #[test]
@@ -12055,8 +11927,8 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .expect("generated standalone ACT GUID");
     assert!(act_guid.guid_offset > act_guid.byte_offset);
     act_guid.guid = "ffffffff-1111-2222-3333-444444444444".into();
+    native.act_registry_channels[0].guid = "dddddddd-1111-2222-3333-eeeeeeeeeeee".into();
     let act_root = &mut native.act_root_components[0];
-    act_root.record_index = 70;
     act_root.instance_root_record = 71;
     act_root.components_root_record = 72;
     act_root.registry_flag = 0;
@@ -12164,12 +12036,16 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .iter()
         .any(|guid| guid.guid == "ffffffff-1111-2222-3333-444444444444"));
     let act_root = &f3d_native(&round_trip.ir).act_root_components[0];
-    assert_eq!(act_root.record_index, 70);
+    assert_eq!(act_root.record_index, 9);
     assert_eq!(act_root.instance_root_record, 71);
     assert_eq!(act_root.components_root_record, 72);
     assert_eq!(act_root.registry_flag, 0);
     assert_eq!(act_root.entity_id, "1_3");
     assert_eq!(act_root.display_name, "(Renamed)");
+    assert_eq!(
+        f3d_native(&round_trip.ir).act_registry_channels[0].guid,
+        "dddddddd-1111-2222-3333-eeeeeeeeeeee"
+    );
     let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
     assert_eq!(act_entity.entity_id, "0_986");
     assert_eq!(
@@ -12240,6 +12116,27 @@ fn generated_f3d_rejects_act_binding_divergence() {
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent ACT and appearance binding must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn generated_f3d_rejects_act_record_index_edit_without_metastream_edit() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated ACT decode");
+    let mut edited = decoded.ir;
+    update_f3d_native(&mut edited, |native| {
+        native.act_root_components[0].record_index += 1;
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("an ACT record-index edit without its MetaStream index must fail");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::NotImplemented(message)
+            if message.contains("ACT root edit changes fields")
+    ));
 }
 
 #[test]
@@ -12605,12 +12502,20 @@ fn f3d_with_smbh_and_instance_properties(smbh: &[u8], properties: &[Vec<u8>]) ->
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
     zip.write_all(&generated_design_metastream()).unwrap();
+    let (act_bulk, act_records) = generated_act_bulkstream();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&generated_act_bulkstream()).unwrap();
+    zip.write_all(&act_bulk).unwrap();
+    zip.start_file(
+        "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(&generated_act_metastream(&act_records))
+        .unwrap();
     zip.finish().unwrap().into_inner()
 }
 
@@ -12628,12 +12533,28 @@ fn design_metastream_with_records(
     types: &[(&str, &str, u32, &str, &[u64])],
     records: &[(u64, u64)],
 ) -> Vec<u8> {
+    segment_metastream(
+        "Design",
+        "FusionDesignSegmentType",
+        "Fusion",
+        types,
+        records,
+    )
+}
+
+fn segment_metastream(
+    short_name: &str,
+    full_name: &str,
+    add_in: &str,
+    types: &[(&str, &str, u32, &str, &[u64])],
+    records: &[(u64, u64)],
+) -> Vec<u8> {
     fn lp(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
     }
     let mut out = Vec::new();
-    lp(&mut out, "Design");
+    lp(&mut out, short_name);
     out.extend_from_slice(&0u32.to_le_bytes());
     let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     out.extend_from_slice(&(asset_guid.encode_utf16().count() as u32).to_le_bytes());
@@ -12642,8 +12563,8 @@ fn design_metastream_with_records(
     }
     out.extend_from_slice(&1234u32.to_le_bytes());
     out.extend_from_slice(&[0; 12]);
-    lp(&mut out, "FusionDesignSegmentType");
-    lp(&mut out, "Fusion");
+    lp(&mut out, full_name);
+    lp(&mut out, add_in);
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(&(types.len() as u32).to_le_bytes());
     for (type_guid, base_type_guid, version, module, entity_ids) in types {
@@ -12704,7 +12625,114 @@ fn generated_design_metastream() -> Vec<u8> {
     ])
 }
 
-fn generated_act_bulkstream() -> Vec<u8> {
+fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    let entity_1 = [1];
+    let entity_2 = [2];
+    let entity_7 = [7];
+    let entity_9 = [9];
+    let types = [
+        (
+            "00000000-0000-0000-0000-000000000100",
+            "",
+            1,
+            "ACT",
+            &entity_2[..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000101",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000102",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000103",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000104",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000105",
+            "",
+            1,
+            "ACT",
+            &entity_7[..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000106",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000107",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000108",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-000000000109",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010a",
+            "",
+            1,
+            "ACT",
+            &[][..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010b",
+            "",
+            1,
+            "ACT",
+            &entity_9[..],
+        ),
+        (
+            "00000000-0000-0000-0000-00000000010c",
+            "",
+            1,
+            "ACT",
+            &entity_1[..],
+        ),
+    ];
+    segment_metastream(
+        "FusionACTSegmentType",
+        "FusionACTSegmentType",
+        "Fusion",
+        &types,
+        records,
+    )
+}
+
+fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     fn lp_ascii(out: &mut Vec<u8>, value: &str) {
         out.extend_from_slice(&(value.len() as u32).to_le_bytes());
         out.extend_from_slice(value.as_bytes());
@@ -12717,6 +12745,12 @@ fn generated_act_bulkstream() -> Vec<u8> {
         }
     }
     let mut out = Vec::new();
+    let mut records = vec![(2, out.len() as u64)];
+    lp_ascii(&mut out, "256");
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(b"decoy:ACTTable");
+    out.extend_from_slice(&[0; 6]);
+    records.push((1, out.len() as u64));
     lp_ascii(&mut out, "268");
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -12728,6 +12762,19 @@ fn generated_act_bulkstream() -> Vec<u8> {
     out.extend_from_slice(&[0u8; 6]);
     lp_utf16(&mut out, "0_985");
     lp_utf16(&mut out, "eeeeeeee-1111-2222-3333-ffffffffffff");
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.push(1);
+    out.extend_from_slice(&9u32.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    out.extend_from_slice(&2u32.to_le_bytes());
+    for (name, guid) in [
+        ("Appearance", "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"),
+        ("PhysicalMaterial", "cccccccc-1111-2222-3333-dddddddddddd"),
+    ] {
+        lp_ascii(&mut out, name);
+        lp_utf16(&mut out, guid);
+    }
+    records.push((9, out.len() as u64));
     lp_ascii(&mut out, "267");
     out.extend_from_slice(&9u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -12745,6 +12792,7 @@ fn generated_act_bulkstream() -> Vec<u8> {
     out.push(1);
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 6]);
+    records.push((7, out.len() as u64));
     lp_ascii(&mut out, "261");
     out.extend_from_slice(&7u32.to_le_bytes());
     out.extend_from_slice(&[0u8; 10]);
@@ -12757,7 +12805,7 @@ fn generated_act_bulkstream() -> Vec<u8> {
         lp_utf16(&mut out, guid);
     }
     lp_utf16(&mut out, "0_985");
-    out
+    (out, records)
 }
 
 fn generated_design_bulkstream() -> Vec<u8> {
@@ -24502,10 +24550,25 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(f3d_native(&result.ir).act_entities.len(), 1);
     assert_eq!(f3d_native(&result.ir).act_entities[0].record_index, 7);
     assert_eq!(f3d_native(&result.ir).act_entities[0].entity_id, "0_985");
-    assert!(f3d_native(&result.ir)
-        .act_guids
-        .iter()
-        .any(|record| record.guid == "eeeeeeee-1111-2222-3333-ffffffffffff"));
+    assert_eq!(f3d_native(&result.ir).act_guids.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).act_guids[0].guid,
+        "eeeeeeee-1111-2222-3333-ffffffffffff"
+    );
+    assert_eq!(f3d_native(&result.ir).act_registry_channels.len(), 2);
+    assert_eq!(f3d_native(&result.ir).act_table_references.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).act_table_references[0].target_record,
+        9
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_registry_channels[0].name,
+        "Appearance"
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_registry_channels[1].name,
+        "PhysicalMaterial"
+    );
     assert!(f3d_native(&result.ir).act_entities[0].in_table);
     assert_eq!(f3d_native(&result.ir).act_root_components.len(), 1);
     assert_eq!(
@@ -24519,6 +24582,10 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(
         f3d_native(&result.ir).act_root_components[0].instance_root_record,
         12
+    );
+    assert_eq!(
+        f3d_native(&result.ir).act_root_components[0].tracked_entity_record,
+        3
     );
     assert_eq!(
         f3d_native(&result.ir).act_root_components[0].components_root_record,
@@ -24734,6 +24801,70 @@ fn decode_transfers_generated_protein_appearance() {
         .design_body_members
         .iter()
         .all(|member| member.flags == 0));
+    assert!(crate::validate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn generated_act_native_validation_rejects_structural_drift() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated ACT decode");
+
+    let mut wrong_root = decoded.ir.clone();
+    update_f3d_native(&mut wrong_root, |native| {
+        native.act_root_components[0].tracked_entity_record = 4;
+    });
+    assert!(crate::validate::validate_native(&wrong_root)
+        .iter()
+        .any(|finding| finding.message.contains("ACT root component")));
+
+    let mut table_only = decoded.ir.clone();
+    update_f3d_native(&mut table_only, |native| {
+        let entity = &mut native.act_entities[0];
+        entity.channel_class_tag = None;
+        entity.channel_record_index_offset = None;
+        entity.channel_entity_id_offset = None;
+        entity.channels.clear();
+        entity.channel_guid_offsets.clear();
+    });
+    assert!(crate::validate::validate_native(&table_only)
+        .iter()
+        .any(|finding| finding.message.contains("ACT entity")));
+
+    let mut shifted_table_row = decoded.ir.clone();
+    update_f3d_native(&mut shifted_table_row, |native| {
+        native.act_entities[0].table_entity_id_offset = native.act_entities[0]
+            .table_entity_id_offset
+            .and_then(|offset| offset.checked_add(1));
+    });
+    assert!(crate::validate::validate_native(&shifted_table_row)
+        .iter()
+        .any(|finding| finding.message.contains("ACT entity")));
+
+    let mut colliding_root = decoded.ir.clone();
+    update_f3d_native(&mut colliding_root, |native| {
+        native.act_root_components[0].record_index = native.act_entities[0].record_index;
+    });
+    assert!(crate::validate::validate_native(&colliding_root)
+        .iter()
+        .any(|finding| finding.message.contains("ACT root component")));
+
+    let mut wrong_registry = decoded.ir;
+    update_f3d_native(&mut wrong_registry, |native| {
+        native.act_registry_channels[1].ordinal = 0;
+    });
+    assert!(crate::validate::validate_native(&wrong_registry)
+        .iter()
+        .any(|finding| finding.message.contains("ACT channel-registry entry")));
+
+    let mut wrong_table_reference = wrong_registry;
+    update_f3d_native(&mut wrong_table_reference, |native| {
+        native.act_table_references[0].target_record_offset += 1;
+    });
+    assert!(crate::validate::validate_native(&wrong_table_reference)
+        .iter()
+        .any(|finding| finding.message.contains("ACT table reference")));
 }
 
 #[test]
