@@ -717,7 +717,8 @@
         "brep_stream_len": "616",
         "brep_stream_sha256": "d7fb4c3acc0a6eba22f5b98742357824db6b2fd70767cf9be35ec0bcd799c626",
         "external_reference_count": "0",
-        "fbb_runs": "4",
+        "fbb_face_rows": "4",
+        "fbb_runs": "1",
         "file_size": "879",
         "finjpl_segment_count": "0",
         "inner_offset": "16",
@@ -1116,7 +1117,7 @@
     "notes": [
       "outer V5_CFV2 container: directory offset 879 + length 0 = 879 (file size 879); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
       "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",
-      "reconstructed BREP stream from MainDataStream + SurfacicReps: 4 FBB run(s), 4 vertex record(s), 1 edge-table delimiter(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 4 face row(s), 4 vertex record(s), 1 edge-table delimiter(s)",
       "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
     ]
   },

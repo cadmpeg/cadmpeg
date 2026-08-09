@@ -585,6 +585,8 @@ pub struct InnerDir {
 pub struct Census {
     /// Contiguous stride-8 FBB runs in the BREP stream.
     pub fbb_runs: usize,
+    /// Stride-8 FBB face rows in the BREP stream.
+    pub fbb_face_rows: usize,
     /// `10 24 04 ff ff 00 00 00` standard edge-table delimiters in the BREP stream.
     pub edge_delimiters: usize,
     /// `05 08 01` vertex-record signatures in the BREP stream.
@@ -683,22 +685,22 @@ pub fn looks_like_catia(prefix: &[u8]) -> bool {
     prefix.starts_with(OUTER_MAGIC)
 }
 
-/// Count non-overlapping stride-8 runs of the FBB marker and total marker hits.
-/// Returns `run_count`. The number of maximal contiguous groups is the
-/// documented body count, but for variant detection the presence of any run is
-/// what matters, so this counts every stride-8 marker occurrence.
-fn count_stride8_fbb(body: &[u8]) -> usize {
-    let mut count = 0;
-    let mut i = 0;
-    while i + 4 <= body.len() {
-        if is_fbb_row(&body[i..]) {
-            count += 1;
-            i += 8;
+/// Return maximal contiguous stride-8 FBB groups in source order.
+pub(crate) fn fbb_run_ranges(body: &[u8]) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut position = 0;
+    while position + 8 <= body.len() {
+        if is_fbb_row(&body[position..]) {
+            let start = position;
+            while position + 8 <= body.len() && is_fbb_row(&body[position..]) {
+                position += 8;
+            }
+            ranges.push(start..position);
         } else {
-            i += 1;
+            position += 1;
         }
     }
-    count
+    ranges
 }
 
 /// A standard face-outer-bound row. Bit 7 of the leading `30` byte is a form
@@ -1200,7 +1202,12 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
         ..Default::default()
     };
     if let Some(b) = &brep {
-        census.fbb_runs = count_stride8_fbb(b);
+        let fbb_ranges = fbb_run_ranges(b);
+        census.fbb_runs = fbb_ranges.len();
+        census.fbb_face_rows = fbb_ranges
+            .iter()
+            .map(|range| (range.end - range.start) / 8)
+            .sum();
         census.edge_delimiters = count_subslice(b, EDGE_DELIMITER);
         census.vertex_markers = count_subslice(b, VERTEX_MARKER);
     }
@@ -1376,9 +1383,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
     if scan.brep.is_some() {
         notes.push(format!(
-            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB run(s), {} \
-             vertex record(s), {} edge-table delimiter(s)",
-            scan.census.fbb_runs, scan.census.vertex_markers, scan.census.edge_delimiters
+            "reconstructed BREP stream from MainDataStream + SurfacicReps: {} FBB group(s) \
+             containing {} face row(s), {} vertex record(s), {} edge-table delimiter(s)",
+            scan.census.fbb_runs,
+            scan.census.fbb_face_rows,
+            scan.census.vertex_markers,
+            scan.census.edge_delimiters
         ));
     }
     if scan.census.a9_markers > 0 || scan.census.e5_markers > 0 {

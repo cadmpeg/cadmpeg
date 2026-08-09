@@ -3994,7 +3994,8 @@ fn scan_parses_directory_and_identifies_standard() {
     // The BREP stream is MainDataStream followed by SurfacicReps.
     assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
     assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
-    assert!(scan.census.fbb_runs >= 2);
+    assert_eq!(scan.census.fbb_runs, 1);
+    assert_eq!(scan.census.fbb_face_rows, 2);
     assert!(scan.census.edge_delimiters >= 1);
     assert_eq!(scan.census.vertex_markers, 3);
 }
@@ -4007,6 +4008,20 @@ fn flagged_fbb_marker_is_structural() {
     assert!(!crate::container::is_fbb_row(&[
         0x20, 0x04, 0x04, 0xff, 0xff, 0xc4, 0xb2, 0xaa,
     ]));
+}
+
+#[test]
+fn fbb_census_separates_groups_from_face_rows() {
+    let row = [0x30, 0x04, 0x04, 0xff, 0, 1, 2, 3];
+    let mut body = row.to_vec();
+    body.extend_from_slice(&row);
+    body.extend_from_slice(&[0xaa; 8]);
+    body.extend_from_slice(&row);
+
+    assert_eq!(crate::container::fbb_run_ranges(&body), vec![0..16, 24..32]);
+    let scan = crate::container::scan_bytes(standard_catpart());
+    assert_eq!(scan.census.fbb_runs, 1);
+    assert_eq!(scan.census.fbb_face_rows, 2);
 }
 
 #[test]

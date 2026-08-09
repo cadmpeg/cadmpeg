@@ -302,7 +302,8 @@
         "brep_stream_len": "324",
         "brep_stream_sha256": "7cc50f0a65a1b74cbab53eea06f88440daacdbf5ed50a4cd98ba1f994dda158e",
         "external_reference_count": "0",
-        "fbb_runs": "2",
+        "fbb_face_rows": "2",
+        "fbb_runs": "1",
         "file_size": "951",
         "finjpl_segment_count": "0",
         "inner_offset": "380",
@@ -694,7 +695,7 @@
       },
       {
         "code": "topology_not_transferred",
-        "message": "The B-rep boundary graph was not emitted: 2 face outer-bound run(s) were detected, but the curve support table is absent or empty.",
+        "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
         "severity": "blocking"
       },
       {
@@ -711,7 +712,7 @@
     "notes": [
       "outer V5_CFV2 container: directory offset 951 + length 0 = 951 (file size 951); variant: standard nested V5_CFV2 (FBB spine + standard edge-table delimiter): geometry decode supported",
       "nested V5_CFV2 at file offset 380 with a CATIA_V5 CB0001 directory of 2 stream(s)",
-      "reconstructed BREP stream from MainDataStream + SurfacicReps: 2 FBB run(s), 3 vertex record(s), 2 edge-table delimiter(s)",
+      "reconstructed BREP stream from MainDataStream + SurfacicReps: 1 FBB group(s) containing 2 face row(s), 3 vertex record(s), 2 edge-table delimiter(s)",
       "container-level enumeration; run `decode` to build geometry from the standard-nested BREP stream (other variants are container-only)"
     ]
   },

@@ -411,6 +411,10 @@ pub(crate) fn source_meta(scan: &ContainerScan) -> SourceMeta {
         attributes.insert("brep_stream_sha256".to_string(), sha256_hex(brep));
         attributes.insert("fbb_runs".to_string(), scan.census.fbb_runs.to_string());
         attributes.insert(
+            "fbb_face_rows".to_string(),
+            scan.census.fbb_face_rows.to_string(),
+        );
+        attributes.insert(
             "vertex_records".to_string(),
             scan.census.vertex_markers.to_string(),
         );
@@ -501,9 +505,9 @@ pub(crate) fn build_geometry_report(
             code: cadmpeg_ir::report::LossKind::TopologyNotTransferred,
             severity: Severity::Blocking,
             message: format!(
-                "The B-rep boundary graph was not emitted: {} face outer-bound run(s) were \
-                 detected, but {topology_failure}.",
-                scan.census.fbb_runs,
+                "The B-rep boundary graph was not emitted: {} face outer-bound row(s) in {} \
+                 group(s) were detected, but {topology_failure}.",
+                scan.census.fbb_face_rows, scan.census.fbb_runs,
             ),
             provenance: None,
         });
