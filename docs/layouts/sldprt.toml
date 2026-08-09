@@ -3960,6 +3960,103 @@ contains = "const POSITION_OFFSETS: [usize; 2] = [243, 259];"
 note = "The parser evaluates both fixed solved-position layouts and requires one distinct result."
 
 [[record]]
+name = "extrusion_sparse_operation_trailer"
+kind = "byte"
+section = "2"
+anchor = "The 40-byte sparse form stores six zero bytes at trailer +16"
+size = 40
+endianness = "little"
+
+[[record.field]]
+name = "zero_header"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "followed by four zero bytes"
+
+[[record.field]]
+name = "family"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The family word is `0x0140` on `moExtrusion_c` objects and `0x01ca` on `moICE_c` objects"
+
+[[record.field]]
+name = "operation"
+offset = 6
+type = "u8"
+source = "spec"
+anchor = "a one-byte Boolean operation"
+
+[[record.field]]
+name = "schema"
+offset = 7
+type = "u8"
+source = "spec"
+anchor = "one schema byte"
+
+[[record.field]]
+name = "object_id"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the repeated little-endian u32 object identifier"
+
+[[record.field]]
+name = "zero_after_object"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "and four zero bytes"
+
+[[record.field]]
+name = "sparse_zero_prefix"
+offset = 16
+type = "bytes[6]"
+source = "spec"
+anchor = "stores six zero bytes at trailer +16"
+
+[[record.field]]
+name = "sparse_marker"
+offset = 22
+type = "u16"
+source = "spec"
+anchor = "u16 `1` at +22"
+
+[[record.field]]
+name = "first_token"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "a nonzero u16 token at +24"
+
+[[record.field]]
+name = "optional_identity"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "an optional u32 identity at +26"
+
+[[record.field]]
+name = "zero_before_final_token"
+offset = 30
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at +30"
+
+[[record.field]]
+name = "final_token"
+offset = 38
+type = "u16"
+source = "spec"
+anchor = "a second nonzero u16 token at +38"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs"
+contains = "suffix[10..14] != [0xff; 4]"
+note = "The parser accepts zero or non-null optional identities and requires the complete sparse trailer."
+
+[[record]]
 name = "coordinate_system_component_point"
 kind = "byte"
 section = "2"

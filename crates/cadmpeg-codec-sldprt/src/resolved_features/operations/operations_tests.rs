@@ -88,6 +88,14 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         feature_inline_operation(&lane, &name),
         Some(BooleanOp::Join)
     );
+    lane.native_payload[trailer + 26..trailer + 30].copy_from_slice(&70_321u32.to_le_bytes());
+    assert_eq!(
+        feature_inline_operation(&lane, &name),
+        Some(BooleanOp::Join)
+    );
+    lane.native_payload[trailer + 26..trailer + 30].fill(0xff);
+    assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+    lane.native_payload[trailer + 26..trailer + 30].fill(0);
     lane.native_payload[trailer + 38..trailer + 40].fill(0);
     assert_eq!(feature_inline_operation_fields(&lane, &name), None);
 

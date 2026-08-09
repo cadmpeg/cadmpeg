@@ -259,7 +259,8 @@ pub(super) fn feature_inline_operation_fields(
                 (suffix[..6] == [0; 6]
                     && suffix[6..8] == [1, 0]
                     && suffix[8..10] != [0, 0]
-                    && suffix[10..22] == [0; 12]
+                    && suffix[10..14] != [0xff; 4]
+                    && suffix[14..22] == [0; 8]
                     && suffix[22..24] != [0, 0])
                     || (suffix[..4] == [0, 0, 1, 0]
                         && suffix[4..8] != [0; 4]

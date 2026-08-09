@@ -1050,6 +1050,29 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser evaluates both fixed solved-position layouts and requires one distinct result.
 
+## `extrusion_sparse_operation_trailer`
+
+Spec §2 · layout: byte offsets · size: 40 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `zero_header` | `u32` | little | spec | followed by four zero bytes |
+| 4 | 2 | `family` | `u16` | little | spec | The family word is `0x0140` on `moExtrusion_c` objects and `0x01ca` on `moICE_c` objects |
+| 6 | 1 | `operation` | `u8` | little | spec | a one-byte Boolean operation |
+| 7 | 1 | `schema` | `u8` | little | spec | one schema byte |
+| 8 | 4 | `object_id` | `u32` | little | spec | the repeated little-endian u32 object identifier |
+| 12 | 4 | `zero_after_object` | `u32` | little | spec | and four zero bytes |
+| 16 | 6 | `sparse_zero_prefix` | `bytes[6]` | little | spec | stores six zero bytes at trailer +16 |
+| 22 | 2 | `sparse_marker` | `u16` | little | spec | u16 `1` at +22 |
+| 24 | 2 | `first_token` | `u16` | little | spec | a nonzero u16 token at +24 |
+| 26 | 4 | `optional_identity` | `u32` | little | spec | an optional u32 identity at +26 |
+| 30 | 8 | `zero_before_final_token` | `bytes[8]` | little | spec | eight zero bytes at +30 |
+| 38 | 2 | `final_token` | `u16` | little | spec | a second nonzero u16 token at +38 |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/operations.rs` — The parser accepts zero or non-null optional identities and requires the complete sparse trailer.
+
 ## `coordinate_system_component_point`
 
 Spec §2 · layout: byte offsets · size: 151 B
