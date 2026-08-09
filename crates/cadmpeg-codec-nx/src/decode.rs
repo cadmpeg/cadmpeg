@@ -10630,6 +10630,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             && !is_exact_empty_base
             && !output_free_native_snapshot(feature)
             && !output_free_local_body_construction(feature)
+            && !output_free_pattern_construction(feature)
         {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
@@ -10948,6 +10949,25 @@ pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features
         && !feature
             .source_properties
             .contains_key("primary_body_segment_use")
+}
+
+/// Return whether a pattern record is construction-only and has no neutral
+/// body-output obligation.
+///
+/// Pattern construction records without a primary-body field describe the
+/// seed and transform graph. A body-affecting pattern has at least one body
+/// reference occurrence, even when the occurrence is too ambiguous to become
+/// a primary writer. Keep that distinction explicit so an incomplete body
+/// binding cannot be mistaken for a construction-only record.
+pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::Pattern { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+        })
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(

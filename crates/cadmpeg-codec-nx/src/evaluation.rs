@@ -502,8 +502,9 @@ fn suppression_is_body_census_invariant(
     );
     let output_free_trim = feature.outputs.is_empty()
         && matches!(&feature.definition, FeatureDefinition::TrimBodies { .. });
-    let output_free_pattern = feature.outputs.is_empty()
-        && matches!(&feature.definition, FeatureDefinition::Pattern { .. });
+    let output_free_pattern = matches!(&feature.definition, FeatureDefinition::Pattern { .. })
+        && (crate::decode::output_free_pattern_construction(feature)
+            || crate::decode::output_free_local_body_construction(feature));
     let output_free_combine = feature.outputs.is_empty()
         && matches!(
             &feature.definition,

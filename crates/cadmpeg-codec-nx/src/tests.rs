@@ -9303,6 +9303,51 @@ fn design_intent_losses_accept_output_free_local_body_operations() {
 }
 
 #[test]
+fn design_intent_losses_accept_pattern_construction_without_body_reference() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let feature = Feature {
+        id: FeatureId("test:feature#pattern-construction".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(feature);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
+    assert!(losses[0].message.contains("pattern (1)"));
+
+    ir.model.features[0]
+        .source_properties
+        .insert("body_reference.0".into(), "42".into());
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
+}
+
+#[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
 
