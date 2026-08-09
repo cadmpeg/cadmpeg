@@ -53,11 +53,12 @@ decode operation.
 bounded endpoint inference, and copied opaque-record bytes charge the shared
 decode session. Each semantic pass charges the complete parsed source graph
 once: records, complex-entity leaves, aggregate members, and nested typed
-values. It also charges the neutral IR entity count already produced before
-the pass. The implicit-face plane pass reserves its complete linear point
-population before topology decoding. This prevents a record-only allowance
-from hiding work proportional to aggregate depth, decoded output size, or
-polygon cardinality. Pcurve consistency omission indexes coedges once,
+values. Semantic stages also admit the incremental neutral IR entity
+population before the next stage runs, with a final defensive admission after
+retention. This prevents a record-only allowance from hiding work proportional
+to aggregate depth or decoded output size. The implicit-face plane pass
+reserves its complete linear point population before topology decoding. Pcurve
+consistency omission indexes coedges once,
 so retaining or omitting many failed optional pcurves is linear in the decoded
 coedge population. Edition-3 anchor expansion charges every cloned value node
 to the same collection-item and work-unit dimensions before materialization;

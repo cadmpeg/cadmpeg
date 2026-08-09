@@ -203,6 +203,35 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
 }
 
 #[test]
+fn semantic_decode_admits_ir_entities_at_stage_boundaries() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=VERTEX_POINT('',#1);ENDSEC;END-ISO-10303-21;";
+    let mut entity_limit = None;
+    for max_entities in 1..=64 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_entities = max_entities;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::reader::decode(source, DecodeOptions::default(), &ctx)
+            .expect_err("the model entity must be admitted before later semantic stages");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+            && limit.context.operation == "step_dependency_decode"
+        {
+            assert!(limit.additional > 0);
+            assert!(limit.used <= limit.limit);
+            entity_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = entity_limit.expect("IR entities must be charged at a semantic stage boundary");
+    assert_eq!(limit.additional, 1);
+}
+
+#[test]
 fn implicit_face_plane_work_is_refused_before_plane_inference_runs() {
     let point_references = (2..=17)
         .map(|id| format!("#{id}"))
