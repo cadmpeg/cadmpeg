@@ -1181,6 +1181,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
             ProceduralSurfaceDefinition::CurveBounded {
                 support,
                 boundaries,
+                boundary_pcurves,
                 ..
             } => {
                 if ids.surfaces(&support.0).is_none() {
@@ -1189,6 +1190,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &ModelIndex<'_>, findings: &mut 
                 for boundary in boundaries {
                     if ids.curves(&boundary.0).is_none() {
                         ref_error(findings, &procedural.id.0, "curve", &boundary.0);
+                    }
+                }
+                for pcurve in boundary_pcurves {
+                    if ids.pcurves(&pcurve.0).is_none() {
+                        ref_error(findings, &procedural.id.0, "pcurve boundary", &pcurve.0);
                     }
                 }
             }

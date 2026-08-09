@@ -43,7 +43,7 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             .filter(|curve| curve.source_object.is_some())
             .map(|curve| curve.id.0.as_str()),
     );
-    let pcurves = ir
+    let mut pcurves = ir
         .model
         .coedges
         .iter()
@@ -55,6 +55,14 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
         }))
         .collect::<HashSet<_>>();
+    for surface in &ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = &surface.definition
+        {
+            pcurves.extend(boundary_pcurves.iter().map(|pcurve| pcurve.0.as_str()));
+        }
+    }
     let mut points = ir
         .model
         .vertices

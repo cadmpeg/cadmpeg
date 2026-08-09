@@ -2582,20 +2582,33 @@ fn build_one(
                                     vec![(pcurve, selected.parameter_range)]
                                 } else {
                                     let n = candidates.len();
-                                    let message = match (edge.curve, surface_step, n) {
-                                        (Some(curve), Some(surface), 1) => format!(
-                                            "curve #{curve} has one pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices, so the coedge has no pcurve"
-                                        ),
-                                        (Some(curve), Some(surface), _) => format!(
-                                            "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                        ),
-                                        _ => format!(
-                                            "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
-                                        ),
-                                    };
+                                    let (code, severity, message) =
+                                        match (edge.curve, surface_step, n) {
+                                            (Some(curve), Some(surface), 1) => (
+                                                LossKind::PcurveOmitted,
+                                                Severity::Error,
+                                                format!(
+                                                    "curve #{curve} has one optional pcurve on surface #{surface} whose mapped endpoints are not continuous with the edge vertices; the pcurve is omitted"
+                                                ),
+                                            ),
+                                            (Some(curve), Some(surface), _) => (
+                                                LossKind::ReferenceGraphNotClosed,
+                                                Severity::Warning,
+                                                format!(
+                                                    "curve #{curve} associates {n} pcurves with surface #{surface}; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                ),
+                                            ),
+                                            _ => (
+                                                LossKind::ReferenceGraphNotClosed,
+                                                Severity::Warning,
+                                                format!(
+                                                    "coedge use #{use_step} has {n} pcurve candidates but its source surface or curve carrier is unresolved; no unique endpoint-continuous pcurve selects one, so the coedge has no pcurve"
+                                                ),
+                                            ),
+                                        };
                                     losses.push(LossNote {
-                                        code: LossKind::ReferenceGraphNotClosed,
-                                        severity: Severity::Warning,
+                                        code,
+                                        severity,
                                         message,
                                         provenance: None,
                                     });

@@ -738,6 +738,23 @@ fn retain_unowned_carriers(
                 .iter()
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.clone()))
         }))
+        .chain(
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .filter_map(|surface| {
+                    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+                        boundary_pcurves,
+                        ..
+                    } = &surface.definition
+                    else {
+                        return None;
+                    };
+                    Some(boundary_pcurves)
+                })
+                .flatten()
+                .map(|pcurve| pcurve.0.clone()),
+        )
         .collect::<BTreeSet<_>>();
     let unowned_pcurves = exchange
         .records

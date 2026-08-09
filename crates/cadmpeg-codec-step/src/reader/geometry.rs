@@ -1323,12 +1323,22 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 continue;
             };
             let support = SurfaceId(format!("step:data:surface#{support_step}"));
-            let boundaries = parameters.get(2).and_then(references).map(|boundaries| {
+            let boundary_steps = parameters.get(2).and_then(references);
+            let boundaries = boundary_steps.as_ref().map(|boundaries| {
                 boundaries
-                    .into_iter()
+                    .iter()
+                    .copied()
                     .map(|boundary| CurveId(format!("step:data:curve#{boundary}")))
                     .collect::<Vec<_>>()
             });
+            let boundary_pcurves = boundary_steps
+                .iter()
+                .flatten()
+                .flat_map(|boundary| boundary_pcurve_steps(*boundary, support_step, exchange))
+                .map(|pcurve| PcurveId(format!("step:data:pcurve#{pcurve}")))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             let implicit_outer = parameters.get(3).and_then(Value::logical);
             let Some((boundaries, implicit_outer, geometry)) = ir
                 .model
@@ -1362,6 +1372,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 definition: ProceduralSurfaceDefinition::CurveBounded {
                     support,
                     boundaries,
+                    boundary_pcurves,
                     implicit_outer,
                 },
                 cache_fit_tolerance: None,
@@ -1647,6 +1658,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         typed.insert(curve_step);
         typed.extend(geometry_records.iter().copied());
+    }
+
+    // Curve-bounded surfaces resolve before the PCURVE pass because their 3D
+    // boundaries do not depend on parameter-space geometry. Remove candidate
+    // references whose pcurve carrier did not decode.
+    let decoded_pcurve_steps = ir
+        .model
+        .pcurves
+        .iter()
+        .filter_map(|pcurve| step_instance_id(&pcurve.id.0))
+        .collect::<BTreeSet<_>>();
+    for surface in &mut ir.model.procedural_surfaces {
+        if let ProceduralSurfaceDefinition::CurveBounded {
+            boundary_pcurves, ..
+        } = &mut surface.definition
+        {
+            boundary_pcurves.retain(|pcurve| {
+                step_instance_id(&pcurve.0).is_some_and(|id| decoded_pcurve_steps.contains(&id))
+            });
+        }
     }
 
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
@@ -2287,6 +2318,22 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
                 .iter()
                 .flat_map(|use_| use_.pcurves.iter().map(|pcurve| pcurve.pcurve.0.as_str()))
         }))
+        .chain(
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .filter_map(|surface| {
+                    let ProceduralSurfaceDefinition::CurveBounded {
+                        boundary_pcurves, ..
+                    } = &surface.definition
+                    else {
+                        return None;
+                    };
+                    Some(boundary_pcurves)
+                })
+                .flatten()
+                .map(|pcurve| pcurve.0.as_str()),
+        )
         .collect::<BTreeSet<_>>();
     for (pcurve_id, record) in exchange.entities("PCURVE") {
         let pcurve_identity = format!("step:data:pcurve#{pcurve_id}");
@@ -3401,6 +3448,54 @@ fn composite_curve_segment_parameters(record: &RawRecord) -> Option<&[Value]> {
         .map(|partial| partial.parameters.as_slice())
 }
 
+fn boundary_pcurve_steps(boundary: u64, support: u64, exchange: &Exchange) -> Vec<u64> {
+    let Some(record) = exchange.records.get(&boundary) else {
+        return Vec::new();
+    };
+    let Some((parameters, offset)) = composite_curve_parameters(record) else {
+        return Vec::new();
+    };
+    parameters
+        .get(offset)
+        .and_then(Value::list)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
+        .filter_map(|segment| exchange.records.get(&segment))
+        .filter_map(composite_curve_segment_parameters)
+        .filter_map(|parameters| parameters.get(2).and_then(Value::reference))
+        .filter_map(|curve| exchange.records.get(&curve))
+        .filter(|curve| {
+            curve.partials.iter().any(|partial| {
+                matches!(
+                    partial.name.as_str(),
+                    "SURFACE_CURVE" | "SEAM_CURVE" | "INTERSECTION_CURVE"
+                )
+            })
+        })
+        .flat_map(|curve| surface_curve_pcurves(curve).unwrap_or_default())
+        .filter(|pcurve| {
+            exchange
+                .records
+                .get(pcurve)
+                .and_then(|record| named_parameter(record, "PCURVE", 1))
+                .and_then(Value::reference)
+                == Some(support)
+        })
+        .collect()
+}
+
+fn surface_curve_pcurves(record: &RawRecord) -> Option<Vec<u64>> {
+    if record.partials.len() == 1 {
+        return record.parameter(2).and_then(references);
+    }
+    record
+        .partial("SURFACE_CURVE")
+        .or_else(|| record.partial("SEAM_CURVE"))
+        .or_else(|| record.partial("INTERSECTION_CURVE"))
+        .and_then(|partial| partial.parameters.get(1).and_then(references))
+}
+
 #[derive(Clone, Copy)]
 enum StepLogical {
     Known(bool),
@@ -4025,7 +4120,27 @@ fn procedural_surface_parameter_scales(
     if !active.insert(surface_id.clone()) {
         return None;
     }
-    let direct = match geometry {
+    let scales = surface_geometry_parameter_scales(
+        ir,
+        surface_id,
+        geometry,
+        length_scale,
+        angle_scale,
+        active,
+    );
+    active.remove(surface_id);
+    scales
+}
+
+fn surface_geometry_parameter_scales(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<SurfaceId>,
+) -> Option<[f64; 2]> {
+    match geometry {
         SurfaceGeometry::Plane { .. } => Some([length_scale, length_scale]),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
             Some([angle_scale, length_scale])
@@ -4034,7 +4149,7 @@ fn procedural_surface_parameter_scales(
             Some([angle_scale, angle_scale])
         }
         SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
-        SurfaceGeometry::Transformed { basis, .. } => procedural_surface_parameter_scales(
+        SurfaceGeometry::Transformed { basis, .. } => surface_geometry_parameter_scales(
             ir,
             surface_id,
             basis,
@@ -4056,24 +4171,26 @@ fn procedural_surface_parameter_scales(
                     active,
                 )
             }),
-        SurfaceGeometry::Unknown { .. } => ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface == *surface_id)
-            .and_then(|procedural| {
-                procedural_definition_parameter_scales(
-                    ir,
-                    &procedural.definition,
-                    length_scale,
-                    angle_scale,
-                    active,
-                )
-            }),
+        SurfaceGeometry::Unknown { .. } => {
+            let mut candidates = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .filter(|procedural| procedural.surface == *surface_id);
+            let procedural = candidates.next()?;
+            if candidates.next().is_some() {
+                return None;
+            }
+            procedural_definition_parameter_scales(
+                ir,
+                &procedural.definition,
+                length_scale,
+                angle_scale,
+                active,
+            )
+        }
         SurfaceGeometry::Polygonal { .. } => None,
-    };
-    active.remove(surface_id);
-    direct
+    }
 }
 
 fn procedural_definition_parameter_scales(
@@ -5001,6 +5118,7 @@ mod tests {
 
     #[test]
     fn surface_parameter_units_follow_the_surface_chart() {
+        let ir = CadIr::empty(cadmpeg_ir::units::Units::default());
         let plane = SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 0.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
@@ -5031,6 +5149,16 @@ mod tests {
         assert_eq!(
             surface_parameter_scales(&transformed, 10.0, 0.25),
             [0.25, 10.0]
+        );
+        assert_eq!(
+            surface_parameter_scales_for_step(
+                &ir,
+                &SurfaceId("transformed".into()),
+                &transformed,
+                10.0,
+                0.25,
+            ),
+            Some([0.25, 10.0])
         );
         assert_eq!(
             surface_parameter_scales(&SurfaceGeometry::Unknown { record: None }, 10.0, 0.25),
