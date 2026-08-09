@@ -3,9 +3,10 @@
 
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::le::u32_at as u32_le;
-use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
+use cadmpeg_ir::topology::Sense;
 use std::collections::HashMap;
 
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
@@ -352,8 +353,8 @@ pub fn summary(scan: &ContainerScan) -> Summary {
 /// Bind a face-tessellation table when its vertices select one analytic face.
 ///
 /// Display coordinates are stored as f32, while the B-rep carriers are f64.
-/// The relative tolerance below covers that quantization. A shared analytic
-/// carrier or another coincident face leaves ownership unresolved.
+/// The relative tolerance below covers that quantization. Complete planar
+/// trims can distinguish faces on a shared analytic carrier.
 pub(crate) fn assign_unique_analytic_owners(
     model: &mut cadmpeg_ir::document::Model,
 ) -> Vec<String> {
@@ -377,6 +378,36 @@ pub(crate) fn assign_unique_analytic_owners(
         .iter()
         .map(|body| (&body.id, body.transform))
         .collect::<HashMap<_, _>>();
+    let loops = model
+        .loops
+        .iter()
+        .map(|loop_| (&loop_.id, loop_))
+        .collect::<HashMap<_, _>>();
+    let coedges = model
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let edges = model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let vertices = model
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, vertex))
+        .collect::<HashMap<_, _>>();
+    let points = model
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position))
+        .collect::<HashMap<_, _>>();
+    let curves = model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<HashMap<_, _>>();
     let candidates = model
         .faces
         .iter()
@@ -393,6 +424,16 @@ pub(crate) fn assign_unique_analytic_owners(
                 *surfaces.get(&face.surface)?,
                 face.tolerance.unwrap_or(0.0),
                 inverse,
+                planar_trim(
+                    face,
+                    *surfaces.get(&face.surface)?,
+                    &loops,
+                    &coedges,
+                    &edges,
+                    &vertices,
+                    &points,
+                    &curves,
+                ),
             ))
         })
         .collect::<Vec<_>>();
@@ -410,24 +451,329 @@ pub(crate) fn assign_unique_analytic_owners(
         let quantization_tolerance = coordinate_scale * f64::from(f32::EPSILON) * 8.0 + 1.0e-9;
         let mut owners = candidates
             .iter()
-            .filter(|(_, _, surface, tolerance, inverse)| {
+            .filter(|(_, _, surface, tolerance, inverse, _)| {
                 let tolerance = tolerance.max(quantization_tolerance);
                 mesh.vertices.iter().all(|point| {
                     analytic_surface_residual(surface, inverse.apply_point(*point))
                         .is_some_and(|residual| residual <= tolerance)
                 })
+            })
+            .collect::<Vec<_>>();
+        if owners.len() > 1 {
+            owners.retain(|(_, _, _, tolerance, inverse, trim)| {
+                trim.as_ref().is_none_or(|trim| {
+                    trim.contains_mesh(mesh, *inverse, tolerance.max(quantization_tolerance))
+                })
             });
-        let Some((face, body, ..)) = owners.next() else {
+        }
+        let [owner] = owners.as_slice() else {
             continue;
         };
-        if owners.next().is_some() {
-            continue;
-        }
+        let (face, body, ..) = owner;
         mesh.faces.push((*face).clone());
         mesh.body = Some((*body).clone());
         assigned.push(mesh.id.clone());
     }
     assigned
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PlaneFrame {
+    origin: Point3,
+    normal: Vector3,
+    u_axis: Vector3,
+    v_axis: Vector3,
+}
+
+impl PlaneFrame {
+    fn project(self, point: Point3) -> Point2 {
+        let delta = point.vector_from(self.origin);
+        Point2::new(delta.dot(self.u_axis), delta.dot(self.v_axis))
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CircularHole {
+    center: Point2,
+    radius: f64,
+}
+
+#[derive(Debug, Clone)]
+struct PlanarTrim {
+    frame: PlaneFrame,
+    outer: Vec<Point2>,
+    holes: Vec<CircularHole>,
+}
+
+impl PlanarTrim {
+    fn contains_mesh(
+        &self,
+        mesh: &cadmpeg_ir::tessellation::Tessellation,
+        inverse_body: cadmpeg_ir::transform::Transform,
+        tolerance: f64,
+    ) -> bool {
+        let projected = mesh
+            .vertices
+            .iter()
+            .map(|point| self.frame.project(inverse_body.apply_point(*point)))
+            .collect::<Vec<_>>();
+        if projected.iter().any(|point| {
+            !convex_polygon_contains(&self.outer, *point, tolerance)
+                || self
+                    .holes
+                    .iter()
+                    .any(|hole| point_distance(*point, hole.center) < hole.radius - tolerance)
+        }) {
+            return false;
+        }
+        mesh.triangles.iter().all(|triangle| {
+            let [Some(a), Some(b), Some(c)] =
+                triangle.map(|index| projected.get(index as usize).copied())
+            else {
+                return false;
+            };
+            self.holes
+                .iter()
+                .all(|hole| !triangle_crosses_hole([a, b, c], *hole, tolerance))
+        })
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Each arena map validates one topology link."
+)]
+fn planar_trim(
+    face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
+    loops: &HashMap<&cadmpeg_ir::ids::LoopId, &cadmpeg_ir::topology::Loop>,
+    coedges: &HashMap<&cadmpeg_ir::ids::CoedgeId, &cadmpeg_ir::topology::Coedge>,
+    edges: &HashMap<&cadmpeg_ir::ids::EdgeId, &cadmpeg_ir::topology::Edge>,
+    vertices: &HashMap<&cadmpeg_ir::ids::VertexId, &cadmpeg_ir::topology::Vertex>,
+    points: &HashMap<&cadmpeg_ir::ids::PointId, Point3>,
+    curves: &HashMap<&cadmpeg_ir::ids::CurveId, &CurveGeometry>,
+) -> Option<PlanarTrim> {
+    let frame = plane_frame(surface)?;
+    let tolerance = face.tolerance.unwrap_or(0.0).max(1.0e-9);
+    let mut polygons = Vec::new();
+    let mut holes = Vec::new();
+    for loop_id in &face.loops {
+        let loop_ = *loops.get(loop_id)?;
+        if loop_.face != face.id || loop_.coedges.is_empty() || !loop_.vertex_uses.is_empty() {
+            return None;
+        }
+        if loop_.coedges.len() == 1 {
+            let coedge = *coedges.get(&loop_.coedges[0])?;
+            let edge = *edges.get(&coedge.edge)?;
+            if coedge.owner_loop != loop_.id
+                || coedge.next != coedge.id
+                || coedge.previous != coedge.id
+                || edge.start != edge.end
+            {
+                return None;
+            }
+            let CurveGeometry::Circle {
+                center,
+                axis,
+                radius,
+                ..
+            } = *curves.get(edge.curve.as_ref()?)?
+            else {
+                return None;
+            };
+            let axis = axis.unit()?;
+            let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
+            if !radius.is_finite()
+                || *radius <= tolerance
+                || axis.dot(frame.normal).abs() < 1.0 - 1.0e-9
+                || analytic_surface_residual(surface, *center)? > tolerance
+                || analytic_surface_residual(surface, boundary_point)? > tolerance
+                || (boundary_point.distance(*center) - radius).abs() > tolerance
+            {
+                return None;
+            }
+            holes.push(CircularHole {
+                center: frame.project(*center),
+                radius: *radius,
+            });
+            continue;
+        }
+
+        let mut polygon = Vec::with_capacity(loop_.coedges.len());
+        let mut first_start = None;
+        let mut previous_end = None;
+        for (index, coedge_id) in loop_.coedges.iter().enumerate() {
+            let coedge = *coedges.get(coedge_id)?;
+            let edge = *edges.get(&coedge.edge)?;
+            if coedge.owner_loop != loop_.id
+                || coedge.next != loop_.coedges[(index + 1) % loop_.coedges.len()]
+                || coedge.previous
+                    != loop_.coedges[(index + loop_.coedges.len() - 1) % loop_.coedges.len()]
+                || !matches!(
+                    curves.get(edge.curve.as_ref()?)?,
+                    CurveGeometry::Line { .. }
+                )
+            {
+                return None;
+            }
+            let (start, end) = match coedge.sense {
+                Sense::Forward => (&edge.start, &edge.end),
+                Sense::Reversed => (&edge.end, &edge.start),
+            };
+            let start = *points.get(&vertices.get(start)?.point)?;
+            let end = *points.get(&vertices.get(end)?.point)?;
+            if analytic_surface_residual(surface, start)? > tolerance
+                || analytic_surface_residual(surface, end)? > tolerance
+                || previous_end.is_some_and(|previous: Point3| previous.distance(start) > tolerance)
+            {
+                return None;
+            }
+            polygon.push(frame.project(start));
+            first_start.get_or_insert(start);
+            previous_end = Some(end);
+        }
+        if previous_end?.distance(first_start?) > tolerance {
+            return None;
+        }
+        polygons.push(polygon);
+    }
+    let [outer] = polygons.as_slice() else {
+        return None;
+    };
+    if !is_strictly_convex(outer, tolerance)
+        || holes
+            .iter()
+            .any(|hole| !circle_inside_polygon(outer, *hole, tolerance))
+        || holes.iter().enumerate().any(|(index, left)| {
+            holes[index + 1..].iter().any(|right| {
+                point_distance(left.center, right.center) < left.radius + right.radius - tolerance
+            })
+        })
+    {
+        return None;
+    }
+    Some(PlanarTrim {
+        frame,
+        outer: outer.clone(),
+        holes,
+    })
+}
+
+fn plane_frame(surface: &SurfaceGeometry) -> Option<PlaneFrame> {
+    let (origin, normal, u_axis) = match surface {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => (*origin, *normal, *u_axis),
+        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+            let basis = plane_frame(basis)?;
+            (
+                transform.apply_point(basis.origin),
+                transform.apply_vector(basis.normal),
+                transform.apply_vector(basis.u_axis),
+            )
+        }
+        _ => return None,
+    };
+    let normal = normal.unit()?;
+    let u_axis = (u_axis - normal.scale(u_axis.dot(normal))).unit()?;
+    let v_axis = normal.cross(u_axis).unit()?;
+    [origin.x, origin.y, origin.z, normal.x, normal.y, normal.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(PlaneFrame {
+            origin,
+            normal,
+            u_axis,
+            v_axis,
+        })
+}
+
+fn point_distance(left: Point2, right: Point2) -> f64 {
+    ((left.u - right.u).powi(2) + (left.v - right.v).powi(2)).sqrt()
+}
+
+fn point_segment_distance(point: Point2, start: Point2, end: Point2) -> f64 {
+    let du = end.u - start.u;
+    let dv = end.v - start.v;
+    let length_squared = du * du + dv * dv;
+    if length_squared <= f64::EPSILON {
+        return point_distance(point, start);
+    }
+    let t =
+        (((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared).clamp(0.0, 1.0);
+    point_distance(point, Point2::new(start.u + t * du, start.v + t * dv))
+}
+
+fn signed_area_twice(left: Point2, middle: Point2, right: Point2) -> f64 {
+    (middle.u - left.u) * (right.v - middle.v) - (middle.v - left.v) * (right.u - middle.u)
+}
+
+fn is_strictly_convex(polygon: &[Point2], tolerance: f64) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let mut sign = 0.0_f64;
+    for index in 0..polygon.len() {
+        let cross = signed_area_twice(
+            polygon[index],
+            polygon[(index + 1) % polygon.len()],
+            polygon[(index + 2) % polygon.len()],
+        );
+        if cross.abs() <= tolerance * tolerance {
+            return false;
+        }
+        if sign == 0.0 {
+            sign = cross.signum();
+        } else if cross.signum() != sign {
+            return false;
+        }
+    }
+    true
+}
+
+fn convex_polygon_contains(polygon: &[Point2], point: Point2, tolerance: f64) -> bool {
+    let mut sign = 0.0_f64;
+    for index in 0..polygon.len() {
+        let start = polygon[index];
+        let end = polygon[(index + 1) % polygon.len()];
+        let cross = signed_area_twice(start, end, point);
+        if point_segment_distance(point, start, end) <= tolerance {
+            continue;
+        }
+        if sign == 0.0 {
+            sign = cross.signum();
+        } else if cross.signum() != sign {
+            return false;
+        }
+    }
+    true
+}
+
+fn circle_inside_polygon(polygon: &[Point2], hole: CircularHole, tolerance: f64) -> bool {
+    convex_polygon_contains(polygon, hole.center, tolerance)
+        && (0..polygon.len()).all(|index| {
+            point_segment_distance(
+                hole.center,
+                polygon[index],
+                polygon[(index + 1) % polygon.len()],
+            ) >= hole.radius - tolerance
+        })
+}
+
+fn triangle_crosses_hole(triangle: [Point2; 3], hole: CircularHole, tolerance: f64) -> bool {
+    if convex_polygon_contains(&triangle, hole.center, tolerance) {
+        return true;
+    }
+    (0..3).any(|index| {
+        let start = triangle[index];
+        let end = triangle[(index + 1) % 3];
+        point_segment_distance(hole.center, start, end) < hole.radius - tolerance
+            && ![start, end]
+                .iter()
+                .all(|point| (point_distance(*point, hole.center) - hole.radius).abs() <= tolerance)
+    })
 }
 
 fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option<f64> {
@@ -496,6 +842,15 @@ fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_ir::geometry::{Curve, Surface};
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::tessellation::Tessellation;
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Region, Shell, Vertex,
+    };
 
     fn descriptor(item_size: u32, kind: u32, count: u32, data: &[u8]) -> Vec<u8> {
         let mut out = Vec::new();
@@ -663,5 +1018,216 @@ mod tests {
             assert!(analytic_surface_residual(surface, displaced)
                 .is_some_and(|residual| residual > 0.0));
         }
+    }
+
+    fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
+        let face_id = FaceId(format!("face-{name}"));
+        let loop_id = LoopId(format!("loop-{name}"));
+        let surface_id = SurfaceId(format!("surface-{name}"));
+        model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let corners = [
+            Point3::new(x, -1.0, 0.0),
+            Point3::new(x + 2.0, -1.0, 0.0),
+            Point3::new(x + 2.0, 1.0, 0.0),
+            Point3::new(x, 1.0, 0.0),
+        ];
+        let coedge_ids = (0..4)
+            .map(|index| CoedgeId(format!("coedge-{name}-{index}")))
+            .collect::<Vec<_>>();
+        for (index, corner) in corners.iter().copied().enumerate() {
+            let point_id = PointId(format!("point-{name}-{index}"));
+            let vertex_id = VertexId(format!("vertex-{name}-{index}"));
+            model.points.push(Point {
+                id: point_id.clone(),
+                position: corner,
+                source_object: None,
+            });
+            model.vertices.push(Vertex {
+                id: vertex_id,
+                point: point_id,
+                tolerance: None,
+            });
+        }
+        for (index, origin) in corners.iter().copied().enumerate() {
+            let next = (index + 1) % 4;
+            let curve_id = CurveId(format!("curve-{name}-{index}"));
+            let edge_id = EdgeId(format!("edge-{name}-{index}"));
+            let direction = corners[next].vector_from(origin).unit().unwrap();
+            model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Line { origin, direction },
+                source_object: None,
+            });
+            model.edges.push(Edge {
+                id: edge_id.clone(),
+                curve: Some(curve_id),
+                start: VertexId(format!("vertex-{name}-{index}")),
+                end: VertexId(format!("vertex-{name}-{next}")),
+                param_range: None,
+                tolerance: None,
+            });
+            model.coedges.push(Coedge {
+                id: coedge_ids[index].clone(),
+                owner_loop: loop_id.clone(),
+                edge: edge_id,
+                next: coedge_ids[next].clone(),
+                previous: coedge_ids[(index + 3) % 4].clone(),
+                radial_next: coedge_ids[index].clone(),
+                sense: Sense::Forward,
+                pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
+            });
+        }
+        model.loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            boundary_role: LoopBoundaryRole::Outer,
+            coedges: coedge_ids,
+            vertex_uses: Vec::new(),
+        });
+        model.faces.push(Face {
+            id: face_id.clone(),
+            shell: ShellId("shell".into()),
+            surface: surface_id,
+            sense: Sense::Forward,
+            loops: vec![loop_id],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        face_id
+    }
+
+    #[test]
+    fn bounded_planar_trim_selects_between_coincident_supports() {
+        let mut model = cadmpeg_ir::document::Model {
+            bodies: vec![Body {
+                id: BodyId("body".into()),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("region".into())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            }],
+            regions: vec![Region {
+                id: RegionId("region".into()),
+                body: BodyId("body".into()),
+                shells: vec![ShellId("shell".into())],
+            }],
+            shells: vec![Shell {
+                id: ShellId("shell".into()),
+                region: RegionId("region".into()),
+                faces: Vec::new(),
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            }],
+            ..Default::default()
+        };
+        let first = add_square_face(&mut model, "first", -4.0);
+        let second = add_square_face(&mut model, "second", 2.0);
+        model.shells[0].faces = vec![first.clone(), second.clone()];
+        model.tessellations.push(Tessellation {
+            id: "mesh".into(),
+            body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
+            source_object: None,
+            vertices: vec![
+                Point3::new(2.25, -0.75, 0.0),
+                Point3::new(3.75, -0.75, 0.0),
+                Point3::new(3.0, 0.75, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+            strip_lengths: Vec::new(),
+            normals: Vec::new(),
+            channels: Vec::new(),
+        });
+
+        assert_eq!(assign_unique_analytic_owners(&mut model), vec!["mesh"]);
+        assert_eq!(model.tessellations[0].faces, vec![second]);
+        assert_eq!(model.tessellations[0].body, Some(BodyId("body".into())));
+
+        model
+            .faces
+            .iter_mut()
+            .find(|face| face.id == first)
+            .unwrap()
+            .loops
+            .clear();
+        model.tessellations[0].body = None;
+        model.tessellations[0].faces.clear();
+        assert!(assign_unique_analytic_owners(&mut model).is_empty());
+        assert!(model.tessellations[0].faces.is_empty());
+    }
+
+    #[test]
+    fn circular_hole_excludes_crossing_triangles_but_allows_boundary_chords() {
+        let trim = PlanarTrim {
+            frame: PlaneFrame {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+                v_axis: Vector3::new(0.0, 1.0, 0.0),
+            },
+            outer: vec![
+                Point2::new(-3.0, -3.0),
+                Point2::new(3.0, -3.0),
+                Point2::new(3.0, 3.0),
+                Point2::new(-3.0, 3.0),
+            ],
+            holes: vec![CircularHole {
+                center: Point2::new(0.0, 0.0),
+                radius: 1.0,
+            }],
+        };
+        let mesh = |vertices, triangle| Tessellation {
+            id: "mesh".into(),
+            body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
+            source_object: None,
+            vertices,
+            triangles: vec![triangle],
+            strip_lengths: Vec::new(),
+            normals: Vec::new(),
+            channels: Vec::new(),
+        };
+        let boundary_chord = mesh(
+            vec![
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(2.0, 2.0, 0.0),
+            ],
+            [0, 1, 2],
+        );
+        let crossing = mesh(
+            vec![
+                Point3::new(-2.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(0.0, 2.0, 0.0),
+            ],
+            [0, 1, 2],
+        );
+
+        assert!(trim.contains_mesh(
+            &boundary_chord,
+            cadmpeg_ir::transform::Transform::identity(),
+            1.0e-9
+        ));
+        assert!(!trim.contains_mesh(
+            &crossing,
+            cadmpeg_ir::transform::Transform::identity(),
+            1.0e-9
+        ));
     }
 }
