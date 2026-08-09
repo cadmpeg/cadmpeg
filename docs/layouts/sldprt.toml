@@ -956,7 +956,7 @@ section = "7.3"
 anchor = "the solved point cache: `count u32 BE, attr u16 BE, base_parameter f64 BE, base_scale f64 BE, chart_count u32 BE, chordal_error f64 BE`"
 size = 52
 endianness = "big"
-note = "Offsets are body-relative as the spec writes them. `count` point entries follow at +52; an entry is either 88 bytes (point xyz, then a unit tangent at entry +56) or a bare 24-byte point."
+note = "Offsets are body-relative as the spec writes them. `count` point entries follow at +52; an entry is either 88 bytes (point xyz, then a finite nonzero tangent at entry +56) or a bare 24-byte point. The chart stores no stride discriminator; chart, terminator, and optional support-UV witnesses must select exactly one entry width."
 
 [[record.field]]
 name = "count"

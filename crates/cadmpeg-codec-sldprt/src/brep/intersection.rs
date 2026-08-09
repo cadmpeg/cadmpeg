@@ -84,7 +84,7 @@ fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
         .then_some(point)
 }
 
-fn unit_tangent(bytes: &[u8], at: usize) -> bool {
+fn finite_tangent(bytes: &[u8], at: usize) -> bool {
     let Some(tangent) = (|| {
         Some([
             f64_at(bytes, at)?,
@@ -97,26 +97,25 @@ fn unit_tangent(bytes: &[u8], at: usize) -> bool {
     if tangent.iter().any(|value| !value.is_finite()) {
         return false;
     }
-    let norm = tangent.iter().map(|value| value * value).sum::<f64>();
-    (norm - 1.0).abs() < 1e-9
+    tangent.iter().any(|value| *value != 0.0)
 }
 
 /// Parse every `00 28` chart record: `count:u32 attr:u16 base_parameter:f64
 /// base_scale:f64 chart_count:u32 chordal_error:f64`, two [`MISSING_PARAMETER`]
 /// sentinels at +36/+44, then `count` point entries at +52 (88-byte entries
-/// carrying a unit tangent at +56, or bare 24-byte points).
+/// carrying a finite nonzero tangent at +56, or bare 24-byte points).
 fn chart_records(bytes: &[u8]) -> HashMap<u16, Vec<Chart>> {
     let mut out: HashMap<u16, Vec<Chart>> = HashMap::new();
     for body in record_bodies(bytes, 0x28) {
-        let Some(chart) = chart_at(bytes, body) else {
+        let Some((attr, candidates)) = chart_candidates(bytes, body) else {
             continue;
         };
-        out.entry(chart.0).or_default().push(chart.1);
+        out.entry(attr).or_default().extend(candidates);
     }
     out
 }
 
-fn chart_at(bytes: &[u8], body: usize) -> Option<(u16, Chart)> {
+fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u16, Vec<Chart>)> {
     let count = u32_at(bytes, body)? as usize;
     let attr = u16_at(bytes, body + 4)?;
     let preamble = body + 6;
@@ -137,27 +136,37 @@ fn chart_at(bytes: &[u8], body: usize) -> Option<(u16, Chart)> {
         return None;
     }
     let block = preamble + 52;
-    let extended = block + 88 * count <= bytes.len()
-        && (0..count).all(|index| unit_tangent(bytes, block + index * 88 + 56));
-    let stride = if extended { 88 } else { 24 };
-    if block + stride * count > bytes.len() {
-        return None;
-    }
-    let points = (0..count)
-        .map(|index| finite_point(bytes, block + index * stride))
-        .collect::<Option<Vec<_>>>()?;
-    if !extended && points.windows(2).all(|pair| pair[0] == pair[1]) {
-        return None;
-    }
-    Some((
-        attr,
-        Chart {
+    let mut candidates = Vec::new();
+    for (stride, extended) in [(88usize, true), (24usize, false)] {
+        let Some(end) = stride
+            .checked_mul(count)
+            .and_then(|size| block.checked_add(size))
+        else {
+            continue;
+        };
+        if end > bytes.len() {
+            continue;
+        }
+        if extended && !(0..count).all(|index| finite_tangent(bytes, block + index * stride + 56)) {
+            continue;
+        }
+        let Some(points) = (0..count)
+            .map(|index| finite_point(bytes, block + index * stride))
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if !extended && points.windows(2).all(|pair| pair[0] == pair[1]) {
+            continue;
+        }
+        candidates.push(Chart {
             points,
             base_parameter,
             base_scale,
             chordal_error,
-        },
-    ))
+        });
+    }
+    (!candidates.is_empty()).then_some((attr, candidates))
 }
 
 /// Parse a terminator body: `count:u32 attr:u16`, a kind label, then the
@@ -310,7 +319,7 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
         let Some(candidates) = charts.get(&chart_ref) else {
             continue;
         };
-        let geometry = candidates.iter().find_map(|chart| {
+        let mut matches = candidates.iter().filter_map(|chart| {
             let first = *chart.points.first()?;
             let last = *chart.points.last()?;
             let start = terms
@@ -330,16 +339,20 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
                 })
                 .then(|| solved_curve(chart, *start, *end))
         });
-        if let Some(geometry) = geometry {
-            out.entry(attr).or_insert(Carrier {
-                attr,
-                offset,
-                end: payload + 12,
-                geometry: CarrierGeometry::Curve(geometry),
-                frame: None,
-                orientation_reversed: false,
-            });
+        let Some(geometry) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
         }
+        out.entry(attr).or_insert(Carrier {
+            attr,
+            offset,
+            end: payload + 12,
+            geometry: CarrierGeometry::Curve(geometry),
+            frame: None,
+            orientation_reversed: false,
+        });
     }
     out
 }
@@ -375,6 +388,30 @@ mod tests {
             for value in point {
                 bytes.extend_from_slice(&value.to_be_bytes());
             }
+        }
+        bytes
+    }
+
+    fn extended_chart(attr: u16, points: &[[f64; 3]], tangent: [f64; 3]) -> Vec<u8> {
+        let mut bytes = vec![0, 0x28];
+        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&0.0f64.to_be_bytes());
+        bytes.extend_from_slice(&1.0f64.to_be_bytes());
+        bytes.extend_from_slice(&(points.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(&1e-5f64.to_be_bytes());
+        bytes.extend_from_slice(&[0u8; 8]);
+        bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
+        bytes.extend_from_slice(&MISSING_PARAMETER.to_be_bytes());
+        for point in points {
+            for value in point {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            bytes.extend_from_slice(&[0u8; 32]);
+            for value in tangent {
+                bytes.extend_from_slice(&value.to_be_bytes());
+            }
+            bytes.extend_from_slice(&[0u8; 8]);
         }
         bytes
     }
@@ -555,6 +592,55 @@ mod tests {
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 2));
+        assert!(scan_intersection_carriers(&bytes).is_empty());
+    }
+
+    #[test]
+    fn extended_chart_stride_is_selected_by_witnesses() {
+        let chart_bytes = extended_chart(4, &POINTS, [0.5, 0.0, 0.0]);
+        let (_, candidates) = chart_candidates(&chart_bytes, 2).expect("chart candidates");
+        assert_eq!(candidates.len(), 2);
+
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart_bytes);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes.extend(uv(7, POINTS.len()));
+
+        let carriers = scan_intersection_carriers(&bytes);
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
+            &carriers.get(&9).expect("extended chart decoded").geometry
+        else {
+            panic!("expected a NURBS polyline");
+        };
+        assert_eq!(curve.control_points.len(), POINTS.len());
+        assert_eq!(
+            *curve.control_points.last().expect("points"),
+            Point3::new(
+                POINTS[2][0] * LEN_TO_MM,
+                POINTS[2][1] * LEN_TO_MM,
+                POINTS[2][2] * LEN_TO_MM,
+            ),
+        );
+    }
+
+    #[test]
+    fn ambiguous_chart_stride_does_not_select_first_candidate() {
+        let end = POINTS[2];
+        let mut chart_bytes = extended_chart(4, &[POINTS[0], end], [0.5, 0.0, 0.0]);
+        let bare_endpoint = 2 + 6 + 52 + 24;
+        for (index, value) in end.into_iter().enumerate() {
+            chart_bytes[bare_endpoint + index * 8..bare_endpoint + (index + 1) * 8]
+                .copy_from_slice(&value.to_be_bytes());
+        }
+        let (_, candidates) = chart_candidates(&chart_bytes, 2).expect("chart candidates");
+        assert_eq!(candidates.len(), 2);
+
+        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(chart_bytes);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, end));
+        bytes.extend(uv(7, 2));
         assert!(scan_intersection_carriers(&bytes).is_empty());
     }
 }

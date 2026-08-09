@@ -355,7 +355,7 @@ Body-relative, after the two-byte `00 26` tag. The intersection-data form replac
 
 Spec §7.3 · layout: byte offsets · size: 52 B
 
-Offsets are body-relative as the spec writes them. `count` point entries follow at +52; an entry is either 88 bytes (point xyz, then a unit tangent at entry +56) or a bare 24-byte point.
+Offsets are body-relative as the spec writes them. `count` point entries follow at +52; an entry is either 88 bytes (point xyz, then a finite nonzero tangent at entry +56) or a bare 24-byte point. The chart stores no stride discriminator; chart, terminator, and optional support-UV witnesses must select exactly one entry width.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

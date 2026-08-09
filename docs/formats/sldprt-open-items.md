@@ -227,24 +227,6 @@ The decoder does not test that one parameter only is inside the limit. `derive_c
 
 **Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
 
-### GC-16. Chart entry stride
-
-**Question.** Which field gives the entry stride of a `00 28` chart?
-
-**Known.** `sldprt.md` §7.3 "**`00 28` chart** — the solved point cache:" defines the chart. `docs/layouts/sldprt.toml` records both the 88-byte and the 24-byte entry widths as alternatives and gives no discriminator.
-
-`crates/cadmpeg-codec-sldprt/src/brep/intersection.rs:140` selects 88 when every candidate tangent at `+56` has unit norm inside `1e-9`, and 24 otherwise:
-
-```rust
-let extended = block + 88 * count <= bytes.len()
-    && (0..count).all(|index| unit_tangent(bytes, block + index * 88 + 56));
-let stride = if extended { 88 } else { 24 };
-```
-
-The 24-byte reading is never tested for self-consistency, so this is a one-sided probe. The only later filter refuses a chart whose points are all identical. A single stored tangent whose norm falls outside `1e-9` moves the stride to 24, and the points are then read from inside the previous entry.
-
-**Need.** We must know the field that gives the stride. A tangent normalized to a different precision must not change the entry width.
-
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
