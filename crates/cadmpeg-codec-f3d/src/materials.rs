@@ -439,13 +439,10 @@ pub fn decode_with_body_bindings(
     let act_channels = decode_act_channels(scan)?;
     let object_types = decode_design_object_types(scan)?;
     for assignment in &assignments {
-        if !out.iter().any(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
-                || assignment.visual_preset.as_deref() == appearance.name.as_deref()
-        }) {
+        if !out
+            .iter()
+            .any(|appearance| appearance_matches_assignment(appearance, assignment))
+        {
             out.push(Appearance {
                 id: AppearanceId(format!("f3d:design:appearance#{}", assignment.visual_guid)),
                 name: assignment.visual_preset.clone(),
@@ -1153,13 +1150,10 @@ fn bind_bodies(
         else {
             continue;
         };
-        let Some(appearance) = appearances.iter().find(|appearance| {
-            appearance
-                .visual_guid
-                .as_deref()
-                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
-                || assignment.visual_preset.as_deref() == appearance.name.as_deref()
-        }) else {
+        let Some(appearance) = appearances
+            .iter()
+            .find(|appearance| appearance_matches_assignment(appearance, assignment))
+        else {
             continue;
         };
         out.push(AppearanceBinding {
@@ -1178,6 +1172,25 @@ fn bind_bodies(
         });
     }
     Ok(out)
+}
+
+/// Whether one decoded appearance has the identity carried by a Design
+/// material assignment.
+///
+/// The visual preset is a secondary identity only when the assignment stores
+/// one. Absence of a preset is not an identity shared by preset-less assets.
+fn appearance_matches_assignment(
+    appearance: &Appearance,
+    assignment: &DesignMaterialAssignment,
+) -> bool {
+    appearance
+        .visual_guid
+        .as_deref()
+        .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
+        || assignment
+            .visual_preset
+            .as_deref()
+            .is_some_and(|preset| appearance.name.as_deref() == Some(preset))
 }
 
 /// Resolve one material owner through its exact ordered body-map pair.
@@ -1764,6 +1777,58 @@ mod tests {
             binding.target,
             cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
         );
+    }
+
+    #[test]
+    fn presetless_assignment_matches_only_its_visual_guid() {
+        let appearance_guid = "11111111-2222-3333-4444-555555555555";
+        let mut appearance = cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#catalog".into()),
+            name: None,
+            asset_guid: Some(appearance_guid.into()),
+            library_id: None,
+            visual_guid: Some(appearance_guid.into()),
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        };
+        let mut assignment = crate::records::DesignMaterialAssignment {
+            id: "f3d:design:material-assignment#1".into(),
+            asm_body_key: 7,
+            asm_body_key_offset: 25,
+            entity_suffix: 100,
+            entity_suffix_offset: 33,
+            entity_id: "0_100".into(),
+            entity_id_offset: 500,
+            visual_guid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into(),
+            visual_guid_offset: 600,
+            physical_token: None,
+            physical_token_offset: None,
+            visual_preset: None,
+            visual_preset_offset: None,
+        };
+
+        assert!(!super::appearance_matches_assignment(
+            &appearance,
+            &assignment
+        ));
+
+        assignment.visual_guid = appearance_guid.into();
+        assert!(super::appearance_matches_assignment(
+            &appearance,
+            &assignment
+        ));
+
+        assignment.visual_guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
+        assignment.visual_preset = Some("Prism-017".into());
+        appearance.name = Some("Prism-017".into());
+        assert!(super::appearance_matches_assignment(
+            &appearance,
+            &assignment
+        ));
     }
 
     #[test]

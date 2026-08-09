@@ -448,16 +448,6 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 **Need.** The writer cannot rewrite an indexed-head assignment owner without its exact owner frame. A stream with two nearby class-299 records separates the enclosing owner from the nearest preceding header.
 
-### MA-12. Appearance identity of an assignment with no preset
-
-**Question.** What distinguishes two body appearance assignments that carry no preset name and whose visual GUIDs name no catalog asset?
-
-**Known.** `decode_with_body_bindings` and `bind_bodies` in `materials.rs` accept an appearance for an assignment when the visual GUIDs agree or when the assignment's preset name equals the appearance's name. A decoded appearance always carries a name; a synthesized one carries the assignment's preset, which is absent unless the string begins with `Prism-`.
-
-Two preset-less assignments whose GUIDs resolve to no asset therefore compare equal on the name clause, because both names are absent. The first synthesizes one appearance and the second finds it, so the second GUID produces no appearance and no loss. Both bodies then bind to the first appearance.
-
-**Need.** The name clause exists for the preset-named case. The identity of a preset-less assignment must come from its visual GUID alone, or two bodies with different appearances are reported as sharing one.
-
 ### MA-14. Length of a visual GUID and the uniqueness of its match
 
 **Question.** Is a visual GUID exactly 36 characters, and may two appearances agree on their first 36 characters?
