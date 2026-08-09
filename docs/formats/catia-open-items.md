@@ -492,16 +492,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** A rejected record leaves the predecessor set of `fbb::parse_trim_chain`. That function then can find one chain of the required length that does not hold the rejected record, and it accepts that chain as unique. We must know the true bounds to keep a valid record in the search.
 
-### SN-42. Consolidated record census by marker
-
-**Question.** Where does the consolidated A/B record cluster start, so that a frame walk can enumerate it?
-
-**Known.** `catia.md` §6 "Header width and flag are independent" gives "The frame is length-closed (walking lands exactly on each next record and on the cluster end)", and gives "A literal marker scan ... is both lossy ... and noisy (in-payload coincidences); census by the frame walk, not by marker hits."
-
-**Need.** `wire::records::consolidated_records` is the only record source for the consolidated, `a5a8`, `b2`, freeform, and standard paths, and its complement defines where `05 08 01` vertex rows are read. It is a marker scan: it accepts an offset when the lead byte is in `a5..a7` or `b2..b4`, the next byte is `03`, `13`, or `83`, and the declared length stays in bounds. It applies no length-closure test. We must know the cluster start to walk the frames as the specification requires.
-
-**Note.** `wire::records::consolidated_records` advances to the end of an accepted frame, so marker-like bytes in that frame's header or payload do not open phantom records. It still searches for the first valid candidate in each gap and has no cluster-boundary or complete-run proof. A valid false candidate in a gap can still start a record walk before the intended cluster.
-
 ## 4. Object stream
 
 ### OS-01. Multi-surface class-`0x5f` face

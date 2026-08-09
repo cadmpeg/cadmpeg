@@ -90,7 +90,8 @@ fn finish_decode(
     standard_face_population: bool,
 ) -> Result<DecodeResult, CodecError> {
     ctx.charge_entities(ir.model.entity_count() as u64, "admit CATIA entities")?;
-    let native = CatiaNative::decode(&scan.data);
+    let consolidated_record_ranges = container::consolidated_record_ranges(scan);
+    let native = CatiaNative::decode_with_record_ranges(&scan.data, &consolidated_record_ranges);
     let modeling_graph_scope = modeling_graph_scope(
         !scan.outer_container_declarations.is_empty(),
         &native.object_graphs,

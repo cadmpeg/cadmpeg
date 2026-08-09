@@ -695,6 +695,29 @@ fn standard_catpart() -> Vec<u8> {
     standard_catpart_from_streams(&main_stream(), &surf_stream())
 }
 
+#[test]
+fn consolidated_record_sources_follow_physical_stream_extents() {
+    let scan = crate::container::scan_bytes(standard_catpart());
+    let inner = scan.inner.as_ref().expect("inner stream directory");
+    let expected = inner
+        .descriptors
+        .iter()
+        .flat_map(|descriptor| {
+            descriptor.extents.iter().map(|extent| {
+                let start = inner.inner + extent.phys_off as usize;
+                start..start + extent.phys_len as usize
+            })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        crate::container::consolidated_record_ranges(&scan),
+        expected
+    );
+    assert!(crate::container::consolidated_record_ranges(&scan)
+        .iter()
+        .all(|range| !range.contains(&inner.inner)));
+}
+
 fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
     // Physical stream layout, relative to the inner magic:
     //   [0..16]  inner header (magic, A, B)

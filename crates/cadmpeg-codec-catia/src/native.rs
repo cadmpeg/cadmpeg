@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 #[cfg(test)]
 use std::mem::size_of;
+use std::ops::Range;
 
 use cadmpeg_ir::native::catalogue::{Catalogue, FamilyRow, Phase, VersionContract};
 
@@ -9668,9 +9669,24 @@ fn validate_native_links(
 }
 
 impl CatiaNative {
-    /// Decode CATIA-native records directly from the complete file image.
+    /// Decode CATIA-native records directly from a synthesized record source.
+    #[cfg(test)]
     #[must_use]
-    pub fn decode(bytes: &[u8]) -> Self {
+    pub(crate) fn decode(bytes: &[u8]) -> Self {
+        let consolidated_records = crate::wire::records::consolidated_records(bytes);
+        Self::decode_with_records(bytes, &consolidated_records)
+    }
+
+    /// Decode CATIA-native records using container-bounded consolidated
+    /// record sources.
+    #[must_use]
+    pub(crate) fn decode_with_record_ranges(bytes: &[u8], ranges: &[Range<usize>]) -> Self {
+        let consolidated_records =
+            crate::wire::records::consolidated_records_in_ranges(bytes, ranges.iter().cloned());
+        Self::decode_with_records(bytes, &consolidated_records)
+    }
+
+    fn decode_with_records(bytes: &[u8], consolidated_records: &[ConsolidatedRecord]) -> Self {
         let outer_directory = container::parse_outer_stream_directory(bytes);
         let outer_container_declarations =
             outer_directory.as_ref().map_or_else(Vec::new, |outer| {
@@ -9966,28 +9982,27 @@ impl CatiaNative {
                 })
                 .map(CatiaOuterContainerBinding::from);
         }
-        let consolidated_records = crate::wire::records::consolidated_records(bytes);
-        let consolidated_circles = consolidated_circles(bytes, &consolidated_records);
+        let consolidated_circles = consolidated_circles(bytes, consolidated_records);
         let consolidated_class61_records =
-            consolidated_class61_records(bytes, &consolidated_records);
+            consolidated_class61_records(bytes, consolidated_records);
         let consolidated_parameter_points =
-            consolidated_parameter_points(bytes, &consolidated_records);
+            consolidated_parameter_points(bytes, consolidated_records);
         let consolidated_cone_faces =
-            consolidated_cone_faces(bytes, &consolidated_records, &consolidated_parameter_points);
-        let consolidated_cones = consolidated_cones(bytes, &consolidated_records);
-        let consolidated_cylinders = consolidated_cylinders(bytes, &consolidated_records);
-        let consolidated_groups = consolidated_groups(bytes, &consolidated_records);
+            consolidated_cone_faces(bytes, consolidated_records, &consolidated_parameter_points);
+        let consolidated_cones = consolidated_cones(bytes, consolidated_records);
+        let consolidated_cylinders = consolidated_cylinders(bytes, consolidated_records);
+        let consolidated_groups = consolidated_groups(bytes, consolidated_records);
         let consolidated_embedded_cylinders =
-            consolidated_embedded_cylinders(bytes, &consolidated_records, &consolidated_groups);
-        let consolidated_line_profiles = consolidated_line_profiles(bytes, &consolidated_records);
-        let consolidated_owner_packets = consolidated_owner_packets(bytes, &consolidated_records);
-        let consolidated_pcurves = consolidated_pcurves(bytes, &consolidated_records);
+            consolidated_embedded_cylinders(bytes, consolidated_records, &consolidated_groups);
+        let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
+        let consolidated_owner_packets = consolidated_owner_packets(bytes, consolidated_records);
+        let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
         let consolidated_reference_lists =
-            consolidated_reference_lists(bytes, &consolidated_records);
+            consolidated_reference_lists(bytes, consolidated_records);
         let consolidated_revolutions =
-            consolidated_revolutions(bytes, &consolidated_records, &consolidated_circles);
-        let consolidated_spheres = consolidated_spheres(bytes, &consolidated_records);
-        let consolidated_tori = consolidated_tori(bytes, &consolidated_records);
+            consolidated_revolutions(bytes, consolidated_records, &consolidated_circles);
+        let consolidated_spheres = consolidated_spheres(bytes, consolidated_records);
+        let consolidated_tori = consolidated_tori(bytes, consolidated_records);
         let zero_entity_records = zero_entity_records(bytes);
         let zero_entity_edge_strides = zero_entity_edge_strides(bytes);
         let zero_entity_oriented_use_pairs = zero_entity_oriented_use_pairs(bytes);
@@ -10013,10 +10028,10 @@ impl CatiaNative {
         let zero_entity_vertex_incidences =
             zero_entity_vertex_incidences(bytes, &zero_entity_records);
         let mut consolidated_edge_nodes =
-            consolidated_edge_nodes(bytes, &consolidated_records, &consolidated_circles);
+            consolidated_edge_nodes(bytes, consolidated_records, &consolidated_circles);
         let consolidated_edge_runs = consolidated_edge_runs(
             bytes,
-            &consolidated_records,
+            consolidated_records,
             &consolidated_pcurves,
             &consolidated_edge_nodes,
         );

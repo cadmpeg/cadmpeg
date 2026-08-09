@@ -84,7 +84,10 @@ pub(crate) fn try_decode_freeform_surfaces(
     let object_frames = crate::families::b5::graph::object_stream_frames(&scan.data);
     let object_records =
         crate::families::b5::graph::records_from_frames(&scan.data, &object_frames);
-    let consolidated_records = crate::wire::records::consolidated_records(&scan.data);
+    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+        &scan.data,
+        container::consolidated_record_ranges(scan),
+    );
     let mut b5_graph = crate::families::b5::graph::parse_from_records(
         &scan.data,
         &object_records,

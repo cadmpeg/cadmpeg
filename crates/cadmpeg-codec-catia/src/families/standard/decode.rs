@@ -1142,7 +1142,10 @@ pub(crate) fn try_decode_standard(
     if !work_budget.charge() {
         return None;
     }
-    let consolidated_records = crate::wire::records::consolidated_records(&scan.data);
+    let consolidated_records = crate::wire::records::consolidated_records_in_ranges(
+        &scan.data,
+        container::consolidated_record_ranges(scan),
+    );
     let points = fbb::standard_vertex_points(brep)
         .unwrap_or_default()
         .into_iter()

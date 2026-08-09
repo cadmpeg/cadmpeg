@@ -185,24 +185,55 @@ pub(crate) fn records_are_contiguous(records: &[ConsolidatedRecord]) -> bool {
         .all(|pair| pair[0].range.end == pair[1].range.start)
 }
 
-/// Inventory length-closed consolidated A/B records while resuming the marker
-/// search only after an accepted frame or a gap.
+/// Inventory length-closed consolidated A/B records in one bounded source.
+///
+/// This convenience form is for a byte slice that is already one record
+/// source, such as a synthesized stream fixture. Container decode paths use
+/// [`consolidated_records_in_ranges`] so directory and unrelated-file bytes
+/// cannot seed the inventory.
 #[must_use]
 pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
+    consolidated_records_in_ranges(data, std::iter::once(0..data.len()))
+}
+
+/// Inventory length-closed consolidated A/B records in disjoint physical
+/// source extents.
+///
+/// The record grammar is length-closed, but it does not define a marker that
+/// identifies the first record in an arbitrary file image. Callers therefore
+/// supply the physical extents that contain record sources. A record that
+/// crosses an extent boundary is not a complete record in that source and is
+/// withheld. The returned records retain their file-relative byte ranges.
+#[must_use]
+pub(crate) fn consolidated_records_in_ranges(
+    data: &[u8],
+    ranges: impl IntoIterator<Item = Range<usize>>,
+) -> Vec<ConsolidatedRecord> {
     let mut records = Vec::new();
-    let mut pos = 0;
-    while pos < data.len() {
-        let Some(record) = parse_consolidated_record(data, pos) else {
-            pos += 1;
+    for range in ranges {
+        let start = range.start.min(data.len());
+        let end = range.end.min(data.len());
+        if start >= end {
             continue;
-        };
-        pos = record.range.end;
-        records.push(record);
+        }
+        let mut pos = start;
+        while pos < end {
+            let Some(record) = parse_consolidated_record(data, pos, end) else {
+                pos += 1;
+                continue;
+            };
+            pos = record.range.end;
+            records.push(record);
+        }
     }
     records
 }
 
-fn parse_consolidated_record(data: &[u8], pos: usize) -> Option<ConsolidatedRecord> {
+fn parse_consolidated_record(
+    data: &[u8],
+    pos: usize,
+    source_end: usize,
+) -> Option<ConsolidatedRecord> {
     let flags = [0x03, 0x13, 0x83];
     let (family, width, token_at, length) = if let Some(width) = data
         .get(pos)
@@ -231,7 +262,7 @@ fn parse_consolidated_record(data: &[u8], pos: usize) -> Option<ConsolidatedReco
     }
     let payload_start = token_at.checked_add(usize::from(width))?;
     let end = payload_start.checked_add(length)?;
-    if end > data.len() {
+    if end > source_end {
         return None;
     }
     let header_token = data
@@ -318,7 +349,8 @@ fn f32_le(bytes: &[u8], at: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        consolidated_records, scan_vertex_records, ConsolidatedFamily, ConsolidatedRecord,
+        consolidated_records, consolidated_records_in_ranges, scan_vertex_records,
+        ConsolidatedFamily, ConsolidatedRecord,
     };
 
     #[test]
@@ -332,6 +364,33 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].family, ConsolidatedFamily::A);
         assert_eq!(records[0].range, 0..18);
+    }
+
+    #[test]
+    fn bounded_record_walk_does_not_cross_an_extent_boundary() {
+        let mut bytes = vec![0xa5, 0x03, 0x20];
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x20, 0x01, 0x05, 0]);
+
+        let records = consolidated_records_in_ranges(&bytes, [0..12, 12..bytes.len()]);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].range, 15..21);
+        assert_eq!(records[0].family, ConsolidatedFamily::B);
+    }
+
+    #[test]
+    fn bounded_record_walk_ignores_unselected_file_regions() {
+        let mut bytes = vec![0xa5, 0x03, 0x20];
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0]);
+        bytes.extend_from_slice(&[0xa5, 0x03, 0x20]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x05, 0]);
+
+        let records = consolidated_records_in_ranges(&bytes, std::iter::once(9..bytes.len()));
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].range, 9..18);
     }
 
     #[test]

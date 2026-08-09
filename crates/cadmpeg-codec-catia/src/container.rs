@@ -624,6 +624,57 @@ pub struct ContainerScan<'a> {
     pub variant: Variant,
 }
 
+/// Return the physical file regions that can carry consolidated A/B records.
+///
+/// Catalogued stream extents are the authoritative source boundaries. When a
+/// file has no outer directory, the bytes after the outer header and before a
+/// nested container (or the outer directory) are the unnamed outer-preamble
+/// source. The nested directory itself and all directory headers stay outside
+/// the inventory. Ranges remain separate even when they are adjacent: a
+/// record cannot establish an ordered relationship across two stream extents.
+pub(crate) fn consolidated_record_ranges(scan: &ContainerScan<'_>) -> Vec<Range<usize>> {
+    let mut ranges = Vec::new();
+    let add_directory = |ranges: &mut Vec<Range<usize>>, directory: &InnerDir| {
+        for descriptor in &directory.descriptors {
+            for extent in &descriptor.extents {
+                let Some(start) = directory.inner.checked_add(extent.phys_off as usize) else {
+                    continue;
+                };
+                let Some(end) = start.checked_add(extent.phys_len as usize) else {
+                    continue;
+                };
+                if end <= scan.data.len() {
+                    ranges.push(start..end);
+                }
+            }
+        }
+    };
+
+    if let Some(outer) = scan.outer.as_ref() {
+        add_directory(&mut ranges, outer);
+    } else {
+        let outer_end = scan
+            .inner
+            .as_ref()
+            .map(|directory| directory.inner)
+            .or_else(|| outer_stream_directory_range(&scan.data).map(|range| range.start))
+            .unwrap_or(scan.data.len());
+        if OUTER_MAGIC.len() + 8 < outer_end {
+            ranges.push((OUTER_MAGIC.len() + 8)..outer_end);
+        }
+    }
+    if let Some(inner) = scan.inner.as_ref() {
+        add_directory(&mut ranges, inner);
+    }
+
+    if ranges.is_empty() && scan.data.len() > OUTER_MAGIC.len() + 8 {
+        ranges.push((OUTER_MAGIC.len() + 8)..scan.data.len());
+    }
+    ranges.sort_by_key(|range| (range.start, range.end));
+    ranges.dedup();
+    ranges
+}
+
 /// Whether a byte prefix is a `.CATPart`: the `V5_CFV2\0` outer magic is unique
 /// to Dassault's container and is a conclusive signal on its own.
 pub fn looks_like_catia(prefix: &[u8]) -> bool {
