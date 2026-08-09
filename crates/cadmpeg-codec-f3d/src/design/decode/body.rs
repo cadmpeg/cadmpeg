@@ -517,13 +517,17 @@ pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
 ) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
+    let types = crate::design::decode::meta::decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, role::BULKSTREAM))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let hidden_by_entity = browser_node_hidden_flags(bytes);
+        let stream_types =
+            crate::design::decode::meta::stream_types_by_class_tag(&types, &entry.name);
+        let entity_types = crate::design::decode::meta::stream_types_by_entity(&types, &entry.name);
+        let hidden_by_entity = typed_browser_node_hidden_flags(bytes, &stream_types, &entity_types);
         for binding in body_bindings(bytes) {
             if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
                 out.insert(
@@ -542,28 +546,57 @@ pub(crate) fn decode_all_body_visibility(
     Ok(out)
 }
 
-/// Scan for browser-node records: a length-prefixed 36-character UTF-16 GUID,
-/// one hidden-flag byte, the `01 01` marker, and the `u64` design-entity
-/// suffix.
+/// Visibility selected from one typed browser-node record.
 #[derive(Debug, Clone, Copy)]
 struct BrowserNodeVisibility {
     byte_offset: u64,
     hidden: bool,
 }
 
-fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
-    browser_node_records(bytes)
-        .into_iter()
-        .map(|record| {
-            (
-                record.entity_suffix,
+fn typed_browser_node_hidden_flags(
+    bytes: &[u8],
+    stream_types: &HashMap<u32, (&str, u32)>,
+    entity_types: &HashMap<u64, (&str, u32)>,
+) -> HashMap<u64, BrowserNodeVisibility> {
+    let nodes = crate::design::decode::presentation::browser_node_records(bytes, stream_types);
+    let presentations =
+        crate::design::decode::presentation::body_presentations(bytes, stream_types, entity_types);
+    let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
+    for node in &nodes {
+        nodes_by_entity
+            .entry(node.entity_suffix)
+            .or_default()
+            .push(node);
+    }
+
+    let mut out = HashMap::new();
+    for (entity_suffix, candidates) in nodes_by_entity {
+        let mut linked = presentations
+            .iter()
+            .filter(|presentation| presentation.entity_suffix == entity_suffix)
+            .filter_map(|presentation| presentation.browser_node.as_ref())
+            .collect::<Vec<_>>();
+        linked.sort_by_key(|node| node.record_index);
+        linked.dedup_by_key(|node| node.record_index);
+        let selected = match linked.as_slice() {
+            [node] => Some(*node),
+            [] => match candidates.as_slice() {
+                [node] => Some(*node),
+                _ => None,
+            },
+            _ => None,
+        };
+        if let Some(node) = selected {
+            out.insert(
+                entity_suffix,
                 BrowserNodeVisibility {
-                    byte_offset: record.byte_offset,
-                    hidden: record.hidden,
+                    byte_offset: node.hidden_offset,
+                    hidden: node.hidden,
                 },
-            )
-        })
-        .collect()
+            );
+        }
+    }
+    out
 }
 
 /// Map each browser-node GUID to its Design entity suffix.
@@ -590,8 +623,6 @@ pub(crate) fn browser_node_entities(bytes: &[u8]) -> HashMap<String, u64> {
 struct BrowserNodeRecord {
     guid: String,
     entity_suffix: u64,
-    byte_offset: u64,
-    hidden: bool,
 }
 
 fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
@@ -608,12 +639,10 @@ fn browser_node_records(bytes: &[u8]) -> Vec<BrowserNodeRecord> {
         }
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
-            if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
+            if let (0 | 1, Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
                 out.push(BrowserNodeRecord {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,
-                    byte_offset: flag_at as u64,
-                    hidden: flag == 1,
                 });
             }
         }
@@ -634,4 +663,105 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
     bytes
         .chunks_exact(2)
         .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bytes::lp_utf16_bytes;
+    use crate::design::presentation::{
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID, BODY_SCENE_NODE_TYPE_GUID,
+        BODY_SCENE_NODE_TYPE_VERSION, BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION,
+        BROWSER_NODE_TYPE_GUID, PHYSICAL_MATERIAL_LIBRARY_ID,
+    };
+
+    fn push_indexed_header(out: &mut Vec<u8>, class_tag: &str, record_index: u32) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&record_index.to_le_bytes());
+    }
+
+    fn push_entity_header(out: &mut Vec<u8>, class_tag: &str, entity: u64) {
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(class_tag.as_bytes());
+        out.extend_from_slice(&entity.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+        out.extend(lp_utf16_bytes(&format!("0_{entity}")));
+    }
+
+    fn push_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
+    fn push_browser_node(
+        out: &mut Vec<u8>,
+        record_index: u32,
+        guid: &str,
+        hidden: bool,
+        entity: u64,
+    ) -> u64 {
+        push_indexed_header(out, "257", record_index);
+        out.extend_from_slice(&[0; 10]);
+        out.extend(lp_utf16_bytes(guid));
+        let hidden_offset = out.len() as u64;
+        out.push(u8::from(hidden));
+        out.extend_from_slice(&[1, 1]);
+        out.extend_from_slice(&entity.to_le_bytes());
+        hidden_offset
+    }
+
+    #[test]
+    fn presentation_guid_selects_visibility_when_suffix_repeats() {
+        let entity = 42u64;
+        let selected_guid = "11111111-2222-8333-A444-555555555555";
+        let competing_guid = "AAAAAAAA-BBBB-8CCC-9DDD-EEEEEEEEEEEE";
+        let mut bytes = Vec::new();
+        push_entity_header(&mut bytes, "256", entity);
+        bytes.extend(lp_utf16_bytes(selected_guid));
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555"));
+        bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID));
+        bytes.extend(lp_utf16_bytes("PrismMaterial-001"));
+        push_reference(&mut bytes, 7);
+        bytes.push(0);
+        push_reference(&mut bytes, entity + 1);
+        bytes.extend(lp_utf16_bytes("Body"));
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 1]);
+        bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC"));
+        bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID));
+        let selected_offset = push_browser_node(&mut bytes, 100, selected_guid, false, entity);
+        push_browser_node(&mut bytes, 101, competing_guid, true, entity);
+
+        let stream_types = HashMap::from([
+            (256, (BODY_PRESENTATION_TYPE_GUID, 19)),
+            (257, (BROWSER_NODE_TYPE_GUID, 2)),
+        ]);
+        let entity_types = HashMap::from([
+            (7, (BREP_CONTAINER_TYPE_GUID, BREP_CONTAINER_TYPE_VERSION)),
+            (
+                entity + 1,
+                (BODY_SCENE_NODE_TYPE_GUID, BODY_SCENE_NODE_TYPE_VERSION),
+            ),
+        ]);
+        let visibility = typed_browser_node_hidden_flags(&bytes, &stream_types, &entity_types);
+        let selected = visibility.get(&entity).expect("presentation-selected node");
+        assert_eq!(selected.byte_offset, selected_offset);
+        assert!(!selected.hidden);
+
+        let mut nodes_only = Vec::new();
+        push_browser_node(&mut nodes_only, 100, selected_guid, false, entity);
+        push_browser_node(&mut nodes_only, 101, competing_guid, true, entity);
+        let visibility = typed_browser_node_hidden_flags(
+            &nodes_only,
+            &HashMap::from([(257, (BROWSER_NODE_TYPE_GUID, 2))]),
+            &HashMap::new(),
+        );
+        assert!(
+            !visibility.contains_key(&entity),
+            "two unjoined typed nodes are ambiguous"
+        );
+    }
 }

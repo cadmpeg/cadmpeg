@@ -346,6 +346,7 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
         }
     }
     let mut types_by_guid = BTreeMap::new();
+    let mut entity_types = BTreeMap::new();
     let mut entity_modules = BTreeMap::new();
     for design_type in &native.design_types {
         if types_by_guid
@@ -358,14 +359,13 @@ pub(crate) fn validate_source_less_design_ownership(native: &F3dNative) -> Resul
             )));
         }
         for entity_id in &design_type.entity_ids {
-            if entity_modules
-                .insert(*entity_id, design_type.module.clone())
-                .is_some_and(|before| before != design_type.module)
-            {
+            if let Some(before) = entity_types.insert(*entity_id, design_type.type_guid.as_str()) {
                 return Err(CodecError::Malformed(format!(
-                    "F3D Design entity {entity_id} is registered by conflicting modules"
+                    "F3D Design entity {entity_id} is registered by both type {before} and type {}",
+                    design_type.type_guid
                 )));
             }
+            entity_modules.insert(*entity_id, design_type.module.clone());
         }
     }
     // A base type need not be registered by the same segment, so an unresolved
@@ -465,29 +465,11 @@ pub(crate) fn validate_source_less_design_bindings(
         }
         Ok(())
     };
-    for assignment in &native.design_material_assignments {
-        if assignment.physical_token.is_none() {
-            return Err(CodecError::Malformed(format!(
-                "F3D material assignment {} requires its physical-material token",
-                assignment.id
-            )));
-        }
-        let parsed_suffix = assignment
-            .entity_id
-            .rsplit('_')
-            .next()
-            .and_then(|suffix| suffix.parse::<u64>().ok());
-        if parsed_suffix != Some(assignment.entity_suffix) {
-            return Err(CodecError::Malformed(format!(
-                "F3D material assignment {} entity id conflicts with suffix {}",
-                assignment.id, assignment.entity_suffix
-            )));
-        }
-        insert(
-            assignment.asm_body_key,
-            assignment.entity_suffix,
-            &assignment.id,
-        )?;
+    if let Some(assignment) = native.design_material_assignments.first() {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
+            assignment.id
+        )));
     }
     for visibility in &native.body_visibilities {
         insert(

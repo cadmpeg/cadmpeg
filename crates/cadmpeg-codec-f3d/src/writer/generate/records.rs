@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bulkstream and sketch/design record encoders for source-less generation.
 
-use std::collections::BTreeMap;
-
 use crate::records::{
     ConstructionRecipeKind, PersistentReferenceKind, SketchCurveGeometry, SketchText,
 };
@@ -12,11 +10,10 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::ids::CoedgeId;
 use cadmpeg_ir::math::Point3;
 
-use super::attributes::source_less_body_key;
 use super::index::NativeGenerationIndex;
 use super::native_bytes::{native_f64, native_i64, native_ref};
 use super::native_geometry::native_nurbs_curve;
-use super::preconditions::DesignBindingsValidated;
+use super::presentation::GeneratedDesignRegistry;
 use crate::native::F3dNative;
 use crate::writer::primitives::native_bool;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -108,7 +105,7 @@ pub(crate) fn native_tolerant_coedge_extension(
 pub(crate) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
-    attributes: &super::attributes::AttributeIndex<'_>,
+    registry: &GeneratedDesignRegistry,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let (_, projected_parameters) =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
@@ -179,41 +176,11 @@ pub(crate) fn encode_design_bulkstream(
     for parameter in &native.design_parameters {
         encode_document_parameter(&mut out, parameter)?;
     }
-    let mut body_map = native
-        .design_material_assignments
-        .iter()
-        .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
-        .collect::<BTreeMap<_, _>>();
-    let body_visibilities = native
-        .body_visibilities
-        .iter()
-        .map(|metadata| (metadata.body.as_str(), metadata))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut visibility_rows = Vec::new();
-    for (ordinal, body) in target.model.bodies.iter().enumerate() {
-        let Some(visible) = body.visible else {
-            continue;
-        };
-        let metadata = body_visibilities.get(body.id.as_str()).copied();
-        let asm_body_key =
-            match metadata {
-                Some(metadata) => metadata.asm_body_key,
-                None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::Malformed("source-less ASM body key is negative".into()),
-                )?,
-            };
-        let entity_suffix = metadata
-            .map(|metadata| metadata.entity_suffix)
-            .or_else(|| body_map.get(&asm_body_key).copied())
-            .unwrap_or(asm_body_key);
-        body_map.insert(asm_body_key, entity_suffix);
-        visibility_rows.push((entity_suffix, visible));
-    }
-    if !body_map.is_empty() {
-        let count = u32::try_from(body_map.len())
+    if !registry.body_map.is_empty() {
+        let count = u32::try_from(registry.body_map.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (body_key, entity_suffix) in body_map {
+        for (&body_key, &entity_suffix) in &registry.body_map {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
@@ -221,32 +188,7 @@ pub(crate) fn encode_design_bulkstream(
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
-    for assignment in &native.design_material_assignments {
-        native_lp_utf16(&mut out, &assignment.entity_id)?;
-        native_lp_utf16(
-            &mut out,
-            assignment
-                .physical_token
-                .as_deref()
-                .expect("validated source-less material token"),
-        )?;
-        native_lp_utf16(&mut out, "Body")?;
-        native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
-        native_lp_utf16(&mut out, &assignment.visual_guid)?;
-        native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
-        if let Some(visual_preset) = &assignment.visual_preset {
-            native_lp_utf16(&mut out, visual_preset)?;
-        }
-    }
-    for (ordinal, (entity_suffix, visible)) in visibility_rows.into_iter().enumerate() {
-        native_lp_utf16(
-            &mut out,
-            &format!("00000000-0000-0000-0000-{:012X}", ordinal + 1),
-        )?;
-        out.push(u8::from(!visible));
-        out.extend_from_slice(&[0x01, 0x01]);
-        out.extend_from_slice(&entity_suffix.to_le_bytes());
-    }
+    encode_browser_nodes(&mut out, registry)?;
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -788,10 +730,9 @@ pub(crate) fn validate_dynamic_class_tag(value: &str, field: &str) -> Result<(),
 }
 
 pub(crate) fn encode_design_metastream(
-    bindings: DesignBindingsValidated<'_>,
+    registry: &GeneratedDesignRegistry,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    let native = bindings.native();
-    if native.design_types.is_empty() {
+    if registry.types.is_empty() {
         return Ok(None);
     }
 
@@ -808,12 +749,12 @@ pub(crate) fn encode_design_metastream(
     native_lp_ascii(&mut out, "Fusion")?;
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    let type_count = u32::try_from(native.design_types.len()).map_err(|_| {
+    let type_count = u32::try_from(registry.types.len()).map_err(|_| {
         CodecError::Malformed("Design MetaStream registers more than u32::MAX types".into())
     })?;
     out.extend_from_slice(&type_count.to_le_bytes());
     let mut next_entity_id = 1u64;
-    for design_type in &native.design_types {
+    for design_type in &registry.types {
         validate_guid(&design_type.type_guid, "Design type GUID")?;
         native_lp_ascii(&mut out, &design_type.type_guid)?;
         match &design_type.base_type_guid {
@@ -846,6 +787,28 @@ pub(crate) fn encode_design_metastream(
     // Trailing flag and empty property block.
     out.extend_from_slice(&[0; 8]);
     Ok(Some(out))
+}
+
+fn encode_browser_nodes(
+    out: &mut Vec<u8>,
+    registry: &GeneratedDesignRegistry,
+) -> Result<(), CodecError> {
+    if registry.browser_nodes.is_empty() {
+        return Ok(());
+    }
+    let node_class_tag = registry.browser_node_class_tag.as_deref().ok_or_else(|| {
+        CodecError::Malformed("generated F3D browser nodes have no registered type".into())
+    })?;
+    for node in &registry.browser_nodes {
+        native_lp_ascii(out, node_class_tag)?;
+        out.extend_from_slice(&node.record_index.to_le_bytes());
+        out.extend_from_slice(&[0; 10]);
+        native_lp_utf16(out, &node.node_guid)?;
+        out.push(u8::from(!node.visible));
+        out.extend_from_slice(&[0x01, 0x01]);
+        out.extend_from_slice(&node.entity_suffix.to_le_bytes());
+    }
+    Ok(())
 }
 
 /// Asset GUID written into a generated Design `MetaStream`, which has no source

@@ -10827,11 +10827,10 @@ fn generated_source_less_rejects_act_without_segment_metadata() {
 }
 
 #[test]
-fn generated_source_less_writes_protein_appearance_and_body_binding() {
+fn generated_source_less_writes_unassigned_protein_appearance() {
     use std::collections::BTreeMap;
 
-    use crate::records::{DesignMaterialAssignment, SegmentType};
-    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
 
@@ -10859,45 +10858,6 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         ]),
         textures: Vec::new(),
     }];
-    source_less.model.appearance_bindings = vec![AppearanceBinding {
-        id: "generated:appearance-binding#0".into(),
-        target: AppearanceTarget::Body(source_less.model.bodies[0].id.clone()),
-        appearance: appearance_id,
-        source_entity_id: Some("0_985".into()),
-        object_type: Some("Body".into()),
-        channels: BTreeMap::new(),
-    }];
-    let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![SegmentType {
-        id: "generated:body-object#0".into(),
-        byte_offset: 0,
-        module: "Body".to_owned(),
-        entity_ids: vec![985],
-        entity_id_offsets: Vec::new(),
-        type_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
-        type_guid_offset: 0,
-        base_type_guid: None,
-        base_type_guid_offset: None,
-        version: 1,
-        version_offset: 0,
-    }];
-    native.design_material_assignments = vec![DesignMaterialAssignment {
-        id: "generated:material-assignment#0".into(),
-        asm_body_key: 42,
-        asm_body_key_offset: 0,
-        entity_suffix: 985,
-        entity_suffix_offset: 0,
-        entity_id: "0_985".into(),
-        entity_id_offset: 0,
-        visual_guid: visual_guid.into(),
-        visual_guid_offset: 0,
-        physical_token: Some("PrismMaterial-Generated".into()),
-        physical_token_offset: None,
-        visual_preset: None,
-        visual_preset_offset: None,
-    }];
-
-    drop(native);
     let mut encoded = Vec::new();
     F3dCodec
         .plan(cadmpeg_ir::codec::EncodeInput {
@@ -10929,51 +10889,67 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         Some(&0.25)
     );
     assert_eq!(appearance.properties.get("refraction_index"), Some(&1.5));
-    assert_eq!(round_trip.ir.model.appearance_bindings.len(), 1);
-    assert!(matches!(
-        &round_trip.ir.model.appearance_bindings[0].target,
-        AppearanceTarget::Body(body) if body == &round_trip.ir.model.bodies[0].id
-    ));
-    assert_eq!(round_trip.ir.model.bodies[0].color, appearance.base_color);
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
-        42
-    );
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].visual_guid,
-        visual_guid
-    );
-    assert_eq!(
-        f3d_native(&round_trip.ir).design_material_assignments[0].visual_preset,
-        None
+    assert!(round_trip.ir.model.appearance_bindings.is_empty());
+    assert!(crate::validate::validate_native(&round_trip.ir).is_empty());
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "validation findings: {:?}",
+        validation.findings
     );
 }
 
 #[test]
-fn generated_source_less_rejects_collapsed_design_body_bindings() {
+fn generated_source_less_rejects_material_assignment_without_presentation_graph() {
     use crate::records::DesignMaterialAssignment;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
-    f3d_native_mut(&mut source_less).design_material_assignments = [("0_985", 985), ("0_986", 986)]
+    f3d_native_mut(&mut source_less).design_material_assignments = vec![DesignMaterialAssignment {
+        id: "generated:material-assignment#0".into(),
+        asm_body_key: 42,
+        asm_body_key_offset: 0,
+        entity_suffix: 985,
+        entity_suffix_offset: 0,
+        entity_id: "0_985".into(),
+        entity_id_offset: 0,
+        visual_guid: "11111111-2222-3333-4444-555555555555".into(),
+        visual_guid_offset: 0,
+        physical_token: Some("PrismMaterial-Generated".into()),
+        physical_token_offset: None,
+        visual_preset: None,
+        visual_preset_offset: None,
+    }];
+
+    let error = F3dCodec
+        .plan(cadmpeg_ir::codec::EncodeInput {
+            ir: &source_less,
+            fidelity: None,
+        })
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("an incomplete generated presentation graph must be refused");
+    assert!(error
+        .to_string()
+        .contains("requires a typed body-presentation B-rep and scene graph"));
+}
+
+#[test]
+fn generated_source_less_rejects_collapsed_visibility_body_bindings() {
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    source_less.model.bodies[0].visible = Some(false);
+    let body = source_less.model.bodies[0].id.clone();
+    f3d_native_mut(&mut source_less).body_visibilities = [985, 986]
         .into_iter()
         .enumerate()
-        .map(
-            |(ordinal, (entity_id, entity_suffix))| DesignMaterialAssignment {
-                id: format!("generated:material-assignment#{ordinal}"),
-                asm_body_key: 42,
-                asm_body_key_offset: 0,
-                entity_suffix,
-                entity_suffix_offset: 0,
-                entity_id: entity_id.into(),
-                entity_id_offset: 0,
-                visual_guid: "11111111-2222-3333-4444-555555555555".into(),
-                visual_guid_offset: 0,
-                physical_token: Some("PrismMaterial-Generated".into()),
-                physical_token_offset: None,
-                visual_preset: None,
-                visual_preset_offset: None,
-            },
-        )
+        .map(|(ordinal, entity_suffix)| crate::records::BodyVisibility {
+            id: format!("generated:body-visibility#{ordinal}"),
+            body: body.clone(),
+            stream: "generated/Design1/BulkStream.dat".into(),
+            byte_offset: 0,
+            asm_body_key_offset: 0,
+            asm_body_key: 42,
+            entity_suffix,
+            visible: false,
+        })
         .collect();
 
     let error = F3dCodec
@@ -11929,11 +11905,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let object = native
         .design_types
         .iter_mut()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
-        .expect("generated body design object");
+        .find(|design_type| design_type.entity_ids == [277])
+        .expect("generated sketch design object");
     assert!(object.byte_offset < object.version_offset);
     assert_eq!(object.entity_id_offsets.len(), 1);
-    object.entity_ids[0] = 986;
     object.type_guid = "91111111-2222-3333-4444-555555555555".into();
     object.base_type_guid = Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeef".into());
     object.version = 9;
@@ -11959,8 +11934,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
     );
     let binding = &mut edited.model.appearance_bindings[0];
-    binding.id = binding.id.replace("0_985", "0_986");
-    binding.source_entity_id = Some("0_986".into());
     binding.channels.insert(
         "Appearance".into(),
         "dddddddd-1111-2222-3333-eeeeeeeeeeee".into(),
@@ -11973,8 +11946,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > 0);
     assert!(assignment.asm_body_key_offset > 0);
-    assignment.entity_id = "0_986".into();
-    assignment.entity_suffix = 986;
     assignment.physical_token = Some("PrismMaterial-019".into());
     assignment.visual_preset = Some("Prism-002".into());
     native.body_native_keys[0].asm_body_key = Some(84);
@@ -11991,7 +11962,6 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     edited.model.appearances[0]
         .properties
         .insert("refraction_index".into(), 1.8);
-    native.act_entities[0].entity_id = "0_986".into();
     assert_eq!(
         native.act_entities[0].entity_id,
         native.design_material_assignments[0].entity_id
@@ -12033,15 +12003,17 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .find(|header| header.in_sketch_module())
         .cloned()
         .expect("round-trip sketch entity header");
+    assert_eq!(header.entity_suffix, 277);
+    assert_eq!(header.entity_id, "0_277");
     assert_eq!(header.record_reference, Some(585));
     assert_eq!(header.reference_indices, [44, 33]);
     let object = f3d_native(&round_trip.ir)
         .design_types
         .iter()
-        .find(|design_type| design_type.module == crate::records::DESIGN_MODULE_BODY)
+        .find(|design_type| design_type.entity_ids == [277])
         .cloned()
-        .expect("round-trip body design object");
-    assert_eq!(object.entity_ids, [986]);
+        .expect("round-trip sketch design object");
+    assert_eq!(object.entity_ids, [277]);
     assert_eq!(object.type_guid, "91111111-2222-3333-4444-555555555555");
     assert_eq!(
         object.base_type_guid.as_deref(),
@@ -12064,13 +12036,13 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         "dddddddd-1111-2222-3333-eeeeeeeeeeee"
     );
     let act_entity = &f3d_native(&round_trip.ir).act_entities[0];
-    assert_eq!(act_entity.entity_id, "0_986");
+    assert_eq!(act_entity.entity_id, "0_985");
     assert_eq!(
         act_entity.channels.get("Appearance").map(String::as_str),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
     let binding = &round_trip.ir.model.appearance_bindings[0];
-    assert_eq!(binding.source_entity_id.as_deref(), Some("0_986"));
+    assert_eq!(binding.source_entity_id.as_deref(), Some("0_985"));
     assert_eq!(
         binding.channels.get("Appearance").map(String::as_str),
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
@@ -12080,7 +12052,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert_eq!(lost_edge.record_index, 4_700);
     assert_eq!(
         f3d_native(&round_trip.ir).design_material_assignments[0].entity_id,
-        "0_986"
+        "0_985"
     );
     assert_eq!(
         f3d_native(&round_trip.ir).design_material_assignments[0]
@@ -12171,6 +12143,27 @@ fn generated_f3d_rejects_material_assignment_divergence() {
         .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
         .expect_err("divergent assignment and appearance must fail");
     assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
+
+#[test]
+fn generated_f3d_rejects_partial_material_assignment_identity_edit() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated material decode");
+    let mut edited = decoded.ir;
+    update_f3d_native(&mut edited, |native| {
+        let assignment = &mut native.design_material_assignments[0];
+        assignment.entity_id = "0_986".into();
+        assignment.entity_suffix = 986;
+    });
+
+    let error = F3dCodec
+        .write_preserved_with_source_fidelity(&edited, &decoded.source_fidelity, &mut Vec::new())
+        .expect_err("a partial presentation-graph identity edit must fail");
+    assert!(error.to_string().contains(
+        "requires synchronized body-presentation, browser-node, B-rep, and scene graphs"
+    ));
 }
 
 #[test]
@@ -12611,9 +12604,9 @@ fn generated_design_metastream() -> Vec<u8> {
     let base = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
     design_metastream(&[
         (
-            "11111111-2222-3333-4444-555555555555",
+            crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
             base,
-            3,
+            crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION,
             "Body",
             &[985],
         ),
@@ -12637,6 +12630,27 @@ fn generated_design_metastream() -> Vec<u8> {
             1,
             "MSketch",
             &[],
+        ),
+        (
+            crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+            crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+            crate::records::DESIGN_MODULE_FUSION,
+            &[900],
+        ),
+        (
+            crate::design::presentation::BREP_CONTAINER_TYPE_GUID,
+            base,
+            crate::design::presentation::BREP_CONTAINER_TYPE_VERSION,
+            crate::records::DESIGN_MODULE_BODY,
+            &[7],
+        ),
+        (
+            crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+            base,
+            crate::design::presentation::BODY_SCENE_NODE_TYPE_VERSION,
+            "Scene",
+            &[986],
         ),
     ])
 }
@@ -12838,6 +12852,12 @@ fn generated_design_bulkstream() -> Vec<u8> {
         relation[at + 1..at + 9].copy_from_slice(&u64::from(target).to_le_bytes());
     }
 
+    fn push_reference(out: &mut Vec<u8>, target: u64) {
+        out.push(1);
+        out.extend_from_slice(&target.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+
     let mut out = Vec::new();
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&42u64.to_le_bytes());
@@ -12845,17 +12865,36 @@ fn generated_design_bulkstream() -> Vec<u8> {
     out.extend_from_slice(&1793u64.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut out, "BREP.synthetic.smbh");
-    for value in [
-        "0_985",
-        "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C",
-        "PrismMaterial-018",
-        "Body",
-        "11111111-2222-3333-4444-555555555555",
-        "BA5EE55E-9982-449B-9D66-9F036540E140",
-        "Prism-001",
-    ] {
-        lp_utf16(&mut out, value);
-    }
+    let node_guid = "ABCD0000-1111-8222-A333-444444444444";
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"256");
+    out.extend_from_slice(&985u64.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    lp_utf16(&mut out, "0_985");
+    lp_utf16(&mut out, node_guid);
+    out.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    lp_utf16(&mut out, "99999999-8888-8777-A666-555555555555");
+    lp_utf16(
+        &mut out,
+        crate::design::presentation::PHYSICAL_MATERIAL_LIBRARY_ID,
+    );
+    lp_utf16(&mut out, "PrismMaterial-018");
+    push_reference(&mut out, 7);
+    out.push(0);
+    push_reference(&mut out, 986);
+    lp_utf16(&mut out, "Body");
+    out.extend_from_slice(&1.0f32.to_le_bytes());
+    out.extend_from_slice(&[1, 1]);
+    lp_utf16(&mut out, "11111111-2222-3333-4444-555555555555");
+    lp_utf16(&mut out, crate::design::presentation::APPEARANCE_LIBRARY_ID);
+    lp_utf16(&mut out, "Prism-001");
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"260");
+    out.extend_from_slice(&900u32.to_le_bytes());
+    out.extend_from_slice(&[0; 10]);
+    lp_utf16(&mut out, node_guid);
+    out.extend_from_slice(&[0, 1, 1]);
+    out.extend_from_slice(&985u64.to_le_bytes());
     out.extend_from_slice(&3u32.to_le_bytes());
     out.extend_from_slice(b"269");
     out.extend_from_slice(&277u64.to_le_bytes());
@@ -24823,7 +24862,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(&result.ir).design_types.len(), 4);
+    assert_eq!(f3d_native(&result.ir).design_types.len(), 7);
     let sketch = f3d_native(&result.ir)
         .design_types
         .iter()
@@ -24832,34 +24871,23 @@ fn decode_transfers_generated_protein_appearance() {
         .unwrap();
     assert_eq!(sketch.entity_ids, vec![277]);
     assert_eq!(sketch.version, 4);
-    assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 1);
+    assert_eq!(f3d_native(&result.ir).design_entity_headers.len(), 2);
+    let sketch_header = f3d_native(&result.ir)
+        .design_entity_headers
+        .iter()
+        .find(|header| header.entity_suffix == 277)
+        .cloned()
+        .expect("generated sketch entity header");
+    assert_eq!(sketch_header.entity_id, "0_277");
+    assert_eq!(sketch_header.class_tag, "269");
+    assert!(sketch_header.optional_slot_present);
     assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].entity_id,
-        "0_277"
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].class_tag,
-        "269"
-    );
-    assert!(f3d_native(&result.ir).design_entity_headers[0].optional_slot_present);
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0]
-            .module
-            .as_deref(),
+        sketch_header.module.as_deref(),
         Some(crate::records::DESIGN_MODULE_SKETCH)
     );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].record_reference,
-        Some(584)
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].declared_reference_count,
-        Some(2)
-    );
-    assert_eq!(
-        f3d_native(&result.ir).design_entity_headers[0].reference_indices,
-        [33, 44]
-    );
+    assert_eq!(sketch_header.record_reference, Some(584));
+    assert_eq!(sketch_header.declared_reference_count, Some(2));
+    assert_eq!(sketch_header.reference_indices, [33, 44]);
     assert_eq!(f3d_native(&result.ir).design_record_headers.len(), 6);
     let record_33 = f3d_native(&result.ir)
         .design_record_headers
@@ -25365,11 +25393,16 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     bulk.extend_from_slice(&1793u64.to_le_bytes());
     bulk.extend_from_slice(&0u32.to_le_bytes());
     lp_utf16(&mut bulk, "BREP.synthetic.smbh");
-    // Browser-node records: GUID, hidden flag, `01 01` marker, member id.
-    for (guid, hidden, member) in [
-        ("b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
-        ("d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
+    // Typed browser-node records: indexed header, ten-byte base payload,
+    // GUID, hidden flag, `01 01` marker, and member id.
+    for (record_index, guid, hidden, member) in [
+        (900u32, "b412e170-dc0c-4932-b699-43fc72cc8b13", 0u8, 269u64),
+        (901, "d4b1078c-43bf-4f6d-a50a-963f94273901", 1, 533),
     ] {
+        bulk.extend_from_slice(&3u32.to_le_bytes());
+        bulk.extend_from_slice(b"256");
+        bulk.extend_from_slice(&record_index.to_le_bytes());
+        bulk.extend_from_slice(&[0; 10]);
         lp_utf16(&mut bulk, guid);
         bulk.push(hidden);
         bulk.extend_from_slice(&[0x01, 0x01]);
@@ -25382,6 +25415,16 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&design_metastream(&[(
+        crate::design::presentation::BROWSER_NODE_TYPE_GUID,
+        crate::design::presentation::BROWSER_NODE_BASE_TYPE_GUID,
+        crate::design::presentation::BROWSER_NODE_TYPE_VERSION,
+        crate::records::DESIGN_MODULE_FUSION,
+        &[900, 901],
+    )]))
+    .unwrap();
     let bytes = zip.finish().unwrap().into_inner();
 
     with_scan(&bytes, |scan| {
@@ -26223,67 +26266,6 @@ fn colliding_body_keys_bind_the_smallest_body() {
         Some("f3d:brep/c.smbh/brep:entity#1".to_owned())
     );
     assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
-}
-
-/// Push one same-segment reference: the `01` tag, a `u64` target, and the
-/// two-byte tail that names no other segment.
-fn push_design_reference(bytes: &mut Vec<u8>, target: u64) {
-    bytes.push(1);
-    bytes.extend(target.to_le_bytes());
-    bytes.extend([0, 0]);
-}
-
-/// Build a modern body-scope appearance-assignment record.
-///
-/// `node` is the record's browser-node entity, which is the owning body's
-/// design-entity suffix plus one.
-fn modern_appearance_record(node: u64, visual: &str, trailer: bool, token: bool) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    bytes.extend(lp_utf16_bytes("C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C"));
-    if token {
-        bytes.extend(lp_utf16_bytes("PrismMaterial-022"));
-    }
-    push_design_reference(&mut bytes, 7);
-    bytes.push(0);
-    push_design_reference(&mut bytes, node);
-    bytes.extend(lp_utf16_bytes("BodyName"));
-    bytes.extend(1.0f32.to_le_bytes());
-    bytes.extend([1, 1]);
-    bytes.extend(lp_utf16_bytes(visual));
-    bytes.extend(lp_utf16_bytes("08861000-1D69-CF2A-C082-CBD98E7E5D7F"));
-    if trailer {
-        bytes.extend(lp_utf16_bytes("005E1000-55CE-AFB6-81A1-36E3EF077C5F"));
-    }
-    bytes
-}
-
-const MODERN_VISUAL_GUID: &str = "251E92E9-B7B8-D3F3-C174-753263AF8709";
-
-#[test]
-fn modern_body_appearance_record_binds_through_its_browser_node_reference() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, true);
-    assert_eq!(
-        crate::materials::browser_body_appearances(&bytes),
-        vec![(291, MODERN_VISUAL_GUID.to_owned())]
-    );
-}
-
-#[test]
-fn modern_appearance_record_without_its_trailer_binds_nothing() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, false, true);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
-}
-
-#[test]
-fn modern_appearance_record_without_a_physical_token_is_not_body_scoped() {
-    let bytes = modern_appearance_record(292, MODERN_VISUAL_GUID, true, false);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
-}
-
-#[test]
-fn modern_appearance_record_refuses_a_browser_node_entity_of_zero() {
-    let bytes = modern_appearance_record(0, MODERN_VISUAL_GUID, true, true);
-    assert!(crate::materials::browser_body_appearances(&bytes).is_empty());
 }
 
 /// A report carrying the BREP-less geometry losses that `build_container_report`

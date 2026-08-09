@@ -845,9 +845,12 @@ pub(crate) fn validate_material_assignment_edits(
     let mut edits: BTreeMap<String, Vec<DesignMaterialAssignment>> = BTreeMap::new();
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
+        if after.entity_id != before.entity_id || after.entity_suffix != before.entity_suffix {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D material-assignment identity edit requires synchronized body-presentation, browser-node, B-rep, and scene graphs: {id}"
+            )));
+        }
         let mut normalized = after.clone();
-        normalized.entity_id.clone_from(&before.entity_id);
-        normalized.entity_suffix = before.entity_suffix;
         normalized.visual_guid.clone_from(&before.visual_guid);
         normalized.physical_token.clone_from(&before.physical_token);
         normalized.visual_preset.clone_from(&before.visual_preset);

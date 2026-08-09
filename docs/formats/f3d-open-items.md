@@ -288,16 +288,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-57. Members of a generated presentation envelope and browser-node join
-
-**Question.** Which GUID of a presentation envelope joins to a browser-node record, and which members must a generated envelope hold?
-
-**Known.** `f3d.md` §3.1 "A browser body record carries" states that exactly one GUID in the presentation envelope equals a browser-node record's GUID and that the node record carries the body's Design entity suffix. `encode_design_bulkstream` in `writer/generate/records.rs` writes the literal string `Body` and the all-zero GUID `00000000-0000-0000-0000-000000000000` into the envelope, and separately synthesizes each browser-node GUID from the body's position in the neutral body list as `00000000-0000-0000-0000-{ordinal:012X}`. The envelope GUID and the node GUID therefore never agree, and a re-ordering of the neutral body list changes every emitted node identity.
-
-The decoder does not use the documented structure either. `decode_design_assignments` in `materials.rs` searches backward up to ten strings for an entity id and forward up to fifteen strings for the library marker, and takes the string before that marker as the visual GUID. The two invented strings satisfy that search.
-
-**Need.** A generated document holds a browser-node set and an appearance envelope that the documented join cannot connect. The envelope's real member sequence, and the source of a browser-node GUID, settle what a writer must emit.
-
 ### DR-58. Bound of a Design body-map pair count
 
 **Question.** What bounds the pair count of a Design body map?
@@ -305,14 +295,6 @@ The decoder does not use the documented structure either. `decode_design_assignm
 **Known.** `f3d.md` §3.1 gives the body map as a count followed by that many sixteen-byte pairs. It gives no bound. `body_bindings` in `design/decode/body.rs` tries the counts one through 64 in ascending order and keeps the first count whose stored word equals the trial. The comment states the reason the ascending scan is taken to be unambiguous: the high halves of the little-endian ids are zero. That statement is an observation of the values present and not a checked invariant.
 
 **Need.** A blob with more than 64 pairs produces no binding at all, and every body in it loses its Design binding, its visibility, and its material assignment with no loss recorded. An entity suffix at or above 2^32 whose high word equals a trial count makes the scan accept the wrong count and mis-pair every key.
-
-### DR-59. Body visibility when two browser-node records name one entity suffix
-
-**Question.** Which browser-node record gives the visibility of a body when two records name one entity suffix?
-
-**Known.** `browser_node_records` in `design/decode/body.rs` is an unanchored byte scan: every offset that holds a length word, a 36-character GUID, a zero-or-one byte, the pair `01 01`, and a u64 is accepted. `browser_node_hidden_flags` collects the results into a map, so the last scan hit wins in silence. `browser_node_entities` reads the same record set, detects the same collision, and drops the entity instead of keeping one.
-
-**Need.** The two functions read one record set and resolve the same ambiguity in opposite ways. A body is exported hidden when it is shown, with no loss recorded. The record that owns the visibility of an entity suffix settles the item.
 
 ### DR-60. Member order of a spline-group constraint
 
@@ -442,13 +424,13 @@ The `.f3z` merge writes the note `(identity placement)` for the first cause. The
 
 **Need.** A target can have more than one colour source. We must know the order to select one neutral colour, and the entry byte runs to write a per-face assignment from a neutral model.
 
-### MA-09. Face identity of a browser-node-reference appearance assignment
+### MA-09. Face identity of a paired-library appearance assignment
 
-**Question.** How does a face-scoped appearance assignment in the browser-node-reference generation name its face?
+**Question.** How does a paired-library face-scoped appearance assignment name its face?
 
-**Known.** `f3d.md` §3.1 "A browser body record carries" gives the record and its body-scope form. A face-scoped record of this generation carries no physical-material preset name and no `299`-tagged head, so neither body-identity form applies. Its presentation envelope holds two lowercase GUIDs before the visual GUID. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
+**Known.** `f3d.md` §3.1 gives the typed body-presentation form. A paired-library face-scoped record carries no physical-material token and no body owner. Its presentation envelope holds two lowercase GUIDs before the visual GUID. A document that assigns one face appearance writes two such records naming the same visual GUID, alongside one body-scope record.
 
-**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual GUID as the face identity, writes the choice into `f3d.md` §3.2 "In the paired-library browser-node-reference generation," as a rule, and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual GUID and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved. Writing the choice into the specification is not evidence for it.
+**Note.** This item was closed by `4ae4944c9` and is reopened. That commit takes the GUID immediately before the visual GUID as the face identity and pins it with a test built from fabricated GUIDs that encodes the same choice. The item states that two lowercase GUIDs stand before the visual GUID and that nothing separates them, and its Need names the specimen that separates them. The commit adds no such specimen, so the rival GUID is discarded and not disproved.
 
 The closure also has no operand. `resolve_face_appearance_bindings` in `decode.rs` builds its face map only from face attributes that hold `NEUTRON_Material_attrib_def`, and this item states that the stream of this generation carries no such attribute. Either that statement is wrong, or the closed rule binds nothing in the generation it settles. The commit resolves neither reading.
 
@@ -464,15 +446,15 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 **Need.** The order is the only arbiter and is not in the specification. A tinted Prism appearance carries both members, and the neutral colour must come from the member the source uses.
 
-### MA-11. Owner join of a Design material assignment
+### MA-11. Owner join of an indexed-head Design material assignment
 
-**Question.** Which stored reference joins a Design material-assignment token to its target entity and to its visual GUID?
+**Question.** What bounds an indexed-head material-assignment record and joins its token and visual GUID to the target entity?
 
-**Known.** `f3d.md` §3.2 gives the join backbone through the numeric design-entity namespace. It gives no adjacency rule. `decode_design_assignments` in `materials.rs` searches the ten strings before the material token for the nearest one that parses as `<name>_<digits>`, and the fifteen strings after it for the library marker, and takes the string before that marker as the visual GUID.
+**Known.** `f3d.md` §3.1 gives the typed body-presentation owner and its exact material envelope. The indexed-head form instead stores class tag `299`, entity suffix `E`, the physical-material token, a browser-node GUID, node entity `E + 1`, the visual GUID, and the appearance-library marker pair.
 
-`entity_suffix` accepts any string of that shape, so an unrelated stored name such as a texture slot or a component label between the true entity id and the token retargets the assignment. The three window sizes are in neither `f3d.md` nor `docs/layouts/f3d.toml`, and a record with one extra string in the run drops the assignment with no loss recorded.
+`browser_body_appearance_at` in `materials.rs` validates the indexed-head member sequence but searches up to 65,536 preceding bytes for the nearest class-299 header. It does not prove the owning record boundary or resolve that class tag through the segment type table. An unrelated class-299 record in that window can retarget the assignment.
 
-**Need.** The record's own framing is settled — `f3d.md` §3.2 "Per-face appearance assignments live" gives the class, the count, and the entry width — and the decoder does not use it. The stored reference from a token to its entity settles the item.
+**Need.** The writer cannot rewrite an indexed-head assignment owner without its exact owner frame. A stream with two nearby class-299 records separates the enclosing owner from the nearest preceding header.
 
 ### MA-12. Appearance identity of an assignment with no preset
 
@@ -606,7 +588,5 @@ The projector leaves are tested. `crates/cadmpeg-codec-f3d/src/design/tests.rs` 
 **Question.** Which generate-writer behaviour do the `attributes`, `sketch_link`, and `topology_base` goldens each pin?
 
 **Known.** `crates/cadmpeg-codec-f3d/tests/golden/generate` holds `attributes.bin`, `sketch_link.bin`, and `topology_base.bin`. The three are byte-identical and each is 2,055 bytes. Their source fixtures under `tests/golden/fixtures` differ from one another, and their decode goldens under `tests/golden/decode` differ from one another. The generate writer therefore maps three different inputs to one output, and two of the three names separate nothing.
-
-**Note.** The three goldens are the only pins on the generate lane's Design BulkStream output. That output holds the fabricated members DR-57 names — the literal `Body`, the all-zero envelope GUID, and the ordinal-derived browser-node GUID — and the body-key assignment that DR-57 and MA-13 name. No golden separates any of them, so a change to those members moves one 2,055-byte file or none.
 
 **Need.** A reader of the golden tree counts three generate cases where one exists. We must find whether the generate lane is meant to discard what separates these inputs. If it is, two names must go or must state that they are duplicates. If it is not, the writer drops content that the decode side keeps.

@@ -17,6 +17,7 @@ pub(crate) mod index;
 pub(crate) mod native_bytes;
 pub(crate) mod native_geometry;
 pub(crate) mod preconditions;
+pub(crate) mod presentation;
 pub(crate) mod records;
 pub(crate) mod smbh;
 use preconditions::{
@@ -26,6 +27,7 @@ use preconditions::{
     validate_source_less_recipes, validate_source_less_sketch_graph,
     validate_source_less_topology_tolerances,
 };
+use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_planar_triangle_smbh;
 
@@ -60,18 +62,16 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             "source-less F3D ACT generation requires a retained MetaStream record registry".into(),
         ));
     }
-    let design_bindings = if has_native {
+    let design_bindings = validate_source_less_design_bindings(&native)?;
+    if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        let design_bindings = validate_source_less_design_bindings(&native)?;
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
-        Some(design_bindings)
-    } else {
-        None
-    };
+    }
+    let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     let smbh = encode_planar_triangle_smbh(target, &native, &attributes)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
@@ -133,7 +133,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             archive.write_all(&payload)?;
         }
     }
-    if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &attributes)? {
+    if let Some(bulk_stream) = encode_design_bulkstream(target, &native, &design_registry)? {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
@@ -141,15 +141,13 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             })?;
         archive.write_all(&bulk_stream)?;
     }
-    if let Some(design_bindings) = design_bindings {
-        if let Some(meta_stream) = encode_design_metastream(design_bindings)? {
-            archive
-                .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
-                .map_err(|error| {
-                    CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
-                })?;
-            archive.write_all(&meta_stream)?;
-        }
+    if let Some(meta_stream) = encode_design_metastream(&design_registry)? {
+        archive
+            .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
+            .map_err(|error| {
+                CodecError::Malformed(format!("cannot create F3D Design MetaStream: {error}"))
+            })?;
+        archive.write_all(&meta_stream)?;
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;

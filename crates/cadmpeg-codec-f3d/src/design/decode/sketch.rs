@@ -603,10 +603,7 @@ pub(crate) fn parse_settled_entity_header(
     start: usize,
 ) -> Option<(u64, String, bool, usize)> {
     let entity_suffix = u64::from_le_bytes(bytes.get(start + 7..start + 15)?.try_into().ok()?);
-    if entity_suffix == 0
-        || entity_suffix >= 1 << 32
-        || bytes.get(start + 15..start + 20) != Some(&[0u8; 5])
-    {
+    if entity_suffix == 0 || bytes.get(start + 15..start + 20) != Some(&[0u8; 5]) {
         return None;
     }
     let (optional_slot_present, string_offset) = match bytes.get(start + 20)? {
