@@ -547,14 +547,30 @@ fn definition_chain_parameter_candidate(
     chain: &crate::native::CatiaDefinitionChainValue,
 ) -> Option<FormulaParameterCandidate> {
     let parameter_type = canonical_parameter_type(&chain.role.value)?;
-    let crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
-        opcode_offset,
-        evaluation,
-    } = &chain.value
-    else {
-        return None;
+    let (evaluation, evaluation_opcode_offset, atom_value) = match &chain.value {
+        crate::native::CatiaEntitySuffixSchemaValue::Evaluation {
+            opcode_offset,
+            evaluation,
+        } => (
+            typed_parameter_evaluation(&chain.role.value, evaluation)?,
+            Some(*opcode_offset),
+            None,
+        ),
+        crate::native::CatiaEntitySuffixSchemaValue::Atom { value }
+            if parameter_type == "Boolean" =>
+        {
+            (
+                TypedParameterEvaluation::Value(ParameterValue::Boolean(match value {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                })),
+                None,
+                Some(*value),
+            )
+        }
+        _ => return None,
     };
-    let evaluation = typed_parameter_evaluation(&chain.role.value, evaluation)?;
     let name = (!chain.selector.value.is_empty()).then(|| chain.selector.value.clone())?;
     let (expression, value) = match evaluation {
         TypedParameterEvaluation::Unset => (String::new(), None),
@@ -591,10 +607,22 @@ fn definition_chain_parameter_candidate(
         "catia_definition_role_offset".to_string(),
         chain.role.offset.to_string(),
     );
-    properties.insert(
-        "catia_definition_evaluation_opcode_offset".to_string(),
-        opcode_offset.to_string(),
-    );
+    if let Some(opcode_offset) = evaluation_opcode_offset {
+        properties.insert(
+            "catia_definition_evaluation_opcode_offset".to_string(),
+            opcode_offset.to_string(),
+        );
+    }
+    if let Some(atom_value) = atom_value {
+        properties.insert(
+            "catia_definition_value_kind".to_string(),
+            "atom".to_string(),
+        );
+        properties.insert(
+            "catia_definition_atom_value".to_string(),
+            atom_value.to_string(),
+        );
+    }
     Some(FormulaParameterCandidate {
         parameter: DesignParameter {
             id: neutral_parameter_id(&entity.id),
@@ -1162,7 +1190,8 @@ fn parameter_expression(value: &ParameterValue) -> String {
         ParameterValue::Angle(Angle(value)) => format!("{value} rad"),
         ParameterValue::Real(value) => value.to_string(),
         ParameterValue::Integer(value) => value.to_string(),
-        ParameterValue::Boolean(_) | ParameterValue::String(_) => unreachable!(),
+        ParameterValue::Boolean(value) => value.to_string(),
+        ParameterValue::String(_) => unreachable!(),
     }
 }
 

@@ -122,14 +122,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the result entity for input-bearing relations and relations with nonlocal selectors so we can transfer the evaluated value.
 
-### DI-12. Typed `Boolean` value production
-
-**Question.** What byte production stores the scalar value of a typed `Boolean` parameter?
-
-**Known.** `catia.md` §7.3 "A complete entity-record suffix value begins" defines scalar, unset, atom, control, and schema-selected object values. Boolean-named field classes can contain compound object payloads.
-
-**Need.** We must know the scalar production to transfer a Boolean parameter.
-
 ### DI-13. Active configuration state
 
 **Question.** Which field selects the active configuration state?

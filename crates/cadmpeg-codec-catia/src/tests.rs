@@ -2861,6 +2861,10 @@ fn standard_catpart_with_definition_value(
 }
 
 fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
+    standard_catpart_with_definition_chain_type("Real", suffix)
+}
+
+fn standard_catpart_with_definition_chain_type(value_type: &str, suffix: &[u8]) -> Vec<u8> {
     let definition = [0x00, 0x08, 0x32, 4, 0, 0, 0, 0x32, 5, 0, 0, 0];
     let records = [object_graph_record(&[0x16, 0x84, 0x81, 0x81], &[0xfe])];
     let mut entity = entity_table_record_with_definition_and_value(1, &definition, &[0xfe]);
@@ -2877,7 +2881,7 @@ fn standard_catpart_with_definition_chain_value(suffix: &[u8]) -> Vec<u8> {
         "catalogLinks",
         "",
         "FeatureFEDGE",
-        "Real",
+        value_type,
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -16840,6 +16844,59 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             .report
             .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
         1
+    );
+
+    let boolean = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_type(
+                "Boolean",
+                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode Boolean definition-chain parameter");
+    let [boolean_parameter] = boolean.ir.model.parameters.as_slice() else {
+        panic!("expected one Boolean definition-chain parameter");
+    };
+    assert_eq!(
+        boolean_parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
+    );
+    assert_eq!(boolean_parameter.expression, "true");
+    assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
+    assert_eq!(
+        boolean_parameter.properties["catia_definition_value_kind"],
+        "atom"
+    );
+    assert_eq!(
+        boolean_parameter.properties["catia_definition_atom_value"],
+        "1"
+    );
+    assert!(!boolean_parameter
+        .properties
+        .contains_key("catia_definition_evaluation_opcode_offset"));
+    assert_eq!(
+        boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        1
+    );
+
+    let invalid_boolean = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_definition_chain_type(
+                "Boolean",
+                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x82],
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode invalid Boolean definition-chain atom");
+    assert!(invalid_boolean.ir.model.parameters.is_empty());
+    assert_eq!(
+        invalid_boolean
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT),
+        0
     );
 
     let unset = CatiaCodec
