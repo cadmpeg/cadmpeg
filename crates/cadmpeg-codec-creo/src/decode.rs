@@ -3431,6 +3431,36 @@ pub(crate) fn resolved_section_coordinates(
             first, second, coordinate, 0.0,
         ));
     }
+    for (target, first, second) in
+        section_equation_point_on_line_constraints(definition, &ambiguous_point_ids)
+    {
+        let (
+            Some([Some(first_u), Some(first_v)]),
+            Some([Some(second_u), Some(second_v)]),
+            Some(target_coordinates),
+        ) = (points.get(&first), points.get(&second), points.get(&target))
+        else {
+            continue;
+        };
+        let [target_u, target_v] = *target_coordinates;
+        if target_u.is_some() == target_v.is_some() {
+            continue;
+        }
+        let delta_u = second_u - first_u;
+        let delta_v = second_v - first_v;
+        let mut equation = SectionCoordinateEquation::default();
+        equation.add_point(target, 0, -delta_v);
+        equation.add_point(target, 1, delta_u);
+        equation.rhs = delta_u * first_v - delta_v * first_u;
+        let missing_coefficient = if target_u.is_none() {
+            delta_v.abs()
+        } else {
+            delta_u.abs()
+        };
+        if missing_coefficient > 1e-12 {
+            equations.push(equation);
+        }
+    }
     for &([first, second], coordinate) in &same_coordinate_points {
         equations.push(SectionCoordinateEquation::source_difference(
             first, second, coordinate, 0.0,
@@ -3794,6 +3824,86 @@ fn section_equation_radius_dimensions(
                 return None;
             }
             Some((radius.key, dimension_value))
+        })
+        .collect()
+}
+
+fn section_equation_point_on_line_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<(u32, u32, u32)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 35 && equation.arguments.len() == 9)
+        .filter_map(|equation| {
+            let [
+                Some(target_u),
+                Some(target_v),
+                Some(first_u),
+                Some(first_v),
+                Some(second_u),
+                Some(second_v),
+                Some(line_parameter),
+                Some(first_zero),
+                Some(second_zero),
+            ] = equation.arguments.as_slice()
+            else {
+                return None;
+            };
+            let target_u = variables.rows.get(usize::try_from(*target_u).ok()?)?;
+            let target_v = variables.rows.get(usize::try_from(*target_v).ok()?)?;
+            let first_u = variables.rows.get(usize::try_from(*first_u).ok()?)?;
+            let first_v = variables.rows.get(usize::try_from(*first_v).ok()?)?;
+            let second_u = variables.rows.get(usize::try_from(*second_u).ok()?)?;
+            let second_v = variables.rows.get(usize::try_from(*second_v).ok()?)?;
+            let line_parameter = variables
+                .rows
+                .get(usize::try_from(*line_parameter).ok()?)?;
+            let first_zero = variables.rows.get(usize::try_from(*first_zero).ok()?)?;
+            let second_zero = variables.rows.get(usize::try_from(*second_zero).ok()?)?;
+            if target_u.variable_type != 1
+                || target_v.variable_type != 2
+                || first_u.variable_type != 1
+                || first_v.variable_type != 2
+                || second_u.variable_type != 1
+                || second_v.variable_type != 2
+                || target_u.key != target_v.key
+                || first_u.key != first_v.key
+                || second_u.key != second_v.key
+                || target_u.key == first_u.key
+                || target_u.key == second_u.key
+                || first_u.key == second_u.key
+                || line_parameter.variable_type != 4
+                || first_zero.variable_type != 5
+                || second_zero.variable_type != 5
+                || first_zero.value != Some(0.0)
+                || second_zero.value != Some(0.0)
+                || ambiguous_point_ids.contains(&target_u.key)
+                || ambiguous_point_ids.contains(&first_u.key)
+                || ambiguous_point_ids.contains(&second_u.key)
+            {
+                return None;
+            }
+            Some((target_u.key, first_u.key, second_u.key))
         })
         .collect()
 }

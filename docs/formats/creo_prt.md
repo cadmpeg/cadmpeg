@@ -1478,6 +1478,12 @@ function-2 row pairs one type-3 row with one type-0 row, the type-0 key is a
 zero-based ordinal into a complete `dimtab_ptr` row table of dimension type
 `3`. The type-0 scalar, selected dimension value, and type-3 radius scalar are
 equal positive millimetre values; the type-3 row key is the radius identity.
+Function `35` has nine argument slots. The first two rows are the type-1 and
+type-2 coordinates of a target point. The next four rows are the type-1 and
+type-2 coordinates of two distinct reference points. The seventh row has type
+`4`; the final two rows have type `5` and scalar value zero. The target point
+lies on the infinite line through the two reference points. A complete line
+equation is required before a missing target coordinate is solved.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table

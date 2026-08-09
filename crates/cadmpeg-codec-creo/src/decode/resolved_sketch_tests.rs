@@ -6544,6 +6544,65 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
 }
 
 #[test]
+fn equation_function_thirty_five_solves_point_on_reference_line() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: false,
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: false,
+        offset: 0,
+    };
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x23\xf8\x09\x00\x01\x02\x03\x04\x05\x06\x07\x08\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 9,
+            entity_ref: None,
+            rows: vec![
+                row(1, 20, None),
+                row(2, 20, Some(165.0)),
+                row(1, 18, Some(0.0)),
+                row(2, 18, Some(0.0)),
+                row(1, 19, Some(0.0)),
+                row(2, 19, Some(-100.0)),
+                row(4, 2, None),
+                row(5, 0, Some(0.0)),
+                row(5, 1, Some(0.0)),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition).get(&20),
+        Some(&[Some(0.0), Some(165.0)])
+    );
+}
+
+#[test]
 fn section_line_requires_two_solved_points() {
     let segment = crate::feature::FeatureSegment {
         kind: crate::feature::FeatureSegmentKind::Line,

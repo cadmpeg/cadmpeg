@@ -328,7 +328,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** What equation does each relation type outside signed type 0, type 5, and type 14 encode?
 
-**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations.
+**Known.** `creo_prt.md` §5 "Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer" through `creo_prt.md` §5 "A positive-ratio elliptical cone uses local frame coordinates" define the recognized linear, radius, incidence, and entity-geometry relations. Complete `eqtn_arr` function-2, function-3, and function-35 rows define scalar equality, unsigned coordinate distance, radius binding, and point-on-line equations when their positional row grammars are complete.
 
 **Need.** We must know each equation to solve the section geometry.
 
