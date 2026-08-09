@@ -82,25 +82,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
-## 3. GUI properties
-
-### GP-01. Other GUI property grammars
-
-**Question.** What value grammar does each GUI property runtime type use when `freecad_fcstd.md` does not define that type?
-
-**Known.** `freecad_fcstd.md` §11 "Format-neutral document and view presentation arenas represent GUI state." through `freecad_fcstd.md` §11 "For shape-bearing objects, the view provider's shape color" define document presentation, view-provider state, object appearance, topology color arrays, and their precedence. Each other GUI property retains its owner, runtime type, status, ordered value elements, side-entry references, exact XML, and byte range.
-
-**Need.** We must know each grammar to parse and validate the property as a typed presentation value.
-
-### GP-02. Other GUI property semantics
-
-**Question.** What presentation value does each GUI property runtime type represent when `freecad_fcstd.md` does not define that type?
-
-**Known.** `freecad_fcstd.md` §11 "GUI records retain view-provider identity separately from application-object identity." states that GUI records keep presentation data linked to its owner. Each undefined GUI property retains its runtime type and ordered value elements.
-
-**Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
-
-## 4. Sketch geometry
+## 3. Sketch geometry
 
 ### SG-02. Conic conventions without a FreeCAD-saved witness
 
@@ -118,7 +100,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-02, and they can support format-support claims because FreeCAD wrote them.
 
-## 5. Persistent topology identity
+## 4. Persistent topology identity
 
 ### PT-02. Element-map position to neutral-occurrence order
 
@@ -130,7 +112,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.
 
-## 6. Exact-topology transfer
+## 5. Exact-topology transfer
 
 ### XT-01. Edge endpoint child selection
 

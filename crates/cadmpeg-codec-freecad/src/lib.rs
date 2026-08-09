@@ -1349,6 +1349,7 @@ impl Codec for FcstdCodec {
                     &graph.properties,
                     &shape_payloads,
                     &element_maps,
+                    gui::requires_alpha_conversion(scan.document.program_version.as_deref()),
                 )?
             } else {
                 gui::Graph::default()

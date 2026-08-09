@@ -342,12 +342,38 @@ values use one `file` attribute. Material values use four packed-color attribute
 registered tags and attributes are mandatory. An unregistered GUI runtime type retains its exact
 ordered XML values without semantic dispatch.
 
+A color-list side entry contains a little-endian `u32` count followed by that many little-endian
+packed `u32` colors. A material-list value has a format version from zero through three. Versions
+zero and one begin with a signed 32-bit count. A negative value is a provisional-version marker
+followed by the unsigned 32-bit count. Version two begins with the unsigned count. Each material
+then contains four packed `u32` colors followed by float32 shininess and transparency. Version
+three uses the version-two header and material records, followed by three length-prefixed byte
+strings for each material in image, image-path, UUID order. Each string has a little-endian `u32`
+byte count and UTF-8 bytes. Counts are bounded by the remaining payload. Truncated records,
+non-finite scalars, invalid UTF-8, and trailing bytes are invalid. Producing versions before 1.1
+store the low color byte with the inverse alpha convention; readers invert that byte before
+presentation transfer.
+
+Neutral presentation dispatch requires both the exact property name and runtime type.
+`Visibility` is `App::PropertyBool`; `DisplayMode` and `SelectionStyle` are
+`App::PropertyEnumeration`; `Transparency` is `App::PropertyPercent`; shape, line, and point colors
+are `App::PropertyColor`; shape material is `App::PropertyMaterial`; face, line, and point color
+arrays are `App::PropertyColorList`; `ShapeAppearance` is `App::PropertyMaterialList`; and line
+width and point size are `App::PropertyFloatConstraint`. A same-named property of another runtime
+type remains native and does not populate the neutral field.
+
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars describe the application object's exact-shape property named `Shape`. They produce an
 object appearance and explicit bindings only for bodies transferred from that property. Other
 exact-shape properties on the same object do not inherit this view-provider state. Packed colors
 decode as red, green, blue, and reserved low byte; the independent transparency percentage
 determines opacity. The effective body display fields mirror this object-level assignment.
+`ShapeAppearance` is the current shape material carrier. One material replaces the legacy shape
+color assignment, binds to every body transferred from `Shape`, and supplies diffuse color,
+transparency, four packed material colors, shininess, and UUID. Multiple materials bind in order to
+the persistent Face element-map group. Their count must equal the group's indexed face count. If
+persistent face identity is absent, the material list remains native and the legacy object color
+remains the neutral fallback.
 Per-face `DiffuseColor`, per-edge `LineColorArray`, and per-vertex `PointColorArray` lists are
 higher-precedence presentation layers. They are not inferred from the corresponding object color.
 Each list contains a little-endian count followed by packed-color records. A count of one applies

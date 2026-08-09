@@ -4127,6 +4127,25 @@ fn rejects_malformed_registered_gui_property_values() {
 }
 
 #[test]
+fn rejects_truncated_gui_material_list_payload() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="3"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+                ("ShapeAppearance", &1_u32.to_le_bytes()),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("truncated GUI material list");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
 fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
@@ -5312,8 +5331,9 @@ fn transfers_connected_text_brep_topology() {
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
-<ViewProvider name="Shape" expanded="1"><Properties Count="7">
+<ViewProvider name="Shape" expanded="1"><Properties Count="8">
 <Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3368601600"/></Property>
+<Property name="ShapeAppearance" type="App::PropertyMaterialList"><MaterialList file="ShapeAppearance" version="3"/></Property>
 <Property name="LineColor" type="App::PropertyColor"><PropertyColor value="4278190335"/></Property>
 <Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="2.5"/></Property>
 <Property name="PointColor" type="App::PropertyColor"><PropertyColor value="16711935"/></Property>
@@ -5345,9 +5365,21 @@ Sh 1001000 +4 0 *
 So 1001000 +3 0 *
 Co 1001000 +2 0 *
 +1 0 *";
+    let mut shape_appearance = Vec::new();
+    shape_appearance.extend_from_slice(&1_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x3333_33ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x3366_99ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x1111_11ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0x0000_00ff_u32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0.75_f32.to_le_bytes());
+    shape_appearance.extend_from_slice(&0.25_f32.to_le_bytes());
+    for _ in 0..3 {
+        shape_appearance.extend_from_slice(&0_u32.to_le_bytes());
+    }
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("GuiDocument.xml", gui),
+        ("ShapeAppearance", &shape_appearance),
         ("Shape.brp", brep),
     ]);
     let result = FcstdCodec
@@ -5424,8 +5456,19 @@ Co 1001000 +2 0 *
     assert_eq!(view.line_width, Some(2.5));
     assert_eq!(view.point_size, Some(4.0));
     let color = result.ir.model.bodies[0].color.expect("shape color");
-    assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
+    assert!((color.r - 0x33 as f32 / 255.0).abs() < 1e-6);
+    assert!((color.g - 0x66 as f32 / 255.0).abs() < 1e-6);
+    assert!((color.b - 0x99 as f32 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
+    let shape_material = result
+        .ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.schema.as_deref() == Some("FCStd ShapeAppearance"))
+        .expect("shape material");
+    assert_eq!(shape_material.properties.get("shininess"), Some(&0.75));
+    assert_eq!(shape_material.properties.get("transparency"), Some(&0.25));
     let namespace = result.ir.native.namespace("fcstd").expect("native");
     assert_eq!(namespace.version, 22);
     let census = namespace
@@ -5449,7 +5492,7 @@ Co 1001000 +2 0 *
         gui_providers[0].object.as_deref(),
         Some("fcstd:native:object#Shape")
     );
-    assert_eq!(gui_properties.len(), 7);
+    assert_eq!(gui_properties.len(), 8);
     assert!(gui_properties
         .iter()
         .all(|property| property.raw_xml.starts_with("<Property")));
