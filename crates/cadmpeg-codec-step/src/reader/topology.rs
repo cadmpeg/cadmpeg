@@ -320,7 +320,7 @@ pub(super) fn decode(
         let mut body_ids = Vec::new();
         let mut body_by_shell = BTreeMap::<u64, BTreeSet<BodyId>>::new();
         for mut built in outcome.built {
-            drop_committed_surfaces(&mut built.draft, &commit_session);
+            drop_committed_surfaces(&mut built.draft, &commit_session, ir);
             if let Err(error) = commit_session.commit_model(built.draft, ir) {
                 result.warnings.push(topology_commit_error(
                     &format!("STEP topology root #{id}"),
@@ -1437,14 +1437,14 @@ struct Built {
     shell_sources: BTreeSet<u64>,
 }
 
-fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession) {
+fn drop_committed_surfaces(draft: &mut ModelDraft, session: &CommitSession, ir: &CadIr) {
     // Implicit surfaces can be staged by multiple roots. The session is the
     // authority on which ones a prior root committed; a pre-loop snapshot is
     // wrong because commits add surfaces while the loop is running.
     draft
         .model_mut()
         .surfaces
-        .retain(|surface| !session.contains(surface.id.as_str()));
+        .retain(|surface| !session.contains(ir, surface.id.as_str()));
 }
 
 #[cfg(test)]
@@ -1485,7 +1485,7 @@ mod tests {
             .commit_model(surface_draft(committed_id), &mut ir)
             .expect("first root commit");
         let mut second_root = surface_draft(committed_id);
-        drop_committed_surfaces(&mut second_root, &session);
+        drop_committed_surfaces(&mut second_root, &session, &ir);
         assert!(second_root.model().surfaces.is_empty());
 
         let mut rejected_root = surface_draft(rejected_id);
@@ -1499,7 +1499,7 @@ mod tests {
         assert!(session.commit_model(rejected_root, &mut ir).is_err());
 
         let mut later_root = surface_draft(rejected_id);
-        drop_committed_surfaces(&mut later_root, &session);
+        drop_committed_surfaces(&mut later_root, &session, &ir);
         assert_eq!(later_root.model().surfaces.len(), 1);
     }
 }

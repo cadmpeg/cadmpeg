@@ -988,15 +988,10 @@ fn byte_accounting(
     if let Some(signature) = &exchange.signature {
         claim_range(&mut classes, signature, ByteClass::Structural);
     }
-    let tokens = match crate::lex::lex(input) {
-        Ok(tokens) => tokens,
-        Err(error) => crate::lex::lex(&input[..error.offset]).unwrap_or_default(),
-    };
-    for token in &tokens {
-        claim_range(&mut classes, &token.span, ByteClass::Structural);
-    }
+    let mut lexer = crate::lex::Lexer::new(input);
     let mut cursor = 0;
-    for token in &tokens {
+    while let Ok(Some(token)) = lexer.next_token() {
+        claim_range(&mut classes, &token.span, ByteClass::Structural);
         claim_trivia(input, cursor..token.span.start, &mut classes);
         cursor = token.span.end;
     }
