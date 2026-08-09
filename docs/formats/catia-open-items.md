@@ -106,22 +106,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must resolve a nonlocal selector to bind the relation result.
 
-### DI-10. Evaluated `String` relation inputs
-
-**Question.** Which string-value entity supplies each typed `String` relation input?
-
-**Known.** `catia.md` §7.1 "A legacy string-value packet is" defines named and evaluated string-value packets. A complete relation program can bind ordered source symbols.
-
-**Need.** We must join the source symbol to its string packet to evaluate the relation.
-
-### DI-11. Evaluated `String` relation results
-
-**Question.** Which string-value entity stores the result of a typed `String` relation?
-
-**Known.** `catia.md` §7.1 "A typed relation consists of" and `catia.md` §7.1 "A legacy string-value packet is" defines string packets and typed relation result signatures. A self-`body` relation whose `param` selector resolves one same-run identity selects that identity. For a zero-input `VoidType` relation, the exact output-assignment rule in `catia.md` §7.1 transfers that selected string packet when its value agrees with the right-hand result. A relation with input clauses or a nonlocal selector still does not establish its result packet.
-
-**Need.** We must know the result entity for input-bearing relations and relations with nonlocal selectors so we can transfer the evaluated value.
-
 ### DI-13. Active configuration state
 
 **Question.** Which field selects the active configuration state?
