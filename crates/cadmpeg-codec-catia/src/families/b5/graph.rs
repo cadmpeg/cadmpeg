@@ -577,7 +577,10 @@ pub struct B5Pcurve {
     pub weights: Option<Vec<f64>>,
     /// Explicit native parameter interval when the pcurve record stores one.
     pub parameter_range: Option<[f64; 2]>,
-    /// Positive scalar stored in the exact class-`21` suffix.
+    /// Positive scalar stored in the exact class-`21` suffix. When a class-`21`
+    /// object-stream jet participates in a translated class-`2c` chart, this
+    /// is the source knot-span witness; standalone pcurve evaluation does not
+    /// use it.
     pub class_21_suffix_scalar: Option<f64>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
@@ -5298,11 +5301,27 @@ mod tests {
         let mut alternate_scalar = payload.clone();
         alternate_scalar[tail + 10..tail + 18].copy_from_slice(&2.5_f64.to_le_bytes());
         assert_eq!(
-            parse_pcurve(&record(alternate_scalar))
+            parse_pcurve(&record(alternate_scalar.clone()))
                 .expect("alternate positive suffix scalar")
                 .class_21_suffix_scalar,
             Some(2.5)
         );
+        let base = parse_pcurve(&record(payload.clone())).expect("base pcurve");
+        let alternate = parse_pcurve(&record(alternate_scalar)).expect("alternate pcurve");
+        assert_eq!(base.distinct_knots, alternate.distinct_knots);
+        assert_eq!(base.multiplicities, alternate.multiplicities);
+        assert_eq!(base.control_points, alternate.control_points);
+        assert_eq!(
+            pcurve_parameter_domain(&base),
+            pcurve_parameter_domain(&alternate)
+        );
+        for parameter in [0.0, 0.25, 0.5, 1.0] {
+            assert_eq!(
+                evaluate_pcurve(&base, parameter),
+                evaluate_pcurve(&alternate, parameter),
+                "suffix scalar must not change standalone pcurve evaluation at {parameter}"
+            );
+        }
         let mut wrong_family = record(payload.clone());
         wrong_family.family = 0xa8;
         assert!(parse_pcurve(&wrong_family).is_none());
