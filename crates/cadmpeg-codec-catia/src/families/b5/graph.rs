@@ -1124,10 +1124,15 @@ pub(crate) fn parse_from_records(
         .filter(|record| record.class == 0x5f)
         .filter_map(|record| parse_face_record(record).map(|face| (record.object_id, face)))
         .collect();
+    let surface_aliases = records
+        .iter()
+        .filter(|record| surfaces.contains_key(&record.object_id))
+        .filter_map(|record| surface_alias_target(record).map(|target| (record.object_id, target)))
+        .collect();
     let faces: Vec<B5Face> = records
         .iter()
         .filter_map(|record| face_records.get(&record.object_id))
-        .filter_map(|record| parse_face(record, &loops, &surfaces))
+        .filter_map(|record| parse_face(record, &loops, &surfaces, &surface_aliases))
         .collect();
     if require_topology && (faces.is_empty() || loops.is_empty()) {
         return None;
@@ -1194,11 +1199,6 @@ pub(crate) fn parse_from_records(
                     && loop_chain_closes(loop_, &edge_vertices)
             })
         });
-    let surface_aliases = records
-        .iter()
-        .filter(|record| surfaces.contains_key(&record.object_id))
-        .filter_map(|record| surface_alias_target(record).map(|target| (record.object_id, target)))
-        .collect();
     Some(B5Graph {
         complete,
         faces,
@@ -4693,18 +4693,32 @@ fn parse_face(
     record: &B5FaceRecord,
     loops: &BTreeMap<u32, B5Loop>,
     surfaces: &BTreeMap<u32, B5Surface>,
+    surface_aliases: &BTreeMap<u32, u32>,
 ) -> Option<B5Face> {
     let references = &record.references;
     let surface = *references.first()?;
     if !surfaces.contains_key(&surface) {
         return None;
     }
-    let loop_ids: Vec<u32> = references[1..]
-        .iter()
-        .copied()
-        .filter(|reference| loops.contains_key(reference))
-        .collect();
-    if loop_ids.is_empty() || loop_ids.len() + 1 != references.len() {
+    let canonical_surface = canonical_surface_id(surface_aliases, surface)?;
+    let mut loop_ids = Vec::new();
+    for &reference in &references[1..] {
+        if loops.contains_key(&reference) {
+            loop_ids.push(reference);
+        } else {
+            let repeats_carrier = surfaces.contains_key(&reference)
+                && canonical_surface_id(surface_aliases, reference) == Some(canonical_surface);
+            if !repeats_carrier {
+                // A distinct surface reference is a multi-surface variant. Its
+                // composition is not represented by the neutral Face type, so
+                // keep the typed record but withhold the face from topology.
+                return None;
+            }
+            // A face may repeat its carrier through an alias identity. This is
+            // the same carrier incidence, not a multi-surface face.
+        }
+    }
+    if loop_ids.is_empty() {
         return None;
     }
     Some(B5Face {
@@ -5728,6 +5742,40 @@ mod tests {
         assert_eq!(parse_face_record(&empty), None);
         empty.payload.extend_from_slice(&[0x80, 0x03]);
         assert_eq!(parse_face_record(&empty), None);
+    }
+
+    #[test]
+    fn face_references_can_repeat_one_carrier_through_an_alias() {
+        let plane = B5Surface::Plane {
+            origin: [0.0; 3],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+            u_range: [-1.0, 1.0],
+            v_range: [-1.0, 1.0],
+        };
+        let record = B5FaceRecord {
+            object_id: 30,
+            references: vec![10, 11, 20],
+            terminal_control: Some(0x05),
+        };
+        let loops = BTreeMap::from([(
+            20,
+            B5Loop {
+                object_id: 20,
+                pcurves: Vec::new(),
+                edges: Vec::new(),
+                metadata: test_loop_metadata(0),
+                surface: 10,
+            },
+        )]);
+        let surfaces = BTreeMap::from([(10, plane.clone()), (11, plane)]);
+        let aliases = BTreeMap::from([(11, 10)]);
+
+        let face = parse_face(&record, &loops, &surfaces, &aliases).expect("aliased face");
+        assert_eq!(face.surface, 10);
+        assert_eq!(face.loops, vec![20]);
+
+        assert!(parse_face(&record, &loops, &surfaces, &BTreeMap::new()).is_none());
     }
 
     #[test]
