@@ -1074,9 +1074,14 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         .iter_mut()
         .filter(|parameter| parameter.value.is_none())
     {
-        parameter.value = bare_text_parameter_literal(&parameter.expression);
+        parameter.value = text_parameter_literal(&parameter.name, &parameter.expression);
     }
     parameters
+}
+
+fn text_parameter_literal(name: &str, expression: &str) -> Option<ParameterValue> {
+    bare_text_parameter_literal(expression)
+        .or_else(|| formatted_text_dimension_literal(name, expression))
 }
 
 fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
@@ -1101,6 +1106,30 @@ fn bare_text_parameter_literal(expression: &str) -> Option<ParameterValue> {
         return None;
     }
     Some(ParameterValue::String(expression.to_owned()))
+}
+
+fn formatted_text_dimension_literal(name: &str, expression: &str) -> Option<ParameterValue> {
+    let suffix = name.strip_prefix("TXD")?;
+    if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let expression = expression.trim();
+    let mut rest = expression;
+    let mut tags = 0usize;
+    while let Some(start) = rest.find('<') {
+        if rest[..start].contains('>') {
+            return None;
+        }
+        let after_start = &rest[start + 1..];
+        let end = after_start.find('>')?;
+        let tag = &after_start[..end];
+        if tag.trim().is_empty() || tag.contains('<') {
+            return None;
+        }
+        tags += 1;
+        rest = &after_start[end + 1..];
+    }
+    (tags > 0 && !rest.contains('>')).then(|| ParameterValue::String(expression.to_owned()))
 }
 
 /// Features whose parameters are document-global equation-manager values.
@@ -2116,7 +2145,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
                 let evaluated =
                     ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
-                        .or_else(|| bare_text_parameter_literal(&parameter.expression))
+                        .or_else(|| text_parameter_literal(&parameter.name, &parameter.expression))
                         .filter(parameter_value_is_finite);
                 if let Some(value) = own {
                     values.insert(parameter.id.clone(), value);
@@ -4741,6 +4770,49 @@ mod history_reference_tests {
         );
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
+    }
+
+    #[test]
+    fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations() {
+        let mut owner = feature("owner", Some("1"), 0);
+        owner.parameters = BTreeMap::from([
+            ("TXD1".into(), "4X <MOD-DIAM> 12 <HOLE-DEPTH> 40".into()),
+            ("TXD2".into(), "<MOD-DIAM>4".into()),
+            ("D1".into(), "1 +".into()),
+        ]);
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }]);
+        let by_name = parameters
+            .iter()
+            .map(|parameter| (parameter.name.as_str(), parameter))
+            .collect::<HashMap<_, _>>();
+
+        assert_eq!(
+            by_name["TXD1"].value,
+            Some(ParameterValue::String(
+                "4X <MOD-DIAM> 12 <HOLE-DEPTH> 40".into()
+            ))
+        );
+        assert_eq!(
+            by_name["TXD2"].value,
+            Some(ParameterValue::Length(Length(4.0)))
+        );
+        assert_eq!(by_name["D1"].value, None);
+        assert_eq!(
+            parameters_with_unevaluable_expressions(
+                &parameters,
+                &HashMap::new(),
+                &HashSet::new(),
+                &[],
+            ),
+            1
+        );
     }
 
     #[test]
@@ -9739,8 +9811,8 @@ mod literal_tests {
     use super::{
         apply_parameter_function, bare_text_parameter_literal, compare_parameter_values,
         dimension_display, exact_integer_f64, exponentiate_parameter_value, format_f64_literal,
-        parse_length_mm, parse_parameter_literal, rewrite_parameter_expression, DimensionDisplay,
-        ParameterExpressionParser, ParameterValue,
+        formatted_text_dimension_literal, parse_length_mm, parse_parameter_literal,
+        rewrite_parameter_expression, DimensionDisplay, ParameterExpressionParser, ParameterValue,
     };
 
     #[test]
@@ -9875,6 +9947,33 @@ mod literal_tests {
                 bare_text_parameter_literal(expression),
                 None,
                 "{expression}"
+            );
+        }
+    }
+
+    #[test]
+    fn formatted_text_dimensions_are_strings_only_for_txd_parameters() {
+        let text = "4X <MOD-DIAM> 12 <HOLE-DEPTH> 40<MOD-PM>.2";
+        for (name, text) in [
+            ("TXD5", text),
+            ("TXD2", "30X <MOD-DIAM> 14<HOLE-SINK><MOD-DIAM> 20 X 90°"),
+            ("TXD3", "<BORDER><MOD-DIAM>10 </BORDER>"),
+            ("TXD7", "4X M12x1.75 <HOLE-DEPTH> 25<MOD-PM>.25"),
+        ] {
+            assert_eq!(
+                formatted_text_dimension_literal(name, text),
+                Some(ParameterValue::String(text.into())),
+                "{name}"
+            );
+        }
+        for name in ["D5", "TXD", "TXD5-extra"] {
+            assert_eq!(formatted_text_dimension_literal(name, text), None, "{name}");
+        }
+        for malformed in ["1 +", "<MOD-DIAM", "MOD-DIAM>", "<>", "< >", "<<TAG>"] {
+            assert_eq!(
+                formatted_text_dimension_literal("TXD5", malformed),
+                None,
+                "{malformed}"
             );
         }
     }

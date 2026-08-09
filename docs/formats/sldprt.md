@@ -673,6 +673,8 @@ An otherwise untyped bare Keywords integer, including `0` and `1`, is a dimensio
 
 A uniquely owned feature-input scalar is the evaluated value of the same-named Keywords dimension. Length-valued feature scalars store metres and angular feature scalars store radians. Keywords dimension text remains the parameter expression; its unitless numeric spelling does not replace the evaluated scalar. Feature operation semantics use the evaluated scalar converted to millimetres or radians.
 
+A Keywords dimension name `TXD` followed by one or more decimal digits is formatted dimension text. A `TXD` value that is one finite scalar has that scalar's neutral value. A non-scalar `TXD` value with one or more complete angle-bracket formatting tags has a string value. The tags and surrounding text remain unchanged in the parameter expression.
+
 A nonempty Keywords parameter value with no scalar literal, operator, grouping delimiter, function delimiter, or definite parameter-reference spelling is literal text. Leading and trailing whitespace are not part of the text value. A double-quoted identifier, an identifier containing `@`, and `D` followed only by decimal digits remain parameter-reference spellings.
 
 A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state.
