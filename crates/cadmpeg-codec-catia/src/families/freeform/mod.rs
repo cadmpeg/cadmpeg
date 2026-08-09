@@ -1056,6 +1056,7 @@ pub(crate) enum ConsolidatedCarrierKey {
     Cone(usize),
     Sphere(usize),
     Torus(usize),
+    Plane(usize),
     NurbsOffset(usize, u64),
 }
 
@@ -1181,6 +1182,10 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
     let tori = crate::families::b2::records::b2_tori_from_records(data, records)
         .into_iter()
         .map(|torus| (torus.pos, torus))
+        .collect::<HashMap<_, _>>();
+    let planes = crate::families::b2::records::b2_plane_carriers_from_records(data, records)
+        .into_iter()
+        .map(|plane| (plane.pos, plane))
         .collect::<HashMap<_, _>>();
     let complete_runs =
         crate::families::consolidated::records::consolidated_topology_edge_runs_from_records(
@@ -1494,6 +1499,23 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         "torus",
                     )
                 }
+                Some(crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos }) => {
+                    let Some(plane) = planes.get(pos) else {
+                        continue;
+                    };
+                    let Some(carrier) = crate::families::b2::records::b2_plane_geometry(plane)
+                    else {
+                        continue;
+                    };
+                    (
+                        ConsolidatedCarrierKey::Plane(*pos),
+                        carrier,
+                        None,
+                        ConsolidatedCarrierChart::Identity,
+                        "consolidated_b2_03_27_plane",
+                        "plane",
+                    )
+                }
                 Some(
                     crate::families::consolidated::records::ConsolidatedSupportBinding::Circle { .. }
                     | crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier { .. },
@@ -1517,6 +1539,7 @@ pub(crate) fn append_resolved_consolidated_surface_curves(
                         | ConsolidatedCarrierKey::Cone(pos)
                         | ConsolidatedCarrierKey::Sphere(pos)
                         | ConsolidatedCarrierKey::Torus(pos)
+                        | ConsolidatedCarrierKey::Plane(pos)
                         | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
                     },
                     "resolved_pcurve_support",
@@ -2691,6 +2714,104 @@ mod tests {
         .expect("reversed pcurve start");
         assert_eq!([start.u, start.v], [0.5, 1.0]);
         assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    }
+
+    #[test]
+    fn consolidated_plane_support_transfers_both_surface_curve_sides() {
+        let plane_stream = crate::tests::b2_plane_carrier_stream();
+        let plane_end = crate::families::b2::records::b2_plane_carriers(&plane_stream)[0].end;
+        let mut bytes = plane_stream[..plane_end].to_vec();
+        let points = [Point3::new(10.0, 20.0, 0.0), Point3::new(11.0, 20.0, 1.0)];
+        for point in points {
+            bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in [point.x, point.y, point.z] {
+                bytes.extend_from_slice(&(value as f32).to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&crate::tests::a5_native_edge_run_stream(6, 139, 142));
+
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in points.into_iter().enumerate() {
+            ir.model.points.push(Point {
+                id: PointId(format!("point#{index}")),
+                position,
+                source_object: None,
+            });
+            ir.model.vertices.push(Vertex {
+                id: VertexId(format!("vertex#{index}")),
+                point: PointId(format!("point#{index}")),
+                tolerance: None,
+            });
+        }
+        let curve_id = CurveId("standard-plane-curve".to_string());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId("standard-plane-edge".to_string()),
+            curve: Some(curve_id.clone()),
+            start: VertexId("vertex#0".to_string()),
+            end: VertexId("vertex#1".to_string()),
+            param_range: None,
+            tolerance: None,
+        });
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(10.0, 20.0, 0.0),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let support_ids = [
+            SurfaceId("standard-plane#0".to_string()),
+            SurfaceId("standard-plane#1".to_string()),
+        ];
+        for support_id in &support_ids {
+            ir.model.surfaces.push(Surface {
+                id: support_id.clone(),
+                geometry: plane.clone(),
+                source_object: None,
+            });
+        }
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("standard-plane-intersection".to_string()),
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: std::array::from_fn(|side| IntcurveSupportSide {
+                        surface: Some(support_ids[side].clone()),
+                        pcurve: None,
+                        pcurve_parameter_range: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+
+        let attached = append_resolved_consolidated_surface_curves(
+            &mut ir,
+            &mut AnnotationBuilder::new(),
+            &bytes,
+            &crate::wire::records::consolidated_records(&bytes),
+            &[],
+            &[],
+        );
+        assert_eq!(attached.standard_edges, 1);
+        assert_eq!(ir.model.edges[0].param_range, Some([0.0, 1.0]));
+        let ProceduralCurveDefinition::Intersection { context, .. } =
+            &ir.model.procedural_curves[0].definition
+        else {
+            panic!("plane support keeps an intersection construction");
+        };
+        assert!(context.sides.iter().all(|side| {
+            side.surface
+                .as_ref()
+                .is_some_and(|id| id.0.starts_with("catia:consolidated:plane#"))
+                && side.pcurve.is_some()
+        }));
     }
 
     /// A plane whose chart origin and axes differ from the stored chart used by

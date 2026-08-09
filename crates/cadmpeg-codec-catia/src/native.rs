@@ -25,7 +25,7 @@ use crate::value_block;
 use crate::wire::records::ConsolidatedRecord;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 269;
+pub const CATIA_NATIVE_VERSION: u32 = 270;
 #[cfg(test)]
 const CATIA_LEGACY_IDENTITY_LEAD_VERSION: u32 = 216;
 #[cfg(test)]
@@ -182,6 +182,7 @@ pub(crate) const CATIA_ARENA_NAMES: &[&str] = &[
     "consolidated_line_profiles",
     "consolidated_owner_packets",
     "consolidated_parameter_points",
+    "consolidated_plane_carriers",
     "consolidated_pcurves",
     "consolidated_reference_lists",
     "consolidated_revolutions",
@@ -487,6 +488,61 @@ pub struct CatiaConsolidatedParameterPoint {
     pub control: u8,
     /// Layout-specific finite scalar lane.
     pub payload: CatiaConsolidatedParameterPointPayload,
+}
+
+/// Selector-specific payload of a consolidated `B:27` plane carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CatiaConsolidatedPlaneCarrierPayload {
+    /// Two-coordinate point, two-coordinate direction, and three tail scalars.
+    PointDirection2 {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// In-plane unit direction with its third component omitted.
+        direction: [f64; 2],
+        /// Complete trailing scalar lane.
+        tail: [f64; 3],
+    },
+    /// Two-coordinate point, three-coordinate direction, and three tail scalars.
+    PointDirection3 {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// In-plane unit direction.
+        direction: [f64; 3],
+        /// Complete trailing scalar lane.
+        tail: [f64; 3],
+    },
+    /// Two-coordinate point followed by four scalar values with no direction
+    /// lane in this layout.
+    PointTail {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// Complete trailing scalar lane.
+        tail: [f64; 4],
+    },
+}
+
+/// One complete consolidated `B:27` plane-carrier record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct CatiaConsolidatedPlaneCarrier {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Complete framed-record length.
+    pub byte_len: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Width-coded frame header token.
+    pub header_token: u32,
+    /// Second payload byte selecting the scalar layout.
+    pub selector: u8,
+    /// Selector-specific finite scalar payload.
+    pub payload: CatiaConsolidatedPlaneCarrierPayload,
 }
 
 /// One complete consolidated `B:37` persistent-reference list.
@@ -900,6 +956,11 @@ pub enum CatiaConsolidatedSupportBinding {
     },
     /// Doubly periodic `b2 03 2b` torus.
     Torus {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
+    /// Direction-bearing consolidated `b2/b3/b4 03 27` plane carrier.
+    Plane {
         /// Carrier record byte offset.
         byte_offset: u64,
     },
@@ -5102,6 +5163,9 @@ pub struct CatiaNative {
     /// Exact consolidated parameter-space records.
     #[serde(default)]
     pub consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint>,
+    /// Structurally complete consolidated class-`0x27` plane carriers.
+    #[serde(default)]
+    pub consolidated_plane_carriers: Vec<CatiaConsolidatedPlaneCarrier>,
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
@@ -5191,6 +5255,7 @@ pub(crate) struct CatiaArenaProjection {
     consolidated_line_profiles: Vec<CatiaConsolidatedLineProfile>,
     consolidated_owner_packets: Vec<CatiaConsolidatedOwnerPacket>,
     consolidated_parameter_points: Vec<CatiaConsolidatedParameterPoint>,
+    consolidated_plane_carriers: Vec<CatiaConsolidatedPlaneCarrier>,
     consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
     consolidated_reference_lists: Vec<CatiaConsolidatedReferenceList>,
     consolidated_revolutions: Vec<CatiaConsolidatedRevolution>,
@@ -5252,6 +5317,7 @@ impl From<&CatiaNative> for CatiaArenaProjection {
             consolidated_line_profiles: native.consolidated_line_profiles.clone(),
             consolidated_owner_packets: native.consolidated_owner_packets.clone(),
             consolidated_parameter_points: native.consolidated_parameter_points.clone(),
+            consolidated_plane_carriers: native.consolidated_plane_carriers.clone(),
             consolidated_pcurves: native.consolidated_pcurves.clone(),
             consolidated_reference_lists: native.consolidated_reference_lists.clone(),
             consolidated_revolutions: native.consolidated_revolutions.clone(),
@@ -5319,6 +5385,7 @@ impl From<CatiaNative> for CatiaArenaProjection {
             consolidated_line_profiles: native.consolidated_line_profiles,
             consolidated_owner_packets: native.consolidated_owner_packets,
             consolidated_parameter_points: native.consolidated_parameter_points,
+            consolidated_plane_carriers: native.consolidated_plane_carriers,
             consolidated_pcurves: native.consolidated_pcurves,
             consolidated_reference_lists: native.consolidated_reference_lists,
             consolidated_revolutions: native.consolidated_revolutions,
@@ -5516,6 +5583,18 @@ pub(crate) const CATIA_FAMILIES: &[CatiaFamilyRow] = &[
             namespace.set_arena(row.arena, &projection.consolidated_parameter_points)
         },
         len: |projection| projection.consolidated_parameter_points.len(),
+        counts_toward_emptiness: true,
+    },
+    CatiaFamilyRow {
+        arena: "consolidated_plane_carriers",
+        tag: None,
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        note: None,
+        emit: |projection, row, namespace| {
+            namespace.set_arena(row.arena, &projection.consolidated_plane_carriers)
+        },
+        len: |projection| projection.consolidated_plane_carriers.len(),
         counts_toward_emptiness: true,
     },
     CatiaFamilyRow {
@@ -5886,6 +5965,7 @@ impl Default for CatiaNative {
             consolidated_line_profiles: Vec::new(),
             consolidated_owner_packets: Vec::new(),
             consolidated_parameter_points: Vec::new(),
+            consolidated_plane_carriers: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_reference_lists: Vec::new(),
             consolidated_revolutions: Vec::new(),
@@ -6982,6 +7062,53 @@ fn consolidated_parameter_points(
         .collect()
 }
 
+fn consolidated_plane_carriers(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<CatiaConsolidatedPlaneCarrier> {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    crate::families::b2::records::b2_plane_carriers_from_records(bytes, records)
+        .into_iter()
+        .enumerate()
+        .map(|(index, carrier)| {
+            let payload = match carrier.payload {
+                B2PlaneCarrierPayload::PointDirection2 {
+                    point,
+                    direction,
+                    tail,
+                } => CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+                    point,
+                    direction,
+                    tail,
+                },
+                B2PlaneCarrierPayload::PointDirection3 {
+                    point,
+                    direction,
+                    tail,
+                } => CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+                    point,
+                    direction,
+                    tail,
+                },
+                B2PlaneCarrierPayload::PointTail { point, tail } => {
+                    CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
+                }
+            };
+            CatiaConsolidatedPlaneCarrier {
+                id: format!("catia:consolidated:plane-carrier#{index}"),
+                byte_offset: carrier.pos as u64,
+                byte_len: (carrier.end - carrier.pos) as u64,
+                width: carrier.width,
+                flag: carrier.flag,
+                header_token: carrier.header_token,
+                selector: carrier.selector,
+                payload,
+            }
+        })
+        .collect()
+}
+
 fn consolidated_reference_lists(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -7671,6 +7798,11 @@ fn native_consolidated_support_binding(
                 byte_offset: *pos as u64,
             }
         }
+        crate::families::consolidated::records::ConsolidatedSupportBinding::Plane { pos } => {
+            CatiaConsolidatedSupportBinding::Plane {
+                byte_offset: *pos as u64,
+            }
+        }
         crate::families::consolidated::records::ConsolidatedSupportBinding::NurbsCarrier {
             pos,
             offset,
@@ -8092,6 +8224,92 @@ fn validate_consolidated_parameter_points(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_consolidated_plane_carriers(
+    carriers: &[CatiaConsolidatedPlaneCarrier],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, carrier) in carriers.iter().enumerate() {
+        let (selector, scalar_count, payload_valid) = match &carrier.payload {
+            CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+                point,
+                direction,
+                tail,
+            } => (
+                0xe4,
+                7,
+                point
+                    .iter()
+                    .chain(direction)
+                    .chain(tail)
+                    .all(|value| value.is_finite()),
+            ),
+            CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+                point,
+                direction,
+                tail,
+            } => (
+                0xc4,
+                8,
+                point
+                    .iter()
+                    .chain(direction)
+                    .chain(tail)
+                    .all(|value| value.is_finite()),
+            ),
+            CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail } => (
+                0xec,
+                6,
+                point.iter().chain(tail).all(|value| value.is_finite()),
+            ),
+        };
+        let header_limit = 1u32.checked_shl(8 * u32::from(carrier.width));
+        let expected_len = 4 + u64::from(carrier.width) + 2 + 8 * scalar_count;
+        if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
+            || !matches!(carrier.width, 1..=3)
+            || header_limit.is_none_or(|limit| carrier.header_token >= limit)
+            || !matches!(carrier.flag, 0x03 | 0x13 | 0x83)
+            || carrier.selector != selector
+            || carrier.byte_len != expected_len
+            || !payload_valid
+            || index > 0 && carriers[index - 1].byte_offset >= carrier.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated plane carrier `{}` is structurally invalid",
+                carrier.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn valid_consolidated_plane_geometry(payload: &CatiaConsolidatedPlaneCarrierPayload) -> bool {
+    let (point, direction, tail) = match payload {
+        CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+            point,
+            direction,
+            tail,
+        } => (*point, [direction[0], direction[1], 0.0], *tail),
+        CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+            point,
+            direction,
+            tail,
+        } => (*point, *direction, *tail),
+        CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => return false,
+    };
+    let finite = point
+        .iter()
+        .chain(direction.iter())
+        .chain(tail.iter())
+        .all(|value| value.is_finite());
+    let norm = direction[0].hypot(direction[1]).hypot(direction[2]);
+    finite
+        && (norm - 1.0).abs() <= 1e-9
+        && direction[2].abs() <= 1e-9
+        && tail[0] > 0.0
+        && tail[1] < tail[2]
 }
 
 #[cfg(test)]
@@ -9070,6 +9288,7 @@ struct ConsolidatedSupportArenas<'a> {
     cylinders: &'a [CatiaConsolidatedCylinder],
     embedded_cylinders: &'a [CatiaConsolidatedEmbeddedCylinder],
     groups: &'a [CatiaConsolidatedGroup],
+    planes: &'a [CatiaConsolidatedPlaneCarrier],
     spheres: &'a [CatiaConsolidatedSphere],
     tori: &'a [CatiaConsolidatedTorus],
 }
@@ -9133,6 +9352,12 @@ fn validate_consolidated_edge_runs(
                 *group_offsets.get(cylinder.group.as_str())?,
             ))
         })
+        .collect::<HashSet<_>>();
+    let plane_offsets = supports
+        .planes
+        .iter()
+        .filter(|plane| valid_consolidated_plane_geometry(&plane.payload))
+        .map(|plane| plane.byte_offset)
         .collect::<HashSet<_>>();
     let mut run_nodes = HashSet::new();
     for (index, node) in nodes.iter().enumerate() {
@@ -9279,6 +9504,9 @@ fn validate_consolidated_edge_runs(
                 }
                 CatiaConsolidatedSupportBinding::Torus { byte_offset } => {
                     torus_offsets.contains(byte_offset)
+                }
+                CatiaConsolidatedSupportBinding::Plane { byte_offset } => {
+                    plane_offsets.contains(byte_offset)
                 }
                 CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. } => offset.is_finite(),
             });
@@ -10012,6 +10240,7 @@ impl CatiaNative {
         let consolidated_line_profiles = consolidated_line_profiles(bytes, consolidated_records);
         let consolidated_owner_packets = consolidated_owner_packets(bytes, consolidated_records);
         let consolidated_pcurves = consolidated_pcurves(bytes, consolidated_records);
+        let consolidated_plane_carriers = consolidated_plane_carriers(bytes, consolidated_records);
         let consolidated_reference_lists =
             consolidated_reference_lists(bytes, consolidated_records);
         let consolidated_revolutions =
@@ -10068,6 +10297,7 @@ impl CatiaNative {
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
+            consolidated_plane_carriers,
             consolidated_pcurves,
             consolidated_reference_lists,
             consolidated_revolutions,
@@ -11093,6 +11323,10 @@ impl CatiaNative {
         consolidated_parameter_points.sort_by_key(|point| point.byte_offset);
         validate_consolidated_parameter_points(&consolidated_parameter_points)?;
         validate_consolidated_cone_faces(&consolidated_cone_faces, &consolidated_parameter_points)?;
+        let mut consolidated_plane_carriers: Vec<CatiaConsolidatedPlaneCarrier> =
+            namespace.arena_as("consolidated_plane_carriers")?;
+        consolidated_plane_carriers.sort_by_key(|carrier| carrier.byte_offset);
+        validate_consolidated_plane_carriers(&consolidated_plane_carriers)?;
         let mut consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
@@ -11173,6 +11407,7 @@ impl CatiaNative {
                 cylinders: &consolidated_cylinders,
                 embedded_cylinders: &consolidated_embedded_cylinders,
                 groups: &consolidated_groups,
+                planes: &consolidated_plane_carriers,
                 spheres: &consolidated_spheres,
                 tori: &consolidated_tori,
             },
@@ -11202,6 +11437,7 @@ impl CatiaNative {
             consolidated_line_profiles,
             consolidated_owner_packets,
             consolidated_parameter_points,
+            consolidated_plane_carriers,
             consolidated_pcurves,
             consolidated_reference_lists,
             consolidated_revolutions,

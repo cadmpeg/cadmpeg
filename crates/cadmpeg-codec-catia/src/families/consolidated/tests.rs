@@ -8,7 +8,8 @@ use crate::tests::{
     a5_edge_block_stream, a5_native_edge_run_stream, a5_nurbs_bound_edge_stream,
     a5_nurbs_pair_bound_edge_stream, a5_pcurve_stream, a5_torus_bound_edge_stream,
     a6_pcurve_stream, append_b5_record, b2_circle_stream, b2_edge_block_stream,
-    b2_edge_parameter_stream_for, b2_topology_edge_run_stream, b3_cylinder_stream, le_f32,
+    b2_edge_parameter_stream_for, b2_plane_carrier_stream, b2_topology_edge_run_stream,
+    b3_cylinder_stream, le_f32,
 };
 
 #[test]
@@ -241,6 +242,40 @@ fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
         Some(ConsolidatedSupportBinding::Cylinder { .. })
     ));
     assert!(blocks[0].endpoint_loci.is_some());
+}
+
+#[test]
+fn b2_edge_binding_resolves_direction_bearing_plane_by_endpoint_lifts() {
+    use crate::families::consolidated::records::ConsolidatedSupportBinding;
+
+    let plane_stream = b2_plane_carrier_stream();
+    let plane_end = crate::families::b2::records::b2_plane_carriers(&plane_stream)[0].end;
+    let mut bytes = b2_edge_block_stream();
+    bytes.extend_from_slice(&plane_stream[..plane_end]);
+    for point in [[10.0f32, 20.0, 0.0], [11.0, 20.0, 1.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+
+    let blocks = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    assert_eq!(blocks.len(), 1);
+    assert!(matches!(
+        blocks[0].supports[0],
+        Some(ConsolidatedSupportBinding::Plane { .. })
+    ));
+    assert!(matches!(
+        blocks[0].supports[1],
+        Some(ConsolidatedSupportBinding::Plane { .. })
+    ));
+    assert_eq!(
+        blocks[0].endpoint_loci,
+        Some([
+            cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0),
+            cadmpeg_ir::math::Point3::new(11.0, 20.0, 1.0),
+        ])
+    );
 }
 
 #[test]

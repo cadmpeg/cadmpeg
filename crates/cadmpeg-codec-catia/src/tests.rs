@@ -11,6 +11,7 @@
 )]
 
 use std::io::Cursor;
+use std::mem::size_of;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
 
@@ -1318,6 +1319,31 @@ pub(crate) fn b2_pcurve_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x20, u8::try_from(payload.len()).unwrap(), 0x05];
     record.extend_from_slice(payload);
     record
+}
+
+pub(crate) fn b2_plane_carrier_stream() -> Vec<u8> {
+    let layouts = [
+        (0xe4, vec![10.0, 20.0, 1.0, 0.0, 5.0, -2.0, 3.0]),
+        (0xc4, vec![10.0, 20.0, 1.0, 0.0, 0.0, 5.0, -2.0, 3.0]),
+        (0xec, vec![10.0, 20.0, -2.0, 5.0, -2.0, 3.0]),
+    ];
+    let mut bytes = Vec::new();
+    for (selector, values) in layouts {
+        let payload_len = 2 + values.len() * size_of::<f64>();
+        bytes.extend_from_slice(&[
+            0xb2,
+            0x03,
+            0x27,
+            u8::try_from(payload_len).expect("class-27 fixture payload"),
+            0x05,
+            0xb4,
+            selector,
+        ]);
+        for value in values {
+            bytes.extend_from_slice(&le_f64(value));
+        }
+    }
+    bytes
 }
 
 pub(crate) fn b2_parameter_point_stream() -> Vec<u8> {
@@ -6563,6 +6589,73 @@ fn native_namespace_retains_all_consolidated_parameter_point_layouts() {
 }
 
 #[test]
+fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
+    let plane_stream = b2_plane_carrier_stream();
+    let native = crate::native::CatiaNative::decode(&plane_stream);
+    let [direction2, direction3, tail] = native.consolidated_plane_carriers.as_slice() else {
+        panic!("three consolidated plane carriers")
+    };
+    assert_eq!(
+        [direction2.selector, direction3.selector, tail.selector],
+        [0xe4, 0xc4, 0xec]
+    );
+    assert!(matches!(
+        &direction2.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection2 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &direction3.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointDirection3 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &tail.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::PointTail {
+            point: [10.0, 20.0],
+            tail: [-2.0, 5.0, -2.0, 3.0],
+        }
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA plane carriers");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA plane carriers"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_plane_carriers[0].selector = 0xc4;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA plane carrier");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut file = standard_catpart();
+    file.splice(16..16, plane_stream);
+    let file_len = u32::try_from(file.len()).expect("bounded CATPart fixture");
+    file[8..12].copy_from_slice(&be32(file_len));
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode CATIA plane carrier coverage");
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT),
+        3
+    );
+}
+
+#[test]
 fn native_namespace_retains_consolidated_reference_lists() {
     let native = crate::native::CatiaNative::decode(&b2_reference_list_stream());
     let [list] = native.consolidated_reference_lists.as_slice() else {
@@ -8204,6 +8297,68 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
             &Vec::<crate::native::CatiaConsolidatedCylinder>::new(),
         )
         .expect("remove retained cylinders");
+    assert!(crate::native::CatiaNative::load(&namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_resolved_consolidated_plane_supports() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let plane_stream = b2_plane_carrier_stream();
+    let plane_carriers = crate::families::b2::records::b2_plane_carriers(&plane_stream);
+    let plane_end = plane_carriers[0].end;
+    let mut bytes = plane_stream[..plane_end].to_vec();
+    for point in [[10.0f32, 20.0, 0.0], [11.0, 20.0, 1.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+    bytes.extend_from_slice(&plane_stream[plane_carriers[2].pos..plane_carriers[2].end]);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated plane-bound edge run");
+    };
+    assert!(run
+        .support_bindings
+        .iter()
+        .all(|binding| matches!(binding, Some(CatiaConsolidatedSupportBinding::Plane { .. }))));
+    assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store plane-bound CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load plane-bound CATIA edge run"),
+        native
+    );
+
+    let mut invalid = native.clone();
+    let directionless_offset = invalid
+        .consolidated_plane_carriers
+        .iter()
+        .find(|carrier| carrier.selector == 0xec)
+        .expect("directionless class-27 carrier")
+        .byte_offset;
+    invalid.consolidated_edge_runs[0].support_bindings[0] =
+        Some(CatiaConsolidatedSupportBinding::Plane {
+            byte_offset: directionless_offset,
+        });
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid directionless plane binding");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    namespace
+        .set_arena(
+            "consolidated_plane_carriers",
+            &Vec::<crate::native::CatiaConsolidatedPlaneCarrier>::new(),
+        )
+        .expect("remove retained plane carriers");
     assert!(crate::native::CatiaNative::load(&namespace).is_err());
 }
 
@@ -20040,7 +20195,7 @@ fn native_store_paths_write_the_current_schema_version() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 41);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 42);
     assert_eq!(
         catalogue_names,
         crate::native::CATIA_ARENA_NAMES

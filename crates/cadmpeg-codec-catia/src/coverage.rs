@@ -61,6 +61,8 @@ pub(crate) const DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT: CoverageKe
     CoverageKey("decoded_consolidated_edge_run_support_binding_count");
 pub(crate) const DECODED_CONSOLIDATED_LINE_PROFILE_COUNT: CoverageKey =
     CoverageKey("decoded_consolidated_line_profile_count");
+pub(crate) const DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT: CoverageKey =
+    CoverageKey("decoded_consolidated_plane_carrier_count");
 pub(crate) const DECODED_CONSTRAINT_RANGE_COUNT: CoverageKey =
     CoverageKey("decoded_constraint_range_count");
 pub(crate) const DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT: CoverageKey =
@@ -612,6 +614,7 @@ pub(crate) const ALL: &[CoverageKey] = &[
     DECODED_CONSOLIDATED_EDGE_RUN_SHARED_LOCUS_COUNT,
     DECODED_CONSOLIDATED_EDGE_RUN_SUPPORT_BINDING_COUNT,
     DECODED_CONSOLIDATED_LINE_PROFILE_COUNT,
+    DECODED_CONSOLIDATED_PLANE_CARRIER_COUNT,
     DECODED_CONSTRAINT_RANGE_COUNT,
     DECODED_CONSTRAINT_RANGE_INCOMING_PAYLOAD_REFERENCE_COUNT,
     DECODED_CONSTRAINT_RANGE_INCOMING_REFERENCE_COUNT,

@@ -368,6 +368,11 @@ current scores require those matrices and representative fixtures.
   carriers, or seam centers remain unbound atomically.
 - Every consolidated line profile transfers its placed signed-distance
   analytic line carrier and stored parameter interval.
+- Complete consolidated class-`0x27` carriers retain all selector-specific
+  scalar layouts in the native namespace. Direction-bearing `e4` and `c4`
+  carriers transfer a plane frame and bind pcurve sides only through unique
+  endpoint lifts to object-stream vertices. Directionless `ec` carriers remain
+  native-retained until their axis and tail roles resolve.
 - Complete `b2 03 16` rational clamped curves, `a5 13 16` degree-five clamped
   curves, and `b2 03 0f` bounded spatial circles transfer as standalone wire
   edges when they are the complete geometric population and no surface graph

@@ -400,11 +400,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### SN-27. Consolidated class-`0x27` plane carrier
 
-**Question.** What are the fields of a `b2`, `b3`, or `b4 03 27` record, and which of them does its second payload byte select?
+**Question.** What semantic roles do the four tail scalars of an `ec` class-`0x27` record have, and what supplies its missing plane axis frame?
 
-**Known.** The payload is that byte pair followed by a whole number of `f64le` values. The count changes with the second byte: `e4` gives 7 values, `c4` gives 8, and `ec` gives 6. A decoded value group holds an in-plane point, an in-plane unit direction with one component absent, and a trailing triple. No decoder reads the class.
+**Known.** A complete `b2`, `b3`, or `b4 03 27` frame has payload marker `b4`, a selector, and a finite f64 lane. Selector `e4` carries seven values as a two-coordinate point, a two-coordinate direction with an omitted third component, and a three-scalar tail. Selector `c4` carries eight values as a two-coordinate point, a three-coordinate direction, and a three-scalar tail. Selector `ec` carries six values as a two-coordinate point and a four-scalar tail. The direction-bearing `e4` and `c4` layouts define a plane frame with origin `(point_x,point_y,0)`, the stored unit direction as `u_axis`, global Z as the second chart axis, and `unit(u_axis×Z)` as the normal. Their tails are finite with a positive first scalar and an increasing final pair. A direction-bearing carrier binds a consolidated pcurve side only when endpoint lifts select exactly one carrier and reach the object-stream vertices. A directionless `ec` carrier is retained in the native namespace and does not supply a neutral plane support.
 
-**Need.** A consolidated edge side whose carrier is one of these records has no bound support. `catia.md` §6.3 "A resolved edge block binds" then recovers the side's chart relation to a standard plane face from the block's shared 3D loci, which needs that face to exist. A side with no standard face keeps no pcurve.
+**Need.** Resolve the `ec` tail roles and its axis-frame source before transferring that layout as a neutral plane support.
 
 ## 4. Object stream
 

@@ -1656,6 +1656,10 @@ fn finish_decode(
             native.consolidated_parameter_points.len(),
         ),
         (
+            "decoded_consolidated_plane_carrier_count".to_string(),
+            native.consolidated_plane_carriers.len(),
+        ),
+        (
             "decoded_consolidated_pcurve_count".to_string(),
             native.consolidated_pcurves.len(),
         ),

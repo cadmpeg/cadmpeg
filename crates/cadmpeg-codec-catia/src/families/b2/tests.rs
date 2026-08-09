@@ -10,9 +10,10 @@ use crate::tests::{
     b2_group_stream, b2_implicit_axis_cylinder_stream, b2_line_profile_stream, b2_link_5f_stream,
     b2_linked_counted_owner_stream, b2_linked_owner_stream, b2_long_61_stream,
     b2_offset_support_stream, b2_owner_packet_stream, b2_parameter_point_stream, b2_pcurve_stream,
-    b2_range_origin_cylinder_stream, b2_reference_list_stream, b2_resolved_revolution_stream,
-    b2_revolution_stream, b2_sphere_stream, b2_topology_metadata_stream, b2_torus_stream,
-    b2_width_coded_owner_packet_stream, b3_cylinder_stream, b3_offset_support_stream,
+    b2_plane_carrier_stream, b2_range_origin_cylinder_stream, b2_reference_list_stream,
+    b2_resolved_revolution_stream, b2_revolution_stream, b2_sphere_stream,
+    b2_topology_metadata_stream, b2_torus_stream, b2_width_coded_owner_packet_stream,
+    b3_cylinder_stream, b3_offset_support_stream,
 };
 use cadmpeg_ir::geometry::SurfaceGeometry;
 
@@ -57,6 +58,103 @@ fn b2_parameter_point_parser_reads_uv_station_and_unsplit_layouts() {
             uv: [6.0, 7.0],
         }
     ));
+}
+
+#[test]
+fn b2_plane_carrier_parser_preserves_each_selector_layout() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
+    assert_eq!(carriers.len(), 3);
+    assert_eq!(
+        carriers
+            .iter()
+            .map(|carrier| carrier.selector)
+            .collect::<Vec<_>>(),
+        [0xe4, 0xc4, 0xec]
+    );
+    assert!(matches!(
+        &carriers[0].payload,
+        B2PlaneCarrierPayload::PointDirection2 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &carriers[1].payload,
+        B2PlaneCarrierPayload::PointDirection3 {
+            point: [10.0, 20.0],
+            direction: [1.0, 0.0, 0.0],
+            tail: [5.0, -2.0, 3.0],
+        }
+    ));
+    assert!(matches!(
+        &carriers[2].payload,
+        B2PlaneCarrierPayload::PointTail {
+            point: [10.0, 20.0],
+            tail: [-2.0, 5.0, -2.0, 3.0],
+        }
+    ));
+    assert_eq!(carriers[0].end - carriers[0].pos, 63);
+}
+
+#[test]
+fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
+    let valid = b2_plane_carrier_stream();
+    let mut invalid_marker = valid.clone();
+    invalid_marker[5] = 0xb5;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_marker).len(),
+        2
+    );
+
+    let mut invalid_selector = valid.clone();
+    invalid_selector[6] = 0xed;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_selector).len(),
+        2
+    );
+
+    let mut invalid_flag = valid.clone();
+    invalid_flag[1] = 0x04;
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_flag).len(),
+        2
+    );
+
+    let mut invalid_scalar = valid;
+    invalid_scalar[7..15].copy_from_slice(&f64::NAN.to_le_bytes());
+    assert_eq!(
+        crate::families::b2::records::b2_plane_carriers(&invalid_scalar).len(),
+        2
+    );
+}
+
+#[test]
+fn b2_plane_geometry_uses_direction_bearing_layouts_only() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&b2_plane_carrier_stream());
+    let geometry =
+        crate::families::b2::records::b2_plane_geometry(&carriers[0]).expect("e4 plane geometry");
+    let cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = geometry
+    else {
+        panic!("plane carrier geometry")
+    };
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(10.0, 20.0, 0.0));
+    assert_eq!(u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(normal, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[1]).is_some());
+    assert!(matches!(
+        &carriers[2].payload,
+        B2PlaneCarrierPayload::PointTail { .. }
+    ));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[2]).is_none());
 }
 
 #[test]

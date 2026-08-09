@@ -2,7 +2,8 @@
 //!
 //! Decodes analytic circle, cylinder, cone, and revolution charts, offset and
 //! construction-use supports, class-`0x5e`/`0x61`/`0x62` owner and link records,
-//! parameter-space packets, and consolidated UV pcurves.
+//! parameter-space packets, consolidated plane carriers, and consolidated UV
+//! pcurves.
 
 use cadmpeg_core::le::u16_at as u16_le;
 use cadmpeg_ir::geometry::{NurbsCurve, SurfaceGeometry};
@@ -19,8 +20,8 @@ use crate::wire::bytes::{
 #[cfg(test)]
 use crate::wire::records::{b_family_frames, consolidated_records};
 use crate::wire::records::{
-    b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFrame, ConsolidatedPcurve,
-    ConsolidatedRecord,
+    b_family_frames_from_records, parse_consolidated_pcurve, ConsolidatedFamily, ConsolidatedFrame,
+    ConsolidatedPcurve, ConsolidatedRecord,
 };
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -78,6 +79,59 @@ pub enum B2ParameterPointPayload {
         /// Stored scalar payload.
         values: [f64; 5],
     },
+}
+
+/// Structurally decoded payload of a consolidated class-`0x27` plane carrier.
+///
+/// The selector chooses the scalar layout. The trailing lanes are retained as
+/// source scalars until their parameter-bound roles are established.
+#[derive(Debug, Clone, PartialEq)]
+pub enum B2PlaneCarrierPayload {
+    /// Two-coordinate point, two-coordinate direction, and three tail scalars.
+    PointDirection2 {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// In-plane unit direction with its third component omitted.
+        direction: [f64; 2],
+        /// Complete trailing scalar lane.
+        tail: [f64; 3],
+    },
+    /// Two-coordinate point, three-coordinate direction, and three tail scalars.
+    PointDirection3 {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// In-plane unit direction.
+        direction: [f64; 3],
+        /// Complete trailing scalar lane.
+        tail: [f64; 3],
+    },
+    /// Two-coordinate point followed by four scalar values with no direction
+    /// lane in this layout.
+    PointTail {
+        /// In-plane point with the host-implied third coordinate omitted.
+        point: [f64; 2],
+        /// Complete trailing scalar lane.
+        tail: [f64; 4],
+    },
+}
+
+/// One complete consolidated `b2/b3/b4 03 27` plane-carrier record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct B2PlaneCarrier {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Exclusive end of the complete framed record.
+    pub end: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent frame flag.
+    pub flag: u8,
+    /// Width-coded frame header token.
+    pub header_token: u32,
+    /// Second payload byte selecting the scalar layout.
+    pub selector: u8,
+    /// Selector-specific finite scalar payload.
+    pub payload: B2PlaneCarrierPayload,
 }
 
 /// Persistent-tag reference list stored in a `b2/b3/b4 03 37` record.
@@ -880,6 +934,104 @@ pub(crate) fn b2_parameter_points_from_records(
             })
         })
         .collect()
+}
+
+/// Decode complete consolidated class-`0x27` plane-carrier records.
+#[must_use]
+#[cfg(test)]
+pub fn b2_plane_carriers(data: &[u8]) -> Vec<B2PlaneCarrier> {
+    let records = consolidated_records(data);
+    b2_plane_carriers_from_records(data, &records)
+}
+
+pub(crate) fn b2_plane_carriers_from_records(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+) -> Vec<B2PlaneCarrier> {
+    records
+        .iter()
+        .filter(|record| record.family == ConsolidatedFamily::B && record.class == 0x27)
+        .filter_map(|record| {
+            if !matches!(record.flag, 0x03 | 0x13 | 0x83) {
+                return None;
+            }
+            let marker = *data.get(record.payload.start)?;
+            let selector = *data.get(record.payload.start + 1)?;
+            if marker != 0xb4 {
+                return None;
+            }
+            let values = finite_f64_lane(data.get(record.payload.start + 2..record.payload.end)?)?;
+            let payload = match selector {
+                0xe4 => {
+                    let values: [f64; 7] = values.try_into().ok()?;
+                    B2PlaneCarrierPayload::PointDirection2 {
+                        point: [values[0], values[1]],
+                        direction: [values[2], values[3]],
+                        tail: [values[4], values[5], values[6]],
+                    }
+                }
+                0xc4 => {
+                    let values: [f64; 8] = values.try_into().ok()?;
+                    B2PlaneCarrierPayload::PointDirection3 {
+                        point: [values[0], values[1]],
+                        direction: [values[2], values[3], values[4]],
+                        tail: [values[5], values[6], values[7]],
+                    }
+                }
+                0xec => {
+                    let values: [f64; 6] = values.try_into().ok()?;
+                    B2PlaneCarrierPayload::PointTail {
+                        point: [values[0], values[1]],
+                        tail: [values[2], values[3], values[4], values[5]],
+                    }
+                }
+                _ => return None,
+            };
+            Some(B2PlaneCarrier {
+                pos: record.range.start,
+                end: record.range.end,
+                width: record.width,
+                flag: record.flag,
+                header_token: record.header_token,
+                selector,
+                payload,
+            })
+        })
+        .collect()
+}
+
+/// Recover the model-space plane carried by a direction-bearing class-`0x27`
+/// layout. The omitted point coordinate is the host plane's third coordinate;
+/// the direction-bearing layouts establish the positive in-plane axis and the
+/// host Z direction establishes the second axis. The directionless `ec` layout
+/// remains a retained native record until its axis rule is resolved.
+pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeometry> {
+    let (point, direction, tail) = match &carrier.payload {
+        B2PlaneCarrierPayload::PointDirection2 {
+            point,
+            direction,
+            tail,
+        } => (*point, [direction[0], direction[1], 0.0], *tail),
+        B2PlaneCarrierPayload::PointDirection3 {
+            point,
+            direction,
+            tail,
+        } => (*point, *direction, *tail),
+        B2PlaneCarrierPayload::PointTail { .. } => return None,
+    };
+    let u_axis = Vector3::new(direction[0], direction[1], direction[2]);
+    let z_axis = Vector3::new(0.0, 0.0, 1.0);
+    let normal = u_axis.cross(z_axis).unit()?;
+    let valid_direction = (u_axis.norm() - 1.0).abs() <= 1e-9
+        && u_axis.z.abs() <= 1e-9
+        && direction.iter().all(|value| value.is_finite());
+    let valid_tail =
+        tail.iter().all(|value| value.is_finite()) && tail[0] > 0.0 && tail[1] < tail[2];
+    (valid_direction && valid_tail).then_some(SurfaceGeometry::Plane {
+        origin: Point3::new(point[0], point[1], 0.0),
+        normal,
+        u_axis,
+    })
 }
 
 /// Decode class-`0x18` descriptors that prefix class-`0x25` edge definitions.

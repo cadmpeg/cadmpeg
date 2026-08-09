@@ -140,6 +140,7 @@
           "consolidated_owner_packets": [],
           "consolidated_parameter_points": [],
           "consolidated_pcurves": [],
+          "consolidated_plane_carriers": [],
           "consolidated_reference_lists": [],
           "consolidated_revolutions": [],
           "consolidated_spheres": [],
@@ -173,7 +174,7 @@
           "zero_entity_support_runs": [],
           "zero_entity_vertex_incidences": []
         },
-        "version": 269
+        "version": 270
       }
     },
     "source": {
@@ -248,6 +249,7 @@
       "decoded_consolidated_line_profile_count": 0,
       "decoded_consolidated_parameter_point_count": 0,
       "decoded_consolidated_pcurve_count": 0,
+      "decoded_consolidated_plane_carrier_count": 0,
       "decoded_consolidated_reference_list_count": 0,
       "decoded_consolidated_revolution_count": 0,
       "decoded_consolidated_sphere_count": 0,
