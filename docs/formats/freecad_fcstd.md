@@ -288,8 +288,12 @@ does not inherit a format-wide placeholder loss.
 
 Format-neutral document and view presentation arenas represent GUI state. A GUI archive produces
 one document presentation record; a headless archive produces none. The neutral document record
-contains the schema version, active view, finite camera position and nonzero orientation quaternion,
-ordered document state, and resolved display-asset references. Each view-provider record contains
+contains the schema version, one camera, ordered document state, and resolved display-asset
+references. GUI schema 1 has exactly one direct `Camera` element. Its `settings` attribute is the
+serialized camera state. GUI schema 1 does not serialize an active view; an `active` root attribute
+or an `ActiveView` element remains source state and does not set the neutral active view. A decoded
+camera position and orientation are optional derived fields and must be finite and nonzero when
+present. Each view-provider record contains
 its resolved application object, source order, tree expansion and visibility state, display and
 selection modes, nonnegative line and point sizes, and exact-name fallback properties. References,
 orders, and numeric invariants are validated independently of the FCStd native namespace.
@@ -387,9 +391,9 @@ missing object identity.
 Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records
-cover cameras, active views, clipping or section state, and future GUI state without treating it as
-an application-object property. Each retains its exact XML span, ordered descendant values, and
-display-asset references.
+cover the camera, unrecognized active-view data, clipping or section state, and future GUI state
+without treating it as an application-object property. Each retains its exact XML span, ordered
+descendant values, and display-asset references.
 
 Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
 side-entry string-table, and side-entry element-map payloads are wholly typed after successful

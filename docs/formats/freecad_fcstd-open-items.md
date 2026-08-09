@@ -100,16 +100,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the value semantics to transfer the property to the correct neutral presentation field.
 
-### GP-03. Document view-state cardinality and precedence
-
-**Question.** How many `Camera` and `ActiveView` state elements can `GuiDocument.xml` contain, and which value is authoritative when the root `active` attribute and an `ActiveView` state disagree?
-
-**Known.** `freecad_fcstd.md` §11 "Format-neutral document and view presentation arenas represent GUI state." requires one neutral document record with its active view, camera, and ordered source state. All source states remain in the native GUI graph.
-
-**Conflict.** `gui.rs` `transfer_neutral_presentation` takes the first `Camera` state and the first `ActiveView` state. An `ActiveView` state takes precedence over the root `active` attribute. The decoder does not establish uniqueness or agreement, so XML order selects the neutral camera and active view when duplicate or conflicting records exist.
-
-**Need.** We must establish the source cardinality and precedence rules. Invalid duplicate or conflicting state must not silently select the first record.
-
 ### GP-04. Topology-color shape-property association
 
 **Question.** Which exact-shape property and element map does a `DiffuseColor`, `LineColorArray`, or `PointColorArray` side entry describe when the application object owns more than one shape property?

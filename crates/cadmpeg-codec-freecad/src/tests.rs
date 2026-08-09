@@ -3934,11 +3934,10 @@ fn retains_ordered_document_level_gui_state() {
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
 </Document>"#;
-    let gui = br#"<Document SchemaVersion="1" active="Perspective">
- <Camera orientation="0 0 0 1"><Position x="1" y="2" z="3"/></Camera>
- <ActiveView name="Perspective"/>
- <ClipPlane enabled="true" file="section.bin"/>
+    let gui = br#"<Document SchemaVersion="1" active="UnrecognizedRootState">
  <ViewProviderData Count="0"/>
+ <Camera settings="OrthographicCamera { position 1 2 3 }"/>
+ <ClipPlane enabled="true" file="section.bin"/>
 </Document>"#;
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
@@ -3954,17 +3953,20 @@ fn retains_ordered_document_level_gui_state() {
         .expect("GUI documents");
     assert_eq!(documents.len(), 1);
     assert_eq!(documents[0].schema_version, Some(1));
-    assert_eq!(documents[0].attributes["active"], "Perspective");
+    assert_eq!(documents[0].attributes["active"], "UnrecognizedRootState");
     assert_eq!(
         documents[0]
             .states
             .iter()
             .map(|state| state.kind.as_str())
             .collect::<Vec<_>>(),
-        ["Camera", "ActiveView", "ClipPlane"]
+        ["Camera", "ClipPlane"]
     );
-    assert_eq!(documents[0].states[0].values[0].tag, "Position");
-    assert_eq!(documents[0].states[2].side_entries, ["section.bin"]);
+    assert_eq!(
+        documents[0].states[0].attributes["settings"],
+        "OrthographicCamera { position 1 2 3 }"
+    );
+    assert_eq!(documents[0].states[1].side_entries, ["section.bin"]);
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
@@ -3972,16 +3974,20 @@ fn retains_ordered_document_level_gui_state() {
         .iter()
         .find(|entry| entry.name == "section.bin")
         .expect("section asset");
-    assert_eq!(section.referenced_by, [documents[0].states[2].id.clone()]);
+    assert_eq!(section.referenced_by, [documents[0].states[1].id.clone()]);
     assert_eq!(result.ir.model.presentation_documents.len(), 1);
     let presentation = &result.ir.model.presentation_documents[0];
     assert_eq!(presentation.schema_version, Some(1));
-    assert_eq!(presentation.active_view.as_deref(), Some("Perspective"));
+    assert_eq!(presentation.active_view, None);
     let camera = presentation.camera.as_ref().expect("camera state");
-    assert_eq!(camera.position, Some([1.0, 2.0, 3.0]));
-    assert_eq!(camera.orientation, Some([0.0, 0.0, 0.0, 1.0]));
-    assert_eq!(presentation.states[2].assets.len(), 1);
-    assert!(presentation.states[2].assets[0].ends_with("section.bin"));
+    assert_eq!(camera.position, None);
+    assert_eq!(camera.orientation, None);
+    assert_eq!(
+        camera.properties["settings"],
+        "OrthographicCamera { position 1 2 3 }"
+    );
+    assert_eq!(presentation.states[1].assets.len(), 1);
+    assert!(presentation.states[1].assets[0].ends_with("section.bin"));
     assert!(result.ir.model.view_presentations.is_empty());
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
@@ -3999,6 +4005,35 @@ fn retains_ordered_document_level_gui_state() {
 }
 
 #[test]
+fn requires_one_camera_in_schema_one_gui_document() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    for camera_records in [
+        "",
+        r#"<Camera settings="first"/><Camera settings="second"/>"#,
+    ] {
+        let gui = format!(
+            r#"<Document SchemaVersion="1"><ViewProviderData Count="0"/>{camera_records}</Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("GuiDocument.xml", gui.as_bytes()),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("schema-one camera cardinality");
+
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("schema 1 requires one Camera record")
+        ));
+    }
+}
+
+#[test]
 fn gui_property_counts_ignore_nested_extension_properties() {
     let document = br#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
@@ -4006,7 +4041,7 @@ fn gui_property_counts_ignore_nested_extension_properties() {
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
 <ViewProvider name="Model"><Properties Count="0"/><Extension name="Nested"><Properties Count="1"><Property name="NestedValue" type="App::PropertyString"><String value="kept by extension"/></Property></Properties></Extension></ViewProvider>
-</ViewProviderData></Document>"#;
+</ViewProviderData><Camera settings=""/></Document>"#;
     let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive_entries(&[
@@ -5138,7 +5173,7 @@ fn transfers_connected_text_brep_topology() {
 <Property name="PointSize" type="App::PropertyFloatConstraint"><Float value="4"/></Property>
 <Property name="Transparency" type="App::PropertyPercent"><Integer value="25"/></Property>
 <Property name="Visibility" type="App::PropertyBool"><Bool value="false"/></Property>
-</Properties></ViewProvider></ViewProviderData></Document>"#;
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2
@@ -5396,7 +5431,7 @@ EndMap
 <Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
 <Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
 <Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
-</Properties></ViewProvider></ViewProviderData></Document>"#;
+</Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
 Curve2ds 2

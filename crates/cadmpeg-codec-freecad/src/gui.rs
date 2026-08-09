@@ -39,6 +39,18 @@ pub(crate) fn transfer(
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid GuiDocument.xml: {error}")))?;
     let root = xml.root_element();
+    let schema_version = root
+        .attribute("SchemaVersion")
+        .and_then(|value| value.parse().ok());
+    let camera_count = root
+        .children()
+        .filter(|node| node.has_tag_name("Camera"))
+        .count();
+    if schema_version == Some(1) && camera_count != 1 {
+        return Err(CodecError::Malformed(format!(
+            "GuiDocument.xml schema 1 requires one Camera record, found {camera_count}"
+        )));
+    }
     let states = root
         .children()
         .filter(roxmltree::Node::is_element)
@@ -48,9 +60,7 @@ pub(crate) fn transfer(
         .collect::<Vec<_>>();
     let document = GuiDocumentRecord {
         id: "fcstd:gui:document#0".into(),
-        schema_version: root
-            .attribute("SchemaVersion")
-            .and_then(|value| value.parse().ok()),
+        schema_version,
         attributes: root
             .attributes()
             .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
@@ -309,7 +319,13 @@ pub(crate) fn transfer(
 
 fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) {
     for document in &graph.documents {
-        let camera_state = document.states.iter().find(|state| state.kind == "Camera");
+        let mut camera_states = document
+            .states
+            .iter()
+            .filter(|state| state.kind == "Camera");
+        let camera_state = camera_states
+            .next()
+            .filter(|_| camera_states.next().is_none());
         let camera = camera_state.map(|state| CameraState {
             position: state
                 .values
@@ -322,17 +338,10 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) {
                 .and_then(|value| parse_vector::<4>(value)),
             properties: state.attributes.clone(),
         });
-        let active_view = document
-            .states
-            .iter()
-            .find(|state| state.kind == "ActiveView")
-            .and_then(|state| state.attributes.get("name"))
-            .cloned()
-            .or_else(|| document.attributes.get("active").cloned());
         ir.model.presentation_documents.push(PresentationDocument {
             id: PresentationId("fcstd:presentation:document#0".into()),
             schema_version: document.schema_version,
-            active_view,
+            active_view: None,
             camera,
             states: document
                 .states
