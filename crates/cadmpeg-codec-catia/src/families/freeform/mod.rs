@@ -60,6 +60,31 @@ fn typed_face_counts(
     ]
 }
 
+fn typed_multi_surface_face_count(graph: &crate::families::b5::graph::B5Graph) -> usize {
+    graph
+        .face_records
+        .values()
+        .filter(|face| {
+            let Some(&carrier) = face.references.first() else {
+                return false;
+            };
+            let Some(canonical_carrier) =
+                crate::families::b5::graph::canonical_surface_id(&graph.surface_aliases, carrier)
+            else {
+                return false;
+            };
+            face.references[1..].iter().any(|reference| {
+                graph.surfaces.contains_key(reference)
+                    && crate::families::b5::graph::canonical_surface_id(
+                        &graph.surface_aliases,
+                        *reference,
+                    )
+                    .is_some_and(|candidate| candidate != canonical_carrier)
+            })
+        })
+        .count()
+}
+
 fn loop_metadata_counts<'a>(
     records: impl Iterator<Item = &'a crate::families::b5::graph::B5Loop>,
 ) -> [usize; 5] {
@@ -111,6 +136,10 @@ pub(crate) fn try_decode_freeform_surfaces(
         let records = crate::families::b5::graph::typed_face_records_from_records(&object_records);
         (!records.is_empty()).then(|| typed_face_counts(&records, 0))
     };
+    let typed_multi_surface_face_count = b5_graph
+        .as_ref()
+        .map(typed_multi_surface_face_count)
+        .unwrap_or_default();
     let typed_edge_records =
         crate::families::b5::graph::typed_edge_records_from_records(&object_records);
     let edge_terminal_controls = (!typed_edge_records.is_empty()).then(|| {
@@ -426,6 +455,14 @@ pub(crate) fn try_decode_freeform_surfaces(
         coverage.insert(
             "typed_unresolved_object_stream_face_count".to_string(),
             unresolved,
+        );
+    }
+    if typed_multi_surface_face_count != 0 {
+        coverage.insert(
+            crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT
+                .0
+                .to_string(),
+            typed_multi_surface_face_count,
         );
     }
     if let Some(counts) = edge_terminal_controls {

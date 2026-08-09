@@ -498,6 +498,8 @@ pub(crate) const TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey
     CoverageKey("typed_object_stream_face_terminal_control_03_count");
 pub(crate) const TYPED_OBJECT_STREAM_FACE_TERMINAL_CONTROL_05_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_face_terminal_control_05_count");
+pub(crate) const TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT: CoverageKey =
+    CoverageKey("typed_multi_surface_object_stream_face_count");
 pub(crate) const TYPED_OBJECT_STREAM_LOOP_FRAMING_CONTROLS_05_05_COUNT: CoverageKey =
     CoverageKey("typed_object_stream_loop_framing_controls_05_05_count");
 pub(crate) const TYPED_OBJECT_STREAM_PARAMETER_INCIDENCE_COUNT: CoverageKey =

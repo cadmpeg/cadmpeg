@@ -21637,6 +21637,35 @@ fn decode_reports_structurally_typed_unresolved_b5_faces() {
 }
 
 #[test]
+fn decode_reports_typed_distinct_surface_b5_faces() {
+    let mut stream = b5_closed_triangle_stream();
+    append_b5_record(&mut stream, 0x27, 101, &b5_plane_payload([0.0, 0.0, 1.0]));
+    let mut face_payload = vec![0x83];
+    face_payload.extend_from_slice(&b5_object_ref(100));
+    face_payload.extend_from_slice(&b5_object_ref(101));
+    face_payload.extend_from_slice(&b5_object_ref(400));
+    face_payload.push(0x05);
+    append_b5_record(&mut stream, 0x5f, 902, &face_payload);
+
+    let graph = crate::families::b5::graph::parse(&stream).expect("typed multi-surface graph");
+    assert_eq!(graph.face_records.len(), 2);
+    assert_eq!(graph.faces.len(), 1);
+
+    let result = CatiaCodec
+        .decode(
+            &mut Cursor::new(object_main_catpart(&stream)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode typed multi-surface face");
+    assert_eq!(
+        result
+            .report
+            .coverage_count(crate::coverage::TYPED_MULTI_SURFACE_OBJECT_STREAM_FACE_COUNT),
+        1
+    );
+}
+
+#[test]
 fn decode_reports_typed_b5_faces_without_a_resolved_topology_graph() {
     let mut stream = b2_sphere_stream();
     append_b5_record(&mut stream, 0x27, 100, &b5_plane_payload([0.0; 3]));
