@@ -1648,7 +1648,7 @@
               "id": "iges:presentation:display-attributes#D7",
               "level_definition": null,
               "level_number": 0,
-              "line_font_definition": "iges:entity:directory#5",
+              "line_font_definition": "iges:presentation:line-font#D5",
               "line_font_number": -5,
               "line_weight_mm": null,
               "line_weight_number": 0,

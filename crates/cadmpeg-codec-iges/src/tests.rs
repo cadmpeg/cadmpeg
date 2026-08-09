@@ -5946,7 +5946,7 @@ fn decode_types_template_and_visible_blank_line_fonts() {
     assert_eq!(line_display.fields()["line_font_number"], -5);
     assert_eq!(
         line_display.fields()["line_font_definition"],
-        "iges:entity:directory#5"
+        "iges:presentation:line-font#D5"
     );
     assert!(
         result.report.losses.is_empty(),

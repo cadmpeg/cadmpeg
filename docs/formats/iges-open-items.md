@@ -192,14 +192,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the meaning of an overlong declared count, and the declared value retained in every counted record.
 
-### DR-13. Line-font links use a different namespace than levels and colors
-
-**Question.** Which arena holds the Directory line-font definition link?
-
-**Known.** `native.rs:1427-1442` sends `level_definition` to `iges:presentation:definition-levels#D{n}` and `color_definition` to `iges:presentation:color#D{n}`, and sends `line_font_definition` to the generic `iges:entity:directory#{n}` although a `line_fonts` arena exists with identities of the form `iges:presentation:line-font#D{n}` (`native.rs:1452`). `iges.md` "Appearance" describes all three uniformly.
-
-**Need.** A consumer that resolves appearance must special-case one of three parallel fields. We need the intended namespace.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance

@@ -1458,8 +1458,12 @@ pub(crate) fn store(
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             visible: entry.status.blank == 0,
             line_font_number: entry.line_font,
-            line_font_definition: (entry.line_font < 0)
-                .then(|| format!("iges:entity:directory#{}", entry.line_font.unsigned_abs())),
+            line_font_definition: (entry.line_font < 0).then(|| {
+                format!(
+                    "iges:presentation:line-font#D{}",
+                    entry.line_font.unsigned_abs()
+                )
+            }),
             level_number: entry.level,
             level_definition: (entry.level < 0).then(|| {
                 format!(
