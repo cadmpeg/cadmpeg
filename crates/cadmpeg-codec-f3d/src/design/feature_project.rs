@@ -2580,7 +2580,6 @@ pub(crate) fn project_edge_flange(
         edge_identity_operands,
         scope.previous_history_state_id,
         &neutral_feature_id(scope),
-        None,
     );
 
     Some(FeatureDefinition::SheetMetalEdgeFlange {
@@ -2856,7 +2855,6 @@ pub(crate) fn project_ruled_surface(
                 edge_identity_operands,
                 scope.previous_history_state_id,
                 &neutral_feature_id(scope),
-                None,
             )
         })
         .collect::<Vec<_>>();
@@ -4556,7 +4554,6 @@ fn resolved_loft_path(
         identity_operands,
         scope.previous_history_state_id,
         &neutral_feature_id(scope),
-        None,
     );
     loft_path_from_edge_selection(&group.id, selection)
 }
@@ -4580,7 +4577,6 @@ fn resolved_surface_patch_path(
                 identity_operands,
                 scope.previous_history_state_id,
                 &neutral_feature_id(scope),
-                None,
             );
             loft_path_from_edge_selection(&group.id, selection)
         })

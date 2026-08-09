@@ -12079,6 +12079,14 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             &[&edge_operand, &context_operand],
             3.0
         ),
+        None
+    );
+    context_operand.changed_boundary_edge_slots.clear();
+    assert_eq!(
+        crate::design::edge_resolve::radius_edge_group_candidates(
+            &[&edge_operand, &context_operand],
+            3.0
+        ),
         Some(vec![17, 18])
     );
     context_operand.changed_boundary_edge_slots = vec![15, 16];
@@ -12135,7 +12143,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[],
         Some(8),
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
-        None,
     );
     assert!(matches!(
         recovered,
@@ -12172,7 +12179,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[],
         None,
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
-        None,
     );
     assert!(
         matches!(
@@ -12222,7 +12228,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[identity(100, 0, Some(17)), identity(104, 1, None)],
         Some(8),
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
-        None,
     );
     assert!(matches!(
         merged,
@@ -12241,7 +12246,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[identity(100, 0, Some(17)), identity(104, 1, Some(18))],
         Some(8),
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
-        None,
     );
     assert!(matches!(
         complete,
@@ -12266,7 +12270,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[first_rule, second_rule],
         Some(8),
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
-        None,
     );
     assert!(matches!(
         face_rules,
@@ -12289,7 +12292,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     chain_recipe.changed_boundary_edge_slots = vec![17, 18];
     let mut chain_identity = identity(100, 0, None);
     chain_identity.transition_edge_candidates = vec![18, 17];
-    let chain = crate::design::edge_resolve::resolved_edge_group(
+    let chain = crate::design::edge_resolve::resolved_edge_treatment_group(
         &chain_group,
         std::slice::from_ref(&chain_group),
         &[chain_recipe],
@@ -12616,7 +12619,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         &[],
         Some(8),
         &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
-        None,
     );
     assert!(matches!(
         surface_selection,
@@ -12634,7 +12636,6 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             &[],
             Some(8),
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#surface-patch".into()),
-            None,
         ),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));

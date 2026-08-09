@@ -5675,6 +5675,12 @@ pub(crate) fn bind_edge_identity_history(
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
 ) {
+    struct EdgeTreatmentTransitionCandidates {
+        radii: Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
+        treatment_edges: Vec<i64>,
+        deleted_edges: Vec<i64>,
+    }
+
     if projection_was_finalized(histories) {
         return;
     }
@@ -5717,13 +5723,8 @@ pub(crate) fn bind_edge_identity_history(
             )
         })
         .collect::<HashMap<_, _>>();
-    let mut treatment_candidates_by_transition = HashMap::<
-        (String, i64, i64),
-        (
-            Vec<crate::records::DesignEdgeTreatmentRadiusCandidate>,
-            Vec<i64>,
-        ),
-    >::new();
+    let mut treatment_candidates_by_transition =
+        HashMap::<(String, i64, i64), EdgeTreatmentTransitionCandidates>::new();
     for operand in operands {
         operand.historical_entity_kind = None;
         operand.historical_entity_ref = None;
@@ -5789,65 +5790,73 @@ pub(crate) fn bind_edge_identity_history(
                     .is_some_and(|state| history_state_reaches(history, state, previous_state_id))
             {
                 let key = (history.id.clone(), current_state_id, previous_state_id);
+                if !treatment_candidates_by_transition.contains_key(&key) {
+                    if let Some(result) = current_state.and_then(|state| state.topology.as_ref()) {
+                        let preceding_faces =
+                            topology.faces.iter().copied().collect::<HashSet<_>>();
+                        let inserted_faces = result
+                            .faces
+                            .iter()
+                            .copied()
+                            .filter(|face| !preceding_faces.contains(face))
+                            .collect::<Vec<_>>();
+                        let result_edges = result.edges.iter().copied().collect::<HashSet<_>>();
+                        let deleted_edges = topology
+                            .edges
+                            .iter()
+                            .copied()
+                            .filter(|edge| !result_edges.contains(edge))
+                            .collect::<Vec<_>>();
+                        let (radii, treatment_edges) = treatment_edge_candidates(
+                            None,
+                            &inserted_faces,
+                            result,
+                            topology,
+                            &deleted_edges,
+                        );
+                        treatment_candidates_by_transition.insert(
+                            key.clone(),
+                            EdgeTreatmentTransitionCandidates {
+                                radii,
+                                treatment_edges,
+                                deleted_edges,
+                            },
+                        );
+                    }
+                }
                 if let Some(candidates) = treatment_candidates_by_transition.get(&key) {
                     operand
                         .treatment_radius_candidates
-                        .clone_from(&candidates.0);
-                    operand.transition_edge_candidates.clone_from(&candidates.1);
-                } else if let Some(result) = current_state.and_then(|state| state.topology.as_ref())
-                {
-                    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
-                    let inserted_faces = result
-                        .faces
-                        .iter()
-                        .copied()
-                        .filter(|face| !preceding_faces.contains(face))
-                        .collect::<Vec<_>>();
-                    let result_edges = result.edges.iter().copied().collect::<HashSet<_>>();
-                    let deleted_edges = topology
-                        .edges
-                        .iter()
-                        .copied()
-                        .filter(|edge| !result_edges.contains(edge))
-                        .collect::<Vec<_>>();
-                    let mut candidates = treatment_edge_candidates(
-                        None,
-                        &inserted_faces,
-                        result,
-                        topology,
-                        &deleted_edges,
-                    );
-                    let is_edge_treatment = scopes.iter().any(|scope| {
-                        crate::ids::native_stream(&scope.id) == Some(stream)
-                            && scope.record_index == operand.scope_record_index
-                            && matches!(
-                                crate::design::design_feature_family(&scope.kind),
-                                Some(
-                                    crate::design::DesignFeatureFamily::Fillet
-                                        | crate::design::DesignFeatureFamily::Chamfer
-                                )
+                        .clone_from(&candidates.radii);
+                    let mut treatment_edges = candidates.treatment_edges.clone();
+                    // The geometric chain is transition-scoped. The deleted-
+                    // set fallback is group-scoped because its proof depends
+                    // on this operand group's compact member count.
+                    if treatment_edges.is_empty() {
+                        let is_edge_treatment = matches!(
+                            crate::design::design_feature_family(&scope.kind),
+                            Some(
+                                crate::design::DesignFeatureFamily::Fillet
+                                    | crate::design::DesignFeatureFamily::Chamfer
                             )
-                    });
-                    let compact_member_count = compact_group_counts
-                        .get(&(
-                            stream.to_owned(),
-                            operand.scope_record_index,
-                            operand.group_record_index,
-                        ))
-                        .copied()
-                        .flatten();
-                    if candidates.1.is_empty() {
-                        candidates.1 = complete_compact_edge_treatment_deletions(
+                        );
+                        let compact_member_count = compact_group_counts
+                            .get(&(
+                                stream.to_owned(),
+                                operand.scope_record_index,
+                                operand.group_record_index,
+                            ))
+                            .copied()
+                            .flatten();
+                        treatment_edges = complete_compact_edge_treatment_deletions(
                             is_edge_treatment,
                             compact_member_count,
-                            &deleted_edges,
+                            &candidates.deleted_edges,
                         );
                     }
                     operand
-                        .treatment_radius_candidates
-                        .clone_from(&candidates.0);
-                    operand.transition_edge_candidates.clone_from(&candidates.1);
-                    treatment_candidates_by_transition.insert(key, candidates);
+                        .transition_edge_candidates
+                        .clone_from(&treatment_edges);
                 }
             }
         }
@@ -9420,6 +9429,109 @@ mod tests {
         assert!(complete_compact_edge_treatment_deletions(true, Some(2), &[17, 18, 19]).is_empty());
         assert!(complete_compact_edge_treatment_deletions(false, Some(2), &[17, 19]).is_empty());
         assert!(complete_compact_edge_treatment_deletions(true, None, &[17, 19]).is_empty());
+    }
+
+    #[test]
+    fn compact_transition_fallback_is_scoped_to_each_operand_group() {
+        let scope: crate::records::DesignParameterScope =
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:test:scope",
+                "byte_offset": 0,
+                "class_tag": "300",
+                "record_index": 1,
+                "frame_length": 200,
+                "kind": "Fillet",
+                "kind_offset": 0,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 0,
+                "history_state_id": 8,
+                "history_state_id_offset": 0,
+                "previous_history_state_id": 7,
+                "previous_history_state_id_offset": 0,
+                "reference_count_offset": 0,
+                "reference_members": [],
+                "reference_member_offsets": [],
+                "paired_class_tag": "261",
+                "paired_byte_offset": 200
+            }))
+            .expect("Fillet scope");
+        let identity = |group_record_index, group_member_ordinal, record_index| {
+            serde_json::from_value::<DesignEdgeIdentityOperand>(serde_json::json!({
+                "id": format!("f3d:test:identity#{record_index}"),
+                "scope_record_index": 1,
+                "group_record_index": group_record_index,
+                "group_member_ordinal": group_member_ordinal,
+                "record_index": record_index,
+                "byte_offset": 0,
+                "class_tag": "277",
+                "compact_layout": true,
+                "local_id": record_index,
+                "local_id_offset": 0,
+                "asset_id": "asset",
+                "asset_id_offset": 0,
+                "context_id": "context",
+                "context_id_offset": 0
+            }))
+            .expect("edge identity")
+        };
+        let mut operands = vec![identity(2, 0, 10), identity(2, 1, 11), identity(3, 0, 12)];
+        let state = |state_id, topology, transition| AsmDeltaState {
+            id: format!("history:state#{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(topology),
+            transition,
+        };
+        let previous = state(
+            7,
+            AsmHistoricalTopology {
+                edges: vec![17, 19],
+                ..AsmHistoricalTopology::default()
+            },
+            None,
+        );
+        let current = state(
+            8,
+            AsmHistoricalTopology::default(),
+            Some(AsmHistoricalTransition {
+                previous_state_id: Some(7),
+                records: AsmHistoricalEntityDelta::default(),
+                topology: AsmHistoricalTopologyDelta::default(),
+            }),
+        );
+        let history = AsmHistory {
+            id: "history".into(),
+            byte_offset: 0,
+            stream_size: None,
+            history_entry_count: None,
+            record_table_binding_budget_exceeded: false,
+            projection_finalized: false,
+            states: vec![current, previous],
+        };
+
+        bind_edge_identity_history(
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+            &HashMap::from([(scope.id.clone(), history.id.clone())]),
+        );
+
+        assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
+        assert_eq!(operands[1].transition_edge_candidates, [17, 19]);
+        assert!(operands[2].transition_edge_candidates.is_empty());
     }
 
     #[test]
