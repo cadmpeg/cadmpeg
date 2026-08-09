@@ -675,14 +675,6 @@ that assign a dimension value to a dimension-driven solver variable.
 
 **Need.** We must know the other grammars to transfer their design data.
 
-### PP-06. Compressed `DispDataTable` dictionary
-
-**Question.** What initial dictionary and code-width state does the compressed `DispDataTable` variant use?
-
-**Known.** `creo_prt.md` §7 "DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]` suffixes. They" defines `1f 9d 10` Unix-compress streams. `creo_prt.md` §8.3 "Unix-compress streams with header `1f 9d 10` grow code width" states that code 256 is a literal dictionary entry and not a clear code.
-
-**Need.** We must know the initial state to decompress the table deterministically.
-
 ### PP-07. Compressed `DispDataTable` geometry binding
 
 **Question.** Which fields bind decompressed `DispDataTable` rows to model geometry?

@@ -54,13 +54,19 @@ A section payload beginning `1f 9d <flags>` uses Unix `compress` LZW framing.
 The low five flag bits give the maximum code width from 9 through 16; bit 7
 enables block mode. In block mode, code 256 clears the dictionary. Without
 block mode (for example `1f 9d 10`), code 256 is a literal dictionary entry.
-Codes are packed least significant bit first in code-width-sized byte blocks.
-Block alignment resets when the code width increases or, in block mode, a clear
-code resets it to nine. Expansion is valid only when the output length equals
-the TOC expanded-length field. For model-data sections, the expanded payload
-begins directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary
-exception: its expanded payload contains the JPEG payload and is identified by
-the `FF D8 FF` marker.
+The initial dictionary contains the 256 one-byte values in slots `0` through
+`255`. The initial code width is nine bits. The next free slot is `256` in a
+non-block stream and `257` in a block-mode stream because block mode reserves
+`256` for the clear code. A decoded code adds one dictionary entry after the
+first code in a block; the reader increases the width from `w` to `w + 1`
+before the first code that requires a value above `(2^w)-1`. Codes are packed
+least significant bit first in code-width-sized byte blocks. Block alignment
+resets when the code width increases or, in block mode, a clear code resets it
+to nine. Expansion is valid only when the output length equals the TOC
+expanded-length field. For model-data sections, the expanded payload begins
+directly with its PSB named record. `THMB_IMG_MAIN` is an auxiliary exception:
+its expanded payload contains the JPEG payload and is identified by the
+`FF D8 FF` marker.
 
 PSB does not use the Parasolid neutral-binary encoding. Parasolid terminology may describe some geometric concepts, but it does not define PSB byte semantics.
 
