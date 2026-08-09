@@ -26,6 +26,28 @@ enum Packet {
     Body([u8; 4]),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SourcedPacket {
+    packet: Packet,
+    source_id: String,
+}
+
+impl SourcedPacket {
+    fn rgba(&self) -> [u8; 4] {
+        match self.packet {
+            Packet::AllFaces(rgba) | Packet::Body(rgba) => rgba,
+        }
+    }
+
+    fn is_all_faces(&self) -> bool {
+        matches!(self.packet, Packet::AllFaces(_))
+    }
+
+    fn is_body(&self) -> bool {
+        matches!(self.packet, Packet::Body(_))
+    }
+}
+
 /// Transfers presentation packets belonging to the selected modeling graph.
 ///
 /// `01 R G B` assigns an opaque color to the complete face population.
@@ -51,7 +73,22 @@ pub(crate) fn transfer(
                     .is_some_and(|graph| scope.contains(graph))
             })
         })
-        .flat_map(|block| block.fields.iter().filter_map(packet))
+        .flat_map(|block| {
+            block
+                .fields
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, field)| {
+                    let packet = packet(field)?;
+                    let ValueField::Inline { offset, .. } = field else {
+                        return None;
+                    };
+                    Some(SourcedPacket {
+                        packet,
+                        source_id: format!("{}:field#{offset:010}:{ordinal:06}", block.id),
+                    })
+                })
+        })
         .collect::<Vec<_>>();
     let mut result = TransferResult {
         decoded_packets: packets.len(),
@@ -60,16 +97,16 @@ pub(crate) fn transfer(
 
     let all_faces = packets
         .iter()
-        .filter_map(|packet| match packet {
-            Packet::AllFaces(rgba) => Some(*rgba),
+        .filter_map(|packet| match packet.packet {
+            Packet::AllFaces(rgba) => Some(rgba),
             Packet::Body(_) => None,
         })
         .collect::<Vec<_>>();
 
     let body = packets
         .iter()
-        .filter_map(|packet| match packet {
-            Packet::Body(rgba) => Some(*rgba),
+        .filter_map(|packet| match packet.packet {
+            Packet::Body(rgba) => Some(rgba),
             Packet::AllFaces(_) => None,
         })
         .collect::<Vec<_>>();
@@ -77,10 +114,7 @@ pub(crate) fn transfer(
     // Assets are meaningful independently of topology ownership. Retain every
     // decoded color even when its target incidence remains unresolved.
     for packet in &packets {
-        let rgba = match packet {
-            Packet::AllFaces(rgba) | Packet::Body(rgba) => *rgba,
-        };
-        insert_appearance(ir, rgba);
+        insert_appearance(ir, packet.rgba());
     }
 
     let positional_colors = standard_fbb
@@ -124,6 +158,9 @@ pub(crate) fn transfer(
             }
             result.transferred_packets += 1;
         } else {
+            for packet in packets.iter().filter(|packet| packet.is_all_faces()) {
+                insert_source_binding(ir, packet);
+            }
             result.unresolved_packets += all_faces.len();
         }
 
@@ -134,7 +171,12 @@ pub(crate) fn transfer(
                 insert_binding(ir, &appearance, target, 0);
                 result.transferred_packets += 1;
             }
-            values => result.unresolved_packets += values.len(),
+            values => {
+                for packet in packets.iter().filter(|packet| packet.is_body()) {
+                    insert_source_binding(ir, packet);
+                }
+                result.unresolved_packets += values.len();
+            }
         }
     }
     result.emitted_assets = ir.model.appearances.len() - initial_assets;
@@ -211,8 +253,41 @@ fn insert_binding(
         .as_str()
         .rsplit_once('#')
         .map_or(appearance.as_str(), |(_, key)| key);
+    insert_binding_record(
+        ir,
+        appearance,
+        target,
+        format!("catia:appearance:binding#{index}:{appearance_key}"),
+    );
+}
+
+fn insert_source_binding(ir: &mut CadIr, packet: &SourcedPacket) {
+    let appearance = insert_appearance(ir, packet.rgba());
+    let appearance_key = appearance
+        .as_str()
+        .rsplit_once('#')
+        .map_or(appearance.as_str(), |(_, key)| key);
+    insert_binding_record(
+        ir,
+        &appearance,
+        AppearanceTarget::Source {
+            source_id: packet.source_id.clone(),
+        },
+        format!(
+            "catia:appearance:source-binding#{}:{appearance_key}",
+            packet.source_id
+        ),
+    );
+}
+
+fn insert_binding_record(
+    ir: &mut CadIr,
+    appearance: &AppearanceId,
+    target: AppearanceTarget,
+    id: String,
+) {
     ir.model.appearance_bindings.push(AppearanceBinding {
-        id: format!("catia:appearance:binding#{index}:{appearance_key}"),
+        id,
         target,
         appearance: appearance.clone(),
         source_entity_id: None,
@@ -383,17 +458,34 @@ mod tests {
                 result.emitted_assets,
                 result.emitted_bindings
             ),
-            (2, 1, 1, 2, 6)
+            (2, 1, 1, 2, 7)
         );
         assert!(ir
             .model
             .appearances
             .iter()
             .any(|asset| asset.id.as_str().contains("143de0ff")));
+        assert_eq!(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .count(),
+            1
+        );
+        assert!(ir.model.appearance_bindings.iter().any(|binding| {
+            binding.appearance.as_str().contains("143de0ff")
+                && matches!(
+                    &binding.target,
+                    AppearanceTarget::Source { source_id }
+                        if source_id == "values:field#0000000000:000001"
+                )
+        }));
         assert!(ir
             .model
             .appearance_bindings
             .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
     }
 
@@ -445,8 +537,13 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (6, 0, 6, 0)
+            (6, 0, 6, 6)
         );
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| matches!(binding.target, AppearanceTarget::Source { .. })));
     }
 
     #[test]
@@ -464,9 +561,13 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings,
             ),
-            (6, 0, 6, 0)
+            (6, 0, 6, 6)
         );
-        assert!(ir.model.appearance_bindings.is_empty());
+        assert!(ir
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|binding| matches!(binding.target, AppearanceTarget::Source { .. })));
     }
 
     #[test]
@@ -511,12 +612,21 @@ mod tests {
                 result.unresolved_packets,
                 result.emitted_bindings
             ),
-            (7, 1, 6, 6)
+            (7, 1, 6, 12)
+        );
+        assert_eq!(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .count(),
+            6
         );
         assert!(ir
             .model
             .appearance_bindings
             .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("d11a1fff")));
     }
 
@@ -606,13 +716,26 @@ mod tests {
         let mut ir = model(6);
         let result = transfer(&mut ir, &native(fields), None, Some(&mismatched));
         assert_eq!(
-            (result.transferred_packets, result.unresolved_packets),
-            (1, 5)
+            (
+                result.transferred_packets,
+                result.unresolved_packets,
+                result.emitted_bindings
+            ),
+            (1, 5, 11)
         );
         assert!(ir
             .model
             .appearance_bindings
             .iter()
+            .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
             .all(|binding| binding.appearance.as_str().contains("e60d0dff")));
+        assert_eq!(
+            ir.model
+                .appearance_bindings
+                .iter()
+                .filter(|binding| matches!(binding.target, AppearanceTarget::Source { .. }))
+                .count(),
+            5
+        );
     }
 }
