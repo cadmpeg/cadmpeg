@@ -1098,7 +1098,32 @@ Spec §2 · layout: byte offsets · size: 151 B
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires exactly one complete component-point record.
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser requires exactly one complete standard or extended component-point record.
+
+## `coordinate_system_extended_component_point`
+
+Spec §2 · layout: byte offsets · size: 165 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 77 | `prefix_and_source` | `bytes[77]` | little | spec | has the same prefix through the source stamp at +73 |
+| 77 | 4 | `reference_id` | `u32` | little | spec | Record +77 stores a nonzero non-sentinel u32 reference ID |
+| 81 | 4 | `sentinel` | `u32` | little | spec | +81 stores `ff ff ff ff` |
+| 85 | 4 | `zero_before_count` | `u32` | little | spec | +85 stores u32 zero |
+| 89 | 4 | `reference_count` | `u32` | little | spec | +89 stores a positive non-sentinel u32 reference count |
+| 93 | 4 | `one` | `u32` | little | spec | +93 stores u32 `1` |
+| 97 | 4 | `zero_before_object` | `u32` | little | spec | +97 stores u32 zero |
+| 101 | 4 | `object_id` | `u32` | little | spec | +101 stores a nonzero u32 object ID |
+| 105 | 12 | `zero_before_handles` | `bytes[12]` | little | spec | +105 stores twelve zero bytes |
+| 117 | 8 | `handles` | `bytes[8]` | little | spec | Record +117 stores `c7 cf ff ff c7 cf ff ff` |
+| 125 | 4 | `zero_before_generation` | `u32` | little | spec | +125 stores u32 zero |
+| 129 | 4 | `generation` | `u32` | little | spec | +129 stores the shared nonzero non-sentinel generation word |
+| 133 | 8 | `zero_before_origin` | `bytes[8]` | little | spec | +133 stores eight zero bytes |
+| 141 | 24 | `origin` | `f64[3]` | little | spec | Three finite f64 LE values at +141, +149, and +157 store the solved origin in metres |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs` — The parser selects the complete standard or extended suffix and returns its exact end offset.
 
 ## `coordinate_system_line_axis`
 

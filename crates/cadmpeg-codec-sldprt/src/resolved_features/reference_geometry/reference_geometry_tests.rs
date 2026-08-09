@@ -365,6 +365,19 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     }
     assert!(resolved_coordinate_system(&other_generation).is_some());
 
+    let mut extended_origin = record.lane.native_payload.clone();
+    extended_origin.splice(record.origin + 103..record.origin + 103, [0; 14]);
+    extended_origin[record.origin + 77..record.origin + 81].copy_from_slice(&1234u32.to_le_bytes());
+    extended_origin[record.origin + 81..record.origin + 85].fill(0xff);
+    extended_origin[record.origin + 85..record.origin + 89].fill(0);
+    extended_origin[record.origin + 89..record.origin + 93].copy_from_slice(&2u32.to_le_bytes());
+    extended_origin[record.origin + 93..record.origin + 97].copy_from_slice(&1u32.to_le_bytes());
+    extended_origin[record.origin + 97..record.origin + 101].fill(0);
+    extended_origin[record.origin + 101..record.origin + 105]
+        .copy_from_slice(&700u32.to_le_bytes());
+    extended_origin[record.origin + 105..record.origin + 117].fill(0);
+    assert!(resolved_coordinate_system(&extended_origin).is_some());
+
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.origin + 115..record.origin + 119].copy_from_slice(&9000u32.to_le_bytes());
     assert_eq!(resolved_coordinate_system(&malformed), None);

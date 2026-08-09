@@ -771,38 +771,66 @@ fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
             if record.get(prefix + 10..prefix + 45) != Some(&[0; 35])
                 || record.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])
                 || record.get(prefix + 61..prefix + 69) != Some(&[0; 8])
-                || record.get(prefix + 77..prefix + 79) != Some(&[0; 2])
-                || record.get(prefix + 79..prefix + 81) != Some(&1u16.to_le_bytes())
-                || record.get(prefix + 81..prefix + 87) != Some(&[0; 6])
-                || record.get(prefix + 91..prefix + 103) != Some(&[0; 12])
-                || record.get(prefix + 103..prefix + 111) != Some(HANDLES)
-                || record.get(prefix + 111..prefix + 115) != Some(&[0; 4])
-                || record.get(prefix + 119..prefix + 127) != Some(&[0; 8])
             {
                 return None;
             }
             let source = u32::from_le_bytes(record.get(prefix + 69..prefix + 73)?.try_into().ok()?);
             let stamp = u32::from_le_bytes(record.get(prefix + 73..prefix + 77)?.try_into().ok()?);
-            let object = u32::from_le_bytes(record.get(prefix + 87..prefix + 91)?.try_into().ok()?);
-            let generation =
-                u32::from_le_bytes(record.get(prefix + 115..prefix + 119)?.try_into().ok()?);
-            if source == 0
-                || stamp == 0
-                || stamp == u32::MAX
-                || object == 0
-                || generation == 0
-                || generation == u32::MAX
+            if source == 0 || stamp == 0 || stamp == u32::MAX {
+                return None;
+            }
+            let (object, generation, origin_offset, record_len) = if record
+                .get(prefix + 77..prefix + 79)
+                == Some(&[0; 2])
+                && record.get(prefix + 79..prefix + 81) == Some(&1u16.to_le_bytes())
+                && record.get(prefix + 81..prefix + 87) == Some(&[0; 6])
+                && record.get(prefix + 91..prefix + 103) == Some(&[0; 12])
+                && record.get(prefix + 103..prefix + 111) == Some(HANDLES)
+                && record.get(prefix + 111..prefix + 115) == Some(&[0; 4])
+                && record.get(prefix + 119..prefix + 127) == Some(&[0; 8])
             {
+                (
+                    u32::from_le_bytes(record.get(prefix + 87..prefix + 91)?.try_into().ok()?),
+                    u32::from_le_bytes(record.get(prefix + 115..prefix + 119)?.try_into().ok()?),
+                    127,
+                    151,
+                )
+            } else if record.get(prefix + 81..prefix + 85) == Some(&[0xff; 4])
+                && record.get(prefix + 85..prefix + 89) == Some(&[0; 4])
+                && record.get(prefix + 93..prefix + 97) == Some(&1u32.to_le_bytes())
+                && record.get(prefix + 97..prefix + 101) == Some(&[0; 4])
+                && record.get(prefix + 105..prefix + 117) == Some(&[0; 12])
+                && record.get(prefix + 117..prefix + 125) == Some(HANDLES)
+                && record.get(prefix + 125..prefix + 129) == Some(&[0; 4])
+                && record.get(prefix + 133..prefix + 141) == Some(&[0; 8])
+            {
+                let reference =
+                    u32::from_le_bytes(record.get(prefix + 77..prefix + 81)?.try_into().ok()?);
+                let count =
+                    u32::from_le_bytes(record.get(prefix + 89..prefix + 93)?.try_into().ok()?);
+                if matches!(reference, 0 | u32::MAX) || matches!(count, 0 | u32::MAX) {
+                    return None;
+                }
+                (
+                    u32::from_le_bytes(record.get(prefix + 101..prefix + 105)?.try_into().ok()?),
+                    u32::from_le_bytes(record.get(prefix + 129..prefix + 133)?.try_into().ok()?),
+                    141,
+                    165,
+                )
+            } else {
+                return None;
+            };
+            if object == 0 || generation == 0 || generation == u32::MAX {
                 return None;
             }
             Some((
                 Point3::new(
-                    finite_f64(record, prefix + 127)? * 1000.0,
-                    finite_f64(record, prefix + 135)? * 1000.0,
-                    finite_f64(record, prefix + 143)? * 1000.0,
+                    finite_f64(record, prefix + origin_offset)? * 1000.0,
+                    finite_f64(record, prefix + origin_offset + 8)? * 1000.0,
+                    finite_f64(record, prefix + origin_offset + 16)? * 1000.0,
                 ),
                 generation,
-                prefix.checked_add(151)?,
+                prefix.checked_add(record_len)?,
             ))
         })
         .collect::<Vec<_>>();

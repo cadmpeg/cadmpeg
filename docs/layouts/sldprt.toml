@@ -4179,7 +4179,118 @@ anchor = "Three finite f64 LE values at +127, +135, and +143 store the solved or
 [[record.code]]
 path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
 contains = "fn coordinate_system_origin(record: &[u8])"
-note = "The parser requires exactly one complete component-point record."
+note = "The parser requires exactly one complete standard or extended component-point record."
+
+[[record]]
+name = "coordinate_system_extended_component_point"
+kind = "byte"
+section = "2"
+anchor = "The extended component-point record is 165 bytes"
+size = 165
+endianness = "little"
+
+[[record.field]]
+name = "prefix_and_source"
+offset = 0
+type = "bytes[77]"
+source = "spec"
+anchor = "has the same prefix through the source stamp at +73"
+
+[[record.field]]
+name = "reference_id"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "Record +77 stores a nonzero non-sentinel u32 reference ID"
+
+[[record.field]]
+name = "sentinel"
+offset = 81
+type = "u32"
+source = "spec"
+anchor = "+81 stores `ff ff ff ff`"
+
+[[record.field]]
+name = "zero_before_count"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "+85 stores u32 zero"
+
+[[record.field]]
+name = "reference_count"
+offset = 89
+type = "u32"
+source = "spec"
+anchor = "+89 stores a positive non-sentinel u32 reference count"
+
+[[record.field]]
+name = "one"
+offset = 93
+type = "u32"
+source = "spec"
+anchor = "+93 stores u32 `1`"
+
+[[record.field]]
+name = "zero_before_object"
+offset = 97
+type = "u32"
+source = "spec"
+anchor = "+97 stores u32 zero"
+
+[[record.field]]
+name = "object_id"
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "+101 stores a nonzero u32 object ID"
+
+[[record.field]]
+name = "zero_before_handles"
+offset = 105
+type = "bytes[12]"
+source = "spec"
+anchor = "+105 stores twelve zero bytes"
+
+[[record.field]]
+name = "handles"
+offset = 117
+type = "bytes[8]"
+source = "spec"
+anchor = "Record +117 stores `c7 cf ff ff c7 cf ff ff`"
+
+[[record.field]]
+name = "zero_before_generation"
+offset = 125
+type = "u32"
+source = "spec"
+anchor = "+125 stores u32 zero"
+
+[[record.field]]
+name = "generation"
+offset = 129
+type = "u32"
+source = "spec"
+anchor = "+129 stores the shared nonzero non-sentinel generation word"
+
+[[record.field]]
+name = "zero_before_origin"
+offset = 133
+type = "bytes[8]"
+source = "spec"
+anchor = "+133 stores eight zero bytes"
+
+[[record.field]]
+name = "origin"
+offset = 141
+type = "f64[3]"
+source = "spec"
+anchor = "Three finite f64 LE values at +141, +149, and +157 store the solved origin in metres"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/resolved_features/reference_geometry.rs"
+contains = "origin_offset, record_len"
+note = "The parser selects the complete standard or extended suffix and returns its exact end offset."
 
 [[record]]
 name = "coordinate_system_line_axis"
