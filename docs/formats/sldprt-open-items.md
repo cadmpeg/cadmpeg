@@ -223,18 +223,9 @@ The disc-`0x0014` path reads its color at a computed offset and does not use thi
 
 **Question.** What native field identifies the role of each optional classless feature-manager node that does not satisfy a defined layout-scoped identity?
 
-**Known.** `sldprt.md` §2 "An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object" through `sldprt.md` §2 "An `moLPattern_c` interval without a line-reference record carries each displayed translation" identify the annotations container, principal planes, model origin, lights-and-cameras container, ambient and directional lights, sheet-metal node, and exploded-views container. The identities depend on a complete native-class roster. Other source identifiers are allocation positions and are not role codes. `sldprt.md` §2 "A classless Keywords `Feature` whose `Type` token is `EquationDriven` is the equation" identifies the equation container by its operation-family token, which is a role code and needs neither a native class nor a reserved source identifier.
+**Known.** `sldprt.md` §2 "An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object" through `sldprt.md` §2 "An `moLPattern_c` interval without a line-reference record carries each displayed translation" identify the annotations container, principal planes, model origin, lights-and-cameras container, ambient and directional lights, sheet-metal node, and exploded-views container. The identities depend on a complete native-class roster. Other source identifiers are allocation positions and are not role codes. `sldprt.md` §2 "A classless Keywords `Feature` whose `Type` token is `EquationDriven` is the equation" identifies the equation container by its operation-family token, which is a role code and needs neither a native class nor a reserved source identifier. `sldprt.md` §8 defines the explicit DisplayLists scene-object source binding. Anonymous scene-object counts do not identify Keywords records.
 
 **Need.** We must distinguish the remaining binders, comments, body folders, materials, notes, sensors, favorites, history, selection sets, and markups.
-
-**Note.** The decoder resolves the light part of this question without a role code. `crates/cadmpeg-codec-sldprt/src/history.rs:301` groups the payload-free classless nodes by kind token and gives a group a scene light class when the group size equals the count of anonymous instances of that class:
-
-```rust
-let candidates = groups.values().filter(|indices| indices.len() == *count).collect::<Vec<_>>();
-let [indices] = candidates.as_slice() else { return None; };
-```
-
-Equal cardinality is the only link between the group and the class. `sldprt.md` §2 "An `moLPattern_c` interval without a line-reference record carries each displayed translation" binds classless light nodes by reserved source identifier and by kind token, not by count. A group that takes a light class loses its `reserved_feature_tree_node_role` path, because that path needs `input_class.is_none()`.
 
 ### DI-02. Equation angular-unit mode
 

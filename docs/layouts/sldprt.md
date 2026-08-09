@@ -965,6 +965,20 @@ The radial ordinal is zero-based in the feature-owned raw coordinate roster, inc
 | 108 | 2 | `class_length` | `u16` | little | spec | u16 length `11` |
 | 110 | 11 | `class_name` | `bytes[11]` | little | spec | class name `sgCircleDim` at marker +110 |
 
+## `display_lists_scene_source_binding`
+
+Spec §8 · layout: byte offsets · size: 16 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 12 | `marker` | `bytes[12]` | little | spec | `00 00 00 00 00 00 30 40 00 00 00 00` |
+| 12 | 4 | `source_id` | `u32` | little | spec | nonzero u32 LE source identifier |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The parser's scene-source marker matches the 12-byte specification marker.
+- `crates/cadmpeg-codec-sldprt/src/tessellation.rs` — The parser reads the source identifier at marker offset +12.
+
 ## `transformed_reference_plane_metadata`
 
 Spec §8 · layout: byte offsets · size: 80 B
@@ -992,4 +1006,4 @@ Cross-checked against code:
 | Body records (§6) | §6 | Apart from the class-root directory, §6 states slot-reference graphs and population invariants over about thirty named disc layouts. Those layouts state no byte offsets; their slot values are reached through the §5 common header and the §10 framing arithmetic. |
 | Inline record framing (§10) | §10 | Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. The bare slot-count table is an open item, not a stated layout. |
 | Compound File Binary directory entry (§1) | §1 | The spec states the 128-byte entry size and names the fields but states no offset for any of them; the layout is the external CFB specification, not a cadmpeg finding. |
-| Tessellation and appearance lanes (§8) | §8 | §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request. |
+| Tessellation and appearance lanes (§8) | §8 | Apart from the scene-source binding tabulated above, §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request. |

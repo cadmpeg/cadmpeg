@@ -1115,6 +1115,7 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.
+- A DisplayLists scene-class declaration scopes its following scene objects. The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier binds that object class to the Keywords record with the same source identifier. Anonymous object counts do not identify Keywords records.
 - **Materials / metadata** live in SW Objects blocks: `moVisualProperties_c` contains material names and RGB `0x00BBGGRR` values; names use UTF-16LE. A document metadata record starts with its ASCII class token. Offsets below are from the end of that token. Scalar fields are little-endian.
 
 | token | offset | type | field |

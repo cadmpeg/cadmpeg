@@ -302,41 +302,6 @@ pub(crate) fn enrich_scene_classes(
             feature.input_class = scene_classes.by_source.get(source).cloned();
         }
     }
-    for history in histories {
-        let mut groups = HashMap::<&str, Vec<usize>>::new();
-        for (index, feature) in history.features.iter().enumerate() {
-            if classless_builtin_node(feature) {
-                groups.entry(feature.kind.as_str()).or_default().push(index);
-            }
-        }
-        let proposals = scene_classes
-            .anonymous_counts
-            .iter()
-            .filter_map(|(class, count)| {
-                let candidates = groups
-                    .values()
-                    .filter(|indices| indices.len() == *count)
-                    .collect::<Vec<_>>();
-                let [indices] = candidates.as_slice() else {
-                    return None;
-                };
-                Some(((*indices).clone(), class))
-            })
-            .collect::<Vec<_>>();
-        for (indices, class) in &proposals {
-            if proposals
-                .iter()
-                .filter(|(candidate, _)| candidate == indices)
-                .count()
-                != 1
-            {
-                continue;
-            }
-            for &index in indices {
-                history.features[index].input_class = Some((*class).clone());
-            }
-        }
-    }
 }
 
 /// Project native Keywords records into the neutral feature arena.
@@ -3489,7 +3454,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn anonymous_scene_class_binds_only_a_unique_matching_kind_group() {
+    fn scene_class_binds_only_its_explicit_source_identifier() {
         let mut first = feature("first", Some("153"), 0);
         first.kind = "localized light".into();
         let mut second = feature("second", Some("155"), 1);
@@ -3505,8 +3470,7 @@ mod history_reference_tests {
             features: vec![first, second, singleton],
         }];
         let scene = crate::tessellation::SceneFeatureClasses {
-            by_source: HashMap::new(),
-            anonymous_counts: HashMap::from([("moDirectionLight_c".into(), 2)]),
+            by_source: HashMap::from([("153".into(), "moDirectionLight_c".into())]),
         };
 
         enrich_scene_classes(&mut histories, &scene);
@@ -3515,10 +3479,7 @@ mod history_reference_tests {
             histories[0].features[0].input_class.as_deref(),
             Some("moDirectionLight_c")
         );
-        assert_eq!(
-            histories[0].features[1].input_class.as_deref(),
-            Some("moDirectionLight_c")
-        );
+        assert_eq!(histories[0].features[1].input_class, None);
         assert_eq!(histories[0].features[2].input_class, None);
     }
 

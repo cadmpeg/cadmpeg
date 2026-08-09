@@ -3717,6 +3717,38 @@ source = "spec"
 anchor = "class name `sgCircleDim` at marker +110"
 
 [[record]]
+name = "display_lists_scene_source_binding"
+kind = "byte"
+section = "8"
+anchor = "The byte sequence `00 00 00 00 00 00 30 40 00 00 00 00` followed by a nonzero u32 LE source identifier"
+size = 16
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[12]"
+source = "spec"
+anchor = "`00 00 00 00 00 00 30 40 00 00 00 00`"
+
+[[record.field]]
+name = "source_id"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "nonzero u32 LE source identifier"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
+contains = "const SCENE_SOURCE_MARKER: &[u8] = &["
+note = "The parser's scene-source marker matches the 12-byte specification marker."
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/tessellation.rs"
+contains = ".then(|| u32_le(window, 12))"
+note = "The parser reads the source identifier at marker offset +12."
+
+[[record]]
 name = "transformed_reference_plane_metadata"
 kind = "byte"
 section = "8"
@@ -3803,6 +3835,6 @@ anchor = "Directory entries are 128 bytes and carry a NUL-terminated UTF-16LE na
 
 [[not_applicable]]
 area = "Tessellation and appearance lanes (§8)"
-reason = "§8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request."
+reason = "Apart from the scene-source binding tabulated above, §8 states descriptor relations and packing rules but no offsets. The parser asserts fixed offsets here that the spec does not state; recorded in the pull request."
 section = "8"
 anchor = "a 6-descriptor table: List A strip lengths"

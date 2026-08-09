@@ -30,23 +30,9 @@ pub struct Mesh {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SceneFeatureClasses {
     pub(crate) by_source: HashMap<String, String>,
-    pub(crate) anonymous_counts: HashMap<String, usize>,
 }
 
-fn legacy_scene_object_count(payload: &[u8]) -> usize {
-    payload
-        .windows(25)
-        .filter(|window| {
-            window[..8] == [1, 0, 0, 0, 0xff, 0xfe, 0xff, 7]
-                && window[9..22].iter().step_by(2).all(|byte| *byte == 0)
-                && window[22..25] == [0xff, 0xfe, 0xff]
-        })
-        .count()
-}
-
-type SceneClasses = (Vec<(u32, String)>, Vec<(String, usize)>);
-
-fn scene_classes(payload: &[u8]) -> SceneClasses {
+fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
     let declarations = payload
         .windows(CLASS_MARKER.len())
         .enumerate()
@@ -69,8 +55,7 @@ fn scene_classes(payload: &[u8]) -> SceneClasses {
             Some((offset, name.to_string()))
         })
         .collect::<Vec<_>>();
-    let mut anonymous = Vec::new();
-    let sourced = declarations
+    declarations
         .iter()
         .enumerate()
         .flat_map(|(index, (offset, class))| {
@@ -86,12 +71,12 @@ fn scene_classes(payload: &[u8]) -> SceneClasses {
             ) {
                 return Vec::new();
             }
-            let start = offset + CLASS_MARKER.len();
+            let start = offset + 6 + class.len();
             let end = declarations
                 .get(index + 1)
                 .map_or(payload.len(), |(offset, _)| *offset);
             let records = &payload[start..end];
-            let sourced = records
+            records
                 .windows(SCENE_SOURCE_MARKER.len() + 4)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
@@ -100,25 +85,15 @@ fn scene_classes(payload: &[u8]) -> SceneClasses {
                         .filter(|source| *source != 0)
                         .map(|source| (source, class.clone()))
                 })
-                .collect::<Vec<_>>();
-            if sourced.is_empty() {
-                let count = legacy_scene_object_count(records);
-                if count > 0 {
-                    anonymous.push((class.clone(), count));
-                }
-            }
-            sourced
+                .collect::<Vec<_>>()
         })
-        .collect();
-    (sourced, anonymous)
+        .collect()
 }
 
 pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses {
     let mut candidates = HashMap::<u32, Option<String>>::new();
-    let mut anonymous = HashMap::<String, Option<usize>>::new();
     for section in scan.sections() {
-        let (sourced, counts) = scene_classes(section.payload());
-        for (source, class) in sourced {
+        for (source, class) in scene_classes(section.payload()) {
             candidates
                 .entry(source)
                 .and_modify(|existing| {
@@ -128,25 +103,11 @@ pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses
                 })
                 .or_insert_with(|| Some(class));
         }
-        for (class, count) in counts {
-            anonymous
-                .entry(class)
-                .and_modify(|existing| {
-                    if *existing != Some(count) {
-                        *existing = None;
-                    }
-                })
-                .or_insert(Some(count));
-        }
     }
     SceneFeatureClasses {
         by_source: candidates
             .into_iter()
             .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
-            .collect(),
-        anonymous_counts: anonymous
-            .into_iter()
-            .filter_map(|(class, count)| count.map(|count| (class, count)))
             .collect(),
     }
 }
@@ -322,7 +283,7 @@ mod tests {
         class(&mut payload, "moSpotLight_c", &[20]);
 
         assert_eq!(
-            scene_classes(&payload).0,
+            scene_classes(&payload),
             vec![
                 (12, "moAmbientLight_c".into()),
                 (30, "moDirectionLight_c".into()),
@@ -334,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_scene_objects_are_counted_from_record_framing() {
+    fn anonymous_scene_object_counts_do_not_create_source_bindings() {
         let mut payload = Vec::new();
         payload.extend_from_slice(CLASS_MARKER);
         let class = b"moDirectionLight_c";
@@ -349,9 +310,6 @@ mod tests {
             payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
         }
 
-        assert_eq!(
-            scene_classes(&payload).1,
-            vec![("moDirectionLight_c".into(), 2)]
-        );
+        assert!(scene_classes(&payload).is_empty());
     }
 }
