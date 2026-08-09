@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity index, Directory Entry references, cycles, and validation states.
 
+use crate::card::{CardScan, Section};
 use crate::directory::DirectoryEntry;
+use cadmpeg_ir::report::{LossNote, Severity};
+use cadmpeg_ir::LossProvenance;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -21,6 +24,7 @@ pub(crate) enum ReferenceKind {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Resolution {
     Resolved,
+    Null,
     OutOfRange,
     EvenSequence,
     Dangling,
@@ -64,7 +68,9 @@ fn positive_candidate(kind: ReferenceKind, raw_pointer: i64) -> Candidate {
     Candidate {
         kind,
         raw_pointer,
-        target_sequence: u32::try_from(raw_pointer).ok(),
+        target_sequence: (raw_pointer != 0)
+            .then(|| u32::try_from(raw_pointer).ok())
+            .flatten(),
     }
 }
 
@@ -87,7 +93,7 @@ fn candidates(entry: &DirectoryEntry) -> Vec<Candidate> {
         (ReferenceKind::Transform, entry.transform),
         (ReferenceKind::LabelDisplay, entry.label_display),
     ] {
-        if pointer > 0 {
+        if pointer != 0 {
             values.push(positive_candidate(kind, pointer));
         }
     }
@@ -183,7 +189,9 @@ pub(crate) fn build(directory: &[DirectoryEntry]) -> BTreeMap<u32, Vec<Reference
                     let target = candidate
                         .target_sequence
                         .and_then(|value| index.get(&value).copied());
-                    let resolution = if candidate.target_sequence.is_none() {
+                    let resolution = if candidate.raw_pointer == 0 {
+                        Resolution::Null
+                    } else if candidate.target_sequence.is_none() {
                         Resolution::OutOfRange
                     } else if candidate
                         .target_sequence
@@ -245,5 +253,42 @@ pub(crate) fn summary_notes(graph: &BTreeMap<u32, Vec<ReferenceEdge>>) -> Vec<St
     counts
         .into_iter()
         .map(|(resolution, count)| format!("references.{resolution}={count}"))
+        .collect()
+}
+
+pub(crate) fn losses(
+    graph: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    scan: &CardScan<'_>,
+) -> Vec<LossNote> {
+    let offsets = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(Section::Directory))
+        .filter_map(|line| line.sequence.map(|sequence| (sequence, line.offset)))
+        .collect::<BTreeMap<_, _>>();
+    graph
+        .iter()
+        .flat_map(|(source, edges)| {
+            let offsets = &offsets;
+            edges
+                .iter()
+                .filter(|edge| {
+                    !matches!(edge.resolution, Resolution::Resolved | Resolution::Null)
+                })
+                .map(move |edge| LossNote {
+                    code: cadmpeg_ir::LossKind::ReferenceGraphNotClosed,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "IGES Directory Entry D{source} {:?} pointer {} has {:?} resolution; expected {}",
+                        edge.kind, edge.raw_pointer, edge.resolution, edge.expected
+                    ),
+                    provenance: offsets.get(source).copied().map(|offset| LossProvenance {
+                        format: "iges".into(),
+                        stream: "iges".into(),
+                        offset,
+                        tag: Some(format!("D{source}")),
+                    }),
+                })
+        })
         .collect()
 }

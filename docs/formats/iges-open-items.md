@@ -152,16 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-08. Reference resolution states are counted and never reported
-
-**Question.** Which reference resolution states are findings?
-
-**Known.** `iges.md` "Entity graph" states "Resolution states distinguish resolved, null, dangling, even-sequence, wrong-type, and cyclic references" and "Cycles are findings unless the owning relationship explicitly permits them". `graph.rs:20-29` gives `Resolved`, `OutOfRange`, `EvenSequence`, `Dangling`, `WrongType`, `Cyclic`. There is no `Null`, and `OutOfRange` is undocumented. Cycle detection covers `ReferenceKind::Transform` only (`graph.rs:127-141`).
-
-**Conflict.** `reader.rs:172` sends `graph::summary_notes` to `DecodeReport.notes` only. No resolution state ever reaches `losses`. A dangling or wrong-type reference is a free-text counter and exit status 0.
-
-**Need.** We need the finding policy for each resolution state, and cycle detection for the relationships that `iges.md` "Entity graph" covers.
-
 ### DR-09. The Directory status field accepts blank or eight digits and nothing between
 
 **Question.** Must the Directory status number be zero-padded to eight digits?

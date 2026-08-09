@@ -6579,6 +6579,22 @@ fn decode_validates_structure_targets_by_source_entity() {
     assert_eq!(wrong_owner["resolution"], "wrong_type");
     assert_eq!(wrong_owner["expected"], "structure-not-permitted");
 
+    let reference_losses = result
+        .report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+        .collect::<Vec<_>>();
+    assert_eq!(reference_losses.len(), 3);
+    assert!(reference_losses.iter().all(|loss| {
+        loss.provenance.as_ref().is_some_and(|provenance| {
+            provenance
+                .tag
+                .as_deref()
+                .is_some_and(|tag| tag.starts_with('D'))
+        })
+    }));
+
     let attribute_instance = result.ir.native.namespace("iges").unwrap().arenas
         ["attribute_table_instances"]
         .first()
@@ -10939,12 +10955,29 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
 
     let summary = IgesCodec
         .inspect(
-            &mut Cursor::new(bytes),
+            &mut Cursor::new(bytes.as_slice()),
             &cadmpeg_core::decode::InspectOptions::default(),
         )
         .unwrap();
 
     assert!(summary.notes.contains(&"references.cyclic=2".into()));
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cycle_losses = decoded
+        .report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed)
+        .collect::<Vec<_>>();
+    assert_eq!(cycle_losses.len(), 2);
+    assert!(cycle_losses
+        .iter()
+        .all(|loss| loss.message.contains("Cyclic resolution")));
 }
 
 #[test]

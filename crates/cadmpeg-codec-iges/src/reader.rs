@@ -125,6 +125,7 @@ fn decode_with_occurrence_limits(
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
+    losses.extend(graph::losses(&references, &scan));
     if product_occurrence_expansion.output_truncated {
         losses.push(LossNote {
             code: cadmpeg_ir::LossKind::DecodeDiagnostic,
