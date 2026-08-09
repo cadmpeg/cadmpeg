@@ -148,8 +148,10 @@ region, shell, face, loop, coedge, edge, vertex, or point identity.
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
-are connected into deterministic oriented profile chains. Points, lines, circles, ellipses,
-hyperbolas, parabolas, their bounded arc forms, and rational or non-rational B-splines retain
+are connected into deterministic oriented profile chains. Each chain starts with the earliest
+unused non-construction entity by numeric persisted position and grows from both endpoints. Points,
+lines, circles, ellipses, hyperbolas, parabolas, their bounded arc forms, and rational or
+non-rational B-splines retain
 canonical millimetre/radian values and parameter bounds. Both start/end-angle and legacy
 first/last-parameter bound names identify the same conic interval. A persisted placement supplies
 the sketch origin, normal, and in-plane axis by applying
@@ -453,8 +455,12 @@ be ordered. Incomplete or invalid primitive definitions remain attributable nati
 Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
 operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
 forms define link zero as the target and the remaining ordered `Shapes` links as tools without
-claiming that application-object links are already neutral body ids. Feature dependencies are the
-stable union of declared object dependencies and earlier link-property operands in source order.
+claiming that application-object links are already neutral body ids. For non-container features,
+feature dependencies are the stable union of all declared object dependencies and earlier
+link-property operands in source order. PartDesign body dependency records describe structural
+membership and do not duplicate the body's neutral child relations. A declared dependency can
+target a later declaration. Neutral feature ordinals use a stable dependency order and use source
+order as the tie-break rule.
 
 Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
 PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path

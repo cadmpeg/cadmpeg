@@ -81,10 +81,16 @@ pub(crate) fn transfer(
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
-    let feature_order = objects
+    let source_order = objects
         .iter()
         .map(|candidate| (feature_id(candidate), candidate.order))
         .collect::<HashMap<_, _>>();
+    let feature_ordinals = feature_ordinals(
+        objects,
+        &properties_by_owner,
+        &parent_by_member,
+        &source_order,
+    )?;
 
     for object in objects {
         if !is_design_object(&object.type_name) {
@@ -366,28 +372,37 @@ pub(crate) fn transfer(
         let mut dependency_objects = object
             .dependencies
             .iter()
-            .map(String::as_str)
+            .filter(|_| !is_body(&object.type_name))
+            .map(|dependency| (dependency.as_str(), true))
             .chain(
                 owned
                     .iter()
                     .flat_map(|property| &property.links)
-                    .filter_map(|link| link.object.as_deref()),
+                    .filter_map(|link| link.object.as_deref())
+                    .map(|dependency| (dependency, false)),
             )
             .collect::<Vec<_>>();
         let mut seen_dependencies = BTreeSet::new();
-        dependency_objects.retain(|dependency| seen_dependencies.insert(*dependency));
+        dependency_objects.retain(|(dependency, _)| seen_dependencies.insert(*dependency));
         let dependencies = dependency_objects
             .into_iter()
-            .filter_map(|dependency| feature_ids.get(dependency).cloned())
-            .filter(|dependency| {
-                feature_order
+            .filter_map(|(dependency, declared)| {
+                feature_ids
                     .get(dependency)
-                    .is_some_and(|order| *order < object.order)
+                    .cloned()
+                    .map(|feature| (feature, declared))
             })
+            .filter(|(dependency, declared)| {
+                *declared
+                    || source_order
+                        .get(dependency)
+                        .is_some_and(|order| *order < object.order)
+            })
+            .map(|(dependency, _)| dependency)
             .collect();
         ir.model.features.push(Feature {
             id,
-            ordinal: object.order as u64,
+            ordinal: feature_ordinals[object.id.as_str()],
             name: Some(object.name.clone()),
             suppressed: bool_property(&owned, "Suppressed"),
             parent: parent_by_member.get(object.id.as_str()).cloned(),
@@ -403,6 +418,81 @@ pub(crate) fn transfer(
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
     Ok(())
+}
+
+fn feature_ordinals<'a>(
+    objects: &'a [ObjectRecord],
+    properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
+    parent_by_member: &HashMap<&'a str, FeatureId>,
+    source_order: &HashMap<FeatureId, usize>,
+) -> Result<HashMap<&'a str, u64>, CodecError> {
+    let design_objects = objects
+        .iter()
+        .filter(|object| is_design_object(&object.type_name))
+        .collect::<Vec<_>>();
+    let object_by_id = design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), *object))
+        .collect::<HashMap<_, _>>();
+    let object_by_feature = design_objects
+        .iter()
+        .map(|object| (feature_id(object), object.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    let source_ordinals = design_objects
+        .iter()
+        .map(|object| object.order as u64)
+        .collect::<Vec<_>>();
+    let mut emitted = BTreeSet::new();
+    let mut ordinals = HashMap::new();
+
+    while emitted.len() < design_objects.len() {
+        let next = design_objects
+            .iter()
+            .copied()
+            .filter(|object| !emitted.contains(object.id.as_str()))
+            .filter(|object| {
+                let parent_ready = parent_by_member
+                    .get(object.id.as_str())
+                    .and_then(|parent| object_by_feature.get(parent))
+                    .is_none_or(|parent| emitted.contains(parent));
+                if !parent_ready {
+                    return false;
+                }
+
+                let declared_ready = is_body(&object.type_name)
+                    || object.dependencies.iter().all(|dependency| {
+                        !object_by_id.contains_key(dependency.as_str())
+                            || emitted.contains(dependency.as_str())
+                    });
+                if !declared_ready {
+                    return false;
+                }
+
+                properties_by_owner
+                    .get(object.id.as_str())
+                    .into_iter()
+                    .flatten()
+                    .flat_map(|property| &property.links)
+                    .filter_map(|link| link.object.as_deref())
+                    .filter(|dependency| {
+                        object_by_id.get(dependency).is_some_and(|dependency| {
+                            source_order[&feature_id(dependency)] < object.order
+                        })
+                    })
+                    .all(|dependency| emitted.contains(dependency))
+            })
+            .min_by_key(|object| object.order);
+        let Some(next) = next else {
+            return Err(CodecError::Malformed(
+                "design feature dependencies contain a cycle".into(),
+            ));
+        };
+        let ordinal = source_ordinals[ordinals.len()];
+        emitted.insert(next.id.as_str());
+        ordinals.insert(next.id.as_str(), ordinal);
+    }
+
+    Ok(ordinals)
 }
 
 /// Wrap an operation in its shape-refinement and boolean-tolerance controls.
@@ -1835,41 +1925,64 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
 fn build_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
     let mut unused = entities
         .iter()
-        .filter(|entity| !entity.construction)
-        .map(|entity| entity.id.clone())
+        .enumerate()
+        .filter(|(_, entity)| !entity.construction)
+        .map(|(index, _)| index)
         .collect::<BTreeSet<_>>();
-    let by_id = entities
-        .iter()
-        .map(|entity| (entity.id.clone(), entity))
-        .collect::<HashMap<_, _>>();
     let mut profiles = Vec::new();
-    while let Some(first) = unused.iter().next().cloned() {
-        unused.remove(&first);
+    while let Some(first) = unused.pop_first() {
         let mut chain = vec![SketchEntityUse {
-            entity: first.clone(),
+            entity: entities[first].id.clone(),
             reversed: false,
         }];
-        let mut end = endpoints(by_id[&first]).map(|(_, end)| end);
-        while let Some(point) = end {
-            let next = unused.iter().find_map(|id| {
-                let (start, finish) = endpoints(by_id[id])?;
-                if near(point, start) {
-                    Some((id.clone(), false, finish))
-                } else if near(point, finish) {
-                    Some((id.clone(), true, start))
+        let Some((mut start, mut end)) = endpoints(&entities[first]) else {
+            profiles.push(chain);
+            continue;
+        };
+        loop {
+            let next = unused.iter().find_map(|index| {
+                let (start, finish) = endpoints(&entities[*index])?;
+                if near(end, start) {
+                    Some((*index, false, finish))
+                } else if near(end, finish) {
+                    Some((*index, true, start))
                 } else {
                     None
                 }
             });
-            let Some((id, reversed, next_end)) = next else {
+            let Some((index, reversed, next_end)) = next else {
                 break;
             };
-            unused.remove(&id);
+            unused.remove(&index);
             chain.push(SketchEntityUse {
-                entity: id,
+                entity: entities[index].id.clone(),
                 reversed,
             });
-            end = Some(next_end);
+            end = next_end;
+        }
+        loop {
+            let previous = unused.iter().find_map(|index| {
+                let (candidate_start, candidate_end) = endpoints(&entities[*index])?;
+                if near(candidate_end, start) {
+                    Some((*index, false, candidate_start))
+                } else if near(candidate_start, start) {
+                    Some((*index, true, candidate_end))
+                } else {
+                    None
+                }
+            });
+            let Some((index, reversed, next_start)) = previous else {
+                break;
+            };
+            unused.remove(&index);
+            chain.insert(
+                0,
+                SketchEntityUse {
+                    entity: entities[index].id.clone(),
+                    reversed,
+                },
+            );
+            start = next_start;
         }
         profiles.push(chain);
     }
@@ -4362,5 +4475,28 @@ mod profile_tests {
         let profiles = build_profiles(&entities);
         assert_eq!(profiles.len(), 1);
         assert_eq!(profiles[0].len(), 2);
+    }
+
+    #[test]
+    fn disconnected_profile_seeds_follow_persisted_entity_order() {
+        let entities = (1..=11)
+            .map(|ordinal| {
+                entity(
+                    &format!("test:entity#{ordinal}"),
+                    SketchGeometry::Line {
+                        start: Point2::new(ordinal as f64 * 10.0, 0.0),
+                        end: Point2::new(ordinal as f64 * 10.0 + 1.0, 0.0),
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let profiles = build_profiles(&entities);
+
+        assert_eq!(profiles.len(), entities.len());
+        assert!(profiles
+            .iter()
+            .zip(&entities)
+            .all(|(profile, entity)| profile[0].entity == entity.id));
     }
 }

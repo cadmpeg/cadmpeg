@@ -3968,13 +3968,11 @@
             ],
             [
               {
-                "entity": "fcstd:design:sketch-entity#DimensionalRelations:6",
-                "reversed": false
-              }
-            ],
-            [
-              {
                 "entity": "fcstd:design:sketch-entity#DimensionalRelations:7",
+                "reversed": true
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#DimensionalRelations:6",
                 "reversed": false
               }
             ],
@@ -4023,42 +4021,6 @@
             ],
             [
               {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:10",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:11",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:12",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:13",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:14",
-                "reversed": false
-              }
-            ],
-            [
-              {
-                "entity": "fcstd:design:sketch-entity#GeometricRelations:15",
-                "reversed": false
-              }
-            ],
-            [
-              {
                 "entity": "fcstd:design:sketch-entity#GeometricRelations:2",
                 "reversed": false
               }
@@ -4102,6 +4064,38 @@
             [
               {
                 "entity": "fcstd:design:sketch-entity#GeometricRelations:9",
+                "reversed": false
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:10",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:12",
+                "reversed": true
+              },
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:11",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:13",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:14",
+                "reversed": false
+              }
+            ],
+            [
+              {
+                "entity": "fcstd:design:sketch-entity#GeometricRelations:15",
                 "reversed": false
               }
             ]

@@ -6032,6 +6032,41 @@ fn rejects_inconsistent_object_dependency_envelopes() {
 }
 
 #[test]
+fn preserves_forward_declared_feature_dependencies() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2" Dependencies="1">
+<ObjectDeps Name="First" Count="1"><Dep Name="Second"/></ObjectDeps>
+<ObjectDeps Name="Second" Count="0"/>
+<Object type="PartDesign::Feature" name="First"/><Object type="PartDesign::Feature" name="Second"/>
+</Objects><ObjectData Count="2"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("forward dependency");
+    let first = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("First"))
+        .expect("first feature");
+    let second = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Second"))
+        .expect("second feature");
+
+    assert_eq!(first.dependencies, std::slice::from_ref(&second.id));
+    assert!(second.ordinal < first.ordinal);
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn detects_marker_but_not_arbitrary_zip() {
     assert_eq!(
         FcstdCodec.detect(&archive(

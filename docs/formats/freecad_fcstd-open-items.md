@@ -216,33 +216,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 8. Design projection
 
-### DP-01. Forward declared dependencies
-
-**Question.** Can a declared `ObjectDeps` target appear later than its dependent object in source order?
-
-**Known.** `freecad_fcstd.md` §11 "Part cut, fuse, common, multi-fuse, and multi-common objects" defines feature dependencies as the stable union of declared object dependencies and earlier link-property operands. The earlier-source restriction applies to link-property operands, not to declared dependencies.
-
-**Conflict.** `design.rs` `transfer` combines declared dependencies and link targets, then filters every resolved feature dependency with `dependency.order < object.order`. A valid forward declared dependency disappears from the neutral feature graph without a loss record. The retained application graph still contains it, so the native and neutral dependency graphs disagree.
-
-**Need.** The decoder must preserve every resolved declared feature dependency. It must apply the earlier-source rule only to link-property operands that supplement the declared graph.
-
-### DP-02. Sketch profile seed order
-
-**Question.** Which non-construction entity starts each oriented sketch profile chain?
-
-**Known.** `freecad_fcstd.md` §8 "Construction objects retain source order and native identity independently of their cached shape." states that planar sketch geometry transfers in persisted entity order and connects into deterministic oriented profile chains. Sketch entity ids end in their one-based decimal source position.
-
-**Conflict.** `design.rs` `build_profiles` stores unused ids in a `BTreeSet` and selects the lexicographically first id. Decimal text order places `:10` before `:2`, so a sketch with at least ten eligible entities does not use persisted entity order. The seed choice can change profile order and orientation.
-
-**Need.** Profile construction must keep the persisted entity ordinal as data and select seeds by that ordinal.
-
 ### DP-03. Sketch profile junction ambiguity and tolerance
 
 **Question.** What endpoint tolerance connects two sketch entities, and what happens when more than one unused entity meets the current endpoint?
 
 **Known.** Constraints and persisted geometry can produce coincident endpoints. A neutral profile chain asserts one ordered continuation and orientation at every junction. Unresolved design geometry must remain attributable in the native lane.
 
-**Conflict.** `design.rs` `build_profiles` uses an uncited coordinate tolerance of `1e-9` on each axis. It takes the first id whose start or end passes that test. It does not detect two candidates, branching geometry, or two opposite endpoints that both pass. The selected branch depends on the id order from DP-02.
+**Conflict.** `design.rs` `build_profiles` uses an uncited coordinate tolerance of `1e-9` on each axis. It takes the first persisted entity whose start or end passes that test. It does not detect two candidates, branching geometry, or two opposite endpoints that both pass. The selected branch depends on persisted entity order.
 
 **Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
 
