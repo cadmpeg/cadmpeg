@@ -67,6 +67,55 @@ impl Interval {
     }
 }
 
+pub(crate) fn declared_unit_vector(
+    record: &ParameterRecord,
+    start: usize,
+    vector: Vector3,
+    precision: RealPrecision,
+) -> bool {
+    if !vector.norm().is_finite() {
+        return false;
+    }
+    let values = [vector.x, vector.y, vector.z];
+    let components = std::array::from_fn::<_, 3, _>(|offset| {
+        Interval::around(
+            values[offset],
+            record.number_uncertainty(start + offset, values[offset], precision),
+        )
+    });
+    components
+        .into_iter()
+        .fold(Interval::around(0.0, 0.0), |sum, component| {
+            sum.add(component.multiply(component))
+        })
+        .contains(1.0)
+}
+
+pub(crate) fn declared_orthogonal_vectors(
+    record: &ParameterRecord,
+    left_start: usize,
+    left: Vector3,
+    right_start: usize,
+    right: Vector3,
+    precision: RealPrecision,
+) -> bool {
+    let left_values = [left.x, left.y, left.z];
+    let right_values = [right.x, right.y, right.z];
+    (0..3)
+        .fold(Interval::around(0.0, 0.0), |sum, offset| {
+            let left = Interval::around(
+                left_values[offset],
+                record.number_uncertainty(left_start + offset, left_values[offset], precision),
+            );
+            let right = Interval::around(
+                right_values[offset],
+                record.number_uncertainty(right_start + offset, right_values[offset], precision),
+            );
+            sum.add(left.multiply(right))
+        })
+        .contains(0.0)
+}
+
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
     pub(crate) rows: [[f64; 4]; 3],

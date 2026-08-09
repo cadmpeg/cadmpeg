@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Constructive-solid primitive validation and native semantic ownership.
 
-use super::geometry::{entity_loss, resolve_transform, Projection};
+use super::geometry::{
+    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform, Projection,
+};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -24,14 +26,6 @@ fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option
         number_or(record, start + 1, default.y)?,
         number_or(record, start + 2, default.z)?,
     ))
-}
-
-fn unit(vector: Vector3) -> bool {
-    vector.norm().is_finite() && (vector.norm() - 1.0).abs() <= 1.0e-10
-}
-
-fn orthogonal(left: Vector3, right: Vector3) -> bool {
-    (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-10
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -205,13 +199,23 @@ pub(super) fn project(
             x_axis_start.and_then(|start| vector_or(record, start, Vector3::new(1.0, 0.0, 0.0)));
         let z_axis =
             z_axis_start.and_then(|start| vector_or(record, start, Vector3::new(0.0, 0.0, 1.0)));
+        let precision = global.real_precision();
         if x_axis_start.is_some() != x_axis.is_some()
             || z_axis_start.is_some() != z_axis.is_some()
-            || x_axis.is_some_and(|axis| !unit(axis))
-            || z_axis.is_some_and(|axis| !unit(axis))
-            || x_axis
+            || x_axis_start
+                .zip(x_axis)
+                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
+            || z_axis_start
                 .zip(z_axis)
-                .is_some_and(|(x_axis, z_axis)| !orthogonal(x_axis, z_axis))
+                .is_some_and(|(start, axis)| !declared_unit_vector(record, start, axis, precision))
+            || x_axis_start
+                .zip(x_axis)
+                .zip(z_axis_start.zip(z_axis))
+                .is_some_and(|((x_start, x_axis), (z_start, z_axis))| {
+                    !declared_orthogonal_vectors(
+                        record, x_start, x_axis, z_start, z_axis, precision,
+                    )
+                })
         {
             losses.push(entity_loss(entry, "primitive axes are not orthonormal"));
             continue;
@@ -259,8 +263,9 @@ pub(super) fn project(
         let direction = vector_or(record, direction_start, Vector3::new(0.0, 0.0, 1.0));
         if origin.is_none_or(|origin| {
             !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite()
-        }) || direction.is_none_or(|direction| !unit(direction))
-        {
+        }) || direction.is_none_or(|direction| {
+            !declared_unit_vector(record, direction_start, direction, global.real_precision())
+        }) {
             losses.push(entity_loss(entry, "solid sweep axis is invalid"));
             continue;
         }

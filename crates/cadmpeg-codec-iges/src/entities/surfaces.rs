@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::geometry::{entity_loss, resolve_transform, source_object};
+use super::geometry::{declared_unit_vector, entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
@@ -1051,11 +1051,11 @@ pub(super) fn project(
             continue;
         };
         let indicator = Vector3::new(x, y, z);
-        let indicator_norm = indicator.norm();
-        if !indicator_norm.is_finite() || (indicator_norm - 1.0).abs() > 1.0e-10 {
+        if !declared_unit_vector(record, 1, indicator, global.real_precision()) {
             losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
             continue;
         }
+        let indicator = normalized(indicator).expect("validated nonzero finite offset indicator");
         let Some(distance) = record
             .number(4)
             .filter(|value| value.is_finite() && *value != 0.0)

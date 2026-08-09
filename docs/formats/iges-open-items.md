@@ -118,16 +118,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-02. Unit-vector acceptance
-
-**Question.** What norm error does a conformant IGES unit vector have?
-
-**Known.** Four sites refuse an entity when a declared unit vector misses unit length by more than 1e-10: `csg.rs:29-35` (every supplied primitive axis, and the Type 162/164 sweep axis at `csg.rs:267`), `surfaces.rs:1064` (the Type 140 offset indicator), and `offsets.rs:110-123` (the Type 130 plane normal). None derives the threshold from the declared precision.
-
-**Note.** `offsets.rs:110-123` normalizes the vector and then refuses on the raw norm, so the test adds no numerical guarantee. `surfaces.rs:1064` refuses on a magnitude that is then used for its sign only (`surfaces.rs:230`).
-
-**Need.** A normal printed as `0.5773503,0.5773503,0.5773503` has a norm error of 6e-8 and loses its entity. We need the norm budget for a declared unit vector.
-
 ### GE-03. Type 112 segment continuity
 
 **Question.** What join residual does a conformant Type 112 parametric spline have?

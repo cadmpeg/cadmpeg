@@ -2618,6 +2618,15 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
 }
 
 fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
+    offset_plane_file_with_indicator("0", "0", &indicator_z.to_string(), distance)
+}
+
+fn offset_plane_file_with_indicator(
+    indicator_x: &str,
+    indicator_y: &str,
+    indicator_z: &str,
+    distance: f64,
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -2639,7 +2648,7 @@ fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
     ));
     bytes.extend(parameter_card(b"108,0,0,1,0,0,0,0,0,0;", 1, 1));
     bytes.extend(parameter_card(
-        format!("140,0,0,{indicator_z},{distance},1;").as_bytes(),
+        format!("140,{indicator_x},{indicator_y},{indicator_z},{distance},1;").as_bytes(),
         3,
         2,
     ));
@@ -6267,6 +6276,33 @@ fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
 }
 
 #[test]
+fn decode_applies_declared_real_significance_to_primitive_axes() {
+    for (axes, decoded) in [
+        (".8,.6,0,-.6000001,.8,0", true),
+        (".8,.6,0,-.5,.8,0", false),
+        (".8D0,.6D0,0,-.6000001D0,.8D0,0", false),
+    ] {
+        let bytes = owned_test_file(&[OwnedTestEntity {
+            entity_type: 168,
+            form: 0,
+            label: "ELLIPSO".into(),
+            status: "00000000",
+            parameters: format!("168,3,2,1,0,0,0,{axes};"),
+        }]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(result.report.losses.is_empty(), decoded, "{axes}");
+        if !decoded {
+            assert!(result.report.losses[0]
+                .message
+                .contains("primitive axes are not orthonormal"));
+        }
+    }
+}
+
+#[test]
 fn decode_types_swept_solids_and_balanced_boolean_postfix() {
     let result = IgesCodec
         .decode(
@@ -6310,6 +6346,42 @@ fn decode_types_swept_solids_and_balanced_boolean_postfix() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_applies_declared_real_significance_to_solid_sweep_axes() {
+    for (axis, decoded) in [
+        (".5773503,.5773503,.5773503", true),
+        (".57,.57,.57", false),
+        (".5773503D0,.5773503D0,.5773503D0", false),
+    ] {
+        let bytes = owned_test_file(&[
+            OwnedTestEntity {
+                entity_type: 100,
+                form: 0,
+                label: "PROFILE".into(),
+                status: "00010000",
+                parameters: "100,0,0,0,1,0,1,0;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 164,
+                form: 0,
+                label: "EXTRUDE".into(),
+                status: "00000000",
+                parameters: format!("164,1,5,{axis};"),
+            },
+        ]);
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        let sweep_loss = result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("solid sweep axis is invalid"));
+        assert_eq!(!sweep_loss, decoded, "{axis}");
+    }
 }
 
 #[test]
@@ -9161,6 +9233,40 @@ fn decode_solves_signed_analytic_offset_surfaces() {
 }
 
 #[test]
+fn decode_applies_declared_real_significance_to_offset_surface_indicators() {
+    for (components, decoded) in [
+        ((".5773503", ".5773503", ".5773503"), true),
+        ((".57", ".57", ".57"), false),
+        ((".5773503D0", ".5773503D0", ".5773503D0"), false),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(offset_plane_file_with_indicator(
+                    components.0,
+                    components.1,
+                    components.2,
+                    2.0,
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        let offset = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id.0 == "iges:model:surface#D3");
+        assert_eq!(offset, decoded, "{components:?}");
+        if !decoded {
+            assert!(result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("offset indicator is not a unit vector")));
+        }
+    }
+}
+
+#[test]
 fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     let result = IgesCodec
         .decode(
@@ -9553,6 +9659,34 @@ fn decode_does_not_default_an_unused_offset_pointer() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("DE2 is not explicit integer zero") }));
+}
+
+#[test]
+fn decode_applies_declared_real_significance_to_curve_offset_normals() {
+    for (normal_z, decoded) in [(".9999999", true), (".99", false), (".9999999D0", false)] {
+        let parameters = format!("130,1,1,0,,,0.5,,,,0,0,{normal_z},0,1.5707963267948966;");
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(uniform_offset_circle_file_with_parameters(
+                    parameters.as_bytes(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        let offset = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id.0 == "iges:model:curve#D3");
+        assert_eq!(offset, decoded, "{normal_z}");
+        if !decoded {
+            assert!(result.report.losses.iter().any(|loss| loss
+                .message
+                .contains("offset plane normal is not a unit vector")));
+        }
+    }
 }
 
 #[test]

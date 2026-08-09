@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Offset curve entity projection.
 
-use super::geometry::{entity_loss, source_object};
+use super::geometry::{declared_unit_vector, entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
@@ -125,7 +125,7 @@ pub(super) fn project(
             ));
             continue;
         };
-        if (Vector3::new(x, y, z).norm() - 1.0).abs() > 1.0e-10 {
+        if !declared_unit_vector(record, 10, Vector3::new(x, y, z), global.real_precision()) {
             losses.push(entity_loss(
                 entry,
                 "offset plane normal is not a unit vector",
