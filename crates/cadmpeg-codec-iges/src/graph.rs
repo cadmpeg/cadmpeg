@@ -87,6 +87,49 @@ impl<'a> ParameterResolver<'a> {
             return None;
         }
         let target_sequence = u32::try_from(raw_pointer).ok();
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            target_sequence,
+            expected,
+            accepts,
+        )
+    }
+
+    pub(crate) fn resolve_negative(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        expected: impl Into<String>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Option<u32> {
+        if raw_pointer == 0 {
+            return None;
+        }
+        let target_sequence = raw_pointer
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok());
+        self.resolve_sequence(
+            source,
+            parameter_index,
+            raw_pointer,
+            target_sequence,
+            expected,
+            accepts,
+        )
+    }
+
+    fn resolve_sequence(
+        &self,
+        source: u32,
+        parameter_index: usize,
+        raw_pointer: i64,
+        target_sequence: Option<u32>,
+        expected: impl Into<String>,
+        accepts: impl FnOnce(&DirectoryEntry) -> bool,
+    ) -> Option<u32> {
         let target = target_sequence.and_then(|sequence| self.directory.get(&sequence).copied());
         let resolution = if target_sequence.is_none() {
             Resolution::OutOfRange

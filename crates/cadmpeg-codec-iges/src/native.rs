@@ -1516,6 +1516,9 @@ pub(crate) fn store(
                     ),
                     template: parameters
                         .and_then(|record| record.integer(2))
+                        .and_then(|sequence| {
+                            parameter_resolver.resolve_type(entry.sequence, 2, sequence, 308, &[0])
+                        })
                         .map(|sequence| format!("iges:entity:directory#{sequence}")),
                     spacing: parameters.and_then(|record| record.number(3)),
                     scale: parameters.and_then(|record| record.number(4)),
@@ -1556,7 +1559,15 @@ pub(crate) fn store(
                 font_code,
                 font_definition: font_code
                     .filter(|value| *value < 0)
-                    .and_then(i64::checked_neg)
+                    .and_then(|value| {
+                        parameter_resolver.resolve_negative(
+                            entry.sequence,
+                            3,
+                            value,
+                            "type-310-form-0",
+                            |target| target.entity_type == 310 && target.form == 0,
+                        )
+                    })
                     .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
                 slant_angle: record.and_then(|record| record.number(4)),
                 rotation_angle: record.and_then(|record| record.number(5)),
@@ -1626,7 +1637,15 @@ pub(crate) fn store(
                 supersedes_code,
                 supersedes_definition: supersedes_code
                     .filter(|value| *value < 0)
-                    .and_then(i64::checked_neg)
+                    .and_then(|value| {
+                        parameter_resolver.resolve_negative(
+                            entry.sequence,
+                            3,
+                            value,
+                            "type-310-form-0",
+                            |target| target.entity_type == 310 && target.form == 0,
+                        )
+                    })
                     .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
                 grid_units_per_text_height: record.and_then(|record| record.integer(4)),
                 declared_character_count: record.and_then(|record| record.integer(5)),
@@ -1775,12 +1794,40 @@ pub(crate) fn store(
                 .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let terms = (0..count)
-                .filter_map(|index| record.and_then(|record| record.integer(2 + index)))
-                .map(|value| {
+                .filter_map(|index| {
+                    record
+                        .and_then(|record| record.integer(2 + index))
+                        .map(|value| (index, value))
+                })
+                .map(|(index, value)| {
                     if value < 0 {
                         NativeBooleanTerm::Operand {
-                            entity: value
-                                .checked_neg()
+                            entity: parameter_resolver
+                                .resolve_negative(
+                                    entry.sequence,
+                                    2 + index,
+                                    value,
+                                    if entry.form == 1 {
+                                        "constructive-solid-or-type-186"
+                                    } else {
+                                        "constructive-solid"
+                                    },
+                                    |target| {
+                                        matches!(
+                                            target.entity_type,
+                                            150 | 152
+                                                | 154
+                                                | 156
+                                                | 158
+                                                | 160
+                                                | 162
+                                                | 164
+                                                | 168
+                                                | 180
+                                                | 430
+                                        ) || (entry.form == 1 && target.entity_type == 186)
+                                    },
+                                )
                                 .map(|sequence| format!("iges:entity:directory#{sequence}")),
                             raw: value,
                         }
@@ -3341,6 +3388,15 @@ pub(crate) fn store(
                             record
                                 .and_then(|record| record.integer(index))
                                 .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        index,
+                                        sequence,
+                                        108,
+                                        &[],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:entity:directory#{sequence}"))
                         })
                         .collect()
@@ -3393,9 +3449,31 @@ pub(crate) fn store(
                 displays: (0..view_count)
                     .map(|index| {
                         let start = 3 + index * width;
+                        if let Some(color) = (entry.form == 4)
+                            .then(|| record.and_then(|record| record.integer(start + 3)))
+                            .flatten()
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 3,
+                                color,
+                                "type-314-form-0",
+                                |target| target.entity_type == 314 && target.form == 0,
+                            );
+                        }
                         NativeViewDisplay {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             line_font: (entry.form == 4)
                                 .then(|| record.and_then(|record| record.integer(start + 1)))
@@ -3404,6 +3482,15 @@ pub(crate) fn store(
                                 .then(|| record.and_then(|record| record.integer(start + 2)))
                                 .flatten()
                                 .filter(|sequence| *sequence != 0)
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start + 2,
+                                        sequence,
+                                        304,
+                                        &[1, 2],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:line-font#D{sequence}")),
                             color: (entry.form == 4)
                                 .then(|| record.and_then(|record| record.integer(start + 3)))
@@ -3418,6 +3505,13 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(3 + view_count * width + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_any(
+                                    entry.sequence,
+                                    3 + view_count * width + index,
+                                    sequence,
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -3444,9 +3538,42 @@ pub(crate) fn store(
                 blocks: (0..count)
                     .map(|index| {
                         let start = 2 + index * 6;
+                        if let Some(color) = record
+                            .and_then(|record| record.integer(start + 3))
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 3,
+                                color,
+                                "type-314-form-0",
+                                |target| target.entity_type == 314 && target.form == 0,
+                            );
+                        }
+                        if let Some(line_font) = record
+                            .and_then(|record| record.integer(start + 4))
+                            .filter(|value| *value < 0)
+                        {
+                            let _ = parameter_resolver.resolve_negative(
+                                entry.sequence,
+                                start + 4,
+                                line_font,
+                                "type-304-form-1-or-2",
+                                |target| target.entity_type == 304 && matches!(target.form, 1 | 2),
+                            );
+                        }
                         NativeSegmentDisplay {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             breakpoint: record.and_then(|record| record.number(start + 1)),
                             display_flag: record.and_then(|record| record.integer(start + 2)),
@@ -3496,6 +3623,15 @@ pub(crate) fn store(
                         NativeDrawingView {
                             view: record
                                 .and_then(|record| record.integer(start))
+                                .and_then(|sequence| {
+                                    parameter_resolver.resolve_type(
+                                        entry.sequence,
+                                        start,
+                                        sequence,
+                                        410,
+                                        &[0, 1],
+                                    )
+                                })
                                 .map(|sequence| format!("iges:presentation:view#D{sequence}")),
                             origin: [
                                 record.and_then(|record| record.number(start + 1)),
@@ -3511,6 +3647,18 @@ pub(crate) fn store(
                     .map(|index| {
                         record
                             .and_then(|record| record.integer(annotation_count_index + 1 + index))
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve(
+                                    entry.sequence,
+                                    annotation_count_index + 1 + index,
+                                    sequence,
+                                    "drawing-space-annotation",
+                                    |target| {
+                                        target.status.use_flag == 1
+                                            && target.status.subordinate == 1
+                                    },
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     })
                     .collect(),
@@ -3534,13 +3682,7 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
-    let font_definition = |value: Option<i64>| {
-        value
-            .filter(|value| *value < 0)
-            .and_then(i64::checked_neg)
-            .map(|sequence| format!("iges:presentation:text-font#D{sequence}"))
-    };
-    let text_run = |record: Option<&ParameterRecord>, start: usize| {
+    let text_run = |source: u32, record: Option<&ParameterRecord>, start: usize| {
         let font_code = record.and_then(|record| record.integer(start + 3));
         NativeTextRun {
             declared_character_count: record.and_then(|record| record.integer(start)),
@@ -3552,7 +3694,18 @@ pub(crate) fn store(
                 record.and_then(|record| record.number(start + 2)),
             ],
             font_code,
-            font_definition: font_definition(font_code),
+            font_definition: font_code
+                .filter(|value| *value < 0)
+                .and_then(|value| {
+                    parameter_resolver.resolve_negative(
+                        source,
+                        start + 3,
+                        value,
+                        "type-310-form-0",
+                        |target| target.entity_type == 310 && target.form == 0,
+                    )
+                })
+                .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
             slant_angle: record.and_then(|record| record.number(start + 4)),
             rotation_angle: record.and_then(|record| record.number(start + 5)),
             mirror: record.and_then(|record| record.integer(start + 6)),
@@ -3589,7 +3742,7 @@ pub(crate) fn store(
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
                     declared_string_count: record.and_then(|record| record.integer(1)),
                     strings: (0..count)
-                        .map(|index| text_run(record, 2 + index * 12))
+                        .map(|index| text_run(entry.sequence, record, 2 + index * 12))
                         .collect(),
                     transformation,
                 }
@@ -3647,7 +3800,22 @@ pub(crate) fn store(
                                         record.and_then(|record| record.number(start + 10)),
                                     ],
                                     font_code,
-                                    font_definition: font_definition(font_code),
+                                    font_definition: font_code
+                                        .filter(|value| *value < 0)
+                                        .and_then(|value| {
+                                            parameter_resolver.resolve_negative(
+                                                entry.sequence,
+                                                start + 11,
+                                                value,
+                                                "type-310-form-0",
+                                                |target| {
+                                                    target.entity_type == 310 && target.form == 0
+                                                },
+                                            )
+                                        })
+                                        .map(|sequence| {
+                                            format!("iges:presentation:text-font#D{sequence}")
+                                        }),
                                     slant_angle: record
                                         .and_then(|record| record.number(start + 12)),
                                     rotation_angle: record
