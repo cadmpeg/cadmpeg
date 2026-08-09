@@ -426,6 +426,31 @@ fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_
 }
 
 #[test]
+fn unsigned_dimension_signs_are_reconciled_only_when_unique() {
+    let equations = [
+        SectionCoordinateEquation::point_value(1, 0, 0.0),
+        SectionCoordinateEquation::point_value(2, 0, 10.0),
+    ];
+    let stored = BTreeMap::from([((1, 0), 0.0), ((2, 0), 10.0)]);
+    assert_eq!(
+        solve_unsigned_dimension_coordinates(
+            &equations,
+            &stored,
+            &[(1, 3, 0, 3.0), (3, 2, 0, 7.0)],
+        ),
+        BTreeMap::from([((3, 0), 3.0)])
+    );
+    assert_eq!(
+        solve_unsigned_dimension_coordinates(
+            &[SectionCoordinateEquation::point_value(1, 0, 0.0)],
+            &BTreeMap::from([((1, 0), 0.0)]),
+            &[(1, 2, 0, 3.0)],
+        ),
+        BTreeMap::new()
+    );
+}
+
+#[test]
 fn normalization_rejects_overflowed_finite_vectors() {
     assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
     assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));

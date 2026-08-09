@@ -3305,7 +3305,7 @@ pub(crate) fn resolved_section_coordinates(
                 })
         })
         .collect::<Vec<_>>();
-    let signed_dimension_candidates = definition
+    let linear_dimension_candidates = definition
         .relations
         .iter()
         .filter(|table| feature_relation_table_complete(table))
@@ -3333,12 +3333,30 @@ pub(crate) fn resolved_section_coordinates(
             let magnitude = section_relation_length_dimension(definition, relation)?
                 .value
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
-            let delta = match relation.sign {
+            matches!(relation.sign, 0 | 1 | 0xf6).then_some((
+                first,
+                second,
+                coordinate,
+                magnitude,
+                relation.sign,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let signed_dimension_candidates = linear_dimension_candidates
+        .iter()
+        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
+            let delta = match sign {
                 1 => magnitude,
                 0xf6 => -magnitude,
                 _ => return None,
             };
             Some((first, second, coordinate, delta))
+        })
+        .collect::<Vec<_>>();
+    let unsigned_dimension_candidates = linear_dimension_candidates
+        .iter()
+        .filter_map(|&(first, second, coordinate, magnitude, sign)| {
+            (sign == 0).then_some((first, second, coordinate, magnitude))
         })
         .collect::<Vec<_>>();
     let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
@@ -3463,6 +3481,16 @@ pub(crate) fn resolved_section_coordinates(
                 .filter_map(move |(coordinate, value)| Some(((point, coordinate), value?)))
         })
         .collect();
+    let unsigned_coordinates = solve_unsigned_dimension_coordinates(
+        &equations,
+        &stored_coordinates,
+        &unsigned_dimension_candidates,
+    );
+    for ((point, coordinate), value) in unsigned_coordinates {
+        equations.push(SectionCoordinateEquation::point_value(
+            point, coordinate, value,
+        ));
+    }
     let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
     let arc_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
@@ -3575,7 +3603,7 @@ pub(crate) fn resolved_section_points(
 
 type SectionCoordinateVariable = (u32, usize);
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct SectionCoordinateEquation {
     terms: BTreeMap<SectionCoordinateVariable, f64>,
     rhs: f64,
@@ -3620,6 +3648,186 @@ impl SectionCoordinateEquation {
             SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate],
         }
     }
+}
+
+fn solve_unsigned_dimension_coordinates(
+    equations: &[SectionCoordinateEquation],
+    stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
+    distances: &[(u32, u32, usize, f64)],
+) -> BTreeMap<SectionCoordinateVariable, f64> {
+    const MAX_SIGNED_BRANCHES: usize = 4096;
+    if distances.is_empty() {
+        return BTreeMap::new();
+    }
+
+    let variables = equations
+        .iter()
+        .flat_map(|equation| equation.terms.keys().copied())
+        .chain(
+            distances
+                .iter()
+                .flat_map(|&(first, second, coordinate, _)| {
+                    [(first, coordinate), (second, coordinate)]
+                }),
+        )
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let indices = variables
+        .iter()
+        .enumerate()
+        .map(|(index, variable)| (*variable, index))
+        .collect::<BTreeMap<_, _>>();
+    let mut adjacency = vec![BTreeSet::new(); variables.len()];
+    let connect = |members: Vec<usize>, adjacency: &mut [BTreeSet<usize>]| {
+        for &first in &members {
+            adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
+        }
+    };
+    for equation in equations {
+        connect(
+            equation
+                .terms
+                .keys()
+                .filter_map(|variable| indices.get(variable).copied())
+                .collect(),
+            &mut adjacency,
+        );
+    }
+    for &(first, second, coordinate, _) in distances {
+        connect(
+            [
+                indices[&(first, coordinate)],
+                indices[&(second, coordinate)],
+            ]
+            .into_iter()
+            .collect(),
+            &mut adjacency,
+        );
+    }
+
+    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
+    let mut resolved = BTreeMap::new();
+    while let Some(seed) = remaining.pop_first() {
+        let mut component = BTreeSet::from([seed]);
+        let mut pending = std::collections::VecDeque::from([seed]);
+        while let Some(variable) = pending.pop_front() {
+            for &neighbor in &adjacency[variable] {
+                if component.insert(neighbor) {
+                    remaining.remove(&neighbor);
+                    pending.push_back(neighbor);
+                }
+            }
+        }
+        let component_distances = distances
+            .iter()
+            .copied()
+            .filter(|&(first, second, coordinate, _)| {
+                component.contains(&indices[&(first, coordinate)])
+                    && component.contains(&indices[&(second, coordinate)])
+            })
+            .collect::<Vec<_>>();
+        if component_distances.is_empty()
+            || component_distances.len() >= usize::BITS as usize
+            || (1usize << component_distances.len()) > MAX_SIGNED_BRANCHES
+        {
+            continue;
+        }
+        let component_equations = equations
+            .iter()
+            .filter(|equation| {
+                equation
+                    .terms
+                    .keys()
+                    .any(|variable| component.contains(&indices[variable]))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let mut solutions = Vec::new();
+        for signs in 0..(1usize << component_distances.len()) {
+            let mut branched = component_equations.clone();
+            for (index, &(first, second, coordinate, magnitude)) in
+                component_distances.iter().enumerate()
+            {
+                let delta = if signs & (1usize << index) == 0 {
+                    magnitude
+                } else {
+                    -magnitude
+                };
+                branched.push(SectionCoordinateEquation::point_difference(
+                    first, second, coordinate, delta,
+                ));
+            }
+            let candidate = solve_section_coordinate_equations(&branched, stored_coordinates);
+            let mut values = stored_coordinates.clone();
+            for (point, coordinates) in &candidate {
+                for (coordinate, value) in coordinates.iter().copied().enumerate() {
+                    if let Some(value) = value {
+                        values.insert((*point, coordinate), value);
+                    }
+                }
+            }
+            let valid = component_equations.iter().all(|equation| {
+                let Some(lhs) = equation
+                    .terms
+                    .iter()
+                    .try_fold(0.0, |lhs, (variable, coefficient)| {
+                        Some(lhs + values.get(variable)? * coefficient)
+                    })
+                else {
+                    return true;
+                };
+                let scale = lhs.abs().max(equation.rhs.abs()).max(1.0);
+                (lhs - equation.rhs).abs() <= 1e-9 * scale
+            }) && component_distances.iter().all(
+                |&(first, second, coordinate, magnitude)| {
+                    let Some(first) = values.get(&(first, coordinate)).copied() else {
+                        return false;
+                    };
+                    let Some(second) = values.get(&(second, coordinate)).copied() else {
+                        return false;
+                    };
+                    let scale = first.abs().max(second.abs()).max(magnitude).max(1.0);
+                    ((second - first).abs() - magnitude).abs() <= 1e-9 * scale
+                },
+            );
+            if valid {
+                let mut candidate_values = BTreeMap::new();
+                for (point, coordinates) in candidate {
+                    for (coordinate, value) in coordinates.into_iter().enumerate() {
+                        let variable = (point, coordinate);
+                        if let (Some(global), Some(value)) = (indices.get(&variable), value) {
+                            if component.contains(global)
+                                && !stored_coordinates.contains_key(&variable)
+                            {
+                                candidate_values.insert(variable, value);
+                            }
+                        }
+                    }
+                }
+                solutions.push(candidate_values);
+            }
+        }
+        for &global in &component {
+            let variable = variables[global];
+            let Some(value) = solutions
+                .first()
+                .and_then(|solution| solution.get(&variable))
+                .copied()
+            else {
+                continue;
+            };
+            let scale = value.abs().max(1.0);
+            if solutions.iter().all(|solution| {
+                solution
+                    .get(&variable)
+                    .is_some_and(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+            }) {
+                resolved.insert(variable, value);
+            }
+        }
+    }
+    resolved
 }
 
 fn solve_section_coordinate_equations(

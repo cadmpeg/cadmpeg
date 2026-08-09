@@ -1798,14 +1798,18 @@ For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and
 `c = [15, 16, 15, 1]`, the referenced dimension supplies the distance between
-the two points along the measured horizontal or vertical segment only when the
-sign is explicit. Sign `1` adds the dimension and sign `f6` subtracts it.
-Sign zero supplies no signed coordinate equation; the segment direction fields
-do not assign the missing sign. The equation requires a complete `dimtab_ptr`;
-rows from a table missing any declared dimension do not supply coordinates.
-Equivalent rows define one coordinate equation. Rows that assign different
-signed differences to the same unordered point pair and coordinate define no
-solved coordinate for that equation.
+the two points along the measured horizontal or vertical segment. Sign `1`
+adds the dimension and sign `f6` subtracts it. Sign zero stores only the
+unsigned magnitude: it supplies the invariant
+`abs(second-first)=value`, but does not select an orientation. A coordinate
+solver may test both orientations only after the dimension table is complete
+and the measured coordinate is established. It admits a derived coordinate
+only when every consistent orientation gives the same value; an unresolved
+orientation supplies no coordinate. Rows from a dimension table missing any
+declared dimension do not supply coordinates. Equivalent rows define one
+coordinate invariant. Rows that assign different signed differences to the
+same unordered point pair and coordinate define no solved coordinate for that
+equation.
 
 A type-zero relation with vectors `a=[first_point,second_point,null,1]`,
 `b=[0,0,0,0]` or `b=[1,1,0,1]`, and `c=[15,16,15,1]` is a
@@ -1813,7 +1817,8 @@ segment-aligned linear dimension.
 Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
 selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
-`second-first=-value`; sign zero stores only the unsigned magnitude.
+`second-first=-value`; sign zero defines only the unsigned magnitude invariant
+above and leaves its orientation to the complete section solve.
 Only a linear selected dimension contributes this section-coordinate equation;
 an angular or schema-defined dimension does not supply a length ordinate.
 The two point identifiers denote endpoint loci shared by every incident
