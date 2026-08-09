@@ -1033,21 +1033,77 @@ impl CompoundPrefixProbe {
         let Some(directory_start) = le_u32(prefix, 48) else {
             return Self::Incomplete;
         };
+        let Some(directory_sector_count) = le_u32(prefix, 40) else {
+            return Self::Incomplete;
+        };
+        let Some(difat_start) = le_u32(prefix, 68) else {
+            return Self::Incomplete;
+        };
+        let Some(difat_count) = le_u32(prefix, 72).and_then(|v| usize::try_from(v).ok()) else {
+            return Self::Incomplete;
+        };
         let available = (prefix.len() - sector_size) / sector_size;
         let mut fat_sectors = Vec::new();
+        let mut header_free_seen = false;
         for index in 0..109 {
             let Some(id) = le_u32(prefix, 76 + index * 4) else {
                 return Self::Incomplete;
             };
-            if id != FREE_SECTOR {
+            if id == FREE_SECTOR {
+                header_free_seen = true;
+            } else {
+                if header_free_seen {
+                    return Self::Malformed(
+                        "non-free CFB header DIFAT entry follows a free entry".into(),
+                    );
+                }
                 fat_sectors.push(id);
             }
         }
+        let mut next_difat = difat_start;
+        let difat_entries = sector_size / 4 - 1;
+        let mut seen_difat = BTreeSet::new();
+        for _ in 0..difat_count {
+            if next_difat as usize >= available {
+                return Self::Incomplete;
+            }
+            if !seen_difat.insert(next_difat) {
+                return Self::Malformed("CFB DIFAT chain is cyclic".into());
+            }
+            let Some(raw) = sector_slice(prefix, sector_size, available, next_difat) else {
+                return Self::Incomplete;
+            };
+            let mut free_seen = false;
+            for index in 0..difat_entries {
+                let Some(id) = le_u32(raw, index * 4) else {
+                    return Self::Incomplete;
+                };
+                if id == FREE_SECTOR {
+                    free_seen = true;
+                } else {
+                    if free_seen {
+                        return Self::Malformed(
+                            "non-free CFB DIFAT entry follows a free entry".into(),
+                        );
+                    }
+                    fat_sectors.push(id);
+                }
+            }
+            let Some(next) = le_u32(raw, difat_entries * 4) else {
+                return Self::Incomplete;
+            };
+            next_difat = next;
+        }
+        if (difat_count == 0 && difat_start != END_OF_CHAIN)
+            || (difat_count != 0 && next_difat != END_OF_CHAIN)
+        {
+            return Self::Malformed("CFB DIFAT chain length does not match the header".into());
+        }
         if fat_sectors.len() != fat_count {
-            return Self::Incomplete;
+            return Self::Malformed("CFB DIFAT does not match its declared FAT count".into());
         }
         let mut fat = Vec::new();
-        for id in fat_sectors {
+        for &id in &fat_sectors {
             if id as usize >= available {
                 return Self::Incomplete;
             }
@@ -1059,14 +1115,49 @@ impl CompoundPrefixProbe {
                     .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk"))),
             );
         }
-        let chain = match chain(&fat, available, directory_start, None, "directory") {
-            Ok(value) => value,
-            Err(error) => return Self::Malformed(error.to_string()),
-        };
-        if chain.iter().any(|id| *id as usize >= available) {
-            return Self::Incomplete;
+        if fat_sectors
+            .iter()
+            .any(|id| fat.get(*id as usize) != Some(&FAT_SECTOR))
+            || seen_difat
+                .iter()
+                .any(|id| fat.get(*id as usize) != Some(&DIFAT_SECTOR))
+        {
+            return Self::Malformed("CFB allocation sector has the wrong role marker".into());
         }
-        let Ok(directory_bytes) = join_sectors(prefix, sector_size, available, &chain) else {
+        let expected_directory_count = if major == 4 {
+            Some(directory_sector_count as usize)
+        } else if directory_sector_count == 0 {
+            None
+        } else {
+            return Self::Malformed("CFB v3 declares directory sector count".into());
+        };
+        let mut directory_chain = Vec::new();
+        let mut seen_directory = BTreeSet::new();
+        let mut current = directory_start;
+        loop {
+            if current as usize >= available {
+                return Self::Incomplete;
+            }
+            let Some(&next) = fat.get(current as usize) else {
+                return Self::Malformed("CFB FAT does not address the directory sector".into());
+            };
+            if !seen_directory.insert(current) {
+                return Self::Malformed("CFB directory chain is cyclic".into());
+            }
+            directory_chain.push(current);
+            if next == END_OF_CHAIN {
+                break;
+            }
+            if next >= DIFAT_SECTOR {
+                return Self::Malformed("CFB directory chain has an invalid terminator".into());
+            }
+            current = next;
+        }
+        if expected_directory_count.is_some_and(|count| count != directory_chain.len()) {
+            return Self::Malformed("CFB directory chain length does not match the header".into());
+        }
+        let Ok(directory_bytes) = join_sectors(prefix, sector_size, available, &directory_chain)
+        else {
             return Self::Incomplete;
         };
         let directory = match parse_directory(&directory_bytes, major) {
@@ -1074,6 +1165,9 @@ impl CompoundPrefixProbe {
             Err(error) => return Self::Malformed(error.to_string()),
         };
         if let Err(error) = validate_root(&directory) {
+            return Self::Malformed(error.to_string());
+        }
+        if let Err(error) = validate_sibling_tree(&directory, directory[0].child) {
             return Self::Malformed(error.to_string());
         }
         let mut names = Vec::new();
@@ -1098,8 +1192,19 @@ impl CompoundPrefixProbe {
             pending.push((entry.left, parent.clone()));
             pending.push((entry.right, parent.clone()));
             if entry.object_type == 1 {
+                if let Err(error) = validate_sibling_tree(&directory, entry.child) {
+                    return Self::Malformed(error.to_string());
+                }
                 pending.push((entry.child, path));
             }
+        }
+        if directory
+            .iter()
+            .enumerate()
+            .skip(1)
+            .any(|(id, entry)| entry.object_type != 0 && !seen.contains(&(id as u32)))
+        {
+            return Self::Malformed("CFB directory contains an unreachable live entry".into());
         }
         Self::DirectoryEvidence(names)
     }
@@ -1430,6 +1535,24 @@ mod tests {
         );
         assert_eq!(
             CompoundPrefixProbe::inspect(&file[..400]),
+            CompoundPrefixProbe::Incomplete
+        );
+    }
+
+    #[test]
+    fn prefix_probe_follows_available_difat_sectors() {
+        let mut file = fixture();
+        file.resize(file.len() + SECTOR_SIZE, 0xff);
+        put_u32(&mut file, 68, 12);
+        put_u32(&mut file, 72, 1);
+        put_u32(sector_mut(&mut file, 11), 12 * 4, DIFAT_SECTOR);
+        put_u32(sector_mut(&mut file, 12), SECTOR_SIZE - 4, END_OF_CHAIN);
+        assert!(matches!(
+            CompoundPrefixProbe::inspect(&file),
+            CompoundPrefixProbe::DirectoryEvidence(_)
+        ));
+        assert_eq!(
+            CompoundPrefixProbe::inspect(&file[..SECTOR_SIZE * 13]),
             CompoundPrefixProbe::Incomplete
         );
     }
