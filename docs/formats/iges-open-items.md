@@ -174,14 +174,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the native parameter domain of each admitted curve type, and one recorded mapping to the IR domain.
 
-### GE-08. Type 106 duplicate points and closure
-
-**Question.** May a Type 106 linear path repeat a point, and which tolerance closes a Form 63 path?
-
-**Known.** `copious.rs:221-231` refuses the complete entity when any two consecutive points are inside the relative 1e-10 test. `copious.rs:39-52` tests Form 63 closure with the same constant, where Type 100 uses the declared minimum resolution for the same class of comparison (`geometry.rs:379`).
-
-**Need.** A digitized profile of 40000 points that repeats one sample loses the complete profile. A Form 63 boundary whose ends differ by 1e-7 mm inside a declared resolution of 1e-5 mm is refused as open. We need the rule for repeated tuples and the closure tolerance.
-
 ### GE-09. Type 104 endpoints are not tested against the conic
 
 **Question.** Must a Type 104 start and terminate point lie on its conic?

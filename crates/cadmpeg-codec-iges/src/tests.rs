@@ -1483,6 +1483,50 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
 }
 
 #[test]
+fn decode_preserves_coincident_segments_in_a_copious_linear_path() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                12,
+                b"106,2,4,0,0,0,0,0,0,1,0,0,1,1,0;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(path) = &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a degree-one path carrier");
+    };
+    assert_eq!(path.control_points[0], path.control_points[1]);
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_closes_form_63_with_the_global_minimum_resolution() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(
+                63,
+                b"106,1,3,0,0,0,1,0,0,0.0005;",
+                "00000000",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.curves.len(), 1);
+    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.001));
+    assert_eq!(result.ir.model.edges[0].start, result.ir.model.edges[0].end);
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
     let result = IgesCodec
         .decode(
