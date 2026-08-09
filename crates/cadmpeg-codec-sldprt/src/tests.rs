@@ -12138,9 +12138,12 @@ fn decode_dispatches_typed_features_by_xml_family() {
             &mut Vec::new(),
         )
         .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("dependencies are inconsistent with its operands"));
+    assert!(
+        error
+            .to_string()
+            .contains("dependencies are inconsistent with its operands"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -15130,6 +15133,76 @@ fn semantic_writer_round_trips_native_axis_helix() {
 }
 
 #[test]
+fn semantic_writer_rejects_embedded_helix_geometry_edits() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        r#"<Keywords><Feature Name="Helix/Spiral1" Type="Helix/Spiral" id="30"><Dimension Name="D3">3200</Dimension><Dimension Name="D4">12800</Dimension><Dimension Name="D5">0.25</Dimension><Dimension Name="D7">0°</Dimension></Feature></Keywords>"#
+            .as_bytes(),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moHelix_c", "Helix/Spiral1", 30)]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        let description = b"boundary_polyline mesh";
+        let schema = b"SCH_3201255_32001_13006";
+        let mut stream = b"PS\0\0".to_vec();
+        stream.extend((description.len() as u16).to_be_bytes());
+        stream.extend(description);
+        stream.push(schema.len() as u8);
+        stream.extend(schema);
+        stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
+        stream.extend((65u32 * 3).to_be_bytes());
+        stream.extend([0x00, 0x22]);
+        for index in 0..=64 {
+            let t = f64::from(index) / 64.0;
+            let angle = std::f64::consts::FRAC_PI_2 * t;
+            for value in [
+                10.0 + 3.5 * angle.cos(),
+                20.0 - 3.2 * t,
+                30.0 + 3.5 * angle.sin(),
+            ] {
+                stream.extend(value.to_be_bytes());
+            }
+        }
+        native.feature_input_lanes[0].native_payload.extend(stream);
+    });
+    let native = sldprt_native(&decoded.ir);
+    crate::resolved_features::holes::project_helix_axes(
+        &mut decoded.ir.model.features,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
+    let FeatureDefinition::Helix { radius, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("embedded helix geometry");
+    };
+    *radius = Length(9.0);
+
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &decoded.ir,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("changes embedded helix geometry"),
+        "{error}"
+    );
+}
+
+#[test]
 fn semantic_writer_round_trips_wrap() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
 
@@ -16625,6 +16698,20 @@ fn semantic_writer_round_trips_all_pattern_forms() {
     *plane_origin = Point3::new(2.0, 0.0, 0.0);
     *plane_normal = Vector3::new(0.0, 1.0, 0.0);
 
+    let mut inconsistent = decoded.ir.clone();
+    inconsistent.model.features[1].dependencies.clear();
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &inconsistent,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("pattern omits seed feature"),
+        "{error}"
+    );
+
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
@@ -17037,7 +17124,25 @@ fn semantic_writer_round_trips_typed_sweep() {
     decoded.ir.model.features[3]
         .dependencies
         .retain(|dependency| dependency != &profile_a);
-    decoded.ir.model.features[3].dependencies.push(profile_b);
+    decoded.ir.model.features[3]
+        .dependencies
+        .insert(0, profile_b);
+
+    let mut inconsistent = decoded.ir.clone();
+    inconsistent.model.features[3].dependencies.remove(0);
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &inconsistent,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("profile feature is not a preceding dependency"),
+        "{error}"
+    );
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -17399,6 +17504,29 @@ fn decode_projects_surface_sweep_reference_curve_profile() {
     ));
     assert!(sweep.dependencies.contains(&helix.id));
 
+    let mut changed_profile = decoded.ir.clone();
+    let FeatureDefinition::Sweep { section, .. } = &mut changed_profile
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
+        .unwrap()
+        .definition
+    else {
+        unreachable!("typed surface sweep");
+    };
+    *section = cadmpeg_ir::features::SweepSection::Profile(ProfileRef::Native("other".into()));
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &changed_profile,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("changes a reference-curve sweep profile"));
+
     decoded
         .ir
         .model
@@ -17568,6 +17696,12 @@ fn semantic_writer_round_trips_typed_loft() {
     *guides = vec![PathRef::Native(native_refs[4].clone())];
     *op = BooleanOp::Join;
     *closed = true;
+    decoded.ir.model.features[5].dependencies = vec![
+        feature_refs[2].clone(),
+        feature_refs[1].clone(),
+        feature_refs[0].clone(),
+        feature_refs[4].clone(),
+    ];
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -17681,6 +17815,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     };
     sections.reverse();
     *closed = true;
+    decoded.ir.model.features[2].dependencies.reverse();
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -19257,6 +19392,185 @@ fn native_store_rejects_edited_history_feature_class() {
     assert!(error
         .to_string()
         .contains("feature classes do not match the feature-input index"));
+}
+
+#[test]
+fn semantic_writer_rejects_compact_edge_selection_edits() {
+    use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Round" Type="Fillet" id="41" Edges="edge:1"><Dimension Name="Radius">2mm</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        let feature_ref = native.feature_histories[0].features[0].id.clone();
+        let lane = &mut native.feature_input_lanes[0];
+        let marker = lane.native_payload.len() + 12;
+        lane.native_payload.extend(1u32.to_le_bytes());
+        lane.native_payload
+            .extend([0x00, 0x02, 0x00, 0x00, 0, 0, 0, 0]);
+        lane.native_payload.extend([
+            0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49,
+            0xb2, 0x54,
+        ]);
+        lane.native_payload.extend([0, 0]);
+        lane.native_payload.extend(0x818bu32.to_le_bytes());
+        lane.native_payload.extend([
+            0x00, 0x81, 0x03, 0x01, 0x2c, 0, 0, 0, 0x63, 0x18, 0x58, 0x69,
+        ]);
+        lane.native_payload.extend(7u32.to_le_bytes());
+        let components = crate::resolved_features::selections::compact_edge_component_path_at(
+            &lane.native_payload,
+            marker,
+        )
+        .unwrap();
+        lane.edge_selections
+            .push(crate::records::FeatureInputEdgeSelection {
+                id: "sldprt:test:edge-selection#0".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: marker as u64,
+                object_name_ref: lane.names[0].id.clone(),
+                feature_ref,
+                local_edge_ids: vec![7],
+                components,
+                producer_feature_refs: Vec::new(),
+                terminal_feature_ref: None,
+            });
+    });
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Round"))
+        .unwrap();
+    let FeatureDefinition::Fillet { groups } = &mut feature.definition else {
+        panic!("typed fillet");
+    };
+    groups[0].edges = EdgeSelection::Native("changed".into());
+
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &decoded.ir,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("changes a compact edge selection"),
+        "{error}"
+    );
+}
+
+#[test]
+fn semantic_writer_rejects_compact_surface_selection_edits() {
+    use cadmpeg_ir::features::{ExtrudeExtent, FaceSelection, FeatureDefinition, Termination};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Profile" Type="Sketch" id="30"/><Extrusion Name="UpTo" Type="BossExtrude" id="31" Profile="30" EndCondition="ToFace" Face="face:12" Operation="Join"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moExtrusion_c", "UpTo", 31)]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        let feature_ref = native.feature_histories[0]
+            .features
+            .iter()
+            .find(|feature| feature.name == "UpTo")
+            .unwrap()
+            .id
+            .clone();
+        let lane = &mut native.feature_input_lanes[0];
+        let marker = lane.native_payload.len() + 12;
+        lane.native_payload.extend(6u32.to_le_bytes());
+        lane.native_payload.extend([0x04, 0x02, 0, 0]);
+        lane.native_payload.extend(0x1234u32.to_le_bytes());
+        lane.native_payload.extend([
+            0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49,
+            0xb2, 0x54,
+        ]);
+        lane.native_payload.extend([0, 0]);
+        lane.native_payload.extend(0x8c20u32.to_le_bytes());
+        let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
+        lane.native_payload.extend(signature);
+        lane.native_payload.extend(12u32.to_le_bytes());
+        lane.native_payload.extend([0; 24]);
+        lane.surface_selections
+            .push(crate::records::FeatureInputSurfaceSelection {
+                id: "sldprt:test:surface-selection#0".into(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: marker as u64,
+                object_name_ref: lane
+                    .names
+                    .iter()
+                    .find(|name| name.value == "UpTo")
+                    .unwrap()
+                    .id
+                    .clone(),
+                feature_ref,
+                producer_feature_refs: Vec::new(),
+                terminal_feature_ref: None,
+                components: vec![crate::records::FeatureInputComponentPathEntry {
+                    instance: Some(0x8c20),
+                    type_signature: signature,
+                    local_id: Some(12),
+                }],
+            });
+    });
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("UpTo"))
+        .unwrap();
+    let FeatureDefinition::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    } = &mut feature.definition
+    else {
+        panic!("typed extrusion");
+    };
+    let Termination::ToFace { face, .. } = &mut side.termination else {
+        panic!("to-face termination");
+    };
+    *face = FaceSelection::Native("changed".into());
+
+    let error = SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &decoded.ir,
+            &decoded.source_fidelity,
+            &mut Vec::new(),
+        )
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("changes a compact surface selection"),
+        "{error}"
+    );
 }
 
 #[test]

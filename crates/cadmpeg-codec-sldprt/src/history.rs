@@ -16552,16 +16552,6 @@ pub fn sync_neutral_features(
         &changed_parameters,
     )?;
     let projected_features = project_features_with_native_inputs(native);
-    let desired_sketches = features
-        .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
-        .map(|feature| feature.id.clone())
-        .collect::<std::collections::HashSet<_>>();
-    let projected_sketches = projected_features
-        .iter()
-        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
-        .map(|feature| feature.id.clone())
-        .collect::<std::collections::HashSet<_>>();
     let projected_features = projected_features
         .into_iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -16577,21 +16567,15 @@ pub fn sync_neutral_features(
                     .map_or_else(|| dependency.clone(), |record| neutral_feature_id(record))
             })
             .collect::<Vec<_>>();
-        let expected = dependency_residual(feature, expected, &desired_sketches);
         let consistent = projected_features
             .get(&projected_id)
             .is_some_and(|projected| {
-                let projected_dependencies = dependency_residual(
-                    projected,
-                    projected.dependencies.clone(),
-                    &projected_sketches,
-                );
                 if feature.native_ref.is_some() {
-                    projected_dependencies == expected
+                    projected.dependencies == expected
                 } else {
                     expected
                         .iter()
-                        .all(|dependency| projected_dependencies.contains(dependency))
+                        .all(|dependency| projected.dependencies.contains(dependency))
                 }
             });
         if !consistent {
@@ -16662,26 +16646,6 @@ fn synchronize_neutral_feature_content(
         record.content = content;
     }
     Ok(())
-}
-
-fn dependency_residual(
-    feature: &cadmpeg_ir::features::Feature,
-    dependencies: Vec<FeatureId>,
-    sketch_features: &std::collections::HashSet<FeatureId>,
-) -> Vec<FeatureId> {
-    match feature.definition {
-        FeatureDefinition::Extrude { .. }
-        | FeatureDefinition::Revolve { .. }
-        | FeatureDefinition::Sweep { .. }
-        | FeatureDefinition::HelicalSweep { .. }
-        | FeatureDefinition::Loft { .. }
-        | FeatureDefinition::Rib { .. } => dependencies
-            .into_iter()
-            .filter(|dependency| !sketch_features.contains(dependency))
-            .collect(),
-        FeatureDefinition::Pattern { .. } => Vec::new(),
-        _ => dependencies,
-    }
 }
 
 fn synchronize_history_content_order(native: &mut crate::native::SldprtNative) {
