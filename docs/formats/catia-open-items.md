@@ -744,14 +744,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** The sign reverses the cyclic member order of every loop in the component and toggles every member sense, which gives an inverted shell. The result stays radially coherent, so no gate rejects it, and the transfer loss note affirms that face and loop orientation transfer. We must know the field to fix the sign without a vote.
 
-### E5-11. Occurrence direction with a degenerate bound span
-
-**Question.** Which field gives the parameter direction of a loop occurrence when its two bound parameters are equal?
-
-**Known.** `catia.md` §9 "**Topology:**" gives "Their span sign relative to the pcurve's native range fixes occurrence parameter direction". A zero span has no sign. `e5::decode` then keeps the smaller of the forward and reverse endpoint errors when the two differ by more than `1e-9`. `catia.md` §12 gives about `1e-5` mm for E5 endpoint storage, so the separation test is four orders below the precision of the compared values and almost never withholds.
-
-**Need.** The direction reverses the edge curve geometry and the coedge parameter range. We must know the field to fix the direction of a degenerate span.
-
 ## 7. FBB-only and float-packed variants
 
 ### FV-01. `u24be` endpoint quotient binding

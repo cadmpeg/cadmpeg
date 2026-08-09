@@ -1077,13 +1077,11 @@ fn plan_e5_boundary(
                 .distance(*end)
                 .max(endpoints[1].distance(*start));
             let reversed = e5_stored_pcurve_reversed(topology, edge_ref, *pcurve_ref, range)
-                .or_else(|| {
-                    ((forward - reverse_error).abs() > 1e-9).then_some(reverse_error < forward)
-                });
+                .or_else(|| unique_endpoint_direction(forward, reverse_error));
             let Some(reversed) = reversed else {
                 continue;
             };
-            if if reversed { reverse_error } else { forward } > 2e-3 {
+            if if reversed { reverse_error } else { forward } > E5_ENDPOINT_MATCH_TOLERANCE {
                 continue;
             }
             let Some((mut curve, mut curve_range)) = e5_boundary_curve(
@@ -2663,6 +2661,65 @@ mod route_tests {
         ]);
 
         assert!(plan_e5_boundary(&topology, &surfaces, &points).is_none());
+    }
+
+    #[test]
+    fn intersection_side_planning_withholds_ambiguous_degenerate_direction() {
+        let surface = E5Surface {
+            pos: 0,
+            record_id: 100,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            uv_scale: [1.0, 1.0],
+        };
+        let line = || E5Pcurve::Line {
+            surface: 100,
+            origin: [0.0, 0.0],
+            direction: [0.001, 0.0],
+            range: [0.0, 1.0],
+        };
+        let topology = E5Topology {
+            bodies: Vec::new(),
+            faces: Vec::new(),
+            edges: BTreeMap::from([(
+                200,
+                E5Edge {
+                    record_id: 200,
+                    support: 300,
+                    start_vertex: 400,
+                    end_vertex: 401,
+                    parameter_start: 500,
+                    parameter_end: 501,
+                    tail: Vec::new(),
+                },
+            )]),
+            pcurves: BTreeMap::from([(20, line()), (21, line())]),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::from([(
+                300,
+                E5CurveSupport {
+                    record_id: 300,
+                    intersection: true,
+                    pcurves: vec![20, 21],
+                    mode: 0,
+                    range: [0.0, 1.0],
+                    tail: Vec::new(),
+                },
+            )]),
+            vertex_refs: vec![400, 401],
+        };
+        let surfaces = HashMap::from([(100, (SurfaceId("surface".to_string()), &surface))]);
+        let points = HashMap::from([
+            (400, Point3::new(0.0001, 0.0, 0.0)),
+            (401, Point3::new(0.0004, 0.0, 0.0)),
+        ]);
+
+        let plan = plan_e5_boundary(&topology, &surfaces, &points).expect("boundary plan");
+        assert!(plan.intersection_plan.is_empty());
+        assert!(plan.edge_curve_plan.is_empty());
     }
 
     #[test]
