@@ -252,6 +252,14 @@ Pcurve coordinates use the parameterization of their support surface. A plane
 uses `(u=length, v=length)`. A cylindrical or conical surface uses
 `(u=angle, v=length)`. A spherical or toroidal surface uses
 `(u=angle, v=angle)`. A NURBS surface uses its native knot-domain values.
+For a linear sweep, the first axis uses the directrix parameterization and the
+second axis uses length. For a revolution, the directrix axis uses its native
+parameterization and the other axis uses plane angle. A transposed revolution
+swaps these axes. An offset, subset, or curve-bounded surface inherits the
+support chart. A line directrix is length-valued, an analytic conic directrix
+is angle-valued, and a NURBS directrix keeps its native knot-domain values.
+Composite, polyline, and unresolved directrices have no settled unit contract
+and remain unscaled and opaque.
 The decoder converts length and plane-angle values to the IR units before it
 binds a pcurve to a coedge. A non-uniform unit conversion is exact for line,
 NURBS, trimmed, harmonic, and hyperbolic pcurve carriers. Analytic conics and

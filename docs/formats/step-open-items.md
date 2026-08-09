@@ -35,7 +35,10 @@ charges the worst-case range-inference allowance before the pass. A synthesized
 16-point implicit-face regression refuses the 16-point linear allowance at the
 `step_implicit_face_plane` operation before plane inference starts. Implicit
 plane inference uses the ordered outer-loop winding and a scale-relative
-collinearity threshold.
+collinearity threshold. The current full sweep has no decode timeout, but a
+large-file spot check still reached 3.3 GiB peak resident memory while writing
+342 MiB of CADIR from a 121 MiB input. The endpoint and termination bounds are
+therefore closed; memory efficiency remains an open defect in this gate.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic
@@ -62,7 +65,12 @@ consistency omission indexes coedges once,
 so retaining or omitting many failed optional pcurves is linear in the decoded
 coedge population. Edition-3 anchor expansion charges every cloned value node
 to the same collection-item and work-unit dimensions before materialization;
-its independent expansion and depth fuses remain active.
+its independent expansion and depth fuses remain active. The service profile
+rejects four large inputs deterministically in about 0.3 s at its
+collection-item ceiling. The desktop profile completes the same spot checks,
+but the measured 3.3 GiB peak resident memory shows that retained allocation
+accounting and representation overhead are not yet efficient enough for an L9
+claim.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
@@ -90,11 +98,13 @@ losses and no remaining pcurve consistency findings. The remaining 3,697
 validation errors are classified as source-invalid topology: 3,693 faces have
 more than one explicit outer bound, and four source `OPEN_SHELL` records have
 disconnected face components. The decoder retains those records and findings.
-Each source-invalid face or shell also emits one `source_topology_invalid` loss
-with source provenance. A face loss includes its outer-bound count. A shell
-loss includes its source shell id, face count, and component count. These losses
-are warnings because a source defect does not mean that the retained topology
-was lost.
+The rebuilt sweep emits 3,719 `source_topology_invalid` losses: 3,715 face
+losses and four shell losses. The 22 additional face losses describe source
+faces that are not present in a retained validation shell. Each source-invalid
+face or shell emits one stable loss with source provenance. A face loss includes
+its outer-bound count. A shell loss includes its source shell id, face count,
+and component count. These losses are warnings because a source defect does
+not mean that the retained topology was lost.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
 artifact. Classify each failure as a source-invalid case with a retained
@@ -119,11 +129,23 @@ IDs and derived edge parameter ranges, but includes carrier geometry, document
 units and tolerances, arena populations, topology cardinalities, orientations,
 and coedge parameter data.
 
+The contract runs for every supported target. It writes and re-decodes an
+edited document for every target and checks the same fingerprint after the
+edit. The strict writer refuses unsupported content before emitting bytes. A
+fresh source-less target matrix was also accepted by the independent FreeCAD
+STEP importer: AP203 editions 1 and 2, AP214, and AP242 editions 1 through 3
+each imported one valid six-face solid. The repeatable check is
+[`scripts/verify-step-freecad.py`](../../scripts/verify-step-freecad.py).
+
+**Status.** Resolved for the declared Part 21 target matrix. The overall STEP
+score remains gated by L9-01, L9-02, L9-03, and L9-05.
+
 **Closure.** Write source-less and edited documents for each supported AP and
 version target. Re-decode and validate every result. Compare a defined semantic
 fingerprint, verify deterministic output, exercise explicit refusal for
 unsupported content, and record independent application acceptance where the
-application is available.
+application is available. These checks are now repository tests and the
+independent importer script above.
 
 ### L9-05. Fuzz and termination proof
 
@@ -136,6 +158,13 @@ lexer, parser, inspection, semantic decode, default writer, custom-header
 writer, and degenerate-geometry writer paths. The targets treat panics,
 aborts, sanitizer findings, and libFuzzer timeouts as failures; ordinary parse,
 validation, and export refusals are expected results.
+
+A bounded campaign ran `step_lexer`, `step_parser`, `step_reader`,
+`step_decode`, `step_writer`, `step_writer_custom`, and
+`step_geometry_degenerate` for 1,000 executions per target with a two-second
+per-input timeout and a 4 GiB RSS ceiling. All seven targets completed without
+a panic, sanitizer finding, timeout, or allocation failure. The checked-in
+seed inputs remain the reproducible regression corpus.
 
 **Closure.** Add parser and writer fuzz targets for the admitted envelope. Run
 bounded campaigns with resource policies enabled. Retain minimized synthesized
@@ -320,14 +349,15 @@ candidates remain detached and produce a topology loss.
 
 ### TP-03. Non-planar pcurve units
 
-**Question.** Which pcurve parameter axes are length-valued for cylinders,
-spheres, cones, tori, and other non-planar support surfaces?
-
-**Known.** A plane uses two length-valued axes. A cylinder or cone uses an
-angular `u` axis and a length-valued `v` axis. A sphere or torus uses two
-angular axes. A NURBS surface uses its native knot-domain parameters. A
-transformed surface keeps the parameterization of its basis. The decoder
-converts these axes to canonical IR units before it binds a pcurve.
+**Resolved.** A plane uses `(length, length)`. A cylinder or cone uses
+`(angle, length)`. A sphere or torus uses `(angle, angle)`. A NURBS surface
+uses native knot-domain values. A linear sweep uses `(directrix, length)` and
+a revolution uses `(directrix, angle)`; a transposed revolution swaps the
+axes. An offset, subset, or curve-bounded surface inherits its support chart.
+Line directrices are length-valued, analytic conic directrices are
+angle-valued, and NURBS directrices retain native knot-domain values.
+Composite, polyline, and unresolved directrices have no stable unit contract
+and are not guessed.
 
 **Current control.** The decoder stores a `PcurveAffineTransform` around the
 exact basis carrier when the two axis scales differ. Evaluation, inverse
@@ -335,9 +365,6 @@ parameter search, validation, and nested trim/offset handling apply the full
 affine map. The writer refuses a transformed pcurve when the target format has
 no native carrier that preserves its parameterization and reports
 `PcurveOmitted`; it does not emit a geometrically false analytic conic.
-
-**Need.** Define the parameter-unit rules for procedural surfaces whose
-directrix parameter is not a standard analytic length or angle parameter.
 
 ### TP-04. Partial solid and tolerant point carriers
 
