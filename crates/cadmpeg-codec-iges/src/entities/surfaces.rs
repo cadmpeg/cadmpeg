@@ -744,7 +744,10 @@ pub(super) fn project(
                 control_points,
                 weights: Some(weights),
                 u_periodic: generatrix.periodic,
-                v_periodic: (end_angle - start_angle - std::f64::consts::TAU).abs() <= 1.0e-12,
+                v_periodic: super::curve_conversion::angularly_equal(
+                    end_angle - start_angle,
+                    std::f64::consts::TAU,
+                ),
             }),
             source_object: Some(source_object(entry)),
         });

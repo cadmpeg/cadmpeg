@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Conic-arc classification and bounded neutral projection.
 
+use super::curve_conversion::angularly_equal;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -231,11 +232,10 @@ pub(super) fn project(
                 let raw_end_parameter = parameter(end);
                 let mut sweep =
                     (raw_end_parameter - raw_start_parameter).rem_euclid(std::f64::consts::TAU);
-                if sweep <= 1.0e-14 {
+                if angularly_equal(sweep, 0.0) {
                     sweep = std::f64::consts::TAU;
                 }
-                let start_parameter = if raw_start_parameter
-                    >= std::f64::consts::TAU - super::curve_conversion::ANGULAR_TOLERANCE
+                let start_parameter = if angularly_equal(raw_start_parameter, std::f64::consts::TAU)
                 {
                     0.0
                 } else {

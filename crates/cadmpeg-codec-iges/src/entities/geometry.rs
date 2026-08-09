@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Point and analytic curve entity projection.
 
+use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
@@ -390,7 +391,7 @@ pub(crate) fn project_geometry(
         let mut angle = dot(axis, cross(ref_direction, end_direction))
             .atan2(dot(ref_direction, end_direction))
             .rem_euclid(std::f64::consts::TAU);
-        if angle <= 1.0e-14 {
+        if angularly_equal(angle, 0.0) {
             angle = std::f64::consts::TAU;
         }
         let stem = format!("D{}", entry.sequence);

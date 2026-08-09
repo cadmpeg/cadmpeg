@@ -192,16 +192,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** The output is an edge whose start vertex is off its own curve, with no loss and no recorded tolerance. We need the endpoint agreement rule for Type 104.
 
-### GE-10. Angular equality constants
-
-**Question.** Which angular difference makes a start and terminate point coincident?
-
-**Known.** A coincident start and terminate means a complete turn, which is an IGES rule. The width of the test is not. `geometry.rs:394-399` and `conics.rs:235-239` use `1.0e-14`; `conics.rs:243-246` uses `ANGULAR_TOLERANCE`, which is 6.3e-12, inside the same function. `surfaces.rs:756` uses `1.0e-12` for the revolution periodicity flag while `surfaces.rs:109-115` clamps a sweep with `ANGULAR_TOLERANCE`, so a sweep between the two constants gives a closed revolution flagged non-periodic. The test at `surfaces.rs:1168-1174` constructs a sweep in exactly that band.
-
-**Note.** `curve_conversion.rs:26-38` documents its constant at the definition and defends it against the discontinuity it guards. The other constants have no such record.
-
-**Need.** We need one angular equality rule.
-
 ### GE-12. Type 126 property flags against the values
 
 **Question.** What does a PROP3 polynomial flag that disagrees with the weights mean, and what slack does the declared parameter range have?

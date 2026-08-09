@@ -76,6 +76,8 @@ Type 106 interpretation flag IP and Directory form are redundant required constr
 
 Type 104 defines a nondegenerate ellipse, hyperbola, or parabola in an XY-parallel plane. Standard position requires each conic axis to be parallel to X or Y and centers the conic on the Z axis; a parabola has its vertex on that axis. An axis-aligned parabola may open along X or Y. A Directory Type 124 transformation moves the standard-position conic into model space. Forms 1, 2, and 3 identify ellipse, hyperbola, and parabola, but the form is informational; the coefficients determine the conic family. Form 0 is the deprecated unspecified form.
 
+Angular equality uses one absolute tolerance of `2π × 10^-12` radians. An arc whose endpoint directions differ by no more than this tolerance is a complete turn. A revolution whose sweep differs from `2π` by no more than this tolerance is periodic. A sweep may exceed `2π` by this tolerance and is then clamped to `2π` before exact carrier construction.
+
 ## Primitive solids
 
 Primitive solid entities use Form 0. Their native dimensional values remain in declared model units, their origin defaults to `(0,0,0)`, and their axis vectors are dimensionless. An omitted X axis defaults to `(1,0,0)` and an omitted Z or revolution axis defaults to `(0,0,1)`. Every supplied or defaulted axis is unit length. Entities carrying both X and Z axes require them to be orthogonal; local Y is `Z × X`. The Directory transformation remains a separate placement link.
