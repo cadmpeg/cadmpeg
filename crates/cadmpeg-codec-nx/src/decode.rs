@@ -10645,6 +10645,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         if feature.suppressed != Some(true)
             && !is_exact_empty_base
             && !output_free_native_snapshot(feature)
+            && !output_free_local_body_construction(feature)
         {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
@@ -10948,6 +10949,21 @@ pub(crate) fn output_free_native_snapshot(feature: &cadmpeg_ir::features::Featur
             .source_properties
             .get("operation_record")
             .is_some_and(|record| !record.trim().is_empty())
+}
+
+/// Return whether a feature's primary body is local to the history namespace.
+///
+/// Offset-store and unbound object-namespace bodies are retained as native
+/// feature-local identities. They do not create neutral current-body outputs;
+/// the saved segment image remains the only neutral body census.
+pub(crate) fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
+    feature.outputs.is_empty()
+        && feature
+            .source_properties
+            .contains_key("primary_body_reference")
+        && !feature
+            .source_properties
+            .contains_key("primary_body_segment_use")
 }
 
 pub(crate) fn active_configuration_state_is_incomplete(

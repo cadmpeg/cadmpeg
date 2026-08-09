@@ -9105,6 +9105,97 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(!losses[5].message.contains("sketch"));
 }
 
+#[test]
+fn design_intent_losses_accept_output_free_local_body_operations() {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut source_properties = std::collections::BTreeMap::new();
+    source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#local-pattern".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("incomplete neutral construction fields"));
+    assert!(losses[0].message.contains("pattern (1)"));
+}
+
+#[test]
+fn output_free_local_body_construction_requires_unbound_primary_body() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
+
+    let mut source_properties = std::collections::BTreeMap::new();
+    source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    let mut feature = Feature {
+        id: FeatureId("test:feature#local-pattern".into()),
+        ordinal: 0,
+        name: Some("Pattern Geometry".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties,
+        source_tag: Some("Pattern Geometry".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved { form: None },
+        },
+        native_ref: None,
+    };
+
+    assert!(crate::decode::output_free_local_body_construction(&feature));
+
+    feature.source_properties.remove("primary_body_reference");
+    feature
+        .source_properties
+        .insert("body_reference.0".to_string(), "42".to_string());
+    assert!(!crate::decode::output_free_local_body_construction(
+        &feature
+    ));
+
+    feature.source_properties.insert(
+        "primary_body_reference".to_string(),
+        "reference".to_string(),
+    );
+    feature.source_properties.insert(
+        "primary_body_segment_use".to_string(),
+        "segment-use".to_string(),
+    );
+    assert!(!crate::decode::output_free_local_body_construction(
+        &feature
+    ));
+}
+
 #[path = "integration_tests.rs"]
 mod integration_tests;
 

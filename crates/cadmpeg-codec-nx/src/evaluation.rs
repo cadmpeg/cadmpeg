@@ -9,7 +9,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::BodyId;
 
-use crate::decode::output_free_native_snapshot;
+use crate::decode::{output_free_local_body_construction, output_free_native_snapshot};
 
 /// Why a saved-body census cannot yet be evaluated exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -564,18 +564,6 @@ fn suppression_is_body_census_invariant(
                     | FeatureDefinition::Draft { .. }
                     | FeatureDefinition::ReplaceFace { .. }
             ))
-}
-
-fn output_free_local_body_construction(feature: &cadmpeg_ir::features::Feature) -> bool {
-    feature.outputs.is_empty()
-        && feature
-            .source_properties
-            .iter()
-            .filter(|(key, _)| key.starts_with("body_reference."))
-            .try_fold(0usize, |count, (_, value)| {
-                value.parse::<u32>().ok().map(|_| count + 1)
-            })
-            .is_some_and(|count| count > 0)
 }
 
 fn complete_local_or_native_body_selection(selection: &BodySelection) -> bool {
@@ -2618,9 +2606,10 @@ mod tests {
         );
         extrude.suppressed = None;
         extrude.dependencies.clear();
-        extrude
-            .source_properties
-            .insert("body_reference.0".to_string(), "42".to_string());
+        extrude.source_properties.insert(
+            "primary_body_reference".to_string(),
+            "reference".to_string(),
+        );
         ir.model.features.push(extrude);
 
         assert_eq!(
