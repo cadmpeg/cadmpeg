@@ -3730,6 +3730,74 @@ fn section_equation_unsigned_coordinate_distances(
         .collect()
 }
 
+fn section_equation_radius_dimensions(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<(u32, f64)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(dimensions) = definition
+        .dimensions
+        .as_ref()
+        .filter(|table| feature_dimension_table_complete(table))
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    equations
+        .rows
+        .iter()
+        .filter(|equation| equation.function_id == 2 && equation.arguments.len() == 2)
+        .filter_map(|equation| {
+            let [Some(first), Some(second)] = equation.arguments.as_slice() else {
+                return None;
+            };
+            let first = variables.rows.get(usize::try_from(*first).ok()?)?;
+            let second = variables.rows.get(usize::try_from(*second).ok()?)?;
+            let (radius, scalar) = match (first.variable_type, second.variable_type) {
+                (3, 0) => (first, second),
+                (0, 3) => (second, first),
+                _ => return None,
+            };
+            let scalar_value = scalar.value?;
+            let dimension = dimensions.rows.get(usize::try_from(scalar.key).ok()?)?;
+            let dimension_value = dimension.value?;
+            if dimension.dimension_type != 3
+                || dimension.value_unit != crate::feature::DimensionUnit::Millimeters
+                || !scalar_value.is_finite()
+                || scalar_value <= 0.0
+                || !dimension_value.is_finite()
+                || dimension_value <= 0.0
+                || (scalar_value - dimension_value).abs()
+                    > 1e-9 * scalar_value.abs().max(dimension_value.abs()).max(1.0)
+                || radius.value.is_some_and(|value| {
+                    !value.is_finite()
+                        || value <= 0.0
+                        || (value - dimension_value).abs()
+                            > 1e-9 * value.abs().max(dimension_value.abs()).max(1.0)
+                })
+            {
+                return None;
+            }
+            Some((radius.key, dimension_value))
+        })
+        .collect()
+}
+
 type SectionCoordinateVariable = (u32, usize);
 
 #[derive(Clone, Default)]
@@ -4577,6 +4645,9 @@ pub(crate) fn resolved_section_radii(
                 candidates.entry(row.key).or_default().push(value);
             }
         }
+    }
+    for (radius_id, value) in section_equation_radius_dimensions(definition) {
+        candidates.entry(radius_id).or_default().push(value);
     }
     for relation in definition
         .relations

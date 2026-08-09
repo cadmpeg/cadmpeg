@@ -6370,6 +6370,96 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
 }
 
 #[test]
+fn equation_function_two_binds_radius_row_to_dimension_row() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x02\xf8\x02\x00\x01\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                crate::feature::FeatureVariableRow {
+                    variable_type: 3,
+                    key: 42,
+                    value: None,
+                    value_body: Vec::new(),
+                    guess: None,
+                    guess_body: Vec::new(),
+                    guess_dimension_driven: true,
+                    known: Some(0),
+                    homogeneity: Some(1),
+                    uvar_id: Some(7),
+                    dimension_driven: true,
+                    offset: 0,
+                },
+                crate::feature::FeatureVariableRow {
+                    variable_type: 0,
+                    key: 0,
+                    value: Some(5.0),
+                    value_body: Vec::new(),
+                    guess: Some(5.0),
+                    guess_body: Vec::new(),
+                    guess_dimension_driven: false,
+                    known: Some(0),
+                    homogeneity: Some(0),
+                    uvar_id: None,
+                    dimension_driven: false,
+                    offset: 0,
+                },
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: Some(crate::feature::FeatureDimensionTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureDimension {
+                dimension_type: 3,
+                value: Some(5.0),
+                value_body: Vec::new(),
+                unresolved_value_token: None,
+                value_unit: crate::feature::DimensionUnit::Millimeters,
+                direction_byte: 0,
+                auxiliary_value: None,
+                auxiliary_body: Vec::new(),
+                external_id: 100,
+                references: None,
+                offset: 0,
+            }],
+            offset: 0,
+        }),
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_radii(&definition),
+        BTreeMap::from([(42, 5.0)])
+    );
+
+    let mut mismatched = definition;
+    mismatched
+        .dimensions
+        .as_mut()
+        .expect("dimension table")
+        .rows[0]
+        .value = Some(6.0);
+    assert!(resolved_section_radii(&mismatched).is_empty());
+}
+
+#[test]
 fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
     let variable =
         |variable_type, key, value, dimension_driven| crate::feature::FeatureVariableRow {

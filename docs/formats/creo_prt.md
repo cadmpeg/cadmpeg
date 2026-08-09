@@ -1473,7 +1473,11 @@ rows have the same type, either `1` or `2`; its third row has type `0`. The
 third row key is a zero-based ordinal into a complete `dimtab_ptr` row table.
 For dimension types `1` through `5`, the type-0 scalar and selected dimension
 value are equal non-negative millimetre values, and the equation asserts that
-the absolute difference of the first two coordinates equals that value.
+the absolute difference of the first two coordinates equals that value. When a
+function-2 row pairs one type-3 row with one type-0 row, the type-0 key is a
+zero-based ordinal into a complete `dimtab_ptr` row table of dimension type
+`3`. The type-0 scalar, selected dimension value, and type-3 radius scalar are
+equal positive millimetre values; the type-3 row key is the radius identity.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table

@@ -401,7 +401,8 @@ equality between two referenced rows; for two type-1 rows or two type-2 rows,
 this transfers equality between the corresponding point coordinates. Function
 `3` transfers a complete non-negative linear dimension into an unsigned
 coordinate-difference constraint when its type-0 scalar agrees with the
-selected dimension row.
+selected dimension row. A function-2 type-3/type-0 pair binds a positive
+type-3 radius row to a type-3 dimension row when both scalar values agree.
 
 **Need.** We must know the remaining non-equality equation and relation joins
 that assign a dimension value to a dimension-driven solver variable.
