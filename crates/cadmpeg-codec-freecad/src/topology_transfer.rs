@@ -751,23 +751,9 @@ impl<'a> Builder<'a> {
                 edge_use.shape
             )));
         };
-        let endpoint_use = |orientation| {
-            shape
-                .children
-                .iter()
-                .find(|child| child.orientation == orientation)
-                .or_else(|| shape.children.first())
-                .cloned()
-        };
-        let Some(start_use) = endpoint_use(TextOrientation::Forward) else {
-            return Err(CodecError::Malformed(format!(
-                "edge TShape {} has no vertex",
-                edge_use.shape
-            )));
-        };
-        let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
-        let start = self.ensure_vertex(ir, &start_use, transform)?;
-        let end = self.ensure_vertex(ir, &end_use, transform)?;
+        let (start_use, end_use) = edge_endpoint_uses(edge_use.shape, &shape.children)?;
+        let start = self.ensure_vertex(ir, start_use, transform)?;
+        let end = self.ensure_vertex(ir, end_use, transform)?;
         let id = EdgeId(crate::native::model_id(
             "edge",
             &self.payload.id,
@@ -1487,11 +1473,28 @@ fn close_radial_rings(coedges: &mut [Coedge]) {
         by_edge.entry(coedge.edge.clone()).or_default().push(index);
     }
     for indices in by_edge.values() {
-        for (position, index) in indices.iter().enumerate() {
-            let next = indices[(position + 1) % indices.len()];
-            coedges[*index].radial_next = coedges[next].id.clone();
+        if let [first, second] = indices.as_slice() {
+            coedges[*first].radial_next = coedges[*second].id.clone();
+            coedges[*second].radial_next = coedges[*first].id.clone();
         }
     }
+}
+
+fn edge_endpoint_uses(
+    edge: usize,
+    children: &[TextShapeUse],
+) -> Result<(&TextShapeUse, &TextShapeUse), CodecError> {
+    let start = children
+        .iter()
+        .rfind(|child| child.orientation == TextOrientation::Forward);
+    let end = children
+        .iter()
+        .rfind(|child| child.orientation == TextOrientation::Reversed);
+    start.zip(end).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "edge TShape {edge} does not have both forward and reversed endpoint uses"
+        ))
+    })
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {
@@ -1517,5 +1520,63 @@ mod tests {
             OccurrenceKey::new(7, positive).0,
             occurrence_label(7, positive)
         );
+    }
+
+    #[test]
+    fn endpoint_selection_matches_the_last_oriented_direct_children() {
+        let children = [
+            TextShapeUse {
+                shape: 1,
+                orientation: TextOrientation::Forward,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 2,
+                orientation: TextOrientation::Internal,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 3,
+                orientation: TextOrientation::Forward,
+                location: 0,
+            },
+            TextShapeUse {
+                shape: 4,
+                orientation: TextOrientation::Reversed,
+                location: 0,
+            },
+        ];
+        let (start, end) = edge_endpoint_uses(9, &children).expect("endpoint uses");
+        assert_eq!(start.shape, 3);
+        assert_eq!(end.shape, 4);
+
+        assert!(matches!(
+            edge_endpoint_uses(9, &children[..3]),
+            Err(CodecError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn non_manifold_incidence_does_not_invent_a_radial_order() {
+        let edge = EdgeId("edge".into());
+        let mut coedges = (0..3)
+            .map(|index| {
+                let id = CoedgeId(format!("coedge-{index}"));
+                Coedge {
+                    id: id.clone(),
+                    owner_loop: LoopId(format!("loop-{index}")),
+                    edge: edge.clone(),
+                    next: id.clone(),
+                    previous: id.clone(),
+                    radial_next: id,
+                    sense: Sense::Forward,
+                    use_curve: None,
+                    use_curve_parameter_range: None,
+                    pcurves: Vec::new(),
+                }
+            })
+            .collect::<Vec<_>>();
+        close_radial_rings(&mut coedges);
+        assert!(coedges.iter().all(|coedge| coedge.radial_next == coedge.id));
     }
 }

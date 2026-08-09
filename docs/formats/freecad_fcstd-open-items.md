@@ -111,35 +111,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Conflict.** `element_map.rs` `bind_topology` gathers all neutral ids of one kind in arena traversal order. It assigns the Nth id to one-based name position N and repeats the complete sequence for placed occurrences. No source topology index is carried through this join, and no check proves that arena order equals the B-rep indexed-map order for each placement. A different traversal or a missing occurrence can attach a valid persistent name to the wrong face, edge, or vertex.
 
 **Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.
-
-## 5. Exact-topology transfer
-
-### XT-01. Edge endpoint child selection
-
-**Question.** What child-use cardinality and orientation combinations define the start and end vertices of normal, closed, degenerate, and malformed edge records?
-
-**Known.** Exact-shape records retain the complete ordered and oriented topology graph. Neutral edges require explicit start and end vertex identities.
-
-**Conflict.** `topology_transfer.rs` `ensure_edge` searches for a `Forward` child and a `Reversed` child. If either search fails, it uses the first child; if the reversed search still has no value, it duplicates the selected start. Thus a record with a missing orientation can become a closed edge, and an unrelated first child can become an endpoint. No loss or refusal identifies the substitution.
-
-**Need.** We must define the valid endpoint child forms. The decoder must handle each valid form explicitly and reject a form that cannot establish both endpoint identities.
-
-### XT-02. Edge representation selection and uniqueness
-
-**Question.** When an edge has multiple 3D curve, polygon, or matching curve-on-surface representations, which representation supplies its neutral carrier and face pcurve?
-
-**Known.** `freecad_fcstd.md` §7 "Part shape properties reference text or binary B-rep entries." requires retention of all geometry carriers, locations, parameter ranges, and pcurves. Polygon transfer is a fallback for an edge without an exact 3D curve.
-
-**Conflict.** `topology_transfer.rs` `ensure_edge` takes the first kind-1 curve representation, or the first kind-5 through kind-7 polygon representation. `face_pcurve` takes the first kind-2 or kind-3 representation whose surface and transform match. Neither path checks uniqueness or equivalence among multiple accepted candidates. Record order therefore selects the neutral geometry and parameter range.
-
-**Need.** We must establish representation cardinality and precedence. If multiple candidates are legal, the decoder must select by serialized role or require equivalent geometry; otherwise it must reject the duplicate form.
-
-### XT-03. Non-manifold radial order
-
-**Question.** What source order defines the radial cycle when more than two coedges use the same edge?
-
-**Known.** The native topology retains ordered child uses and their orientations. A neutral coedge has one `radial_next` relation. For a manifold edge, the one- or two-use cycle has no additional ordering choice.
-
-**Conflict.** `topology_transfer.rs` `close_radial_rings` groups emitted coedges by edge and links them in global emission order. For three or more uses, this asserts a radial order without reading a source relation or deriving the around-edge order from geometry. A different root or face traversal changes the asserted cycle.
-
-**Need.** We must establish whether the B-rep topology supplies a radial order for non-manifold uses. If it does not, the neutral model must retain an unordered incidence relation or mark the radial order as unresolved.

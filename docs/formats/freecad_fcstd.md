@@ -166,6 +166,24 @@ use is a distinct neutral occurrence. Repeated root uses of the same shape at th
 retain their serialized root order as an occurrence discriminator; they do not share body,
 region, shell, face, loop, coedge, edge, vertex, or point identity.
 
+An edge endpoint accessor visits the edge's direct child uses in serialized order. A `Forward`
+vertex replaces the start vertex and a `Reversed` vertex replaces the end vertex. Thus the last
+child of each orientation supplies the endpoint. `Internal` and `External` children do not supply
+endpoints. Closed and degenerate edges still require both oriented uses; the uses can reference the
+same vertex. An edge transferred to neutral topology without both endpoint orientations is invalid.
+
+Edge geometry access follows serialized representation order. The first 3D-curve representation
+supplies the exact neutral carrier and parameter range. Only when no 3D curve exists does the first
+stored polygon representation supply an approximate carrier. For a face use, the first pcurve
+representation whose surface and composed location equal the face surface supplies the pcurve.
+A closed-surface representation supplies its second pcurve when the edge use is reversed. Later
+matching representations remain in the native edge record.
+
+The B-rep edge record stores incidence but no radial order between three or more face uses. One
+coedge is self-radial. Two coedges reference each other. Three or more coedges remain self-radial;
+their shared edge identity carries unordered non-manifold incidence without asserting a
+serialization-dependent radial cycle.
+
 ## 8. Design-history transfer
 
 Construction objects retain source order and native identity independently of their cached shape.
