@@ -42,14 +42,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `container::e5_record_stream_in_segments` takes the segment with the largest count through `max_by_key`, which keeps the last maximum. Two segments with equal counts and no `0x0000008e` type resolve by segment order. The specification sentence is a transcription of the function's doc comment.
 
-### CR-04. Repeated BREP stream names
-
-**Question.** Which field selects the `MainDataStream` and the `SurfacicReps` stream that make the BREP buffer when the directory holds more than one descriptor with that name?
-
-**Known.** `catia.md` §3.4 "The descriptor names include" gives the descriptor names and the content of each stream. It gives no selection rule for a repeated name. `container::brep_stream` keeps the descriptor with the largest logical length in each class, and it accepts a second-class name that contains `Surf` instead of the complete name.
-
-**Need.** The BREP buffer is the input to the variant census and to every standard-path decoder. We must know the selection to read the correct body.
-
 ### CR-05. Descriptor name position
 
 **Question.** Which offset and length hold the stream name in a directory descriptor?
@@ -251,16 +243,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `catia.md` §7.3 "The fixed bytes in the inline production are structural" enumerates the assigned payload forms and gives "bytes outside those assigned forms remain literals; they do not create references." `0x3c` is not an assigned form. `object_graph::decode_payload` reads `3c <atom> <u32le>` as a bulk-table header when the `u32le` is not more than the payload byte length, and reads the `0x3c` byte as a literal atom when it is more.
 
 **Need.** The two branches consume different byte counts, so the token boundary of every field after the `0x3c` byte changes. A different boundary makes or removes an object reference. We must know the extent field to walk the payload.
-
-### DI-27. Feature-local parameter order
-
-**Question.** Which field gives the position of a parameter in the parameter list of its feature?
-
-**Known.** `catia.md` §7.3 "An object graph is preceded by" gives the byte offset of a design object's first field and the zero-based position of that object in the graph. It gives no order for the parameters of one feature. `design_feature` sorts the exact feature-owned parameters by object-record byte offset, then by entity byte offset, then by the identifier that the codec makes, and it publishes that rank as `DesignParameter.ordinal`.
-
-**Need.** `DesignParameter.ordinal` states the position of the parameter in its ownership scope. One feature can own parameters from more than one design object, so the sort interleaves records of different objects by file position alone. We must know the field to order the list of one feature.
-
-**Note.** The parameters that no feature owns keep a document-wide rank from a separate enumeration that counts the feature-owned parameters, so their sequence has gaps. One field holds two different orders.
 
 ## 3. Standard nested `V5_CFV2`
 
