@@ -5,12 +5,12 @@ use cadmpeg_container::compound::{CompoundEntry, CompoundSnapshot};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::{CodecError, ContainerSummary};
 
-use crate::rse::{database_band, direct_rse_child, RseInventory};
+use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
     pub(crate) snapshot: CompoundSnapshot<'a>,
-    pub(crate) rse: RseInventory,
+    pub(crate) rse: RseInventory<'a>,
 }
 
 impl<'a> InventorContainer<'a> {
@@ -24,12 +24,54 @@ impl<'a> InventorContainer<'a> {
                 "Inventor document has no RSeStorage storage".into(),
             ));
         }
-        let rse = RseInventory::build(&snapshot);
+        let rse = RseInventory::build(ctx, &snapshot);
         Ok(Self { snapshot, rse })
     }
 
     pub(crate) fn summary(&self) -> ContainerSummary {
-        let entries = self.snapshot.container_entries(classify);
+        let mut entries = self.snapshot.container_entries(classify);
+        for segment in &self.rse.segments {
+            let directory_id = segment.pair.metadata.directory_id().to_string();
+            let Some(entry) = entries
+                .iter_mut()
+                .find(|entry| entry.attributes.get("directory_id") == Some(&directory_id))
+            else {
+                continue;
+            };
+            match &segment.meta {
+                SegmentMetaState::Parsed(meta) => {
+                    entry
+                        .attributes
+                        .insert("inner_framing".into(), "zlib".into());
+                    entry
+                        .attributes
+                        .insert("expanded_size".into(), meta.body.window().len().to_string());
+                    entry.attributes.insert(
+                        "meta_stream_version".into(),
+                        meta.version.value().to_string(),
+                    );
+                    entry
+                        .attributes
+                        .insert("segment_kind".into(), meta.kind.label().into());
+                    entry
+                        .attributes
+                        .insert("display_name".into(), meta.display_name.clone());
+                }
+                SegmentMetaState::Unsupported { marker, version } => {
+                    entry
+                        .attributes
+                        .insert("meta_marker".into(), marker.clone());
+                    entry
+                        .attributes
+                        .insert("meta_stream_version".into(), version.to_string());
+                }
+                SegmentMetaState::Malformed(error) => {
+                    entry
+                        .attributes
+                        .insert("framing_error".into(), error.clone());
+                }
+            }
+        }
         ContainerSummary {
             format: "inventor".into(),
             container_kind: "cfb".into(),

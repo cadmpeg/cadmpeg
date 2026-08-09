@@ -23,5 +23,8 @@ cadmpeg-ir.workspace = true
 schemars = { workspace = true, optional = true }
 serde.workspace = true
 
+[dev-dependencies]
+flate2.workspace = true
+
 [lints]
 workspace = true

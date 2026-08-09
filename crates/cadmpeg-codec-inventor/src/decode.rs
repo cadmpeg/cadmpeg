@@ -7,14 +7,17 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::{DecodeReport, LossKind, LossNote, Severity, TransferLedger};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::SourceFidelity;
 
 use crate::container::InventorContainer;
 use crate::native::{
-    SegmentPairRecord, StorageBandRecord, UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
+    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, StorageBandRecord,
+    UnpairedSegmentRecord, INVENTOR_NATIVE_VERSION,
 };
+use crate::rse::SegmentMetaState;
 
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let container = InventorContainer::open(ctx, root)?;
@@ -51,10 +54,59 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         .segments
         .iter()
         .map(|segment| SegmentPairRecord {
-            id: format!("inventor:rse:segment:{}", segment.token.as_str()),
-            token: segment.token.as_str().into(),
-            metadata_directory_id: segment.metadata.directory_id(),
-            bulk_directory_id: segment.bulk.directory_id(),
+            id: format!("inventor:rse:segment:{}", segment.pair.token.as_str()),
+            token: segment.pair.token.as_str().into(),
+            metadata_directory_id: segment.pair.metadata.directory_id(),
+            bulk_directory_id: segment.pair.bulk.directory_id(),
+        })
+        .collect::<Vec<_>>();
+    let segment_meta = container
+        .rse
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let SegmentMetaState::Parsed(meta) = &segment.meta else {
+                return None;
+            };
+            Some(SegmentMetaRecord {
+                id: format!("inventor:rse:segment-meta:{}", segment.pair.token.as_str()),
+                token: segment.pair.token.as_str().into(),
+                version: meta.version.value(),
+                kind: meta.kind.label().into(),
+                display_name: meta.display_name.clone(),
+                segment_id: hex(&meta.segment_id),
+                header_words: meta.header_words,
+                state_words: meta.state_words,
+                created: meta.created.clone(),
+                modified: meta.modified.clone(),
+                body_form: meta.body_form,
+                expanded_body_len: meta.body.window().len() as u64,
+                expanded_body_sha256: sha256_hex(meta.body.window()),
+            })
+        })
+        .collect::<Vec<_>>();
+    let segment_meta_issues = container
+        .rse
+        .segments
+        .iter()
+        .filter_map(|segment| {
+            let (status, detail) = match &segment.meta {
+                SegmentMetaState::Parsed(_) => return None,
+                SegmentMetaState::Unsupported { marker, version } => (
+                    "unsupported",
+                    format!("marker {marker:?}, version {version}"),
+                ),
+                SegmentMetaState::Malformed(detail) => ("malformed", detail.clone()),
+            };
+            Some(SegmentMetaIssueRecord {
+                id: format!(
+                    "inventor:rse:segment-meta-issue:{}",
+                    segment.pair.token.as_str()
+                ),
+                token: segment.pair.token.as_str().into(),
+                status: status.into(),
+                detail,
+            })
         })
         .collect::<Vec<_>>();
     let unpaired_segments = container
@@ -82,6 +134,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         storage_bands
             .len()
             .saturating_add(segment_pairs.len())
+            .saturating_add(segment_meta.len())
+            .saturating_add(segment_meta_issues.len())
             .saturating_add(unpaired_segments.len()) as u64,
         "retain Inventor native structural records",
     )?;
@@ -89,6 +143,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
     namespace.version = INVENTOR_NATIVE_VERSION;
     namespace.set_arena("storage_bands", &storage_bands)?;
     namespace.set_arena("segment_pairs", &segment_pairs)?;
+    namespace.set_arena("segment_meta", &segment_meta)?;
+    namespace.set_arena("segment_meta_issues", &segment_meta_issues)?;
     namespace.set_arena("unpaired_segments", &unpaired_segments)?;
     let mut losses = Vec::new();
     if ctx.container_only() {
@@ -114,6 +170,15 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             ));
         }
     }
+    if !segment_meta_issues.is_empty() {
+        losses.push(LossNote::new(
+            LossKind::DecodeDiagnostic,
+            format!(
+                "{} RSe metadata stream(s) are malformed or outside the implemented envelope.",
+                segment_meta_issues.len()
+            ),
+        ));
+    }
     if !container.rse.unpaired_metadata.is_empty() || !container.rse.unpaired_bulk.is_empty() {
         losses.push(LossNote::new(
             LossKind::DecodeDiagnostic,
@@ -134,6 +199,8 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
             coverage: BTreeMap::from([
                 ("rse_storage_bands".into(), storage_bands.len()),
                 ("rse_segment_pairs".into(), segment_pairs.len()),
+                ("rse_segment_meta".into(), segment_meta.len()),
+                ("rse_segment_meta_issues".into(), segment_meta_issues.len()),
             ]),
             losses,
             notes: Vec::new(),
@@ -141,4 +208,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeRe
         },
         SourceFidelity::default(),
     ))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut output = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(output, "{byte:02x}");
+    }
+    output
 }

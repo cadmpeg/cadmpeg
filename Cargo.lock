@@ -257,6 +257,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "flate2",
  "schemars",
  "serde",
 ]
