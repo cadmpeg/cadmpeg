@@ -6779,6 +6779,44 @@ fn native_namespace_retains_all_consolidated_plane_carrier_layouts() {
 }
 
 #[test]
+fn native_namespace_retains_unclassified_consolidated_plane_carrier_lanes() {
+    let mut stream = b2_plane_carrier_stream();
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+    stream.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x27,
+        2 + u8::try_from(values.len() * 8).expect("scalar lane fixture"),
+        0x05,
+        0xb4,
+        0x40,
+    ]);
+    for value in values {
+        stream.extend_from_slice(&le_f64(value));
+    }
+
+    let native = crate::native::CatiaNative::decode(&stream);
+    let Some(carrier) = native.consolidated_plane_carriers.get(3) else {
+        panic!("unclassified consolidated plane carrier")
+    };
+    assert_eq!(carrier.selector, 0x40);
+    assert!(matches!(
+        &carrier.payload,
+        crate::native::CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values: lane }
+            if lane == &values
+    ));
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store unclassified plane carrier");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load unclassified plane carrier"),
+        native
+    );
+}
+
+#[test]
 fn native_namespace_retains_consolidated_reference_lists() {
     let native = crate::native::CatiaNative::decode(&b2_reference_list_stream());
     let [list] = native.consolidated_reference_lists.as_slice() else {

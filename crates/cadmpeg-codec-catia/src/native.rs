@@ -521,6 +521,12 @@ pub enum CatiaConsolidatedPlaneCarrierPayload {
         /// Complete trailing scalar lane.
         tail: [f64; 4],
     },
+    /// Finite scalar lane for a selector whose semantic layout is not yet
+    /// established.
+    ScalarLane {
+        /// Complete selector-specific scalar lane in source order.
+        values: Vec<f64>,
+    },
 }
 
 /// One complete consolidated `B:27` plane-carrier record.
@@ -7094,6 +7100,9 @@ fn consolidated_plane_carriers(
                 B2PlaneCarrierPayload::PointTail { point, tail } => {
                     CatiaConsolidatedPlaneCarrierPayload::PointTail { point, tail }
                 }
+                B2PlaneCarrierPayload::ScalarLane { values } => {
+                    CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values }
+                }
             };
             CatiaConsolidatedPlaneCarrier {
                 id: format!("catia:consolidated:plane-carrier#{index}"),
@@ -8263,13 +8272,28 @@ fn validate_consolidated_plane_carriers(
                 6,
                 point.iter().chain(tail).all(|value| value.is_finite()),
             ),
+            CatiaConsolidatedPlaneCarrierPayload::ScalarLane { values } => (
+                carrier.selector,
+                values.len(),
+                !values.is_empty() && values.iter().all(|value| value.is_finite()),
+            ),
         };
         let header_limit = 1u32.checked_shl(8 * u32::from(carrier.width));
+        let scalar_count = u64::try_from(scalar_count).map_err(|_| {
+            cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated plane carrier `{}` has too many scalars",
+                carrier.id
+            ))
+        })?;
         let expected_len = 4 + u64::from(carrier.width) + 2 + 8 * scalar_count;
         if carrier.id != format!("catia:consolidated:plane-carrier#{index}")
             || !matches!(carrier.width, 1..=3)
             || header_limit.is_none_or(|limit| carrier.header_token >= limit)
             || !matches!(carrier.flag, 0x03 | 0x13 | 0x83)
+            || matches!(
+                &carrier.payload,
+                CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. }
+            ) && matches!(carrier.selector, 0xe4 | 0xc4 | 0xec)
             || carrier.selector != selector
             || carrier.byte_len != expected_len
             || !payload_valid
@@ -8298,6 +8322,7 @@ fn valid_consolidated_plane_geometry(payload: &CatiaConsolidatedPlaneCarrierPayl
             tail,
         } => (*point, *direction, *tail),
         CatiaConsolidatedPlaneCarrierPayload::PointTail { .. } => return false,
+        CatiaConsolidatedPlaneCarrierPayload::ScalarLane { .. } => return false,
     };
     let finite = point
         .iter()

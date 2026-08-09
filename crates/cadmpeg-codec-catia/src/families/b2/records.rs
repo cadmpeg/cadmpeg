@@ -113,6 +113,12 @@ pub enum B2PlaneCarrierPayload {
         /// Complete trailing scalar lane.
         tail: [f64; 4],
     },
+    /// Finite scalar lane for a selector whose semantic layout is not yet
+    /// established.
+    ScalarLane {
+        /// Complete selector-specific scalar lane in source order.
+        values: Vec<f64>,
+    },
 }
 
 /// One complete consolidated `b2/b3/b4 03 27` plane-carrier record.
@@ -985,6 +991,7 @@ pub(crate) fn b2_plane_carriers_from_records(
                         tail: [values[2], values[3], values[4], values[5]],
                     }
                 }
+                _ if !values.is_empty() => B2PlaneCarrierPayload::ScalarLane { values },
                 _ => return None,
             };
             Some(B2PlaneCarrier {
@@ -1017,7 +1024,9 @@ pub(crate) fn b2_plane_geometry(carrier: &B2PlaneCarrier) -> Option<SurfaceGeome
             direction,
             tail,
         } => (*point, *direction, *tail),
-        B2PlaneCarrierPayload::PointTail { .. } => return None,
+        B2PlaneCarrierPayload::PointTail { .. } | B2PlaneCarrierPayload::ScalarLane { .. } => {
+            return None
+        }
     };
     let u_axis = Vector3::new(direction[0], direction[1], direction[2]);
     let z_axis = Vector3::new(0.0, 0.0, 1.0);

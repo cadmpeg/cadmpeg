@@ -100,6 +100,35 @@ fn b2_plane_carrier_parser_preserves_each_selector_layout() {
 }
 
 #[test]
+fn b2_plane_carrier_parser_retains_unclassified_scalar_lanes() {
+    use crate::families::b2::records::B2PlaneCarrierPayload;
+
+    let mut stream = b2_plane_carrier_stream();
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    stream.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x27,
+        2 + u8::try_from(values.len() * 8).expect("scalar lane fixture"),
+        0x05,
+        0xb4,
+        0x40,
+    ]);
+    for value in values {
+        stream.extend_from_slice(&crate::tests::le_f64(value));
+    }
+
+    let carriers = crate::families::b2::records::b2_plane_carriers(&stream);
+    assert_eq!(carriers.len(), 4);
+    assert_eq!(carriers[3].selector, 0x40);
+    assert!(matches!(
+        &carriers[3].payload,
+        B2PlaneCarrierPayload::ScalarLane { values: lane } if lane == &values
+    ));
+    assert!(crate::families::b2::records::b2_plane_geometry(&carriers[3]).is_none());
+}
+
+#[test]
 fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
     let valid = b2_plane_carrier_stream();
     let mut invalid_marker = valid.clone();
@@ -110,7 +139,7 @@ fn b2_plane_carrier_parser_rejects_open_or_nonfinite_layouts() {
     );
 
     let mut invalid_selector = valid.clone();
-    invalid_selector[6] = 0xed;
+    invalid_selector[6] = 0xc4;
     assert_eq!(
         crate::families::b2::records::b2_plane_carriers(&invalid_selector).len(),
         2
