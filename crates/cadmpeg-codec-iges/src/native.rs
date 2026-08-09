@@ -436,6 +436,7 @@ enum NativeAssociativity {
     SingleParent {
         id: String,
         source_entity: String,
+        declared_child_count: Option<i64>,
         parent: Option<String>,
         children: Vec<Option<String>>,
     },
@@ -448,12 +449,14 @@ enum NativeAssociativity {
     DimensionedGeometry {
         id: String,
         source_entity: String,
+        declared_geometry_count: Option<i64>,
         dimension: Option<String>,
         geometry: Vec<Option<String>>,
     },
     Planar {
         id: String,
         source_entity: String,
+        declared_entity_count: Option<i64>,
         plane_transform: Option<String>,
         entities: Vec<Option<String>>,
     },
@@ -461,6 +464,12 @@ enum NativeAssociativity {
         id: String,
         source_entity: String,
         form: i64,
+        declared_associated_flow_count: Option<i64>,
+        declared_connection_count: Option<i64>,
+        declared_join_count: Option<i64>,
+        declared_name_count: Option<i64>,
+        declared_name_display_count: Option<i64>,
+        declared_continuation_count: Option<i64>,
         type_flag: Option<i64>,
         function_flag: Option<i64>,
         associated_flows: Vec<Option<String>>,
@@ -473,6 +482,7 @@ enum NativeAssociativity {
     RecalculableDimension {
         id: String,
         source_entity: String,
+        declared_geometry_count: Option<i64>,
         dimension: Option<String>,
         orientation_flag: Option<i64>,
         angle: Option<f64>,
@@ -1567,38 +1577,43 @@ pub(crate) fn store(
                 .and_then(|record| record.count(5))
                 .unwrap_or_default();
             let supersedes_code = record.and_then(|record| record.integer(3));
-            let mut cursor = 6;
-            let characters = (0..count)
-                .map(|_| {
-                    let motion_count = record
-                        .and_then(|record| record.count(cursor + 3))
-                        .unwrap_or_default();
-                    let glyph = NativeGlyph {
-                        character_code: record.and_then(|record| record.integer(cursor)),
-                        next_origin: [
-                            record.and_then(|record| record.integer(cursor + 1)),
-                            record.and_then(|record| record.integer(cursor + 2)),
-                        ],
-                        declared_motion_count: record.and_then(|record| record.integer(cursor + 3)),
-                        motions: (0..motion_count)
-                            .map(|offset| {
-                                let start = cursor + 4 + offset * 3;
-                                NativeGlyphMotion {
-                                    pen_up: record
-                                        .and_then(|record| record.integer(start))
-                                        .map(|value| value == 1),
-                                    point: [
-                                        record.and_then(|record| record.integer(start + 1)),
-                                        record.and_then(|record| record.integer(start + 2)),
-                                    ],
-                                }
-                            })
-                            .collect(),
-                    };
-                    cursor += 4 + motion_count * 3;
-                    glyph
-                })
-                .collect();
+            let mut cursor = 6_usize;
+            let mut characters = Vec::with_capacity(count);
+            for _ in 0..count {
+                let Some(record) = record else { break };
+                let Some(count_index) = cursor.checked_add(3) else {
+                    break;
+                };
+                let declared_motion_count = record.integer(count_index);
+                let motion_count = record.count_with_stride(count_index, 3);
+                let motions = motion_count
+                    .into_iter()
+                    .flat_map(|count| 0..count)
+                    .map(|offset| {
+                        let start = cursor + 4 + offset * 3;
+                        NativeGlyphMotion {
+                            pen_up: record.integer(start).map(|value| value == 1),
+                            point: [record.integer(start + 1), record.integer(start + 2)],
+                        }
+                    })
+                    .collect();
+                characters.push(NativeGlyph {
+                    character_code: record.integer(cursor),
+                    next_origin: [record.integer(cursor + 1), record.integer(cursor + 2)],
+                    declared_motion_count,
+                    motions,
+                });
+                let Some(motion_count) = motion_count else {
+                    break;
+                };
+                let Some(next) = motion_count
+                    .checked_mul(3)
+                    .and_then(|width| cursor.checked_add(4 + width))
+                else {
+                    break;
+                };
+                cursor = next;
+            }
             NativeTextFontDefinition {
                 id: format!("iges:presentation:text-font#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -2152,30 +2167,30 @@ pub(crate) fn store(
             let class_count = record
                 .and_then(|record| record.count(1))
                 .unwrap_or_default();
-            let mut cursor = 2;
-            let classes = (0..class_count)
-                .map(|_| {
-                    let item_count = record
-                        .and_then(|record| record.count(cursor + 2))
-                        .unwrap_or_default();
-                    let class = NativeAssociativityClassDefinition {
-                        back_pointers_required: record
-                            .and_then(|record| record.integer(cursor))
-                            .map(|value| value == 1),
-                        ordered: record
-                            .and_then(|record| record.integer(cursor + 1))
-                            .map(|value| value == 1),
-                        declared_item_count: record.and_then(|record| record.integer(cursor + 2)),
-                        item_types: (0..item_count)
-                            .map(|offset| {
-                                record.and_then(|record| record.integer(cursor + 3 + offset))
-                            })
-                            .collect(),
-                    };
-                    cursor += 3 + item_count;
-                    class
-                })
-                .collect();
+            let mut cursor = 2_usize;
+            let mut classes = Vec::with_capacity(class_count);
+            for _ in 0..class_count {
+                let Some(record) = record else { break };
+                let Some(count_index) = cursor.checked_add(2) else {
+                    break;
+                };
+                let item_count = record.count(count_index);
+                classes.push(NativeAssociativityClassDefinition {
+                    back_pointers_required: record.integer(cursor).map(|value| value == 1),
+                    ordered: record.integer(cursor + 1).map(|value| value == 1),
+                    declared_item_count: record.integer(cursor + 2),
+                    item_types: item_count
+                        .into_iter()
+                        .flat_map(|count| 0..count)
+                        .map(|offset| record.integer(cursor + 3 + offset))
+                        .collect(),
+                });
+                let Some(item_count) = item_count else { break };
+                let Some(next) = cursor.checked_add(3 + item_count) else {
+                    break;
+                };
+                cursor = next;
+            }
             NativeAssociativity::Definition {
                 id: format!("iges:structure:associativity#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
@@ -2251,6 +2266,7 @@ pub(crate) fn store(
                         NativeAssociativity::SingleParent {
                             id,
                             source_entity,
+                            declared_child_count: record.and_then(|record| record.integer(2)),
                             parent: entity_link(3),
                             children: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
@@ -2283,6 +2299,7 @@ pub(crate) fn store(
                         NativeAssociativity::DimensionedGeometry {
                             id,
                             source_entity,
+                            declared_geometry_count: record.and_then(|record| record.integer(2)),
                             dimension: entity_link(3),
                             geometry: (0..count).map(|offset| entity_link(4 + offset)).collect(),
                         }
@@ -2294,6 +2311,7 @@ pub(crate) fn store(
                         NativeAssociativity::Planar {
                             id,
                             source_entity,
+                            declared_entity_count: record.and_then(|record| record.integer(2)),
                             plane_transform: record
                                 .and_then(|record| record.integer(3))
                                 .filter(|sequence| *sequence != 0)
@@ -2336,6 +2354,15 @@ pub(crate) fn store(
                             id,
                             source_entity,
                             form: entry.form,
+                            declared_associated_flow_count: record
+                                .and_then(|record| record.integer(2)),
+                            declared_connection_count: record.and_then(|record| record.integer(3)),
+                            declared_join_count: record.and_then(|record| record.integer(4)),
+                            declared_name_count: record.and_then(|record| record.integer(5)),
+                            declared_name_display_count: record
+                                .and_then(|record| record.integer(6)),
+                            declared_continuation_count: record
+                                .and_then(|record| record.integer(7)),
                             type_flag: record.and_then(|record| record.integer(8)),
                             function_flag: (entry.form == 18)
                                 .then(|| record.and_then(|record| record.integer(9)))
@@ -2355,6 +2382,7 @@ pub(crate) fn store(
                         NativeAssociativity::RecalculableDimension {
                             id,
                             source_entity,
+                            declared_geometry_count: record.and_then(|record| record.integer(2)),
                             dimension: entity_link(3),
                             orientation_flag: record.and_then(|record| record.integer(4)),
                             angle: record.and_then(|record| record.number(5)),
@@ -2390,38 +2418,41 @@ pub(crate) fn store(
             let mut cursor = 4;
             let mut attributes = Vec::with_capacity(count);
             for _ in 0..count {
-                let attribute_type = record.and_then(|record| record.integer(cursor));
-                let value_data_type = record.and_then(|record| record.integer(cursor + 1));
-                let declared_value_count = record.and_then(|record| record.integer(cursor + 2));
+                let Some(record) = record else { break };
+                let attribute_type = record.integer(cursor);
+                let value_data_type = record.integer(cursor + 1);
+                let declared_value_count = record.integer(cursor + 2);
+                let stride = if entry.form == 2 { 2 } else { 1 };
                 let value_count = if entry.form == 0 {
-                    0
+                    Some(0)
                 } else {
-                    match record
-                        .and_then(|record| record.tokens.get(cursor + 2))
-                        .map(|token| &token.value)
-                    {
-                        None | Some(TokenValue::Omitted) => 1,
-                        Some(TokenValue::Integer(_)) => record
-                            .and_then(|record| record.count(cursor + 2))
-                            .unwrap_or_default(),
-                        Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                    match record.tokens.get(cursor + 2).map(|token| &token.value) {
+                        Some(TokenValue::Omitted) => {
+                            (stride <= record.tokens.len().saturating_sub(cursor + 3)).then_some(1)
+                        }
+                        Some(TokenValue::Integer(_)) => {
+                            record.count_with_stride(cursor + 2, stride)
+                        }
+                        None | Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
                     }
                 };
-                cursor += 3;
-                let mut values = Vec::with_capacity(value_count);
+                let Some(value_start) = cursor.checked_add(3) else {
+                    break;
+                };
+                let mut values = Vec::with_capacity(value_count.unwrap_or_default());
                 if entry.form != 0 {
-                    for _ in 0..value_count {
+                    for offset in 0..value_count.unwrap_or_default() {
+                        let value_index = value_start + offset * stride;
                         let value = record
-                            .and_then(|record| record.tokens.get(cursor))
+                            .tokens
+                            .get(value_index)
                             .map(token)
                             .map_or(NativeTokenValue::Omitted, |token| token.value);
-                        cursor += 1;
                         let display_template = (entry.form == 2)
-                            .then(|| record.and_then(|record| record.integer(cursor)))
+                            .then(|| record.integer(value_index + 1))
                             .flatten()
                             .filter(|sequence| *sequence != 0)
                             .map(|sequence| format!("iges:entity:directory#{sequence}"));
-                        cursor += usize::from(entry.form == 2);
                         values.push(NativeAttributeValue {
                             value,
                             display_template,
@@ -2434,6 +2465,16 @@ pub(crate) fn store(
                     declared_value_count,
                     values,
                 });
+                let Some(value_count) = value_count else {
+                    break;
+                };
+                let Some(next) = value_count
+                    .checked_mul(stride)
+                    .and_then(|width| value_start.checked_add(width))
+                else {
+                    break;
+                };
+                cursor = next;
             }
             NativeAttributeTableDefinition {
                 id: format!("iges:product:attribute-definition#D{}", entry.sequence),

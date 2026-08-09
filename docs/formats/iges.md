@@ -40,6 +40,8 @@ Bytes 1 through 64 of Parameter Data cards form parameter fragments. Bytes 65 th
 
 Tokens retain their exact source spans and lexical bytes. Token classes are integer, real, Hollerith string, Directory Entry pointer, omitted value, parameter delimiter, record delimiter, and retained uninterpreted value. An empty or blank-only Parameter Data field is an omitted value. Entity accessors impose field-specific token types and arity. Pointer interpretation is field-specific; a numeric token is not globally coerced to a pointer.
 
+A declared count applies only when the complete counted sequence fits before the end of the entity-specific parameters. Fixed-width items require `count * width` tokens. If a nested counted sequence is incomplete, its declared count remains present, its typed item list is empty, and no later token is reinterpreted as the start of a sibling item. Every counted native record retains its declared count separately from its typed items. Type 402 Forms 9, 13, 16, 18, 20, and 21 retain their child, geometry, entity, flow, connection, join, name, name-display, and continuation counts as applicable.
+
 After the primary record delimiter, an entity may carry an ordered associativity pointer group and an ordered property pointer group. Each group begins with a count followed by that many pointers. The complete trailing groups remain part of the owning entity and retain token spans.
 
 ## Entity graph

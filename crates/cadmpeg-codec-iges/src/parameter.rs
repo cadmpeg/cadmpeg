@@ -69,9 +69,17 @@ impl ParameterRecord {
     /// tokens, so this is a format-derived upper bound for every count-driven
     /// loop before its entity-specific stride is validated.
     pub(crate) fn count(&self, index: usize) -> Option<usize> {
-        self.integer(index)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count <= self.tokens.len().saturating_sub(index + 1))
+        self.count_with_stride(index, 1)
+    }
+
+    /// Return a nonnegative declared count only when all fixed-width items fit.
+    pub(crate) fn count_with_stride(&self, index: usize, stride: usize) -> Option<usize> {
+        let count = self
+            .integer(index)
+            .and_then(|value| usize::try_from(value).ok())?;
+        let required = count.checked_mul(stride)?;
+        let item_start = index.checked_add(1)?;
+        (required <= self.tokens.len().saturating_sub(item_start)).then_some(count)
     }
 }
 

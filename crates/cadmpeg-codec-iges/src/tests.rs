@@ -6396,6 +6396,78 @@ fn decode_bounds_declared_attribute_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_stops_cursor_records_after_an_overlong_nested_count() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "FONTCNT".into(),
+            status: "00000200",
+            parameters: "310,1,1HA,0,1,2,65,0,0,99,66,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 302,
+            form: 0,
+            label: "CLASSCNT".into(),
+            status: "00000200",
+            parameters: "302,2,0,0,99,1,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 1,
+            label: "ATTRCNT".into(),
+            status: "00000200",
+            parameters: "322,4HATTR,0,2,1,1,99,2,3,1,42;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 2,
+            label: "ATTRPAIR".into(),
+            status: "00000200",
+            parameters: "322,4HPAIR,0,1,1,1,2,10,0,20;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+
+    let characters = native.arenas["text_fonts"][0].fields()["characters"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(characters.len(), 1);
+    assert_eq!(characters[0]["declared_motion_count"], 99);
+    assert!(characters[0]["motions"].as_array().unwrap().is_empty());
+
+    let classes = native.arenas["associativities"][0].fields()["classes"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0]["declared_item_count"], 99);
+    assert!(classes[0]["item_types"].as_array().unwrap().is_empty());
+
+    let definitions = &native.arenas["attribute_table_definitions"];
+    for definition in definitions {
+        let attributes = definition.fields()["attributes"]
+            .as_array()
+            .unwrap()
+            .clone();
+        assert_eq!(attributes.len(), 1);
+        assert!(attributes[0]["values"].as_array().unwrap().is_empty());
+    }
+    assert_eq!(
+        definitions[0].fields()["attributes"][0]["declared_value_count"],
+        99
+    );
+    assert_eq!(
+        definitions[1].fields()["attributes"][0]["declared_value_count"],
+        2
+    );
+}
+
+#[test]
 fn decode_bounds_declared_brep_counts_by_record_tokens() {
     let bytes = owned_test_file(&[OwnedTestEntity {
         entity_type: 502,
@@ -7259,6 +7331,7 @@ fn decode_types_bounded_predefined_associativity_roles() {
         .find(|value| value.fields()["kind"] == "single_parent")
         .unwrap();
     assert_eq!(parent.fields()["parent"], "iges:entity:directory#9");
+    assert_eq!(parent.fields()["declared_child_count"], 1);
     assert_eq!(parent.fields()["children"][0], "iges:entity:directory#11");
     let labels = associativities
         .iter()
@@ -7274,12 +7347,14 @@ fn decode_types_bounded_predefined_associativity_roles() {
         .find(|value| value.fields()["kind"] == "dimensioned_geometry")
         .unwrap();
     assert_eq!(dimension.fields()["dimension"], "iges:entity:directory#21");
+    assert_eq!(dimension.fields()["declared_geometry_count"], 1);
     assert_eq!(dimension.fields()["geometry"][0], "iges:entity:directory#9");
     let planar = associativities
         .iter()
         .find(|value| value.fields()["kind"] == "planar")
         .unwrap();
     assert!(planar.fields()["plane_transform"].is_null());
+    assert_eq!(planar.fields()["declared_entity_count"], 2);
     assert_eq!(planar.fields()["entities"].as_array().unwrap().len(), 2);
     assert!(
         result.report.losses.is_empty(),
@@ -7342,6 +7417,12 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
         })
         .unwrap();
     assert_eq!(signal.fields()["type_flag"], 1);
+    assert_eq!(signal.fields()["declared_associated_flow_count"], 0);
+    assert_eq!(signal.fields()["declared_connection_count"], 1);
+    assert_eq!(signal.fields()["declared_join_count"], 1);
+    assert_eq!(signal.fields()["declared_name_count"], 1);
+    assert_eq!(signal.fields()["declared_name_display_count"], 1);
+    assert_eq!(signal.fields()["declared_continuation_count"], 1);
     assert_eq!(signal.fields()["function_flag"], 2);
     assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#1");
     assert_eq!(signal.fields()["joins"][0], "iges:entity:directory#3");
@@ -7363,6 +7444,12 @@ fn decode_preserves_signal_and_piping_flow_class_order() {
         })
         .unwrap();
     assert_eq!(pipe.fields()["type_flag"], 2);
+    assert_eq!(pipe.fields()["declared_associated_flow_count"], 0);
+    assert_eq!(pipe.fields()["declared_connection_count"], 1);
+    assert_eq!(pipe.fields()["declared_join_count"], 1);
+    assert_eq!(pipe.fields()["declared_name_count"], 1);
+    assert_eq!(pipe.fields()["declared_name_display_count"], 0);
+    assert_eq!(pipe.fields()["declared_continuation_count"], 1);
     assert!(pipe.fields()["function_flag"].is_null());
     assert_eq!(pipe.fields()["connections"][0], "iges:entity:directory#11");
     assert_eq!(
@@ -7393,6 +7480,7 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
         "iges:entity:directory#11"
     );
     assert_eq!(associativity.fields()["orientation_flag"], 4);
+    assert_eq!(associativity.fields()["declared_geometry_count"], 2);
     assert_eq!(
         associativity.fields()["geometry"].as_array().unwrap().len(),
         2

@@ -210,6 +210,7 @@
               "children": [
                 "iges:entity:directory#11"
               ],
+              "declared_child_count": 1,
               "id": "iges:structure:associativity#D13",
               "kind": "single_parent",
               "parent": "iges:entity:directory#9",
@@ -233,6 +234,7 @@
               "source_entity": "iges:entity:directory#15"
             },
             {
+              "declared_geometry_count": 1,
               "dimension": "iges:entity:directory#21",
               "geometry": [
                 "iges:entity:directory#9"
@@ -242,6 +244,7 @@
               "source_entity": "iges:entity:directory#23"
             },
             {
+              "declared_entity_count": 2,
               "entities": [
                 "iges:entity:directory#9",
                 "iges:entity:directory#11"

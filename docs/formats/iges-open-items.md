@@ -152,16 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-12. A clamped list count desynchronizes the cursor-walking readers
-
-**Question.** What does a declared count larger than the available tokens mean?
-
-**Known.** `ParameterRecord::count` (`parameter.rs:73-77`) gives `None` when the declared count passes the remaining tokens, and every caller uses `.unwrap_or_default()`. For a flat list this is a safe clamp and the declared value is kept beside it. Three readers walk a cursor instead: `native.rs:1530-1555` (Type 310 glyphs), `:2115-2132` (Type 302 classes), `:2349-2394` (Type 322 descriptors). One clamped count shifts the cursor, so every later element reads from the wrong offsets and produces plausible wrong values instead of a short list.
-
-**Note.** Six Type 402 forms drop their declared counts completely — forms 9, 13, 16, 18, 20, and 21 have no `declared_*` field (`native.rs:426-470`), unlike every other counted record. A clamp then leaves no trace.
-
-**Need.** We need the meaning of an overlong declared count, and the declared value retained in every counted record.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance
