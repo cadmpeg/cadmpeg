@@ -1199,9 +1199,10 @@ pub fn a8_surface_headers(data: &[u8]) -> Vec<A8SurfaceHeader> {
         .collect()
 }
 
-/// Resolve an elided-pole `a8 <flag> 34` carrier from its uniquely sized external
-/// grid allocation. The allocation occupies the complete unframed gap between
-/// a length-closed `b5 <flag> 21` pcurve and the following A/B-family frame.
+/// Resolve an elided-pole `a8 <flag> 34` carrier from its support-referenced
+/// external grid allocation. The allocation occupies the complete unframed gap
+/// between a length-closed `b5 <flag> 21` pcurve and the following A/B-family
+/// frame; its pcurve support reference must equal the surface object id.
 #[must_use]
 pub fn a8_surface_from_external_grid(
     data: &[u8],
@@ -1224,6 +1225,12 @@ pub fn a8_surface_from_external_grid(
     for frame in object_stream_frames(data)
         .into_iter()
         .filter(|frame| frame.family == 0xb5 && frame.class == 0x21)
+        .filter(|frame| {
+            let Some(mut at) = frame.payload.checked_add(1) else {
+                return false;
+            };
+            object_stream_reference(data, &mut at) == Some(header.object_id)
+        })
     {
         let start = frame.end;
         let end = start.checked_add(grid_bytes)?;

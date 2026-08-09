@@ -1172,14 +1172,19 @@ pub(crate) fn a8_inline_tail_surface_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a8_elided_surface_stream() -> Vec<u8> {
+    const SURFACE: u32 = 100;
+
     let mut bytes = a8_surface_stream();
     bytes.truncate(59);
+    bytes[7..11].copy_from_slice(&SURFACE.to_le_bytes());
     bytes.extend_from_slice(&a8_surface_tail());
     let payload_len = u32::try_from(bytes.len() - 11).unwrap();
     bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
 
     let mut pcurve_payload = vec![0; 58];
     pcurve_payload[0] = 0x81;
+    pcurve_payload[1] = 0x18;
+    pcurve_payload[2..4].copy_from_slice(&(SURFACE as u16).to_le_bytes());
     pcurve_payload[57] = 0x07;
     bytes.extend_from_slice(&[0xb5, 0x03, 0x21, 58, 1, 0, 0, 0]);
     bytes.extend_from_slice(&pcurve_payload);

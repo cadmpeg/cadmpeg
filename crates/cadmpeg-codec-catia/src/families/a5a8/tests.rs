@@ -224,11 +224,40 @@ fn a8_elided_surface_resolves_one_external_pole_grid_gap() {
     let [resolved] = crate::families::a5a8::records::resolved_a8_surfaces(&bytes)
         .try_into()
         .expect("one resolved surface");
-    assert_eq!(resolved.object_id(), Some(0xdeca_fbad));
+    assert_eq!(resolved.object_id(), Some(100));
     let SurfaceGeometry::Nurbs(resolved) = resolved.geometry else {
         panic!("NURBS surface");
     };
     assert_eq!(resolved.control_points, surface.control_points);
+}
+
+#[test]
+fn a8_elided_surface_uses_the_pcurve_support_reference_to_disambiguate_equal_grids() {
+    let first = a8_elided_surface_stream();
+    let mut second = a8_elided_surface_stream();
+    second[7..11].copy_from_slice(&101_u32.to_le_bytes());
+    let pcurve = second
+        .windows(3)
+        .position(|value| value == [0xb5, 0x03, 0x21])
+        .expect("second external pcurve");
+    second[pcurve + 10..pcurve + 12].copy_from_slice(&101_u16.to_le_bytes());
+
+    let mut bytes = first;
+    bytes.extend(second);
+    let headers = crate::families::a5a8::records::a8_surface_headers(&bytes);
+    assert_eq!(headers.len(), 2);
+    assert_eq!(
+        headers
+            .iter()
+            .map(|header| header.object_id)
+            .collect::<Vec<_>>(),
+        [100, 101]
+    );
+    for header in &headers {
+        let surface = crate::families::a5a8::records::a8_surface_from_external_grid(&bytes, header)
+            .expect("support reference selects one equal-sized grid");
+        assert_eq!(surface.object_id(), Some(header.object_id));
+    }
 }
 
 #[test]
