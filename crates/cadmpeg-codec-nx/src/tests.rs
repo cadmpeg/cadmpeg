@@ -9263,6 +9263,56 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 }
 
 #[test]
+fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.features.extend([
+        Feature {
+            id: FeatureId("test:feature#active".into()),
+            ordinal: 0,
+            name: Some("active".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body],
+            definition: FeatureDefinition::DatumPoint {
+                position: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#inactive".into()),
+            ordinal: 1,
+            name: Some("inactive".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::DatumPoint {
+                position: cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+            },
+            native_ref: None,
+        },
+    ]);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(!losses.iter().any(|loss| loss
+        .message
+        .contains("Suppression state remains unresolved")));
+}
+
+#[test]
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};

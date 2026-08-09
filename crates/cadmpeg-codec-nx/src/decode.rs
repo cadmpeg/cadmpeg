@@ -10485,11 +10485,24 @@ fn build_geometry_report(
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let current_body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let active_features = crate::native::history::active_feature_closure(ir, &current_body_ids);
+    let suppression_scope = active_features.as_ref().map_or("", |_| "active ");
     let unresolved_suppression_count = ir
         .model
         .features
         .iter()
-        .filter(|feature| feature.suppressed.is_none())
+        .filter(|feature| {
+            feature.suppressed.is_none()
+                && active_features
+                    .as_ref()
+                    .is_none_or(|active| active.contains(&feature.id))
+        })
         .count();
     if unresolved_suppression_count != 0 {
         losses.push(LossNote {
@@ -10497,7 +10510,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             severity: Severity::Warning,
             message: format!(
                 "Suppression state remains unresolved for {unresolved_suppression_count} NX \
-                 feature history operation(s)."
+                 {suppression_scope}feature history operation(s)."
             ),
             provenance: None,
         });
