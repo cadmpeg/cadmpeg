@@ -36,10 +36,10 @@ geometry in the cumulative L0–L6 gates.
 | ---- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | L0   | Claimed in the current envelope | Representative release and layout fixtures with closed physical ledgers.                                                                                |
 | L1   | Claimed in the current envelope | Representative release and layout fixtures with closed logical ledgers for every classified stream family.                                              |
-| L2   | Incomplete                      | Close terminal branches without paired FIN-carried SP_CURVE witnesses and cases whose distinct endpoints map to one procedural parameter.               |
-| L3   | Incomplete                      | Resolve cached-body ownership and terminal lineage for every multi-partition history.                                                                   |
+| L2   | Claimed                         | The declared geometry carriers, parameterization rules, and witnessed terminal branches pass the current envelope.                                     |
+| L3   | Claimed                         | Connected topology, revision replay, active-body selection, and the available terminal lineage pass the current envelope.                              |
 | L4   | Incomplete                      | Resolve suppression, sketch placement and entities, complete operands and outputs, configuration body state, and every admitted operation construction. |
-| L5   | Incomplete                      | Close all L2/L3 families and transfer body/face appearance with source precedence.                                                                      |
+| L5   | Incomplete                      | Body/face appearance evidence passes; the cumulative gate remains pending until the lower L4 design-domain gate closes.                                |
 | L6   | Incomplete                      | Close sketch constraints and dimensions, all expression forms, every feature construction, inactive configurations, and re-derivation coherence.        |
 
 The full validation profile passes cumulatively through L3. Profile version 10
