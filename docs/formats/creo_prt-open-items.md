@@ -338,7 +338,12 @@ Function-6 rows with two complete type-1/type-2 point pairs and a type-3
 scalar define their positive Euclidean distance.
 Function-42 rows define the arithmetic-mean relation between two same-axis
 point coordinates and a type-6 scalar. Function-31 rows bind one type-1/type-2
-point pair to two type-6 coordinate scalars.
+point pair to two type-6 coordinate scalars. Function-43 rows define the
+eight-slot axis-distance form with two point pairs, two type-4-or-type-5
+auxiliary rows, a type-0 distance row, and a type-5 auxiliary row. The
+non-negative type-0 value transfers when it agrees with exactly one absolute
+coordinate difference; a missing value transfers only when exactly one
+coordinate difference is non-zero. Other function-43 forms remain native.
 
 **Need.** We must know each equation to solve the section geometry.
 

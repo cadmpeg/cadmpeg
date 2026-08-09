@@ -4383,6 +4383,13 @@ pub(crate) fn resolved_section_scalar_values(
     {
         merge_scalar_value_candidate(&mut values, variable, value);
     }
+    for (variable, value) in section_equation_function_forty_three_axis_distance_values(
+        definition,
+        &coordinates,
+        &BTreeSet::new(),
+    ) {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
     {
@@ -4484,6 +4491,135 @@ fn section_equation_function_six_distance_values(
                 return None;
             }
             Some(((radius.variable_type, radius.key), distance))
+        })
+        .collect()
+}
+
+fn section_equation_function_forty_three_axis_distance_values(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Vec<(SectionScalarVariable, f64)> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return Vec::new();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return Vec::new();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return Vec::new();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return Vec::new();
+    }
+    let row = |ordinal: u32| {
+        usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    equations
+        .rows
+        .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+        .filter_map(|equation| {
+            if equation.function_id != 43 || equation.arguments.len() != 8 {
+                return None;
+            }
+            let [
+                Some(first_u),
+                Some(first_v),
+                Some(second_u),
+                Some(second_v),
+                Some(first_auxiliary),
+                Some(second_auxiliary),
+                Some(distance),
+                Some(final_auxiliary),
+            ] = equation.arguments.as_slice()
+            else {
+                return None;
+            };
+            let (Some(first_u), Some(first_v), Some(second_u), Some(second_v)) = (
+                row(*first_u),
+                row(*first_v),
+                row(*second_u),
+                row(*second_v),
+            ) else {
+                return None;
+            };
+            let (Some(first_auxiliary), Some(second_auxiliary), Some(distance), Some(final_auxiliary)) =
+                (
+                    row(*first_auxiliary),
+                    row(*second_auxiliary),
+                    row(*distance),
+                    row(*final_auxiliary),
+                )
+            else {
+                return None;
+            };
+            if first_u.variable_type != 1
+                || first_v.variable_type != 2
+                || first_u.key != first_v.key
+                || second_u.variable_type != 1
+                || second_v.variable_type != 2
+                || second_u.key != second_v.key
+                || first_u.key == second_u.key
+                || !matches!(first_auxiliary.variable_type, 4 | 5)
+                || !matches!(second_auxiliary.variable_type, 4 | 5)
+                || distance.variable_type != 0
+                || final_auxiliary.variable_type != 5
+                || ambiguous_point_ids.contains(&first_u.key)
+                || ambiguous_point_ids.contains(&second_u.key)
+                || [first_auxiliary, second_auxiliary, final_auxiliary]
+                    .into_iter()
+                    .any(|row| {
+                        row.value.is_some_and(|value| {
+                            !value.is_finite()
+                                || row.variable_type == 5 && value.abs() > 1e-12
+                        })
+                    })
+            {
+                return None;
+            }
+            let first = coordinates
+                .get(&first_u.key)
+                .and_then(|point| Some([point[0]?, point[1]?]))?;
+            let second = coordinates
+                .get(&second_u.key)
+                .and_then(|point| Some([point[0]?, point[1]?]))?;
+            let deltas = [
+                (second[0] - first[0]).abs(),
+                (second[1] - first[1]).abs(),
+            ];
+            if !deltas.into_iter().all(f64::is_finite) {
+                return None;
+            }
+            let matches_distance = |value: f64| {
+                deltas.iter().filter_map(move |delta| {
+                    let scale = value.abs().max(delta.abs()).max(1.0);
+                    ((*delta - value).abs() <= 1e-9 * scale).then_some(*delta)
+                })
+            };
+            let value = if let Some(stored) = distance.value {
+                if !stored.is_finite() || stored < 0.0 {
+                    return None;
+                }
+                let mut matches = matches_distance(stored);
+                let value = matches.next()?;
+                matches.next().is_none().then_some(value)?
+            } else {
+                let mut nonzero = deltas
+                    .iter()
+                    .filter_map(|delta| (*delta > 1e-12).then_some(*delta));
+                let value = nonzero.next()?;
+                nonzero.next().is_none().then_some(value)?
+            };
+            Some(((distance.variable_type, distance.key), value))
         })
         .collect()
 }

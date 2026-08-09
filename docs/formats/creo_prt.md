@@ -1534,6 +1534,15 @@ scalars and bind the point's `u` and `v` coordinates, respectively. A missing
 coordinate is solved from its finite type-6 scalar, and a missing type-6 scalar
 is derived from its finite bound coordinate. A conflicting stored value leaves
 the equation native.
+Function `43` has eight argument slots. The first four rows are the type-1 and
+type-2 coordinates of two distinct point keys. The fifth and sixth rows have
+type `4` or `5`; the seventh row has type `0`; and the final row has type `5`.
+The type-0 row is a non-negative axis distance between the two points. Its
+value equals the absolute difference of exactly one selected coordinate. A
+missing type-0 scalar is derived only when exactly one coordinate difference is
+non-zero. A stored scalar must agree with exactly one coordinate difference.
+Non-zero type-5 auxiliary values, ambiguous coordinate matches, and incomplete
+point pairs leave the equation native.
 
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
