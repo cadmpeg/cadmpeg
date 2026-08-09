@@ -158,6 +158,7 @@ pub(super) fn project(
                                 &entries,
                                 &records,
                                 global.length_factor_mm(),
+                                global.real_precision(),
                                 &mut BTreeSet::new(),
                             )
                             .is_ok()

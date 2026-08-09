@@ -50,7 +50,7 @@ fn direction(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    factor: f64,
+    global: &Global,
 ) -> Option<Vector3> {
     let entry = entries.get(&sequence).copied()?;
     if entry.entity_type != 123 || entry.form != 0 {
@@ -62,7 +62,8 @@ fn direction(
         entry.transform,
         entries,
         records,
-        factor,
+        global.length_factor_mm(),
+        global.real_precision(),
         &mut BTreeSet::new(),
     )
     .ok()?;
@@ -80,13 +81,14 @@ fn surface_transform(
     entry: &DirectoryEntry,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-    factor: f64,
+    global: &Global,
 ) -> Result<Affine, String> {
     resolve_transform(
         entry.transform,
         entries,
         records,
-        factor,
+        global.length_factor_mm(),
+        global.real_precision(),
         &mut BTreeSet::new(),
     )
 }
@@ -124,7 +126,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let transform = match surface_transform(entry, &entries, &records, factor) {
+        let transform = match surface_transform(entry, &entries, &records, global) {
             Ok(transform) => transform,
             Err(message) => {
                 losses.push(entity_loss(entry, message));
@@ -143,7 +145,7 @@ pub(super) fn project(
         let result = match entry.entity_type {
             190 => {
                 let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .and_then(|axis| normalized(transform.vector(axis)))
                 else {
                     losses.push(entity_loss(entry, "plane normal direction is missing"));
@@ -152,7 +154,7 @@ pub(super) fn project(
                 let candidate = (entry.form == 1)
                     .then(|| pointer(record, 3))
                     .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .map(|direction| transform.vector(direction));
                 let Some(u_axis) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
@@ -169,7 +171,7 @@ pub(super) fn project(
             }
             192 => {
                 let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .and_then(|axis| normalized(transform.vector(axis)))
                 else {
                     losses.push(entity_loss(entry, "cylinder axis direction is missing"));
@@ -189,7 +191,7 @@ pub(super) fn project(
                 let candidate = (entry.form == 1)
                     .then(|| pointer(record, 4))
                     .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .map(|direction| transform.vector(direction));
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
@@ -207,7 +209,7 @@ pub(super) fn project(
             }
             194 => {
                 let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .and_then(|axis| normalized(transform.vector(axis)))
                 else {
                     losses.push(entity_loss(entry, "cone axis direction is missing"));
@@ -233,7 +235,7 @@ pub(super) fn project(
                 let candidate = (entry.form == 1)
                     .then(|| pointer(record, 5))
                     .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .map(|direction| transform.vector(direction));
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
@@ -265,7 +267,7 @@ pub(super) fn project(
                 };
                 let axis = if entry.form == 1 {
                     pointer(record, 3)
-                        .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                        .and_then(|sequence| direction(sequence, &entries, &records, global))
                         .and_then(|axis| normalized(transform.vector(axis)))
                 } else {
                     normalized(transform.vector(Vector3::new(0.0, 0.0, 1.0)))
@@ -277,7 +279,7 @@ pub(super) fn project(
                 let candidate = (entry.form == 1)
                     .then(|| pointer(record, 4))
                     .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .map(|direction| transform.vector(direction));
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(
@@ -295,7 +297,7 @@ pub(super) fn project(
             }
             198 => {
                 let Some(axis) = pointer(record, 2)
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .and_then(|axis| normalized(transform.vector(axis)))
                 else {
                     losses.push(entity_loss(entry, "torus axis direction is missing"));
@@ -321,7 +323,7 @@ pub(super) fn project(
                 let candidate = (entry.form == 1)
                     .then(|| pointer(record, 5))
                     .flatten()
-                    .and_then(|sequence| direction(sequence, &entries, &records, factor))
+                    .and_then(|sequence| direction(sequence, &entries, &records, global))
                     .map(|direction| transform.vector(direction));
                 let Some(ref_direction) = reference_direction(axis, candidate) else {
                     losses.push(entity_loss(

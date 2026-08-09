@@ -57,6 +57,12 @@ pub(crate) struct Global {
     pub(crate) record_end: usize,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct RealPrecision {
+    pub(crate) single_significance: u32,
+    pub(crate) double_significance: u32,
+}
+
 fn malformed(message: impl Into<String>) -> CodecError {
     CodecError::Malformed(format!("IGES Global: {}", message.into()))
 }
@@ -322,6 +328,13 @@ impl Global {
             .and_then(|value| u32::try_from(value).ok())
             .filter(|value| *value > 0)
             .expect("validated Global double-precision significance")
+    }
+
+    pub(crate) fn real_precision(&self) -> RealPrecision {
+        RealPrecision {
+            single_significance: self.single_precision_significance(),
+            double_significance: self.double_precision_significance(),
+        }
     }
 
     fn named_unit_factor_mm(&self) -> Option<f64> {

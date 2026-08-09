@@ -637,6 +637,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => (entry.transform != 0).then(|| transform.body_transform()),

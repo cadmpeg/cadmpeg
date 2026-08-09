@@ -3,7 +3,7 @@
 
 use super::curve_conversion::angularly_equal;
 use crate::directory::DirectoryEntry;
-use crate::global::Global;
+use crate::global::{Global, RealPrecision};
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
@@ -14,7 +14,58 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
-const TRANSFORM_TOLERANCE: f64 = 1.0e-10;
+const COMPUTATION_TOLERANCE: f64 = 64.0 * f64::EPSILON;
+
+#[derive(Clone, Copy)]
+struct Interval {
+    lower: f64,
+    upper: f64,
+}
+
+impl Interval {
+    fn outward(lower: f64, upper: f64) -> Self {
+        Self {
+            lower: lower.next_down(),
+            upper: upper.next_up(),
+        }
+    }
+
+    fn around(value: f64, uncertainty: f64) -> Self {
+        if uncertainty == 0.0 {
+            Self {
+                lower: value,
+                upper: value,
+            }
+        } else {
+            Self::outward(value - uncertainty, value + uncertainty)
+        }
+    }
+
+    fn add(self, other: Self) -> Self {
+        Self::outward(self.lower + other.lower, self.upper + other.upper)
+    }
+
+    fn subtract(self, other: Self) -> Self {
+        Self::outward(self.lower - other.upper, self.upper - other.lower)
+    }
+
+    fn multiply(self, other: Self) -> Self {
+        let products = [
+            self.lower * other.lower,
+            self.lower * other.upper,
+            self.upper * other.lower,
+            self.upper * other.upper,
+        ];
+        Self::outward(
+            products.into_iter().fold(f64::INFINITY, f64::min),
+            products.into_iter().fold(f64::NEG_INFINITY, f64::max),
+        )
+    }
+
+    fn contains(self, value: f64) -> bool {
+        self.lower <= value && value <= self.upper
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
@@ -106,6 +157,7 @@ pub(crate) fn resolve_transform(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
+    precision: RealPrecision,
     path: &mut BTreeSet<u32>,
 ) -> Result<Affine, String> {
     if sequence == 0 {
@@ -156,43 +208,95 @@ pub(crate) fn resolve_transform(
         for index in [3, 7, 11] {
             values[index] *= length_factor;
         }
-        let columns = [
-            [values[0], values[4], values[8]],
-            [values[1], values[5], values[9]],
-            [values[2], values[6], values[10]],
-        ];
-        let column_dot = |left: usize, right: usize| {
-            (0..3)
-                .map(|row| columns[left][row] * columns[right][row])
-                .sum::<f64>()
+        let coefficient_intervals = std::array::from_fn::<_, 9, _>(|offset| {
+            let row = offset / 3;
+            let column = offset % 3;
+            let value_index = row * 4 + column;
+            Interval::around(
+                values[value_index],
+                record.number_uncertainty(value_index + 1, values[value_index], precision),
+            )
+        });
+        let interval = |row: usize, column: usize| coefficient_intervals[row * 3 + column];
+        let column_dot_interval = |left: usize, right: usize| {
+            (0..3).fold(Interval::around(0.0, 0.0), |sum, row| {
+                sum.add(interval(row, left).multiply(interval(row, right)))
+            })
         };
-        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > TRANSFORM_TOLERANCE)
+        if (0..3).any(|column| !column_dot_interval(column, column).contains(1.0))
             || [(0, 1), (0, 2), (1, 2)]
                 .into_iter()
-                .any(|(left, right)| column_dot(left, right).abs() > TRANSFORM_TOLERANCE)
+                .any(|(left, right)| !column_dot_interval(left, right).contains(0.0))
         {
             return Err(format!(
-                "transformation D{sequence} linear part is not orthonormal"
+                "transformation D{sequence} linear part is not orthonormal within its declared numeric precision"
             ));
         }
-        let determinant = values[0] * (values[5] * values[10] - values[6] * values[9])
-            - values[1] * (values[4] * values[10] - values[6] * values[8])
-            + values[2] * (values[4] * values[9] - values[5] * values[8]);
+        let determinant_interval = interval(0, 0)
+            .multiply(
+                interval(1, 1)
+                    .multiply(interval(2, 2))
+                    .subtract(interval(1, 2).multiply(interval(2, 1))),
+            )
+            .subtract(
+                interval(0, 1).multiply(
+                    interval(1, 0)
+                        .multiply(interval(2, 2))
+                        .subtract(interval(1, 2).multiply(interval(2, 0))),
+                ),
+            )
+            .add(
+                interval(0, 2).multiply(
+                    interval(1, 0)
+                        .multiply(interval(2, 1))
+                        .subtract(interval(1, 1).multiply(interval(2, 0))),
+                ),
+            );
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if (determinant - expected_determinant).abs() > TRANSFORM_TOLERANCE {
+        if !determinant_interval.contains(expected_determinant) {
             return Err(format!(
-                "transformation D{sequence} determinant {determinant} disagrees with form {}",
+                "transformation D{sequence} determinant disagrees with form {} within its declared numeric precision",
                 entry.form
             ));
         }
+
+        let raw_columns = [
+            Vector3::new(values[0], values[4], values[8]),
+            Vector3::new(values[1], values[5], values[9]),
+            Vector3::new(values[2], values[6], values[10]),
+        ];
+        let first = normalized(raw_columns[0])
+            .ok_or_else(|| format!("transformation D{sequence} first axis cannot be normalized"))?;
+        let second_projection = dot(first, raw_columns[1]);
+        let second_residual = Vector3::new(
+            raw_columns[1].x - first.x * second_projection,
+            raw_columns[1].y - first.y * second_projection,
+            raw_columns[1].z - first.z * second_projection,
+        );
+        let second = normalized(second_residual).ok_or_else(|| {
+            format!("transformation D{sequence} second axis cannot be normalized")
+        })?;
+        let perpendicular = cross(first, second);
+        let third = Vector3::new(
+            perpendicular.x * expected_determinant,
+            perpendicular.y * expected_determinant,
+            perpendicular.z * expected_determinant,
+        );
         let local = Affine {
             rows: [
-                [values[0], values[1], values[2], values[3]],
-                [values[4], values[5], values[6], values[7]],
-                [values[8], values[9], values[10], values[11]],
+                [first.x, second.x, third.x, values[3]],
+                [first.y, second.y, third.y, values[7]],
+                [first.z, second.z, third.z, values[11]],
             ],
         };
-        let parent = resolve_transform(entry.transform, entries, records, length_factor, path)?;
+        let parent = resolve_transform(
+            entry.transform,
+            entries,
+            records,
+            length_factor,
+            precision,
+            path,
+        )?;
         Ok(parent.compose(local))
     })();
     path.remove(&sequence);
@@ -335,6 +439,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -347,11 +452,11 @@ pub(crate) fn project_geometry(
         let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
         let scale_x = basis_x.norm();
         let scale_y = basis_y.norm();
-        let scale_tolerance = scale_x.max(scale_y).max(1.0) * TRANSFORM_TOLERANCE;
+        let scale_tolerance = scale_x.max(scale_y).max(1.0) * COMPUTATION_TOLERANCE;
         if !scale_x.is_finite()
             || !scale_y.is_finite()
             || (scale_x - scale_y).abs() > scale_tolerance
-            || dot(basis_x, basis_y).abs() > scale_x * scale_y * TRANSFORM_TOLERANCE
+            || dot(basis_x, basis_y).abs() > scale_x * scale_y * COMPUTATION_TOLERANCE
         {
             losses.push(entity_loss(
                 entry,
@@ -376,7 +481,7 @@ pub(crate) fn project_geometry(
         };
         let radius_tolerance = global
             .minimum_resolution_mm()
-            .max(radius.max(end_radius).max(1.0) * TRANSFORM_TOLERANCE);
+            .max(radius.max(end_radius).max(1.0) * COMPUTATION_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             losses.push(entity_loss(
                 entry,
@@ -466,6 +571,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -526,6 +632,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -693,17 +800,9 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "weights are not strictly positive"));
             continue;
         }
-        let uncertainty = |index: usize, value: f64| {
-            record
-                .number_significance(index, global)
-                .map_or(0.0, |digits| {
-                    if value == 0.0 {
-                        0.0
-                    } else {
-                        0.5 * 10.0_f64.powf(value.abs().log10().floor() - f64::from(digits) + 1.0)
-                    }
-                })
-        };
+        let precision = global.real_precision();
+        let uncertainty =
+            |index: usize, value: f64| record.number_uncertainty(index, value, precision);
         let equal_within_significance =
             |left_index: usize, left: f64, right_index: usize, right: f64| {
                 (left - right).abs()
@@ -770,6 +869,7 @@ pub(crate) fn project_geometry(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,

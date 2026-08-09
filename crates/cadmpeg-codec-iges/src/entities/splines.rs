@@ -227,6 +227,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,
@@ -450,6 +451,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         ) {
             Ok(transform) => transform,

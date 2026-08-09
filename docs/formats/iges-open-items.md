@@ -118,22 +118,6 @@ from a conformant file.
 
 ## 4. Geometry carriers and tolerances
 
-### GE-01. The Type 124 transformation tolerance
-
-**Question.** What round-off does a conformant Type 124 linear part have?
-
-**Known.** IGES requires the Form 0 and Form 1 linear part to be orthonormal and states no numeric slack. `geometry.rs:16` gives one absolute constant for orthonormality, column orthogonality, the determinant, and circular preservation:
-
-```rust
-const TRANSFORM_TOLERANCE: f64 = 1.0e-10;
-```
-
-The constant demands about ten correct significant digits in each element. The Global section declares the file's own precision (`iges.md` "Global section") and the test ignores it. A failure gives `Err` from `resolve_transform`, so each entity that refers to the matrix is dropped (`geometry.rs:343-346`).
-
-**Note.** Commit `f20d17e65` set this constant and authored its witness fixture in the same commit. The fixture perturbs one element by 5e-11, which is inside the threshold that the fixture is cited to justify. It cannot show that the threshold fits producer output.
-
-**Need.** A writer that prints direction cosines to seven significant digits gives a column norm error near 1e-8 and loses every placed entity in the file. We need the round-off that producers give, against the file's declared precision.
-
 ### GE-02. Unit-vector acceptance
 
 **Question.** What norm error does a conformant IGES unit vector have?

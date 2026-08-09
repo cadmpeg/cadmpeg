@@ -104,6 +104,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -284,6 +285,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -390,6 +392,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()
@@ -437,6 +440,7 @@ pub(super) fn project(
             &entries,
             &records,
             factor,
+            global.real_precision(),
             &mut BTreeSet::new(),
         )
         .is_err()

@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::annotation::{parameterized_curve_type, section_boundary_type};
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::entities::structure::array_base_type;
-use crate::global::Global;
+use crate::global::{Global, RealPrecision};
 use crate::graph::{ParameterResolver, ReferenceEdge};
 use crate::parameter::{
     trailing_pointer_group_candidates, trailing_pointer_groups, ParameterRecord, Token, TokenValue,
@@ -1116,6 +1116,7 @@ fn placement_affine(
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: f64,
+    precision: RealPrecision,
 ) -> Option<(u32, Affine)> {
     let definition = u32::try_from(record.integer(1)?).ok()?;
     let translation = Affine {
@@ -1162,6 +1163,7 @@ fn placement_affine(
         entries,
         records,
         length_factor,
+        precision,
         &mut std::collections::BTreeSet::new(),
     )
     .ok()?;
@@ -1174,6 +1176,7 @@ struct OccurrenceExpansion<'a> {
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
     neutral_links: &'a BTreeMap<u32, Vec<String>>,
     length_factor: f64,
+    precision: RealPrecision,
     output_limit: usize,
     depth_limit: usize,
 }
@@ -1209,6 +1212,7 @@ impl OccurrenceExpansion<'_> {
             self.entries,
             self.records,
             self.length_factor,
+            self.precision,
         ) else {
             return false;
         };
@@ -1261,6 +1265,7 @@ impl OccurrenceExpansion<'_> {
                         self.entries,
                         self.records,
                         self.length_factor,
+                        self.precision,
                         &mut std::collections::BTreeSet::new(),
                     )
                     .ok()
@@ -4347,6 +4352,7 @@ pub(crate) fn store(
         definitions: &occurrence_definitions,
         neutral_links: &occurrence_neutral_links,
         length_factor: global.length_factor_mm(),
+        precision: global.real_precision(),
         output_limit: limits.output,
         depth_limit: limits.depth,
     };
