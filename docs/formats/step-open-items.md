@@ -39,12 +39,18 @@ plane inference uses the ordered outer-loop winding and a scale-relative
 collinearity threshold. The release-build sweep enumerated 4,173 STEP-named
 inputs. It decoded and validated 4,054 inputs, returned deterministic
 detection or parse errors for 119 inputs, and reached no per-file decode
-timeout. The largest accepted input completed in 9.63 seconds and reached
-1,338,996 KiB peak resident memory while writing 342,305,575 bytes of CADIR
+timeout. The largest accepted input completed in 8.61 seconds and reached
+1,339,884 KiB peak resident memory while writing 342,305,575 bytes of CADIR
 from 121,000,708 input bytes. This is below the 4 GiB desktop materialization
 and retention ceilings. The service profile refused the same input
 deterministically at its one-million collection-item ceiling. Endpoint and
 termination control therefore satisfy the declared resource envelope.
+
+The evaluator does not clone or sort a complete effective knot partition and
+does not clone validated rational weights. It scans validated boundaries, keeps
+at most 512 seed-nearest spans for seeded inverse searches, and keeps only the
+final 512 valid spans for unseeded containment. Each search examines at most
+512 spans.
 
 **Status.** Resolved for the declared STEP Part 21 envelope. The measured
 retained-memory ratio remains a performance observation, but it is bounded by
@@ -80,10 +86,10 @@ to the same collection-item and work-unit dimensions before materialization;
 its independent expansion and depth fuses remain active. The service profile
 rejects the large input deterministically with `CollectionItems:
 BudgetExceeded` after `used=1,000,000` and `requested=1`. The desktop profile
-completes it within 4 GiB, with the 1,338,996 KiB peak reported above. Parser
+completes it within 4 GiB, with the 1,339,884 KiB peak reported above. Parser
 value nodes, exact interned source names, compact exact identity slots,
-streamed byte accounting, and release of the parsed source graph are active
-controls.
+streamed byte accounting, explicit record-table backing-storage accounting,
+and release of the parsed source graph are active controls.
 
 **Status.** Resolved for the declared desktop and service policies. The policy
 accounts parser graph, semantic work, collection growth, output entities, and
@@ -185,7 +191,7 @@ writer, and degenerate-geometry writer paths. The targets treat panics,
 aborts, sanitizer findings, and libFuzzer timeouts as failures; ordinary parse,
 validation, and export refusals are expected results.
 
-A current bounded campaign ran `step_lexer`, `step_parser`, `step_reader`,
+The current bounded campaign ran `step_lexer`, `step_parser`, `step_reader`,
 `step_decode`, `step_writer`, `step_writer_custom`, and
 `step_geometry_degenerate` for 1,000 executions per target with a two-second
 per-input timeout and a 4 GiB RSS ceiling. All seven targets completed without
