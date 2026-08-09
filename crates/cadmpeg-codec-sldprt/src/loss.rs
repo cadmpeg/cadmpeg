@@ -74,6 +74,8 @@ pub enum SldprtLossCode {
     GeometryFaceSupportSurfaceUntyped,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
+    /// A derived pcurve parameter has multiple geometric candidates.
+    GeometryPcurveAmbiguous,
     /// No body record was available; a body hierarchy was derived.
     TopologyBodyHierarchyDerived,
     /// Body-component overlap tied and no body assignment was selected.
@@ -121,6 +123,7 @@ impl SldprtLossCode {
         Self::FeatureBodyRetentionUnresolved,
         Self::GeometryFaceSupportSurfaceUntyped,
         Self::GeometryEdgeSupportCurveUntyped,
+        Self::GeometryPcurveAmbiguous,
         Self::TopologyBodyHierarchyDerived,
         Self::TopologyBodyAssignmentAmbiguous,
         Self::TopologyFaceOwnerAmbiguous,
@@ -161,6 +164,7 @@ impl SldprtLossCode {
             Self::FeatureBodyRetentionUnresolved => "feature.body-retention-unresolved",
             Self::GeometryFaceSupportSurfaceUntyped => "geometry.face-support-surface-untyped",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
+            Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::TopologyBodyHierarchyDerived => "topology.body-hierarchy-derived",
             Self::TopologyBodyAssignmentAmbiguous => "topology.body-assignment-ambiguous",
             Self::TopologyFaceOwnerAmbiguous => "topology.face-owner-ambiguous",
@@ -195,6 +199,7 @@ impl SldprtLossCode {
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryParasolidNotTransferred => LossKind::GeometryNotTransferred,
+            Self::GeometryPcurveAmbiguous => LossKind::PcurveOmitted,
             Self::MaterialMetadataNotTransferred => LossKind::MaterialNotTransferred,
             _ => LossKind::FeatureHistoryRetained,
         }
@@ -213,6 +218,8 @@ impl SldprtLossCode {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::report::{LossKind, StrictConsequence};
+
     use super::SldprtLossCode;
     use std::collections::BTreeSet;
 
@@ -250,6 +257,7 @@ mod tests {
                 "feature.body-retention-unresolved",
                 "geometry.face-support-surface-untyped",
                 "geometry.edge-support-curve-untyped",
+                "geometry.pcurve-ambiguous",
                 "topology.body-hierarchy-derived",
                 "topology.body-assignment-ambiguous",
                 "topology.face-owner-ambiguous",
@@ -288,5 +296,12 @@ mod tests {
             assert_eq!(note.message, "x");
             assert!(note.provenance.is_none());
         }
+    }
+
+    #[test]
+    fn ambiguous_pcurve_is_a_tolerable_pcurve_omission() {
+        let note = SldprtLossCode::GeometryPcurveAmbiguous.note("ambiguous");
+        assert_eq!(note.code, LossKind::PcurveOmitted);
+        assert_eq!(note.strict_consequence(), StrictConsequence::Tolerate);
     }
 }

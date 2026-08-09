@@ -2009,6 +2009,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.body_modifiers.append(&mut source.body_modifiers);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
+    target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
     target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.ambiguous_body_assignments += source.stats.ambiguous_body_assignments;
     target.stats.ambiguous_face_owners += source.stats.ambiguous_face_owners;
@@ -2829,6 +2830,12 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
                 s.unknown_curve_edges
             )),
         );
+    }
+    if s.ambiguous_pcurve_parameters > 0 {
+        losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
+            "{} pcurve(s) were withheld because more than one geometric parameter satisfies the stored edge or ruling geometry; the decoder does not choose by residual order.",
+            s.ambiguous_pcurve_parameters
+        )));
     }
     if s.ambiguous_body_assignments > 0 {
         losses.push(SldprtLossCode::TopologyBodyAssignmentAmbiguous.note(format!(
@@ -3854,9 +3861,9 @@ mod design_loss_tests {
         multiply_projected_sketch_relation_records,
         sketch_constraint_has_complete_neutral_semantics, snapshot_active_configuration,
         spatial_sketch_constraint_has_complete_neutral_semantics,
-        unbound_feature_input_operation_objects, unprojected_sketch_relation_records,
+        unbound_feature_input_operation_objects, unprojected_sketch_relation_records, Brep,
     };
-    use crate::container::{Block, CompoundStream};
+    use crate::container::{Block, CompoundStream, ContainerScan};
     use crate::native::SldprtNative;
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -6314,6 +6321,26 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "0 semantic dimension record(s) are not bound to parameters; 1 parameter dimension(s) retain native subtypes."
+        }));
+    }
+
+    #[test]
+    fn geometry_report_surfaces_ambiguous_pcurve_loss() {
+        let scan = ContainerScan {
+            source_image: &[],
+            version: 0,
+            blocks: Vec::new(),
+            directory: Vec::new(),
+            cache_cells: Vec::new(),
+            compound_streams: Vec::new(),
+        };
+        let mut decoded = Brep::default();
+        decoded.stats.ambiguous_pcurve_parameters = 2;
+
+        let report = super::build_geometry_report(&scan, &decoded);
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == cadmpeg_ir::report::LossKind::PcurveOmitted
+                && loss.message.contains("2 pcurve(s)")
         }));
     }
 }

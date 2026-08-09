@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations};
-use cadmpeg_ir::eval::nurbs_curve_point;
+use cadmpeg_ir::eval::{nurbs_curve_parameter_domain, nurbs_curve_point};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, Pcurve, PcurveGeometry,
     ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
@@ -298,6 +298,8 @@ pub struct Stats {
     pub unknown_surface_faces: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
     pub unknown_curve_edges: usize,
+    /// Pcurves withheld because geometric inverse selection was ambiguous.
+    pub ambiguous_pcurve_parameters: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub synthetic_body_grouping: bool,
 }
@@ -883,7 +885,9 @@ fn decode_graph(
             curve,
             start: start_id,
             end: end_id,
-            param_range: None,
+            param_range: carriers
+                .curve(curve_attr)
+                .and_then(|carrier| carrier.parameter_range),
             tolerance: None,
         });
     }
@@ -2025,19 +2029,27 @@ fn derive_cylindrical_pcurves(
                 ) {
                     continue;
                 }
-                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
-                    continue;
+                parameter_range = if let Some(range) = edge.param_range {
+                    Some(range)
+                } else {
+                    let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end))
+                    else {
+                        continue;
+                    };
+                    match (
+                        nurbs_parameter_at_point(nurbs, start),
+                        nurbs_parameter_at_point(nurbs, end),
+                    ) {
+                        (InverseResolution::Unique(start), InverseResolution::Unique(end)) => {
+                            Some([start.min(end), start.max(end)])
+                        }
+                        (InverseResolution::Ambiguous, _) | (_, InverseResolution::Ambiguous) => {
+                            out.stats.ambiguous_pcurve_parameters += 1;
+                            continue;
+                        }
+                        _ => continue,
+                    }
                 };
-                let (Some(start_parameter), Some(end_parameter)) = (
-                    nurbs_parameter_at_point(nurbs, start),
-                    nurbs_parameter_at_point(nurbs, end),
-                ) else {
-                    continue;
-                };
-                parameter_range = Some([
-                    start_parameter.min(end_parameter),
-                    start_parameter.max(end_parameter),
-                ]);
                 let axial_control_points = nurbs
                     .control_points
                     .iter()
@@ -2098,10 +2110,133 @@ fn derive_cylindrical_pcurves(
     }
 }
 
+enum InverseResolution<T> {
+    NoMatch,
+    Unique(T),
+    Ambiguous,
+}
+
+const INVERSE_SAMPLE_COUNT: usize = 32;
+const INVERSE_PARAMETER_TOLERANCE: f64 = 1.0e-10;
+const INVERSE_ABSOLUTE_TOLERANCE_MM: f64 = 1.0e-6;
+const INVERSE_RELATIVE_TOLERANCE: f64 = 8.0 * f64::EPSILON;
+
+fn inverse_coordinate_tolerance(points: impl IntoIterator<Item = cadmpeg_ir::math::Point3>) -> f64 {
+    let scale = points.into_iter().fold(1.0_f64, |scale, point| {
+        scale
+            .max(point.x.abs())
+            .max(point.y.abs())
+            .max(point.z.abs())
+    });
+    INVERSE_ABSOLUTE_TOLERANCE_MM.max(scale * INVERSE_RELATIVE_TOLERANCE)
+}
+
+fn golden_section_minimum<F>(mut left: f64, mut right: f64, objective: &mut F) -> Option<(f64, f64)>
+where
+    F: FnMut(f64) -> Option<f64>,
+{
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let mut a = right - ratio * (right - left);
+    let mut b = left + ratio * (right - left);
+    let mut da = objective(a)?;
+    let mut db = objective(b)?;
+    for _ in 0..80 {
+        if da <= db {
+            right = b;
+            b = a;
+            db = da;
+            a = right - ratio * (right - left);
+            da = objective(a)?;
+        } else {
+            left = a;
+            a = b;
+            da = db;
+            b = left + ratio * (right - left);
+            db = objective(b)?;
+        }
+    }
+    let parameter = (left + right) * 0.5;
+    Some((parameter, objective(parameter)?))
+}
+
+/// Find one representative for every sampled local minimum of an objective on
+/// each nonzero knot span. Endpoints are always retained, so a candidate at a
+/// knot is not lost when adjacent spans share it.
+fn sampled_parameter_minima<F>(
+    knots: &[f64],
+    domain: [f64; 2],
+    mut objective: F,
+) -> Option<Vec<(f64, f64)>>
+where
+    F: FnMut(f64) -> Option<f64>,
+{
+    let mut candidates = Vec::new();
+    for span in knots.windows(2).filter(|span| span[0] < span[1]) {
+        let start = span[0].max(domain[0]);
+        let end = span[1].min(domain[1]);
+        if start >= end {
+            continue;
+        }
+        let step = (end - start) / INVERSE_SAMPLE_COUNT as f64;
+        let mut samples = Vec::with_capacity(INVERSE_SAMPLE_COUNT + 1);
+        for index in 0..=INVERSE_SAMPLE_COUNT {
+            let parameter = if index == INVERSE_SAMPLE_COUNT {
+                end
+            } else {
+                start + step * index as f64
+            };
+            samples.push((parameter, objective(parameter)?));
+        }
+        candidates.extend(samples.iter().copied());
+        for index in 1..INVERSE_SAMPLE_COUNT {
+            if samples[index].1 <= samples[index - 1].1 && samples[index].1 <= samples[index + 1].1
+            {
+                candidates.push(golden_section_minimum(
+                    samples[index - 1].0,
+                    samples[index + 1].0,
+                    &mut objective,
+                )?);
+            }
+        }
+    }
+    Some(candidates)
+}
+
+fn unique_inverse_parameter(
+    mut candidates: Vec<(f64, f64)>,
+    tolerance: f64,
+    parameter_domain: [f64; 2],
+) -> InverseResolution<f64> {
+    let tolerance_squared = tolerance * tolerance;
+    candidates.retain(|(parameter, error)| {
+        parameter.is_finite() && error.is_finite() && *error <= tolerance_squared
+    });
+    candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
+    let parameter_tolerance =
+        INVERSE_PARAMETER_TOLERANCE * (1.0 + (parameter_domain[1] - parameter_domain[0]).abs());
+    let mut unique = Vec::<(f64, f64)>::new();
+    for candidate in candidates {
+        if let Some(previous) = unique.last_mut() {
+            if (candidate.0 - previous.0).abs() <= parameter_tolerance {
+                if candidate.1 < previous.1 {
+                    *previous = candidate;
+                }
+                continue;
+            }
+        }
+        unique.push(candidate);
+    }
+    match unique.as_slice() {
+        [] => InverseResolution::NoMatch,
+        [(parameter, _)] => InverseResolution::Unique(*parameter),
+        _ => InverseResolution::Ambiguous,
+    }
+}
+
 fn nurbs_parameter_at_point(
     nurbs: &cadmpeg_ir::geometry::NurbsCurve,
     target: cadmpeg_ir::math::Point3,
-) -> Option<f64> {
+) -> InverseResolution<f64> {
     let squared_distance = |parameter: f64| {
         let point = nurbs_curve_point(
             nurbs.degree,
@@ -2116,38 +2251,23 @@ fn nurbs_parameter_at_point(
                 + (point.z - target.z).powi(2),
         )
     };
-    let mut best = None::<(f64, f64)>;
-    for span in nurbs.knots.windows(2).filter(|span| span[0] < span[1]) {
-        let (mut left, mut right) = (span[0], span[1]);
-        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-        let mut a = right - ratio * (right - left);
-        let mut b = left + ratio * (right - left);
-        let mut da = squared_distance(a)?;
-        let mut db = squared_distance(b)?;
-        for _ in 0..80 {
-            if da <= db {
-                right = b;
-                b = a;
-                db = da;
-                a = right - ratio * (right - left);
-                da = squared_distance(a)?;
-            } else {
-                left = a;
-                a = b;
-                da = db;
-                b = left + ratio * (right - left);
-                db = squared_distance(b)?;
-            }
-        }
-        for parameter in [span[0], (left + right) * 0.5, span[1]] {
-            let distance = squared_distance(parameter)?;
-            if best.is_none_or(|(_, best_distance)| distance < best_distance) {
-                best = Some((parameter, distance));
-            }
-        }
-    }
-    let (parameter, squared_distance) = best?;
-    (squared_distance.sqrt() <= 0.01).then_some(parameter)
+    let Some(domain) = nurbs_curve_parameter_domain(nurbs) else {
+        return InverseResolution::NoMatch;
+    };
+    let Some(candidates) = sampled_parameter_minima(&nurbs.knots, domain, squared_distance) else {
+        return InverseResolution::NoMatch;
+    };
+    unique_inverse_parameter(
+        candidates,
+        inverse_coordinate_tolerance(
+            nurbs
+                .control_points
+                .iter()
+                .copied()
+                .chain(std::iter::once(target)),
+        ),
+        domain,
+    )
 }
 
 fn quadratic_nurbs_has_constant_radius(
@@ -2731,16 +2851,30 @@ fn derive_nurbs_isoparametric_pcurves(
                         direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
                     })
                 };
+                let mut boundary_candidates = Vec::new();
                 if let Some(geometry) = line_pcurve(0, v_min) {
-                    geometry
-                } else if let Some(geometry) = line_pcurve(vc - 1, v_max) {
-                    geometry
-                } else if let Some(geometry) =
-                    ruled_surface_line_pcurve(surface, *origin, *direction, u_min, u_max)
-                {
-                    geometry
-                } else {
-                    continue;
+                    boundary_candidates.push(geometry);
+                }
+                if let Some(geometry) = line_pcurve(vc - 1, v_max) {
+                    boundary_candidates.push(geometry);
+                }
+                match boundary_candidates.len() {
+                    1 => boundary_candidates.pop().expect("one boundary pcurve"),
+                    0 => {
+                        match ruled_surface_line_pcurve(surface, *origin, *direction, u_min, u_max)
+                        {
+                            InverseResolution::Unique(geometry) => geometry,
+                            InverseResolution::Ambiguous => {
+                                out.stats.ambiguous_pcurve_parameters += 1;
+                                continue;
+                            }
+                            InverseResolution::NoMatch => continue,
+                        }
+                    }
+                    _ => {
+                        out.stats.ambiguous_pcurve_parameters += 1;
+                        continue;
+                    }
                 }
             }
             _ => continue,
@@ -2790,7 +2924,7 @@ fn ruled_surface_line_pcurve(
     line_direction: cadmpeg_ir::math::Vector3,
     u_min: f64,
     u_max: f64,
-) -> Option<PcurveGeometry> {
+) -> InverseResolution<PcurveGeometry> {
     let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
     if uc != 2
         || surface.u_degree != 1
@@ -2801,7 +2935,7 @@ fn ruled_surface_line_pcurve(
             .as_ref()
             .is_some_and(|weights| (0..vc).any(|v| (weights[v] - weights[vc + v]).abs() > 1e-12))
     {
-        return None;
+        return InverseResolution::NoMatch;
     }
     let row = |u: usize| &surface.control_points[u * vc..(u + 1) * vc];
     let row_weights = |u: usize| {
@@ -2832,7 +2966,7 @@ fn ruled_surface_line_pcurve(
         + line_direction.y * line_direction.y
         + line_direction.z * line_direction.z;
     if direction_squared <= f64::EPSILON {
-        return None;
+        return InverseResolution::NoMatch;
     }
     let perpendicular_squared = |point: cadmpeg_ir::math::Point3| {
         let relative = [
@@ -2852,45 +2986,43 @@ fn ruled_surface_line_pcurve(
         let (a, b) = evaluate_rows(parameter)?;
         Some(perpendicular_squared(a).max(perpendicular_squared(b)))
     };
-    let mut best = None::<(f64, f64)>;
-    for span in surface.v_knots.windows(2).filter(|span| span[0] < span[1]) {
-        let (mut left, mut right) = (span[0], span[1]);
-        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
-        let mut a = right - ratio * (right - left);
-        let mut b = left + ratio * (right - left);
-        let mut da = objective(a)?;
-        let mut db = objective(b)?;
-        for _ in 0..80 {
-            if da <= db {
-                right = b;
-                b = a;
-                db = da;
-                a = right - ratio * (right - left);
-                da = objective(a)?;
-            } else {
-                left = a;
-                a = b;
-                da = db;
-                b = left + ratio * (right - left);
-                db = objective(b)?;
-            }
-        }
-        for parameter in [span[0], (left + right) * 0.5, span[1]] {
-            let error = objective(parameter)?;
-            if best.is_none_or(|(_, best_error)| error < best_error) {
-                best = Some((parameter, error));
-            }
-        }
+    let Some(v_degree) = usize::try_from(surface.v_degree).ok() else {
+        return InverseResolution::NoMatch;
+    };
+    let (Some(&v_min), Some(&v_max)) = (surface.v_knots.get(v_degree), surface.v_knots.get(vc))
+    else {
+        return InverseResolution::NoMatch;
+    };
+    if !v_min.is_finite() || !v_max.is_finite() || v_min >= v_max {
+        return InverseResolution::NoMatch;
     }
-    let (v, error) = best?;
-    if error.sqrt() > 0.01 {
-        return None;
-    }
-    let (a, b) = evaluate_rows(v)?;
+    let Some(candidates) = sampled_parameter_minima(&surface.v_knots, [v_min, v_max], objective)
+    else {
+        return InverseResolution::NoMatch;
+    };
+    let resolution = unique_inverse_parameter(
+        candidates,
+        inverse_coordinate_tolerance(
+            surface
+                .control_points
+                .iter()
+                .copied()
+                .chain(std::iter::once(line_origin)),
+        ),
+        [v_min, v_max],
+    );
+    let v = match resolution {
+        InverseResolution::Unique(v) => v,
+        InverseResolution::NoMatch => return InverseResolution::NoMatch,
+        InverseResolution::Ambiguous => return InverseResolution::Ambiguous,
+    };
+    let Some((a, b)) = evaluate_rows(v) else {
+        return InverseResolution::NoMatch;
+    };
     let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
     let delta_squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
     if delta_squared <= f64::EPSILON {
-        return None;
+        return InverseResolution::NoMatch;
     }
     let project = |value: [f64; 3]| {
         (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / delta_squared
@@ -2902,10 +3034,10 @@ fn ruled_surface_line_pcurve(
     ]);
     let rate = project([line_direction.x, line_direction.y, line_direction.z]);
     if rate == 0.0 {
-        return None;
+        return InverseResolution::NoMatch;
     }
     let domain = u_max - u_min;
-    Some(PcurveGeometry::Line {
+    InverseResolution::Unique(PcurveGeometry::Line {
         origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
         direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
     })
@@ -3724,14 +3856,17 @@ mod tests {
             u_periodic: false,
             v_periodic: false,
         };
-        let geometry = super::ruled_surface_line_pcurve(
+        let geometry = match super::ruled_surface_line_pcurve(
             &surface,
             cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
             cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
             0.0,
             1.0,
-        )
-        .expect("interior ruling");
+        ) {
+            super::InverseResolution::Unique(geometry) => geometry,
+            super::InverseResolution::NoMatch => panic!("interior ruling did not match"),
+            super::InverseResolution::Ambiguous => panic!("interior ruling was ambiguous"),
+        };
         let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
             panic!("expected affine line pcurve");
         };
@@ -3739,5 +3874,170 @@ mod tests {
         assert!((origin.v - 0.5).abs() < 1e-12);
         assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
         assert!(direction.v.abs() < 1e-12);
+    }
+
+    #[test]
+    fn repeated_ruled_surface_line_candidates_are_ambiguous() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 2,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 3,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        assert!(matches!(
+            super::ruled_surface_line_pcurve(
+                &surface,
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                0.0,
+                1.0,
+            ),
+            super::InverseResolution::Ambiguous
+        ));
+    }
+
+    #[test]
+    fn repeated_nurbs_endpoint_candidates_are_ambiguous() {
+        let curve = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        assert!(matches!(
+            super::nurbs_parameter_at_point(&curve, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),),
+            super::InverseResolution::Ambiguous
+        ));
+    }
+
+    #[test]
+    fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
+        use cadmpeg_ir::annotations::AnnotationBuilder;
+        use cadmpeg_ir::geometry::{Curve, NurbsCurve, Surface};
+        use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
+        use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
+
+        let surface_id = SurfaceId("surface".into());
+        let curve_id = CurveId("curve".into());
+        let loop_id = LoopId("loop".into());
+        let edge_id = EdgeId("edge".into());
+        let start_vertex = VertexId("start-vertex".into());
+        let end_vertex = VertexId("end-vertex".into());
+        let start_point = PointId("start-point".into());
+        let end_point = PointId("end-point".into());
+        let coedge_id = cadmpeg_ir::ids::CoedgeId("coedge".into());
+        let mut brep = super::Brep {
+            surfaces: vec![Surface {
+                id: surface_id.clone(),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+                    origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                    radius: 1000.0,
+                },
+                source_object: None,
+            }],
+            curves: vec![Curve {
+                id: curve_id.clone(),
+                geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(NurbsCurve {
+                    degree: 2,
+                    knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    control_points: vec![
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 1000.0),
+                        cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    ],
+                    weights: None,
+                    periodic: false,
+                }),
+                source_object: None,
+            }],
+            faces: vec![Face {
+                id: FaceId("face".into()),
+                shell: cadmpeg_ir::ids::ShellId("shell".into()),
+                surface: surface_id,
+                sense: Sense::Forward,
+                loops: vec![loop_id.clone()],
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            loops: vec![Loop {
+                id: loop_id.clone(),
+                face: FaceId("face".into()),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::default(),
+                coedges: vec![coedge_id.clone()],
+                vertex_uses: Vec::new(),
+            }],
+            coedges: vec![Coedge {
+                id: coedge_id,
+                owner_loop: loop_id,
+                edge: edge_id.clone(),
+                next: cadmpeg_ir::ids::CoedgeId("coedge".into()),
+                previous: cadmpeg_ir::ids::CoedgeId("coedge".into()),
+                radial_next: cadmpeg_ir::ids::CoedgeId("coedge".into()),
+                sense: Sense::Forward,
+                pcurves: Vec::new(),
+                use_curve: None,
+                use_curve_parameter_range: None,
+            }],
+            edges: vec![Edge {
+                id: edge_id,
+                curve: Some(curve_id),
+                start: start_vertex.clone(),
+                end: end_vertex.clone(),
+                param_range: None,
+                tolerance: None,
+            }],
+            vertices: vec![
+                Vertex {
+                    id: start_vertex,
+                    point: start_point.clone(),
+                    tolerance: None,
+                },
+                Vertex {
+                    id: end_vertex,
+                    point: end_point.clone(),
+                    tolerance: None,
+                },
+            ],
+            points: vec![
+                Point {
+                    id: start_point,
+                    position: cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    source_object: None,
+                },
+                Point {
+                    id: end_point,
+                    position: cadmpeg_ir::math::Point3::new(1000.0, 0.0, 0.0),
+                    source_object: None,
+                },
+            ],
+            ..Default::default()
+        };
+        let mut annotations = AnnotationBuilder::new();
+        let source_stream = annotations.stream("test");
+        super::derive_cylindrical_pcurves(&mut brep, &mut annotations, source_stream);
+
+        assert!(brep.pcurves.is_empty());
+        assert_eq!(brep.stats.ambiguous_pcurve_parameters, 1);
     }
 }

@@ -351,6 +351,7 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
             end: payload + 12,
             geometry: CarrierGeometry::Curve(geometry),
             frame: None,
+            parameter_range: None,
             orientation_reversed: false,
         });
     }

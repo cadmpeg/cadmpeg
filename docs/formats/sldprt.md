@@ -1029,6 +1029,8 @@ Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list c
 
 An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates equal evaluation of the referenced source curve at the two interval parameters; the wrapper retains the source curve's geometry and bounds its use.
 
+When a bounded wrapper passes its endpoint-evaluation invariant, its two source parameters are the edge's parameter range. The decoder retains that range and does not replace it with an endpoint inverse search. An unwrapped NURBS edge obtains its range from its two vertex positions only when each position has exactly one parameter in the complete nonzero-knot-span domain within numerical roundoff. Multiple parameter values for either endpoint leave the range unresolved.
+
 The Parasolid partition and deltas grammar contains no two-dimensional UV pcurve control array. The `00 2d`, `00 7f`, and `00 80` arrays carry 3D or homogeneous control nets and knot data.
 
 Planar pcurves are the exact inverse of the edge carrier in the support plane frame. Lines remain lines. Coplanar circles and ellipses remain analytic circles and ellipses with the same angular parameter; an edge axis opposite the plane normal reverses the parameter-plane rotation.
@@ -1044,6 +1046,8 @@ A NURBS surface boundary that shares a complete control row, knot vector, degree
 A quadratic rational NURBS edge on a cylinder has a polar-NURBS pcurve when every Bézier span satisfies the homogeneous polynomial identity `X² + Y² = R²W²` in the cylinder radial frame. Its axial control channel is the projection of the same spatial poles onto the cylinder axis. The pcurve shares the edge curve's degree, knots, weights, and parameter; its stored range is the interval whose evaluated endpoints coincide with the edge vertices.
 
 A NURBS surface that is degree one and clamped in `u`, with equal weights at corresponding poles of its two control rows, is ruled in `u`. A spatial line coincident with a fixed-`v` ruling has an affine pcurve: `v` is the common row parameter and `u(t)` is the line parameter projected onto the evaluated ruling vector.
+
+The fixed `v` is selected only when the ruling inverse has one parameter candidate across the complete `v` knot domain. Exact boundary-row matches are candidates alongside interior rulings. Multiple candidates leave the pcurve unresolved; residual magnitude does not select one candidate.
 
 ### 7.3 Surface-intersection curve carriers
 

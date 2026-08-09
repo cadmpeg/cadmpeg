@@ -755,6 +755,32 @@ fn rational_linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) 
     bytes
 }
 
+fn bounded_curve_wrapper(
+    attr: u16,
+    source_attr: u16,
+    start: [f64; 3],
+    end: [f64; 3],
+    start_parameter: f64,
+    end_parameter: f64,
+) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x85];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    be16(&mut bytes, source_attr);
+    for value in start
+        .into_iter()
+        .chain(end)
+        .chain([start_parameter, end_parameter])
+    {
+        bef64(&mut bytes, value);
+    }
+    bytes
+}
+
 fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u16) -> Vec<u8> {
     nurbs_surface_carrier_with_v_knot_storage(
         wrapper_attr,
@@ -8080,9 +8106,17 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
     let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
     body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
     let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
-    body[edge + 24..edge + 26].copy_from_slice(&190u16.to_be_bytes());
+    body[edge + 24..edge + 26].copy_from_slice(&192u16.to_be_bytes());
     body.extend(nurbs_surface_carrier(180, 181, 10));
     body.extend(line_carrier(190, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    body.extend(bounded_curve_wrapper(
+        192,
+        190,
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        0.0,
+        1.0,
+    ));
     let result = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&body)),
@@ -8104,6 +8138,16 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
                     if direction.v == 0.0 && direction.u != 0.0
             )
     }));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.curve.as_ref().is_some_and(|id| id.0.ends_with("#192")))
+            .and_then(|edge| edge.param_range),
+        Some([0.0, 1.0])
+    );
 }
 
 #[test]

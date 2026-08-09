@@ -145,6 +145,8 @@ pub(crate) struct Carrier {
     pub end: usize,
     pub geometry: CarrierGeometry,
     pub frame: Option<(Point3, Vector3, Vector3)>,
+    /// Native parameter interval when a bounded curve wrapper supplies one.
+    pub parameter_range: Option<[f64; 2]>,
     /// Whether neutral radius normalization reverses the surface parameter frame.
     pub orientation_reversed: bool,
 }
@@ -291,6 +293,7 @@ fn parse_carrier_at_marker(
         end,
         geometry,
         frame,
+        parameter_range: None,
         orientation_reversed: tt == tag::TORUS && vals[6].is_sign_negative(),
     })
 }

@@ -90,36 +90,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier and relation to construct the exact surface geometry.
 
-### GC-10. Isoparametric trim line parameter
-
-**Question.** Which field fixes the `v` parameter of an isoparametric trim line on a ruled B-spline surface?
-
-**Known.** `sldprt.md` §7.1 defines the ruled-surface carrier. `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:2681` searches each knot span with a golden-section minimization and accepts the parameter with the smallest residual:
-
-```rust
-let (v, error) = best?;
-if error.sqrt() > 0.01 { return None; }
-```
-
-The limit `0.01` millimetres is not a stated bound. The decoder does not compare the best parameter with the second-best parameter. The two boundary cases above it use the stored boundary control rows and are exact.
-
-**Need.** We must know the field to construct the trim without a search. Two rulings inside the limit must not select by residual order.
-
-### GC-11. Cylindrical pcurve parameter range
-
-**Question.** Which field fixes the start and end parameters of a NURBS edge on a cylindrical face?
-
-**Known.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:1949` searches the knot spans for the parameter nearest each vertex point and accepts it below `0.01`:
-
-```rust
-let (parameter, squared_distance) = best?;
-(squared_distance.sqrt() <= 0.01).then_some(parameter)
-```
-
-The decoder does not test that one parameter only is inside the limit. `derive_cylindrical_pcurves` uses the two results as the pcurve `parameter_range`.
-
-**Need.** We must know the field to bound the trim. A curve that approaches its own start must not collapse to a sliver.
-
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
