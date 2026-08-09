@@ -793,60 +793,82 @@ pub(crate) fn resolve_consolidated_edge_blocks_from_records(
                 let pcurve = &block.pcurves[side];
                 let mut winners = Vec::new();
                 let mut ambiguous_family = false;
-                for cylinder in &standalone {
-                    if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
-                        winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
-                    }
-                }
-                for value in &embedded {
-                    if pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points) {
-                        winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
-                            pos: value.pos,
-                            wrapper_pos: value.wrapper_pos,
-                        });
-                    }
-                }
                 let identity_circles: Vec<_> = circles
                     .iter()
                     .filter(|circle| circle.record_id == pcurve.support_id)
                     .collect();
-                if identity_circles.len() > 1 {
-                    ambiguous_family = true;
-                } else if let [circle] = identity_circles.as_slice() {
-                    if pcurve_matches_circle(pcurve, circle) {
-                        winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                let identity_embedded: Vec<_> = embedded
+                    .iter()
+                    .filter(|value| value.object_id == pcurve.support_id)
+                    .collect();
+                let identity_count = identity_circles.len() + identity_embedded.len();
+                if identity_count == 0 {
+                    for cylinder in &standalone {
+                        if pcurve_endpoints_match_vertices(pcurve, cylinder, &points) {
+                            winners
+                                .push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
+                        }
                     }
-                } else {
+                    winners.extend(
+                        embedded
+                            .iter()
+                            .filter(|value| {
+                                pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points)
+                            })
+                            .map(|value| ConsolidatedSupportBinding::EmbeddedCylinder {
+                                pos: value.pos,
+                                wrapper_pos: value.wrapper_pos,
+                            }),
+                    );
                     winners.extend(
                         circles
                             .iter()
                             .filter(|circle| pcurve_matches_circle(pcurve, circle))
                             .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos }),
                     );
+                    winners.extend(
+                        cones
+                            .iter()
+                            .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
+                            .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
+                    );
+                    winners.extend(
+                        spheres
+                            .iter()
+                            .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
+                            .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
+                    );
+                    winners.extend(
+                        tori.iter()
+                            .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
+                            .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
+                    );
+                    winners.extend(
+                        planes
+                            .iter()
+                            .filter(|plane| pcurve_endpoints_match_plane(pcurve, plane, &points))
+                            .map(|plane| ConsolidatedSupportBinding::Plane { pos: plane.pos }),
+                    );
+                } else if identity_count > 1 {
+                    ambiguous_family = true;
+                } else if let [circle] = identity_circles.as_slice() {
+                    if pcurve_matches_circle(pcurve, circle) {
+                        winners.push(ConsolidatedSupportBinding::Circle { pos: circle.pos });
+                    } else {
+                        ambiguous_family = true;
+                    }
+                } else if let [value] = identity_embedded.as_slice() {
+                    if pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points) {
+                        winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
+                            pos: value.pos,
+                            wrapper_pos: value.wrapper_pos,
+                        });
+                    } else {
+                        ambiguous_family = true;
+                    }
+                } else {
+                    ambiguous_family = true;
                 }
-                winners.extend(
-                    cones
-                        .iter()
-                        .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
-                        .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos }),
-                );
-                winners.extend(
-                    spheres
-                        .iter()
-                        .filter(|sphere| pcurve_endpoints_match_sphere(pcurve, sphere, &points))
-                        .map(|sphere| ConsolidatedSupportBinding::Sphere { pos: sphere.pos }),
-                );
-                winners.extend(
-                    tori.iter()
-                        .filter(|torus| pcurve_endpoints_match_torus(pcurve, torus, &points))
-                        .map(|torus| ConsolidatedSupportBinding::Torus { pos: torus.pos }),
-                );
-                winners.extend(
-                    planes
-                        .iter()
-                        .filter(|plane| pcurve_endpoints_match_plane(pcurve, plane, &points))
-                        .map(|plane| ConsolidatedSupportBinding::Plane { pos: plane.pos }),
-                );
                 if !ambiguous_family && winners.len() == 1 {
                     winners.pop()
                 } else {

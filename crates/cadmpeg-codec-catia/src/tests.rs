@@ -1766,7 +1766,16 @@ pub(crate) fn b2_group_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
-    let mut payload = vec![0x08, 0x34, 0x12, 21, 9, 0x08, 9];
+    a5_pcurve_stream_with_support_and_uv(0x1234, u, v)
+}
+
+pub(crate) fn a5_pcurve_stream_with_support_and_uv(
+    support_id: u32,
+    u: [f64; 2],
+    v: [f64; 2],
+) -> Vec<u8> {
+    let mut payload = compact_uint_bytes(support_id);
+    payload.extend_from_slice(&[21, 9, 0x08, 9]);
     for value in [0.0f64, 1.0] {
         payload.extend_from_slice(&le_f64(value));
     }
@@ -1937,8 +1946,23 @@ pub(crate) fn b2_topology_edge_run_stream() -> Vec<u8> {
 }
 
 pub(crate) fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+    a5_native_edge_run_stream_with_support(curve, start, end, 0x1234)
+}
+
+pub(crate) fn a5_native_edge_run_stream_with_support(
+    curve: u8,
+    start: u8,
+    end: u8,
+    support_id: u32,
+) -> Vec<u8> {
     assert!(curve >= 3);
-    let mut bytes = a5_edge_block_stream();
+    let mut bytes = a5_pcurve_stream_with_support_and_uv(support_id, [0.0, 1.0], [0.0, 1.0]);
+    bytes.extend_from_slice(&a5_pcurve_stream_with_support_and_uv(
+        support_id,
+        [0.0, 1.0],
+        [0.0, 1.0],
+    ));
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
     bytes.extend_from_slice(&a5_native_edge_identity_stream(curve, start, end));
     bytes
 }
@@ -2203,11 +2227,15 @@ fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
 }
 
 pub(crate) fn b2_embedded_cylinder_stream() -> Vec<u8> {
+    b2_embedded_cylinder_stream_with_object_id(0x5678)
+}
+
+pub(crate) fn b2_embedded_cylinder_stream_with_object_id(object_id: u32) -> Vec<u8> {
     let standalone = b2_cylinder_stream();
     let mut record = vec![
         0xb2, 0x03, 0x60, 0x02, 0x05, 0x81, 0x0d, 0xb4, 0x03, 0x28, 0x5a,
     ];
-    record.extend_from_slice(&[0x08, 0x78, 0x56]);
+    record.extend_from_slice(&compact_uint_bytes(object_id));
     record.extend_from_slice(&standalone[5..]);
     record
 }
@@ -8601,6 +8629,75 @@ fn native_namespace_binds_edges_to_retained_embedded_cylinders() {
         crate::native::CatiaNative::load(&namespace).expect("load embedded-cylinder edge binding"),
         native
     );
+}
+
+#[test]
+fn native_namespace_binds_embedded_cylinder_by_unique_pcurve_support_identity() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let mut bytes = b2_embedded_cylinder_stream_with_object_id(0x5678);
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x9abc));
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [first, second] = native.consolidated_embedded_cylinders.as_slice() else {
+        panic!("two embedded consolidated cylinders");
+    };
+    assert_ne!(first.object_id, second.object_id);
+    let [first_group, _second_group] = native.consolidated_groups.as_slice() else {
+        panic!("two consolidated groups");
+    };
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    let expected = Some(CatiaConsolidatedSupportBinding::EmbeddedCylinder {
+        byte_offset: first.byte_offset,
+        wrapper_byte_offset: first_group.byte_offset,
+    });
+    assert_eq!(run.support_bindings, [expected.clone(), expected]);
+}
+
+#[test]
+fn native_namespace_withholds_duplicate_embedded_pcurve_support_identity() {
+    let mut bytes = b2_embedded_cylinder_stream_with_object_id(0x5678);
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x5678));
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream_with_support(6, 139, 142, 0x5678));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    assert_eq!(run.support_bindings, [None, None]);
+}
+
+#[test]
+fn consolidated_support_identity_mismatch_does_not_fall_back_to_geometry() {
+    let mut bytes = a5_cone_bound_edge_stream();
+    bytes.extend_from_slice(&b2_embedded_cylinder_stream_with_object_id(0x1234));
+
+    let resolved = crate::families::consolidated::records::resolve_consolidated_edge_blocks(&bytes);
+    let [edge] = resolved.as_slice() else {
+        panic!("one consolidated edge block");
+    };
+    assert_eq!(edge.supports, [None, None]);
 }
 
 #[test]
