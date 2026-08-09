@@ -545,6 +545,15 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     let mut initialized = false;
     let mut ordered = bodies.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|(_, header)| header.description.to_ascii_lowercase().contains("deltas"));
+    let entity_streams = ordered
+        .iter()
+        .map(|(payload, header)| {
+            let body = &payload[header.body_offset.min(payload.len())..];
+            let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+            (body, is_deltas)
+        })
+        .collect::<Vec<_>>();
+    let final_state_refs = entity::scan_final_bridge_selector(&entity_streams);
     for (payload, header) in ordered {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
@@ -555,10 +564,14 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
         } else {
             topology::scan_with_curve_attrs(body, &curve_attrs)
         };
-        let mut scanned_facts = entity::scan(body);
+        let mut scanned_facts = if is_deltas {
+            entity::scan_deltas(body)
+        } else {
+            entity::scan(body)
+        };
         if !initialized || !is_deltas {
             if initialized {
-                tables.merge_deltas(scanned_tables);
+                tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
                 if facts.bodies.is_empty() {
                     facts.bodies = scanned_facts.bodies;
                 }
@@ -580,7 +593,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 initialized = true;
             }
         } else {
-            tables.merge_deltas(scanned_tables);
+            tables.merge_deltas(scanned_tables, final_state_refs.as_ref());
             facts.face_colors.append(&mut scanned_facts.face_colors);
             facts.face_atoms.append(&mut scanned_facts.face_atoms);
             facts

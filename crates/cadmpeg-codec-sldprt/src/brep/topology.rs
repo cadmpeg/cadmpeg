@@ -360,11 +360,20 @@ impl Tables {
     /// Merge deltas without replacing partition topology membership.
     ///
     /// The change roster does not identify a partition face that a deltas
-    /// bridge supersedes. Keep the partition bridge set when it exists; a
-    /// deltas bridge set is usable only for a site with no partition bridges.
-    pub fn merge_deltas(&mut self, mut deltas: Self) {
+    /// bridge supersedes. Preserve a partition bridge when its identity is
+    /// present and add only missing deltas bridges reached by the final-state
+    /// body-relation selector.
+    pub fn merge_deltas(&mut self, mut deltas: Self, final_state_refs: Option<&HashSet<u16>>) {
         if self.bridges.is_empty() {
             self.bridges = deltas.bridges;
+        } else if let Some(final_state_refs) = final_state_refs {
+            deltas.bridges.retain(|attr, record| {
+                final_state_refs.contains(attr)
+                    || record
+                        .owner
+                        .is_some_and(|owner| final_state_refs.contains(&owner))
+            });
+            merge_missing(&mut self.bridges, deltas.bridges);
         }
         merge_missing(&mut self.loops, deltas.loops);
         merge_missing(&mut self.edge_uses, deltas.edge_uses);

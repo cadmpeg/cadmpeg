@@ -854,7 +854,9 @@ A deltas stream groups its records into change sets. Each change set carries a *
 
 Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
 
-A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition updates only a point coordinate; it does not replace the partition topology or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face. A deltas bridge or edge-use is not final topology when a partition bridge set exists unless a separate final-state body relation selects it; the decoder withholds an unselected deltas record. A partition without bridges takes its face membership entirely from the deltas stream.
+A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition updates only a point coordinate; it does not replace the partition topology or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face.
+
+An explicit deltas disc17 body root supplies a final-state bridge selector. The selector is reconstructed over the combined site entity table: partition entity records are the base, a deltas entity record with a greater or equal sequence replaces the same-attribute entity record for selector traversal, and references can resolve to records in either stream. When partition bridges exist, a missing-identity deltas bridge enters the merged bridge set only when its bridge attribute or owner attribute is reachable from this selector. Partition topology keeps precedence for every identity already present. The selector does not replace the class-root body relation. The decoder withholds an unselected deltas bridge. A partition without bridges takes its face membership entirely from the deltas stream.
 
 For bridges whose owner field is greater than one, the owner identifies the canonical face entity and the bridge identifies a face use. Bridges with the same owner and identical reference, marker, and walked loop/surface payload are duplicate uses; the bridge encoded first is canonical. Bridges with the same owner and non-equivalent payloads are alternate uses without a selector; the decoder withholds every use for that owner and reports the unresolved owner.
 
@@ -989,7 +991,7 @@ The class-root directory has this fixed prefix and variable root vector:
 +44 roots           u16 BE[root_count]
 ```
 
-`class_token` is a stream-local nonsentinel token. `root_count` is positive. Each root is a distinct nonsentinel entity attribute. Exactly one distinct valid vector selects class-root relations; an incomplete vector, a vector with a duplicate or sentinel root, or multiple distinct valid vectors selects no relation. A root that resolves to a complete class-number-independent body list head selects that body chain. A selected complete chain is the authoritative body relation for the site and supersedes a disc-keyed subchain. Multiple selected chains retain section-interval ownership. A sole selected chain owns every canonical face in the site.
+`class_token` is a stream-local nonsentinel token. `root_count` is positive. Each root is a distinct nonsentinel entity attribute. Exactly one distinct valid vector selects class-root relations; an incomplete vector, a vector with a duplicate or sentinel root, or multiple distinct valid vectors selects no relation. A root that resolves to a complete class-number-independent body list head selects that body chain. A selected complete chain is the authoritative body relation for the site and supersedes a disc-keyed subchain. Multiple selected chains retain section-interval ownership. A sole selected chain owns every canonical face in the site, including a deltas-only face admitted by the final-state bridge selector. With multiple selected chains, a deltas-only face outside every section interval has no recoverable body identity and is withheld.
 
 ---
 
@@ -1147,6 +1149,6 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 
 ## 10. Inline record framing
 
-Inline `00 51` subrecords use a fixed slot count selected by the Parasolid schema, disc, low flag byte, and optional prefixed form. `00 51` and `00 52` byte occurrences do not delimit records.
+Bare inline `00 51` subrecords use a fixed slot count selected by the Parasolid schema, disc, and low flag byte. `00 51` and `00 52` byte occurrences do not delimit records.
 
-For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, the final byte is `00`, and `end = pos + 14 + 3*slot_count + 1`. For a bare subrecord, `end = pos + 14 + 2*slot_count`.
+For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`. The zero byte self-delimits the slot run, and `end = pos + 14 + 3*slot_count + 1`, where `slot_count` is the number of complete triples. For a bare subrecord, `end = pos + 14 + 2*slot_count`; its schema-specific slot count is required to find the end.

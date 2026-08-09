@@ -16,14 +16,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Body classification
 
-### BC-02. Deltas faces outside partition intervals
-
-**Question.** Which body owns a deltas-stream face that is outside all partition intervals of a multi-chain site?
-
-**Known.** `sldprt.md` §6 "The disc04-root layout uses" defines interval ownership for the class-number-independent layout. A sole chain owns all canonical faces in its site.
-
-**Need.** We must know the owner to construct the final body membership of a multi-chain site.
-
 ## 2. Geometry carriers
 
 ### GC-01. Non-isoparametric B-spline trim UV
@@ -118,19 +110,19 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### CM-05. Other inline entity families
 
-**Question.** What fixed slot count does each inline entity family outside the canonical face families use in each Parasolid schema?
+**Question.** What fixed slot count does each bare inline entity family outside the canonical face families use in each Parasolid schema?
 
-**Known.** `sldprt.md` §5 "Top-level entity families:" defines the common entity header. `sldprt.md` §10 "Inline `00 51` subrecords use a fixed slot count" defines inline record boundaries when the schema-specific slot count is known.
+**Known.** `sldprt.md` §5 "Top-level entity families:" defines the common entity header. `sldprt.md` §10 "Bare inline `00 51` subrecords use a fixed slot count" defines bare record boundaries. A prefixed record is self-delimiting because its `[01][hi][lo]` slot run ends at the first `00` byte.
 
-**Need.** We must know each slot count to find record boundaries without treating payload bytes as delimiters.
+**Need.** We must know each bare slot count to find bare record boundaries without treating payload bytes as delimiters.
 
-**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:70` gives three families an explicit slot count and gives every other family the count `6`:
+**Note.** `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:78` gives three families an explicit slot count and gives every other family the count `6`:
 
 ```rust
 _ => 6,
 ```
 
-The table has no schema dimension. The count is load-bearing: `refs()` uses it to select between the prefixed-triple form and the bare u16 form, and to bound the read. A wrong count changes every reference the layout recognizers chain through. The decoder has no branch that refuses an unlisted family.
+The table has no schema dimension. The count bounds bare u16 references only. A wrong bare count changes every reference the layout recognizers chain through. The decoder has no branch that refuses an unlisted bare family.
 
 `crates/cadmpeg-codec-sldprt/src/brep/attrib.rs:78` and `attrib.rs:126` accept a `00 4f` name length and a `00 52` list count in the range `1..64`. `sldprt.md` states no bound for either. Both modules scan every byte offset for the tags, which is the practice this item names.
 

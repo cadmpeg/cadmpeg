@@ -3732,9 +3732,9 @@ anchor = "Slot values `0` and `1` are sentinels."
 
 [[not_applicable]]
 area = "Inline record framing (§10)"
-reason = "Framing arithmetic rather than a record: `end = pos + 14 + 3*slot_count + 1` for a prefixed subrecord and `end = pos + 14 + 2*slot_count` for a bare one. The slot-count table it depends on is an open item, not a stated layout."
+reason = "Framing arithmetic rather than a fixed-offset record: the zero byte after a prefixed triple run self-delimits that form, while `end = pos + 14 + 2*slot_count` for a bare record. The bare slot-count table is an open item, not a stated layout."
 section = "10"
-anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, the final byte is `00`"
+anchor = "For a prefixed subrecord, `body[14] == 0x01`, each slot is `[01][hi][lo]`, and the first byte after the slot run is `00`"
 
 [[not_applicable]]
 area = "Compound File Binary directory entry (§1)"

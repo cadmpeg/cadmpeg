@@ -84,19 +84,18 @@ fn slot_count(disc: u16, flo: u8) -> usize {
     }
 }
 
-fn refs(body: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
-    if body.get(at) == Some(&1) {
-        let mut out = Vec::with_capacity(count);
-        let mut prefixed = true;
-        for index in 0..count {
-            let p = at + index * 3;
-            if body.get(p) != Some(&1) {
-                prefixed = false;
-                break;
-            }
-            out.push(u16_be(body, p + 1)?);
+fn refs(body: &[u8], at: usize, count: usize, prefixed: bool) -> Option<Vec<u16>> {
+    if prefixed {
+        if body.get(at) != Some(&1) {
+            return None;
         }
-        if prefixed && body.get(at + count * 3) == Some(&0) {
+        let mut out = Vec::new();
+        let mut p = at;
+        while body.get(p) == Some(&1) {
+            out.push(u16_be(body, p.checked_add(1)?)?);
+            p = p.checked_add(3)?;
+        }
+        if !out.is_empty() && body.get(p) == Some(&0) {
             return Some(out);
         }
     }
@@ -105,7 +104,7 @@ fn refs(body: &[u8], at: usize, count: usize) -> Option<Vec<u16>> {
         .collect()
 }
 
-fn scan_entities(body: &[u8]) -> Vec<EntityRecord> {
+fn scan_entities(body: &[u8], prefixed: bool) -> Vec<EntityRecord> {
     let mut out = Vec::new();
     for off in 0..body.len().saturating_sub(25) {
         if body.get(off..off + 2) != Some(&[0x00, 0x51]) {
@@ -131,7 +130,7 @@ fn scan_entities(body: &[u8]) -> Vec<EntityRecord> {
         if attr <= 1 || seq == 0 || !(1..=0x20).contains(&flo) {
             continue;
         }
-        let Some(refs) = refs(body, p + 12, slot_count(disc, flo)) else {
+        let Some(refs) = refs(body, p + 12, slot_count(disc, flo), prefixed) else {
             continue;
         };
         out.push(EntityRecord {
@@ -225,7 +224,15 @@ fn color_record(body: &[u8], off: usize) -> Option<(u16, Color, usize)> {
 }
 
 pub fn scan(body: &[u8]) -> Facts {
-    let entities = scan_entities(body);
+    scan_with_framing(body, false)
+}
+
+pub fn scan_deltas(body: &[u8]) -> Facts {
+    scan_with_framing(body, true)
+}
+
+fn scan_with_framing(body: &[u8], prefixed: bool) -> Facts {
+    let entities = scan_entities(body, prefixed);
     let entity_attrs = entities.iter().map(|record| record.attr).collect();
     let class_roots = class_root_attrs(body, &entity_attrs);
     let mut colors = HashMap::new();
@@ -282,6 +289,28 @@ pub fn scan(body: &[u8]) -> Facts {
         face_atoms: super::attrib::scan(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
     }
+}
+
+/// Reconstruct the bridge selector carried by explicit deltas body relations.
+///
+/// Deltas entity records are ordered after partition records. Equal-sequence
+/// records therefore select the deltas framing while references can still
+/// resolve to unchanged partition records.
+pub fn scan_final_bridge_selector(streams: &[(&[u8], bool)]) -> Option<HashSet<u16>> {
+    let mut entities = Vec::new();
+    let mut has_deltas_body_root = false;
+    for (body, is_deltas) in streams {
+        let scanned = scan_entities(body, *is_deltas);
+        has_deltas_body_root |= *is_deltas && scanned.iter().any(is_explicit_body_root);
+        entities.extend(scanned);
+    }
+    has_deltas_body_root.then(|| {
+        bodies(&entities)
+            .0
+            .into_iter()
+            .flat_map(|body| body.refs)
+            .collect()
+    })
 }
 
 /// Decode cluster-key chain bodies ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#6-body-records)).
@@ -379,6 +408,10 @@ fn cluster_chain_bodies(
     out
 }
 
+fn is_explicit_body_root(record: &EntityRecord) -> bool {
+    (record.flags == 2 || record.flags & 0xff00_0000 == 0xff00_0000) && record.disc == 0x0017
+}
+
 /// Decode explicit `MANIFOLD_SOLID_BREP` entity-51 records.
 fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
     let mut by_attr = HashMap::new();
@@ -391,9 +424,11 @@ fn bodies(entities: &[EntityRecord]) -> (Vec<BodyRecord>, usize) {
         }
     }
     let mut out = Vec::new();
-    for root in by_attr.values().filter(|record| {
-        (record.flags == 2 || record.flags & 0xff00_0000 == 0xff00_0000) && record.disc == 0x0017
-    }) {
+    for root in by_attr
+        .values()
+        .copied()
+        .filter(|record| is_explicit_body_root(record))
+    {
         let solid_regions = body_regions(&by_attr, root, 0x001b, None);
         let sheet_regions = body_regions(&by_attr, root, 0x001d, Some(1));
         let mut refs = HashSet::new();
@@ -3913,6 +3948,18 @@ mod tests {
 
         let unknown_root = class_root_index(&[5, 32, 200]);
         assert_eq!(class_root_attrs(&unknown_root, &entity_attrs), None);
+    }
+
+    #[test]
+    fn prefixed_entity_refs_end_at_the_zero_terminator() {
+        let mut bytes = Vec::new();
+        for reference in 2_u16..=8 {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.push(0);
+
+        assert_eq!(refs(&bytes, 0, 6, true), Some((2_u16..=8).collect()));
     }
 
     #[test]

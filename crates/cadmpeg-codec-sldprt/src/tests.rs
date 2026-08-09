@@ -6434,6 +6434,46 @@ fn class_root_index_selects_complete_cluster_body_relation() {
 }
 
 #[test]
+fn class_root_body_relation_selects_missing_deltas_face() {
+    let mut partition = class_root_index(&[5, 32, 36, 700]);
+    partition.extend(entity51(2, 5, 0x0004, &[3, 32, 1, 1, 1, 1]));
+    partition.extend(entity51(2, 32, 0x000f, &[3, 36, 5, 1, 1, 1]));
+    partition.extend(entity51(2, 36, 0x0011, &[3, 1, 32, 1, 1, 1]));
+    partition.extend(entity51(1, 700, 0x0014, &[10, 1, 1, 1, 1, 1]));
+    partition.extend(owned_triangle(0, 700, 0.0));
+
+    let mut deltas = vec![0x00, 0x51];
+    be32(&mut deltas, 2);
+    be16(&mut deltas, 500);
+    be32(&mut deltas, 1);
+    be16(&mut deltas, 0x0017);
+    for reference in [700, 701, 1, 1, 1, 1, 1] {
+        deltas.push(1);
+        be16(&mut deltas, reference);
+    }
+    deltas.push(0);
+    deltas.extend(entity51(1, 701, 0x0014, &[210, 1, 1, 1, 1, 1]));
+    deltas.extend(owned_triangle(200, 701, 2.0));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_partition_and_deltas(&partition, &deltas)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].id.0, "sldprt:brep:body#32");
+    assert_eq!(result.ir.model.faces.len(), 2);
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| loss.code != LossKind::TopologyNotTransferred));
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn unselected_deltas_bridges_do_not_enter_partition_membership() {
     let partition = triangle_body();
     let deltas = owned_triangle(200, 900, 10.0);
