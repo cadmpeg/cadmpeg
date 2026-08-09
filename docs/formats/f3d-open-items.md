@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-45. Face set of an Extrude to-shape target
-
-**Question.** Which faces of a whole-body recipe target define the shape an Extrude terminates on?
-
-**Known.** `f3d.md` §3.1 "The extent form is carried by" gives the role-`0x0000000500000000` target group whose members are whole-body recipe operands. It gives no rule that turns the group into a neutral face set. `f3d.md` §3.1 "A `Combine` scope stores" uses the candidate faces of a body recipe in the opposite direction, as a check on a body identity: "if candidate faces are present, that body must occur in their body incidence".
-
-`resolved_body_recipe_shape` in `design/face_resolve.rs` collects the union of every reference's candidate faces and emits it as the resolved face set of the termination. A reference's candidate faces are the active faces whose persistent subentity tag holds that reference. The set is not proved to be the body's complete boundary and is not proved to be the termination surface.
-
-**Need.** A recipe reference that tags three faces of a twelve-face body makes the neutral model state that the extrusion terminates on those three faces. The rule that gives the target shape from a whole-body recipe settles the item.
-
 ### DR-46. Join from a `Chamfer` dimensional specification to its edge group
 
 **Question.** Which stored field joins a `Chamfer` dimensional specification to one construction-operand group?
