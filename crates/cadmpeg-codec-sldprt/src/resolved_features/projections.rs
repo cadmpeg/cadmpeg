@@ -572,6 +572,53 @@ pub(crate) fn project_compact_surface_selections(
             }
             continue;
         }
+        if let FeatureDefinition::SplitFace { targets, .. } = &mut feature.definition {
+            if !matches!(
+                targets,
+                cadmpeg_ir::features::FaceSelection::Unresolved
+                    | cadmpeg_ir::features::FaceSelection::Native(_)
+            ) {
+                continue;
+            }
+            let native = compact_surface_selection_set_value(feature_selections);
+            let mut faces = Vec::new();
+            let mut complete = true;
+            for selection in feature_selections {
+                let generated = selection
+                    .terminal_feature_ref
+                    .as_ref()
+                    .and_then(|producer| feature_ids_by_native.get(producer))
+                    .zip(selection.components.last())
+                    .and_then(|(producer, component)| Some((producer, component.local_id?)));
+                if let Some((producer, local_id)) = generated {
+                    let face = cadmpeg_ir::features::GeneratedFaceRef {
+                        feature: producer.clone(),
+                        local_id: local_id.to_string(),
+                    };
+                    if !faces.contains(&face) {
+                        faces.push(face);
+                    }
+                } else {
+                    complete = false;
+                }
+                for producer in selection
+                    .producer_feature_refs
+                    .iter()
+                    .filter_map(|producer| feature_ids_by_native.get(producer))
+                    .filter(|producer| *producer != &feature.id)
+                {
+                    if !feature.dependencies.contains(producer) {
+                        feature.dependencies.push(producer.clone());
+                    }
+                }
+            }
+            *targets = if complete && !faces.is_empty() {
+                cadmpeg_ir::features::FaceSelection::Generated { faces, native }
+            } else {
+                cadmpeg_ir::features::FaceSelection::Native(native)
+            };
+            continue;
+        }
         let Some(selection) = surface_selection_consensus(feature_selections) else {
             continue;
         };
@@ -837,6 +884,22 @@ pub(crate) fn project_compact_surface_selections(
             u_axis,
         });
     }
+}
+
+fn compact_surface_selection_set_value(selections: &[&FeatureInputSurfaceSelection]) -> String {
+    let mut values = selections
+        .iter()
+        .map(|selection| compact_surface_selection_value(&selection.components))
+        .collect::<Vec<_>>();
+    let mut seen = HashSet::new();
+    values.retain(|value| seen.insert(value.clone()));
+    if let [value] = values.as_slice() {
+        return value.clone();
+    }
+    format!(
+        "sldprt:feature-input:surface-selection-vectors:{}",
+        values.join(";")
+    )
 }
 
 fn surface_selection_consensus<'a>(

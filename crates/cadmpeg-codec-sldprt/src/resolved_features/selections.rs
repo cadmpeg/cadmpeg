@@ -490,11 +490,15 @@ pub(super) fn compact_surface_selections(
                 }))
                 .collect(),
             NativeClassKind::Operation(operation) => {
-                operation_surface_selection_candidates(operation, lane, start, end)
+                operation_surface_selection_candidates(operation, lane, start, end, name.object_id)
             }
             _ => continue,
         };
-        if kind != NativeClassKind::MirrorPattern && candidates.len() != 1 {
+        if !matches!(
+            kind,
+            NativeClassKind::MirrorPattern | NativeClassKind::Operation(FeatureClass::SplitFace)
+        ) && candidates.len() != 1
+        {
             continue;
         }
         for (offset, components) in candidates {
@@ -530,7 +534,34 @@ fn operation_surface_selection_candidates(
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
+    object_source: Option<u32>,
 ) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    if operation == FeatureClass::SplitFace {
+        if !["moPLineProjIdRep_c", "moPLineSurfIdRep_c"]
+            .into_iter()
+            .all(|required| lane.classes.iter().any(|class| class.name == required))
+        {
+            return Vec::new();
+        }
+        let Some(object_source) = object_source else {
+            return Vec::new();
+        };
+        return generated_surface_identities(lane)
+            .into_iter()
+            .filter(|identity| {
+                let Some(first) = identity.components.first() else {
+                    return false;
+                };
+                let Some(last) = identity.components.last() else {
+                    return false;
+                };
+                component_source(first) == Some(object_source)
+                    && component_source(last).is_some_and(|source| source != object_source)
+                    && last.local_id.is_some()
+            })
+            .map(|identity| (identity.offset as usize, identity.components))
+            .collect();
+    }
     if !matches!(
         operation,
         FeatureClass::Dome
@@ -590,6 +621,11 @@ fn operation_surface_selection_candidates(
     } else {
         Vec::new()
     }
+}
+
+fn component_source(component: &FeatureInputComponentPathEntry) -> Option<u32> {
+    let source: [u8; 4] = component.type_signature[4..8].try_into().ok()?;
+    Some(u32::from_le_bytes(source))
 }
 
 fn compact_surface_selection_candidates_for_class(
@@ -1292,9 +1328,9 @@ pub(super) fn inline_surface_reference_at(
     }
 }
 
-/// Decode feature-produced surface identities declared by `*SurfIdRep_c`
-/// classes. These are output identities, not selections consumed by the
-/// feature that owns the input lane.
+/// Decode persistent surface identities declared by `*SurfIdRep_c` classes.
+/// Operation-specific consumers separately project the identities that also
+/// carry input selections, including projected split-line target faces.
 pub(crate) fn generated_surface_identities(
     lane: &FeatureInputLane,
 ) -> Vec<crate::records::FeatureInputGeneratedSurfaceIdentity> {

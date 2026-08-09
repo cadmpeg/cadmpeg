@@ -760,8 +760,13 @@ fn operation_surface_selection_finds_marker_inside_class_body() {
         sketch_entities: Vec::new(),
     };
 
-    let selections =
-        operation_surface_selection_candidates(FeatureClass::TrimSurface, &lane, 0, payload.len());
+    let selections = operation_surface_selection_candidates(
+        FeatureClass::TrimSurface,
+        &lane,
+        0,
+        payload.len(),
+        None,
+    );
 
     assert_eq!(selections.len(), 1);
     assert_eq!(selections[0].0, marker);
@@ -1428,6 +1433,88 @@ fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
     assert_eq!(path[0].local_id, None);
     assert_eq!(path[1].instance, Some(0x8200));
     assert_eq!(path[1].local_id, Some(7));
+}
+
+#[test]
+fn projected_split_line_consumes_self_owned_surface_identity_paths() {
+    let class_name = "moPLineSurfIdRep_c";
+    let prefix = [0xc3, 0x80, 0xc5, 0x00];
+    let signature = |source: u32, identity: u32| {
+        let mut signature = [0; 12];
+        signature[..4].copy_from_slice(&prefix);
+        signature[4..8].copy_from_slice(&source.to_le_bytes());
+        signature[8..].copy_from_slice(&identity.to_le_bytes());
+        signature
+    };
+    let mut payload = CLASS_MARKER.to_vec();
+    payload.extend((class_name.len() as u16).to_le_bytes());
+    payload.extend(class_name.as_bytes());
+    payload.extend([0, 0]);
+    payload.extend(signature(711, 1));
+    payload.extend(0x80a7_u16.to_le_bytes());
+    payload.extend([0, 0]);
+    payload.extend(signature(314, 2));
+    payload.extend(3u32.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload.clone(),
+        classes: vec![
+            FeatureInputClass {
+                id: "surface-class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                name: class_name.into(),
+                role: FeatureInputClassRole::Auxiliary,
+            },
+            FeatureInputClass {
+                id: "projection-class".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: payload.len() as u64,
+                name: "moPLineProjIdRep_c".into(),
+                role: FeatureInputClassRole::Auxiliary,
+            },
+        ],
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let candidates = operation_surface_selection_candidates(
+        FeatureClass::SplitFace,
+        &lane,
+        0,
+        payload.len(),
+        Some(711),
+    );
+    assert_eq!(candidates.len(), 1, "{candidates:#?}");
+    assert_eq!(candidates[0].1.len(), 2);
+    assert_eq!(
+        &candidates[0].1[0].type_signature[4..8],
+        &711u32.to_le_bytes()
+    );
+    assert_eq!(
+        &candidates[0].1[1].type_signature[4..8],
+        &314u32.to_le_bytes()
+    );
+    assert_eq!(candidates[0].1[1].local_id, Some(3));
+    assert!(operation_surface_selection_candidates(
+        FeatureClass::SplitFace,
+        &lane,
+        0,
+        payload.len(),
+        Some(712),
+    )
+    .is_empty());
 }
 
 #[test]

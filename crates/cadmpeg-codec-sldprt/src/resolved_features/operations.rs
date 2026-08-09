@@ -5,6 +5,9 @@ use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use std::collections::HashMap;
 
+pub(crate) const SPLIT_LINE_MODE_PROPERTY: &str = "SplitLineMode";
+pub(crate) const SPLIT_LINE_PROJECTION_MODE: &str = "Projection";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FormCodePadding {
     Four,
@@ -390,6 +393,58 @@ pub(crate) fn bind_extrusion_operations(
         };
         if operations.all(|operation| operation == first) {
             *op = first;
+        }
+    }
+}
+
+/// Establish projected split-line mode from the class owned by each
+/// `moPLine_c` feature-input object.
+pub(crate) fn enrich_history_split_line_modes(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let mut observations = HashMap::<String, (bool, bool)>::new();
+    for lane in lanes {
+        let mut objects = features
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        for (index, (start, feature)) in objects.iter().enumerate() {
+            if feature.input_class.as_deref() != Some("moPLine_c") {
+                continue;
+            }
+            let end = objects
+                .get(index + 1)
+                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
+            let project_classes = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moPLineProject_c" && class.offset >= *start && class.offset < end
+                })
+                .count();
+            let observation = observations.entry(feature.id.clone()).or_default();
+            if project_classes == 1 {
+                observation.0 = true;
+            } else {
+                observation.1 = true;
+            }
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if observations.get(&feature.id) == Some(&(true, false)) {
+            feature.properties.insert(
+                SPLIT_LINE_MODE_PROPERTY.into(),
+                SPLIT_LINE_PROJECTION_MODE.into(),
+            );
         }
     }
 }

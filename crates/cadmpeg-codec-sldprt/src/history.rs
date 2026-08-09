@@ -19,8 +19,8 @@ use cadmpeg_ir::features::{
     HoleBottom, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
     PatternKind, PatternSeed, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RevolveExtent, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SurfaceExtension, SweepMode, Termination, TrimRegion,
-    VariableRadius, VertexSelection, WrapMode,
+    ScaleCenter, ScaleFactors, SketchSpace, SplitFaceTool, SurfaceExtension, SweepMode,
+    Termination, TrimRegion, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::{Curve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::AttributeId;
@@ -392,7 +392,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
         })
         .collect::<Vec<_>>();
     bind_offset_plane_references(&mut features);
-    bind_native_profile_features(&mut features, histories);
+    bind_native_construction_features(&mut features, histories);
     features
 }
 
@@ -710,7 +710,7 @@ fn bind_offset_plane_references(features: &mut [cadmpeg_ir::features::Feature]) 
     }
 }
 
-fn bind_native_profile_features(
+fn bind_native_construction_features(
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
 ) {
@@ -776,6 +776,14 @@ fn bind_native_profile_features(
                     if let cadmpeg_ir::features::LoftSection::Profile(profile) = section {
                         bind(profile);
                     }
+                }
+            }
+            FeatureDefinition::SplitFace {
+                tool: SplitFaceTool::Path(PathRef::Native(native)),
+                ..
+            } => {
+                if let Some(target) = feature_ids_by_native.get(native.as_str()) {
+                    dependencies.push(target.clone());
                 }
             }
             _ => {}
@@ -2487,6 +2495,88 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn projected_split_line_uses_the_unique_lower_source_sketch_signature() {
+        let dimensions = BTreeMap::from([("D1".into(), "<MOD-DIAM>85".into())]);
+        let mut split = feature("split", Some("711"), 0);
+        split.kind = "Split Line".into();
+        split.input_class = Some("moPLine_c".into());
+        split.parameters.clone_from(&dimensions);
+        split.properties.insert(
+            crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY.into(),
+            crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE.into(),
+        );
+        let mut sketch = feature("sketch", Some("705"), 1);
+        sketch.xml_tag = "Sketch".into();
+        sketch.kind = "Sketch".into();
+        sketch.input_class = Some("moProfileFeature_c".into());
+        sketch.parameters = dimensions;
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![split.clone(), sketch.clone()],
+        };
+
+        let projected = project_features(std::slice::from_ref(&history));
+        let split_feature = projected
+            .iter()
+            .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
+            .expect("split feature");
+        assert_eq!(
+            split_feature.definition,
+            FeatureDefinition::SplitFace {
+                targets: FaceSelection::Unresolved,
+                tool: SplitFaceTool::Path(PathRef::Native(sketch.id.clone())),
+            }
+        );
+        assert_eq!(
+            split_feature.dependencies,
+            vec![neutral_feature_id(&sketch.id)]
+        );
+
+        let mut ambiguous = history;
+        let mut duplicate = sketch;
+        duplicate.id = "duplicate-sketch".into();
+        duplicate.source_id = Some("704".into());
+        ambiguous.features.push(duplicate);
+        let projected = project_features(&[ambiguous]);
+        assert!(matches!(
+            projected
+                .iter()
+                .find(|candidate| candidate.native_ref.as_deref() == Some(split.id.as_str()))
+                .map(|candidate| &candidate.definition),
+            Some(FeatureDefinition::Native { .. })
+        ));
+    }
+
+    #[test]
+    fn split_face_path_binds_to_projected_sketch_geometry() {
+        let mut definition = FeatureDefinition::SplitFace {
+            targets: FaceSelection::Unresolved,
+            tool: SplitFaceTool::Path(PathRef::Native("sketch-native".into())),
+        };
+        let feature_id = FeatureId("sketch-feature".into());
+        let sketch_id = cadmpeg_ir::sketches::SketchId("sketch-geometry".into());
+
+        assert!(bind_definition_sketch(
+            &mut definition,
+            "sketch-native",
+            &feature_id,
+            &sketch_id,
+            true,
+        ));
+        assert!(matches!(
+            definition,
+            FeatureDefinition::SplitFace {
+                tool: SplitFaceTool::Path(PathRef::Sketch(ref bound)),
+                ..
+            } if bound == &sketch_id
+        ));
     }
 
     #[test]
@@ -7025,6 +7115,10 @@ fn bind_definition_sketch(
                 | path.as_mut().is_some_and(bind_path)
         }
         FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
+        FeatureDefinition::SplitFace {
+            tool: SplitFaceTool::Path(path),
+            ..
+        } => bind_path(path),
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
@@ -7153,6 +7247,9 @@ fn project_definition(
         project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Draft) {
         project_draft(feature)
+    } else if class == Some(FeatureClass::SplitFace) {
+        project_split_face(feature, native_by_source, history_features)
+            .unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::CutWithSurface) {
@@ -7188,6 +7285,44 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+}
+
+fn project_split_face(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+    history_features: &[Feature],
+) -> Option<FeatureDefinition> {
+    if feature.input_class.as_deref() != Some("moPLine_c")
+        || feature
+            .properties
+            .get(crate::resolved_features::operations::SPLIT_LINE_MODE_PROPERTY)
+            .map(String::as_str)
+            != Some(crate::resolved_features::operations::SPLIT_LINE_PROJECTION_MODE)
+        || feature.parameters.is_empty()
+    {
+        return None;
+    }
+    let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+    let mut candidates = history_features.iter().filter(|candidate| {
+        candidate.parent == feature.parent
+            && classify(candidate) == Some(FeatureClass::Sketch)
+            && candidate.input_class.as_deref() == Some("moProfileFeature_c")
+            && candidate.parameters == feature.parameters
+            && candidate
+                .source_id
+                .as_deref()
+                .and_then(|value| value.parse::<u32>().ok())
+                .is_some_and(|candidate_source| candidate_source > 0 && candidate_source < source)
+    });
+    let tool = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    let native = native_by_source.get(tool.source_id.as_deref()?)?;
+    Some(FeatureDefinition::SplitFace {
+        targets: FaceSelection::Unresolved,
+        tool: SplitFaceTool::Path(PathRef::Native((*native).into())),
+    })
 }
 
 fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
@@ -10619,6 +10754,7 @@ pub(crate) fn enrich_history_semantic(
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(histories, lanes);
     crate::resolved_features::direct_edits::enrich_history_move_body_translations(histories, lanes);
     enrich_history_parameters_semantic(histories, lanes);
+    crate::resolved_features::operations::enrich_history_split_line_modes(histories, lanes);
     if matches!(mode, HistoryEnrichment::Read) {
         crate::resolved_features::holes::enrich_history_hole_constructions(histories, lanes);
         crate::resolved_features::holes::enrich_history_cosmetic_thread_diameters(histories, lanes);

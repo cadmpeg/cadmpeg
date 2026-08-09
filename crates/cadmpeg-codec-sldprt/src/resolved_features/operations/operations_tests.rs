@@ -1,15 +1,115 @@
 //! Tests for the `operations` module.
 
 use super::{
-    class_scoped_extrusion_operation, extrusion_operation, feature_inline_operation,
-    feature_inline_operation_fields, feature_operation_code, form_code_padding,
-    revolution_operation, FormCodePadding,
+    class_scoped_extrusion_operation, enrich_history_split_line_modes, extrusion_operation,
+    feature_inline_operation, feature_inline_operation_fields, feature_operation_code,
+    form_code_padding, revolution_operation, FormCodePadding, SPLIT_LINE_MODE_PROPERTY,
+    SPLIT_LINE_PROJECTION_MODE,
 };
 use crate::records::{
-    Feature, FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
+    Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+    FeatureInputName,
 };
 use cadmpeg_ir::features::BooleanOp;
 use std::collections::BTreeMap;
+
+#[test]
+fn split_line_projection_mode_requires_one_owned_project_class() {
+    let native_feature = |id: &str, source: &str, class: &str| Feature {
+        id: id.into(),
+        parent: "history".into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: Some(source.into()),
+        parent_source_id: None,
+        ordinal: source.parse().expect("required invariant"),
+        name: id.into(),
+        kind: "Split Line".into(),
+        input_class: Some(class.into()),
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native_feature("split", "40", "moPLine_c"),
+            native_feature("next", "50", "moExtrusion_c"),
+        ],
+    };
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: vec![0; 200],
+        classes: vec![FeatureInputClass {
+            id: "project".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            name: "moPLineProject_c".into(),
+            role: FeatureInputClassRole::Auxiliary,
+        }],
+        names: vec![
+            FeatureInputName {
+                id: "split-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 20,
+                value: "split".into(),
+                object_id: Some(40),
+            },
+            FeatureInputName {
+                id: "next-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 150,
+                value: "next".into(),
+                object_id: Some(50),
+            },
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let mut projected = vec![history.clone()];
+    enrich_history_split_line_modes(&mut projected, std::slice::from_ref(&lane));
+    assert_eq!(
+        projected[0].features[0]
+            .properties
+            .get(SPLIT_LINE_MODE_PROPERTY)
+            .map(String::as_str),
+        Some(SPLIT_LINE_PROJECTION_MODE)
+    );
+
+    let mut ambiguous_lane = lane;
+    ambiguous_lane.classes.push(FeatureInputClass {
+        id: "second-project".into(),
+        parent: "lane".into(),
+        ordinal: 1,
+        offset: 120,
+        name: "moPLineProject_c".into(),
+        role: FeatureInputClassRole::Auxiliary,
+    });
+    let mut ambiguous = vec![history];
+    enrich_history_split_line_modes(&mut ambiguous, &[ambiguous_lane]);
+    assert!(!ambiguous[0].features[0]
+        .properties
+        .contains_key(SPLIT_LINE_MODE_PROPERTY));
+}
 #[test]
 fn inline_operation_binds_join_and_cut_to_their_family_words() {
     use crate::records::{FeatureInputLane, FeatureInputName};

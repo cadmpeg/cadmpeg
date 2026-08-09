@@ -33,6 +33,7 @@ pub(crate) enum FeatureClass {
     ExtendSurface,
     RuledSurface,
     Draft,
+    SplitFace,
     Combine,
     CutWithSurface,
     DeleteBody,
@@ -177,6 +178,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Thicken),
             None,
         ),
+        "moPLine_c" => (
+            NativeClassKind::Operation(FeatureClass::SplitFace),
+            Feature,
+            Some(FeatureClass::SplitFace),
+            None,
+        ),
+        "moPLineProject_c"
+        | "moPLineProjIdRep_c"
+        | "moPLineSurfIdRep_c"
+        | "moPerBodyChooserDataWithFileName_c" => {
+            (NativeClassKind::Auxiliary, Auxiliary, None, None)
+        }
         "moSweep_c" => (
             NativeClassKind::Sweep,
             Feature,
@@ -585,6 +598,7 @@ pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
         "Rib" => FeatureClass::Rib,
         "Shell" => FeatureClass::Shell,
         "Draft" => FeatureClass::Draft,
+        "Split Line" => FeatureClass::SplitFace,
         "Surface-Offset" => FeatureClass::OffsetSurface,
         "Surface-Knit" => FeatureClass::KnitSurface,
         "Surface-Fill" => FeatureClass::FilledSurface,
@@ -693,6 +707,7 @@ mod tests {
             ("moExtruRefSurface_c", FeatureClass::Extrude),
             ("moCirPattern_c", FeatureClass::Pattern),
             ("moCoordSys_c", FeatureClass::CoordinateSystem),
+            ("moPLine_c", FeatureClass::SplitFace),
         ] {
             assert_eq!(
                 classify(&feature("Feature", "localized", "localized", Some(class))),
@@ -716,6 +731,7 @@ mod tests {
             ("Body-Move/Copy", FeatureClass::MoveBody),
             ("3DPoint", FeatureClass::ReferencePoint),
             ("Coordinate System", FeatureClass::CoordinateSystem),
+            ("Split Line", FeatureClass::SplitFace),
         ] {
             assert_eq!(
                 classify(&feature("Feature", "localized", kind, None)),
@@ -748,6 +764,11 @@ mod tests {
                 "moCirPattern_c",
                 NativeClassKind::CircularPattern,
                 FeatureClass::Pattern,
+            ),
+            (
+                "moPLine_c",
+                NativeClassKind::Operation(FeatureClass::SplitFace),
+                FeatureClass::SplitFace,
             ),
         ] {
             let class = native_object_class(name);
