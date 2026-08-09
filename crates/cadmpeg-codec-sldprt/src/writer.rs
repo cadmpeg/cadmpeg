@@ -475,6 +475,21 @@ fn section_type_ids(
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+    if ir.source.as_ref().is_some_and(|source| {
+        source
+            .attributes
+            .contains_key("sldprt_active_partition_unresolved")
+    }) && ir
+        .model
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.active)
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writing requires an active partition identity for a multi-partition source"
+                .into(),
+        ));
+    }
     if !ir.model.configurations.is_empty()
         && ir
             .model

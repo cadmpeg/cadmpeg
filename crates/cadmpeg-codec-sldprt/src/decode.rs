@@ -112,7 +112,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let (ir, annotations, unknowns) = build_geometry_ir(
                 &scan,
-                streams[decoded.selected].origin,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
@@ -2038,7 +2037,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
 
 fn build_geometry_ir(
     scan: &ContainerScan,
-    origin: BodyOrigin<'_>,
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
@@ -2054,7 +2052,7 @@ fn build_geometry_ir(
             }
         }
     }
-    ir.source = Some(source_meta(scan, origin, header));
+    ir.source = Some(source_meta(scan, header));
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut annotations);
     let mut lanes = crate::resolved_features::assembly::lanes(scan, &mut annotations);
@@ -2648,7 +2646,7 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
     }
 }
 
-fn source_meta(scan: &ContainerScan, origin: BodyOrigin<'_>, header: &StreamHeader) -> SourceMeta {
+fn source_meta(scan: &ContainerScan, header: &StreamHeader) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -2670,24 +2668,12 @@ fn source_meta(scan: &ContainerScan, origin: BodyOrigin<'_>, header: &StreamHead
         "compound_stream_count".to_string(),
         scan.compound_streams.len().to_string(),
     );
-    let active_name = match origin {
-        BodyOrigin::Block(fallback) => container::select_active_parasolid(scan).map_or_else(
-            || {
-                fallback
-                    .section
-                    .clone()
-                    .unwrap_or_else(|| format!("block@{}", fallback.offset))
-            },
-            |(block, _)| {
-                block
-                    .section
-                    .clone()
-                    .unwrap_or_else(|| format!("block@{}", block.offset))
-            },
-        ),
-        BodyOrigin::Compound(_) => origin.name(),
-    };
-    attributes.insert("active_parasolid_block".to_string(), active_name);
+    let active_name = container::active_parasolid_summary(scan).map(|(name, _, _)| name);
+    if let Some(active_name) = active_name {
+        attributes.insert("active_parasolid_block".to_string(), active_name);
+    } else {
+        attributes.insert("sldprt_active_partition_unresolved".into(), "true".into());
+    }
     attributes.insert("parasolid_schema".to_string(), header.schema.clone());
     attributes.insert(
         "parasolid_description".to_string(),

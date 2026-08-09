@@ -653,7 +653,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             name, size, sch.schema
         )),
         None => notes.push(
-            "no Parasolid partition/deltas stream located; B-rep decode will be container-only"
+            "no unique active Parasolid partition located; available B-rep sites remain decodable"
                 .to_string(),
         ),
     }
@@ -675,7 +675,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-fn active_parasolid_summary(
+pub(crate) fn active_parasolid_summary(
     scan: &ContainerScan,
 ) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
     if let Some((block, header)) = select_active_parasolid(scan) {
@@ -688,67 +688,94 @@ fn active_parasolid_summary(
             header,
         ));
     }
-    scan.compound_streams
+    let candidates = scan
+        .compound_streams
         .iter()
         .flat_map(|stream| {
             stream.ps_streams.iter().filter_map(move |payload| {
                 let header = crate::parasolid::stream_header(payload)?;
-                crate::parasolid::is_body_stream(&header).then_some((
-                    stream.path.clone(),
-                    payload.len(),
-                    header,
-                ))
+                let path = stream.path.to_ascii_lowercase();
+                let description = header.description.to_ascii_lowercase();
+                (crate::parasolid::is_body_stream(&header)
+                    && !path.contains("ghost")
+                    && !description.contains("ghost")
+                    && (path.contains("partition") || description.contains("partition"))
+                    && !path.contains("deltas")
+                    && !description.contains("deltas"))
+                .then_some((stream.path.clone(), payload.len(), header))
             })
         })
-        .max_by_key(|(_, size, _)| *size)
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 /// Test whether either outer envelope carries a framed Parasolid body stream.
 pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
-    active_parasolid_summary(scan).is_some()
+    scan.blocks
+        .iter()
+        .flat_map(|block| &block.ps_streams)
+        .chain(
+            scan.compound_streams
+                .iter()
+                .flat_map(|stream| &stream.ps_streams),
+        )
+        .filter_map(|payload| crate::parasolid::stream_header(payload))
+        .any(|header| crate::parasolid::is_body_stream(&header))
 }
 
-/// Select the highest-ranked Parasolid B-rep block.
+/// Select the unique Parasolid partition block for the active configuration.
 ///
-/// Ranking favors larger partition streams, then deltas streams. Ghost and
-/// `ResolvedFeatures` sections receive a penalty. The return value includes the
-/// parsed stream header.
+/// An explicit active configuration index is authoritative. Without one, the
+/// block envelope must contain exactly one non-ghost partition candidate.
 pub fn select_active_parasolid<'a>(
     scan: &'a ContainerScan<'_>,
 ) -> Option<(&'a Block, crate::parasolid::StreamHeader)> {
     let active_configuration = active_configuration_index(scan);
-    let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
-    for b in &scan.blocks {
-        let Some(ps) = &b.ps_stream else { continue };
-        let Some(sch) = crate::parasolid::stream_header(ps) else {
-            continue;
-        };
-        let name = b.section.as_deref().unwrap_or("").to_ascii_lowercase();
-        let desc = sch.description.to_ascii_lowercase();
-
-        // Larger real streams score higher; the ghost stub and feature lane are
-        // demoted below any genuine partition/deltas body.
-        let mut score = (ps.len() / 64) as i64;
-        if name.contains("ghost") || desc.contains("ghost") {
-            score -= 1_000_000;
-        }
-        if name.contains("resolvedfeatures") {
-            score -= 1_000_000;
-        }
-        if name.contains("partition") {
-            score += 100_000;
-            if active_configuration.is_some_and(|index| configuration_index(&name) == Some(index)) {
-                score += 1_000_000;
-            }
-        } else if name.contains("deltas") || desc.contains("deltas") {
-            score += 50_000;
-        }
-
-        if best.as_ref().is_none_or(|(s, _, _)| score > *s) {
-            best = Some((score, b, sch));
-        }
-    }
-    best.map(|(_, b, sch)| (b, sch))
+    let candidates = scan
+        .blocks
+        .iter()
+        .flat_map(|block| {
+            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
+            let section_is_partition = section.contains("partition")
+                && !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let section_is_admissible = !section.contains("ghost")
+                && !section.contains("deltas")
+                && !section.contains("resolvedfeatures");
+            let body_streams = block
+                .ps_streams
+                .iter()
+                .filter_map(|payload| {
+                    let header = crate::parasolid::stream_header(payload)?;
+                    crate::parasolid::is_body_stream(&header).then_some(header)
+                })
+                .collect::<Vec<_>>();
+            let sole_body_stream = body_streams.len() == 1;
+            body_streams
+                .into_iter()
+                .filter(move |header| {
+                    let description = header.description.to_ascii_lowercase();
+                    section_is_admissible
+                        && !description.contains("ghost")
+                        && !description.contains("deltas")
+                        && (description.contains("partition")
+                            || sole_body_stream && section_is_partition)
+                })
+                .map(move |header| (block, header))
+                .collect::<Vec<_>>()
+        })
+        .filter(|(block, _)| {
+            active_configuration.is_none_or(|active| {
+                block.section.as_deref().and_then(configuration_index) == Some(active)
+            })
+        })
+        .collect::<Vec<_>>();
+    (candidates.len() == 1)
+        .then(|| candidates.into_iter().next())
+        .flatten()
 }
 
 pub(crate) fn configuration_index(section: &str) -> Option<usize> {

@@ -2061,6 +2061,53 @@ fn parasolid_stream_header_is_parsed() {
 }
 
 #[test]
+fn parasolid_partition_selection_withholds_ambiguous_sites() {
+    let source = sldprt_with_colliding_sites();
+    let scan = container::scan_bytes(&source);
+
+    assert!(container::has_parasolid_body_stream(&scan));
+    assert!(container::select_active_parasolid(&scan).is_none());
+}
+
+#[test]
+fn parasolid_partition_selection_uses_explicit_active_source_index() {
+    let mut source = sldprt_with_colliding_sites();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="First" SourceIndex="0"/><Configuration Name="Second" SourceIndex="1"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    let scan = container::scan_bytes(&source);
+
+    let (block, header) =
+        container::select_active_parasolid(&scan).expect("explicit active partition");
+    assert_eq!(
+        block.section.as_deref(),
+        Some("Contents/Config-1-Partition")
+    );
+    assert!(header.description.contains("partition"));
+}
+
+#[test]
+fn parasolid_partition_selection_never_uses_a_deltas_section() {
+    let mut source = outer_header();
+    source.extend(make_block(
+        0x21,
+        "Contents/Config-0-Deltas",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body()),
+    ));
+    let scan = container::scan_bytes(&source);
+
+    assert!(container::has_parasolid_body_stream(&scan));
+    assert!(container::select_active_parasolid(&scan).is_none());
+}
+
+#[test]
 fn parasolid_extracts_every_direct_stream_in_block() {
     let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     payload.extend(parasolid_with_body(

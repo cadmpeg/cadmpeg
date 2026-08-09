@@ -144,26 +144,9 @@ Observed gap:
 
 **Question.** Which field identifies the active B-rep stream when no configuration record selects one?
 
-**Known.** `sldprt.md` §1.2 names the `Config-N-Partition`, `Config-N-Deltas`, and `Config-N-GhostPartition` families. It gives no rank between them and no rule that selects one as the active B-rep.
+**Known.** The active configuration's `SourceIndex=N` selects `Config-N-Partition`. `Config-N-Deltas`, `Config-N-GhostPartition`, and `Config-N-ResolvedFeatures` do not substitute for that partition. Without an explicit active source index, a sole non-ghost partition is active. Multiple partitions leave active geometry identity unresolved. Stream size and container order do not select one.
 
-`crates/cadmpeg-codec-sldprt/src/container.rs:716` selects with a weighted score:
-
-```rust
-let mut score = (ps.len() / 64) as i64;
-... score -= 1_000_000;   // ghost
-... score -= 1_000_000;   // resolvedfeatures
-... score += 100_000;     // partition
-... score += 1_000_000;   // matches the active configuration
-... score += 50_000;      // deltas
-```
-
-The values `64`, `50_000`, `100_000`, and `1_000_000` are not in `sldprt.md` or in `docs/layouts/sldprt.toml`. The comparison uses `>`, so the earlier block wins an equal score. The function has no branch that withholds.
-
-`crates/cadmpeg-codec-sldprt/src/container.rs:691` uses a second rule for the compound envelope. It takes the largest body stream with `max_by_key` and gives partition and deltas equal rank.
-
-**Need.** We must know the field to select the active stream. Stream size is not a defined selector.
-
-**Note.** The test for `partition` uses the section name only. The test for `deltas` uses the section name or the stream description. `crates/cadmpeg-codec-sldprt/src/parasolid.rs:188` shows that the description carries both words. A block with an empty or unprintable preamble therefore gets no partition score while a sibling deltas block still gets `50_000` from its description. The writer then patches the deltas lane. Correct this asymmetry with the selection rule.
+**Need.** We must know whether another stored field selects one partition when multiple partitions exist and no configuration record supplies `SourceIndex`.
 
 ### CM-10. Parasolid stream boundary
 
