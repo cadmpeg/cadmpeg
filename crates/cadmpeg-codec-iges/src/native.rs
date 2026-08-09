@@ -4212,7 +4212,8 @@ pub(crate) fn store(
                 .filter_map(|index| {
                     let member = record
                         .integer(4 + index)
-                        .and_then(|value| u32::try_from(value).ok());
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence));
                     root_inference_blocked |= member.is_none();
                     member
                 })

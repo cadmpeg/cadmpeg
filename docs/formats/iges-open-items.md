@@ -140,18 +140,6 @@ The result decides two unrelated things: where an entity's own parameters stop, 
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DR-01. Parameter Data pointers become typed arena identities without validation
-
-**Question.** Which validation must a Parameter Data pointer pass before the codec gives it a typed namespace?
-
-**Known.** `graph.rs` reads Directory fields only. Entity-specific pointers, which are the majority of the pointers in a file, are converted directly into arena identities from their field position. Representative sites: `native.rs:1737` (Type 182 to Type 180), `native.rs:1830` (Type 408 to Type 308), `native.rs:2935` (Type 402 Form 3 to Type 410), and the same shape at `native.rs:1464`, `:1767`, `:1790`, `:1905`, `:2257`, `:2475`, `:2945`, `:2988`, `:3037`. Parity, existence, and target type are not tested.
-
-The codec knows the correct pattern. `native.rs:3253-3266` looks the target up and tests `entity_type == 214` before it selects a namespace. `parameter.rs:108-113` tests parity and target type. `graph.rs:112-125` classifies every Directory-field pointer as `WrongType`, `EvenSequence`, or `Dangling`.
-
-**Note.** A writer that stores the even sequence of a Directory pair produces a dead cross-reference in a typed arena with no loss and no graph record. The codec has a dedicated repair for exactly this producer defect in back-pointers (PH-02) and none here.
-
-**Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
-
 ## 4. Geometry carriers and tolerances
 
 ### GE-01. The Type 124 transformation tolerance

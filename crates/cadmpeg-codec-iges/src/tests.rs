@@ -5056,6 +5056,13 @@ fn malformed_occurrence_definition_file() -> Vec<u8> {
             status: "00000200",
             parameters: "308,1,6HBROKEN,1,3.;".into(),
         },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "DANGLING".into(),
+            status: "00000200",
+            parameters: "308,1,8HDANGLING,1,99;".into(),
+        },
     ])
 }
 
@@ -6770,6 +6777,11 @@ fn decode_validates_selected_component_parameter_pointer() {
             parameters: "182,-1,0,0,0;".into(),
         },
     ]);
+    let even_pointer_offset = bytes
+        .windows(5)
+        .position(|window| window == b"182,2")
+        .unwrap()
+        + 4;
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
@@ -6818,6 +6830,18 @@ fn decode_validates_selected_component_parameter_pointer() {
             .count(),
         4
     );
+    let even_loss = result
+        .report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == cadmpeg_ir::LossKind::ReferenceGraphNotClosed
+                && loss.message.contains("D7 Parameter pointer 2")
+        })
+        .unwrap();
+    let provenance = even_loss.provenance.as_ref().unwrap();
+    assert_eq!(provenance.offset, even_pointer_offset as u64);
+    assert_eq!(provenance.tag.as_deref(), Some("D7:parameter[1]"));
 }
 
 #[test]
@@ -7913,7 +7937,7 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         .unwrap();
     let native = result.ir.native.namespace("iges").unwrap();
 
-    assert_eq!(native.arenas["subfigure_definitions"].len(), 2);
+    assert_eq!(native.arenas["subfigure_definitions"].len(), 3);
     assert_eq!(native.arenas["subfigure_instances"].len(), 1);
     assert!(native.arenas["product_occurrences"].is_empty());
     let expansion = &native.arenas["product_occurrence_expansion"][0];
@@ -7923,6 +7947,17 @@ fn decode_does_not_infer_roots_from_malformed_definition_members() {
         loss.message
             == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
     }));
+    let dangling = native.arenas["entities"]
+        .iter()
+        .find(|entity| entity.id() == "iges:entity:directory#7")
+        .unwrap();
+    assert_eq!(dangling.fields()["references"][0]["resolution"], "dangling");
+    assert!(native.arenas["subfigure_definitions"]
+        .iter()
+        .find(|definition| definition.id() == "iges:product:subfigure-definition#D7")
+        .unwrap()
+        .fields()["members"][0]
+        .is_null());
 }
 
 #[test]
