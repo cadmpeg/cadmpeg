@@ -18270,7 +18270,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "bb8178be92d5ba86d10eff37f0fdb46836419a6ac0edaae3a39d822fcf5e16d3",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

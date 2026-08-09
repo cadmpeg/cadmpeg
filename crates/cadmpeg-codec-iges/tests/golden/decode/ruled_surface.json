@@ -2219,7 +2219,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "9d8e5ecfd61cc6846bb5909525112257e9c0663ac7d1732ee8a7a7e2a53ccb36",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

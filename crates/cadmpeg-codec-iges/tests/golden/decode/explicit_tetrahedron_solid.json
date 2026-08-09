@@ -16190,7 +16190,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "ddf64cf8f3e8e991f6a64f458b1c25b07382e529446c98675f8aaaf8e7c84c1f",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

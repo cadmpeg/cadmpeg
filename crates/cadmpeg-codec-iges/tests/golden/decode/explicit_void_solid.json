@@ -31389,7 +31389,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "362948228ba9b3b2a9b61aafe6aba9937c115cd6d8ec4d23358d81dcf6b5fd0b",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

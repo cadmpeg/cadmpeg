@@ -2542,7 +2542,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "6088b063ffd8bca82e08a39b1b21040d6ddf16d2b51186912dd53c9fff94a4a6",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",

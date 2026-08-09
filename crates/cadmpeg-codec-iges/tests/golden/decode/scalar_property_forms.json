@@ -7758,7 +7758,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "16a32cf1da090cb76365949f77f9396153126d647fff42daa57d83f2c9103710",
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
