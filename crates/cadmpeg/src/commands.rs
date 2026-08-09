@@ -76,6 +76,8 @@ pub struct ConversionPlan {
     pub rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     /// STEP writer options selected by the caller.
     pub step_options: cadmpeg_codec_step::StepWriteOptions,
+    /// IGES writer options selected by the caller.
+    pub iges_options: cadmpeg_codec_iges::IgesWriteOptions,
     /// Explicit input format selected by the user.
     pub forced_input: Option<ForcedInput>,
 }
@@ -211,6 +213,7 @@ pub fn decode(
         force,
         None,
         cadmpeg_codec_step::StepWriteOptions::default(),
+        cadmpeg_codec_iges::IgesWriteOptions::default(),
         false,
     )?;
     if let Some(report) = loaded.decode_report() {
@@ -408,6 +411,7 @@ fn execute_conversion(
         plan.force,
         plan.rhino_version,
         plan.step_options,
+        plan.iges_options,
         plan.reject_lossy,
     )?;
     write_command_report(
@@ -701,6 +705,7 @@ fn export_ir(
     force: bool,
     rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
     step_options: cadmpeg_codec_step::StepWriteOptions,
+    iges_options: cadmpeg_codec_iges::IgesWriteOptions,
     reject_lossy: bool,
 ) -> Result<ExportReport> {
     if rhino_version.is_some() && format != Format::Rhino {
@@ -714,6 +719,7 @@ fn export_ir(
         Format::Rhino => TargetOptions::Rhino(
             rhino_version.unwrap_or(cadmpeg_codec_rhino::RhinoArchiveVersion::V8),
         ),
+        Format::Iges => TargetOptions::Iges(iges_options),
         _ => TargetOptions::Neutral,
     };
     let encoder = registry

@@ -2645,6 +2645,7 @@ fn emit_carrier_curve(
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
                 source: source_id,
                 parameter_range,
+                sense: true,
             }
         } else if let Some(embedded) = procedural.5 {
             let surfaces: [Option<SurfaceId>; 2] = embedded

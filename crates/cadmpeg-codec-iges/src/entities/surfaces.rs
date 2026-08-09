@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Analytic and free-form surface projection.
 
-use super::curve_conversion::circular_arc_nurbs;
 use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -60,55 +59,9 @@ fn normalized(vector: Vector3) -> Option<Vector3> {
         .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
-fn point_for_vertex(ir: &CadIr, id: &cadmpeg_ir::ids::VertexId) -> Option<Point3> {
-    let point_id = &ir
-        .model
-        .vertices
-        .iter()
-        .find(|vertex| vertex.id == *id)?
-        .point;
-    ir.model
-        .points
-        .iter()
-        .find(|point| point.id == *point_id)
-        .map(|point| point.position)
-}
-
 fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let curve = ir.model.curves.iter().find(|curve| curve.id == curve_id)?;
-    let edge = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&curve_id))?;
-    let interval = edge.param_range?;
-    match &curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => Some((nurbs.clone(), interval)),
-        CurveGeometry::Line { .. } => Some((
-            NurbsCurve {
-                degree: 1,
-                knots: vec![0.0, 0.0, 1.0, 1.0],
-                control_points: vec![
-                    point_for_vertex(ir, &edge.start)?,
-                    point_for_vertex(ir, &edge.end)?,
-                ],
-                weights: None,
-                periodic: false,
-            },
-            [0.0, 1.0],
-        )),
-        CurveGeometry::Circle {
-            center,
-            axis,
-            ref_direction,
-            radius,
-        } => Some((
-            circular_arc_nurbs(*center, *axis, *ref_direction, *radius, interval)?,
-            interval,
-        )),
-        _ => None,
-    }
+    super::composite::bounded_nurbs_for_curve(ir, &curve_id)
 }
 
 fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
@@ -1023,13 +976,18 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "surface parameter ranges are missing"));
             continue;
         };
-        if ranges[0] > ranges[1]
-            || ranges[2] > ranges[3]
-            || ranges[0] < u_knots[u_degree_usize]
-            || ranges[1] > u_knots[u_count]
-            || ranges[2] < v_knots[v_degree_usize]
-            || ranges[3] > v_knots[v_count]
-        {
+        let range_is_bounded = |[u_start, u_end, v_start, v_end]: [f64; 4]| {
+            u_start <= u_end
+                && v_start <= v_end
+                && u_start >= u_knots[u_degree_usize]
+                && u_end <= u_knots[u_count]
+                && v_start >= v_knots[v_degree_usize]
+                && v_end <= v_knots[v_count]
+        };
+        let standard_ranges = [ranges[0], ranges[1], ranges[2], ranges[3]];
+        // Keep a bounded compatibility path for producers that place V0 before U1.
+        let alternate_ranges = [ranges[0], ranges[2], ranges[1], ranges[3]];
+        if !range_is_bounded(standard_ranges) && !range_is_bounded(alternate_ranges) {
             losses.push(entity_loss(
                 entry,
                 "surface parameter ranges lie outside their knot domains",

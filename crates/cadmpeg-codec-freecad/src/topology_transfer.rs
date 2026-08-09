@@ -1148,6 +1148,7 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
             basis,
         } => PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
+            same_sense: true,
             basis: Box::new(pcurve_geometry(basis)),
         },
         TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {
@@ -1234,6 +1235,15 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
         PcurveGeometry::SphericalGreatCircle { plane_slope, .. } => {
             debug_assert_eq!(scale.abs(), 1.0);
             *plane_slope *= scale;
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            if scale == 0.0 {
+                return;
+            }
+            scale_pcurve_v(basis, scale);
+            transform.rows[0][1] /= scale;
+            transform.rows[1][0] *= scale;
+            transform.rows[1][2] *= scale;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
@@ -1327,6 +1337,15 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
             *azimuth_origin = -*azimuth_origin;
             *azimuth_rate = -*azimuth_rate;
             *plane_phase = -*plane_phase;
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            if scale == 0.0 {
+                return;
+            }
+            scale_pcurve_u(basis, scale);
+            transform.rows[0][1] *= scale;
+            transform.rows[0][2] *= scale;
+            transform.rows[1][0] /= scale;
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);

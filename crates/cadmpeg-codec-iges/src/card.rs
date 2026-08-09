@@ -114,10 +114,12 @@ fn sequence(card: &[u8]) -> Option<u32> {
 }
 
 fn header(line: &[u8]) -> Option<(u8, u32)> {
-    if line.len() != CARD_WIDTH || line.iter().any(|byte| !(b' '..=b'~').contains(byte)) {
+    if line.len() != CARD_WIDTH {
         return None;
     }
-    Some((*line.get(72)?, sequence(line)?))
+    let marker = *line.get(72)?;
+    Section::parse(marker)?;
+    Some((marker, sequence(line)?))
 }
 
 pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {

@@ -102,6 +102,7 @@ IR and STEP:
 - `step_parser` parses arbitrary Part 21 exchange structures and resolves
   instance references.
 - `step_reader` exercises public STEP inspection on arbitrary bytes.
+- `step_decode` exercises public STEP semantic decoding on arbitrary bytes.
 - `step_geometry_degenerate` parses IR and exercises STEP export with any
   degenerate geometry present in the document.
 - `decode_pipeline_mutated` uses the first byte to mutate the remaining

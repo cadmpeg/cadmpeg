@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! External document and source dependency decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::report::{LossKind, LossNote};
 
@@ -10,7 +10,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::decode_text;
 
 pub(super) struct DependencyResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub notes: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -20,15 +20,16 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     let documents = exchange
         .records
         .iter()
-        .filter(|(_, record)| matches!(record.simple_name(), Some("DOCUMENT" | "DOCUMENT_FILE")))
-        .map(|(&id, record)| {
-            (
+        .filter_map(|(&id, record)| {
+            let parameters = document_parameters(record)?;
+            Some((
                 id,
                 (
-                    record
-                        .parameter(0)
+                    parameters
+                        .first()
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,
@@ -37,10 +38,11 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                             )
                         })
                         .unwrap_or_default(),
-                    record
-                        .parameter(1)
+                    parameters
+                        .get(1)
                         .and_then(|value| {
                             decode_text(
+                                exchange,
                                 value,
                                 &mut losses,
                                 id,
@@ -49,43 +51,41 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
                             )
                         })
                         .unwrap_or_default(),
-                    record.parameter(3).and_then(ValueExt::reference),
+                    parameters.get(3).and_then(ValueExt::reference),
                 ),
-            )
+            ))
         })
         .collect::<BTreeMap<_, _>>();
     let sources = exchange
         .records
         .iter()
-        .filter(|(_, record)| record.simple_name() == Some("EXTERNAL_SOURCE"))
-        .map(|(&id, record)| {
-            (
+        .filter_map(|(&id, record)| {
+            let parameters = record.partial("EXTERNAL_SOURCE")?.parameters.as_slice();
+            Some((
                 id,
-                record
-                    .parameter(0)
-                    .and_then(|value| source_text(value, &mut losses, id, "external source")),
-            )
+                parameters.first().and_then(|value| {
+                    source_text(exchange, value, &mut losses, id, "external source")
+                }),
+            ))
         })
         .filter_map(|(id, source)| source.map(|source| (id, source)))
         .collect::<BTreeMap<_, _>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
     for (&id, record) in &exchange.records {
-        if matches!(
-            record.simple_name(),
-            Some("APPLIED_DOCUMENT_REFERENCE" | "DOCUMENT_REFERENCE")
-        ) {
-            let Some(document_id) = record.parameter(0).and_then(ValueExt::reference) else {
+        if let Some(parameters) = document_reference_parameters(record) {
+            let Some(document_id) = parameters.first().and_then(ValueExt::reference) else {
                 continue;
             };
             let Some((identifier, name, kind)) = documents.get(&document_id) else {
                 continue;
             };
-            let source = record
-                .parameter(1)
+            let source = parameters
+                .get(1)
                 .and_then(|value| {
                     decode_text(
+                        exchange,
                         value,
                         &mut losses,
                         id,
@@ -98,16 +98,17 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
             typed.extend([id, document_id]);
             typed.extend(kind);
         }
-        if record.simple_name() == Some("EXTERNALLY_DEFINED_ITEM") {
-            let Some(source_id) = record.parameter(1).and_then(ValueExt::reference) else {
+        if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
+            let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
                 continue;
             };
             let Some(source) = sources.get(&source_id) else {
                 continue;
             };
-            let item = record
-                .parameter(0)
-                .and_then(|value| source_text(value, &mut losses, id, "external item"))
+            let item = partial
+                .parameters
+                .first()
+                .and_then(|value| source_text(exchange, value, &mut losses, id, "external item"))
                 .unwrap_or_default();
             notes.insert(format!("external source {source} item {item}"));
             typed.extend([id, source_id]);
@@ -121,7 +122,22 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
     }
 }
 
+fn document_parameters(record: &RawRecord) -> Option<&[Value]> {
+    record
+        .partial("DOCUMENT")
+        .or_else(|| record.partial("DOCUMENT_FILE"))
+        .map(|partial| partial.parameters.as_slice())
+}
+
+fn document_reference_parameters(record: &RawRecord) -> Option<&[Value]> {
+    record
+        .partial("DOCUMENT_REFERENCE")
+        .or_else(|| record.partial("APPLIED_DOCUMENT_REFERENCE"))
+        .map(|partial| partial.parameters.as_slice())
+}
+
 fn source_text(
+    exchange: &Exchange,
     value: &Value,
     losses: &mut Vec<LossNote>,
     record_id: u64,
@@ -129,13 +145,14 @@ fn source_text(
 ) -> Option<String> {
     match value {
         Value::String(_) => decode_text(
+            exchange,
             value,
             losses,
             record_id,
             field,
             LossKind::MetadataNotTransferred,
         ),
-        Value::Typed(_, value) => source_text(value, losses, record_id, field),
+        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
         _ => None,
     }
 }
@@ -155,17 +172,12 @@ fn document_note(identifier: &str, name: &str, source: &str) -> String {
 }
 
 trait RecordExt {
-    fn simple_name(&self) -> Option<&str>;
-    fn parameter(&self, index: usize) -> Option<&Value>;
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord>;
 }
 
 impl RecordExt for RawRecord {
-    fn simple_name(&self) -> Option<&str> {
-        (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
-    }
-
-    fn parameter(&self, index: usize) -> Option<&Value> {
-        self.partials.first()?.parameters.get(index)
+    fn partial(&self, name: &str) -> Option<&crate::parse::PartialRecord> {
+        self.partials.iter().find(|partial| partial.name == name)
     }
 }
 

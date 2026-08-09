@@ -415,6 +415,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "step_decode"
+path = "fuzz_targets/step_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ir_diff"
 path = "fuzz_targets/ir_diff.rs"
 test = false

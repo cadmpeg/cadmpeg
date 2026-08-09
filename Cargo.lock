@@ -306,10 +306,13 @@ dependencies = [
 name = "cadmpeg-codec-step"
 version = "0.4.0"
 dependencies = [
+ "base64",
+ "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
  "encoding_rs",
  "thiserror",
+ "zip",
 ]
 
 [[package]]
