@@ -9348,6 +9348,47 @@ fn design_intent_losses_accept_pattern_construction_without_body_reference() {
 }
 
 #[test]
+fn design_intent_losses_accept_unbound_trim_surface_construction() {
+    use cadmpeg_ir::features::{
+        FaceSelection, Feature, FeatureDefinition, FeatureId, PathRef, TrimRegion,
+    };
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#construction-trim".into()),
+        ordinal: 0,
+        name: Some("TRIMMED_SH".into()),
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: Some("TRIMMED_SH".into()),
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Faces(vec![cadmpeg_ir::ids::FaceId("face".into())]),
+            tool: PathRef::Edges(vec![cadmpeg_ir::ids::EdgeId("edge".into())]),
+            keep: TrimRegion::Inside,
+        },
+        native_ref: None,
+    });
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert!(losses.is_empty());
+
+    ir.model.features[0]
+        .source_properties
+        .insert("body_reference.0".into(), "42".into());
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0]
+        .message
+        .contains("output lineage is missing, duplicated"));
+}
+
+#[test]
 fn output_free_local_body_construction_requires_unbound_primary_body() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
 

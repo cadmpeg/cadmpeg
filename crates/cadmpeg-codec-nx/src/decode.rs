@@ -10631,6 +10631,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             && !output_free_native_snapshot(feature)
             && !output_free_local_body_construction(feature)
             && !output_free_pattern_construction(feature)
+            && !output_free_trim_surface_construction(feature)
         {
             if let Some(family) = feature.definition.body_output_family().filter(|_| {
                 let current_outputs_are_valid = !feature.outputs.is_empty()
@@ -10967,6 +10968,26 @@ pub(crate) fn output_free_pattern_construction(feature: &cadmpeg_ir::features::F
                 || key == "primary_body_object_index"
                 || key == "primary_body_data_block"
                 || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
+        })
+}
+
+/// Return whether a `TRIMMED_SH` record is a construction-only operation.
+///
+/// NX uses the typed trim-surface family for records that carry no body
+/// occurrence or primary-body field. Those records have no body result to
+/// bind; a body marker makes the output obligation explicit again.
+pub(crate) fn output_free_trim_surface_construction(
+    feature: &cadmpeg_ir::features::Feature,
+) -> bool {
+    feature.outputs.is_empty()
+        && matches!(&feature.definition, FeatureDefinition::TrimSurface { .. })
+        && !feature.source_properties.keys().any(|key| {
+            key == "primary_body_reference"
+                || key == "primary_body_object_index"
+                || key == "primary_body_data_block"
+                || key.starts_with("body_reference.")
+                || key.starts_with("body_reference_occurrence.")
         })
 }
 
