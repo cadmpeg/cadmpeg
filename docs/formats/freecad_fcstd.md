@@ -329,6 +329,19 @@ property retains its owner, runtime type, status, ordered value elements, refere
 exact XML, and byte range. GUI-only providers remain valid named records rather than being attached
 to an unrelated application object.
 
+Core GUI properties use the application property grammar. `App::PropertyBool` contains `Bool`.
+Enumeration, integer, integer-constraint, and percent properties contain `Integer`. Angle,
+distance, float, float-constraint, and length properties contain `Float`. File, font,
+persistent-object, and string properties contain `String`. Color, color-list, material,
+material-list, vector, bool-list, and Python-object properties contain `PropertyColor`,
+`ColorList`, `PropertyMaterial`, `MaterialList`, `PropertyVector`, `BoolList`, and `Python`,
+respectively. Each registered property contains exactly one value root. Scalar values use the
+`value` attribute. Vectors use `valueX`, `valueY`, and `valueZ`. Color-list and material-list
+values use one `file` attribute. Material values use four packed-color attributes plus finite `shininess` and
+`transparency` scalars. Boolean lists contain only `0` and `1`. Numeric values are finite, and
+registered tags and attributes are mandatory. An unregistered GUI runtime type retains its exact
+ordered XML values without semantic dispatch.
+
 For shape-bearing objects, the view provider's shape color, transparency, visibility, and material
 scalars describe the application object's exact-shape property named `Shape`. They produce an
 object appearance and explicit bindings only for bodies transferred from that property. Other

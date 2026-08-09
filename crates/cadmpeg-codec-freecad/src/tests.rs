@@ -4109,6 +4109,51 @@ fn gui_property_counts_ignore_nested_extension_properties() {
 }
 
 #[test]
+fn rejects_malformed_registered_gui_property_values() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="LineWidth" type="App::PropertyFloatConstraint"><Integer value="2"/></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let error = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect_err("mismatched GUI value tag");
+    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+}
+
+#[test]
+fn retains_unregistered_gui_property_values_without_semantic_dispatch() {
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Model"/></Objects><ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
+<ViewProvider name="Model"><Properties Count="1"><Property name="ExtensionState" type="Vendor::PropertyState"><VendorState mode="custom"><Nested value="kept"/></VendorState></Property></Properties></ViewProvider>
+</ViewProviderData><Camera settings=""/></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document),
+                ("GuiDocument.xml", gui),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("unregistered GUI property");
+    let properties = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::GuiPropertyRecord>("gui_properties")
+        .expect("GUI properties");
+    assert_eq!(properties[0].type_name, "Vendor::PropertyState");
+    assert_eq!(properties[0].values[0].tag, "VendorState");
+    assert_eq!(properties[0].values[1].tag, "Nested");
+}
+
+#[test]
 fn recovers_techdraw_page_template_and_view_graph() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

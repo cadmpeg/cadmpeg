@@ -138,18 +138,6 @@ pub(crate) fn transfer(
             .children()
             .filter(|node| node.has_tag_name("Property"))
             .collect::<Vec<_>>();
-        let declared = properties_node
-            .attribute("Count")
-            .and_then(|value| value.parse::<usize>().ok())
-            .ok_or_else(|| {
-                CodecError::Malformed(format!("ViewProvider {name} has invalid property count"))
-            })?;
-        if declared != property_nodes.len() {
-            return Err(CodecError::Malformed(format!(
-                "ViewProvider {name} declares {declared} properties but contains {}",
-                property_nodes.len()
-            )));
-        }
         let values = property_nodes
             .into_iter()
             .filter_map(|property| {
@@ -614,17 +602,30 @@ fn append_native_provider(
             "ViewProvider {name} has no Properties"
         )));
     };
-    for (property_order, property) in container
+    let property_nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
-        .enumerate()
-    {
+        .collect::<Vec<_>>();
+    let declared = container
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| {
+            CodecError::Malformed(format!("ViewProvider {name} has invalid property count"))
+        })?;
+    if declared != property_nodes.len() {
+        return Err(CodecError::Malformed(format!(
+            "ViewProvider {name} declares {declared} properties but contains {}",
+            property_nodes.len()
+        )));
+    }
+    for (property_order, property) in property_nodes.into_iter().enumerate() {
         let property_name = property.attribute("name").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name} property has no name"))
         })?;
         let type_name = property.attribute("type").ok_or_else(|| {
             CodecError::Malformed(format!("ViewProvider {name}.{property_name} has no type"))
         })?;
+        validate_gui_property(property, property_name, type_name)?;
         let values = property
             .descendants()
             .filter(|value| value.is_element() && *value != property)
@@ -661,6 +662,175 @@ fn append_native_provider(
             byte_start: property.range().start as u64,
             byte_end: property.range().end as u64,
         });
+    }
+    Ok(())
+}
+
+fn validate_gui_property(
+    property: roxmltree::Node<'_, '_>,
+    property_name: &str,
+    type_name: &str,
+) -> Result<(), CodecError> {
+    let Some(expected_tag) = gui_value_tag(type_name) else {
+        return Ok(());
+    };
+    let mut roots = property.children().filter(roxmltree::Node::is_element);
+    let root = roots.next().ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "GUI property {property_name} requires one {expected_tag} value"
+        ))
+    })?;
+    if !root.has_tag_name(expected_tag) || roots.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "GUI property {property_name} requires exactly one {expected_tag} value"
+        )));
+    }
+    let scalar = |attribute: &str| {
+        root.attribute(attribute).ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "GUI property {property_name} {expected_tag} has no {attribute} attribute"
+            ))
+        })
+    };
+    match expected_tag {
+        "Bool" => {
+            if parse_bool(scalar("value")?).is_none() {
+                return Err(CodecError::Malformed(format!(
+                    "GUI property {property_name} has an invalid Boolean"
+                )));
+            }
+        }
+        "Integer" => {
+            scalar("value")?.parse::<i64>().map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} has an invalid integer"
+                ))
+            })?;
+        }
+        "Float" => {
+            let value = scalar("value")?.parse::<f64>().map_err(|_| {
+                CodecError::Malformed(format!("GUI property {property_name} has an invalid float"))
+            })?;
+            if !value.is_finite() {
+                return Err(CodecError::Malformed(format!(
+                    "GUI property {property_name} has a non-finite float"
+                )));
+            }
+        }
+        "String" | "Python" | "ColorList" | "MaterialList" => {
+            let attribute = if matches!(expected_tag, "ColorList" | "MaterialList") {
+                "file"
+            } else {
+                "value"
+            };
+            scalar(attribute)?;
+        }
+        "PropertyColor" => {
+            scalar("value")?.parse::<u32>().map_err(|_| {
+                CodecError::Malformed(format!("GUI property {property_name} has an invalid color"))
+            })?;
+        }
+        "PropertyVector" => {
+            for attribute in ["valueX", "valueY", "valueZ"] {
+                let value = scalar(attribute)?.parse::<f64>().map_err(|_| {
+                    CodecError::Malformed(format!(
+                        "GUI property {property_name} has an invalid vector"
+                    ))
+                })?;
+                if !value.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "GUI property {property_name} has a non-finite vector"
+                    )));
+                }
+            }
+        }
+        "PropertyMaterial" => validate_gui_material(root, property_name)?,
+        "BoolList" => {
+            if !scalar("value")?
+                .bytes()
+                .all(|byte| matches!(byte, b'0' | b'1'))
+            {
+                return Err(CodecError::Malformed(format!(
+                    "GUI property {property_name} has an invalid Boolean list"
+                )));
+            }
+        }
+        _ => unreachable!("closed GUI value-tag registry"),
+    }
+    Ok(())
+}
+
+fn gui_value_tag(type_name: &str) -> Option<&'static str> {
+    let tag = match type_name {
+        "App::PropertyBool" => "Bool",
+        "App::PropertyEnumeration"
+        | "App::PropertyInteger"
+        | "App::PropertyIntegerConstraint"
+        | "App::PropertyPercent" => "Integer",
+        "App::PropertyAngle"
+        | "App::PropertyDistance"
+        | "App::PropertyFloat"
+        | "App::PropertyFloatConstraint"
+        | "App::PropertyLength" => "Float",
+        "App::PropertyFile"
+        | "App::PropertyFont"
+        | "App::PropertyPersistentObject"
+        | "App::PropertyString" => "String",
+        "App::PropertyColor" => "PropertyColor",
+        "App::PropertyColorList" => "ColorList",
+        "App::PropertyMaterial" => "PropertyMaterial",
+        "App::PropertyMaterialList" => "MaterialList",
+        "App::PropertyVector" => "PropertyVector",
+        "App::PropertyBoolList" => "BoolList",
+        "App::PropertyPythonObject" => "Python",
+        _ => return None,
+    };
+    Some(tag)
+}
+
+fn validate_gui_material(
+    value: roxmltree::Node<'_, '_>,
+    property_name: &str,
+) -> Result<(), CodecError> {
+    for attribute in [
+        "ambientColor",
+        "diffuseColor",
+        "specularColor",
+        "emissiveColor",
+    ] {
+        value
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} material has no {attribute}"
+                ))
+            })?
+            .parse::<u32>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} material has an invalid {attribute}"
+                ))
+            })?;
+    }
+    for attribute in ["shininess", "transparency"] {
+        let scalar = value
+            .attribute(attribute)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} material has no {attribute}"
+                ))
+            })?
+            .parse::<f64>()
+            .map_err(|_| {
+                CodecError::Malformed(format!(
+                    "GUI property {property_name} material has an invalid {attribute}"
+                ))
+            })?;
+        if !scalar.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "GUI property {property_name} material has a non-finite {attribute}"
+            )));
+        }
     }
     Ok(())
 }
