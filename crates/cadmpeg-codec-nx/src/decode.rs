@@ -51,7 +51,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 
-use crate::container::{self, Container, EntryContent};
+use crate::container::{self, Container};
 use crate::geometry;
 use crate::native::vector::{cross_vector, dot_vector, unit_vector};
 use crate::parasolid::{self, Stream, StreamKind};
@@ -10468,22 +10468,6 @@ fn build_geometry_report(
             severity: Severity::Warning,
             message: "A referenced Parasolid attribute value was not transferred because its \
                       complete value relation did not resolve."
-                .to_string(),
-            provenance: None,
-        });
-    }
-
-    if scan
-        .container
-        .entries
-        .iter()
-        .any(|entry| entry.content() == EntryContent::ExternalReferences)
-    {
-        losses.push(LossNote {
-            code: LossKind::AssemblyPlacementsNotTransferred,
-            severity: Severity::Warning,
-            message: "Assembly occurrence placements were not transferred because their remaining \
-                      NX object-model field serialization is not decoded."
                 .to_string(),
             provenance: None,
         });

@@ -362,11 +362,6 @@
           "code": "topology_not_transferred",
           "message": "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not reconstructed because the surviving typed records did not form a complete connected ownership graph. Exact-key supported partition↔deltas replacements and deletions were applied before graph construction. Required unresolved records prevent their dependent incidence from being emitted; decoded geometry then remains unattached.",
           "severity": "blocking"
-        },
-        {
-          "code": "assembly_placements_not_transferred",
-          "message": "Assembly occurrence placements were not transferred because their remaining NX object-model field serialization is not decoded.",
-          "severity": "warning"
         }
       ],
       "notes": [

@@ -2294,7 +2294,7 @@ fn decode_emits_connected_primitive_brep() {
 }
 
 #[test]
-fn decode_reports_missing_assembly_placements_only_for_external_references() {
+fn decode_does_not_report_assembly_placements_for_inline_external_metadata() {
     let file = prt_with_named_payloads(&[
         (
             "/Root/UG_PART/UG_PART",
@@ -2309,10 +2309,32 @@ fn decode_reports_missing_assembly_placements_only_for_external_references() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
 
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
+}
+
+#[test]
+fn decode_reports_external_assembly_boundary_without_inline_geometry() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/ExternalReferences",
+        external_reference_stream(),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
     assert!(result.report.losses.iter().any(|loss| {
-        loss.code == LossKind::AssemblyPlacementsNotTransferred
-            && loss.message.contains("Assembly occurrence placements")
+        loss.code == LossKind::AssemblyComponentsExternal
+            && loss.message.contains("No inline Parasolid geometry")
     }));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.code == LossKind::AssemblyPlacementsNotTransferred));
 }
 
 #[test]
