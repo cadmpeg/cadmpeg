@@ -1494,6 +1494,13 @@ coordinate difference and does not constrain the angle. A missing radial
 distance or angle is resolved only when the complete point coordinates determine
 a unique value, and a stored value must agree with those coordinates before the
 equation is transferred.
+Function `6` has five argument slots. The first two rows are the type-1 and
+type-2 coordinates of a first point. The next two rows are the type-1 and
+type-2 coordinates of a distinct second point. The final row has type `3` and
+is their positive Euclidean distance. A missing type-3 scalar is derived when
+both points are complete; a stored scalar must agree with that distance. An
+incomplete point pair or a non-positive or conflicting scalar leaves the
+equation native.
 Function `35` has nine argument slots. The first two rows are the type-1 and
 type-2 coordinates of a target point. The next four rows are the type-1 and
 type-2 coordinates of two distinct reference points. The seventh row has type

@@ -334,6 +334,8 @@ row define a same-coordinate equation.
 Function-33 rows with four type-1/type-2 coordinate pairs identifying two
 endpoint pairs and a zero type-7 auxiliary row define equality of the two
 squared endpoint-pair lengths.
+Function-6 rows with two complete type-1/type-2 point pairs and a type-3
+scalar define their positive Euclidean distance.
 Function-42 rows define the arithmetic-mean relation between two same-axis
 point coordinates and a type-6 scalar. Function-31 rows bind one type-1/type-2
 point pair to two type-6 coordinate scalars.

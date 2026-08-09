@@ -6797,6 +6797,70 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
 }
 
 #[test]
+fn equation_function_six_derives_positive_point_distance() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: value.is_none(),
+        offset: 0,
+    };
+    let definition = |radius| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x06\xf8\x05\x00\x01\x02\x03\x04\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 5,
+            entity_ref: None,
+            rows: vec![
+                row(1, 10, Some(0.0)),
+                row(2, 10, Some(0.0)),
+                row(1, 11, Some(3.0)),
+                row(2, 11, Some(4.0)),
+                row(3, 20, radius),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_scalar_values(&definition(None)).get(&(3, 20)),
+        Some(&5.0)
+    );
+    assert_eq!(
+        resolved_section_radii(&definition(None)).get(&20),
+        Some(&5.0)
+    );
+    assert!(!resolved_section_scalar_values(&definition(Some(6.0))).contains_key(&(3, 20)));
+    assert_eq!(
+        resolved_section_radii(&definition(Some(6.0))).get(&20),
+        Some(&6.0)
+    );
+}
+
+#[test]
 fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
         variable_type,
