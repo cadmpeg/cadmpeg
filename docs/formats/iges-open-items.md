@@ -152,26 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-10. Two fabricated defaults in the Type 406 Form 30 native record
-
-**Question.** What are the defaults of the Type 406 Form 30 character-set and witness-line-angle fields, and in which unit is the angle native?
-
-**Known.** `native.rs:2728-2737` gives `Some(1)` for an omitted character set and `Some(std::f64::consts::FRAC_PI_2)` for an omitted witness-line angle. These are the only two fabricated values in the complete `properties` projection; every other omitted field maps to `None`. `iges.md` "Product structure" describes Form 30 and records neither default.
-
-**Conflict.** `iges.md` "Global section" gives "Native values remain unchanged" and `iges.md` "Units and transformations" converts angles to radians at neutral projection only. `FRAC_PI_2` is a radian constant written into a native arena. A consumer that applies the documented native-to-radian conversion gets 90 for an explicit file and 1.5707963 for an omitted one.
-
-**Need.** We need the two defaults and the native unit of the angle field. An injected value must also stay distinguishable from an explicit one.
-
-### DR-11. Integer flags collapse to `bool` with an invented polarity
-
-**Question.** What does an out-of-range Boolean integer mean, and what is the polarity of each flag?
-
-**Known.** `native.rs:2636-2645` and `:2719` map Type 406 flags with `map(|value| value == 1)` for highlight, finite, and lines, and `map(|value| value == 0)` for pick and weighted. Neither the polarity nor an out-of-range escape is recorded. `iges.md` "Product structure" gives "highlight and pick flags are Boolean integers" only.
-
-**Note.** `native.rs:1455-1461` shows the correct pattern for Type 304: `0 => Some(false)`, `1 => Some(true)`, `_ => None`. A highlight flag of `2` is stored as `Some(false)` and is then identical to a conforming "not highlighted" file.
-
-**Need.** We need the polarity of each flag and the treatment of an out-of-range value.
-
 ### DR-12. A clamped list count desynchronizes the cursor-walking readers
 
 **Question.** What does a declared count larger than the available tokens mean?

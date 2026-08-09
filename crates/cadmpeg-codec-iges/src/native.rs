@@ -652,9 +652,11 @@ enum NativePropertyValue {
     DimensionDisplayData {
         dimension_type: Option<i64>,
         label_position: Option<i64>,
+        declared_character_set: Option<i64>,
         character_set: Option<i64>,
         label: Option<Vec<u8>>,
         decimal_symbol: Option<i64>,
+        declared_witness_line_angle: Option<f64>,
         witness_line_angle: Option<f64>,
         text_alignment: Option<i64>,
         text_level: Option<i64>,
@@ -1074,6 +1076,14 @@ fn token(token: &Token) -> NativeToken {
     }
 }
 
+fn binary_integer(value: Option<i64>) -> Option<bool> {
+    match value? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
 fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
     let suffix = id.strip_prefix(prefix)?;
     let digits = suffix
@@ -1489,12 +1499,8 @@ pub(crate) fn store(
                     id: format!("iges:presentation:line-font#D{}", entry.sequence),
                     source_entity: format!("iges:entity:directory#{}", entry.sequence),
                     fallback_line_font_number: entry.line_font,
-                    tangent_oriented: parameters.and_then(|record| record.integer(1)).and_then(
-                        |value| match value {
-                            0 => Some(false),
-                            1 => Some(true),
-                            _ => None,
-                        },
+                    tangent_oriented: binary_integer(
+                        parameters.and_then(|record| record.integer(1)),
                     ),
                     template: parameters
                         .and_then(|record| record.integer(2))
@@ -2669,15 +2675,15 @@ pub(crate) fn store(
                     pattern_code: record.integer(2),
                 },
                 20 => NativePropertyValue::Highlight {
-                    highlighted: record.integer(2).map(|value| value == 1),
+                    highlighted: binary_integer(record.integer(2)),
                 },
                 21 => NativePropertyValue::Pick {
-                    pickable: record.integer(2).map(|value| value == 0),
+                    pickable: binary_integer(record.integer(2)).map(|value| !value),
                 },
                 22 => NativePropertyValue::UniformRectangularGrid {
-                    finite: record.integer(2).map(|value| value == 1),
-                    lines: record.integer(3).map(|value| value == 1),
-                    weighted: record.integer(4).map(|value| value == 0),
+                    finite: binary_integer(record.integer(2)),
+                    lines: binary_integer(record.integer(3)),
+                    weighted: binary_integer(record.integer(4)).map(|value| !value),
                     origin: [record.number(5), record.number(6)],
                     spacing: [record.number(7), record.number(8)],
                     counts: [record.integer(9), record.integer(10)],
@@ -2751,7 +2757,7 @@ pub(crate) fn store(
                     placement: record.integer(4),
                     upper: record.number(5),
                     lower: record.number(6),
-                    suppress_plus: record.integer(7).map(|value| value == 1),
+                    suppress_plus: binary_integer(record.integer(7)),
                     fraction_flag: record.integer(8),
                     precision: record.integer(9),
                 },
@@ -2760,12 +2766,14 @@ pub(crate) fn store(
                     NativePropertyValue::DimensionDisplayData {
                         dimension_type: record.integer(2),
                         label_position: record.integer(3),
+                        declared_character_set: record.integer(4),
                         character_set: match record.tokens.get(4).map(|token| &token.value) {
                             None | Some(TokenValue::Omitted) => Some(1),
                             _ => record.integer(4),
                         },
                         label: record.string(5).map(<[u8]>::to_vec),
                         decimal_symbol: record.integer(6),
+                        declared_witness_line_angle: record.number(7),
                         witness_line_angle: match record.tokens.get(7).map(|token| &token.value) {
                             None | Some(TokenValue::Omitted) => Some(std::f64::consts::FRAC_PI_2),
                             _ => record.number(7),

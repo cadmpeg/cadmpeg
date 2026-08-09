@@ -6835,6 +6835,69 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
 }
 
 #[test]
+fn decode_preserves_property_defaults_without_coercing_non_boolean_flags() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 20,
+            label: "HILITE".into(),
+            status: "00000000",
+            parameters: "406,1,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 21,
+            label: "PICK".into(),
+            status: "00000000",
+            parameters: "406,1,-1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 22,
+            label: "GRID".into(),
+            status: "00000000",
+            parameters: "406,9,2,2,2,0,0,1,1,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 29,
+            label: "TOL".into(),
+            status: "00000000",
+            parameters: "406,8,0,2,2,0.1,-0.1,2,0,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 30,
+            label: "DISPLAY".into(),
+            status: "00000000",
+            parameters: "406,15,2,1,,3HDIA,0,,1,0,0,0,12.5,1,1,1,1;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
+    let property = |form| {
+        properties
+            .iter()
+            .find(|property| property.fields()["form"] == form)
+            .unwrap()
+    };
+
+    assert!(property(20).fields()["highlighted"].is_null());
+    assert!(property(21).fields()["pickable"].is_null());
+    assert!(property(22).fields()["finite"].is_null());
+    assert!(property(22).fields()["lines"].is_null());
+    assert!(property(22).fields()["weighted"].is_null());
+    assert!(property(29).fields()["suppress_plus"].is_null());
+    let display = property(30).fields();
+    assert!(display["declared_character_set"].is_null());
+    assert_eq!(display["character_set"], 1);
+    assert!(display["declared_witness_line_angle"].is_null());
+    assert_eq!(display["witness_line_angle"], std::f64::consts::FRAC_PI_2);
+}
+
+#[test]
 fn decode_types_orthographic_and_perspective_views() {
     let result = IgesCodec
         .decode(
