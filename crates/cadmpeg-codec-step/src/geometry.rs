@@ -257,13 +257,15 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         }
         PcurveGeometry::Trimmed {
             parameter_range,
+            same_sense,
             basis,
         } => {
             let basis = pcurve(e, basis)?;
+            let sense = if *same_sense { ".T." } else { ".F." };
             e.emit(
                 "TRIMMED_CURVE",
                 &format!(
-                    "'',{basis},({}),({}),.T.,.PARAMETER.",
+                    "'',{basis},({}),({}),{sense},.PARAMETER.",
                     real(parameter_range[0]),
                     real(parameter_range[1])
                 ),

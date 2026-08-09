@@ -28,10 +28,12 @@ pub(crate) struct Token {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParameterRecord {
     pub(crate) directory_sequence: u32,
+    pub(crate) declared_line_range: Range<u32>,
     pub(crate) line_range: Range<u32>,
     pub(crate) bytes: Vec<u8>,
     pub(crate) tokens: Vec<Token>,
     pub(crate) comment: Vec<u8>,
+    pub(crate) noncanonical_back_pointers: Vec<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -270,7 +272,29 @@ pub(crate) fn assemble(
         .filter(|line| line.section == Some(Section::Parameter))
         .map(|line| (line.sequence.unwrap_or_default(), line))
         .collect::<BTreeMap<_, _>>();
-    let mut used = BTreeSet::new();
+    let entries = directory
+        .iter()
+        .filter(|entry| !(entry.entity_type == 0 && entry.parameter_line_count == 0))
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut owners = BTreeMap::<u32, u32>::new();
+    let mut noncanonical_back_pointers = BTreeSet::new();
+    for (sequence, line) in &lines {
+        let pointer = back_pointer(line)?;
+        let (owner, noncanonical) = if entries.contains_key(&pointer) {
+            (pointer, false)
+        } else if pointer % 2 == 0 && entries.contains_key(&pointer.saturating_add(1)) {
+            (pointer + 1, true)
+        } else {
+            return Err(CodecError::Malformed(format!(
+                "IGES Parameter Data card P{sequence} does not point to a Directory Entry"
+            )));
+        };
+        owners.insert(*sequence, owner);
+        if noncanonical {
+            noncanonical_back_pointers.insert(*sequence);
+        }
+    }
     let mut records = Vec::new();
     for entry in directory {
         if entry.parameter_line_count == 0 && entry.entity_type == 0 {
@@ -295,21 +319,43 @@ pub(crate) fn assemble(
         let end = start
             .checked_add(count)
             .ok_or_else(|| malformed(entry.sequence, "Parameter Data range overflow"))?;
+        let owned = owners
+            .iter()
+            .filter_map(|(sequence, owner)| (*owner == entry.sequence).then_some(*sequence))
+            .collect::<Vec<_>>();
+        let actual_start = owned.first().copied().ok_or_else(|| {
+            malformed(
+                entry.sequence,
+                "no Parameter Data card points to this Directory Entry",
+            )
+        })?;
+        let actual_end = owned
+            .last()
+            .copied()
+            .and_then(|sequence| sequence.checked_add(1))
+            .ok_or_else(|| malformed(entry.sequence, "Parameter Data range overflow"))?;
+        if actual_start != start || owned.windows(2).any(|pair| pair[1] != pair[0] + 1) {
+            return Err(malformed(
+                entry.sequence,
+                "Parameter Data back-pointer range is not contiguous at the declared start",
+            ));
+        }
+        let declared_count = usize::try_from(count)
+            .map_err(|_| malformed(entry.sequence, "Parameter Data count overflows usize"))?;
+        if owned.len() < declared_count {
+            return Err(malformed(
+                entry.sequence,
+                "declared Parameter Data range contains fewer cards than requested",
+            ));
+        }
         let mut bytes = Vec::new();
-        for sequence in start..end {
+        for sequence in actual_start..actual_end {
             let line = lines.get(&sequence).ok_or_else(|| {
                 malformed(
                     entry.sequence,
                     format!("Parameter Data card P{sequence} is missing"),
                 )
             })?;
-            if back_pointer(line)? != entry.sequence {
-                return Err(malformed(
-                    entry.sequence,
-                    format!("Parameter Data card P{sequence} has a different back-pointer"),
-                ));
-            }
-            used.insert(sequence);
             bytes.extend_from_slice(&line.payload[..64]);
         }
         let (tokens, record_end) = tokenize(
@@ -327,27 +373,22 @@ pub(crate) fn assemble(
         }
         records.push(ParameterRecord {
             directory_sequence: entry.sequence,
-            line_range: start..end,
+            declared_line_range: start..end,
+            line_range: actual_start..actual_end,
             comment: bytes[record_end..].to_vec(),
             bytes,
             tokens,
+            noncanonical_back_pointers: noncanonical_back_pointers
+                .range(actual_start..actual_end)
+                .copied()
+                .collect(),
         });
-    }
-    if used.len() != lines.len() {
-        let unowned = lines
-            .keys()
-            .find(|sequence| !used.contains(sequence))
-            .copied()
-            .unwrap_or_default();
-        return Err(CodecError::Malformed(format!(
-            "IGES Parameter Data card P{unowned} is not owned by a Directory Entry"
-        )));
     }
     Ok(records)
 }
 
 pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
-    vec![
+    let mut notes = vec![
         format!("parameter_records={}", records.len()),
         format!(
             "parameter_tokens={}",
@@ -363,5 +404,24 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
                 .filter(|record| record.integer(0) == Some(416))
                 .count()
         ),
-    ]
+    ];
+    let noncanonical_count = records
+        .iter()
+        .map(|record| record.noncanonical_back_pointers.len())
+        .sum::<usize>();
+    if noncanonical_count != 0 {
+        notes.push(format!(
+            "noncanonical_parameter_back_pointers={noncanonical_count}"
+        ));
+    }
+    let noncanonical_range_count = records
+        .iter()
+        .filter(|record| record.line_range != record.declared_line_range)
+        .count();
+    if noncanonical_range_count != 0 {
+        notes.push(format!(
+            "noncanonical_parameter_ranges={noncanonical_range_count}"
+        ));
+    }
+    notes
 }

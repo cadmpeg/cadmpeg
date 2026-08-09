@@ -173,7 +173,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D11:0:0"
+          "start": "iges:model:vertex#D11:0:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -214,7 +215,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D11",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -232,6 +234,7 @@
       "parameters": [],
       "pcurves": [
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -260,6 +263,7 @@
           ]
         },
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -429,7 +433,8 @@
       "vertices": [
         {
           "id": "iges:model:vertex#D11:0:0",
-          "point": "iges:model:point#D11:0:0"
+          "point": "iges:model:point#D11:0:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D3-end",
@@ -4313,6 +4318,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "93431839a18c3d641f4e290797deb33ff8d1ea3d9e43e0bf9070678f2813e881",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -4351,6 +4357,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1782,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgICBNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMjYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMSAgICAgICAwRCAgICAgIDYKICAgICAxMjYgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDcKICAgICAxMjYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMSAgICAgICAgICAgICAgICAgUENVUlZFMiAgICAgICAwRCAgICAgIDgKICAgICAxNDEgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxNDEgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBCT1VOREFSWSAgICAgICAwRCAgICAgMTAKICAgICAxNDMgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTEKICAgICAxNDMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQk9VTkRFRCAgICAgICAwRCAgICAgMTIKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDAsMCwwLDEsMSwwLDAsMSwwLDAsMTsgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTI2LDEsMSwxLDAsMSwwLDAsMCwxLDEsMSwxLDEsMSwwLDAsMCwwLDAsMSwwLDAsMTsgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTQxLDEsMywxLDEsMywxLDIsNSw3OyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKMTQzLDEsMSwxLDk7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDEyUDAwMDAwMDYgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "2e96fc215283b57d829769ce4c51887fc7dcd85e4345bdee26940b2af0c22eb5",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

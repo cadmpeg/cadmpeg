@@ -8200,8 +8200,10 @@ fn reverse_pcurve_over_range(
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            same_sense,
         } => Some(PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
+            same_sense: *same_sense,
             basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
         }),
         PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {

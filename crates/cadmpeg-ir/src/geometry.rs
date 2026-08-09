@@ -3461,6 +3461,11 @@ pub enum PcurveGeometry {
     Trimmed {
         /// Native parameter interval retained from the basis.
         parameter_range: [f64; 2],
+        /// Whether the trimmed traversal follows increasing basis parameters.
+        ///
+        /// Older CADIR documents omitted this field and mean `true`.
+        #[serde(default = "default_true")]
+        same_sense: bool,
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
     },

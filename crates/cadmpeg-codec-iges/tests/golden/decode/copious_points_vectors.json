@@ -1110,6 +1110,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "d3e253e86c1f627a545bf87ad2a7d6de8a0b19b014baad49f8d7adcd867d9c6a",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -1144,6 +1145,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 567,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDEKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMyAgICAgICAgICAgICAgICAgQ09QSU9VUyAgICAgICAwRCAgICAgIDIKMTA2LDMsMiwxLDIsMywwLDAsMSw0LDUsNiwxLDAsMDsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDAyUDAwMDAwMDEgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "d90dddcb2bcd3e3e3d0514c4424e85f38fb25d7a8ceb194518cd54d605c3a7fc",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

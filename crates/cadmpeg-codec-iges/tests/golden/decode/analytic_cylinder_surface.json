@@ -6,16 +6,7 @@
       "appearances": [],
       "assembly_joints": [],
       "attributes": [],
-      "bodies": [
-        {
-          "id": "iges:model:body#free-geometry",
-          "kind": "wire",
-          "name": "IGES free geometry",
-          "regions": [
-            "iges:model:region#free-geometry"
-          ]
-        }
-      ],
+      "bodies": [],
       "coedges": [],
       "configurations": [],
       "curves": [],
@@ -28,41 +19,15 @@
       "parameters": [],
       "pcurves": [],
       "pmi": [],
-      "points": [
-        {
-          "id": "iges:model:point#D1",
-          "position": {
-            "x": 1.0,
-            "y": 2.0,
-            "z": 3.0
-          }
-        }
-      ],
+      "points": [],
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
       "product_definitions": [],
-      "regions": [
-        {
-          "body": "iges:model:body#free-geometry",
-          "id": "iges:model:region#free-geometry",
-          "shells": [
-            "iges:model:shell#free-geometry"
-          ]
-        }
-      ],
+      "regions": [],
       "semantic_annotations": [],
-      "shells": [
-        {
-          "faces": [],
-          "free_vertices": [
-            "iges:model:vertex#D1"
-          ],
-          "id": "iges:model:shell#free-geometry",
-          "region": "iges:model:region#free-geometry"
-        }
-      ],
+      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
@@ -102,12 +67,7 @@
         }
       ],
       "tessellations": [],
-      "vertices": [
-        {
-          "id": "iges:model:vertex#D1",
-          "point": "iges:model:point#D1"
-        }
-      ],
+      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -2569,6 +2529,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "52dce9308494f3919dbb60c3f1498e04fa386ee7e4e4ac06f3867990545e1d82",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -2605,6 +2566,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1296,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMTYgICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMTYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBMT0NBVElPTiAgICAgICAwRCAgICAgIDIKICAgICAxMjMgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMjMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICAgQVhJUyAgICAgICAwRCAgICAgIDQKICAgICAxMjMgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICAxMjMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgIFJFRkRJUiAgICAgICAwRCAgICAgIDYKICAgICAxOTIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDcKICAgICAxOTIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgU1VSRkFDRSAgICAgICAwRCAgICAgIDgKMTE2LDEsMiwzLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTIzLDAsMCwxOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTIzLDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTkyLDEsMywyOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDA4UDAwMDAwMDQgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "e0cf50ccc23762079e3d4d75286a7b093c7616d346330e16c91dc0641a4d44cb",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

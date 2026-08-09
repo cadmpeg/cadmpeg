@@ -3937,8 +3937,11 @@ fn decode_pcurve_geometry(
                     let end = pcurve_trim_parameter(named_parameter(record, "TRIMMED_CURVE", 3)?)?
                         * scale;
                     records.extend(basis_records);
+                    let (parameter_range, same_sense) =
+                        trimmed_pcurve_parameterization(&basis, start, end, sense);
                     PcurveGeometry::Trimmed {
-                        parameter_range: trimmed_pcurve_parameter_range(&basis, start, end, sense),
+                        parameter_range,
+                        same_sense,
                         basis: Box::new(basis),
                     }
                 }
@@ -4010,12 +4013,12 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
     .filter(|value| value.is_finite())
 }
 
-fn trimmed_pcurve_parameter_range(
+fn trimmed_pcurve_parameterization(
     geometry: &PcurveGeometry,
     start: f64,
     end: f64,
     sense: bool,
-) -> [f64; 2] {
+) -> ([f64; 2], bool) {
     let mut start = start;
     let mut end = end;
     // Closed STEP pcurves use cyclic parameter branches. Move the endpoint
@@ -4028,11 +4031,11 @@ fn trimmed_pcurve_parameter_range(
             start += period;
         }
     }
-    let range = if sense { [start, end] } else { [end, start] };
-    if range[0] <= range[1] {
-        range
+    let [from, to] = if sense { [start, end] } else { [end, start] };
+    if from <= to {
+        ([from, to], true)
     } else {
-        [range[1], range[0]]
+        ([to, from], false)
     }
 }
 

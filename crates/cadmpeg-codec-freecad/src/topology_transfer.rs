@@ -1148,6 +1148,7 @@ pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {
             basis,
         } => PcurveGeometry::Trimmed {
             parameter_range: *parameter_range,
+            same_sense: true,
             basis: Box::new(pcurve_geometry(basis)),
         },
         TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {

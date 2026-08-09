@@ -1702,6 +1702,7 @@ mod tests {
                 direction: Point2::new(0.0, 1.0),
             }),
             parameter_range: [0.0, 1.0],
+            same_sense: true,
         };
         assert!(endpoint_parameter_transform(
             &isoparametric,
@@ -4118,6 +4119,7 @@ fn pcurve_selection_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => {
             if parameter_range[0] < parameter_range[1] {
                 Some(*parameter_range)

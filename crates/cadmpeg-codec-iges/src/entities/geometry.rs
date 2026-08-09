@@ -13,6 +13,7 @@ use cadmpeg_ir::{CadIr, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_TRANSFORM_DEPTH: usize = 64;
+const TRANSFORM_TOLERANCE: f64 = 1.0e-10;
 
 #[derive(Clone, Copy)]
 pub(crate) struct Affine {
@@ -164,10 +165,10 @@ pub(crate) fn resolve_transform(
                 .map(|row| columns[left][row] * columns[right][row])
                 .sum::<f64>()
         };
-        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > 1.0e-10)
+        if (0..3).any(|column| (column_dot(column, column) - 1.0).abs() > TRANSFORM_TOLERANCE)
             || [(0, 1), (0, 2), (1, 2)]
                 .into_iter()
-                .any(|(left, right)| column_dot(left, right).abs() > 1.0e-10)
+                .any(|(left, right)| column_dot(left, right).abs() > TRANSFORM_TOLERANCE)
         {
             return Err(format!(
                 "transformation D{sequence} linear part is not orthonormal"
@@ -177,7 +178,7 @@ pub(crate) fn resolve_transform(
             - values[1] * (values[4] * values[10] - values[6] * values[8])
             + values[2] * (values[4] * values[9] - values[5] * values[8]);
         let expected_determinant = if entry.form == 0 { 1.0 } else { -1.0 };
-        if (determinant - expected_determinant).abs() > 1.0e-10 {
+        if (determinant - expected_determinant).abs() > TRANSFORM_TOLERANCE {
             return Err(format!(
                 "transformation D{sequence} determinant {determinant} disagrees with form {}",
                 entry.form
@@ -256,6 +257,18 @@ pub(crate) fn project_geometry(
             .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12))
             .map(|entry| entry.sequence),
     );
+    let analytic_surface_locations = directory
+        .iter()
+        .filter(|entry| {
+            matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
+        })
+        .filter_map(|entry| {
+            records
+                .get(&entry.sequence)
+                .and_then(|record| record.integer(1))
+                .and_then(|value| u32::try_from(value).ok())
+        })
+        .collect::<BTreeSet<_>>();
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
     for entry in directory
@@ -336,11 +349,11 @@ pub(crate) fn project_geometry(
         let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
         let scale_x = basis_x.norm();
         let scale_y = basis_y.norm();
-        let scale_tolerance = scale_x.max(scale_y).max(1.0) * 1.0e-12;
+        let scale_tolerance = scale_x.max(scale_y).max(1.0) * TRANSFORM_TOLERANCE;
         if !scale_x.is_finite()
             || !scale_y.is_finite()
             || (scale_x - scale_y).abs() > scale_tolerance
-            || dot(basis_x, basis_y).abs() > scale_x * scale_y * 1.0e-12
+            || dot(basis_x, basis_y).abs() > scale_x * scale_y * TRANSFORM_TOLERANCE
         {
             losses.push(entity_loss(
                 entry,
@@ -363,9 +376,11 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "arc placement collapses its plane"));
             continue;
         };
-        if !end_radius.is_finite()
-            || (end_radius - radius).abs() > radius.max(end_radius).max(1.0) * 1.0e-10
-        {
+        let radius_tolerance = global
+            .minimum_resolution_mm()
+            .unwrap_or_default()
+            .max(radius.max(end_radius).max(1.0) * TRANSFORM_TOLERANCE);
+        if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             losses.push(entity_loss(
                 entry,
                 "arc start and terminate points have different radii",
@@ -471,18 +486,20 @@ pub(crate) fn project_geometry(
             continue;
         }
         let point = PointId(format!("iges:model:point#D{}", entry.sequence));
-        let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
         ir.model.points.push(Point {
             source_object: None,
             id: point.clone(),
             position,
         });
-        ir.model.vertices.push(Vertex {
-            id: vertex.clone(),
-            point,
-            tolerance: None,
-        });
-        free_vertices.push(vertex);
+        if entry.status.subordinate == 0 || !analytic_surface_locations.contains(&entry.sequence) {
+            let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
+            ir.model.vertices.push(Vertex {
+                id: vertex.clone(),
+                point,
+                tolerance: None,
+            });
+            free_vertices.push(vertex);
+        }
         decoded.insert(entry.sequence);
     }
     for entry in directory
@@ -823,11 +840,6 @@ pub(crate) fn project_geometry(
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
-    let composites = super::composite::project(ir, directory, parameters);
-    handled.extend(composites.handled);
-    decoded.extend(composites.decoded);
-    losses.extend(composites.losses);
-    wire_edges.extend(composites.wire_edges);
     let copious = super::copious::project(ir, directory, parameters, global);
     handled.extend(copious.handled);
     decoded.extend(copious.decoded);
@@ -839,6 +851,11 @@ pub(crate) fn project_geometry(
     decoded.extend(splines.decoded);
     losses.extend(splines.losses);
     wire_edges.extend(splines.wire_edges);
+    let composites = super::composite::project(ir, directory, parameters);
+    handled.extend(composites.handled);
+    decoded.extend(composites.decoded);
+    losses.extend(composites.losses);
+    wire_edges.extend(composites.wire_edges);
     let offsets = super::offsets::project(ir, directory, parameters, global);
     handled.extend(offsets.handled);
     decoded.extend(offsets.decoded);
@@ -906,6 +923,19 @@ pub(crate) fn project_geometry(
     handled.extend(annotation.handled);
     decoded.extend(annotation.decoded);
     losses.extend(annotation.losses);
+    let analytic_surface_points = analytic_surface_locations
+        .iter()
+        .map(|sequence| PointId(format!("iges:model:point#D{sequence}")))
+        .collect::<BTreeSet<_>>();
+    let vertex_points = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<BTreeSet<_>>();
+    ir.model.points.retain(|point| {
+        !analytic_surface_points.contains(&point.id) || vertex_points.contains(&point.id)
+    });
     Projection {
         handled,
         decoded,

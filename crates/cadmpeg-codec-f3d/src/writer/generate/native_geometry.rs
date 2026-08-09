@@ -6203,6 +6203,7 @@ fn native_pcurve_geometry(
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => native_pcurve_geometry(basis, *parameter_range),
         PcurveGeometry::Parabola { .. }
         | PcurveGeometry::Hyperbola { .. }

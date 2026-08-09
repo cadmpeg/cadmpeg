@@ -281,7 +281,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D15:0:0"
+          "start": "iges:model:vertex#D15:0:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D9",
@@ -291,7 +292,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D15:1:0"
+          "start": "iges:model:vertex#D15:1:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -333,7 +335,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D15",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -359,6 +362,7 @@
       "parameters": [],
       "pcurves": [
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -402,6 +406,7 @@
           ]
         },
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -619,11 +624,13 @@
         },
         {
           "id": "iges:model:vertex#D15:0:0",
-          "point": "iges:model:point#D15:0:0"
+          "point": "iges:model:point#D15:0:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D15:1:0",
-          "point": "iges:model:point#D15:1:0"
+          "point": "iges:model:point#D15:1:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D3-end",
@@ -5461,6 +5468,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "73ae036659706ecbf7e89fc97f69cb4bb76126982d741868bb383cd4718ea202",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -5498,6 +5506,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 2268,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBPVVRQQ1VSViAgICAgICAwRCAgICAgIDYKICAgICAxNDIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBPVVRCT1VORCAgICAgICAwRCAgICAgIDgKICAgICAxMDYgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgSU5NT0RFTCAgICAgICAwRCAgICAgMTAKICAgICAxMDYgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgMTEKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICBJTlBDVVJWRSAgICAgICAwRCAgICAgMTIKICAgICAxNDIgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTMKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgSU5CT1VORCAgICAgICAwRCAgICAgMTQKICAgICAxNDQgICAgICAgOCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTUKICAgICAxNDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQU5OVUxVUyAgICAgICAwRCAgICAgMTYKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTQyLDAsMSw1LDMsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgICA5UCAgICAgIDUKMTA2LDEsNSwwLDAuMjUsMC4yNSwwLjc1LDAuMjUsMC43NSwwLjc1LDAuMjUsMC43NSwwLjI1LDAuMjU7ICAgICAgICAgIDExUCAgICAgIDYKMTQyLDAsMSwxMSw5LDM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKMTQ0LDEsMSwxLDcsMTM7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDE1UCAgICAgIDgKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE2UDAwMDAwMDggICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "149027bd5a869d57f3fd4384723d78fb5a53228ec94d0f0c440e97c17c36c37c",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

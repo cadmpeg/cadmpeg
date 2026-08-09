@@ -4148,6 +4148,7 @@ fn writer_round_trips_every_exact_step_pcurve_family() {
         },
         PcurveGeometry::Trimmed {
             parameter_range: [0.25, 1.75],
+            same_sense: true,
             basis: Box::new(PcurveGeometry::Circle {
                 center: Point2::new(2.0, 3.0),
                 x_axis,

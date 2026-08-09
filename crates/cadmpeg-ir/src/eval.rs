@@ -371,13 +371,26 @@ pub fn nurbs_curve_point(
 
 /// Effective knot domain of a structurally evaluable NURBS curve.
 pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
-    let degree = usize::try_from(curve.degree).ok()?;
-    let count = curve.control_points.len();
-    if count <= degree || curve.knots.len() < count.checked_add(degree)?.checked_add(1)? {
+    nurbs_pcurve_parameter_domain(curve.degree, &curve.knots, curve.control_points.len())
+}
+
+/// Effective knot domain shared by model-space and parameter-space NURBS
+/// carriers. The full knot vector contains multiplicity and extrapolation
+/// knots; only the interval between the degree-th knot and the control-pole
+/// count-th knot is evaluable.
+pub fn nurbs_pcurve_parameter_domain(
+    degree: u32,
+    knots: &[f64],
+    control_point_count: usize,
+) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    if control_point_count <= degree
+        || knots.len() < control_point_count.checked_add(degree)?.checked_add(1)?
+    {
         return None;
     }
-    let lower = *curve.knots.get(degree)?;
-    let upper = *curve.knots.get(count)?;
+    let lower = *knots.get(degree)?;
+    let upper = *knots.get(control_point_count)?;
     (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
 }
 
@@ -1721,6 +1734,132 @@ fn model_axis_revolution_partials(
     })
 }
 
+/// Map a construction-space directrix parameter to the carrier curve and
+/// return the carrier derivative with respect to the construction parameter.
+///
+/// IGES line entities use a normalized surface interval while the neutral
+/// line carrier uses signed distance. Other curve carriers retain their native
+/// parameterization. A line used by more than one edge is only unambiguous
+/// when every retained edge range agrees.
+fn construction_curve_parameter(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    parameter: f64,
+    surface_interval: Option<[f64; 2]>,
+) -> Option<(f64, f64)> {
+    if !parameter.is_finite() {
+        return None;
+    }
+    let Some([surface_start, surface_end]) = surface_interval else {
+        return Some((parameter, 1.0));
+    };
+    let surface_width = surface_end - surface_start;
+    if !surface_start.is_finite()
+        || !surface_end.is_finite()
+        || surface_width <= 0.0
+        || parameter < surface_start
+        || parameter > surface_end
+    {
+        return None;
+    }
+    let curve = index.curves(&directrix.0)?;
+    if !matches!(curve.geometry, CurveGeometry::Line { .. }) {
+        return Some((parameter, 1.0));
+    }
+
+    let mut ranges = index
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve.as_ref() == Some(directrix))
+        .filter_map(|edge| edge.param_range);
+    let [curve_start, curve_end] = ranges.next()?;
+    if !curve_start.is_finite()
+        || !curve_end.is_finite()
+        || ranges.any(|range| range != [curve_start, curve_end])
+    {
+        return None;
+    }
+    let curve_width = curve_end - curve_start;
+    let derivative = curve_width / surface_width;
+    let fraction = (parameter - surface_start) / surface_width;
+    Some((curve_start + fraction * curve_width, derivative))
+}
+
+fn model_native_extrusion_partials(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    direction: Vector3,
+    parameter_interval: Option<[f64; 2]>,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    if !v.is_finite() {
+        return None;
+    }
+    let (parameter, derivative) =
+        construction_curve_parameter(index, directrix, u, parameter_interval)?;
+    let differential = model_curve_differential_by_id(index, directrix, parameter)?;
+    let zero = Vector3::new(0.0, 0.0, 0.0);
+    Some(SurfaceSecondPartials {
+        point: offset(differential.point, &[(v, direction)]),
+        du: scale_vector(differential.tangent, derivative),
+        dv: direction,
+        duu: scale_vector(differential.acceleration, derivative * derivative),
+        duv: zero,
+        dvv: zero,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn model_native_revolution_partials(
+    index: &crate::index::ModelIndex<'_>,
+    directrix: &crate::ids::CurveId,
+    axis_origin: Point3,
+    axis_direction: Vector3,
+    angular_interval: [f64; 2],
+    parameter_interval: Option<[f64; 2]>,
+    transposed: bool,
+    u: f64,
+    v: f64,
+) -> Option<SurfaceSecondPartials> {
+    if !angular_interval.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    let (directrix_parameter, angle) = if transposed { (v, u) } else { (u, v) };
+    let (directrix_parameter, derivative) =
+        construction_curve_parameter(index, directrix, directrix_parameter, parameter_interval)?;
+    let partials = model_axis_revolution_partials(
+        index,
+        directrix,
+        axis_origin,
+        axis_direction,
+        angle,
+        directrix_parameter,
+    )?;
+
+    if transposed {
+        Some(SurfaceSecondPartials {
+            point: partials.point,
+            du: partials.du,
+            dv: scale_vector(partials.dv, derivative),
+            duu: partials.duu,
+            duv: scale_vector(partials.duv, derivative),
+            dvv: scale_vector(partials.dvv, derivative * derivative),
+        })
+    } else {
+        Some(SurfaceSecondPartials {
+            point: partials.point,
+            du: scale_vector(partials.dv, derivative),
+            dv: partials.du,
+            duu: scale_vector(partials.dvv, derivative * derivative),
+            duv: scale_vector(partials.duv, derivative),
+            dvv: partials.duu,
+        })
+    }
+}
+
 fn model_curve_point_by_id_inner(
     index: &crate::index::ModelIndex<'_>,
     curve_id: &crate::ids::CurveId,
@@ -2614,13 +2753,42 @@ pub fn model_surface_point(
         ProceduralSurfaceDefinition::Extrusion {
             directrix,
             direction,
+            parameter_interval,
             ..
-        }
-        | ProceduralSurfaceDefinition::LinearSweep {
+        } => model_native_extrusion_partials(
+            &index,
+            directrix,
+            *direction,
+            *parameter_interval,
+            u,
+            v,
+        )
+        .map(|partials| partials.point),
+        ProceduralSurfaceDefinition::LinearSweep {
             directrix,
             direction,
         } => model_curve_point_by_id(&index, directrix, u)
             .map(|point| offset(point, &[(v, *direction)])),
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+            ..
+        } => model_native_revolution_partials(
+            &index,
+            directrix,
+            *axis_origin,
+            *axis_direction,
+            *angular_interval,
+            *parameter_interval,
+            *transposed,
+            u,
+            v,
+        )
+        .map(|partials| partials.point),
         ProceduralSurfaceDefinition::AxisRevolution {
             directrix,
             axis_origin,
@@ -2672,18 +2840,51 @@ pub fn model_surface_point_by_id(
                         oriented_normal: None,
                     })
             }
-            Some(
-                ProceduralSurfaceDefinition::Extrusion {
-                    directrix,
-                    direction,
-                    ..
-                }
-                | ProceduralSurfaceDefinition::LinearSweep {
-                    directrix,
-                    direction,
-                },
-            ) => model_curve_point_by_id(index, directrix, u).map(|point| SurfaceEvaluation {
+            Some(ProceduralSurfaceDefinition::Extrusion {
+                directrix,
+                direction,
+                parameter_interval,
+                ..
+            }) => model_native_extrusion_partials(
+                index,
+                directrix,
+                *direction,
+                *parameter_interval,
+                u,
+                v,
+            )
+            .map(|partials| SurfaceEvaluation {
+                point: partials.point,
+                oriented_normal: None,
+            }),
+            Some(ProceduralSurfaceDefinition::LinearSweep {
+                directrix,
+                direction,
+            }) => model_curve_point_by_id(index, directrix, u).map(|point| SurfaceEvaluation {
                 point: offset(point, &[(v, *direction)]),
+                oriented_normal: None,
+            }),
+            Some(ProceduralSurfaceDefinition::Revolution {
+                directrix,
+                axis_origin,
+                axis_direction,
+                angular_interval,
+                parameter_interval,
+                transposed,
+                ..
+            }) => model_native_revolution_partials(
+                index,
+                directrix,
+                *axis_origin,
+                *axis_direction,
+                *angular_interval,
+                *parameter_interval,
+                *transposed,
+                u,
+                v,
+            )
+            .map(|partials| SurfaceEvaluation {
+                point: partials.point,
                 oriented_normal: None,
             }),
             Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
@@ -2863,17 +3064,29 @@ fn model_surface_mapping(
             v_scale: 1.0,
             orientation: 1.0,
         }),
-        Some(
-            ProceduralSurfaceDefinition::Extrusion {
+        Some(ProceduralSurfaceDefinition::Extrusion {
+            directrix,
+            direction,
+            parameter_interval,
+            ..
+        }) => Some(SurfaceMapping {
+            base: model_native_extrusion_partials(
+                index,
                 directrix,
-                direction,
-                ..
-            }
-            | ProceduralSurfaceDefinition::LinearSweep {
-                directrix,
-                direction,
-            },
-        ) => {
+                *direction,
+                *parameter_interval,
+                u,
+                v,
+            )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
+        Some(ProceduralSurfaceDefinition::LinearSweep {
+            directrix,
+            direction,
+        }) => {
             let differential = model_curve_differential_by_id(index, directrix, u)?;
             let zero = Vector3::new(0.0, 0.0, 0.0);
             Some(SurfaceMapping {
@@ -2891,6 +3104,31 @@ fn model_surface_mapping(
                 orientation: 1.0,
             })
         }
+        Some(ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            axis_origin,
+            axis_direction,
+            angular_interval,
+            parameter_interval,
+            transposed,
+            ..
+        }) => Some(SurfaceMapping {
+            base: model_native_revolution_partials(
+                index,
+                directrix,
+                *axis_origin,
+                *axis_direction,
+                *angular_interval,
+                *parameter_interval,
+                *transposed,
+                u,
+                v,
+            )?,
+            offset_distance: 0.0,
+            u_scale: 1.0,
+            v_scale: 1.0,
+            orientation: 1.0,
+        }),
         Some(ProceduralSurfaceDefinition::Replica { source, transform }) => {
             let source = model_surface_mapping(index, source, u, v, visiting)?;
             let base = if source.offset_distance == 0.0 {

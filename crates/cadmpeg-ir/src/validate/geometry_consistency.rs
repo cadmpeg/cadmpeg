@@ -895,6 +895,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Trimmed {
             parameter_range,
             basis,
+            ..
         } => {
             if parameter_range[0] < parameter_range[1] {
                 Some(*parameter_range)
@@ -1270,6 +1271,7 @@ mod tests {
         ir.model.points[1].position = Point3::new(0.0, 0.0, 0.0);
         ir.model.pcurves[0].geometry = PcurveGeometry::Trimmed {
             parameter_range: [0.0, 1.0],
+            same_sense: true,
             basis: Box::new(PcurveGeometry::Line {
                 origin: Point2::new(0.0, 0.0),
                 direction: Point2::new(1.0, 0.0),
@@ -1308,6 +1310,7 @@ mod tests {
     fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
         let geometry = PcurveGeometry::Trimmed {
             parameter_range: [1.0, 1.0],
+            same_sense: true,
             basis: Box::new(PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: vec![0.0, 0.0, 1.0, 1.0],
