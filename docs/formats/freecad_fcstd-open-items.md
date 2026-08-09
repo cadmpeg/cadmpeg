@@ -82,16 +82,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the field meanings to transfer the side entry to a typed native or neutral record.
 
-### AR-03. Typed geometry side-entry cardinality
-
-**Question.** How many side entries can one `PropertyMeshKernel` or `PropertyPointKernel` property reference, and which entry contains the geometry payload?
-
-**Known.** `freecad_fcstd.md` §11 "Mesh-kernel properties reference a binary side entry." and "Point-kernel properties reference a side entry" define one typed payload per property. Property records retain every side-entry request in source order.
-
-**Conflict.** `application_geometry.rs` `transfer` reads only `property.side_entries.first()`. It does not reject a second entry and does not report that the second entry did not participate in neutral transfer. Changing the request order can therefore change the projected mesh or point set while both entries remain retained.
-
-**Need.** We must establish the cardinality rule for both runtime types. The decoder must reject an invalid cardinality or identify the payload entry from the typed value grammar.
-
 ### AR-04. Shared side-entry logical ownership
 
 **Question.** How does the logical byte ledger represent one archive entry that is referenced by more than one property or typed payload?

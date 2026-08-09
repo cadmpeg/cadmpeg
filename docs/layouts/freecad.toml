@@ -19,7 +19,7 @@ records is little-endian.
 name = "mesh_kernel_side_entry_header"
 kind = "byte"
 section = "11"
-anchor = "The current typed record begins with the 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field."
+anchor = "The current typed binary record begins with the 32-bit magic `a0b0c0d0`, the 32-bit version `00010000`, and a 256-byte information field."
 size = 264
 endianness = "unstated"
 note = "Both integer byte orders are accepted when the magic and version agree, so the header states no single endianness. Two 32-bit counts follow at +264, then ordered float32 XYZ points and facets, then six float32 bounding-box limits."
@@ -94,7 +94,7 @@ note = "The parser bounds the facet array at 24 bytes per facet, matching the de
 name = "point_kernel_side_entry_header"
 kind = "byte"
 section = "11"
-anchor = "Point-kernel properties reference a side entry containing a little-endian 32-bit point count followed by ordered float32 XYZ triples."
+anchor = "The entry contains a little-endian 32-bit point count followed by ordered float32 XYZ triples."
 size = 4
 note = "Fixed prefix only; `count` float32 XYZ triples follow at +4. The property's `Points` element carries the sixteen finite row-major transform scalars separately, in XML."
 

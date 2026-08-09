@@ -3890,6 +3890,45 @@ fn transfers_application_mesh_and_transformed_point_cloud_payloads() {
 }
 
 #[test]
+fn rejects_multiple_side_entries_for_one_typed_geometry_property() {
+    for (object_type, property_type, values) in [
+        (
+            "Mesh::Feature",
+            "Mesh::PropertyMeshKernel",
+            r#"<Mesh file="first"/><Mesh file="second"/>"#,
+        ),
+        (
+            "Points::Feature",
+            "Points::PropertyPointKernel",
+            r#"<Points file="first"/><Points file="second"/>"#,
+        ),
+    ] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="{object_type}" name="Geometry"/></Objects>
+<ObjectData Count="1"><Object name="Geometry"><Properties Count="1"><Property name="Geometry" type="{property_type}">{values}</Property></Properties></Object></ObjectData>
+</Document>"#
+        );
+        let error = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive_entries(&[
+                    ("Document.xml", document.as_bytes()),
+                    ("first", b""),
+                    ("second", b""),
+                ])),
+                &DecodeOptions::default(),
+            )
+            .expect_err("multiple typed geometry entries");
+
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::Malformed(message)
+                if message.contains("references more than one side entry")
+        ));
+    }
+}
+
+#[test]
 fn retains_ordered_document_level_gui_state() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
