@@ -42,8 +42,8 @@ use crate::records::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFeatureTimeline, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignParameter,
     DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, DesignType, LostEdgeReference, PersistentDesignLink,
-    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
+    DesignSketchPlacement, LostEdgeReference, PersistentDesignLink, PersistentReference,
+    PersistentSubentityTag, SegmentType, SketchCurveIdentity, SketchCurveLink, SketchPoint,
     SketchRelation, SketchSurface, SketchText, XrefDesign, XrefReference,
 };
 use cadmpeg_asm::brep::records::{
@@ -1087,7 +1087,7 @@ pub struct F3dNative {
     pub body_visibilities: Vec<BodyVisibility>,
     /// Design `MetaStream` type-table entries.
     #[serde(default)]
-    pub design_types: Vec<DesignType>,
+    pub design_types: Vec<SegmentType>,
     /// Whole-body operands joined to persistent body construction recipes.
     #[serde(default)]
     pub design_body_recipe_operands: Vec<DesignBodyRecipeOperand>,

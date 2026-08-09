@@ -4339,20 +4339,20 @@ pub enum DesignConfigurationKind {
     Rule,
 }
 
-/// One type-table entry from the Design `MetaStream` segment header. The entry
-/// registers a record type and lists the design entities whose `BulkStream`
-/// records carry it.
+/// One type-table entry from a `MetaStream` segment header. The entry registers
+/// a record type and lists the entities whose sibling `BulkStream` records
+/// carry it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-pub struct DesignType {
+pub struct SegmentType {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Byte offset of this type-table entry in its Design `MetaStream`.
+    /// Byte offset of this type-table entry in its `MetaStream`.
     pub byte_offset: u64,
     /// GUID naming this entry's record type. Class tags are segment-local, so
     /// this GUID is the only discriminator that is stable across files.
     pub type_guid: String,
-    /// Byte offset of the type-GUID bytes in the Design `MetaStream`.
+    /// Byte offset of the type-GUID bytes in the `MetaStream`.
     pub type_guid_offset: u64,
     /// GUID of this type's base type; `None` for a root type, whose stored base
     /// GUID is the empty string.
@@ -4369,8 +4369,8 @@ pub struct DesignType {
     /// `Body`. Every type a module registers repeats the module name, so it
     /// classifies a type but does not identify one. Some types record no module.
     pub module: String,
-    /// Design-entity ids whose records carry this type, in source `MetaStream`
-    /// order; a count rather than a fixed-arity list, so length varies per entry.
+    /// Entity ids whose records carry this type, in source `MetaStream` order;
+    /// a count rather than a fixed-arity list, so length varies per entry.
     pub entity_ids: Vec<u64>,
     /// Byte offsets parallel to `entity_ids`.
     pub entity_id_offsets: Vec<u64>,

@@ -91,6 +91,7 @@ pub mod history;
 mod history_records;
 mod ids;
 pub mod materials;
+mod metastream;
 mod native;
 mod paramesh;
 mod protein;

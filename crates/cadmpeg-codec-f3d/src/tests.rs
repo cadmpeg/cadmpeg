@@ -9733,7 +9733,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
 
 #[test]
 fn design_type_table_attributes_each_entry_to_its_own_type() {
-    use crate::design::decode::meta::parse_design_type_table;
+    use crate::metastream::parse;
 
     let first = "11111111-1111-1111-1111-111111111111";
     let second = "22222222-2222-2222-2222-222222222222";
@@ -9746,7 +9746,9 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
         (second, "", 7, "MSketch", &[20]),
         (third, second, 11, "Body", &[30, 31, 32]),
     ]);
-    let types = parse_design_type_table(&bytes).expect("a segment closing on its own end parses");
+    let types = parse(&bytes, "synthetic MetaStream")
+        .expect("a segment closing on its own end parses")
+        .types;
     assert_eq!(types.len(), 3);
 
     // Every field of an entry belongs to that entry, not to its successor.
@@ -9814,8 +9816,9 @@ fn design_type_table_attributes_each_entry_to_its_own_type() {
     // A stream that does not close on its own end is rejected whole.
     let mut trailing = bytes.clone();
     trailing.push(0);
-    assert!(parse_design_type_table(&trailing).is_none());
-    assert!(parse_design_type_table(&bytes[..bytes.len() - 1]).is_none());
+    assert!(parse(&trailing, "trailing MetaStream").is_err());
+    assert!(parse(&bytes[..bytes.len() - 1], "truncated MetaStream").is_err());
+    assert!(parse(&bytes[..bytes.len() - 4], "flag-only MetaStream").is_err());
 }
 
 #[test]
@@ -9907,7 +9910,7 @@ fn design_feature_timeline_decodes_variable_width_local_references() {
 fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let meta_stream = "f3d:FusionAssetName[Active]/Design1/MetaStream.dat";
     let bulk_entry = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::DesignType {
+    let design_type = |id: &str, type_guid: &str, entities: Vec<u64>| crate::records::SegmentType {
         id: id.into(),
         byte_offset: 0,
         type_guid: type_guid.into(),
@@ -9997,12 +10000,12 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
 
 #[test]
 fn generated_source_less_writes_design_type_metastream() {
-    use crate::records::DesignType;
+    use crate::records::SegmentType;
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
-        DesignType {
+        SegmentType {
             id: "generated:design-type#0".into(),
             byte_offset: 0,
             module: "Fusion".to_owned(),
@@ -10015,7 +10018,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version: 7,
             version_offset: 0,
         },
-        DesignType {
+        SegmentType {
             id: "generated:design-type#1".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -10028,7 +10031,7 @@ fn generated_source_less_writes_design_type_metastream() {
             version: 9,
             version_offset: 0,
         },
-        DesignType {
+        SegmentType {
             id: "generated:design-type#2".into(),
             byte_offset: 0,
             module: "FutureFeature".to_owned(),
@@ -10300,11 +10303,11 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
 #[test]
 fn generated_source_less_writes_design_ownership_and_record_headers() {
-    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, DesignType};
+    use crate::records::{DesignBodyMember, DesignEntityHeader, DesignRecordHeader, SegmentType};
 
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![DesignType {
+    native.design_types = vec![SegmentType {
         id: "generated:design-type#0".into(),
         byte_offset: 0,
         module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -10421,7 +10424,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
 #[test]
 fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     use crate::records::{
-        DesignEntityHeader, DesignType, SketchConstraintKind, SketchCurveGeometry,
+        DesignEntityHeader, SegmentType, SketchConstraintKind, SketchCurveGeometry,
         SketchCurveIdentity, SketchPoint, SketchRelation,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -10429,7 +10432,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let mut native = f3d_native_mut(&mut source_less);
     native.design_types = vec![
-        DesignType {
+        SegmentType {
             id: "generated:sketch-object#0".into(),
             byte_offset: 0,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -10442,7 +10445,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             version: 1,
             version_offset: 0,
         },
-        DesignType {
+        SegmentType {
             id: "generated:sketch-relation-type#0".into(),
             byte_offset: 1,
             module: crate::records::DESIGN_MODULE_SKETCH.to_owned(),
@@ -10938,7 +10941,7 @@ fn generated_source_less_rejects_lossy_act_layouts() {
 fn generated_source_less_writes_protein_appearance_and_body_binding() {
     use std::collections::BTreeMap;
 
-    use crate::records::{DesignMaterialAssignment, DesignType};
+    use crate::records::{DesignMaterialAssignment, SegmentType};
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
@@ -10976,7 +10979,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         channels: BTreeMap::new(),
     }];
     let mut native = f3d_native_mut(&mut source_less);
-    native.design_types = vec![DesignType {
+    native.design_types = vec![SegmentType {
         id: "generated:body-object#0".into(),
         byte_offset: 0,
         module: "Body".to_owned(),

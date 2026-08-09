@@ -45,7 +45,7 @@ use std::collections::{HashMap, HashSet};
 pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     entities: &[DesignEntityHeader],
-    types: &[crate::records::DesignType],
+    types: &[crate::records::SegmentType],
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::DesignParameterOwner],
     component_occurrences: &[DesignComponentOccurrence],

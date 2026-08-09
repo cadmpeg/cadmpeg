@@ -6,158 +6,26 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::le::{u32_at, u64_at};
 use cadmpeg_core::CodecError;
 
-use crate::bytes::{
-    is_guid_relaxed, lp_ascii_filtered, lp_utf16_bounded, take_reference, Reference,
-};
+use crate::bytes::{lp_ascii_filtered, take_reference, Reference};
 use crate::container::{role, ContainerScan};
 use crate::ids::{self, native_stream};
-use crate::records::{DesignFeatureTimeline, DesignType, DESIGN_MODULE_FUSION};
+use crate::records::{DesignFeatureTimeline, SegmentType, DESIGN_MODULE_FUSION};
 
 /// Stable Design type identity of the record that owns the ordered feature
 /// scope list.
 pub(crate) const FEATURE_TIMELINE_TYPE_GUID: &str = "2F4C1849-1A5A-4F6C-A086-8DD445CBF94B";
 pub(crate) const FEATURE_TIMELINE_TYPE_VERSION: u32 = 3;
 
-#[derive(Debug, Clone, Copy)]
-struct DesignRecordIndexEntry {
-    entity_id: u64,
-    bulk_offset: u64,
-}
-
-struct DesignMetaStream {
-    types: Vec<DesignType>,
-    records: Vec<DesignRecordIndexEntry>,
-}
-
-fn take_counted_run(bytes: &[u8], at: &mut usize, stride: usize) -> Option<()> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
-    let start = at.checked_add(4)?;
-    let end = count.checked_mul(stride)?.checked_add(start)?;
-    bytes.get(start..end)?;
-    *at = end;
-    Some(())
-}
-
-fn take_record_index(bytes: &[u8], at: &mut usize) -> Option<Vec<DesignRecordIndexEntry>> {
-    let count = usize::try_from(u32_at(bytes, *at)?).ok()?;
-    *at = at.checked_add(4)?;
-    let mut records = Vec::with_capacity(count);
-    for _ in 0..count {
-        let entity_id = u64_at(bytes, *at)?;
-        let bulk_offset = u64_at(bytes, at.checked_add(8)?)?;
-        *at = at.checked_add(16)?;
-        records.push(DesignRecordIndexEntry {
-            entity_id,
-            bulk_offset,
-        });
-    }
-    Some(records)
-}
-
-/// Parse one complete Design `MetaStream` segment.
-fn parse_design_meta_stream(bytes: &[u8]) -> Option<DesignMetaStream> {
-    // Header: short segment type name, segment id, asset GUID, serializer
-    // magic and its magic-gated integer group, full segment type name, add-in
-    // name, and the segment type code.
-    let (_, at) = lp_ascii_filtered(bytes, 0, 1..=256, u8::is_ascii_graphic)?;
-    let at = at.checked_add(4)?;
-    let (_, at) = lp_utf16_bounded(bytes, at, 0..=256)?;
-    let magic = u32_at(bytes, at)?;
-    let at = at.checked_add(if magic == 1234 { 16 } else { 8 })?;
-    let (_, at) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)?;
-    let (_, at) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-    let mut at = at.checked_add(8)?;
-
-    let count = u32_at(bytes, at)?;
-    at = at.checked_add(4)?;
-    let mut types = Vec::new();
-    for _ in 0..count {
-        let entry_at = at;
-        let type_guid_offset = at.checked_add(4)?;
-        let (type_guid, next) = lp_ascii_filtered(bytes, at, 1..=256, u8::is_ascii_graphic)
-            .filter(|(guid, _)| is_guid_relaxed(guid))?;
-        at = next;
-        let base_type_guid_offset = at.checked_add(4)?;
-        let (base_type_guid, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)
-            .filter(|(guid, _)| guid.is_empty() || is_guid_relaxed(guid))?;
-        at = next;
-        let version_offset = at;
-        let version = u32_at(bytes, at)?;
-        at = at.checked_add(4)?;
-        let (module, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-        at = next;
-        let id_count = usize::try_from(u32_at(bytes, at)?).ok()?;
-        let ids_at = at.checked_add(4)?;
-        let ids_end = id_count.checked_mul(8)?.checked_add(ids_at)?;
-        let raw_ids = bytes.get(ids_at..ids_end)?;
-        at = ids_end;
-        types.push(DesignType {
-            id: String::new(),
-            byte_offset: entry_at as u64,
-            type_guid,
-            type_guid_offset: type_guid_offset as u64,
-            base_type_guid_offset: (!base_type_guid.is_empty())
-                .then_some(base_type_guid_offset as u64),
-            base_type_guid: (!base_type_guid.is_empty()).then_some(base_type_guid),
-            version,
-            version_offset: version_offset as u64,
-            module,
-            entity_ids: raw_ids
-                .chunks_exact(8)
-                .map(|raw| {
-                    u64::from_le_bytes(
-                        raw.try_into()
-                            .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-                    )
-                })
-                .collect(),
-            entity_id_offsets: (0..id_count)
-                .map(|index| (ids_at + index * 8) as u64)
-                .collect(),
-        });
-    }
-
-    // Named entities, the primary record index, and the secondary index.
-    take_counted_run(bytes, &mut at, 8)?;
-    let records = take_record_index(bytes, &mut at)?;
-    take_counted_run(bytes, &mut at, 16)?;
-
-    // A legacy segment can end after the secondary index, after the
-    // next-entity counter, or after the complete flag/property suffix.
-    if bytes.len().checked_sub(at)? >= 8 {
-        at += 8;
-    }
-    if bytes.len().checked_sub(at)? >= 4 {
-        at += 4;
-    }
-    if bytes.len().checked_sub(at)? >= 4 {
-        let properties = u32_at(bytes, at)?;
-        at = at.checked_add(4)?;
-        for _ in 0..properties {
-            let (_, next) = lp_ascii_filtered(bytes, at, 0..=256, u8::is_ascii_graphic)?;
-            at = next.checked_add(4)?;
-        }
-    }
-    (at == bytes.len()).then_some(DesignMetaStream { types, records })
-}
-
-/// Parse one Design `MetaStream` segment into its type table.
-pub(crate) fn parse_design_type_table(bytes: &[u8]) -> Option<Vec<DesignType>> {
-    Some(parse_design_meta_stream(bytes)?.types)
-}
-
 /// Decode the type table of every Design `MetaStream` entry.
-pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError> {
+pub fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let Some(types) = parse_design_type_table(scan.entry_bytes(&entry.name)?) else {
-            continue;
-        };
-        out.extend(types.into_iter().map(|mut design_type| {
+        let meta = crate::metastream::parse(scan.entry_bytes(&entry.name)?, &entry.name)?;
+        out.extend(meta.types.into_iter().map(|mut design_type| {
             design_type.id = ids::native_design_type_id(&entry.name, design_type.byte_offset);
             design_type
         }));
@@ -168,7 +36,7 @@ pub fn decode_types(scan: &ContainerScan) -> Result<Vec<DesignType>, CodecError>
 /// Type GUID and record version keyed by the Design entity ids that carry the
 /// type in the sibling `BulkStream`.
 pub(crate) fn stream_types_by_entity<'a>(
-    types: &'a [DesignType],
+    types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u64, (&'a str, u32)> {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
@@ -191,7 +59,7 @@ pub(crate) fn stream_types_by_entity<'a>(
 
 /// Type GUID and record version keyed by the segment-local dynamic class tag.
 pub(crate) fn stream_types_by_class_tag<'a>(
-    types: &'a [DesignType],
+    types: &'a [SegmentType],
     bulk_entry_name: &str,
 ) -> HashMap<u32, (&'a str, u32)> {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
@@ -291,9 +159,7 @@ pub fn decode_feature_timelines(
         .iter()
         .filter(|entry| entry.role == role::METASTREAM && entry.name.contains("Design"))
     {
-        let Some(meta) = parse_design_meta_stream(scan.entry_bytes(&meta_entry.name)?) else {
-            continue;
-        };
+        let meta = crate::metastream::parse(scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let timeline_types = meta
             .types
             .iter()
