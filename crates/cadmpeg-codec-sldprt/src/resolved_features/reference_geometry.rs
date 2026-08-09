@@ -8,7 +8,9 @@ use super::curves::{
 use super::scalars::feature_object_name;
 use super::selections::component_face_reference_in_record;
 use super::{CLASS_MARKER, NAME_MARKER};
-use crate::classification::{native_object_class, principal_plane_with_siblings, NativeClassKind};
+use crate::classification::{
+    classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
+};
 use crate::records::{FeatureInputLane, FeatureInputName};
 use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -85,10 +87,7 @@ pub(crate) fn enrich_history_reference_planes(
             history
                 .features
                 .iter()
-                .filter(|feature| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                        == NativeClassKind::ReferencePlane
-                })
+                .filter(|feature| classify(feature) == Some(FeatureClass::ReferencePlane))
                 .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
                 .collect::<HashSet<_>>()
         })
@@ -110,8 +109,7 @@ pub(crate) fn enrich_history_reference_planes(
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                != NativeClassKind::ReferencePlane
+            if classify(feature) != Some(FeatureClass::ReferencePlane)
                 || principal_plane_with_siblings(feature, &histories[history_index].features)
                     .is_some()
                 || feature.properties.contains_key("Origin")

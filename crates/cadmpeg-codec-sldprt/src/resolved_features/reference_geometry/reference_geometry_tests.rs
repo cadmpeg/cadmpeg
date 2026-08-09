@@ -1062,7 +1062,7 @@ fn constraint_midplane_uses_its_normal_form_equation() {
 }
 
 #[test]
-fn reference_plane_enrichment_marks_a_constructed_midplane_axis() {
+fn classless_reference_plane_enrichment_marks_a_constructed_midplane_axis() {
     const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
     let class_offset = 16;
     let body = class_offset + CLASS_MARKER.len() + 2 + CLASS.len();
@@ -1095,8 +1095,8 @@ fn reference_plane_enrichment_marks_a_constructed_midplane_axis() {
             parent_source_id: None,
             ordinal: 0,
             name: "MidPlane".into(),
-            kind: String::new(),
-            input_class: Some("moRefPlane_c".into()),
+            kind: "Plane".into(),
+            input_class: None,
             suppressed: false,
             parameters: BTreeMap::new(),
             dimension_properties: BTreeMap::new(),

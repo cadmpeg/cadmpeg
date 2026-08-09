@@ -480,8 +480,7 @@ pub(crate) fn principal_plane_with_siblings(
     siblings: &[Feature],
 ) -> Option<PrincipalPlane> {
     let is_builtin_plane = |candidate: &Feature| {
-        native_object_class(candidate.input_class.as_deref().unwrap_or_default()).kind
-            == NativeClassKind::ReferencePlane
+        classify(candidate) == Some(FeatureClass::ReferencePlane)
             && candidate.parameters.is_empty()
             && candidate.properties.is_empty()
     };
@@ -571,6 +570,7 @@ pub(crate) fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
 
 pub(crate) fn classify_type_token(kind: &str) -> Option<FeatureClass> {
     Some(match kind {
+        "Plane" => FeatureClass::ReferencePlane,
         "BossExtrude" | "CutExtrude" | "Extrude" | "Surface-Extrude" => FeatureClass::Extrude,
         "Helix" | "HelixSpiral" | "Helix/Spiral" => FeatureClass::Helix,
         "Surface-Sweep" | "Sweep" | "Cut-Sweep" => FeatureClass::Sweep,
@@ -647,6 +647,35 @@ mod tests {
         assert_eq!(
             classify(&feature("Extrusion", "arbitrary", "Custom", None)),
             Some(FeatureClass::Extrude)
+        );
+        assert_eq!(
+            classify(&feature("Feature", "arbitrary", "Plane", None)),
+            Some(FeatureClass::ReferencePlane)
+        );
+    }
+
+    #[test]
+    fn classless_plane_triplet_has_principal_plane_identity() {
+        let mut planes = [
+            feature("Feature", "localized front", "Plane", None),
+            feature("Feature", "localized top", "Plane", None),
+            feature("Feature", "localized right", "Plane", None),
+        ];
+        for (plane, source) in planes.iter_mut().zip(["2", "3", "4"]) {
+            plane.source_id = Some(source.into());
+        }
+
+        assert_eq!(
+            principal_plane_with_siblings(&planes[0], &planes),
+            Some(PrincipalPlane::Front)
+        );
+        assert_eq!(
+            principal_plane_with_siblings(&planes[1], &planes),
+            Some(PrincipalPlane::Top)
+        );
+        assert_eq!(
+            principal_plane_with_siblings(&planes[2], &planes),
+            Some(PrincipalPlane::Right)
         );
     }
 
