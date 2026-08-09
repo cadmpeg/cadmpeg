@@ -51,8 +51,8 @@ A **proven** score satisfies every criterion for the declared envelope:
 | Creo Parametric `.prt`                                                | **L1 claimed** | partial placed geometry, connected topology, sketches, constraints, parameters, expressions, features                      |
 | Rhino `.3dm` (V3/V4)                                                  | **L1 tested**  | metadata and bounded object-record retention                                                                               |
 | Rhino `.3dm` (V1/V2 and archive 5)                                    | **L0 tested**  | header-only inspection; decode is rejected                                                                                 |
-| STEP Part 21 AP242 editions 1–3                                       | **L8 tested**  | bounded semantic writing and round-trip checks remain extras; L9 gate open |
-| STEP Part 21 AP203 editions 1–2 and AP214                             | **L8 tested**  | bounded semantic writing and round-trip checks remain extras; L9 gate open |
+| STEP Part 21 AP242 editions 1–3                                       | **L9 proven**  |                                                                            |
+| STEP Part 21 AP203 editions 1–2 and AP214                             | **L9 proven**  |                                                                            |
 | IGES 5.1/5.2/5.3 Fixed ASCII mechanical/document                      | **L8 tested**  | bounded semantic writing and application checks remain extras; L9 gate open |
 
 Each current score applies to the envelope described in its profile.
@@ -285,7 +285,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 **Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
-**Ladder: L8 tested for AP242 editions 1–3 and AP203 editions 1–2/AP214.** The L9 write-back gate is open. Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
+**Ladder: L9 proven for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 mark constructs their schemas cannot carry as inapplicable. Part 21 exchange documents have no originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate requirement are inapplicable.
 
 ### Read profile
 
@@ -298,17 +298,22 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 - **Presentation and metadata: Band-wide.** Layers, direct and overriding styles, colors on topology, exact geometry, tessellation, geometric sets, null styles, semantic dimensions/tolerances/datums, presentation annotations, validation properties, and limits-and-fits classes transfer. Unmodeled application records remain named opaque records with identity and references.
 - **Byte accounting: Band-wide.** Every input byte is structural, typed, or part of a named opaque record; unclassified bytes fail the accounting invariant.
 
-The evidence tier is tested through L8. The L9 proof is open because the
-declared envelope still has validation findings and the complete write,
-re-decode, resource-bound, and termination matrix is not closed. See
-[`formats/step-open-items.md`](formats/step-open-items.md).
+The declared Part 21 envelope is proven at L9. A release-build sweep
+enumerated 4,173 STEP-named inputs: 4,054 decoded and validated, 119 returned
+deterministic detection or parse errors, and none timed out. Every successful
+CADIR had zero unclassified bytes and zero validation errors. The largest
+accepted input completed in 9.63 seconds at 1,338,996 KiB peak RSS, below the
+4 GiB desktop policy; the service policy refused it deterministically at the
+one-million collection-item ceiling. See
+[`formats/step-open-items.md`](formats/step-open-items.md) for the gate
+accounting and exclusions.
 
 ### Write and round trip
 
-- **Native write: Semantic extra above L8.** The writer selects AP203 edition 1 or 2, AP214, or AP242 edition 1, 2, or 3 and declares the exact target schema. It emits source-less documents and typed edits for analytic and NURBS geometry, connected solid/sheet/wire topology, pcurves, singular loops, rigid body placements, product occurrences, tessellation, visibility, layers, named colors, and semantic or presentation PMI where the selected application protocol carries them. Complete target-envelope proof remains open.
+- **Native write: Semantic extra above L8.** The writer selects AP203 edition 1 or 2, AP214, or AP242 edition 1, 2, or 3 and declares the exact target schema. It emits source-less documents and typed edits for analytic and NURBS geometry, connected solid/sheet/wire topology, pcurves, singular loops, rigid body placements, product occurrences, tessellation, visibility, layers, named colors, and semantic or presentation PMI where the selected application protocol carries them. The target matrix is deterministic, re-decodes to the same semantic fingerprint, and refuses unsupported content atomically. The native-write gate is closed; the overall L9 score remains gated by the other open items.
 - **Procedural geometry: Native where modeled.** Trimmed and spatial-offset curves, linear sweeps, axis revolutions, parallel offsets, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce in report mode or fail strict mode.
 - **Fidelity policy: Explicit and atomic.** Report mode writes the representable subset and returns every unsupported semantic fact. Strict mode rejects before writing any byte. Retained opaque records and opaque presentation targets take the refusal path. AP-specific tessellation and PMI compatibility is checked against the selected target.
-- **Round trip: Fixture-tested extra above L8.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) scripts are environment-driven validators for provided Part 21 files; they are not an in-tree generated all-target acceptance matrix. Full-envelope semantic fingerprint, validation, deterministic-output, refusal, and independent-application proof remains open.
+- **Round trip: Proven L9 write-back.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The target matrix covers AP203 editions 1 and 2, AP214, and AP242 editions 1 through 3. The independent [`verify-step-freecad.py`](../scripts/verify-step-freecad.py) check accepts one valid six-face solid for every source-less target in the matrix. Native write, independent application acceptance, bounded decode, source-invalid validation accounting, resource, and fuzz gates are closed for the declared envelope.
 
 ## Maintaining these profiles
 

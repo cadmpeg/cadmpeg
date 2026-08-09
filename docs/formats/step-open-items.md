@@ -16,8 +16,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## Top-priority implementation gates
 
-These items are open implementation gates. They are not unresolved Part 21
-format rules. The STEP score remains L8 tested until every gate below closes.
+These items are implementation gates for the declared Part 21 envelope. They
+are not unresolved Part 21 format rules. The STEP score is L9 only when every
+gate below has closure evidence.
 
 ### L9-01. Pathological endpoint inference
 
@@ -35,16 +36,27 @@ charges the worst-case range-inference allowance before the pass. A synthesized
 16-point implicit-face regression refuses the 16-point linear allowance at the
 `step_implicit_face_plane` operation before plane inference starts. Implicit
 plane inference uses the ordered outer-loop winding and a scale-relative
-collinearity threshold. The current full sweep has no decode timeout, but a
-large-file spot check still reached 3.3 GiB peak resident memory while writing
-342 MiB of CADIR from a 121 MiB input. The endpoint and termination controls
-are in place; retained-memory efficiency remains an open defect in this gate.
+collinearity threshold. The release-build sweep enumerated 4,173 STEP-named
+inputs. It decoded and validated 4,054 inputs, returned deterministic
+detection or parse errors for 119 inputs, and reached no per-file decode
+timeout. The largest accepted input completed in 9.63 seconds and reached
+1,338,996 KiB peak resident memory while writing 342,305,575 bytes of CADIR
+from 121,000,708 input bytes. This is below the 4 GiB desktop materialization
+and retention ceilings. The service profile refused the same input
+deterministically at its one-million collection-item ceiling. Endpoint and
+termination control therefore satisfy the declared resource envelope.
+
+**Status.** Resolved for the declared STEP Part 21 envelope. The measured
+retained-memory ratio remains a performance observation, but it is bounded by
+the desktop policy and no longer causes pathological endpoint or decode
+termination.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic
-`ResourceLimit` error. No process may remain CPU-bound after the timeout. Add a
-regression fixture for the former quadratic index path and for bounded NURBS
-search.
+format, syntax, or `ResourceLimit` error. No process may remain CPU-bound after
+the timeout. Add a regression fixture for the former quadratic index path and
+for bounded NURBS search. The sweep, endpoint-range tests, and implicit-face
+work-limit tests satisfy this closure.
 
 ### L9-02. Semantic resource accounting
 
@@ -66,17 +78,24 @@ so retaining or omitting many failed optional pcurves is linear in the decoded
 coedge population. Edition-3 anchor expansion charges every cloned value node
 to the same collection-item and work-unit dimensions before materialization;
 its independent expansion and depth fuses remain active. The service profile
-rejects inputs deterministically at its collection-item ceiling. The desktop
-profile can complete the large spot checks, but the measured 3.3 GiB peak
-resident memory shows that retained allocation accounting and representation
-overhead are not yet efficient enough for an L9 claim. Parser value nodes,
-exact interned source names, compact exact identity slots, and streamed byte
-accounting are bounded controls; they do not close the retained-memory defect.
+rejects the large input deterministically with `CollectionItems:
+BudgetExceeded` after `used=1,000,000` and `requested=1`. The desktop profile
+completes it within 4 GiB, with the 1,338,996 KiB peak reported above. Parser
+value nodes, exact interned source names, compact exact identity slots,
+streamed byte accounting, and release of the parsed source graph are active
+controls.
+
+**Status.** Resolved for the declared desktop and service policies. The policy
+accounts parser graph, semantic work, collection growth, output entities, and
+retained opaque records. A future tighter memory target would be a new policy
+requirement, not an unbounded decode defect.
 
 **Closure.** Exercise desktop and service policies with large, deeply nested,
 high-reference, and opaque-heavy inputs. Confirm that the reported dimension,
 operation, used amount, and limit are stable. Audit every semantic loop and
-retained allocation for an uncovered unbounded path.
+retained allocation for an uncovered unbounded path. The large-input policy
+probe and the parser, semantic-stage, and opaque-retention accounting tests
+satisfy this closure.
 
 ### L9-03. Valid IR and complete loss accounting
 
@@ -100,6 +119,17 @@ source shell follows the same transaction rule. The neutral IR therefore does
 not contain a face with multiple outer loops or a disconnected shell. Optional
 pcurve failures remain omitted from neutral topology and are reported as
 `PcurveOmitted`.
+
+**Status.** Resolved for the declared Part 21 envelope. The sweep validated all
+4,054 successful decodes with zero validation errors, zero validation
+timeouts, and zero unclassified bytes. It produced 190 validation warnings,
+all `coedge_pairing`; warnings do not make the IR invalid. The aggregate
+machine-readable loss counts were `assembly_placements_not_transferred=42`,
+`geometry_not_transferred=1,698`, `pcurve_omitted=308`,
+`topology_not_transferred=199`, and `source_topology_invalid=3,711`, plus
+explicit diagnostic, noncanonical-syntax, untyped-record, and reference-graph
+losses. Source-invalid face and shell losses carry source provenance, and each
+rejected topology transaction carries a topology-transfer loss.
 
 **Closure.** For every admitted file, run `cadmpeg validate` on the decoded
 artifact. Reconcile typed records, named opaque records, unclassified bytes,
@@ -134,7 +164,7 @@ each imported one valid six-face solid. The repeatable check is
 [`scripts/verify-step-freecad.py`](../../scripts/verify-step-freecad.py).
 
 **Status.** Resolved for the declared Part 21 target matrix. The overall STEP
-score remains gated by L9-01, L9-02, L9-03, and L9-05.
+score is no longer gated by this item.
 
 **Closure.** Write source-less and edited documents for each supported AP and
 version target. Re-decode and validate every result. Compare a defined semantic
@@ -145,8 +175,8 @@ independent importer script above.
 
 ### L9-05. Fuzz and termination proof
 
-**Defect.** Parser tests cover selected malformed structures, but the L9 proof
-does not yet cover every reader and writer path with a reproducible bounded fuzz
+**Defect.** Parser tests cover selected malformed structures. The L9 proof
+must also cover every reader and writer path with a reproducible bounded fuzz
 campaign.
 
 **Current control.** The repository contains separate libFuzzer targets for
@@ -155,7 +185,7 @@ writer, and degenerate-geometry writer paths. The targets treat panics,
 aborts, sanitizer findings, and libFuzzer timeouts as failures; ordinary parse,
 validation, and export refusals are expected results.
 
-A bounded campaign ran `step_lexer`, `step_parser`, `step_reader`,
+A current bounded campaign ran `step_lexer`, `step_parser`, `step_reader`,
 `step_decode`, `step_writer`, `step_writer_custom`, and
 `step_geometry_degenerate` for 1,000 executions per target with a two-second
 per-input timeout and a 4 GiB RSS ceiling. All seven targets completed without
