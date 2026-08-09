@@ -7315,6 +7315,68 @@ fn decode_partitions_disc14_faces_by_native_shell_rings() {
 }
 
 #[test]
+fn decode_keeps_multiple_disc14_regions_as_separate_bodies() {
+    let mut body = Vec::new();
+    body.extend(entity51(1, 900, 0x001a, &[500, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 901, 0x001a, &[501, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 500, 0x0016, &[550, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 501, 0x0016, &[602, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 550, 0x0012, &[600, 0, 0, 0, 0, 0]));
+    body.extend(entity51(1, 600, 0x0020, &[0, 0, 609, 601, 0, 0]));
+    body.extend(entity51(1, 601, 0x0020, &[0, 0, 701, 600, 0, 0]));
+    body.extend(entity51(1, 602, 0x0020, &[0, 0, 612, 603, 0, 0]));
+    body.extend(entity51(1, 603, 0x0020, &[0, 0, 613, 602, 0, 0]));
+    body.extend(entity51(1, 609, 0x001e, &[0, 0, 610, 0, 0, 0]));
+    for (geometry, face) in [(610, 700), (611, 701), (612, 800), (613, 801)] {
+        body.extend(entity51(1, geometry, 0x0018, &[0, 0, face, 0, 0, 0]));
+        body.extend(entity51(1, face, 0x0014, &[0, 0, 0, 0, 0, 0]));
+    }
+    body.extend(owned_triangle(0, 700, 0.0));
+    body.extend(owned_triangle(200, 701, 2.0));
+    body.extend(owned_triangle(400, 800, 10.0));
+    body.extend(owned_triangle(600, 801, 12.0));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.bodies.len(), 2);
+    assert_eq!(decoded.ir.model.regions.len(), 2);
+    for (body_attr, shell_prefix) in [
+        (900, "sldprt:brep:shell#500"),
+        (901, "sldprt:brep:shell#501"),
+    ] {
+        let body_id = format!("sldprt:brep:body#{body_attr}");
+        let body = decoded
+            .ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id.0 == body_id)
+            .unwrap();
+        assert_eq!(body.regions.len(), 1);
+        let region_id = &body.regions[0].0;
+        assert_eq!(region_id, &format!("sldprt:brep:region#{body_attr}"));
+        let region = decoded
+            .ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id.0 == *region_id)
+            .unwrap();
+        assert_eq!(region.body.0, body_id);
+        assert!(!region.shells.is_empty());
+        assert!(region
+            .shells
+            .iter()
+            .all(|shell| shell.0.starts_with(shell_prefix)));
+    }
+}
+
+#[test]
 fn decode_partitions_disc20_faces_by_native_single_shell_lattice() {
     let mut body = Vec::new();
     body.extend(entity51(2, 900, 0x001a, &[500, 0, 0, 0, 0, 0]));

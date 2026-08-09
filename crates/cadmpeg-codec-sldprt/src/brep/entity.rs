@@ -2524,13 +2524,11 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     }
 
     let mut region_records = Vec::new();
-    let mut body_refs = HashSet::new();
     for region in regions {
         let shells = reachable_records(by_attr, region, 0x0016)
             .into_iter()
             .filter_map(|shell| {
                 let face_attrs = shell_face_ring(by_attr, shell)?;
-                body_refs.extend(face_attrs.iter().copied());
                 Some(ShellRecord {
                     attr: shell.attr,
                     offset: shell.offset,
@@ -2549,15 +2547,26 @@ fn disc14_bodies(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     if region_records.is_empty() {
         return Vec::new();
     }
-    let mut refs = body_refs.into_iter().collect::<Vec<_>>();
-    refs.sort_unstable();
-    vec![BodyRecord {
-        attr: region_records[0].attr,
-        kind: BodyKind::Solid,
-        refs,
-        offset: region_records[0].offset,
-        regions: region_records,
-    }]
+    region_records.sort_by_key(|region| (region.attr, region.offset));
+    region_records
+        .into_iter()
+        .map(|region| {
+            let mut refs = region
+                .shells
+                .iter()
+                .flat_map(|shell| shell.refs.iter().copied())
+                .collect::<Vec<_>>();
+            refs.sort_unstable();
+            refs.dedup();
+            BodyRecord {
+                attr: region.attr,
+                kind: BodyKind::Solid,
+                refs,
+                offset: region.offset,
+                regions: vec![region],
+            }
+        })
+        .collect()
 }
 
 fn reachable_records<'a>(
@@ -2840,6 +2849,41 @@ mod tests {
         assert_eq!(bind_schema_33103_faces(&entities, &mut bodies), 1);
         assert_eq!(bodies[0].refs, [10]);
         assert_eq!(bodies[0].regions[0].shells[0].refs, [10]);
+    }
+
+    #[test]
+    fn disc14_regions_form_distinct_stored_bodies() {
+        let records = [
+            record(90, 0x001a, [500, 1, 1, 1, 1, 1]),
+            record(10, 0x001a, [400, 1, 1, 1, 1, 1]),
+            record(500, 0x0016, [550, 1, 1, 1, 1, 1]),
+            record(400, 0x0016, [450, 1, 1, 1, 1, 1]),
+            record(550, 0x0020, [1, 1, 700, 550, 1, 1]),
+            record(450, 0x0020, [1, 1, 800, 450, 1, 1]),
+            record(700, 0x0014, [1; 6]),
+            record(800, 0x0014, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = disc14_bodies(&by_attr);
+
+        assert_eq!(bodies.len(), 2);
+        assert_eq!(
+            bodies
+                .iter()
+                .map(|body| (body.attr, body.refs.clone()))
+                .collect::<Vec<_>>(),
+            vec![(10, vec![800]), (90, vec![700])]
+        );
+        assert_eq!(bodies[0].regions.len(), 1);
+        assert_eq!(bodies[0].regions[0].attr, 10);
+        assert_eq!(bodies[0].regions[0].shells[0].attr, 400);
+        assert_eq!(bodies[1].regions.len(), 1);
+        assert_eq!(bodies[1].regions[0].attr, 90);
+        assert_eq!(bodies[1].regions[0].shells[0].attr, 500);
     }
 
     #[test]

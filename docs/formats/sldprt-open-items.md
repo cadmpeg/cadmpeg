@@ -56,14 +56,6 @@ The decoder records no loss for a deleted face. A site with no body records keep
 
 **Need.** We must know the owner to construct the final body membership. Until we know it, the decoder must report the unclaimed faces as a loss.
 
-### BC-06. Multi-region disc14 sites
-
-**Question.** How many bodies does a disc14 partition with more than one `0x1a` region contain, and which region gives each body its identity?
-
-**Known.** `sldprt.md` §6 defines the disc14 layout for one `0x1a` region and one reachable `0x16` shell. `sldprt.md` §6 states that multiple disc17 records represent distinct stored bodies. `crates/cadmpeg-codec-sldprt/src/brep/entity.rs:2548` collects all regions into one body and takes the body attribute and offset from `region_records[0]`. The region order comes from `HashMap` iteration, so the body identity can change between runs.
-
-**Need.** We must know the body count to construct the stored bodies. We must know the identity rule to give each body a stable neutral identifier.
-
 ### BC-07. Two bridges with one owner
 
 **Question.** What do two face-use bridges denote when both name the same owner entity?
