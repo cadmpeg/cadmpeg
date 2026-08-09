@@ -238,7 +238,7 @@ source = "spec"
 anchor = "the complete zlib-member byte count as u32 LE"
 
 [[record.code]]
-path = "crates/cadmpeg-codec-sldprt/src/compound.rs"
+path = "crates/cadmpeg-codec-sldprt/src/container.rs"
 contains = "WRAPPED_PAYLOAD_MAGIC"
 note = "The parser names the same 16-byte wrapper magic."
 

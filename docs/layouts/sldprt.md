@@ -105,7 +105,7 @@ Fixed prefix only; the zlib member follows and an 8-byte trailer closes the wrap
 
 Cross-checked against code:
 
-- `crates/cadmpeg-codec-sldprt/src/compound.rs` — The parser names the same 16-byte wrapper magic.
+- `crates/cadmpeg-codec-sldprt/src/container.rs` — The parser names the same 16-byte wrapper magic.
 
 ## `world_point`
 

@@ -1775,18 +1775,70 @@ fn detect_high_on_marker_after_header() {
 
 #[test]
 fn compound_detection_distinguishes_solidworks_and_generic_signals() {
-    let mut file = vec![0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
-    file.resize(512, 0);
-    for byte in b"ISolidWorksInformation" {
-        file.extend_from_slice(&[*byte, 0]);
-    }
+    let file = synthetic_compound_with_storage("ISolidWorksInformation");
     assert_eq!(SldprtCodec.detect(&file), Confidence::High);
 
     let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
     assert_eq!(
         SldprtCodec.detect(&generic_compound_document),
-        Confidence::Low
+        Confidence::No
     );
+}
+
+fn synthetic_compound_with_storage(name: &str) -> Vec<u8> {
+    const FREE: u32 = 0xffff_ffff;
+    const END: u32 = 0xffff_fffe;
+    const FAT: u32 = 0xffff_fffd;
+    const SECTOR_SIZE: usize = 512;
+
+    let mut file = vec![0_u8; SECTOR_SIZE * 3];
+    file[..8].copy_from_slice(&[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    file[24..26].copy_from_slice(&0x003e_u16.to_le_bytes());
+    file[26..28].copy_from_slice(&3_u16.to_le_bytes());
+    file[28..30].copy_from_slice(&0xfffe_u16.to_le_bytes());
+    file[30..32].copy_from_slice(&9_u16.to_le_bytes());
+    file[32..34].copy_from_slice(&6_u16.to_le_bytes());
+    file[44..48].copy_from_slice(&1_u32.to_le_bytes());
+    file[48..52].copy_from_slice(&0_u32.to_le_bytes());
+    file[56..60].copy_from_slice(&4096_u32.to_le_bytes());
+    file[60..64].copy_from_slice(&END.to_le_bytes());
+    file[68..72].copy_from_slice(&END.to_le_bytes());
+    for index in 0..109 {
+        let offset = 76 + index * 4;
+        file[offset..offset + 4].copy_from_slice(&FREE.to_le_bytes());
+    }
+    file[76..80].copy_from_slice(&1_u32.to_le_bytes());
+
+    let directory = &mut file[SECTOR_SIZE..SECTOR_SIZE * 2];
+    write_compound_directory_entry(directory, 0, "Root Entry", 5, 1);
+    write_compound_directory_entry(directory, 1, name, 1, FREE);
+    let fat = &mut file[SECTOR_SIZE * 2..SECTOR_SIZE * 3];
+    fat.fill(0xff);
+    fat[..4].copy_from_slice(&END.to_le_bytes());
+    fat[4..8].copy_from_slice(&FAT.to_le_bytes());
+    file
+}
+
+fn write_compound_directory_entry(
+    directory: &mut [u8],
+    index: usize,
+    name: &str,
+    object_type: u8,
+    child: u32,
+) {
+    const NO_STREAM: u32 = 0xffff_ffff;
+    let entry = &mut directory[index * 128..(index + 1) * 128];
+    let name = name.encode_utf16().collect::<Vec<_>>();
+    for (offset, unit) in name.iter().enumerate() {
+        entry[offset * 2..offset * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+    }
+    entry[64..66].copy_from_slice(&((name.len() as u16 + 1) * 2).to_le_bytes());
+    entry[66] = object_type;
+    entry[67] = 1;
+    entry[68..72].copy_from_slice(&NO_STREAM.to_le_bytes());
+    entry[72..76].copy_from_slice(&NO_STREAM.to_le_bytes());
+    entry[76..80].copy_from_slice(&child.to_le_bytes());
+    entry[116..120].copy_from_slice(&NO_STREAM.to_le_bytes());
 }
 
 #[test]
