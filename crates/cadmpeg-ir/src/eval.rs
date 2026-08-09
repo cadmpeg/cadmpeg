@@ -12,6 +12,10 @@
 //! [`model_curve_point_by_id`] resolves construction-backed curves whose
 //! parameterization is established by model entities.
 
+use std::borrow::Cow;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
+
 use crate::geometry::{
     CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralCurveDefinition,
     ProceduralSurfaceDefinition, SurfaceGeometry, SurfaceParameterAxis,
@@ -377,6 +381,15 @@ pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
     (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
 }
 
+const NURBS_SEARCH_MAX_INTERVALS: usize = 512;
+const NURBS_SEARCH_MAX_NEWTON_ITERATIONS: usize = 12;
+
+#[derive(Clone, Copy)]
+struct NurbsSearchWindow<'a> {
+    domain: [f64; 2],
+    boundaries: &'a [f64],
+}
+
 /// Find a parameter witness whose NURBS curve point lies within `tolerance` of
 /// `point`, searching finite knot spans in proximity to `seed`.
 ///
@@ -390,8 +403,6 @@ pub fn nurbs_curve_parameter_near_point(
     tolerance: f64,
     seed: f64,
 ) -> Option<f64> {
-    const MAX_INTERVALS: usize = 100_000;
-
     let degree = usize::try_from(curve.degree).ok()?;
     let count = curve.control_points.len();
     let domain = nurbs_curve_parameter_domain(curve)?;
@@ -406,13 +417,13 @@ pub fn nurbs_curve_parameter_near_point(
         return None;
     }
     let weights = validated_nurbs_curve_weights(curve)?;
-    let speed_bound = nurbs_curve_speed_bound_about(curve, &weights, point)?;
+    let speed_bound = nurbs_curve_speed_bound_about(curve, weights.as_ref(), point)?;
     let distance = |parameter| {
         let position = nurbs_curve_point(
             curve.degree,
             &curve.knots,
             &curve.control_points,
-            Some(&weights),
+            Some(weights.as_ref()),
             parameter,
         )?;
         Some(
@@ -423,29 +434,27 @@ pub fn nurbs_curve_parameter_near_point(
         )
     };
     let seed = seed.clamp(domain[0], domain[1]);
-    let mut boundaries = curve.knots[degree..=count].to_vec();
-    boundaries.sort_by(f64::total_cmp);
-    boundaries.dedup();
-    let mut boundary_witnesses = boundaries.clone();
-    boundary_witnesses
-        .sort_by(|first, second| (first - seed).abs().total_cmp(&(second - seed).abs()));
-    for parameter in boundary_witnesses {
-        if distance(parameter)? <= tolerance {
-            return Some(parameter);
-        }
+    let boundaries = &curve.knots[degree..=count];
+    match nearest_boundary_witness(boundaries, seed, tolerance, distance) {
+        BoundaryWitness::Found(parameter) => return Some(parameter),
+        BoundaryWitness::Invalid => return None,
+        BoundaryWitness::NoMatch => {}
     }
-    let mut intervals = boundaries
-        .windows(2)
-        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
-        .collect::<Vec<_>>();
-    intervals.sort_by(|first, second| {
-        interval_distance_to_parameter(*second, seed)
-            .total_cmp(&interval_distance_to_parameter(*first, seed))
-    });
+    if let Some(parameter) = nurbs_curve_parameter_near_point_newton(
+        curve,
+        weights.as_ref(),
+        point,
+        tolerance,
+        seed,
+        NurbsSearchWindow { domain, boundaries },
+    ) {
+        return Some(parameter);
+    }
+    let mut intervals = bounded_nearest_intervals(boundaries, seed);
     let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
         examined += 1;
-        if examined > MAX_INTERVALS {
+        if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
         let middle = start + (end - start) * 0.5;
@@ -470,25 +479,76 @@ pub fn nurbs_curve_parameter_near_point(
     None
 }
 
+fn nurbs_curve_parameter_near_point_newton(
+    curve: &NurbsCurve,
+    weights: &[f64],
+    point: Point3,
+    tolerance: f64,
+    seed: f64,
+    search: NurbsSearchWindow<'_>,
+) -> Option<f64> {
+    let [lower, upper] =
+        parameter_interval_containing(search.boundaries, seed).unwrap_or(search.domain);
+    let mut parameter = seed.clamp(lower, upper);
+    for _ in 0..NURBS_SEARCH_MAX_NEWTON_ITERATIONS {
+        let position = nurbs_curve_point(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            Some(weights),
+            parameter,
+        )?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        if residual.norm() <= tolerance {
+            return Some(parameter);
+        }
+        let tangent = nurbs_curve_tangent(
+            curve.degree,
+            &curve.knots,
+            &curve.control_points,
+            Some(weights),
+            parameter,
+        )?;
+        let denominator = tangent.dot(tangent);
+        if !denominator.is_finite() || denominator <= 0.0 {
+            return None;
+        }
+        let next = parameter - residual.dot(tangent) / denominator;
+        if !next.is_finite() {
+            return None;
+        }
+        let next = next.clamp(lower, upper);
+        if next == parameter {
+            return None;
+        }
+        parameter = next;
+    }
+    None
+}
+
 /// Global model-space speed bound for a structurally valid rational NURBS
 /// curve over its effective knot domain.
 pub fn nurbs_curve_speed_bound(curve: &NurbsCurve) -> Option<f64> {
     let weights = validated_nurbs_curve_weights(curve)?;
-    nurbs_curve_speed_bound_about(curve, &weights, Point3::new(0.0, 0.0, 0.0))
+    nurbs_curve_speed_bound_about(curve, weights.as_ref(), Point3::new(0.0, 0.0, 0.0))
 }
 
-fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Vec<f64>> {
+fn validated_nurbs_curve_weights(curve: &NurbsCurve) -> Option<Cow<'_, [f64]>> {
     nurbs_curve_parameter_domain(curve)?;
     let count = curve.control_points.len();
     let weights = match &curve.weights {
-        Some(weights) if weights.len() == count => weights.clone(),
+        Some(weights) if weights.len() == count => Cow::Borrowed(weights.as_slice()),
         Some(_) => return None,
-        None => vec![1.0; count],
+        None => Cow::Owned(vec![1.0; count]),
     };
     if curve
         .control_points
         .iter()
-        .zip(&weights)
+        .zip(weights.as_ref())
         .any(|(control, weight)| {
             !control.x.is_finite()
                 || !control.y.is_finite()
@@ -556,6 +616,125 @@ fn interval_distance_to_parameter(interval: [f64; 2], parameter: f64) -> f64 {
     } else {
         0.0
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SearchInterval {
+    bounds: [f64; 2],
+    distance: f64,
+}
+
+impl PartialEq for SearchInterval {
+    fn eq(&self, other: &Self) -> bool {
+        self.distance.total_cmp(&other.distance) == Ordering::Equal
+            && self.bounds[0].total_cmp(&other.bounds[0]) == Ordering::Equal
+            && self.bounds[1].total_cmp(&other.bounds[1]) == Ordering::Equal
+    }
+}
+
+impl Eq for SearchInterval {}
+
+impl PartialOrd for SearchInterval {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SearchInterval {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.distance
+            .total_cmp(&other.distance)
+            .then_with(|| self.bounds[0].total_cmp(&other.bounds[0]))
+            .then_with(|| self.bounds[1].total_cmp(&other.bounds[1]))
+    }
+}
+
+/// Retain only the nearest knot intervals that the bounded search can visit.
+fn bounded_nearest_intervals(boundaries: &[f64], seed: f64) -> Vec<[f64; 2]> {
+    let mut nearest = BinaryHeap::with_capacity(NURBS_SEARCH_MAX_INTERVALS + 1);
+    for pair in boundaries.windows(2) {
+        if pair[0] >= pair[1] {
+            continue;
+        }
+        let candidate = SearchInterval {
+            bounds: [pair[0], pair[1]],
+            distance: interval_distance_to_parameter([pair[0], pair[1]], seed),
+        };
+        if nearest.len() < NURBS_SEARCH_MAX_INTERVALS {
+            nearest.push(candidate);
+        } else if nearest.peek().is_some_and(|farthest| candidate < *farthest) {
+            nearest.pop();
+            nearest.push(candidate);
+        }
+    }
+    let mut intervals = nearest.into_vec();
+    intervals.sort_unstable_by(|first, second| second.cmp(first));
+    intervals
+        .into_iter()
+        .map(|interval| interval.bounds)
+        .collect()
+}
+
+/// Retain the final valid knot intervals without materializing the full partition.
+fn bounded_tail_intervals(boundaries: &[f64]) -> (Vec<[f64; 2]>, bool) {
+    let mut valid = boundaries
+        .windows(2)
+        .rev()
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]));
+    let mut intervals = valid
+        .by_ref()
+        .take(NURBS_SEARCH_MAX_INTERVALS)
+        .collect::<Vec<_>>();
+    let truncated = valid.next().is_some();
+    intervals.reverse();
+    (intervals, truncated)
+}
+
+#[derive(Debug, PartialEq)]
+enum BoundaryWitness {
+    Invalid,
+    NoMatch,
+    Found(f64),
+}
+
+/// Find the nearest admissible distinct boundary without cloning and sorting knots.
+fn nearest_boundary_witness<F>(
+    boundaries: &[f64],
+    seed: f64,
+    tolerance: f64,
+    mut distance: F,
+) -> BoundaryWitness
+where
+    F: FnMut(f64) -> Option<f64>,
+{
+    let mut previous_boundary = None;
+    let mut nearest = None;
+    let mut nearest_seed_distance = f64::INFINITY;
+    for &parameter in boundaries {
+        if previous_boundary == Some(parameter) {
+            continue;
+        }
+        previous_boundary = Some(parameter);
+        let seed_distance = (parameter - seed).abs();
+        if seed_distance >= nearest_seed_distance {
+            continue;
+        }
+        let Some(candidate_distance) = distance(parameter) else {
+            return BoundaryWitness::Invalid;
+        };
+        if candidate_distance <= tolerance {
+            nearest = Some(parameter);
+            nearest_seed_distance = seed_distance;
+        }
+    }
+    nearest.map_or(BoundaryWitness::NoMatch, BoundaryWitness::Found)
+}
+
+fn parameter_interval_containing(boundaries: &[f64], parameter: f64) -> Option<[f64; 2]> {
+    boundaries.windows(2).find_map(|pair| {
+        (pair[0] < pair[1] && parameter >= pair[0] && parameter <= pair[1])
+            .then_some([pair[0], pair[1]])
+    })
 }
 
 /// Map a NURBS parameter onto its evaluable knot branch.
@@ -672,8 +851,6 @@ pub fn nurbs_pcurve_contains_point(
     point: Point2,
     tolerance: f64,
 ) -> Option<bool> {
-    const MAX_INTERVALS: usize = 100_000;
-
     let degree_usize = usize::try_from(degree).ok()?;
     let count = control_points.len();
     if degree_usize == 0
@@ -736,17 +913,14 @@ pub fn nurbs_pcurve_contains_point(
     if domain[0] > domain[1] {
         return None;
     }
-    let mut intervals = knots[degree_usize..=count]
-        .windows(2)
-        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
-        .collect::<Vec<_>>();
+    let (mut intervals, truncated) = bounded_tail_intervals(&knots[degree_usize..=count]);
     if intervals.is_empty() {
         intervals.push(domain);
     }
     let mut examined = 0usize;
     while let Some([start, end]) = intervals.pop() {
         examined += 1;
-        if examined > MAX_INTERVALS {
+        if examined > NURBS_SEARCH_MAX_INTERVALS {
             return None;
         }
         let middle = start + (end - start) * 0.5;
@@ -765,7 +939,7 @@ pub fn nurbs_pcurve_contains_point(
         intervals.push([start, middle]);
         intervals.push([middle, end]);
     }
-    Some(false)
+    (!truncated).then_some(false)
 }
 
 /// Evaluate a tensor-product NURBS surface at `(u, v)`.
@@ -4196,6 +4370,40 @@ mod tests {
             None
         );
         assert!(nurbs_curve_speed_bound(&curve).is_some_and(|bound| bound >= 2.0));
+    }
+
+    #[test]
+    fn bounded_nurbs_interval_search_keeps_a_fixed_working_set() {
+        let boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
+        let intervals = super::bounded_nearest_intervals(&boundaries, 5_000.5);
+
+        assert_eq!(intervals.len(), 512);
+        assert!(intervals.contains(&[5_000.0, 5_001.0]));
+    }
+
+    #[test]
+    fn bounded_nurbs_containment_search_keeps_the_final_valid_spans() {
+        let boundaries = [0.0, 1.0, 1.0, 2.0, 3.0];
+
+        assert_eq!(
+            super::bounded_tail_intervals(&boundaries),
+            (vec![[0.0, 1.0], [1.0, 2.0], [2.0, 3.0]], false)
+        );
+
+        let many_boundaries = (0..=10_000).map(f64::from).collect::<Vec<_>>();
+        let (intervals, truncated) = super::bounded_tail_intervals(&many_boundaries);
+        assert_eq!(intervals.len(), 512);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn bounded_nurbs_boundary_witness_preserves_seed_priority() {
+        let boundaries = [0.0, 1.0, 2.0];
+
+        assert_eq!(
+            super::nearest_boundary_witness(&boundaries, 1.4, 0.0, |_| Some(0.0)),
+            super::BoundaryWitness::Found(1.0)
+        );
     }
 
     #[test]
