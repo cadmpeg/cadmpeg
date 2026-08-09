@@ -1618,6 +1618,26 @@ fn feature_row_definitions(rows: &[FeatureRow]) -> Vec<FeatureDefinition> {
     definitions
 }
 
+fn section_owner_ranges(sections: &[Section], feature_rows: &[FeatureRow]) -> Vec<(usize, usize)> {
+    let mut ranges = sections
+        .iter()
+        .filter(|section| section.name == "DEPDB_DATA")
+        .map(|section| {
+            (
+                section.offset,
+                section.offset.saturating_add(section.length),
+            )
+        })
+        .collect::<Vec<_>>();
+    ranges.extend(feature_rows.iter().map(|row| {
+        (
+            row.body_offset,
+            row.body_offset.saturating_add(row.body.len()),
+        )
+    }));
+    ranges
+}
+
 fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
     for section in sections.iter().filter(|section| section.name == "FeatDefs") {
@@ -2002,29 +2022,7 @@ pub fn scan_bytes<'a>(data: impl Into<Cow<'a, [u8]>>) -> ContainerScan<'a> {
     );
     feature_definitions.extend(replay_definitions);
     feature_definitions.sort_by_key(|definition| definition.offset);
-    let mut section_owner_ranges = sections
-        .iter()
-        .filter(|section| section.name == "DEPDB_DATA")
-        .map(|section| {
-            (
-                section.offset,
-                section.offset.saturating_add(section.length),
-            )
-        })
-        .collect::<Vec<_>>();
-    if sections.iter().any(|section| section.name == "DEPDB_DATA") {
-        section_owner_ranges.extend(
-            feature_rows
-                .iter()
-                .filter(|row| row.root_schema_class == Some(926))
-                .map(|row| {
-                    (
-                        row.body_offset,
-                        row.body_offset.saturating_add(row.body.len()),
-                    )
-                }),
-        );
-    }
+    let section_owner_ranges = section_owner_ranges(&sections, &feature_rows);
     feature::bind_depdb_section_owners(
         &mut feature_definitions,
         &feature_operations,
@@ -2417,5 +2415,59 @@ mod feature_row_definition_tests {
         assert_eq!(definitions[0].id, 2);
         assert_eq!(definitions[0].owner_feature_id, None);
         assert_eq!(definitions[0].offset, 127);
+    }
+
+    #[test]
+    fn embedded_section_definition_uses_the_bounded_feature_row_for_chain_binding() {
+        let row = FeatureRow {
+            feature_id: 247,
+            header: [0xe3, 0xf6],
+            root_schema_class: Some(917),
+            stream_offset: 100,
+            body: b"prefix gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
+                    \xe0\x00gsec3d_ptr\0\xf1\xe3\
+                    \xe0\x01plane_id\0\x80\xf9\
+                    \xe0\x00p_saved_result\0"
+                .to_vec(),
+            body_offset: 120,
+            offset: 118,
+        };
+        let mut definitions = feature_row_definitions(std::slice::from_ref(&row));
+        let operation = |feature_id, recipe, offset| FeatureOperation {
+            feature_id,
+            kind: String::new(),
+            display_name_stored: false,
+            stored_name: None,
+            stored_name_bytes: None,
+            identifier_keyword: None,
+            stored_name_prefix: None,
+            recipe,
+            root_schema_class: None,
+            parent_feature_id: None,
+            offset,
+            state_offset: offset,
+        };
+
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].owner_feature_id, None);
+        assert_eq!(
+            definitions[0]
+                .section_3d
+                .as_ref()
+                .and_then(|section| section.sketch_plane_entity_id),
+            Some(249)
+        );
+
+        feature::bind_depdb_section_owners(
+            &mut definitions,
+            &[
+                operation(247, Some(FeatureRecipe::ProtrudeRevolve), 10),
+                operation(248, None, 20),
+            ],
+            &section_owner_ranges(&[], &[row]),
+        );
+
+        assert_eq!(definitions[0].id, 2);
+        assert_eq!(definitions[0].owner_feature_id, Some(247));
     }
 }
