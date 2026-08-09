@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric validation-property decoding and mesh self-checks.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -13,7 +13,7 @@ use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct ValidationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
@@ -35,7 +35,7 @@ pub(super) fn decode(
         || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
     {
         return ValidationResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             notes: Vec::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
@@ -96,7 +96,7 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let computed = mesh_properties(ir);
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
@@ -307,7 +307,7 @@ fn derived_unit_elements(record: &RawRecord) -> Option<&Value> {
         .and_then(|partial| partial.parameters.first())
 }
 
-fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
+fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) {
     typed.insert(id);
     let Some(record) = exchange.records.get(&id) else {
         return;

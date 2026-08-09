@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -19,7 +19,7 @@ use super::decode_text;
 use super::topology::TopologyResult;
 
 pub(super) struct PresentationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -30,7 +30,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     product_definition_ids_by_source: &BTreeMap<u64, Vec<ProductDefinitionId>>,
 ) -> PresentationResult {
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let face_indices = ir
@@ -481,7 +481,7 @@ fn collect_invisible_body_ids(
 fn expand_style_targets(
     id: u64,
     exchange: &Exchange,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     active: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Vec<u64> {

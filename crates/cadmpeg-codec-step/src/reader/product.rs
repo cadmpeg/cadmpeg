@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
@@ -32,7 +32,7 @@ const PRODUCT_DEFINITION_TYPES: &[&str] = &[
 
 pub(super) struct ProductResult {
     pub product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -43,7 +43,7 @@ pub(super) fn decode(
     topology: &TopologyResult,
     ir: &mut CadIr,
 ) -> ProductResult {
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let formations = exchange

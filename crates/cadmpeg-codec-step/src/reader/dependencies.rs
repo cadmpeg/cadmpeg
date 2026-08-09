@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! External document and source dependency decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::report::{LossKind, LossNote};
 
@@ -10,7 +10,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::decode_text;
 
 pub(super) struct DependencyResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub notes: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -70,7 +70,7 @@ pub(super) fn decode(exchange: &Exchange) -> DependencyResult {
         })
         .filter_map(|(id, source)| source.map(|source| (id, source)))
         .collect::<BTreeMap<_, _>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
     for (&id, record) in &exchange.records {

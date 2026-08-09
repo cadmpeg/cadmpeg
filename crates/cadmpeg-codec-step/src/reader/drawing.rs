@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP drawing definitions, revisions, sheets, views, and their relations.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_ir::document::CadIr;
@@ -23,13 +23,13 @@ const DRAWING_ENTITIES: &[&str] = &[
 ];
 
 pub(super) struct DrawingResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub losses: Vec<LossNote>,
 }
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
-    known_typed: &'a BTreeSet<u64>,
+    known_typed: &'a HashSet<u64>,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
 }
@@ -50,7 +50,7 @@ impl TargetContext<'_> {
 pub(super) fn decode(
     exchange: &Exchange,
     ir: &mut CadIr,
-    known_typed: &BTreeSet<u64>,
+    known_typed: &HashSet<u64>,
 ) -> DrawingResult {
     let mut losses = Vec::new();
     let mut candidates = exchange
@@ -75,7 +75,7 @@ pub(super) fn decode(
 
     if candidates.is_empty() {
         return DrawingResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             losses,
         };
     }
@@ -84,7 +84,7 @@ pub(super) fn decode(
         .iter()
         .map(|(id, name)| (*id, drawing_identity(*id, name)))
         .collect::<BTreeMap<_, _>>();
-    let mut target_identities = typed_record_targets(ir, known_typed);
+    let mut target_identities = typed_record_targets(ir, known_typed, None);
     for (&id, identity) in &drawing_identities {
         target_identities
             .entry(id)
@@ -162,7 +162,7 @@ pub(super) fn decode(
     add_sheet_revision_usages(exchange, &mut drawings, &target_context, &mut losses);
     add_draughting_model_associations(exchange, &mut drawings, &target_context, &mut losses);
 
-    let typed_records = drawings.keys().copied().collect::<BTreeSet<_>>();
+    let typed_records = drawings.keys().copied().collect::<HashSet<_>>();
     ir.model.drawings.extend(drawings.into_values());
     DrawingResult {
         typed_records,
@@ -406,7 +406,7 @@ fn add_draughting_model_associations(
 fn target_for(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
-    known_typed: &BTreeSet<u64>,
+    known_typed: &HashSet<u64>,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
 ) -> Option<DrawingTarget> {

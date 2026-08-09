@@ -218,6 +218,18 @@ impl PartialEq for EntityIndex {
 }
 
 impl Exchange {
+    /// Release semantic source structures before retained opaque bytes are copied.
+    pub(crate) fn release_source_graph(&mut self) {
+        self.header.clear();
+        self.anchors.clear();
+        self.references.clear();
+        self.data.clear();
+        self.signatures.clear();
+        self.signature_sections.clear();
+        self.records.clear();
+        self.entity_ids = EntityIndex::default();
+    }
+
     fn entity_ids(&self) -> &HashMap<String, Vec<u64>> {
         self.entity_ids.0.get_or_init(|| {
             let mut entity_ids = HashMap::<String, Vec<u64>>::new();
@@ -625,6 +637,8 @@ impl Parser<'_, '_, '_> {
                     self.punct(&TokenKind::RBrace)?;
                     tags.push(AnchorTag { name, value });
                 }
+                tags.shrink_to_fit();
+                self.charge_vec_storage(&tags, "step_anchor_tag_storage")?;
                 self.punct(&TokenKind::Semicolon)?;
                 anchors.push(AnchorEntry { name, value, tags });
             }
@@ -729,6 +743,7 @@ impl Parser<'_, '_, '_> {
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
+            ids.shrink_to_fit();
             self.charge_vec_storage(&ids, "step_parse_section_storage")?;
             data.push(DataSection {
                 parameters,
@@ -779,7 +794,8 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
             let span = start..self.previous_end();
             let payload = payload_start..payload_end;
-            let cms = decode_signature_payload(self.lexer.input(), &payload)?;
+            let mut cms = decode_signature_payload(self.lexer.input(), &payload)?;
+            cms.shrink_to_fit();
             self.charge_vec_storage(&cms, "step_parse_signature_storage")?;
             signature_sections.push(SignatureSection {
                 span: span.clone(),
@@ -860,9 +876,19 @@ impl Parser<'_, '_, '_> {
             .map_err(|error| error.into_parse_error(0))?;
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
+                let previous_capacity = record.partials[0].parameters.capacity();
                 record.partials[0]
                     .parameters
                     .insert(0, Value::String(Vec::new()));
+                record.partials[0].parameters.shrink_to_fit();
+                let added_capacity = record.partials[0]
+                    .parameters
+                    .capacity()
+                    .saturating_sub(previous_capacity);
+                self.charge_retained(
+                    allocation_bytes(added_capacity, size_of::<Value>()),
+                    "step_omitted_name_recovery_storage",
+                )?;
                 self.omitted_entity_name_count += 1;
                 self.first_omitted_entity_name_offset
                     .get_or_insert(record.span.start);
@@ -958,12 +984,16 @@ impl Parser<'_, '_, '_> {
                 ),
             });
         }
-        self.charge_vec_storage(&header, "step_parse_exchange_storage")?;
-        self.charge_vec_storage(&anchors, "step_parse_exchange_storage")?;
-        self.charge_vec_storage(&reference_entries, "step_parse_exchange_storage")?;
-        self.charge_vec_storage(&data, "step_parse_exchange_storage")?;
-        self.charge_vec_storage(&signatures, "step_parse_exchange_storage")?;
-        self.charge_vec_storage(&signature_sections, "step_parse_exchange_storage")?;
+        for capacity in [
+            compact_vec(&mut header),
+            compact_vec(&mut anchors),
+            compact_vec(&mut reference_entries),
+            compact_vec(&mut data),
+            compact_vec(&mut signatures),
+            compact_vec(&mut signature_sections),
+        ] {
+            self.charge_retained(capacity, "step_parse_exchange_storage")?;
+        }
         Ok((
             Exchange {
                 header,
@@ -993,6 +1023,7 @@ impl Parser<'_, '_, '_> {
                 parts.push(self.partial()?);
             }
             self.next_kind()?;
+            parts.shrink_to_fit();
             let mut canonical_names = parts
                 .iter()
                 .map(|part| part.name.clone())
@@ -1051,7 +1082,10 @@ impl Parser<'_, '_, '_> {
         self.depth += 1;
         let result = self.parameters_inner();
         self.depth -= 1;
-        result
+        result.map(|mut values| {
+            values.shrink_to_fit();
+            values
+        })
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
@@ -1081,14 +1115,32 @@ impl Parser<'_, '_, '_> {
             match self.next_kind()? {
                 TokenKind::Instance(v) => Value::Reference(v),
                 TokenKind::ValueInstance(v) => Value::ValueReference(v),
-                TokenKind::ConstantEntity(name) => Value::ConstantEntity(name),
-                TokenKind::ConstantValue(name) => Value::ConstantValue(name),
+                TokenKind::ConstantEntity(mut name) => {
+                    name.shrink_to_fit();
+                    Value::ConstantEntity(name)
+                }
+                TokenKind::ConstantValue(mut name) => {
+                    name.shrink_to_fit();
+                    Value::ConstantValue(name)
+                }
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
-                TokenKind::Enumeration(v) => Value::Enumeration(v),
-                TokenKind::String(v) => Value::String(v),
-                TokenKind::Binary(v) => Value::Binary(v),
-                TokenKind::Resource(v) => Value::Resource(v),
+                TokenKind::Enumeration(mut value) => {
+                    value.shrink_to_fit();
+                    Value::Enumeration(value)
+                }
+                TokenKind::String(mut value) => {
+                    value.shrink_to_fit();
+                    Value::String(value)
+                }
+                TokenKind::Binary(mut value) => {
+                    value.data.shrink_to_fit();
+                    Value::Binary(value)
+                }
+                TokenKind::Resource(mut value) => {
+                    value.shrink_to_fit();
+                    Value::Resource(value)
+                }
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => self.typed_parameter(name)?,
@@ -1100,7 +1152,8 @@ impl Parser<'_, '_, '_> {
         Ok(value)
     }
 
-    fn typed_parameter(&mut self, name: String) -> Result<Value, ParseError> {
+    fn typed_parameter(&mut self, mut name: String) -> Result<Value, ParseError> {
+        name.shrink_to_fit();
         let parameters = self.parameters()?;
         if parameters.len() != 1 {
             return self.err("typed parameter requires one value");
@@ -1239,6 +1292,11 @@ fn allocation_bytes(capacity: usize, element_size: usize) -> u64 {
     u64::try_from(capacity)
         .unwrap_or(u64::MAX)
         .saturating_mul(u64::try_from(element_size).unwrap_or(u64::MAX))
+}
+
+fn compact_vec<T>(values: &mut Vec<T>) -> u64 {
+    values.shrink_to_fit();
+    allocation_bytes(values.capacity(), size_of::<T>())
 }
 
 fn btree_node_storage<K, V>() -> u64 {
@@ -2491,6 +2549,20 @@ mod tests {
         let (untouched, _) = parse(source).expect("required invariant");
         assert_eq!(indexed.entities("POINT").count(), 1);
         assert_eq!(indexed, untouched);
+    }
+
+    #[test]
+    fn released_source_graph_drops_records_and_cached_entity_indexes() {
+        let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
+        let (mut exchange, _) = parse(source).expect("required invariant");
+        assert!(exchange.has_entity("POINT"));
+
+        exchange.release_source_graph();
+
+        assert!(exchange.records.is_empty());
+        assert!(exchange.header.is_empty());
+        assert!(exchange.data.is_empty());
+        assert!(!exchange.has_entity("POINT"));
     }
 
     #[test]

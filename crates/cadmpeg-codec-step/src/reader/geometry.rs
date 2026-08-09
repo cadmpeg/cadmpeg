@@ -25,7 +25,7 @@ use super::index::{step_instance_id, CarrierIndex};
 use super::opaque_record_id;
 
 pub(super) struct GeometryResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
@@ -66,7 +66,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         1.0
     });
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses);
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();

@@ -444,6 +444,36 @@ fn parser_accounts_for_record_table_storage() {
 }
 
 #[test]
+fn parser_accounts_for_anchor_tag_collection_storage() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=1 {tag:2};ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    crate::parse::parse(source).expect("anchor-tag fixture must parse");
+    let mut tag_limit = None;
+    for max_retained_bytes in 1..=8192 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::parse::parse_with_context(source, &ctx)
+            .expect_err("anchor-tag storage must consume retained bytes");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_anchor_tag_storage" {
+            tag_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = tag_limit.expect("anchor-tag storage must have a retained-byte gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert!(limit.additional > 0);
+}
+
+#[test]
 fn anchor_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'4;2');FILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
     let mut materialization_limit = None;
@@ -1055,6 +1085,41 @@ fn parser_resolves_anchor_before_repairing_omitted_entity_names() {
             crate::parse::Value::Reference(3),
         ]
     );
+}
+
+#[test]
+fn omitted_name_recovery_accounts_for_inserted_parameter_storage() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT((0.,0.,0.));ENDSEC;END-ISO-10303-21;";
+    let (exchange, diagnostics) = crate::parse::parse(source).expect("recover omitted name");
+    let parameters = &exchange.records[&1].partials[0].parameters;
+
+    assert_eq!(parameters.len(), 2);
+    assert_eq!(diagnostics.len(), 1);
+
+    let mut recovery_limit = None;
+    for max_retained_bytes in 1..=8192 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::parse::parse_with_context(source, &ctx)
+            .expect_err("recovered storage must consume retained bytes");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_omitted_name_recovery_storage" {
+            recovery_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = recovery_limit.expect("recovered name storage must have a budget gate");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert!(limit.additional > 0);
 }
 
 #[test]
