@@ -3236,37 +3236,37 @@ fn synthesize_sphere_seams(
             if circle_count != 3 {
                 continue;
             }
-            let edge = &out.edges[*edge_index];
             let north = cadmpeg_ir::math::Point3::new(
                 center.x + radius * axis.x,
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             );
-            let south = cadmpeg_ir::math::Point3::new(
-                center.x - radius * axis.x,
-                center.y - radius * axis.y,
-                center.z - radius * axis.z,
-            );
-            let squared_distance =
-                |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
-                    (left.x - right.x).powi(2)
-                        + (left.y - right.y).powi(2)
-                        + (left.z - right.z).powi(2)
-                };
-            let point = vertex_points
-                .get(&edge.start)
-                .or_else(|| vertex_points.get(&edge.end))
-                .map_or(north, |endpoint| {
-                    if squared_distance(*endpoint, north) <= squared_distance(*endpoint, south) {
-                        north
-                    } else {
-                        south
-                    }
-                });
+            // The analytic sphere axis fixes the seam pole. An existing
+            // endpoint is a topology carrier, not a pole selector; choosing
+            // the nearer pole lets a stale or reversed endpoint change the
+            // sphere parameterization.
+            let point = north;
             existing.push((*edge_index, point));
         }
     }
     for (edge_index, point) in existing {
+        let seam_vertices = [
+            out.edges[edge_index].start.clone(),
+            out.edges[edge_index].end.clone(),
+        ];
+        for vertex_id in seam_vertices {
+            let Some(point_id) = out
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == vertex_id)
+                .map(|vertex| vertex.point.clone())
+            else {
+                continue;
+            };
+            if let Some(vertex_point) = out.points.iter_mut().find(|item| item.id == point_id) {
+                vertex_point.position = point;
+            }
+        }
         let suffix = out.edges[edge_index].id.0.rsplit('#').next().unwrap_or("0");
         let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
         annotations

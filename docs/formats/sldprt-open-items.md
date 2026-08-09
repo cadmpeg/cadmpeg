@@ -90,22 +90,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the carrier and relation to construct the exact surface geometry.
 
-### GC-09. Sphere seam pole selection
-
-**Question.** Which pole does a spherical face's degenerate seam use, and what identifies it?
-
-**Known.** `crates/cadmpeg-codec-sldprt/src/brep/graph.rs:3086` selects the nearer of the two poles for an edge with a resolved endpoint. It selects `+axis` when the edge has no resolved endpoint:
-
-```rust
-.map_or(north, |endpoint| {
-    if squared_distance(*endpoint, north) <= squared_distance(*endpoint, south) { north } else { south }
-})
-```
-
-`graph.rs:3159` uses `+axis` with no test. When no loop vertex is within the distance limit of that pole, `graph.rs:3203` creates a new point and vertex there. `graph.rs:3246` gives the paired pcurve the fixed origin `Point2::new(0.0, FRAC_PI_2)`. The entry gate counts loops, coedges, and circular edges. It does not test which pole the face reaches.
-
-**Need.** We must know the pole to construct the seam. A face that reaches the `-axis` pole must not receive a vertex at `+axis`.
-
 ### GC-10. Isoparametric trim line parameter
 
 **Question.** Which field fixes the `v` parameter of an isoparametric trim line on a ruled B-spline surface?

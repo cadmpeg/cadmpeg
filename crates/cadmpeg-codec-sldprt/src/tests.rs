@@ -568,6 +568,31 @@ fn sphere_patch_body() -> Vec<u8> {
     b
 }
 
+fn sphere_existing_seam_body() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend(sphere_carrier(100, [0.0, 0.0, 0.0], 1.0));
+    b.extend(circle_carrier(70, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], 1.0));
+    b.extend(circle_carrier(71, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0));
+    b.extend(circle_carrier(72, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0));
+    b.extend(bridge(10, 20, 100));
+    b.extend(loop_head(20, 30, 10));
+    b.extend(coedge(30, 20, 31, 51, 0, 40, false));
+    b.extend(coedge(31, 20, 32, 52, 0, 41, false));
+    b.extend(coedge(32, 20, 33, 53, 0, 42, false));
+    b.extend(coedge(33, 20, 30, 51, 0, 43, false));
+    b.extend(edge_use(40, 70));
+    b.extend(edge_use(41, 71));
+    b.extend(edge_use(42, 72));
+    b.extend(edge_use(43, 0));
+    b.extend(vertex_use(51, 60));
+    b.extend(vertex_use(52, 61));
+    b.extend(vertex_use(53, 62));
+    b.extend(world_point(60, [0.0, 0.0, -1.0]));
+    b.extend(world_point(61, [1.0, 0.0, 0.0]));
+    b.extend(world_point(62, [0.0, 1.0, 0.0]));
+    b
+}
+
 fn f64_array(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
     let mut b = vec![0x00, tag, 0x2b];
     be32(&mut b, values.len() as u32);
@@ -7090,6 +7115,57 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
     assert_eq!(
         [point.position.x, point.position.y, point.position.z],
         [0.0, 0.0, 1000.0]
+    );
+}
+
+#[test]
+fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&sphere_existing_seam_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let seam_curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            result
+                .source_fidelity
+                .annotations
+                .provenance
+                .get(&curve.id.0)
+                .and_then(|note| note.tag.as_deref())
+                == Some("derived_sphere_seam")
+        })
+        .expect("existing sphere seam curve");
+    let seam = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(&seam_curve.id))
+        .expect("existing sphere seam edge");
+    let vertex = result
+        .ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == seam.start)
+        .expect("sphere seam pole vertex");
+    let point = result
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id == vertex.point)
+        .expect("sphere seam pole point");
+
+    assert_eq!(
+        point.position,
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
     );
 }
 
