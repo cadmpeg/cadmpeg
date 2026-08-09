@@ -18,14 +18,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
-### DR-03. ACT table trailing GUID run
-
-**Question.** What does the run of LP-UTF16 GUIDs after an ACT table's counted entry list hold? What gives its length?
-
-**Known.** `f3d.md` §3.1 "**The ACT segment.**" gives the two-byte prologue, the counted `(reference, entity key)` entries, and the join from each entry to its change group. The run after the last entry is a sequence of 36-character GUID strings and has no count of its own.
-
-**Need.** We must know the run to write an ACT table. A reader that stops after the counted entries keeps every change-version join, so the item blocks writing only.
-
 ### DR-05. Recipe records of a non-locus parameter companion
 
 **Question.** How do the recipe records inside one non-locus indexed-parameter-companion variant relate to each other as an operation?
@@ -295,24 +287,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 **Known.** `exact_legacy_distance_extrude_prologue` in `design/decode/scopes.rs` reads one word at `operation + 4` and refuses the record when the value is not `2`. Under `f3d.md` §3.1 "An `Extrude` or `Extrusion` scope stores its result-operation" that word is the travel direction and the value `2` is two sides. `DesignExtrudePrologue::extent` in `records.rs` returns a one-sided distance for this dialect without reading a field.
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
-
-### DR-52. Location of the ACT table and the root-component discriminator
-
-**Question.** Which stored reference locates the `ACTTable` record, and which field marks the root component's link?
-
-**Known.** `f3d.md` §3.1 gives the per-component links and states that "the record whose entity key names entity 3 is the root component's". `decode_root_components` in `act.rs` applies no entity-3 test and emits every link as an `ActRootComponent`, whose fields are documented as the document root entity and the document display name. An N-component document therefore holds N records that each claim to be the document root.
-
-`decode_table` in the same file locates the table by the first `ACTTable` byte window in the stream and returns an empty entity table and an empty GUID pool from five distinct rejection paths. No loss is recorded at either call site, so a document whose first window is not the table decodes to an ACT arena that has lost its table half in silence.
-
-**Need.** The entity-3 rule is in the specification and not in the decoder. The table's stored location, and a per-record mark for the root link, settle both halves.
-
-### DR-53. ACT entity identity when one record index carries two entity ids
-
-**Question.** What identifies an ACT entity when one record index carries more than one entity id?
-
-**Known.** `decode` in `act.rs` keys its entity map on the pair of record index and entity id, so the code states that one record index can carry two ids. `crate::ids::native_scoped_id` builds the emitted identity from the record index alone. Two arena records then carry equal identities. The channel assignment overwrites rather than merges, so the later scan position wins.
-
-**Need.** The identity is the join key for annotations and for the writer's patch lookup. Two records with one identity make the patch target ambiguous. Either the record index is the identity and the map key is too wide, or the entity id is part of the identity and the emitted id is too narrow.
 
 ### DR-54. Selection of the design asset folder
 
