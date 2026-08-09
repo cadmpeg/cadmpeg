@@ -1140,10 +1140,10 @@ fn try_decode_geometry(
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    // PS-31: the OFFSET_SURF discriminator and true-offset
-                    // flag have no settled parameter-sense mapping. Keep the
-                    // exact native fields in the source arena and leave the
-                    // neutral senses unknown until that mapping is proven.
+                    // OFFSET_SURF status fields do not select parameter
+                    // direction. The exact fields remain in the native
+                    // source record; the neutral IR senses are intentionally
+                    // unknown.
                     u_sense: None,
                     v_sense: None,
                     extension_flags: Vec::new(),

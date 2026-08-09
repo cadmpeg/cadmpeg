@@ -208,14 +208,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the roles and cardinality rules to transfer the complete inline body state.
 
-### PS-31. `OFFSET_SURF` discriminator and true-offset roles
-
-**Question.** What do the `OFFSET_SURF` discriminator byte and `true_offset` field select?
-
-**Known.** `siemens_nx.md` §6.1 "**OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref" defines the layout and the evaluation `P = base(u,v) + offset_distance * unit_normal(u,v)`. It assigns no role to the discriminator or to `true_offset`.
-
-**Need.** We must know the roles before the transferred surface states a parameter-direction sense. The decoder writes a forward sense for both parameters on every offset surface. If either field selects parameter reversal, every transferred offset surface states the wrong sense, and the sense comparison between two offset surfaces cannot separate them.
-
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
