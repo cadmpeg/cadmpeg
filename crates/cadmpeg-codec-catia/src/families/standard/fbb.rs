@@ -488,6 +488,14 @@ fn parse_standard_group(
 }
 
 fn selected_standard_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
+    let ranges = crate::container::fbb_run_ranges(bytes);
+    if let [range] = ranges.as_slice() {
+        // A single marker run has no competing population to disambiguate.
+        // Keep the historical marker-only fallback here; the readers that
+        // need a complete source-closed topology still validate the edge,
+        // vertex, trim, and reconstruction stages independently.
+        return Some((range.start, range.len() / 8, range.end));
+    }
     let groups = standard_fbb_groups(bytes);
     match groups.as_slice() {
         [group] if group.topology.face_count() == group.face_count => {
