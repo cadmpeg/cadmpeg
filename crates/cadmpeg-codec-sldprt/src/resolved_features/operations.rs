@@ -243,13 +243,11 @@ pub(crate) fn bind_sweep_operations(
     }
 }
 
-/// Inline extrusion trailer fields: the low byte of the family word and the
-/// operation byte. The family word is `0x0140` for `moExtrusion_c` objects
-/// and `0x01ca` for `moICE_c` objects.
+/// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
-) -> Option<(u8, u8)> {
+) -> Option<(u16, u8)> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
@@ -272,7 +270,6 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[20..24] == [0; 4])
             });
     if bytes[..4] != [0; 4]
-        || bytes[5] != 1
         || bytes[8..12] != name.object_id?.to_le_bytes()
         || bytes[12..16] != [0; 4]
         || !terminated
@@ -280,64 +277,19 @@ pub(super) fn feature_inline_operation_fields(
     {
         return None;
     }
-    Some((bytes[4], bytes[6]))
+    Some((u16::from_le_bytes([bytes[4], bytes[5]]), bytes[6]))
 }
 
-/// Inline Boolean operation, when the trailer carries one. A zero operation
-/// byte on an `moICE_c` object is not an operation carrier; those objects use
-/// class-scoped form semantics instead.
+/// Project an inline Boolean operation from a recognized complete family.
 pub(super) fn feature_inline_operation(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
 ) -> Option<BooleanOp> {
     match feature_inline_operation_fields(lane, name)? {
-        (0x40, 0) => Some(BooleanOp::Join),
-        (0xca, 2) => Some(BooleanOp::Cut),
+        (0x0140, 0) => Some(BooleanOp::Join),
+        (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
         _ => None,
     }
-}
-
-pub(super) fn class_scoped_extrusion_operation(
-    feature: &crate::records::Feature,
-    features: &[&crate::records::Feature],
-    lane: &FeatureInputLane,
-    name: &FeatureInputName,
-    form_padding: Option<FormCodePadding>,
-) -> Option<BooleanOp> {
-    if feature.input_class.as_deref() != Some("moICE_c")
-        || feature_inline_operation_fields(lane, name) != Some((0xca, 0))
-        || !lane.classes.iter().any(|class| {
-            class.name == "moICE_c" && class.offset + 6 + class.name.len() as u64 == name.offset
-        })
-    {
-        return None;
-    }
-    let siblings = features
-        .iter()
-        .copied()
-        .filter(|candidate| {
-            candidate.id != feature.id && candidate.input_class == feature.input_class
-        })
-        .collect::<Vec<_>>();
-    if siblings.len() < 2 {
-        return None;
-    }
-    let mut operations = siblings.iter().map(|sibling| {
-        let sibling_name = feature_object_name(sibling, lane)?;
-        extrusion_operation(
-            sibling.input_class.as_deref(),
-            feature_operation_code(
-                lane,
-                sibling_name,
-                sibling.input_class.as_deref(),
-                form_padding,
-            )?,
-        )
-    });
-    let operation = operations.next()??;
-    operations
-        .all(|candidate| candidate == Some(operation))
-        .then_some(operation)
 }
 
 /// Project the feature-input operation discriminator onto typed extrusions.
@@ -372,15 +324,6 @@ pub(crate) fn bind_extrusion_operations(
         let mut operations = lanes.iter().filter_map(|lane| {
             let name = feature_object_name(history, lane)?;
             if let Some(operation) = feature_inline_operation(lane, name) {
-                return Some(operation);
-            }
-            if let Some(operation) = class_scoped_extrusion_operation(
-                history,
-                &history_features,
-                lane,
-                name,
-                form_padding,
-            ) {
                 return Some(operation);
             }
             extrusion_operation(

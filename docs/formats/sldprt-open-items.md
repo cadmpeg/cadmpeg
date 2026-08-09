@@ -306,9 +306,9 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 ### DI-21. Other inline extrusion operation bytes
 
-**Question.** What Boolean operation does each inline operation byte other than `moExtrusion_c` byte `00` and `moICE_c` byte `02` represent?
+**Question.** What Boolean operation does each inline family-word and operation-byte combination outside family `0x0140` byte `00` and family `0x01ca` byte `00` or `02` represent?
 
-**Known.** `sldprt.md` §2 "Feature-tree" defines those two operation bytes and states that `moICE_c` byte `00` does not carry an operation.
+**Known.** `sldprt.md` §2 "Feature-tree" defines the three supported combinations. The family word establishes join or cut independently of a shared class token; family `0x01ca` byte `00` derives subtraction from its family rather than from the zero byte alone.
 
 **Need.** We must know the other byte values to construct the extrusion Boolean operation.
 

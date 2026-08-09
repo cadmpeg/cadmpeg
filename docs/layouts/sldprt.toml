@@ -3979,7 +3979,7 @@ name = "family"
 offset = 4
 type = "u16"
 source = "spec"
-anchor = "The family word is `0x0140` on `moExtrusion_c` objects and `0x01ca` on `moICE_c` objects"
+anchor = "The family word establishes the operation family independently of a shared class token"
 
 [[record.field]]
 name = "operation"

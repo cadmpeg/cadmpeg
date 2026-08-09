@@ -1057,7 +1057,7 @@ Spec §2 · layout: byte offsets · size: 40 B
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 4 | `zero_header` | `u32` | little | spec | followed by four zero bytes |
-| 4 | 2 | `family` | `u16` | little | spec | The family word is `0x0140` on `moExtrusion_c` objects and `0x01ca` on `moICE_c` objects |
+| 4 | 2 | `family` | `u16` | little | spec | The family word establishes the operation family independently of a shared class token |
 | 6 | 1 | `operation` | `u8` | little | spec | a one-byte Boolean operation |
 | 7 | 1 | `schema` | `u8` | little | spec | one schema byte |
 | 8 | 4 | `object_id` | `u32` | little | spec | the repeated little-endian u32 object identifier |

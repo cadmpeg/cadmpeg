@@ -1,10 +1,9 @@
 //! Tests for the `operations` module.
 
 use super::{
-    class_scoped_extrusion_operation, enrich_history_split_line_modes, extrusion_operation,
-    feature_inline_operation, feature_inline_operation_fields, feature_operation_code,
-    form_code_padding, revolution_operation, FormCodePadding, SPLIT_LINE_MODE_PROPERTY,
-    SPLIT_LINE_PROJECTION_MODE,
+    enrich_history_split_line_modes, extrusion_operation, feature_inline_operation,
+    feature_inline_operation_fields, feature_operation_code, form_code_padding,
+    revolution_operation, FormCodePadding, SPLIT_LINE_MODE_PROPERTY, SPLIT_LINE_PROJECTION_MODE,
 };
 use crate::records::{
     Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
@@ -167,14 +166,21 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
         feature_inline_operation(&lane, &name),
         Some(BooleanOp::Join)
     );
-    // A zero operation byte on an moICE_c object carries no operation.
+    // The 0x01ca family supplies subtraction when its operation byte is zero.
     lane.native_payload[trailer + 4] = 0xca;
-    assert_eq!(feature_inline_operation(&lane, &name), None);
+    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
     assert!(feature_inline_operation_fields(&lane, &name).is_some());
     lane.native_payload[trailer + 6] = 2;
     assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
     lane.native_payload[trailer + 4] = 0x40;
     assert_eq!(feature_inline_operation(&lane, &name), None);
+    lane.native_payload[trailer + 5] = 2;
+    assert_eq!(
+        feature_inline_operation_fields(&lane, &name),
+        Some((0x0240, 2))
+    );
+    assert_eq!(feature_inline_operation(&lane, &name), None);
+    lane.native_payload[trailer + 5] = 1;
     lane.native_payload[trailer + 6] = 3;
     assert_eq!(feature_inline_operation_fields(&lane, &name), None);
 
@@ -206,107 +212,9 @@ fn inline_operation_binds_join_and_cut_to_their_family_words() {
     lane.native_payload[trailer + 34..trailer + 36].copy_from_slice(&435u16.to_le_bytes());
     assert_eq!(
         feature_inline_operation_fields(&lane, &name),
-        Some((0xca, 0))
+        Some((0x01ca, 0))
     );
-    assert_eq!(feature_inline_operation(&lane, &name), None);
-}
-
-#[test]
-fn declared_ice_object_uses_a_unanimous_repeated_class_form() {
-    let native_feature = |id: &str, source: &str| Feature {
-        id: id.into(),
-        parent: "history".into(),
-        xml_tag: "Feature".into(),
-        tree_parent: None,
-        source_id: Some(source.into()),
-        parent_source_id: None,
-        ordinal: source.parse().expect("required invariant"),
-        name: id.into(),
-        kind: "Extrusion".into(),
-        input_class: Some("moICE_c".into()),
-        suppressed: false,
-        parameters: BTreeMap::new(),
-        dimension_properties: BTreeMap::new(),
-        properties: BTreeMap::new(),
-        text: None,
-        content: Vec::new(),
-    };
-    let features = [
-        native_feature("first", "67"),
-        native_feature("second", "79"),
-        native_feature("third", "90"),
-    ];
-    let names = [
-        FeatureInputName {
-            id: "first-name".into(),
-            parent: "lane".into(),
-            ordinal: 0,
-            offset: 33,
-            value: "F".into(),
-            object_id: Some(67),
-        },
-        FeatureInputName {
-            id: "second-name".into(),
-            parent: "lane".into(),
-            ordinal: 1,
-            offset: 100,
-            value: "S".into(),
-            object_id: Some(79),
-        },
-        FeatureInputName {
-            id: "third-name".into(),
-            parent: "lane".into(),
-            ordinal: 2,
-            offset: 150,
-            value: "T".into(),
-            object_id: Some(90),
-        },
-    ];
-    let mut payload = vec![0; 200];
-    let trailer = 33 + 6 + 2;
-    payload[trailer + 4] = 0xca;
-    payload[trailer + 5] = 1;
-    payload[trailer + 8..trailer + 12].copy_from_slice(&67u32.to_le_bytes());
-    payload[trailer + 16..trailer + 19].copy_from_slice(&[0xff, 0xfe, 0xff]);
-    for name_offset in [100_usize, 150] {
-        let code_offset = name_offset - 14;
-        payload[code_offset..code_offset + 4].copy_from_slice(&1u32.to_le_bytes());
-        payload[name_offset - 2..name_offset].copy_from_slice(&0x8000u16.to_le_bytes());
-    }
-    let mut lane = FeatureInputLane {
-        id: "lane".into(),
-        configuration: None,
-        native_payload: payload,
-        classes: vec![FeatureInputClass {
-            id: "ice".into(),
-            parent: "lane".into(),
-            ordinal: 0,
-            offset: 20,
-            name: "moICE_c".into(),
-            role: FeatureInputClassRole::Feature,
-        }],
-        names: names.to_vec(),
-        scalars: Vec::new(),
-        relation_bindings: Vec::new(),
-        relation_instances: Vec::new(),
-        body_selections: Vec::new(),
-        edge_selections: Vec::new(),
-        surface_selections: Vec::new(),
-        generated_surface_identities: Vec::new(),
-        references: Vec::new(),
-        sketch_entities: Vec::new(),
-    };
-    let feature_refs = features.iter().collect::<Vec<_>>();
-
-    assert_eq!(
-        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0], None,),
-        Some(BooleanOp::Cut)
-    );
-    lane.native_payload[136..140].copy_from_slice(&6u32.to_le_bytes());
-    assert_eq!(
-        class_scoped_extrusion_operation(&features[0], &feature_refs, &lane, &names[0], None,),
-        None
-    );
+    assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
 }
 
 #[test]
