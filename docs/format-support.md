@@ -302,7 +302,7 @@ The declared Part 21 envelope is proven at L9. A release-build sweep
 enumerated 4,173 STEP-named inputs: 4,054 decoded and validated, 119 returned
 deterministic detection or parse errors, and none timed out. Every successful
 CADIR had zero unclassified bytes and zero validation errors. The largest
-accepted input completed in 9.63 seconds at 1,338,996 KiB peak RSS, below the
+accepted input completed in 8.61 seconds at 1,339,884 KiB peak RSS, below the
 4 GiB desktop policy; the service policy refused it deterministically at the
 one-million collection-item ceiling. See
 [`formats/step-open-items.md`](formats/step-open-items.md) for the gate
