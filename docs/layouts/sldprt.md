@@ -156,7 +156,7 @@ Unstated regions:
 
 Spec §7.1 · layout: byte offsets · size: 17 B
 
-Body-relative, after the two-byte `00 TT` tag and the optional `ff`. `values f64 BE[n]` follows at +17; `n` is the per-tag f64 count. Total record size is `2 + [1] + 17 + 8n`.
+Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

@@ -983,6 +983,14 @@ Stream-scope support-geometry carriers encoding untrimmed surface/curve placemen
 00 TT  [ff]?  attr u16 BE  ordinal u32 BE  refs u16 BE[5]  marker u8 (0x2b|0x2d)  values f64 BE[n]
 ```
 
+The partition form uses the five adjacent u16 references shown above; its marker is at `hdr + 16`, where `hdr` is the attr offset after `00 TT` and the optional `ff`. A deltas compact analytic record uses five `[hi][lo][01]` reference triples instead:
+
+```
+00 TT [ff]? attr u16 BE ordinal u32 BE refs [hi][lo][01][5] marker u8 (0x2b|0x2d) values f64 BE[n]
+```
+
+Its marker is at `hdr + 21`, and the values begin one byte after the marker in both forms. The five triple terminators are `01`. All scalar payload values are finite; the format imposes no coordinate-magnitude cutoff. A carrier is selected only when exactly one of the two framings satisfies these byte invariants and the analytic geometry invariants below.
+
 | Tag     | Kind     | f64 count | Payload                                                                  |
 | ------- | -------- | --------: | ------------------------------------------------------------------------ |
 | `00 1e` | line     |         6 | point xyz, direction xyz                                                 |

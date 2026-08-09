@@ -408,7 +408,7 @@ section = "7.1"
 anchor = "00 TT [ff]? attr u16 BE ordinal u32 BE refs u16 BE[5] marker u8 (0x2b|0x2d) values f64 BE[n]"
 size = 17
 endianness = "big"
-note = "Body-relative, after the two-byte `00 TT` tag and the optional `ff`. `values f64 BE[n]` follows at +17; `n` is the per-tag f64 count. Total record size is `2 + [1] + 17 + 8n`."
+note = "Body-relative, after the two-byte `00 TT` tag and the optional `ff`. The partition form uses five u16 references and places the marker at +16; the deltas form uses five [hi][lo][01] reference triples and places it at +21. Values follow the marker in either form; `n` is the per-tag f64 count. All scalar payload values are finite, and no coordinate-magnitude cutoff is part of the format. A carrier is accepted only for a unique framing."
 
 [[record.field]]
 name = "attr"

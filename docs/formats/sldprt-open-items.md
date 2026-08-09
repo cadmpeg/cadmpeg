@@ -211,22 +211,6 @@ The decoder does not test that one parameter only is inside the limit. `derive_c
 
 **Need.** We must know the field to bound the trim. A curve that approaches its own start must not collapse to a sliver.
 
-### GC-12. Compact carrier marker position
-
-**Question.** What fixes the position of the `0x2b` or `0x2d` marker in a tripled deltas analytic carrier?
-
-**Known.** `sldprt.md` §7.1 defines the compact analytic carriers. `crates/cadmpeg-codec-sldprt/src/brep.rs:251` uses a fixed position when the form gives one. For the deltas form it accepts the first position in a 56-byte window:
-
-```rust
-(hdr + 8..(hdr + 64).min(body.len())).find(|at| {
-    matches!(body.get(*at), Some(0x2b | 0x2d)) && body.get(at.saturating_sub(1)) == Some(&1)
-})?
-```
-
-`brep.rs:263` then refuses the record when a value is not finite or its magnitude is more than `1e6`. `sldprt.md` states no coordinate magnitude limit. The frame invariants at `brep.rs:102` are exact and come from `sldprt.md` §7.1.
-
-**Need.** We must know the position to find the values without a window. We must know the magnitude limit, or remove it, so that a large part keeps its carriers.
-
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix
