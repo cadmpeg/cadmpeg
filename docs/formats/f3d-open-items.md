@@ -296,14 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-51. Authored order of design configuration variants
-
-**Question.** Where does a document store the authored order of the variants of a configuration table?
-
-**Known.** `f3d.md` gives the configuration tables as JSON documents. `design/configurations.rs` reads the variants from a `serde_json::Map`. No crate in the workspace enables the `preserve_order` feature of `serde_json`, so that map is a `BTreeMap` and its iteration order is the ASCII order of the variant names. The projector derives `NeutralConfiguration.ordinal` from that iteration and from a counter that runs across every table. `cadmpeg-ir` documents the field as the position in the design configuration list.
-
-**Need.** A table authored as `Small`, `Medium`, `Large` is exported with `Large` at ordinal zero. Either the JSON document holds the authored order in a member the decoder does not read, or the order is not recoverable and the neutral model must not state one.
-
 ### DR-52. Location of the ACT table and the root-component discriminator
 
 **Question.** Which stored reference locates the `ACTTable` record, and which field marks the root component's link?
