@@ -2488,6 +2488,7 @@ mod route_tests {
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
+                    orientation_hint: None,
                 }],
             }],
             edges,
@@ -2530,6 +2531,7 @@ mod route_tests {
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
+                    orientation_hint: None,
                 }],
             }],
             edges: BTreeMap::from([
@@ -2749,6 +2751,7 @@ mod route_tests {
                     }]),
                     outer: Some(true),
                     orientation_signs: Vec::new(),
+                    orientation_hint: None,
                 }],
             }],
             edges: BTreeMap::from([(
@@ -2897,6 +2900,7 @@ mod route_tests {
                     }]),
                     outer: Some(true),
                     orientation_signs: Vec::new(),
+                    orientation_hint: None,
                 }],
             }],
             edges: BTreeMap::from([(
@@ -3008,6 +3012,7 @@ mod route_tests {
                 }]),
                 outer: Some(true),
                 orientation_signs: Vec::new(),
+                orientation_hint: None,
             }],
         };
         let edge = |record_id| E5Edge {
@@ -3845,6 +3850,7 @@ mod route_tests {
                     oriented_members: None,
                     outer: Some(true),
                     orientation_signs: Vec::new(),
+                    orientation_hint: None,
                 }],
             }],
             edges,

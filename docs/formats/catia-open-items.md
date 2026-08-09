@@ -600,14 +600,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the other mappings to trim the primitive correctly.
 
-### E5-03. Plane-cap digon orientation
-
-**Question.** Which fields orient a plane-cap digon?
-
-**Known.** `catia.md` §9 "**E5 orientation** is" defines the E5 incidence graph and the non-degenerate orientation equations.
-
-**Need.** We must know the fields to orient the cap when its boundary is a digon.
-
 ### E5-05. Root orientation signs
 
 **Question.** What does each of the two root `extra_orientation_signs` control?
