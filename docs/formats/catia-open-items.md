@@ -244,24 +244,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the operation-specific binding that transfers profiles, directions, extents, outputs, and regeneration dependencies for each admitted feature family.
 
-### DI-24. Unresolved role selector framing
-
-**Question.** Which condition selects the `80 <identity:u32le>` selector form of an unresolved role, and which selects the `<page:d1..e4> <low:u8>` form?
-
-**Known.** `catia.md` §7.1 "Within an identity interval, `<inclusive-length:u8> <name:utf8> <selector>`" admits both forms. It gives no precedence. The two productions can match the same bytes: the first needs a nonzero byte at `field-6`, `80` at `field-5`, and a nonzero `u32le` at `field-4`; the second needs a nonzero byte at `field-3` and a byte from `d1` to `e4` at `field-2`. `legacy_entity::parse_role_selectors` tests the first form first and keeps it when it parses.
-
-**Need.** The selected form gives the role offset and the target selector. The two forms give different offsets and different selectors for the same bytes. We must know the condition to bind the relation context and the relation result (DI-08, DI-09).
-
-### DI-25. Text-field terminator before a role page
-
-**Question.** Which condition closes a legacy text field with `FE`, and which condition continues it with a compound role, when the byte after the terminator is `E3`?
-
-**Known.** `catia.md` §7.1 "A legacy string-value packet is" gives `FE` as the close of the nonempty single-value form, and gives `<role> E3 <selector-low:u8>` as the continuation of the compound form. It gives no rule for a terminated field that an `E3` byte follows.
-
-**Need.** A role at a terminator offset moves the boundary of the field before it and stops the unresolved-role recovery of the opener after it. We must know the condition to keep one reading.
-
-**Note.** The decoder holds both readings at the same time. `legacy_entity::parse_text_field` closes the field as `U8InclusiveLength`. `legacy_entity::parse_role_selectors` makes a role at the terminator offset, with the terminator byte `FE` as the role name. The two functions decide the same bytes differently.
-
 ### DI-26. `7C0A` payload `0x3c` form
 
 **Question.** What does a `0x3c` byte introduce in a `7C0A` payload, and which field gives its extent?
