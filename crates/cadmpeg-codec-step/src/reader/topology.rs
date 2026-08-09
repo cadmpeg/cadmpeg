@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP boundary-representation ownership and orientation decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::draft::{CommitSession, DraftError, ModelDraft};
@@ -22,7 +22,7 @@ use crate::parse::{Exchange, RawRecord, Value};
 use super::index::CarrierIndex;
 
 pub(super) struct TopologyResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub body_by_root: BTreeMap<u64, Vec<BodyId>>,
@@ -64,7 +64,7 @@ pub(super) fn decode(
 ) -> TopologyResult {
     let mut commit_session = CommitSession::new(ir);
     let mut result = TopologyResult {
-        typed_records: BTreeSet::new(),
+        typed_records: HashSet::new(),
         warnings: Vec::new(),
         losses: Vec::new(),
         body_by_root: BTreeMap::new(),
@@ -193,7 +193,9 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -242,7 +244,9 @@ pub(super) fn decode(
                     .entry(model)
                     .or_default()
                     .push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if committed == 0 {
@@ -339,7 +343,9 @@ pub(super) fn decode(
                         .insert(built.body_id.clone());
                 }
                 body_ids.push(built.body_id.clone());
-                result.typed_records.append(&mut built.typed);
+                result
+                    .typed_records
+                    .extend(std::mem::take(&mut built.typed));
             }
         }
         if body_ids.is_empty() {
@@ -416,7 +422,9 @@ pub(super) fn decode(
             ));
         } else {
             result.body_by_root.insert(id, vec![built.body_id.clone()]);
-            result.typed_records.append(&mut built.typed);
+            result
+                .typed_records
+                .extend(std::mem::take(&mut built.typed));
         }
     }
     for (id, record) in exchange.entities_any(&[
@@ -662,7 +670,7 @@ fn build_wire_set(
     } else {
         String::new()
     };
-    let mut typed = BTreeSet::from([id, set_id]);
+    let mut typed = HashSet::from([id, set_id]);
     if set_type == "CONNECTED_EDGE_SUB_SET"
         && !validate_subset_parent(set, set_type, exchange, warnings)
     {
@@ -810,7 +818,7 @@ fn build_shell_wire_set(
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
     let shell_record = exchange.records.get(&shell_id)?;
-    let mut typed = BTreeSet::from([id, shell_id]);
+    let mut typed = HashSet::from([id, shell_id]);
     let mut edge_uses = Vec::new();
     let mut used_vertices = BTreeSet::new();
     let mut free_vertices = BTreeSet::new();
@@ -946,7 +954,7 @@ fn mark_standalone_geometric_set(
     representation: &RawRecord,
     exchange: &Exchange,
     carrier_index: &CarrierIndex,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) -> bool {
     let Some(set_ids) = representation.parameter(1).and_then(refs) else {
         return false;
@@ -989,7 +997,7 @@ fn build_geometric_set(
     warnings: &mut Vec<String>,
 ) -> Option<Built> {
     let set_ids = refs(representation.parameter(1)?)?;
-    let mut typed = BTreeSet::from([id]);
+    let mut typed = HashSet::from([id]);
     let mut surfaces = Vec::new();
     for set_id in set_ids {
         let Some(set) = exchange.records.get(&set_id) else {
@@ -1444,7 +1452,7 @@ fn edge_same_sense(record: &RawRecord) -> Option<bool> {
 }
 
 struct Built {
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
     draft: ModelDraft,
     body_id: BodyId,
     shell_sources: BTreeSet<u64>,
@@ -1522,7 +1530,7 @@ mod tests {
     reason = "Decode/encode helper keeps one parameter per independent arena, table, or control flag rather than a catch-all context struct."
 )]
 fn staged_topology(
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
@@ -1810,7 +1818,7 @@ fn build_one(
     let solid = has_type(root, "MANIFOLD_SOLID_BREP")
         || has_type(root, "BREP_WITH_VOIDS")
         || has_type(root, "FACETED_BREP");
-    let mut typed = BTreeSet::from([id]);
+    let mut typed = HashSet::from([id]);
     let mut vertices = Vec::new();
     let mut edges = Vec::new();
     let mut coedges = Vec::new();
@@ -2842,7 +2850,7 @@ fn associated_pcurves(
 struct ShellDef {
     base: u64,
     forward: bool,
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -3077,7 +3085,7 @@ fn shell_def_cached(
             "OPEN_SHELL" | "CLOSED_SHELL" => Some(ShellDef {
                 base: reference,
                 forward: true,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             }),
             "ORIENTED_OPEN_SHELL" | "ORIENTED_CLOSED_SHELL" => {
                 let shell_type =
@@ -3117,7 +3125,7 @@ fn shell_def_cached(
 fn shell_def_for(
     reference: u64,
     shells: &BTreeMap<u64, ShellDef>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) -> Option<(u64, bool)> {
     let definition = shells.get(&reference)?;
     typed.extend(definition.typed.iter().copied());
@@ -3130,7 +3138,7 @@ struct FaceInfo {
     surface: Option<u64>,
     same_sense: bool,
     reverse_bound_orientation: bool,
-    typed: BTreeSet<u64>,
+    typed: HashSet<u64>,
 }
 
 fn is_face_record(record: &RawRecord) -> bool {
@@ -3191,7 +3199,7 @@ fn face_attributes(
                 surface: None,
                 same_sense: true,
                 reverse_bound_orientation: false,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             })
         }
         "ADVANCED_FACE" | "FACE_SURFACE" => {
@@ -3204,7 +3212,7 @@ fn face_attributes(
                 surface: Some(surface),
                 same_sense,
                 reverse_bound_orientation: false,
-                typed: BTreeSet::new(),
+                typed: HashSet::new(),
             })
         }
         _ => None,
@@ -3435,8 +3443,8 @@ impl ValueExt for Value {
     }
     fn logical(&self) -> Option<bool> {
         match self {
-            Value::Enumeration(v) if v == "T" => Some(true),
-            Value::Enumeration(v) if v == "F" => Some(false),
+            Value::Enumeration(v) if v.as_ref() == "T" => Some(true),
+            Value::Enumeration(v) if v.as_ref() == "F" => Some(false),
             _ => None,
         }
     }

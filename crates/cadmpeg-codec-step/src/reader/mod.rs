@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Schema-aware STEP-to-IR decoding entry point.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeOptions, DecodeResult};
@@ -27,6 +27,13 @@ mod validation;
 
 pub(super) const MAX_RECORD_GRAPH_DEPTH: usize = 256;
 
+struct OpaqueSourceRecord {
+    unknown_id: String,
+    span: std::ops::Range<usize>,
+    links: BTreeSet<u64>,
+    reference_work: u64,
+}
+
 /// Decode a complete clear-text exchange structure.
 pub fn decode(
     input: &[u8],
@@ -34,22 +41,23 @@ pub fn decode(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<DecodeResult, CodecError> {
     let (exchange, diagnostics) = parse::parse_with_context(input, ctx)?;
-    decode_exchange(input, options, &exchange, &diagnostics, Some(ctx))
+    decode_exchange(input, options, exchange, &diagnostics, Some(ctx))
 }
 
 pub(super) fn decode_exchange(
     input: &[u8],
     options: DecodeOptions,
-    exchange: &Exchange,
+    mut exchange: Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
 ) -> Result<DecodeResult, CodecError> {
-    decode_exchange_mode(input, options, exchange, diagnostics, true, ctx).map(|(result, _)| result)
+    decode_exchange_mode(input, options, &mut exchange, diagnostics, true, ctx)
+        .map(|(result, _)| result)
 }
 
 pub(super) fn inspect_exchange(
     input: &[u8],
-    exchange: &Exchange,
+    exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
 ) -> Result<(DecodeResult, BTreeSet<usize>), CodecError> {
@@ -66,7 +74,7 @@ pub(super) fn inspect_exchange(
 fn decode_exchange_mode(
     input: &[u8],
     options: DecodeOptions,
-    exchange: &Exchange,
+    exchange: &mut Exchange,
     diagnostics: &[ParseDiagnostic],
     retain_opaque: bool,
     ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
@@ -117,6 +125,14 @@ fn decode_exchange_mode(
     }
 
     let semantic_input_work = semantic_input_work(exchange);
+    if retain_opaque {
+        // Normal decode does not expose DATA-section membership after the
+        // canonical record table is built. Keep it only for inspect, where
+        // the section-level container summary still reports its counts.
+        exchange.header.clear();
+        exchange.anchors.clear();
+        exchange.data.clear();
+    }
     let mut admitted_ir_entities = 0;
     charge_semantic_stage(
         ctx,
@@ -420,15 +436,20 @@ fn decode_exchange_mode(
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut source_fidelity = SourceFidelity::default();
+    let mut opaque_sources = Vec::new();
+    let opaque_ids = if retain_opaque {
+        Some(
+            exchange
+                .records
+                .values()
+                .filter(|record| !typed_records.contains(&record.id))
+                .map(|record| (record.id, opaque_record_id(record).0))
+                .collect::<BTreeMap<_, _>>(),
+        )
+    } else {
+        None
+    };
     if retain_opaque {
-        let opaque_ids = exchange
-            .records
-            .values()
-            .filter(|record| !typed_records.contains(&record.id))
-            .map(|record| (record.id, opaque_record_id(record).0))
-            .collect::<BTreeMap<_, _>>();
-        let source_targets = source_record_targets(&ir);
-        let mut opaque = Vec::with_capacity(exchange.records.len());
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
                 continue;
@@ -440,49 +461,29 @@ fn decode_exchange_mode(
                 .collect::<Vec<_>>()
                 .join("+");
             *counts.entry(kind).or_default() += 1;
-            if let Some(ctx) = ctx {
-                ctx.charge_retained(
-                    u64::try_from(record.span.len()).unwrap_or(u64::MAX),
-                    "step_opaque_record",
-                    None,
-                )?;
-            }
-            if let Some(ctx) = ctx {
-                let reference_count = record
-                    .partials
-                    .iter()
-                    .flat_map(|partial| partial.parameters.iter())
-                    .map(reference_work_units)
-                    .fold(0, u64::saturating_add);
-                ctx.charge_collection_items(reference_count, "step_opaque_record_links")?;
-            }
-            let bytes = input[record.span.clone()].to_vec();
             let mut links = BTreeSet::new();
-            for partial in &record.partials {
+            for partial in record.partials.iter() {
                 partial
                     .parameters
                     .iter()
                     .for_each(|value| collect_references(value, &mut links));
             }
-            opaque.push(UnknownRecord {
-                id: UnknownId(opaque_ids[&record.id].clone()),
-                offset: record.span.start as u64,
-                byte_len: record.span.len() as u64,
-                sha256: sha256_hex(&bytes),
-                data: Some(bytes),
-                links: links
-                    .into_iter()
-                    .flat_map(|id| {
-                        opaque_ids
-                            .get(&id)
-                            .cloned()
-                            .into_iter()
-                            .chain(source_targets.get(&id).into_iter().flatten().cloned())
-                    })
-                    .collect(),
+            let reference_work = record
+                .partials
+                .iter()
+                .flat_map(|partial| partial.parameters.iter())
+                .map(reference_work_units)
+                .fold(0, u64::saturating_add);
+            opaque_sources.push(OpaqueSourceRecord {
+                unknown_id: opaque_ids
+                    .as_ref()
+                    .expect("opaque identifiers exist in opaque mode")[&record.id]
+                    .clone(),
+                span: record.span.clone(),
+                links,
+                reference_work,
             });
         }
-        source_fidelity.attach_native_unknown_records(&mut ir, "step", opaque)?;
     } else {
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
@@ -497,6 +498,13 @@ fn decode_exchange_mode(
             *counts.entry(kind).or_default() += 1;
         }
     }
+    let source_targets = retain_opaque.then(|| {
+        let target_ids = opaque_sources
+            .iter()
+            .flat_map(|source| source.links.iter().copied())
+            .collect::<BTreeSet<_>>();
+        source_record_targets(&ir, &target_ids)
+    });
     let accounting = {
         if let Some(ctx) = ctx {
             ctx.charge_work(
@@ -509,6 +517,46 @@ fn decode_exchange_mode(
             .transpose()?;
         byte_accounting(input, exchange, &typed_records)
     };
+    if retain_opaque {
+        exchange.release_source_graph();
+        let mut opaque = Vec::with_capacity(opaque_sources.len());
+        for source in opaque_sources {
+            if let Some(ctx) = ctx {
+                ctx.charge_retained(
+                    u64::try_from(source.span.len()).unwrap_or(u64::MAX),
+                    "step_opaque_record",
+                    None,
+                )?;
+                ctx.charge_collection_items(source.reference_work, "step_opaque_record_links")?;
+            }
+            let bytes = input[source.span.clone()].to_vec();
+            opaque.push(UnknownRecord {
+                id: UnknownId(source.unknown_id),
+                offset: source.span.start as u64,
+                byte_len: source.span.len() as u64,
+                sha256: sha256_hex(&bytes),
+                data: Some(bytes),
+                links: source
+                    .links
+                    .into_iter()
+                    .flat_map(|id| {
+                        opaque_ids
+                            .as_ref()
+                            .and_then(|ids| ids.get(&id).cloned())
+                            .into_iter()
+                            .chain(
+                                source_targets
+                                    .as_ref()
+                                    .into_iter()
+                                    .flat_map(move |targets| targets.get(&id).into_iter().flatten())
+                                    .cloned(),
+                            )
+                    })
+                    .collect(),
+            });
+        }
+        source_fidelity.attach_native_unknown_records(&mut ir, "step", opaque)?;
+    }
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -722,7 +770,7 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
                 .find(|partial| partial.name.as_ref() == "POLY_LOOP")
                 .and_then(|partial| partial.parameters.get(1))
                 .and_then(|value| match value {
-                    Value::List(values) => Some(values.as_slice()),
+                    Value::List(values) => Some(values),
                     _ => None,
                 })
                 .map(|points| u64::try_from(points.len()).unwrap_or(u64::MAX))
@@ -733,7 +781,7 @@ fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
 fn retain_unowned_pcurves(
     exchange: &Exchange,
     ir: &mut CadIr,
-    typed_records: &mut BTreeSet<u64>,
+    typed_records: &mut HashSet<u64>,
     warnings: &mut Vec<String>,
 ) {
     let owned = ir
@@ -938,11 +986,18 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
     UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
-fn source_record_targets(ir: &CadIr) -> BTreeMap<u64, BTreeSet<String>> {
+fn source_record_targets(
+    ir: &CadIr,
+    target_ids: &BTreeSet<u64>,
+) -> BTreeMap<u64, BTreeSet<String>> {
+    if target_ids.is_empty() {
+        return BTreeMap::new();
+    }
     cadmpeg_ir::index::ModelIndex::new(ir)
         .identities()
         .filter_map(|identity| {
             let record_id = source_record_id(identity)?;
+            target_ids.contains(&record_id).then_some(())?;
             Some((record_id, identity.to_owned()))
         })
         .fold(BTreeMap::new(), |mut targets, (record_id, identity)| {
@@ -974,7 +1029,7 @@ struct ByteAccounting {
 fn byte_accounting(
     input: &[u8],
     exchange: &Exchange,
-    typed_records: &BTreeSet<u64>,
+    typed_records: &HashSet<u64>,
 ) -> ByteAccounting {
     let mut classes = vec![ByteClass::Unclassified; input.len()];
     for record in exchange.records.values() {
@@ -1115,11 +1170,11 @@ mod tests {
     #[test]
     fn byte_accounting_reports_an_unrecognized_suffix() {
         let input = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
-        let (exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
+        let (mut exchange, _) = crate::parse::parse(input).expect("parse accounting fixture");
         let mut extended = input.to_vec();
         extended.push(0x01);
 
-        let accounting = byte_accounting(&extended, &exchange, &BTreeSet::new());
+        let accounting = byte_accounting(&extended, &exchange, &HashSet::new());
 
         assert_eq!(accounting.unclassified, 1);
         assert_eq!(
@@ -1130,7 +1185,7 @@ mod tests {
         let result = decode_exchange_mode(
             &extended,
             cadmpeg_ir::codec::DecodeOptions::default(),
-            &exchange,
+            &mut exchange,
             &[],
             true,
             None,

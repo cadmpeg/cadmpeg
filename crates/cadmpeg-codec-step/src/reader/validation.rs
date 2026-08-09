@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometric validation-property decoding and mesh self-checks.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::math::Point3;
@@ -13,7 +13,7 @@ use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct ValidationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub notes: Vec<String>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
@@ -35,7 +35,7 @@ pub(super) fn decode(
         || !exchange.has_entity("PROPERTY_DEFINITION_REPRESENTATION")
     {
         return ValidationResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             notes: Vec::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
@@ -90,7 +90,7 @@ pub(super) fn decode(
         })
         .collect::<BTreeMap<_, _>>();
     let computed = mesh_properties(ir);
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut validation_points = BTreeSet::new();
     let mut validation_representations = BTreeSet::new();
     let mut notes = Vec::new();
@@ -202,10 +202,10 @@ fn expected_value(
         return None;
     }
     match record.parameter(1)? {
-        Value::Typed(kind, value) if kind == "AREA_MEASURE" => Some(Expected::Area(
+        Value::Typed(kind, value) if kind.as_ref() == "AREA_MEASURE" => Some(Expected::Area(
             value.number()? * measure_scale(record, exchange, scale, 2, losses),
         )),
-        Value::Typed(kind, value) if kind == "VOLUME_MEASURE" => Some(Expected::Volume(
+        Value::Typed(kind, value) if kind.as_ref() == "VOLUME_MEASURE" => Some(Expected::Volume(
             value.number()? * measure_scale(record, exchange, scale, 3, losses),
         )),
         _ => None,
@@ -253,7 +253,7 @@ fn measure_scale(
         })
 }
 
-fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut BTreeSet<u64>) {
+fn collect_unit_records(id: u64, exchange: &Exchange, typed: &mut HashSet<u64>) {
     typed.insert(id);
     let Some(record) = exchange.records.get(&id) else {
         return;

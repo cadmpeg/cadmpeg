@@ -33,7 +33,7 @@ use super::opaque_record_id;
 const RANGE_INFERENCE_WORK_UNITS: u64 = 4_096;
 
 pub(super) struct GeometryResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
@@ -446,7 +446,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         ));
         1.0
     });
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
     let mut points2 = BTreeMap::new();
@@ -2667,7 +2667,7 @@ fn trim_parameter(value: &Value, context: &mut TrimParameterContext<'_>) -> Opti
 fn is_parameter_trim_value(value: &Value) -> bool {
     match value {
         Value::Integer(_) | Value::Real(_) => true,
-        Value::Typed(name, _) => name == "PARAMETER_VALUE",
+        Value::Typed(name, _) => name.as_ref() == "PARAMETER_VALUE",
         _ => false,
     }
 }
@@ -2676,7 +2676,7 @@ fn trim_parameter_value(value: &Value, context: &TrimParameterContext<'_>) -> Op
     let raw = match value {
         Value::Integer(value) => Some(*value as f64),
         Value::Real(value) => Some(*value),
-        Value::Typed(name, value) if name == "PARAMETER_VALUE" => {
+        Value::Typed(name, value) if name.as_ref() == "PARAMETER_VALUE" => {
             return trim_parameter_value(value, context);
         }
         _ => return None,
@@ -3052,9 +3052,9 @@ impl StepLogical {
 
 fn logical_value(value: &Value) -> Option<StepLogical> {
     match value {
-        Value::Enumeration(value) if value == "T" => Some(StepLogical::Known(true)),
-        Value::Enumeration(value) if value == "F" => Some(StepLogical::Known(false)),
-        Value::Enumeration(value) if value == "U" => Some(StepLogical::Unknown),
+        Value::Enumeration(value) if value.as_ref() == "T" => Some(StepLogical::Known(true)),
+        Value::Enumeration(value) if value.as_ref() == "F" => Some(StepLogical::Known(false)),
+        Value::Enumeration(value) if value.as_ref() == "U" => Some(StepLogical::Unknown),
         _ => None,
     }
 }
@@ -3432,11 +3432,13 @@ fn pcurve_trim_parameter(value: &Value) -> Option<f64> {
 
     match value {
         Value::Integer(_) | Value::Real(_) => bare_number(value),
-        Value::Typed(name, value) if name == "PARAMETER_VALUE" => bare_number(value),
+        Value::Typed(name, value) if name.as_ref() == "PARAMETER_VALUE" => bare_number(value),
         Value::List(values) => values
             .iter()
             .find_map(|value| match value {
-                Value::Typed(name, value) if name == "PARAMETER_VALUE" => bare_number(value),
+                Value::Typed(name, value) if name.as_ref() == "PARAMETER_VALUE" => {
+                    bare_number(value)
+                }
                 _ => None,
             })
             .or_else(|| {
@@ -4237,8 +4239,8 @@ impl ValueExt for Value {
     }
     fn logical(&self) -> Option<bool> {
         match self {
-            Value::Enumeration(value) if value == "T" => Some(true),
-            Value::Enumeration(value) if value == "F" => Some(false),
+            Value::Enumeration(value) if value.as_ref() == "T" => Some(true),
+            Value::Enumeration(value) if value.as_ref() == "F" => Some(false),
             _ => None,
         }
     }
@@ -4276,11 +4278,9 @@ mod tests {
 
     #[test]
     fn pcurve_trim_select_ignores_cartesian_point_coordinates() {
+        let point = Value::List(vec![Value::Real(17.0), Value::Real(23.0)]);
         let value = Value::List(vec![
-            Value::Typed(
-                "CARTESIAN_POINT".into(),
-                Box::new(Value::List(vec![Value::Real(17.0), Value::Real(23.0)])),
-            ),
+            Value::Typed("CARTESIAN_POINT".into(), Box::new(point)),
             Value::Real(0.25),
         ]);
         assert_eq!(pcurve_trim_parameter(&value), Some(0.25));

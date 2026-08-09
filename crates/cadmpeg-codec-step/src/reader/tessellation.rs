@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! AP242 indexed tessellation decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
@@ -17,7 +17,7 @@ use super::index::CarrierIndex;
 use super::topology::TopologyResult;
 
 pub(super) struct TessellationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -75,7 +75,7 @@ pub(super) fn decode(
             coordinate_rows(record, geometry.length_scale).map(|vertices| (id, vertices))
         })
         .collect::<BTreeMap<_, _>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut item_bodies = BTreeMap::<u64, BTreeSet<BodyId>>::new();

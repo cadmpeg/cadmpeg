@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP presentation style and topology color decoding.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::document::CadIr;
@@ -19,7 +19,7 @@ use super::decode_text;
 use super::topology::TopologyResult;
 
 pub(super) struct PresentationResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -29,7 +29,7 @@ pub(super) fn decode(
     topology: &TopologyResult,
     ir: &mut CadIr,
 ) -> PresentationResult {
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let face_indices = ir
@@ -333,7 +333,7 @@ pub(super) fn decode(
 fn expand_style_targets(
     id: u64,
     exchange: &Exchange,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     active: &mut BTreeSet<u64>,
     depth: usize,
 ) -> Vec<u64> {
@@ -756,7 +756,7 @@ fn contains_null_style(
         return false;
     }
     match value {
-        Value::Typed(name, _) if name == "NULL_STYLE" => true,
+        Value::Typed(name, _) if name.as_ref() == "NULL_STYLE" => true,
         Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1),
         Value::List(values) => values
             .iter()

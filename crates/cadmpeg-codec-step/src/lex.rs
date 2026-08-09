@@ -55,7 +55,7 @@ pub struct BinaryValue {
     /// Number of significant payload bits.
     pub bit_len: usize,
     /// Packed bytes; unused low-order bits in the final byte are zero.
-    pub data: Vec<u8>,
+    pub data: Box<[u8]>,
 }
 
 /// Lexical failure with a stable byte position.
@@ -362,7 +362,10 @@ impl<'a> Lexer<'a> {
         }
         let bit_len = digits.len() * 4 - usize::from(unused_bits);
         self.at += 1;
-        Ok(TokenKind::Binary(BinaryValue { bit_len, data }))
+        Ok(TokenKind::Binary(BinaryValue {
+            bit_len,
+            data: data.into_boxed_slice(),
+        }))
     }
 
     fn resource(&mut self) -> Result<TokenKind, LexError> {

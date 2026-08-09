@@ -6,9 +6,10 @@
 //! producer, represented by its own diagnostic kind, and rejectable by strict
 //! decode policy. Ambiguous records and duplicate names remain parse errors.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::mem::size_of;
-use std::ops::Range;
+use std::ops::{Index, IndexMut, Range};
+use std::slice;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -26,21 +27,126 @@ pub enum Value {
     /// Real value.
     Real(f64),
     /// Enumeration or logical name without delimiter dots.
-    Enumeration(String),
+    Enumeration(Box<str>),
     /// Raw string-token bytes before Part 21 escape decoding.
-    String(Vec<u8>),
+    String(Box<[u8]>),
     /// Decoded binary literal and final-byte significant-bit boundary.
     Binary(BinaryValue),
     /// Edition-3 resource value.
-    Resource(String),
+    Resource(Box<str>),
     /// Omitted optional value `$`.
     Omitted,
     /// Derived value `*`.
     Derived,
-    /// Ordered aggregate values.
+    /// Ordered aggregate values with exact retained capacity after parsing.
     List(Vec<Value>),
-    /// Type name and its single wrapped parameter.
-    Typed(String, Box<Value>),
+    /// Interned type name and its single wrapped parameter.
+    Typed(Arc<str>, Box<Value>),
+}
+
+/// Parameters of one simple entity leaf.
+///
+/// A single parameter is stored in the leaf itself. STEP entity leaves with
+/// one parameter are common, so this keeps their parameter collection off the
+/// heap without changing the slice-like access used by the reader.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Parameters {
+    /// One inline parameter.
+    One(Value),
+    /// Zero or multiple parameters in source order with exact retained length.
+    Many(Box<[Value]>),
+}
+
+impl Parameters {
+    fn from_vec(mut values: Vec<Value>) -> Self {
+        if values.len() == 1 {
+            Self::One(values.pop().expect("length was one"))
+        } else {
+            Self::Many(values.into_boxed_slice())
+        }
+    }
+
+    /// Number of parameters.
+    pub fn len(&self) -> usize {
+        self.as_slice().len()
+    }
+
+    /// Return whether this parameter collection is empty.
+    pub fn is_empty(&self) -> bool {
+        self.as_slice().is_empty()
+    }
+
+    /// Return the parameter at `index`.
+    pub fn get(&self, index: usize) -> Option<&Value> {
+        self.as_slice().get(index)
+    }
+
+    /// Return the first parameter.
+    pub fn first(&self) -> Option<&Value> {
+        self.as_slice().first()
+    }
+
+    /// Return the last parameter.
+    pub fn last(&self) -> Option<&Value> {
+        self.as_slice().last()
+    }
+
+    /// Borrow parameters as a contiguous slice.
+    pub fn as_slice(&self) -> &[Value] {
+        match self {
+            Self::One(value) => slice::from_ref(value),
+            Self::Many(values) => values,
+        }
+    }
+
+    /// Iterate over parameters in source order.
+    pub fn iter(&self) -> slice::Iter<'_, Value> {
+        self.as_slice().iter()
+    }
+
+    /// Iterate over parameters mutably in source order.
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, Value> {
+        match self {
+            Self::One(value) => slice::from_mut(value).iter_mut(),
+            Self::Many(values) => values.iter_mut(),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Parameters {
+    type Item = &'a Value;
+    type IntoIter = slice::Iter<'a, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Parameters {
+    type Item = &'a mut Value;
+    type IntoIter = slice::IterMut<'a, Value>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
+impl std::ops::Index<usize> for Parameters {
+    type Output = Value;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.as_slice()[index]
+    }
+}
+
+impl std::ops::IndexMut<usize> for Parameters {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match self {
+            Self::One(value) if index == 0 => value,
+            Self::Many(values) => &mut values[index],
+            Self::One(_) => panic!("parameter index out of bounds"),
+        }
+    }
 }
 
 /// One simple entity leaf within an entity instance.
@@ -49,7 +155,140 @@ pub struct PartialRecord {
     /// Uppercase entity name.
     pub name: Arc<str>,
     /// Explicit external-mapping parameters.
-    pub parameters: Vec<Value>,
+    pub parameters: Parameters,
+}
+
+/// Partial records with the common single-part form stored inline.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Partials {
+    /// One simple entity leaf.
+    One(PartialRecord),
+    /// Multiple leaves for a complex entity.
+    Many(Vec<PartialRecord>),
+}
+
+impl Partials {
+    fn from_vec(mut values: Vec<PartialRecord>) -> Self {
+        if values.len() == 1 {
+            Self::One(values.pop().expect("length was one"))
+        } else {
+            Self::Many(values)
+        }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            Self::One(_) => 1,
+            Self::Many(values) => values.len(),
+        }
+    }
+
+    pub(crate) fn first(&self) -> Option<&PartialRecord> {
+        match self {
+            Self::One(value) => Some(value),
+            Self::Many(values) => values.first(),
+        }
+    }
+
+    #[allow(
+        clippy::iter_without_into_iter,
+        reason = "The iterator type is crate-private because Partials is an internal parser representation."
+    )]
+    pub(crate) fn iter(&self) -> PartialsIter<'_> {
+        match self {
+            Self::One(value) => PartialsIter::One(Some(value)),
+            Self::Many(values) => PartialsIter::Many(values.iter()),
+        }
+    }
+
+    #[allow(
+        clippy::iter_without_into_iter,
+        reason = "The iterator type is crate-private because Partials is an internal parser representation."
+    )]
+    pub(crate) fn iter_mut(&mut self) -> PartialsIterMut<'_> {
+        match self {
+            Self::One(value) => PartialsIterMut::One(Some(value)),
+            Self::Many(values) => PartialsIterMut::Many(values.iter_mut()),
+        }
+    }
+}
+
+impl Index<usize> for Partials {
+    type Output = PartialRecord;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            Self::One(value) if index == 0 => value,
+            Self::Many(values) => &values[index],
+            Self::One(_) => panic!("partial index out of bounds"),
+        }
+    }
+}
+
+impl IndexMut<usize> for Partials {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        match self {
+            Self::One(value) if index == 0 => value,
+            Self::Many(values) => &mut values[index],
+            Self::One(_) => panic!("partial index out of bounds"),
+        }
+    }
+}
+
+/// Iterator over simple or complex partial records.
+pub(crate) enum PartialsIter<'a> {
+    /// The inline single-part representation.
+    One(Option<&'a PartialRecord>),
+    /// The heap-backed complex-part representation.
+    Many(slice::Iter<'a, PartialRecord>),
+}
+
+impl<'a> Iterator for PartialsIter<'a> {
+    type Item = &'a PartialRecord;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(value) => value.take(),
+            Self::Many(values) => values.next(),
+        }
+    }
+}
+
+impl DoubleEndedIterator for PartialsIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(value) => value.take(),
+            Self::Many(values) => values.next_back(),
+        }
+    }
+}
+
+/// Mutable iterator over simple or complex partial records.
+pub(crate) enum PartialsIterMut<'a> {
+    /// The inline single-part representation.
+    One(Option<&'a mut PartialRecord>),
+    /// The heap-backed complex-part representation.
+    Many(slice::IterMut<'a, PartialRecord>),
+}
+
+impl<'a> Iterator for PartialsIterMut<'a> {
+    type Item = &'a mut PartialRecord;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(value) => value.take(),
+            Self::Many(values) => values.next(),
+        }
+    }
+}
+
+impl DoubleEndedIterator for PartialsIterMut<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::One(value) => value.take(),
+            Self::Many(values) => values.next_back(),
+        }
+    }
 }
 
 /// One DATA entity instance with its exact source extent.
@@ -58,9 +297,99 @@ pub struct RawRecord {
     /// Numeric entity-instance name without `#`.
     pub id: u64,
     /// One leaf for a simple instance or all leaves for a complex instance.
-    pub partials: Vec<PartialRecord>,
+    pub partials: Partials,
     /// Half-open byte range from instance name through semicolon.
     pub span: Range<usize>,
+}
+
+/// DATA records in deterministic instance-id order.
+///
+/// A sorted flat table keeps each record once and uses binary search for
+/// reference lookup. This avoids a second per-record index allocation while
+/// keeping traversal deterministic and bounded by the source population.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RecordTable {
+    records: Vec<RawRecord>,
+}
+
+impl RecordTable {
+    fn from_sorted(records: Vec<RawRecord>) -> Self {
+        debug_assert!(records.windows(2).all(|window| window[0].id < window[1].id));
+        Self { records }
+    }
+
+    /// Look up one DATA record by instance id.
+    pub fn get(&self, id: &u64) -> Option<&RawRecord> {
+        self.records
+            .binary_search_by_key(id, |record| record.id)
+            .ok()
+            .map(|index| &self.records[index])
+    }
+
+    pub(crate) fn values_mut(&mut self) -> slice::IterMut<'_, RawRecord> {
+        self.records.iter_mut()
+    }
+
+    /// Iterate over DATA records in instance-id order.
+    pub fn values(&self) -> slice::Iter<'_, RawRecord> {
+        self.records.iter()
+    }
+
+    /// Iterate over instance ids and their DATA records in instance-id order.
+    pub fn iter(&self) -> RecordIter<'_> {
+        RecordIter {
+            records: self.records.iter(),
+        }
+    }
+
+    /// Test whether a DATA record with `id` exists.
+    pub fn contains_key(&self, id: &u64) -> bool {
+        self.get(id).is_some()
+    }
+
+    /// Number of DATA records.
+    pub fn len(&self) -> usize {
+        self.records.len()
+    }
+
+    /// Return whether the DATA record table is empty.
+    pub fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
+    pub(crate) fn clear(&mut self) {
+        self.records.clear();
+    }
+}
+
+impl Index<&u64> for RecordTable {
+    type Output = RawRecord;
+
+    fn index(&self, id: &u64) -> &Self::Output {
+        self.get(id).expect("record id must exist")
+    }
+}
+
+/// Iterator over DATA records in instance-id order.
+pub struct RecordIter<'a> {
+    records: slice::Iter<'a, RawRecord>,
+}
+
+impl<'a> Iterator for RecordIter<'a> {
+    type Item = (&'a u64, &'a RawRecord);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.records.next().map(|record| (&record.id, record))
+    }
+}
+
+impl<'a> IntoIterator for &'a RecordTable {
+    type Item = (&'a u64, &'a RawRecord);
+    type IntoIter = RecordIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
 }
 
 /// One entity-like record in the HEADER section.
@@ -113,7 +442,7 @@ pub struct Exchange {
     /// Complete SIGNATURE section byte range when present.
     pub signature: Option<Range<usize>>,
     /// DATA instances indexed across every DATA section.
-    pub records: BTreeMap<u64, RawRecord>,
+    pub records: RecordTable,
     entity_ids: EntityIndex,
 }
 
@@ -164,7 +493,7 @@ impl Exchange {
         self.entity_ids.0.get_or_init(|| {
             let mut entity_ids = HashMap::<Arc<str>, Vec<u64>>::new();
             for (&id, record) in &self.records {
-                for partial in &record.partials {
+                for partial in record.partials.iter() {
                     if let Some(ids) = entity_ids.get_mut(partial.name.as_ref()) {
                         ids.push(id);
                     } else {
@@ -252,6 +581,17 @@ impl Exchange {
             EntityIdIter::Shared { ids, at: 0 }
         };
         ids.filter_map(|id| self.records.get(&id).map(|record| (id, record)))
+    }
+
+    /// Releases the parsed source graph after decode has extracted all data
+    /// needed for semantic output and source fidelity.
+    pub(crate) fn release_source_graph(&mut self) {
+        self.records.clear();
+        self.entity_ids = EntityIndex::default();
+        self.header.clear();
+        self.anchors.clear();
+        self.references.clear();
+        self.data.clear();
     }
 }
 
@@ -397,7 +737,8 @@ impl Parser<'_, '_, '_> {
             self.punct(&TokenKind::Semicolon)?;
         }
         let mut data = Vec::new();
-        let mut records = BTreeMap::new();
+        let mut record_values = Vec::new();
+        let mut record_ids = HashSet::new();
         while self.peek_name("DATA") {
             self.next_kind()?;
             let parameters = if self.peek(&TokenKind::LParen) {
@@ -412,23 +753,23 @@ impl Parser<'_, '_, '_> {
             while !self.peek_name("ENDSEC") {
                 let record = self.record()?;
                 let id = record.id;
-                if records.insert(id, record).is_some() {
+                if !record_ids.insert(id) {
                     return self.err("duplicate instance name");
                 }
-                self.charge_retained(
-                    btree_node_storage::<u64, RawRecord>(),
-                    "step_parse_record_index",
-                )?;
+                record_values.push(record);
+                self.charge_retained(hash_set_entry_storage::<u64>(), "step_parse_record_index")?;
                 ids.push(id);
             }
             self.name("ENDSEC")?;
             self.punct(&TokenKind::Semicolon)?;
+            ids.shrink_to_fit();
             self.charge_vec_storage(&ids, "step_parse_section_storage")?;
             data.push(DataSection {
                 parameters,
                 records: ids,
             });
         }
+        drop(record_ids);
         let signature = if self.peek_name("SIGNATURE") {
             let start = self.current_offset();
             self.next_kind()?;
@@ -450,6 +791,9 @@ impl Parser<'_, '_, '_> {
         if self.current.is_some() {
             return self.err("tokens after exchange terminator");
         }
+        record_values.shrink_to_fit();
+        record_values.sort_unstable_by_key(|record| record.id);
+        let mut records = RecordTable::from_sorted(record_values);
         if !anchors.is_empty() {
             let mut anchor_bindings = BTreeMap::new();
             for anchor in &anchors {
@@ -476,7 +820,7 @@ impl Parser<'_, '_, '_> {
                     .map_err(|error| error.into_parse_error(0))?;
             }
             for record in records.values_mut() {
-                for partial in &mut record.partials {
+                for partial in record.partials.iter_mut() {
                     for value in &mut partial.parameters {
                         *value = resolver
                             .resolve_root(value)
@@ -499,7 +843,7 @@ impl Parser<'_, '_, '_> {
         }
         for record in records.values() {
             refs.clear();
-            for partial in &record.partials {
+            for partial in record.partials.iter() {
                 for value in &partial.parameters {
                     references(value, &mut refs);
                 }
@@ -536,6 +880,7 @@ impl Parser<'_, '_, '_> {
                 parts.push(self.partial()?);
             }
             self.next_kind()?;
+            parts.shrink_to_fit();
             let mut canonical_names = parts
                 .iter()
                 .map(|part| part.name.clone())
@@ -565,12 +910,12 @@ impl Parser<'_, '_, '_> {
                     ),
                 });
             }
-            parts
+            Partials::from_vec(parts)
         } else {
-            vec![self.partial()?]
+            Partials::One(self.partial()?)
         };
         self.punct(&TokenKind::Semicolon)?;
-        self.charge_vec_storage(&partials, "step_parse_record_storage")?;
+        self.charge_partials_storage(&partials, "step_parse_record_storage")?;
         self.charge_retained(
             u64::try_from(size_of::<RawRecord>()).unwrap_or(u64::MAX),
             "step_parse_record_storage",
@@ -584,8 +929,8 @@ impl Parser<'_, '_, '_> {
 
     fn partial(&mut self) -> Result<PartialRecord, ParseError> {
         let name = self.take_name()?;
-        let parameters = self.parameters()?;
-        self.charge_value_vec_storage(&parameters, "step_parse_collection_storage")?;
+        let parameters = Parameters::from_vec(self.parameters()?);
+        self.charge_parameters_storage(&parameters, "step_parse_collection_storage")?;
         Ok(PartialRecord { name, parameters })
     }
 
@@ -597,7 +942,12 @@ impl Parser<'_, '_, '_> {
         self.depth += 1;
         let result = self.parameters_inner();
         self.depth -= 1;
-        result
+        result.map(|mut values| {
+            // Parser growth uses geometric capacities. Trim before a
+            // collection becomes part of the retained source graph.
+            values.shrink_to_fit();
+            values
+        })
     }
 
     fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
@@ -623,17 +973,20 @@ impl Parser<'_, '_, '_> {
     fn value(&mut self) -> Result<Value, ParseError> {
         let value = if self.peek(&TokenKind::LParen) {
             let values = self.parameters()?;
-            self.charge_value_vec_storage(&values, "step_parse_collection_storage")?;
+            self.charge_retained(
+                allocation_bytes(values.capacity(), size_of::<Value>()),
+                "step_parse_collection_storage",
+            )?;
             Value::List(values)
         } else {
             match self.next_kind()? {
                 TokenKind::Instance(v) => Value::Reference(v),
                 TokenKind::Integer(v) => Value::Integer(v),
                 TokenKind::Real(v) => Value::Real(v),
-                TokenKind::Enumeration(v) => Value::Enumeration(v),
-                TokenKind::String(v) => Value::String(v),
+                TokenKind::Enumeration(v) => Value::Enumeration(v.into_boxed_str()),
+                TokenKind::String(v) => Value::String(v.into_boxed_slice()),
                 TokenKind::Binary(v) => Value::Binary(v),
-                TokenKind::Resource(v) => Value::Resource(v),
+                TokenKind::Resource(v) => Value::Resource(v.into_boxed_str()),
                 TokenKind::Omitted => Value::Omitted,
                 TokenKind::Derived => Value::Derived,
                 TokenKind::Name(name) => {
@@ -641,6 +994,7 @@ impl Parser<'_, '_, '_> {
                     if parameters.len() != 1 {
                         return self.err("typed parameter requires one value");
                     }
+                    let name = self.intern_name(name)?;
                     Value::Typed(
                         name,
                         Box::new(
@@ -662,6 +1016,9 @@ impl Parser<'_, '_, '_> {
         let TokenKind::Name(name) = self.next_kind()? else {
             return self.err("expected name");
         };
+        self.intern_name(name)
+    }
+    fn intern_name(&mut self, name: String) -> Result<Arc<str>, ParseError> {
         if let Some(interned) = self.name_pool.get(&name) {
             return Ok(Arc::clone(interned));
         }
@@ -765,6 +1122,20 @@ impl Parser<'_, '_, '_> {
         )
     }
 
+    fn charge_parameters_storage(
+        &self,
+        parameters: &Parameters,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        if let Parameters::Many(values) = parameters {
+            self.charge_retained(
+                allocation_bytes(values.len(), size_of::<Value>()),
+                operation,
+            )?;
+        }
+        Ok(())
+    }
+
     fn charge_vec_storage<T>(
         &self,
         values: &Vec<T>,
@@ -774,6 +1145,17 @@ impl Parser<'_, '_, '_> {
             allocation_bytes(values.capacity(), size_of::<T>()),
             operation,
         )
+    }
+
+    fn charge_partials_storage(
+        &self,
+        partials: &Partials,
+        operation: &'static str,
+    ) -> Result<(), ParseError> {
+        if let Partials::Many(values) = partials {
+            self.charge_vec_storage(values, operation)?;
+        }
+        Ok(())
     }
     fn current_offset(&self) -> usize {
         self.current
@@ -872,8 +1254,8 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
             ));
         }
         match value {
-            Value::Resource(name) if self.anchors.contains_key(name) => {
-                if let Some((value, nodes)) = self.memo.get(name) {
+            Value::Resource(name) if self.anchors.contains_key(name.as_ref()) => {
+                if let Some((value, nodes)) = self.memo.get(name.as_ref()) {
                     if *nodes > budget {
                         return Err(AnchorResolveError::Syntax(
                             "expanded anchor value exceeds 1000000 nodes".into(),
@@ -884,15 +1266,15 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     self.charge_storage(value_storage_bytes(&cloned))?;
                     return Ok((cloned, *nodes, *nodes));
                 }
-                if stack.contains(name) {
+                if stack.iter().any(|entry| entry == name.as_ref()) {
                     return Err(AnchorResolveError::Syntax(format!(
                         "cyclic anchor binding <{name}>"
                     )));
                 }
-                stack.push(name.clone());
-                let source_nodes = value_node_count(&self.anchors[name]);
+                stack.push(name.to_string());
+                let source_nodes = value_node_count(&self.anchors[name.as_ref()]);
                 self.charge_nodes(source_nodes)?;
-                let source = self.anchors[name].clone();
+                let source = self.anchors[name.as_ref()].clone();
                 self.charge_storage(value_storage_bytes(&source))?;
                 let resolved = self.resolve(&source, stack, budget, depth + 1);
                 stack.pop();
@@ -904,7 +1286,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                 }
                 self.charge_nodes(nodes)?;
                 self.charge_storage(value_storage_bytes(&value))?;
-                self.memo.insert(name.clone(), (value.clone(), nodes));
+                self.memo.insert(name.to_string(), (value.clone(), nodes));
                 self.charge_storage(value_storage_bytes(&value))?;
                 Ok((value, nodes, nodes))
             }
@@ -935,6 +1317,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         })?;
                     resolved.push(value);
                 }
+                resolved.shrink_to_fit();
                 let value = Value::List(resolved);
                 self.charge_storage(value_node_storage_bytes(&value))?;
                 self.charge_storage(allocation_bytes(
@@ -1008,12 +1391,16 @@ fn btree_node_storage<K, V>() -> u64 {
     )
 }
 
+fn hash_set_entry_storage<T>() -> u64 {
+    allocation_bytes(1, size_of::<T>().saturating_add(2 * size_of::<usize>()))
+}
+
 fn value_node_storage_bytes(value: &Value) -> u64 {
     let dynamic = match value {
-        Value::Enumeration(value) | Value::Resource(value) => value.capacity(),
-        Value::String(value) => value.capacity(),
-        Value::Binary(value) => value.data.capacity(),
-        Value::Typed(name, _) => name.capacity(),
+        Value::Enumeration(value) | Value::Resource(value) => value.len(),
+        Value::String(value) => value.len(),
+        Value::Binary(value) => value.data.len(),
+        Value::Typed(_, _) => 0,
         Value::Reference(_)
         | Value::Integer(_)
         | Value::Real(_)
@@ -1042,7 +1429,61 @@ fn value_storage_bytes(value: &Value) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse, AnchorResolver, BTreeMap, Value};
+    use super::{parse, AnchorResolver, BTreeMap, Parameters, Partials, Value};
+
+    #[test]
+    fn simple_record_stores_its_partial_inline() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POINT();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = parse(source).expect("required invariant");
+
+        assert!(matches!(exchange.records[&1].partials, Partials::One(_)));
+    }
+
+    #[test]
+    fn complex_record_retains_all_partials_in_order() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=(A()B());ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = parse(source).expect("required invariant");
+
+        let Partials::Many(partials) = &exchange.records[&1].partials else {
+            panic!("complex record must retain its partial collection");
+        };
+        assert_eq!(partials.len(), 2);
+        assert_eq!(partials[0].name.as_ref(), "A");
+        assert_eq!(partials[1].name.as_ref(), "B");
+    }
+
+    #[test]
+    fn record_table_sorts_ids_and_keeps_binary_lookup() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#2=A();#1=B();ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = parse(source).expect("required invariant");
+
+        let ids = exchange
+            .records
+            .values()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec![1, 2]);
+        assert_eq!(
+            exchange.records.get(&2).unwrap().partials[0].name.as_ref(),
+            "A"
+        );
+        assert!(exchange.records.contains_key(&1));
+    }
+
+    #[test]
+    fn parameter_storage_keeps_single_inline_and_many_exact() {
+        let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=A(#2);#2=B(1,2);ENDSEC;END-ISO-10303-21;";
+        let (exchange, _) = parse(source).expect("required invariant");
+
+        assert!(matches!(
+            exchange.records[&1].partials[0].parameters,
+            Parameters::One(Value::Reference(2))
+        ));
+        let Parameters::Many(values) = &exchange.records[&2].partials[0].parameters else {
+            panic!("multiple parameters must retain their collection");
+        };
+        assert_eq!(values.as_ref(), &[Value::Integer(1), Value::Integer(2)]);
+    }
 
     #[test]
     fn entity_index_is_not_part_of_exchange_equality() {
@@ -1091,8 +1532,6 @@ mod tests {
         let mut resolver = AnchorResolver::new(&anchors, None);
         resolver.remaining_nodes = 2;
 
-        assert!(resolver
-            .resolve_root(&Value::Resource("a".to_string()))
-            .is_err());
+        assert!(resolver.resolve_root(&Value::Resource("a".into())).is_err());
     }
 }

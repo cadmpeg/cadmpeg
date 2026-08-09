@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP semantic product-manufacturing information.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
@@ -18,7 +18,7 @@ use super::decode_text;
 use super::geometry::GeometryResult;
 
 pub(super) struct PmiResult {
-    pub typed_records: BTreeSet<u64>,
+    pub typed_records: HashSet<u64>,
     pub warnings: Vec<String>,
     pub losses: Vec<LossNote>,
 }
@@ -32,7 +32,7 @@ struct MeasureContext<'a> {
 pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut CadIr) -> PmiResult {
     if !exchange.has_entity_matching(is_pmi_entity_name) {
         return PmiResult {
-            typed_records: BTreeSet::new(),
+            typed_records: HashSet::new(),
             warnings: Vec::new(),
             losses: Vec::new(),
         };
@@ -42,7 +42,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         .filter(|(_, record)| is_shape_aspect(record))
         .map(|(id, _)| id)
         .collect::<BTreeSet<_>>();
-    let mut typed = BTreeSet::new();
+    let mut typed = HashSet::new();
     let mut warnings = Vec::new();
     let mut losses = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
@@ -97,7 +97,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .rev()
             .find_map(ValueExt::list)
             .unwrap_or_default();
-        let mut datum_records = BTreeSet::new();
+        let mut datum_records = HashSet::new();
         let mut measurements = MeasureContext {
             length_scale: geometry.length_scale,
             angle_scale: geometry.plane_angle_scale,
@@ -506,7 +506,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
 fn mark_characteristic_representations(
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
 ) {
     for (id, record) in exchange.entities("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION") {
         let record_references = record
@@ -557,7 +557,7 @@ fn datum_references(
     precedence: u32,
     exchange: &Exchange,
     annotations: &BTreeMap<u64, usize>,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Vec<DatumReference> {
     let Some(compartment_id) = value.reference() else {
@@ -640,7 +640,7 @@ fn datum_references(
 }
 
 fn is_common_datum_list(value: Option<&Value>) -> bool {
-    matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
+    matches!(value, Some(Value::Typed(kind, _)) if kind.as_ref() == "COMMON_DATUM_LIST")
 }
 
 fn datum_ids(value: Option<&Value>) -> Vec<u64> {
@@ -657,7 +657,7 @@ fn datum_ids(value: Option<&Value>) -> Vec<u64> {
 fn modifier_text(
     value: &Value,
     exchange: &Exchange,
-    typed: &mut BTreeSet<u64>,
+    typed: &mut HashSet<u64>,
     measurements: &mut MeasureContext<'_>,
 ) -> Option<String> {
     match value {

@@ -72,14 +72,14 @@ fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
         lex(b"\"0A1F\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
             bit_len: 12,
-            data: vec![0xa1, 0xf0],
+            data: vec![0xa1, 0xf0].into(),
         })
     );
     assert_eq!(
         lex(b"\"17E\"").unwrap()[0].kind,
         TokenKind::Binary(BinaryValue {
             bit_len: 7,
-            data: vec![0x7e],
+            data: vec![0x7e].into(),
         })
     );
     for invalid in [b"\"\"".as_slice(), b"\"4FF\"", b"\"17F\"", b"\"3A7\""] {
@@ -535,7 +535,7 @@ fn codec_inspects_edition3_sections_and_external_references() {
     assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
     assert_eq!(
         exchange.records[&2].partials[0].parameters,
-        vec![crate::parse::Value::Reference(1)]
+        crate::parse::Parameters::One(crate::parse::Value::Reference(1))
     );
 }
 

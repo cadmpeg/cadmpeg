@@ -3458,9 +3458,9 @@ impl Codec for StepCodec {
         if self.detect(bytes) == Confidence::No {
             return Err(CodecError::WrongFormat("missing ISO-10303-21 magic".into()));
         }
-        let (exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
+        let (mut exchange, diagnostics) = parse::parse_with_context(bytes, ctx)?;
         let (decoded, opaque_offsets) =
-            reader::inspect_exchange(bytes, &exchange, &diagnostics, Some(ctx))?;
+            reader::inspect_exchange(bytes, &mut exchange, &diagnostics, Some(ctx))?;
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -3511,7 +3511,7 @@ impl Codec for StepCodec {
                 if !opaque_offsets.contains(&exchange.records[id].span.start) {
                     continue;
                 }
-                for partial in &exchange.records[id].partials {
+                for partial in exchange.records[id].partials.iter() {
                     *counts.entry(partial.name.to_string()).or_default() += 1;
                 }
             }
