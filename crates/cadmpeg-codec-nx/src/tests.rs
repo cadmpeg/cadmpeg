@@ -9363,6 +9363,64 @@ fn design_intent_losses_ignore_unresolved_suppression_outside_active_closure() {
 }
 
 #[test]
+fn design_intent_losses_do_not_scope_to_retained_base_feature_alone() {
+    use cadmpeg_ir::features::{BodySelection, Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.features.extend([
+        Feature {
+            id: FeatureId("test:feature#retained-input".into()),
+            ordinal: 0,
+            name: Some("Retained history input".into()),
+            suppressed: Some(false),
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: vec![body.clone()],
+            definition: FeatureDefinition::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: vec![body],
+                    native: "nx:segment-body-bindings".into(),
+                },
+            },
+            native_ref: None,
+        },
+        Feature {
+            id: FeatureId("test:feature#unresolved".into()),
+            ordinal: 1,
+            name: Some("unresolved".into()),
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "DELETE".into(),
+                parameters: Default::default(),
+                properties: Default::default(),
+            },
+            native_ref: None,
+        },
+    ]);
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 2);
+    assert!(losses[0]
+        .message
+        .contains("Suppression state remains unresolved for 1 NX feature history operation"));
+    assert!(losses[1].message.contains("DELETE (1)"));
+}
+
+#[test]
 fn design_intent_losses_accept_output_free_local_body_operations() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, PatternKind};
