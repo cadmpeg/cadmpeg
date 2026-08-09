@@ -5,10 +5,9 @@
 //! curve defined by the intersection of two support surfaces. Its payload
 //! references a `00 28` chart record (the solved point cache), two `00 29`
 //! terminator records (the exact curve endpoints), and a `00 cc` support-UV
-//! record. A carrier whose referenced chart and terminators are mutually
-//! consistent yields a derived degree-one NURBS curve through the chart points
-//! with the terminators as endpoints. A complete width-4 UV record additionally
-//! yields co-parameterized support pcurve caches.
+//! record. Referenced terminators select the chart entry width and replace its
+//! approximate endpoints. A complete width-4 UV record additionally yields
+//! co-parameterized support pcurve caches.
 
 use std::collections::HashMap;
 
@@ -50,6 +49,14 @@ pub(super) struct IntersectionSupportData {
 struct UvRecord {
     width: usize,
     values: Vec<f64>,
+}
+
+struct SolvedChart {
+    geometry: CurveGeometry,
+    parameters: Vec<f64>,
+    fit_tolerance_mm: f64,
+    reversed: bool,
+    endpoint_displacement: f64,
 }
 
 /// Offsets of every `00 tt` tag, with the optional `0xff` escape skipped.
@@ -362,15 +369,34 @@ fn solved_support_uv(
         .then_some(candidate)
 }
 
-/// Scan intersection carriers whose chart and terminator witnesses are mutually
-/// consistent, keyed by carrier attribute.
+fn nearest_term(
+    records: &HashMap<u16, Vec<[f64; 3]>>,
+    attr: u16,
+    endpoint: [f64; 3],
+) -> Option<([f64; 3], f64)> {
+    records
+        .get(&attr)?
+        .iter()
+        .copied()
+        .fold(None, |best, point| {
+            let candidate = (point, distance(point, endpoint));
+            match best {
+                Some(best) if best.1 <= candidate.1 => Some(best),
+                _ => Some(candidate),
+            }
+        })
+}
+
+/// Scan intersection carriers whose referenced chart and terminators resolve,
+/// keyed by carrier attribute.
 ///
 /// The composite body is `attr:u16 ordinal:u32 refs:u16[5] marker:u8(0x2b|0x2d)`
 /// then six payload references `[support0, support1, chart, term_start,
-/// term_end, uv]`. Both terminators must sit within the chart chordal error of
-/// the corresponding chart endpoint (a ring names one terminator twice). When
-/// the composite's UV reference resolves, at least one record must cover the
-/// chart points, with an optional extra row at a periodic seam.
+/// term_end, uv]`. Terminators replace the approximate chart endpoints. When
+/// both 24-byte and 88-byte chart strides frame, the referenced terminators
+/// select the unique candidate with the least endpoint displacement. An absent
+/// or inconsistent optional UV record does not invalidate the model-space
+/// curve; only a unique complete width-4 record supplies solved pcurves.
 pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, IntersectionCarrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
@@ -397,54 +423,58 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
         let mut matches = candidates.iter().filter_map(|chart| {
             let first = *chart.points.first()?;
             let last = *chart.points.last()?;
-            let start = terms
-                .get(&start_ref)?
-                .iter()
-                .find(|point| distance(**point, first) <= chart.chordal_error)?;
-            let end = terms
-                .get(&end_ref)?
-                .iter()
-                .find(|point| distance(**point, last) <= chart.chordal_error)?;
-            let n = chart.points.len();
-            if !uvs.get(&uv_ref).is_none_or(|records| {
-                records.iter().any(|record| {
-                    record.values.len() == record.width * n
-                        || record.values.len() == record.width * (n + 1)
-                })
-            }) {
-                return None;
-            }
-            let (geometry, parameters, reversed) = solved_curve(chart, *start, *end)?;
+            let (start, start_distance) = nearest_term(&terms, start_ref, first)?;
+            let (end, end_distance) = nearest_term(&terms, end_ref, last)?;
+            let endpoint_displacement = start_distance + end_distance;
+            let (geometry, parameters, reversed) = solved_curve(chart, start, end)?;
             let fit_tolerance_mm = chart.chordal_error * LEN_TO_MM;
-            fit_tolerance_mm.is_finite().then_some((
+            fit_tolerance_mm.is_finite().then_some(SolvedChart {
                 geometry,
                 parameters,
                 fit_tolerance_mm,
                 reversed,
-            ))
+                endpoint_displacement,
+            })
         });
-        let Some((geometry, parameters, fit_tolerance_mm, reversed)) = matches.next() else {
+        let Some(mut selected) = matches.next() else {
             continue;
         };
-        if matches.next().is_some() {
+        let mut ambiguous = false;
+        for candidate in matches {
+            match candidate
+                .endpoint_displacement
+                .total_cmp(&selected.endpoint_displacement)
+            {
+                std::cmp::Ordering::Less => {
+                    selected = candidate;
+                    ambiguous = false;
+                }
+                std::cmp::Ordering::Equal => ambiguous = true,
+                std::cmp::Ordering::Greater => {}
+            }
+        }
+        if ambiguous {
             continue;
         }
         let supports = [refs[0], refs[1]];
-        let support_uv =
-            solved_support_uv(&parameters, reversed, uvs.get(&uv_ref).map(Vec::as_slice));
+        let support_uv = solved_support_uv(
+            &selected.parameters,
+            selected.reversed,
+            uvs.get(&uv_ref).map(Vec::as_slice),
+        );
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: Carrier {
                 attr,
                 offset,
                 end: payload + 12,
-                geometry: CarrierGeometry::Curve(geometry),
+                geometry: CarrierGeometry::Curve(selected.geometry),
                 frame: None,
                 parameter_range: None,
                 orientation_reversed: false,
             },
             support_data: IntersectionSupportData {
                 supports,
-                fit_tolerance_mm,
+                fit_tolerance_mm: selected.fit_tolerance_mm,
                 support_uv,
             },
         });
@@ -658,18 +688,8 @@ mod tests {
     }
 
     #[test]
-    fn terminator_outside_chordal_error_is_rejected() {
-        let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
-        bytes.extend(chart(4, &POINTS));
-        bytes.extend(term(5, POINTS[0]));
-        bytes.extend(term(6, [0.011, 0.01, 0.0]));
-        bytes.extend(uv(7, POINTS.len()));
-        assert!(scan_intersection_carriers(&bytes).is_empty());
-    }
-
-    #[test]
-    fn terminator_within_chordal_error_replaces_endpoint() {
-        let end = [0.010_000_002, 0.01, 0.0];
+    fn exact_terminator_replaces_an_approximate_chart_endpoint() {
+        let end = [0.011, 0.01, 0.0];
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
@@ -735,13 +755,15 @@ mod tests {
     }
 
     #[test]
-    fn mismatched_uv_count_is_rejected() {
+    fn mismatched_optional_uv_count_does_not_reject_the_curve() {
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len() + 2));
-        assert!(scan_intersection_carriers(&bytes).is_empty());
+        let carriers = scan_intersection_carriers(&bytes);
+        assert!(carriers.contains_key(&9));
+        assert!(carriers[&9].support_data.support_uv.is_none());
     }
 
     #[test]

@@ -26,13 +26,13 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the convention to construct the trim in the surface parameter space.
 
-### GC-02. Inconsistent intersection witnesses
+### GC-02. Missing intersection witnesses
 
-**Question.** Where are the authoritative chart, terminator, and support-UV replacements when an intersection composite references inconsistent witnesses?
+**Question.** Where are the authoritative chart and terminator replacements when an intersection composite references an absent witness record?
 
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. A complete width-4 support-UV record supplies the two solved pcurve caches. When that record is absent, tolerance-bounded inversion constructs the pcurve on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance.
+**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. The referenced terminators select the unique chart stride with the least endpoint displacement and replace the approximate chart endpoints. A complete width-4 support-UV record supplies the two solved pcurve caches. An absent or structurally inconsistent optional support-UV record does not invalidate the curve. Tolerance-bounded inversion constructs its pcurves on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance.
 
-**Need.** We must locate an authoritative replacement when a referenced chart, terminator, or support-UV witness is inconsistent.
+**Need.** We must locate an authoritative replacement when the referenced chart or terminator record is absent.
 
 ### GC-03. Surface-owned edge curve attributes
 
