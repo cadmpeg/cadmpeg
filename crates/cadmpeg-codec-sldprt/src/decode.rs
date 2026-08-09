@@ -2578,6 +2578,11 @@ fn build_geometry_ir(
             links: Vec::new(),
         });
     }
+    for id in crate::tessellation::assign_unique_analytic_owners(&mut ir.model) {
+        let note = annotations.exactness.entry(id).or_default();
+        note.fields.insert("body".into(), Exactness::Derived);
+        note.fields.insert("faces".into(), Exactness::Derived);
+    }
     for source_block in &scan.blocks {
         if unknowns
             .iter()

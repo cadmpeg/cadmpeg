@@ -3,6 +3,7 @@
 
 use crate::container::{ContainerScan, Section};
 use cadmpeg_core::le::u32_at as u32_le;
+use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
 use std::collections::HashMap;
@@ -348,6 +349,150 @@ pub fn summary(scan: &ContainerScan) -> Summary {
         })
 }
 
+/// Bind a face-tessellation table when its vertices select one analytic face.
+///
+/// Display coordinates are stored as f32, while the B-rep carriers are f64.
+/// The relative tolerance below covers that quantization. A shared analytic
+/// carrier or another coincident face leaves ownership unresolved.
+pub(crate) fn assign_unique_analytic_owners(
+    model: &mut cadmpeg_ir::document::Model,
+) -> Vec<String> {
+    let surfaces = model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<HashMap<_, _>>();
+    let regions = model
+        .regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = model
+        .shells
+        .iter()
+        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
+        .collect::<HashMap<_, _>>();
+    let body_transforms = model
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body.transform))
+        .collect::<HashMap<_, _>>();
+    let candidates = model
+        .faces
+        .iter()
+        .filter_map(|face| {
+            let body = *shell_bodies.get(&face.shell)?;
+            let inverse = match body_transforms.get(body).copied().flatten() {
+                Some(transform) if transform.is_proper_rigid() => transform.try_inverse_affine()?,
+                Some(_) => return None,
+                None => cadmpeg_ir::transform::Transform::identity(),
+            };
+            Some((
+                &face.id,
+                body,
+                *surfaces.get(&face.surface)?,
+                face.tolerance.unwrap_or(0.0),
+                inverse,
+            ))
+        })
+        .collect::<Vec<_>>();
+
+    let mut assigned = Vec::new();
+    for mesh in &mut model.tessellations {
+        if mesh.body.is_some() || !mesh.faces.is_empty() || mesh.vertices.is_empty() {
+            continue;
+        }
+        let coordinate_scale = mesh
+            .vertices
+            .iter()
+            .flat_map(|point| [point.x.abs(), point.y.abs(), point.z.abs()])
+            .fold(1.0_f64, f64::max);
+        let quantization_tolerance = coordinate_scale * f64::from(f32::EPSILON) * 8.0 + 1.0e-9;
+        let mut owners = candidates
+            .iter()
+            .filter(|(_, _, surface, tolerance, inverse)| {
+                let tolerance = tolerance.max(quantization_tolerance);
+                mesh.vertices.iter().all(|point| {
+                    analytic_surface_residual(surface, inverse.apply_point(*point))
+                        .is_some_and(|residual| residual <= tolerance)
+                })
+            });
+        let Some((face, body, ..)) = owners.next() else {
+            continue;
+        };
+        if owners.next().is_some() {
+            continue;
+        }
+        mesh.faces.push((*face).clone());
+        mesh.body = Some((*body).clone());
+        assigned.push(mesh.id.clone());
+    }
+    assigned
+}
+
+fn analytic_surface_residual(surface: &SurfaceGeometry, point: Point3) -> Option<f64> {
+    let subtract = |left: Point3, right: Point3| {
+        Vector3::new(left.x - right.x, left.y - right.y, left.z - right.z)
+    };
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let norm = |value: Vector3| dot(value, value).sqrt();
+    match surface {
+        SurfaceGeometry::Plane { origin, normal, .. } => {
+            Some(dot(subtract(point, *origin), *normal).abs() / norm(*normal))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } => {
+            let delta = subtract(point, *origin);
+            let axis_length = norm(*axis);
+            let axial = dot(delta, *axis) / axis_length;
+            let radial = Vector3::new(
+                delta.x - axis.x * axial / axis_length,
+                delta.y - axis.y * axial / axis_length,
+                delta.z - axis.z * axial / axis_length,
+            );
+            Some((norm(radial) - radius).abs())
+        }
+        SurfaceGeometry::Sphere { center, radius, .. } => {
+            Some((norm(subtract(point, *center)) - radius).abs())
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let delta = subtract(point, *center);
+            let axis_length = norm(*axis);
+            let axial = dot(delta, *axis) / axis_length;
+            let radial = Vector3::new(
+                delta.x - axis.x * axial / axis_length,
+                delta.y - axis.y * axial / axis_length,
+                delta.z - axis.z * axial / axis_length,
+            );
+            Some(
+                (((norm(radial) - major_radius).powi(2) + axial.powi(2)).sqrt() - minor_radius)
+                    .abs(),
+            )
+        }
+        SurfaceGeometry::Transformed { basis, transform } if transform.is_proper_rigid() => {
+            analytic_surface_residual(basis, transform.try_inverse_affine()?.apply_point(point))
+        }
+        SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
+    }
+    .filter(|residual| residual.is_finite())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,5 +608,60 @@ mod tests {
         let list_b_count = 20 + 52 + 52 + 12;
         payload[list_b_count..list_b_count + 4].copy_from_slice(&3_u32.to_le_bytes());
         assert!(parse_table(&payload, 0).is_none());
+    }
+
+    #[test]
+    fn analytic_surface_residuals_measure_normal_distance() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 2.0),
+            normal: Vector3::new(0.0, 0.0, 2.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 2.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+        };
+        let sphere = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        };
+
+        for (surface, point, displaced) in [
+            (
+                &plane,
+                Point3::new(3.0, 4.0, 2.0),
+                Point3::new(3.0, 4.0, 2.5),
+            ),
+            (
+                &cylinder,
+                Point3::new(3.0, 0.0, 7.0),
+                Point3::new(3.5, 0.0, 7.0),
+            ),
+            (
+                &sphere,
+                Point3::new(5.0, 2.0, 3.0),
+                Point3::new(5.5, 2.0, 3.0),
+            ),
+            (
+                &torus,
+                Point3::new(7.0, 0.0, 0.0),
+                Point3::new(7.5, 0.0, 0.0),
+            ),
+        ] {
+            assert_eq!(analytic_surface_residual(surface, point), Some(0.0));
+            assert!(analytic_surface_residual(surface, displaced)
+                .is_some_and(|residual| residual > 0.0));
+        }
     }
 }
