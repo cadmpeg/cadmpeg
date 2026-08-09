@@ -520,16 +520,6 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must know the fields to decode complete occurrence and external-reference state.
 
-### AM-09. SDL/TYSA attribute values
-
-**Question.** How does each Parasolid SDL/TYSA attribute instance assign its referenced value records to the fields declared by its type-79 class definition?
-
-**Known.** `siemens_nx.md` §9.4 "A shell, face, loop, edge, FIN, or vertex topology record with one uniquely resolved" and `siemens_nx.md` §9.4 "When a value resolves without a unique declared-field assignment, its neutral" define attribute-class declarations, type-81 class selection, referenced value records, topology ownership, and neutral source-attribute names. The declaration includes ordered field type codes such as those for `SDL/TYSA_DENSITY` and `SDL/TYSA_BLEND_ID`. The specification assigns the two fields of `SDL/TYSA_DENSITY` by name. Every other class falls back to the zero-based declared field ordinal and declared field code.
-
-**Need.** We must know the assignment to transfer class-specific material and topology attributes with semantic field names.
-
-**Note.** This item was closed by an assignment for one class. The question covers every class, and `SDL/TYSA_BLEND_ID` is named in the item itself and remains unassigned. A per-class table with one entry does not answer a per-class question, so the item is open again.
-
 ### AM-10. Face material bindings
 
 **Question.** Which serialized relation binds a material or appearance to a Parasolid face identity?

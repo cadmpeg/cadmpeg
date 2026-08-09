@@ -11262,6 +11262,98 @@ mod tests {
     }
 
     #[test]
+    fn topology_attribute_fields_use_declared_ordinal_and_type_for_every_class() {
+        use crate::native::parasolid::{
+            ParasolidAttributeDefinition, ParasolidAttributeFieldUse,
+            ParasolidAttributeFieldValueKind, ParasolidTopologyAttributeClassUse,
+            ParasolidTopologyAttributeListReference,
+        };
+
+        let reference = ParasolidTopologyAttributeListReference {
+            id: "topology-reference".into(),
+            stream_ordinal: 3,
+            topology_type: 14,
+            topology_xmt: 60,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        };
+        let definition = ParasolidAttributeDefinition {
+            id: "definition".into(),
+            stream_ordinal: 3,
+            xmt: 34,
+            next_definition_xmt: 1,
+            identifier_xmt: 35,
+            identifier_inflated_offset: 90,
+            name: "SDL/TYSA_BLEND_ID".into(),
+            type_id: 8004,
+            action_codes: [0; 8],
+            field_names_xmt: 1,
+            legal_owner_flags: [0; 16],
+            field_count: 2,
+            field_codes: vec![3, 2],
+            inflated_offset: 100,
+        };
+        let class_use = ParasolidTopologyAttributeClassUse {
+            id: "topology-class-use".into(),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: "entity".into(),
+            attribute_class_use: "attribute-class-use".into(),
+            definition_xmt: definition.xmt,
+            attribute_definition: definition.id.clone(),
+        };
+        let text_field = ParasolidAttributeFieldUse {
+            id: "text-field-use".into(),
+            stream_ordinal: 3,
+            attribute_class_use: class_use.attribute_class_use.clone(),
+            entity_51_record: class_use.entity_51_record.clone(),
+            attribute_definition: definition.id.clone(),
+            field_ordinal: 0,
+            field_code: 3,
+            reference_ordinal: 5,
+            value_kind: ParasolidAttributeFieldValueKind::String,
+            value_use: "text-use".into(),
+            value_record: "text-record".into(),
+            inflated_offset: 200,
+        };
+        let numeric_field = ParasolidAttributeFieldUse {
+            id: "numeric-field-use".into(),
+            field_ordinal: 1,
+            field_code: 2,
+            reference_ordinal: 6,
+            value_kind: ParasolidAttributeFieldValueKind::Doubles,
+            value_use: "numeric-use".into(),
+            value_record: "numeric-record".into(),
+            ..text_field.clone()
+        };
+
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "text-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&text_field),
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_BLEND_ID.field_0.parasolid_type_3")
+        );
+        assert_eq!(
+            super::parasolid_topology_attribute_field_name(
+                &reference,
+                "numeric-use",
+                std::slice::from_ref(&class_use),
+                std::slice::from_ref(&definition),
+                std::slice::from_ref(&numeric_field),
+                &[],
+            )
+            .as_deref(),
+            Some("SDL/TYSA_BLEND_ID.field_1.parasolid_type_2")
+        );
+    }
+
+    #[test]
     fn topology_structured_attribute_values_preserve_serialized_lanes() {
         use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
         use cadmpeg_ir::ids::FaceId;
