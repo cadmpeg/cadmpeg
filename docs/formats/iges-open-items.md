@@ -152,18 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-03. Occurrence expansion truncates at depth 64 with no signal
-
-**Question.** What does the product occurrence expansion do when nesting passes its depth limit?
-
-**Known.** `native.rs:1138-1142` gives `true` for the output-count limit, which becomes `product_occurrences_truncated` and a `LossNote` at `reader.rs:135-142`. The depth guard beside it gives `false`, which the caller at `native.rs:1193` reads as "this member produced nothing".
-
-**Conflict.** `iges.md` "Product structure" states "Expansion is bounded to 64 nested instances ... The `product_occurrence_expansion` arena records the limit, emitted count, and truncation state; truncation produces a decode loss." The recorded `limit` field is `MAX_PRODUCT_OCCURRENCES` (`native.rs:1533`) and never 64, and depth truncation produces no loss. The specification sentence is false for the depth case.
-
-**Note.** `MAX_PRODUCT_OCCURRENCES` is `100` under `#[cfg(test)]` (`native.rs:15-18`), so the production limit and its interaction with the recursion are never exercised.
-
-**Need.** A consumer that trusts `truncated` accepts a silently pruned assembly tree. We need depth truncation to be visible, and the recorded limit to be the limit that applies.
-
 ### DR-04. One malformed subfigure definition promotes its instances to assembly roots
 
 **Question.** How is a top-level product instance identified?

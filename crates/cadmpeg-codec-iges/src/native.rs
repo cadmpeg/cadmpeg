@@ -12,10 +12,20 @@ use cadmpeg_ir::CadIr;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
-#[cfg(not(test))]
-const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
-#[cfg(test)]
-const MAX_PRODUCT_OCCURRENCES: usize = 100;
+pub(crate) const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
+pub(crate) const MAX_PRODUCT_OCCURRENCE_DEPTH: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductOccurrenceLimits {
+    output: usize,
+    depth: usize,
+}
+
+impl ProductOccurrenceLimits {
+    pub(crate) const fn new(output: usize, depth: usize) -> Self {
+        Self { output, depth }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeCard {
@@ -754,9 +764,18 @@ struct NativeProductOccurrence {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct NativeProductOccurrenceExpansion {
     id: String,
-    limit: usize,
+    output_limit: usize,
+    depth_limit: usize,
     emitted: usize,
     truncated: bool,
+    output_truncated: bool,
+    depth_truncated: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ProductOccurrenceExpansion {
+    pub(crate) output_truncated: bool,
+    pub(crate) depth_truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1123,6 +1142,8 @@ struct OccurrenceExpansion<'a> {
     definitions: &'a BTreeMap<u32, OccurrenceDefinition>,
     neutral_links: &'a BTreeMap<u32, Vec<String>>,
     length_factor: f64,
+    output_limit: usize,
+    depth_limit: usize,
 }
 
 impl OccurrenceExpansion<'_> {
@@ -1132,11 +1153,16 @@ impl OccurrenceExpansion<'_> {
         parent: Affine,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
+        depth_truncated: &mut bool,
     ) -> bool {
-        if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
+        if occurrences.len() >= self.output_limit {
             return true;
         }
-        if path.len() >= 64 || path.contains(&instance_sequence) {
+        if path.len() >= self.depth_limit {
+            *depth_truncated = true;
+            return false;
+        }
+        if path.contains(&instance_sequence) {
             return false;
         }
         let (Some(instance), Some(record)) = (
@@ -1179,7 +1205,7 @@ impl OccurrenceExpansion<'_> {
             world_transform: world.rows,
         });
         for member in &definition.members {
-            if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
+            if occurrences.len() >= self.output_limit {
                 path.pop();
                 return true;
             }
@@ -1188,7 +1214,7 @@ impl OccurrenceExpansion<'_> {
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                if self.expand(*member, world, path, occurrences) {
+                if self.expand(*member, world, path, occurrences, depth_truncated) {
                     path.pop();
                     return true;
                 }
@@ -1231,7 +1257,8 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
-) -> Result<bool, CodecError> {
+    limits: ProductOccurrenceLimits,
+) -> Result<ProductOccurrenceExpansion, CodecError> {
     let cards = scan
         .lines
         .iter()
@@ -3497,13 +3524,16 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
-    let mut product_occurrences_truncated = false;
+    let mut output_truncated = false;
+    let mut depth_truncated = false;
     let expansion = OccurrenceExpansion {
         entries: &entries,
         records: &by_directory,
         definitions: &occurrence_definitions,
         neutral_links: &occurrence_neutral_links,
         length_factor: global.length_factor_mm(),
+        output_limit: limits.output,
+        depth_limit: limits.depth,
     };
     for root in directory.iter().filter(|entry| {
         matches!(entry.entity_type, 408 | 420)
@@ -3515,16 +3545,20 @@ pub(crate) fn store(
             Affine::IDENTITY,
             &mut Vec::new(),
             &mut product_occurrences,
+            &mut depth_truncated,
         ) {
-            product_occurrences_truncated = true;
+            output_truncated = true;
             break;
         }
     }
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
         id: "iges:product:occurrence-expansion#state".into(),
-        limit: MAX_PRODUCT_OCCURRENCES,
+        output_limit: limits.output,
+        depth_limit: limits.depth,
         emitted: product_occurrences.len(),
-        truncated: product_occurrences_truncated,
+        truncated: output_truncated || depth_truncated,
+        output_truncated,
+        depth_truncated,
     }];
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
@@ -3570,5 +3604,8 @@ pub(crate) fn store(
         "product_occurrence_expansion",
         &product_occurrence_expansion,
     )?;
-    Ok(product_occurrences_truncated)
+    Ok(ProductOccurrenceExpansion {
+        output_truncated,
+        depth_truncated,
+    })
 }

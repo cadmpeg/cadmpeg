@@ -3553,9 +3553,12 @@
           "procedural_solids": [],
           "product_occurrence_expansion": [
             {
+              "depth_limit": 64,
+              "depth_truncated": false,
               "emitted": 0,
               "id": "iges:product:occurrence-expansion#state",
-              "limit": 100,
+              "output_limit": 100000,
+              "output_truncated": false,
               "truncated": false
             }
           ],

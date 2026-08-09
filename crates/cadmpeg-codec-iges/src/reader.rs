@@ -56,6 +56,20 @@ fn source_meta(global: &global::Global) -> SourceMeta {
 }
 
 pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
+    decode_with_occurrence_limits(
+        bytes,
+        options,
+        native::MAX_PRODUCT_OCCURRENCES,
+        native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+    )
+}
+
+fn decode_with_occurrence_limits(
+    bytes: &[u8],
+    options: DecodeOptions,
+    product_occurrence_output_limit: usize,
+    product_occurrence_depth_limit: usize,
+) -> Result<DecodeResult, CodecError> {
     let scan = card::scan(bytes)?;
     let global = global::parse(&scan)?;
     if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
@@ -88,13 +102,17 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
     } else {
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
     };
-    let product_occurrences_truncated = native::store(
+    let product_occurrence_expansion = native::store(
         &mut ir,
         &scan,
         &directory,
         &parameters,
         &references,
         &global,
+        native::ProductOccurrenceLimits::new(
+            product_occurrence_output_limit,
+            product_occurrence_depth_limit,
+        ),
     )?;
     ir.finalize();
     let document_digest = crate::document_digest(&ir);
@@ -107,11 +125,20 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
-    if product_occurrences_truncated {
+    if product_occurrence_expansion.output_truncated {
         losses.push(LossNote {
             code: cadmpeg_ir::LossKind::DecodeDiagnostic,
             severity: Severity::Warning,
             message: "IGES product occurrence expansion reached its configured output limit".into(),
+            provenance: None,
+        });
+    }
+    if product_occurrence_expansion.depth_truncated {
+        losses.push(LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message: "IGES product occurrence expansion reached its configured nesting-depth limit"
+                .into(),
             provenance: None,
         });
     }
@@ -158,4 +185,14 @@ pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResul
         },
         source_fidelity,
     ))
+}
+
+#[cfg(test)]
+pub(crate) fn decode_with_test_occurrence_limits(
+    bytes: &[u8],
+    options: DecodeOptions,
+    output_limit: usize,
+    depth_limit: usize,
+) -> Result<DecodeResult, CodecError> {
+    decode_with_occurrence_limits(bytes, options, output_limit, depth_limit)
 }

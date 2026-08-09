@@ -4859,6 +4859,38 @@ fn occurrence_limit_file() -> Vec<u8> {
     owned_test_file(&entities)
 }
 
+fn occurrence_depth_limit_file() -> Vec<u8> {
+    const INSTANCE_COUNT: usize = 65;
+    let mut entities = Vec::with_capacity(INSTANCE_COUNT * 2);
+    for index in 0..INSTANCE_COUNT {
+        let definition_sequence = 1 + u32::try_from(index).unwrap() * 4;
+        let member = if index + 1 < INSTANCE_COUNT {
+            format!(",{}", definition_sequence + 6)
+        } else {
+            String::new()
+        };
+        let member_count = usize::from(index + 1 < INSTANCE_COUNT);
+        entities.push(OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: format!("DEF{index}"),
+            status: "00000200",
+            parameters: format!(
+                "308,{},1HD,{member_count}{member};",
+                INSTANCE_COUNT - index - 1
+            ),
+        });
+        entities.push(OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: format!("INS{index}"),
+            status: "00000000",
+            parameters: format!("408,{definition_sequence},0,0,0,1;"),
+        });
+    }
+    owned_test_file(&entities)
+}
+
 fn invalid_subfigure_depth_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -7322,21 +7354,52 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
 
 #[test]
 fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
+    let result = crate::reader::decode_with_test_occurrence_limits(
+        &occurrence_limit_file(),
+        DecodeOptions::default(),
+        100,
+        crate::native::MAX_PRODUCT_OCCURRENCE_DEPTH,
+    )
+    .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["product_occurrences"].len(), 100);
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["output_limit"], 100);
+    assert_eq!(expansion.fields()["depth_limit"], 64);
+    assert_eq!(expansion.fields()["emitted"], 100);
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["output_truncated"], true);
+    assert_eq!(expansion.fields()["depth_truncated"], false);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message == "IGES product occurrence expansion reached its configured output limit"
+    }));
+}
+
+#[test]
+fn decode_reports_product_occurrence_depth_truncation() {
     let result = IgesCodec
         .decode(
-            &mut Cursor::new(occurrence_limit_file()),
+            &mut Cursor::new(occurrence_depth_limit_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
     let native = result.ir.native.namespace("iges").unwrap();
 
-    assert_eq!(native.arenas["product_occurrences"].len(), 100);
+    assert_eq!(native.arenas["product_occurrences"].len(), 64);
     let expansion = &native.arenas["product_occurrence_expansion"][0];
-    assert_eq!(expansion.fields()["limit"], 100);
-    assert_eq!(expansion.fields()["emitted"], 100);
+    assert_eq!(
+        expansion.fields()["output_limit"],
+        crate::native::MAX_PRODUCT_OCCURRENCES
+    );
+    assert_eq!(expansion.fields()["depth_limit"], 64);
+    assert_eq!(expansion.fields()["emitted"], 64);
     assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["output_truncated"], false);
+    assert_eq!(expansion.fields()["depth_truncated"], true);
     assert!(result.report.losses.iter().any(|loss| {
-        loss.message == "IGES product occurrence expansion reached its configured output limit"
+        loss.message
+            == "IGES product occurrence expansion reached its configured nesting-depth limit"
     }));
 }
 
