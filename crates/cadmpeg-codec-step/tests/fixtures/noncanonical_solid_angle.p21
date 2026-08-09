@@ -1,7 +1,7 @@
 ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('noncanonical unit order'),'2;1');
-FILE_NAME('noncanonical-unit','','',(''),'','cadmpeg','');
+FILE_NAME('noncanonical-unit','',(''),(''),'','cadmpeg','');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2'));
 ENDSEC;
 DATA;

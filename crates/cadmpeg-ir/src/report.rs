@@ -101,6 +101,9 @@ pub enum LossKind {
     /// The B-rep topology graph was not transferred, though carriers or a
     /// container were decoded.
     TopologyNotTransferred,
+    /// The source topology violates a neutral topology invariant; the decoder
+    /// reported the defect and retained only valid neutral topology.
+    SourceTopologyInvalid,
     /// B-rep geometry was not transferred, though carriers or a container were
     /// decoded.
     GeometryNotTransferred,
@@ -196,6 +199,7 @@ impl LossKind {
             Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
             Self::TopologyNotTransferred => "topology_not_transferred",
+            Self::SourceTopologyInvalid => "source_topology_invalid",
             Self::GeometryNotTransferred => "geometry_not_transferred",
             Self::ReferenceGraphNotClosed => "reference_graph_not_closed",
             Self::TopologyGaugeSubstituted => "topology_gauge_substituted",
@@ -239,6 +243,7 @@ impl LossKind {
     pub const fn category(self) -> LossCategory {
         match self {
             Self::TopologyNotTransferred
+            | Self::SourceTopologyInvalid
             | Self::ReferenceGraphNotClosed
             | Self::TopologyGaugeSubstituted
             | Self::NoExportableSolids

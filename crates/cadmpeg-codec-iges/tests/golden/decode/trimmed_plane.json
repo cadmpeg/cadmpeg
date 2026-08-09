@@ -175,7 +175,8 @@
             0.0,
             4.0
           ],
-          "start": "iges:model:vertex#D9:0:0"
+          "start": "iges:model:vertex#D9:0:0",
+          "tolerance": 0.001
         }
       ],
       "faces": [
@@ -186,7 +187,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D9",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -204,6 +206,7 @@
       "parameters": [],
       "pcurves": [
         {
+          "fit_tolerance": 0.001,
           "geometry": {
             "control_points": [
               {
@@ -387,7 +390,8 @@
         },
         {
           "id": "iges:model:vertex#D9:0:0",
-          "point": "iges:model:point#D9:0:0"
+          "point": "iges:model:point#D9:0:0",
+          "tolerance": 0.001
         }
       ],
       "view_presentations": []
@@ -3559,6 +3563,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -3596,6 +3601,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 1539,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMDYgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgICBNT0RFTCAgICAgICAwRCAgICAgIDQKICAgICAxMDYgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwNTAwRCAgICAgIDUKICAgICAxMDYgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICA2MyAgICAgICAgICAgICAgICAgIFBDVVJWRSAgICAgICAwRCAgICAgIDYKICAgICAxNDIgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxNDIgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgT05fU1VSRiAgICAgICAwRCAgICAgIDgKICAgICAxNDQgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgIDkKICAgICAxNDQgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgVFJJTU1FRCAgICAgICAwRCAgICAgMTAKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTA2LDEsNSwwLDAsMCwxLDAsMSwxLDAsMSwwLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTQyLDAsMSw1LDMsMzsgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTQ0LDEsMSwwLDc7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDEwUDAwMDAwMDUgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "18fcdcb8d219999287ef7a5e138df013330e8deabd48cd71e0b0c6d34ed67296",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

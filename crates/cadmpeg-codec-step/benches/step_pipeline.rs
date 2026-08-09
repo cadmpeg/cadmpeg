@@ -19,7 +19,7 @@ fn exchange(entity: &str) -> Vec<u8> {
     let mut source = String::with_capacity(4_000_000);
     source.push_str(
         "ISO-10303-21;HEADER;FILE_DESCRIPTION(('benchmark'),'2;1');\
-         FILE_NAME('','','','','','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\
+         FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN'));\
          ENDSEC;DATA;",
     );
     for id in 1..=ENTITY_COUNT {

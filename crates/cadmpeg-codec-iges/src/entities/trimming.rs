@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Face-local trimmed-surface projection.
 
+use super::composite::bounded_nurbs_for_curve_with_tolerance;
 use super::evaluation;
 use super::geometry::entity_loss;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::draft::ModelDraft;
-use cadmpeg_ir::geometry::{CurveGeometry, Pcurve, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Pcurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
@@ -50,19 +51,8 @@ fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
     })
 }
 
-fn close(left: Point3, right: Point3) -> bool {
-    let scale = left
-        .x
-        .abs()
-        .max(left.y.abs())
-        .max(left.z.abs())
-        .max(right.x.abs())
-        .max(right.y.abs())
-        .max(right.z.abs())
-        .max(1.0);
-    (left.x - right.x).abs() <= scale * 1.0e-10
-        && (left.y - right.y).abs() <= scale * 1.0e-10
-        && (left.z - right.z).abs() <= scale * 1.0e-10
+fn close(left: Point3, right: Point3, tolerance: f64) -> bool {
+    tolerance.is_finite() && tolerance > 0.0 && left.distance(right) <= tolerance
 }
 
 fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
@@ -85,10 +75,11 @@ fn face_vertex(
     stem: &str,
     boundary: usize,
     position: Point3,
+    tolerance: f64,
 ) -> VertexId {
     if let Some((_, id)) = vertices
         .iter()
-        .find(|(existing, _)| close(*existing, position))
+        .find(|(existing, _)| close(*existing, position, tolerance))
     {
         return id.clone();
     }
@@ -103,7 +94,7 @@ fn face_vertex(
     candidate.model_mut().vertices.push(Vertex {
         id: vertex_id.clone(),
         point: point_id,
-        tolerance: None,
+        tolerance: Some(tolerance),
     });
     vertices.push((position, vertex_id.clone()));
     vertex_id
@@ -114,15 +105,10 @@ pub(super) fn pcurve_geometry(
     sequence: u32,
     support: &SurfaceGeometry,
     factor: f64,
+    tolerance: Option<f64>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
-    let curve = ir.model.curves.iter().find(|curve| curve.id == curve_id)?;
-    let range = ir
-        .model
-        .edges
-        .iter()
-        .find(|edge| edge.curve.as_ref() == Some(&curve_id))?
-        .param_range?;
+    let (nurbs, range) = bounded_nurbs_for_curve_with_tolerance(ir, &curve_id, tolerance)?;
     let (u_factor, v_factor) = match support {
         SurfaceGeometry::Plane { .. } => (1.0, 1.0),
         SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => (1.0 / factor, 1.0),
@@ -134,23 +120,55 @@ pub(super) fn pcurve_geometry(
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };
-    match &curve.geometry {
-        CurveGeometry::Nurbs(nurbs) => Some((
-            PcurveGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots.clone(),
-                control_points: nurbs
-                    .control_points
-                    .iter()
-                    .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
-                    .collect(),
-                weights: nurbs.weights.clone(),
-                periodic: nurbs.periodic,
-            },
-            range,
-        )),
-        _ => None,
-    }
+    Some((
+        PcurveGeometry::Nurbs {
+            degree: nurbs.degree,
+            knots: nurbs.knots,
+            control_points: nurbs
+                .control_points
+                .iter()
+                .map(|point| Point2::new(point.x * u_factor, point.y * v_factor))
+                .collect(),
+            weights: nurbs.weights,
+            periodic: nurbs.periodic,
+        },
+        range,
+    ))
+}
+
+fn pcurves_agree(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    pcurves: &[(PcurveGeometry, [f64; 2])],
+    expected_start: Point3,
+    expected_end: Point3,
+    tolerance: f64,
+) -> bool {
+    let index = cadmpeg_ir::index::ModelIndex::new(ir);
+    let mapped = pcurves
+        .iter()
+        .map(|(geometry, range)| {
+            let start = evaluation::pcurve(geometry, range[0]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+            })?;
+            let end = evaluation::pcurve(geometry, range[1]).and_then(|uv| {
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, surface_id, uv.u, uv.v)
+            })?;
+            Some((start, end))
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(mapped) = mapped else {
+        return false;
+    };
+    mapped
+        .first()
+        .is_some_and(|(start, _)| close(*start, expected_start, tolerance))
+        && mapped
+            .last()
+            .is_some_and(|(_, end)| close(*end, expected_end, tolerance))
+        && mapped
+            .windows(2)
+            .all(|pair| close(pair[0].1, pair[1].0, tolerance))
 }
 
 pub(super) struct TrimmingProjection {
@@ -338,11 +356,12 @@ pub(super) fn project(
                 valid = false;
                 break;
             }
+            let require_carrier_agreement = !pcurves.is_empty();
             segments.push(BoundarySegment {
                 model_curve,
                 pcurves,
                 sense,
-                require_carrier_agreement: false,
+                require_carrier_agreement,
             });
             index += 3 + pcurve_count;
         }
@@ -358,6 +377,13 @@ pub(super) fn project(
         handled.insert(entry.sequence);
         let Some(factor) = global.length_factor_mm() else {
             losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(tolerance) = global.minimum_resolution_mm() else {
+            losses.push(entity_loss(
+                entry,
+                "Global minimum resolution is missing or invalid",
+            ));
             continue;
         };
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -554,7 +580,9 @@ pub(super) fn project(
                 let pcurves = segment
                     .pcurves
                     .iter()
-                    .map(|sequence| pcurve_geometry(ir, *sequence, &support_geometry, factor))
+                    .map(|sequence| {
+                        pcurve_geometry(ir, *sequence, &support_geometry, factor, Some(tolerance))
+                    })
                     .collect::<Option<Vec<_>>>();
                 let Some(pcurves) = pcurves else {
                     losses.push(entity_loss(
@@ -565,18 +593,21 @@ pub(super) fn project(
                     break;
                 };
                 if segment.require_carrier_agreement {
-                    let agrees = pcurves.len() == 1
-                        && global.minimum_resolution_mm().is_some_and(|tolerance| {
-                            let (geometry, range) = &pcurves[0];
-                            let mapped_start = evaluation::pcurve(geometry, range[0])
-                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
-                            let mapped_end = evaluation::pcurve(geometry, range[1])
-                                .and_then(|uv| evaluation::surface(&support_geometry, uv));
-                            mapped_start.is_some_and(|point| {
-                                evaluation::distance(point, start) <= tolerance
-                            }) && mapped_end
-                                .is_some_and(|point| evaluation::distance(point, end) <= tolerance)
-                        });
+                    let (expected_start, expected_end) = if segment.sense == Sense::Forward {
+                        (start, end)
+                    } else {
+                        (end, start)
+                    };
+                    let agrees = global.minimum_resolution_mm().is_some_and(|tolerance| {
+                        pcurves_agree(
+                            ir,
+                            &surface_id,
+                            &pcurves,
+                            expected_start,
+                            expected_end,
+                            tolerance,
+                        )
+                    });
                     if !agrees {
                         losses.push(entity_loss(
                             entry,
@@ -608,7 +639,7 @@ pub(super) fn project(
             if items.iter().enumerate().any(|(index, item)| {
                 let (_, end) = traversal(item);
                 let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
-                !close(end, next_start)
+                !close(end, next_start, tolerance)
             }) {
                 losses.push(entity_loss(
                     entry,
@@ -632,6 +663,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.start,
+                    tolerance,
                 );
                 let end_vertex = face_vertex(
                     &mut candidate,
@@ -639,6 +671,7 @@ pub(super) fn project(
                     &stem,
                     boundary_index,
                     item.end,
+                    tolerance,
                 );
                 candidate.model_mut().edges.push(Edge {
                     id: edge_id.clone(),
@@ -646,7 +679,7 @@ pub(super) fn project(
                     start: start_vertex,
                     end: end_vertex,
                     param_range: item.source_edge.param_range,
-                    tolerance: None,
+                    tolerance: Some(tolerance),
                 });
                 let pcurve_uses = item
                     .pcurves
@@ -662,12 +695,12 @@ pub(super) fn project(
                             wrapper_reversed: None,
                             native_tail_flags: None,
                             parameter_range: Some(parameter_range),
-                            fit_tolerance: None,
+                            fit_tolerance: global.minimum_resolution_mm(),
                         });
                         PcurveUse {
                             pcurve: id,
                             isoparametric: None,
-                                    parameter_range: None,
+                            parameter_range: None,
                         }
                     })
                     .collect();
@@ -715,7 +748,7 @@ pub(super) fn project(
             loops: loop_ids,
             name: None,
             color: None,
-            tolerance: None,
+            tolerance: Some(tolerance),
         });
         candidate.model_mut().shells.push(Shell {
             id: shell_id.clone(),

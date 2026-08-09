@@ -167,7 +167,8 @@
             0.0,
             1.0
           ],
-          "start": "iges:model:vertex#D13:0:0"
+          "start": "iges:model:vertex#D13:0:0",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D5",
@@ -177,7 +178,8 @@
             0.0,
             1.0
           ],
-          "start": "iges:model:vertex#D13:0:2"
+          "start": "iges:model:vertex#D13:0:2",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D7",
@@ -187,7 +189,8 @@
             0.0,
             1.0
           ],
-          "start": "iges:model:vertex#D13:0:2"
+          "start": "iges:model:vertex#D13:0:2",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D9",
@@ -197,7 +200,8 @@
             0.0,
             1.0
           ],
-          "start": "iges:model:vertex#D13:0:3"
+          "start": "iges:model:vertex#D13:0:3",
+          "tolerance": 0.001
         },
         {
           "curve": "iges:model:curve#D3",
@@ -248,7 +252,8 @@
           ],
           "sense": "forward",
           "shell": "iges:model:shell#D13",
-          "surface": "iges:model:surface#D1"
+          "surface": "iges:model:surface#D1",
+          "tolerance": 0.001
         }
       ],
       "features": [],
@@ -450,19 +455,23 @@
       "vertices": [
         {
           "id": "iges:model:vertex#D13:0:0",
-          "point": "iges:model:point#D13:0:0"
+          "point": "iges:model:point#D13:0:0",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D13:0:1",
-          "point": "iges:model:point#D13:0:1"
+          "point": "iges:model:point#D13:0:1",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D13:0:2",
-          "point": "iges:model:point#D13:0:2"
+          "point": "iges:model:point#D13:0:2",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D13:0:3",
-          "point": "iges:model:point#D13:0:3"
+          "point": "iges:model:point#D13:0:3",
+          "tolerance": 0.001
         },
         {
           "id": "iges:model:vertex#D3-end",
@@ -4626,6 +4635,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "iges_version": "5.3",
         "iges_version_flag": "11",
         "native_file_name": "part.igs",
@@ -4663,6 +4673,16 @@
   },
   "source_fidelity": {
     "annotations": {},
+    "retained_records": [
+      {
+        "byte_len": 2025,
+        "data": "b3JpZ2luYWwgZml4dHVyZSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgUyAgICAgIDEKMUgsLDFIOyw3SHByb2R1Y3QsOEhwYXJ0Lmlncyw3SGNhZG1wZWcsM0gwLjEsMzIsMzgsNiwzMDgsMTUsMEgsMS4wLDIsMkhNRyAgICAgIDEKTSwxLDEuMCwxNUgyMDI2MDcxNC4wMDAwMDAsMC4wMDEsMTAwMC4wLDZIYXV0aG9yLDNIb3JnLDExLDAsMEgsMEg7ICAgICAgRyAgICAgIDIKICAgICAxMDggICAgICAgMSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDEKICAgICAxMDggICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBQTEFORSAgICAgICAwRCAgICAgIDIKICAgICAxMTAgICAgICAgMiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDMKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMSAgICAgICAwRCAgICAgIDQKICAgICAxMTAgICAgICAgMyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDUKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMiAgICAgICAwRCAgICAgIDYKICAgICAxMTAgICAgICAgNCAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDcKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFMyAgICAgICAwRCAgICAgIDgKICAgICAxMTAgICAgICAgNSAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgIDkKICAgICAxMTAgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgICBFREdFNCAgICAgICAwRCAgICAgMTAKICAgICAxNDEgICAgICAgNiAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDEwMDAwRCAgICAgMTEKICAgICAxNDEgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICBCT1VOREFSWSAgICAgICAwRCAgICAgMTIKICAgICAxNDMgICAgICAgNyAgICAgICAwICAgICAgIDAgICAgICAgMCAgICAgICAwICAgICAgIDAgICAgICAgMDAwMDAwMDAwRCAgICAgMTMKICAgICAxNDMgICAgICAgMCAgICAgICAwICAgICAgIDEgICAgICAgMCAgICAgICAgICAgICAgICAgQk9VTkRFRCAgICAgICAwRCAgICAgMTQKMTA4LDAsMCwxLDAsMCwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAxUCAgICAgIDEKMTEwLDAsMCwwLDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAzUCAgICAgIDIKMTEwLDEsMSwwLDEsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA1UCAgICAgIDMKMTEwLDEsMSwwLDAsMSwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA3UCAgICAgIDQKMTEwLDAsMSwwLDAsMCwwOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA5UCAgICAgIDUKMTQxLDAsMSwxLDQsMywxLDAsNSwyLDAsNywxLDAsOSwxLDA7ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDExUCAgICAgIDYKMTQzLDAsMSwxLDExOyAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIDEzUCAgICAgIDcKUzAwMDAwMDFHMDAwMDAwMkQwMDAwMDE0UDAwMDAwMDcgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgVCAgICAgIDEK",
+        "id": "iges:file:source-image#0",
+        "offset": 0,
+        "sha256": "67e4b66e234f2c8d03f7991aab2219b2289aad8073703bc19d2dd72058a772ef",
+        "stream": "iges"
+      }
+    ],
     "version": "3"
   }
 }

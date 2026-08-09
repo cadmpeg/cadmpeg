@@ -1,4 +1,4 @@
-# IGES 5.3 Fixed ASCII format specification
+# IGES 5.1/5.2/5.3 Fixed ASCII format specification
 
 > **License:** This document is released under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Attribute to the cadmpeg project.
 
@@ -20,7 +20,7 @@ The Global data stream is the concatenation of bytes 1 through 72 from its cards
 
 A Hollerith value is an unsigned decimal byte count, the byte `H` or `h`, and exactly that many following bytes. Delimiters inside the counted payload are data. The count and payload may cross card boundaries. Integer values are signed decimal integers. Real values accept a decimal point and an exponent introduced by `E`, `e`, `D`, or `d`. An empty field between parameter delimiters is omitted. The record delimiter terminates the Global record.
 
-Global fields declare the sender and receiver identifiers, native file name, generator, significant digits, single and double precision limits, model scale, units flag and unit name, maximum line-weight gradation and width, creation and modification timestamps, minimum resolution, maximum coordinate, author, organization, specification version, drafting standard, and application protocol. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged.
+Global fields declare the sender and receiver identifiers, native file name, generator, significant digits, single and double precision limits, model scale, units flag and unit name, maximum line-weight gradation and width, creation and modification timestamps, minimum resolution, maximum coordinate, author, organization, specification version, drafting standard, and application protocol. Length-valued fields are converted from the declared units and model scale only when projected to neutral IR. Native values remain unchanged. The specification version field is `9` for IGES 5.1, `10` for IGES 5.2, and `11` for IGES 5.3.
 
 ## Directory Entry section
 
@@ -47,6 +47,12 @@ An entity retains its type, form, Directory Entry fields, status fields, ordered
 ## Units and transformations
 
 Model-space lengths equal native values divided by the Global model-space scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
+
+## Geometry
+
+Type 116 Form 0 stores one finite model-space point. Type 123 Form 0 stores three finite dimensionless direction components and is physically dependent. Type 108 Form 0 stores a plane through the origin of its Directory transformation with local X and Y axes from that transformation; its local Z axis is the plane normal.
+
+Pointer-defined analytic surfaces use odd Directory pointers to Type 116 location points and physically dependent Type 123 direction entities. Type 190 Forms 0 and 1 define a plane from a location and normal, with Form 1 adding a reference direction. Type 192 Forms 0 and 1 define a circular cylinder from a location, axis, positive radius, and optional reference direction. Type 194 Forms 0 and 1 define a circular cone from a location, axis, nonnegative radius, semi-angle in degrees in `(0, 90)`, and an optional reference direction. Type 196 Forms 0 and 1 define a sphere from a center and positive radius, with Form 1 adding its polar axis and reference direction. Type 198 Forms 0 and 1 define a torus from a center, axis, positive major and minor radii satisfying `minor < major`, and an optional reference direction. A missing reference direction derives a stable perpendicular frame from the axis. A supplied reference direction is projected into the plane normal to the axis and must remain nonzero.
 
 ## Primitive solids
 
@@ -176,4 +182,4 @@ The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type
 
 ## Byte accounting
 
-The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. The reader does not emit a closed `transfer_ledger` and does not populate `SourceFidelity` retained opaque byte records or SHA-256 digests.
+The Fixed ASCII reader retains every physical card and every Directory/Parameter entity in `native.iges`, including typed domain arenas where projected and generic entity records otherwise. Card payloads, line endings, Directory fields, Parameter tokens, links, and source identities remain available through that namespace. `SourceFidelity` retains the complete source image as a byte record and records its document-local SHA-256 digest. The reader does not emit a closed `transfer_ledger`.
