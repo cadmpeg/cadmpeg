@@ -5450,6 +5450,38 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 }
 
 #[test]
+fn repeated_shape_roots_have_distinct_occurrence_identity() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 +1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("repeated roots");
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.edges.len(), 2);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_ne!(result.ir.model.bodies[0].id, result.ir.model.bodies[1].id);
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn preserves_an_unbounded_edge_as_a_free_exact_curve() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::Line" name="Axis" id="1"/></Objects>

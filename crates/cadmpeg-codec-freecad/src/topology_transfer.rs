@@ -125,20 +125,15 @@ struct BodyRoot {
     shape: usize,
     transform: Transform,
     reversed: bool,
+    root_ordinal: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct OccurrenceKey {
-    shape: usize,
-    transform: [u64; 16],
-}
+struct OccurrenceKey(String);
 
 impl OccurrenceKey {
     fn new(shape: usize, transform: Transform) -> Self {
-        Self {
-            shape,
-            transform: transform_bits(transform),
-        }
+        Self(occurrence_label(shape, transform))
     }
 }
 
@@ -151,6 +146,7 @@ struct Builder<'a> {
     emitted_surfaces: HashSet<SurfaceId>,
     emitted_triangulations: HashSet<usize>,
     body_scope: Transform,
+    root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
     source_object: String,
 }
@@ -166,6 +162,7 @@ impl<'a> Builder<'a> {
             emitted_surfaces: HashSet::new(),
             emitted_triangulations: HashSet::new(),
             body_scope: Transform::identity(),
+            root_discriminator: None,
             current_body: None,
             source_object,
         }
@@ -293,15 +290,19 @@ impl<'a> Builder<'a> {
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
+        let has_multiple_roots = self.tables.roots.len() > 1;
         self.tables
             .roots
             .iter()
-            .map(|root| {
+            .enumerate()
+            .map(|(index, root)| {
                 self.shape(root.shape)?;
+                let transform = self.tables.location(root.location);
                 Ok(BodyRoot {
                     shape: root.shape,
-                    transform: self.tables.location(root.location),
+                    transform,
                     reversed: is_reversed(root.orientation),
+                    root_ordinal: has_multiple_roots.then_some(index + 1),
                 })
             })
             .collect()
@@ -314,6 +315,9 @@ impl<'a> Builder<'a> {
         root: BodyRoot,
     ) -> Result<(), CodecError> {
         self.body_scope = root.transform;
+        self.root_discriminator = root.root_ordinal;
+        self.vertices.clear();
+        self.edges.clear();
         let root_shape = self.shape(root.shape)?;
         let root_kind = root_shape.kind;
         if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
@@ -337,7 +341,7 @@ impl<'a> Builder<'a> {
             }
             return Ok(());
         }
-        let body_key = occurrence_label(root.shape, root.transform);
+        let body_key = self.topology_label(root.shape, Transform::identity());
         let body_id = BodyId(crate::native::model_id("body", &self.payload.id, &body_key));
         self.current_body = Some(body_id.clone());
         let kind = match root_kind {
@@ -1074,7 +1078,9 @@ impl<'a> Builder<'a> {
     }
 
     fn topology_label(&self, shape: usize, local: Transform) -> String {
-        occurrence_label(shape, self.body_scope.compose(local))
+        let label = occurrence_label(shape, self.body_scope.compose(local));
+        self.root_discriminator
+            .map_or(label.clone(), |ordinal| format!("{label}~root{ordinal}"))
     }
 }
 
@@ -1451,14 +1457,6 @@ fn transform_digest(transform: Transform) -> String {
     sha256_hex(&bytes)[..16].to_owned()
 }
 
-fn transform_bits(transform: Transform) -> [u64; 16] {
-    let mut output = [0; 16];
-    for (target, value) in output.iter_mut().zip(transform.rows.into_iter().flatten()) {
-        *target = value.to_bits();
-    }
-    output
-}
-
 fn is_identity(transform: Transform) -> bool {
     transforms_equal(transform, Transform::identity())
 }
@@ -1498,4 +1496,26 @@ fn close_radial_rings(coedges: &mut [Coedge]) {
 
 fn dot(left: Vector3, right: Vector3) -> f64 {
     left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn occurrence_key_uses_the_identity_transform_equivalence_rule() {
+        let mut positive = Transform::identity();
+        positive.rows[0][3] = 0.5e-12;
+        let mut negative = Transform::identity();
+        negative.rows[0][3] = -0.5e-12;
+
+        assert_eq!(
+            OccurrenceKey::new(7, positive),
+            OccurrenceKey::new(7, negative)
+        );
+        assert_eq!(
+            OccurrenceKey::new(7, positive).0,
+            occurrence_label(7, positive)
+        );
+    }
 }

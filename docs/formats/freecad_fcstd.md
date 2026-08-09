@@ -129,7 +129,10 @@ as persistent identity by themselves. Counts, indices, dictionary references, st
 property ownership, and neutral topology links are validated without synthesizing missing names.
 
 The native location chain is applied exactly once at the owning topology level. Display
-tessellation is presentation data and does not replace an available exact shape.
+tessellation is presentation data and does not replace an available exact shape. Each root shape
+use is a distinct neutral occurrence. Repeated root uses of the same shape at the same placement
+retain their serialized root order as an occurrence discriminator; they do not share body,
+region, shell, face, loop, coedge, edge, vertex, or point identity.
 
 ## 8. Design-history transfer
 
