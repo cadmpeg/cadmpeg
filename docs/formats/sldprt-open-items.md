@@ -158,13 +158,13 @@ The decoder treats a later `PS\0\0` as a boundary only when the bytes from that 
 
 **Need.** We must know the mapping to attach each tessellated triangle to its face.
 
-### AL-03. DisplayLists table-header fields
+### AL-03. DisplayLists extended table-header token
 
-**Question.** What do the two u32 cells in the common face-tessellation header and the nonzero extended-form token encode?
+**Question.** What does the nonzero extended-form token encode?
 
-**Known.** `sldprt.md` §8 defines the compact and extended `uoTempFaceTessData_c` headers and the exact descriptor-table position for each form. The common 8-byte header does not select the form. The fixed extension cells and its nonzero token select the extended form.
+**Known.** `sldprt.md` §8 defines the common triangle-count and strip-count cells and the exact descriptor-table position of the compact and extended `uoTempFaceTessData_c` forms. The common cells do not select the form. The fixed extension cells and its nonzero token select the extended form.
 
-**Need.** We must know the field semantics to validate these cells and regenerate their values without a retained source record.
+**Need.** We must know the token semantics to regenerate the extended form without a retained source record.
 
 ## 5. Design intent
 

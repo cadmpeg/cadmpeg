@@ -3811,17 +3811,24 @@ note = "The writer emits the fixed prefix before the value fields."
 name = "display_lists_compact_face_header"
 kind = "byte"
 section = "8"
-anchor = "Both forms start with an opaque 8-byte common header."
+anchor = "Both forms start with the first table's triangle count"
 size = 8
 endianness = "little"
 note = "Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this compact header."
 
 [[record.field]]
-name = "common"
+name = "triangle_count"
 offset = 0
-type = "bytes[8]"
+type = "u32"
 source = "spec"
-anchor = "Both forms start with an opaque 8-byte common header."
+anchor = "triangle count as u32 LE at `+0`"
+
+[[record.field]]
+name = "strip_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "strip count as u32 LE at `+4`"
 
 [[record]]
 name = "display_lists_extended_face_header"
@@ -3833,11 +3840,18 @@ endianness = "little"
 note = "Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor starts at the end of this extended header."
 
 [[record.field]]
-name = "common"
+name = "triangle_count"
 offset = 0
-type = "bytes[8]"
+type = "u32"
 source = "spec"
-anchor = "Both forms start with an opaque 8-byte common header."
+anchor = "triangle count as u32 LE at `+0`"
+
+[[record.field]]
+name = "strip_count"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "strip count as u32 LE at `+4`"
 
 [[record.field]]
 name = "form"

@@ -1006,7 +1006,8 @@ Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `common` | `bytes[8]` | little | spec | Both forms start with an opaque 8-byte common header. |
+| 0 | 4 | `triangle_count` | `u32` | little | spec | triangle count as u32 LE at `+0` |
+| 4 | 4 | `strip_count` | `u32` | little | spec | strip count as u32 LE at `+4` |
 
 ## `display_lists_extended_face_header`
 
@@ -1016,7 +1017,8 @@ Offsets begin after the `uoTempFaceTessData_c` class token. The first descriptor
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 8 | `common` | `bytes[8]` | little | spec | Both forms start with an opaque 8-byte common header. |
+| 0 | 4 | `triangle_count` | `u32` | little | spec | triangle count as u32 LE at `+0` |
+| 4 | 4 | `strip_count` | `u32` | little | spec | strip count as u32 LE at `+4` |
 | 8 | 4 | `form` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
 | 12 | 4 | `zero_at_12` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |
 | 16 | 4 | `zero_at_16` | `u32` | little | spec | u32 LE values `1`, `0`, `0`, and one nonzero token at `+8`, `+12`, `+16`, and `+20` |

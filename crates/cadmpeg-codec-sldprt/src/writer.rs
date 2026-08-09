@@ -1947,12 +1947,28 @@ fn xml_text(out: &mut String, value: &str) {
 }
 
 fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+    let meshes = ir
+        .model
+        .tessellations
+        .iter()
+        .map(sequential_tessellation)
+        .collect::<Result<Vec<_>, _>>()?;
     let mut out = b"uoTempBodyTessData_c".to_vec();
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(b"uoTempFaceTessData_c");
-    out.extend_from_slice(&[0; 8]);
-    for mesh in &ir.model.tessellations {
-        let mesh = sequential_tessellation(mesh)?;
+    let (triangle_count, strip_count) = match meshes.first() {
+        Some(mesh) => (
+            u32::try_from(mesh.triangles.len()).map_err(|_| {
+                CodecError::Malformed("tessellation triangle count overflow".into())
+            })?,
+            u32::try_from(mesh.strip_lengths.len())
+                .map_err(|_| CodecError::Malformed("tessellation strip count overflow".into()))?,
+        ),
+        None => (0, 0),
+    };
+    out.extend_from_slice(&triangle_count.to_le_bytes());
+    out.extend_from_slice(&strip_count.to_le_bytes());
+    for mesh in &meshes {
         let strips = mesh
             .strip_lengths
             .iter()

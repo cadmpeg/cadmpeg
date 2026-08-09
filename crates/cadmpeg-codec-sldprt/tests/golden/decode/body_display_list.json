@@ -183,99 +183,7 @@
           "id": "sldprt:brep:surf#10"
         }
       ],
-      "tessellations": [
-        {
-          "channels": [
-            {
-              "count": 1,
-              "data": "AwAAAA==",
-              "flags": 2,
-              "item_size": 4,
-              "kind": 8
-            },
-            {
-              "count": 3,
-              "data": "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA",
-              "flags": 2,
-              "item_size": 12,
-              "kind": 100
-            },
-            {
-              "count": 3,
-              "data": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-              "flags": 2,
-              "item_size": 12,
-              "kind": 100
-            },
-            {
-              "count": 0,
-              "data": "",
-              "flags": 2,
-              "item_size": 4,
-              "kind": 8
-            },
-            {
-              "count": 1,
-              "data": "BAAAAA==",
-              "flags": 2,
-              "item_size": 4,
-              "kind": 8
-            },
-            {
-              "count": 0,
-              "data": "",
-              "flags": 2,
-              "item_size": 1,
-              "kind": 8
-            }
-          ],
-          "id": "sldprt:displaylist:record#247:0",
-          "normals": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            }
-          ],
-          "strip_lengths": [
-            3
-          ],
-          "triangles": [
-            [
-              0,
-              1,
-              2
-            ]
-          ],
-          "vertices": [
-            {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 1000.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            {
-              "x": 0.0,
-              "y": 1000.0,
-              "z": 0.0
-            }
-          ]
-        }
-      ],
+      "tessellations": [],
       "vertices": [
         {
           "id": "sldprt:brep:vertex#50",
@@ -313,9 +221,6 @@
           "sketch_input_entities": [],
           "unknowns": [
             {
-              "id": "sldprt:displaylist:record#247"
-            },
-            {
               "id": "sldprt:file:block#247"
             },
             {
@@ -333,8 +238,6 @@
         "bmp_thumbnail_count": "0",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "compound_stream_count": "0",
-        "displaylist_triangles": "1",
-        "displaylist_vertices": "3",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
         "parasolid_description": "partition body",
@@ -374,11 +277,6 @@
         "severity": "warning"
       },
       {
-        "code": "reference_graph_not_closed",
-        "message": "1 DisplayLists tessellation table(s) do not resolve to B-rep face ownership. Geometry and native channels are retained without fabricating body or face references.",
-        "severity": "warning"
-      },
-      {
         "code": "feature_history_retained",
         "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
         "severity": "warning"
@@ -407,9 +305,6 @@
           "fields": {
             "geometry.u_axis": "derived"
           }
-        },
-        "sldprt:displaylist:record#247": {
-          "entity": "unknown"
         }
       },
       "provenance": {
@@ -503,16 +398,6 @@
           "stream": 0,
           "tag": "00_12"
         },
-        "sldprt:displaylist:record#247": {
-          "offset": 0,
-          "stream": 1,
-          "tag": "displaylist_tessellation"
-        },
-        "sldprt:displaylist:record#247:0": {
-          "offset": 0,
-          "stream": 1,
-          "tag": "displaylist_tessellation"
-        },
         "sldprt:file:block#247": {
           "offset": 247,
           "stream": 1,
@@ -543,14 +428,6 @@
         "offset": 0,
         "sha256": "3660d0ac9ce4b3ae64f1237e1010509cb1f03acd6c0a30c6e0f67332bd763b71",
         "stream": "Contents/Config-0-Partition"
-      },
-      {
-        "byte_len": 232,
-        "data": "dW9UZW1wQm9keVRlc3NEYXRhX2MAAAAAAAAAAHVvVGVtcEZhY2VUZXNzRGF0YV9jAAAAAAAAAAAEAAAACAAAAAIAAAABAAAAAwAAAAwAAABkAAAAAgAAAAMAAAAAAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAAAAAACAPwAAAAAMAAAAZAAAAAIAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAgAAAACAAAAAAAAAAQAAAAIAAAAAgAAAAEAAAAEAAAAAQAAAAgAAAACAAAAAAAAAA==",
-        "id": "sldprt:displaylist:record#247",
-        "offset": 0,
-        "sha256": "dbdf3decadc69b74b5e80fd5be52df65affb5edc2e10a5b8fa0f98332e8c94db",
-        "stream": "Contents/DisplayLists"
       },
       {
         "byte_len": 232,

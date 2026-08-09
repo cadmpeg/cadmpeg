@@ -268,7 +268,20 @@ pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
         return Vec::new();
     };
     let end = marker + MARKER.len();
-    parse_table_sequence(payload, end + descriptor_table_offset(payload, end)).unwrap_or_default()
+    let (Some(triangle_count), Some(strip_count)) =
+        (u32_le(payload, end), u32_le(payload, end + 4))
+    else {
+        return Vec::new();
+    };
+    let meshes = parse_table_sequence(payload, end + descriptor_table_offset(payload, end));
+    meshes
+        .filter(|meshes| {
+            meshes.first().is_some_and(|mesh| {
+                usize::try_from(triangle_count).ok() == Some(mesh.triangles.len())
+                    && usize::try_from(strip_count).ok() == Some(mesh.strip_lengths.len())
+            })
+        })
+        .unwrap_or_default()
 }
 
 /// Offset of the first descriptor after a face-tessellation class name.
@@ -416,7 +429,7 @@ mod tests {
     #[test]
     fn compact_face_tessellation_header_places_table_at_plus_8() {
         let mut payload = Vec::new();
-        payload.extend(2_u32.to_le_bytes());
+        payload.extend(1_u32.to_le_bytes());
         payload.extend(1_u32.to_le_bytes());
         payload.extend(table());
         assert_eq!(descriptor_table_offset(&payload, 0), 8);
@@ -426,7 +439,7 @@ mod tests {
     #[test]
     fn extended_face_tessellation_header_places_table_at_plus_40() {
         let mut payload = Vec::new();
-        for word in [2_u32, 1, 1, 0, 0, 0x0020_1296, 0, 0, 0, 0] {
+        for word in [1_u32, 1, 1, 0, 0, 0x0020_1296, 0, 0, 0, 0] {
             payload.extend(word.to_le_bytes());
         }
         payload.extend(table());
@@ -437,7 +450,7 @@ mod tests {
     #[test]
     fn incomplete_extended_header_does_not_shift_the_table() {
         let mut payload = Vec::new();
-        for word in [2_u32, 1, 1, 0, 0, 0, 0, 0, 0, 0] {
+        for word in [1_u32, 1, 1, 0, 0, 0, 0, 0, 0, 0] {
             payload.extend(word.to_le_bytes());
         }
         payload.extend(table());

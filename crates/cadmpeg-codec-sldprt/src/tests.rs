@@ -1336,7 +1336,8 @@ fn display_list_payload() -> Vec<u8> {
     let mut b = b"uoTempBodyTessData_c".to_vec();
     b.extend_from_slice(&[0u8; 8]);
     b.extend_from_slice(b"uoTempFaceTessData_c");
-    b.extend_from_slice(&[0u8; 8]);
+    b.extend_from_slice(&1u32.to_le_bytes());
+    b.extend_from_slice(&1u32.to_le_bytes());
     b.extend(descriptor(4, 8, 1, &3u32.to_le_bytes()));
     let mut positions = Vec::new();
     for value in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
@@ -9002,6 +9003,25 @@ fn decode_reports_extended_header_display_list_geometry() {
         .unwrap();
     assert_eq!(result.ir.model.tessellations.len(), 1);
     assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
+}
+
+#[test]
+fn decode_rejects_incoherent_display_list_header_counts() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let header = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .expect("face tessellation class")
+        + marker.len();
+    payload[header..header + 4].copy_from_slice(&2_u32.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.tessellations.is_empty());
 }
 
 #[test]
