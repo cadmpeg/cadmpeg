@@ -829,7 +829,7 @@ fn collect_legacy_parameters(
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {
-            if relation.inputs.is_empty() && relation.output.is_none() {
+            if relation.inputs.is_empty() {
                 if let Some(parameter) = relation.parameter_entity_id {
                     relations_by_parameter
                         .entry(parameter)
@@ -851,13 +851,32 @@ fn collect_legacy_parameters(
             let Some(candidate) = candidates.get_mut(parameter) else {
                 continue;
             };
-            if canonical_parameter_type(&relation.result_type) != Some(candidate.parameter_type) {
+            let (source_type, formula_expression, evaluated) = match relation.output.as_ref() {
+                Some(output) if relation.result_type == "VoidType" => {
+                    let formula_expression = legacy_output_assignment_expression(
+                        &relation.expression,
+                        &output.parameter,
+                    );
+                    let evaluated =
+                        evaluate_legacy_output_assignment(&relation.expression, &output.parameter);
+                    (output.value_type.as_str(), formula_expression, evaluated)
+                }
+                None if relation.result_type != "VoidType" => (
+                    relation.result_type.as_str(),
+                    Some(relation.expression.as_str()),
+                    evaluate_formula_expression(&relation.expression, &BTreeMap::new()),
+                ),
+                _ => continue,
+            };
+            if canonical_parameter_type(source_type) != Some(candidate.parameter_type) {
                 continue;
             }
-            let bindings = BTreeMap::new();
-            let Some(evaluated) = evaluate_formula_expression(&relation.expression, &bindings)
-                .filter(|value| value.satisfies_source_type(&relation.result_type))
+            let Some(evaluated) =
+                evaluated.filter(|value| value.satisfies_source_type(source_type))
             else {
+                continue;
+            };
+            let Some(formula_expression) = formula_expression else {
                 continue;
             };
             if let Some(stored) = candidate.parameter.value.clone() {
@@ -865,15 +884,35 @@ fn collect_legacy_parameters(
                     continue;
                 }
             }
-            candidate
-                .parameter
-                .expression
-                .clone_from(&relation.expression);
+            candidate.parameter.expression = formula_expression.to_string();
             candidate.formula_output = true;
             transfer.formulas += 1;
         }
     }
     transfer
+}
+
+fn evaluate_legacy_output_assignment(
+    source: &str,
+    output_parameter: &str,
+) -> Option<EvaluatedFormulaValue> {
+    let expression = legacy_output_assignment_expression(source, output_parameter)?;
+    evaluate_formula_expression(expression, &BTreeMap::new())
+}
+
+fn legacy_output_assignment_expression<'a>(
+    source: &'a str,
+    output_parameter: &str,
+) -> Option<&'a str> {
+    let source = source.trim_matches(|character: char| character.is_ascii_whitespace());
+    let remainder = source.strip_prefix(output_parameter)?;
+    let remainder = remainder.trim_start_matches(|character: char| character.is_ascii_whitespace());
+    let remainder = remainder.strip_prefix('=')?;
+    if remainder.starts_with('=') {
+        return None;
+    }
+    let expression = remainder.trim_matches(|character: char| character.is_ascii_whitespace());
+    (!expression.is_empty()).then_some(expression)
 }
 
 fn outer_container_in_scope(
@@ -2937,6 +2976,22 @@ mod parser_tests {
             &unset_candidate("LENGTH"),
             &unset_candidate("Real")
         ));
+    }
+
+    #[test]
+    fn legacy_output_assignment_requires_one_exact_assignment() {
+        let value = evaluate_legacy_output_assignment("#1_ = 2 + 3", "#1_")
+            .and_then(EvaluatedFormulaValue::scalar)
+            .expect("numeric assignment result");
+        assert_eq!(value.value, 5.0);
+        assert!(evaluate_legacy_output_assignment("#1_ == 5", "#1_").is_none());
+        assert!(evaluate_legacy_output_assignment("#1_ = 2 = 3", "#1_").is_none());
+        assert!(evaluate_legacy_output_assignment("#2_ = 5", "#1_").is_none());
+        assert_eq!(
+            evaluate_legacy_output_assignment("#1_ = \"a=b\"", "#1_")
+                .and_then(EvaluatedFormulaValue::string),
+            Some("a=b".to_string())
+        );
     }
 
     #[test]

@@ -5389,6 +5389,125 @@ fn decode_transfers_only_an_agreeing_closed_legacy_formula() {
 }
 
 #[test]
+fn decode_transfers_a_zero_input_legacy_output_assignment() {
+    fn legacy_output_assignment(
+        expression: &str,
+        stored: Option<f64>,
+        parameter_type: &str,
+        output_type: &str,
+    ) -> Vec<u8> {
+        let mut bytes = zero_entity_catpart();
+        bytes.push(0xea);
+        bytes.extend(1_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        let signature = format!("(#1_ : #Out {output_type}) : VoidType\n");
+        for (role, selector, value) in [
+            ("body", 1_u32, expression),
+            ("param", 4_u32, signature.as_str()),
+        ] {
+            bytes.push(u8::try_from(role.len() + 1).expect("short role"));
+            bytes.extend(role.as_bytes());
+            bytes.push(0x80);
+            bytes.extend(selector.to_le_bytes());
+            bytes.extend(b"\xe8\x00\x12\x01");
+            bytes.push(u8::try_from(value.len() + 1).expect("short text"));
+            bytes.extend(value.as_bytes());
+            bytes.push(0xfe);
+        }
+        bytes.push(0xea);
+        bytes.extend(4_u32.to_le_bytes());
+        bytes.push(0x81);
+        bytes.extend([0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1, 8]);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.extend([7, b'R', b'e', b's', b'u', b'l', b't', 0xfe]);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.push(u8::try_from(parameter_type.len() + 1).expect("short type"));
+        bytes.extend(parameter_type.as_bytes());
+        bytes.push(0x83);
+        bytes.extend(b"\xfe\x84\x88\x82\xfe");
+        if let Some(stored) = stored {
+            bytes.push(0xe6);
+            bytes.extend(stored.to_bits().to_le_bytes());
+        } else {
+            bytes.push(0xe7);
+        }
+        bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+        bytes
+    }
+
+    let transferred = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                Some(5.0),
+                "Real",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode output assignment");
+    let [parameter] = transferred.ir.model.parameters.as_slice() else {
+        panic!("one legacy output parameter")
+    };
+    assert_eq!(parameter.expression, "2+3");
+    assert_eq!(
+        transferred
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
+
+    let unset = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment("#1_ = 2+3", None, "Real", "Real")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unset output assignment");
+    assert_eq!(unset.ir.model.parameters[0].expression, "2+3");
+    assert_eq!(unset.ir.model.parameters[0].value, None);
+
+    let mismatched_value = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                Some(6.0),
+                "Real",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode mismatched output assignment");
+    assert_eq!(mismatched_value.ir.model.parameters[0].expression, "6");
+    assert_eq!(
+        mismatched_value
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        0
+    );
+
+    let mismatched_type = CatiaCodec
+        .decode(
+            &mut Cursor::new(legacy_output_assignment(
+                "#1_ = 2+3",
+                None,
+                "LENGTH",
+                "Real",
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode type-mismatched output assignment");
+    assert!(mismatched_type.ir.model.parameters[0].expression.is_empty());
+    assert_eq!(
+        mismatched_type
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        0
+    );
+}
+
+#[test]
 fn decode_transfers_an_agreeing_closed_legacy_string_formula() {
     fn legacy_string_constant(expression: &str, stored: &str) -> Vec<u8> {
         let mut bytes = zero_entity_catpart();

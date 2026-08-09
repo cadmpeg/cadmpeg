@@ -118,9 +118,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Which string-value entity stores the result of a typed `String` relation?
 
-**Known.** `catia.md` §7.1 "A typed relation consists of" and `catia.md` §7.1 "A legacy string-value packet is" defines string packets and typed relation result signatures. The type signature does not select the result packet.
+**Known.** `catia.md` §7.1 "A typed relation consists of" and `catia.md` §7.1 "A legacy string-value packet is" defines string packets and typed relation result signatures. A self-`body` relation whose `param` selector resolves one same-run identity selects that identity. For a zero-input `VoidType` relation, the exact output-assignment rule in `catia.md` §7.1 transfers that selected string packet when its value agrees with the right-hand result. A relation with input clauses or a nonlocal selector still does not establish its result packet.
 
-**Need.** We must know the result entity to transfer the evaluated value.
+**Need.** We must know the result entity for input-bearing relations and relations with nonlocal selectors so we can transfer the evaluated value.
 
 ### DI-12. Typed `Boolean` value production
 
