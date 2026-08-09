@@ -42,14 +42,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** `container::e5_record_stream_in_segments` takes the segment with the largest count through `max_by_key`, which keeps the last maximum. Two segments with equal counts and no `0x0000008e` type resolve by segment order. The specification sentence is a transcription of the function's doc comment.
 
-### CR-05. Descriptor name position
-
-**Question.** Which offset and length hold the stream name in a directory descriptor?
-
-**Known.** `catia.md` §3.4 "A candidate is a descriptor when every extent validates" gives "The stream name is a UTF-16LE ASCII run in the descriptor header." `docs/layouts/catia.toml` holds no row for the name. `container::descriptor_name` takes the longest run of printable ASCII characters with `00` high bytes in the window from `ds-40` to `ds+0x50`, and it needs three characters as a minimum.
-
-**Need.** The name selects the BREP streams (CR-04) and names the stream in the container report. An empty or wrong name makes `container::identify_variant` report `Variant::InnerNoDirectory` for a file that has a directory. We must know the offset to read a name that is not the longest run in that window.
-
 ## 2. Design intent
 
 ### DI-01. Compact schema-program semantics

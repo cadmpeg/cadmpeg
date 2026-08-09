@@ -101,7 +101,7 @@ ds+0x54 : k extent structs, 20 bytes each:
             flags    u32be
 ```
 
-A candidate is a descriptor when every extent validates: `inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, `sum(log_len) == logical_stream_length`. A logical stream is the concatenation of `file[inner+phys_off : inner+phys_off+phys_len]` over the descriptor's extents in `log_off` order. The stream name is a UTF-16LE ASCII run in the descriptor header.
+A candidate is a descriptor when every extent validates: `inner + phys_off + phys_len <= filesize`, `phys_len != 0`, `log_off` cumulative from 0, `log_len == phys_len`, `sum(log_len) == logical_stream_length`. A logical stream is the concatenation of `file[inner+phys_off : inner+phys_off+phys_len]` over the descriptor's extents in `log_off` order. The standard descriptor form has `00 00 00` at `ds-3..ds`: a two-byte UTF-16LE name terminator followed by one padding byte. Its name is the complete run of pairs `<printable-ASCII-byte> 00` immediately before that tail, with at least three characters. The legacy descriptor form starts its name at `ds+0x10`; the name has the same UTF-16LE terminator, and every byte from the terminator through `ds+0x50` is zero. A descriptor with neither complete name form has no name.
 
 Container inspection retains the `flags` word of every extent and reports the words as an ordered comma-separated list of eight-digit hexadecimal values in the `extent_flags` attribute.
 

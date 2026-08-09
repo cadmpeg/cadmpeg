@@ -847,39 +847,67 @@ fn parse_extents(
     Some((extents, cum))
 }
 
-/// Read the UTF-16LE ASCII stream name from a descriptor header region: the
-/// longest run of printable ASCII characters each followed by a `0x00` high byte,
-/// searched in the window preceding the extent-count field.
+/// Read a descriptor's UTF-16LE ASCII stream name from one of its two framed
+/// name locations.
+///
+/// The descriptor tail is a two-byte UTF-16LE terminator followed by one zero
+/// padding byte. The name is the complete run of printable ASCII code units
+/// immediately before that tail. This end anchor keeps unrelated UTF-16 text
+/// elsewhere in the descriptor from becoming the stream name.
 fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
-    let start = ds.saturating_sub(40);
-    let window = &dirbuf[start..ds + 0x50.min(dirbuf.len() - ds)];
-    let mut best = String::new();
-    let mut ambiguous = false;
-    let mut i = 0;
-    while i + 1 < window.len() {
-        let mut chars = String::new();
-        let mut j = i;
-        while j + 1 < window.len() && (0x20..0x7f).contains(&window[j]) && window[j + 1] == 0 {
-            chars.push(window[j] as char);
-            j += 2;
-        }
-        if chars.len() >= 3 {
-            if chars.len() > best.len() {
-                best = chars;
-                ambiguous = false;
-            } else if chars.len() == best.len() && chars != best {
-                ambiguous = true;
+    if let Some(tail_start) = ds.checked_sub(3) {
+        if dirbuf.get(tail_start..ds) == Some(&[0, 0, 0]) {
+            let mut name_start = tail_start;
+            while name_start >= 2 {
+                let pair_start = name_start - 2;
+                if (0x20..0x7f).contains(&dirbuf[pair_start]) && dirbuf[pair_start + 1] == 0 {
+                    name_start = pair_start;
+                } else {
+                    break;
+                }
             }
-            i = j;
-        } else {
-            i += 1;
+            let name_bytes = &dirbuf[name_start..tail_start];
+            if name_bytes.len() >= 6 {
+                return name_bytes
+                    .chunks_exact(2)
+                    .map(|pair| pair[0] as char)
+                    .collect();
+            }
         }
     }
-    if ambiguous {
-        String::new()
-    } else {
-        best
+
+    // Older directory headers place an unframed name at ds+0x10. Admit this
+    // form only when the name closes with a UTF-16LE terminator and the rest
+    // of the header before the extent count is zero.
+    let Some(header_name_start) = ds.checked_add(0x10) else {
+        return String::new();
+    };
+    let Some(header_end) = ds.checked_add(0x50) else {
+        return String::new();
+    };
+    let Some(header_name) = dirbuf.get(header_name_start..header_end) else {
+        return String::new();
+    };
+    let mut name_len = 0;
+    while name_len + 1 < header_name.len()
+        && (0x20..0x7f).contains(&header_name[name_len])
+        && header_name[name_len + 1] == 0
+    {
+        name_len += 2;
     }
+    if name_len < 6
+        || header_name.get(name_len..name_len + 2) != Some(&[0, 0])
+        || header_name
+            .get(name_len + 2..)
+            .is_none_or(|rest| rest.iter().any(|byte| *byte != 0))
+    {
+        return String::new();
+    }
+
+    header_name[..name_len]
+        .chunks_exact(2)
+        .map(|pair| pair[0] as char)
+        .collect()
 }
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
@@ -1540,19 +1568,51 @@ mod tests {
     }
 
     #[test]
-    fn descriptor_name_withholds_tied_utf16_candidates() {
+    fn descriptor_name_is_anchored_to_the_descriptor_tail() {
         let mut directory = vec![0u8; 0x80];
-        for (offset, name) in [(24, b"ABC".as_slice()), (32, b"XYZ".as_slice())] {
-            for (index, byte) in name.iter().enumerate() {
-                directory[offset + index * 2] = *byte;
-            }
+        let ds = 0x40;
+        let name = b"MainDataStream";
+        let name_start = ds - 3 - name.len() * 2;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
         }
-        assert!(super::descriptor_name(&directory, 0x40).is_empty());
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
 
-        for (index, byte) in b"LONGER".iter().enumerate() {
-            directory[48 + index * 2] = *byte;
+        assert_eq!(super::descriptor_name(&directory, ds), "MainDataStream");
+    }
+
+    #[test]
+    fn descriptor_name_ignores_unrelated_utf16_runs_and_requires_the_tail() {
+        let mut directory = vec![0u8; 0x80];
+        for (index, byte) in b"UNRELATED_LONGER_RUN".iter().enumerate() {
+            directory[8 + index * 2] = *byte;
         }
-        assert_eq!(super::descriptor_name(&directory, 0x40), "LONGER");
+        let ds = 0x40;
+        let name = b"Data";
+        let name_start = ds - 3 - name.len() * 2;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
+        }
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 1]);
+        assert!(super::descriptor_name(&directory, ds).is_empty());
+
+        directory[ds - 3..ds].copy_from_slice(&[0, 0, 0]);
+        assert_eq!(super::descriptor_name(&directory, ds), "Data");
+    }
+
+    #[test]
+    fn descriptor_name_accepts_the_legacy_fixed_header_form() {
+        let mut directory = vec![0u8; 0x80];
+        let ds = 0x10;
+        let name = b"RootStorage";
+        let name_start = ds + 0x10;
+        for (index, byte) in name.iter().enumerate() {
+            directory[name_start + index * 2] = *byte;
+        }
+        directory[name_start + name.len() * 2..name_start + name.len() * 2 + 2]
+            .copy_from_slice(&[0, 0]);
+
+        assert_eq!(super::descriptor_name(&directory, ds), "RootStorage");
     }
 
     #[test]

@@ -113,7 +113,7 @@ kind = "byte"
 section = "3.4"
 anchor = "ds+0x0c : logical_stream_length  (u32be)"
 size = 84
-note = "Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The stream name is a UTF-16LE ASCII run somewhere in this header; the spec states no offset for it."
+note = "Descriptor-relative. `k` extent structs of 20 bytes each follow at ds+0x54. The standard name form ends at the three-byte tail ds-3..ds (`00 00 00`); the legacy form starts at ds+0x10 and ends with the same UTF-16LE terminator, with zero fill through ds+0x50."
 
 [[record.field]]
 name = "logical_stream_length"
@@ -139,7 +139,7 @@ note = "The spec states no field between the descriptor start and the logical st
 [[record.gap]]
 offset = 16
 size = 64
-note = "The spec states no field between ds+0x10 and the extent count at ds+0x50. The stream name lies somewhere in this region."
+note = "The standard name lies before ds and ends at the fixed tail ds-3..ds. In the legacy form, ds+0x10 starts the variable-length printable UTF-16LE run; its terminator and the remaining bytes through ds+0x50 are zero."
 
 [[record.code]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
