@@ -2091,11 +2091,14 @@ fn parse_text_style(
         }
         let face_end = face_units.iter().position(|unit| *unit == 0).unwrap_or(64);
         let windows_logfont_name = String::from_utf16_lossy(&face_units[..face_end]);
-        let postscript_name = (!description.is_empty()
+        let postscript_name = if !description.is_empty()
             && !description.eq_ignore_ascii_case("Default")
-            && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230)))
-        .then(|| description.clone())
-        .unwrap_or_default();
+            && (apple_runtime || writer_version.is_some_and(|version| version > 201_802_230))
+        {
+            description.clone()
+        } else {
+            String::new()
+        };
         let mut font = FontRecord {
             windows_logfont_name,
             postscript_name,

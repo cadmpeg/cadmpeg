@@ -44,6 +44,7 @@ const TCODE_COMPRESSED_MESH_GEOMETRY: u32 = 0x0010_0017;
 const TCODE_UNIT_AND_TOLERANCES: u32 = 0x0200_0010;
 const TCODE_ENDOFFILE: u32 = 0x8000_7fff;
 
+#[allow(clippy::needless_pass_by_value)] // This signature permits direct use with Result::map_err.
 fn malformed(error: FramingError) -> CodecError {
     CodecError::Malformed(error.to_string())
 }
@@ -119,7 +120,7 @@ fn legacy_spline(
             stored_knots.push(first);
         }
     }
-    while stored_knots.len() <= cv_count - 1 {
+    while stored_knots.len() < cv_count {
         stored_knots.push(reader.f64().map_err(malformed)?);
     }
     let last = *stored_knots.last().expect("first knot exists");
@@ -323,8 +324,7 @@ fn legacy_surface(
     }
     let rational_mode = rational_modes
         .into_iter()
-        .filter(|mode| *mode != 0)
-        .next_back()
+        .rfind(|mode| *mode != 0)
         .unwrap_or(0);
     let closed = [
         reader.u8().map_err(malformed)?,
@@ -553,10 +553,7 @@ fn append_legacy_brep(ir: &mut CadIr, brep: LegacyBrep, suffix: &str) -> Result<
             let globals = trim_paths
                 .iter()
                 .enumerate()
-                .filter_map(|(global, path)| {
-                    (*path == (face_index, loop_index, 0)).then_some(global)
-                })
-                .next()
+                .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .map(|start| (start..start + loop_record.trims.len()).collect::<Vec<_>>())
                 .unwrap_or_default();
             for (position, global) in globals.iter().copied().enumerate() {
@@ -888,10 +885,7 @@ fn legacy_face(
     let glue_count = usize::try_from(reader.i32().map_err(malformed)?)
         .map_err(|_| CodecError::Malformed("invalid V1 face seam count".to_string()))?;
     let seam_glue = (0..glue_count)
-        .map(|_| {
-            usize::try_from(reader.u16().map_err(malformed)?)
-                .map_err(|_| CodecError::Malformed("V1 seam index overflow".to_string()))
-        })
+        .map(|_| reader.u16().map(usize::from).map_err(malformed))
         .collect::<Result<Vec<_>, _>>()?;
     let surface_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_SRF)?;
     let surface = legacy_surface(data, surface_chunk.body, scale)?;
@@ -932,10 +926,7 @@ fn legacy_brep(
     let glue_count = usize::try_from(reader.i32().map_err(malformed)?)
         .map_err(|_| CodecError::Malformed("invalid V1 shell glue count".to_string()))?;
     let shell_glue = (0..glue_count)
-        .map(|_| {
-            usize::try_from(reader.u16().map_err(malformed)?)
-                .map_err(|_| CodecError::Malformed("V1 shell glue index overflow".to_string()))
-        })
+        .map(|_| reader.u16().map(usize::from).map_err(malformed))
         .collect::<Result<Vec<_>, _>>()?;
     let mut faces = Vec::with_capacity(face_count);
     for _ in 0..face_count {
@@ -1089,9 +1080,9 @@ fn evaluate_nurbs(curve: &NurbsCurve, parameter: f64) -> Result<Point3, CodecErr
             } else {
                 (parameter - curve.knots[index]) / denominator
             };
-            for coordinate in 0..4 {
-                values[j][coordinate] =
-                    (1.0 - alpha) * values[j - 1][coordinate] + alpha * values[j][coordinate];
+            let previous = values[j - 1];
+            for (coordinate, value) in values[j].iter_mut().enumerate() {
+                *value = (1.0 - alpha) * previous[coordinate] + alpha * *value;
             }
         }
     }

@@ -2260,6 +2260,7 @@ fn parses_layer_class_wrapper_and_rendering_chunk() {
     section_style.extend(&model_attributes);
     section_style.push(0);
     payload.push(35);
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
     payload.extend(crc_chunk_excluding(
         archive,
         0x4000_8000,

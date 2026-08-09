@@ -853,10 +853,7 @@ fn read_regions(
     reader.skip(chunk.next_offset - reader.position())?;
     match parsed {
         Ok((sides, regions, nested)) => {
-            let direct = crate::chunks::direct_checksum_ranges(
-                &chunk.body,
-                nested.as_ref().map_or(&[][..], std::slice::from_ref),
-            )?;
+            let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested.as_slice())?;
             if matches!(
                 verify_checksum_ranges(bytes, &chunk, &direct)?,
                 ChecksumStatus::Mismatch { .. }
@@ -974,11 +971,6 @@ fn region_element(
 }
 
 fn validate(mut raw: RawBrep) -> Result<ValidatedRawBrep, GeometryError> {
-    positional(&raw.vertices, |v| v.index)?;
-    positional(&raw.edges, |v| v.index)?;
-    positional(&raw.trims, |v| v.index)?;
-    positional(&raw.loops, |v| v.index)?;
-    positional(&raw.faces, |v| v.index)?;
     for vertex in &raw.vertices {
         refs(&vertex.edges, raw.edges.len(), "vertex edge")?;
         finite_tolerance(vertex.tolerance, "vertex tolerance")?;
@@ -1327,11 +1319,6 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
         return Err(error(reader.position(), "Brep count exhausts payload"));
     }
     Ok(count)
-}
-
-fn positional<T>(values: &[T], index: impl Fn(&T) -> i32) -> Result<(), GeometryError> {
-    let _ = (values, index);
-    Ok(())
 }
 
 fn refs(values: &[i32], len: usize, label: &str) -> Result<(), GeometryError> {

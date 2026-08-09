@@ -609,15 +609,6 @@ fn finite_attribute(value: f64, offset: usize, label: &str) -> Result<f64, Frami
     }
 }
 
-fn validate_attribute_selectors(
-    object_mode: u8,
-    selectors: [u8; 5],
-    offset: usize,
-) -> Result<(), FramingError> {
-    let _ = (object_mode, selectors, offset);
-    Ok(())
-}
-
 pub(crate) fn parse_attributes(
     bytes: &[u8],
     body_range: Range<usize>,
@@ -714,17 +705,6 @@ pub(crate) fn parse_attributes(
         } else {
             None
         };
-        validate_attribute_selectors(
-            object_mode,
-            [
-                color_source,
-                linetype_source,
-                material_source,
-                plot_color_source,
-                plot_weight_source,
-            ],
-            body_range.start,
-        )?;
         let obsolete_thickness =
             finite_attribute(obsolete_thickness, body_range.start, "obsolete thickness")?;
         let obsolete_scale = finite_attribute(obsolete_scale, body_range.start, "obsolete scale")?;
@@ -982,17 +962,6 @@ pub(crate) fn parse_attributes(
             41 => attributes.selective_clipping_list = reader.bool()?,
             _ => unreachable!(),
         }
-        validate_attribute_selectors(
-            attributes.object_mode,
-            [
-                attributes.color_source,
-                attributes.linetype_source,
-                attributes.material_source,
-                attributes.plot_color_source,
-                attributes.plot_weight_source,
-            ],
-            reader.position(),
-        )?;
     }
     Err(malformed_at(
         reader.end(),

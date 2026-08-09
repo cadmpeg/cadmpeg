@@ -161,9 +161,7 @@ pub(crate) fn decode(
             mesh_budget,
             &mut warnings,
         ) {
-            Ok(meshes) => {
-                meshes
-            }
+            Ok(meshes) => meshes,
             Err(cache_error) => {
                 // The document budget is not rolled back: any buffer the cache
                 // inflated before failing is retained in the arena, so its
@@ -962,6 +960,7 @@ pub(crate) mod tests {
             let count = payload.len() - 4 - cap_bytes - cache_bytes - 4;
             payload[count..count + 4].copy_from_slice(&2_i32.to_le_bytes());
             let body = &payload[12..payload.len() - 4];
+            #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
             let mut children = vec![8..8 + profile_len];
             if cache_bytes != 0 {
                 children.push(body.len() - cache_bytes..body.len());
@@ -1035,7 +1034,9 @@ pub(crate) mod tests {
         cache.push(1);
         cache.extend(item);
         cache.push(0);
-        crc_chunk_excluding(ANONYMOUS, &cache, &[9..9 + item_len])
+        #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child.
+        let wrapped = crc_chunk_excluding(ANONYMOUS, &cache, &[9..9 + item_len]);
+        wrapped
     }
 
     fn decoded_polygon(clockwise: bool, closed: bool) -> DecodedCurve {

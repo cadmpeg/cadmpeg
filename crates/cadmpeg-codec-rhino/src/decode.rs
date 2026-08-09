@@ -5847,10 +5847,10 @@ mod tests {
     #[test]
     fn coedge_and_edge_proxy_reversals_are_independent() {
         for trim_reversed in [false, true] {
-            for _edge_proxy_reversed in [false, true] {
+            for edge_proxy_reversed in [false, true] {
                 assert_eq!(
-                    coedge_sense(trim_reversed, _edge_proxy_reversed),
-                    if trim_reversed ^ _edge_proxy_reversed {
+                    coedge_sense(trim_reversed, edge_proxy_reversed),
+                    if trim_reversed ^ edge_proxy_reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward

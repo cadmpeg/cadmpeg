@@ -927,10 +927,7 @@ fn read_double_chunk<'a>(
             "double-vertex chunk has trailing bytes",
         ));
     }
-    let direct = crate::chunks::direct_checksum_ranges(
-        &chunk.body,
-        nested_buffer.as_ref().map_or(&[][..], std::slice::from_ref),
-    )?;
+    let direct = crate::chunks::direct_checksum_ranges(&chunk.body, nested_buffer.as_slice())?;
     if matches!(
         crate::chunks::verify_checksum_ranges(reader.backing_bytes(), &chunk, &direct)?,
         ChecksumStatus::Mismatch { .. }

@@ -593,6 +593,7 @@ fn parse_v6(
     finish(&outer, "instance-definition wrapper")?;
     let component_start = reader.position();
     let (index, id, name) = model_component(data, &mut reader, archive, warnings)?;
+    #[allow(clippy::single_range_in_vec_init)] // The range is one checksum child, not its offsets.
     let mut outer_children = vec![component_start..reader.position()];
     if id.is_nil() {
         return Err(structural(&reader, "definition UUID is nil"));

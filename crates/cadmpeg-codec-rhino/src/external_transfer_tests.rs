@@ -7,6 +7,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
 
 use super::RhinoCodec;
@@ -54,7 +55,7 @@ fn archive_version(notes: &[String]) -> Option<u64> {
 fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
     let bytes = fs::read(path).expect("read 3DM witness");
     let inspect = RhinoCodec
-        .inspect(&mut Cursor::new(bytes.clone()), &Default::default())
+        .inspect(&mut Cursor::new(bytes.clone()), &InspectOptions::default())
         .expect("inspect witness");
     let version = archive_version(&inspect.notes).expect("archive version note");
     let decoded = RhinoCodec
