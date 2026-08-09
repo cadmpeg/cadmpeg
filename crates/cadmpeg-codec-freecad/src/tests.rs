@@ -5842,7 +5842,22 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
 fn repeated_shape_roots_have_distinct_occurrence_identity() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape">
+<Part ElementMap="1.0" file="Shape.brp"/>
+<ElementMap new="1" count="1"><Element key="compat" value="compat"/></ElementMap>
+<ElementMap2 count="3">
+1 PostfixCount 0 MapCount 1
+ElementMap 1 1 2
+Edge ChildCount 0 NameCount 2
+0
+;EdgeStable.0.a 0
+Vertex ChildCount 0 NameCount 3
+0
+;VertexStable1.0.a 0
+;VertexStable2.0.a 0
+EndMap
+</ElementMap2>
+</Property></Properties></Object></ObjectData>
 </Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
@@ -5867,6 +5882,17 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir.model.edges.len(), 2);
     assert_eq!(result.ir.model.vertices.len(), 4);
     assert_ne!(result.ir.model.bodies[0].id, result.ir.model.bodies[1].id);
+    let maps = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::ElementMapRecord>("element_maps")
+        .expect("element maps");
+    let groups = &maps[0].maps[0].groups;
+    assert_eq!(groups[0].names[1][0].topology_ids.len(), 2);
+    assert_eq!(groups[1].names[1][0].topology_ids.len(), 2);
+    assert_eq!(groups[1].names[2][0].topology_ids.len(), 2);
     assert_valid_document(&result.ir);
 }
 

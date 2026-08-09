@@ -1310,7 +1310,8 @@ impl Codec for FcstdCodec {
                 .extend(surface_transfer.procedural);
             geometry_transferred |=
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
-            topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
+            let topology_occurrences =
+                topology_transfer::transfer(ctx, &mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(
                 &mut ir,
                 &graph.objects,
@@ -1335,11 +1336,7 @@ impl Codec for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("design_census", &design_census)?;
-            let payload_ids = shape_payloads
-                .iter()
-                .map(|payload| (payload.property.as_str(), payload.id.as_str()))
-                .collect::<HashMap<_, _>>();
-            element_map::bind_topology(&mut element_maps, &payload_ids, &ir);
+            element_map::bind_topology(&mut element_maps, &topology_occurrences);
             let gui_graph = if let Some(gui_bytes) = scan.data.get("GuiDocument.xml") {
                 gui::transfer(
                     &mut ir,

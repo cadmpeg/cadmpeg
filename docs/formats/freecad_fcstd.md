@@ -155,10 +155,17 @@ encodes a literal or dictionary-derived base, a postfix-dictionary index, and pe
 references. The final node owns the shape. Group order and name position establish `Face1`,
 `Edge1`, `Vertex1`, and the corresponding other topology-kind indices. Name position zero is
 reserved; the transient element with one-based index N uses name position N. Each placed root
-repeats the same one-based position sequence. These transient positions are connected to
-persistent names and to every placed neutral occurrence; they are never exposed as persistent
-identity by themselves. Counts, indices, dictionary references, string references, property
-ownership, and neutral topology links are validated without synthesizing missing names.
+repeats the same one-based position sequence. For each topology kind, positions follow a
+depth-first traversal of serialized child order. Traversal stops below a child of the requested
+kind, and the indexed map keeps the first occurrence of each shape plus composed location while
+ignoring orientation. The decoder carries that source position with each transferred neutral
+occurrence. It does not derive the position from neutral arena order. Repeated roots at the same
+placement attach their distinct neutral occurrences to the same source position. A source element
+that has no neutral occurrence leaves its position empty and does not shift later bindings. These
+transient positions are connected to persistent names and to every placed neutral occurrence;
+they are never exposed as persistent identity by themselves. Counts, indices, dictionary
+references, string references, property ownership, and neutral topology links are validated
+without synthesizing missing names.
 
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape. Each root shape

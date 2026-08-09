@@ -99,15 +99,3 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `corpus/freecad_fcstd/author_fixtures.py` authors fixtures through the FreeCAD Python API on a machine with a FreeCAD installation. The current build machine has no FreeCAD installation. `corpus/freecad_fcstd-fixture-charter.md` states that a synthetic parser input establishes no ladder score. No current fixture carries an arc with a non-zero sweep that a profile chain consumes.
 
 **Need.** We must extend the authoring script with one sketch that contains a circular arc with a non-zero `AngleXU`, a bounded elliptical arc with a rotated major axis, a full rotated ellipse, a hyperbola, a parabola, and line segments that meet the arc endpoints. The rotation angles must stay away from multiples of a quarter turn, because at those angles a frame built with swapped axes produces the same points. We must then run the script under FreeCAD, commit the saved documents, and pin their decode, inspect, encode, and STEP goldens. These fixtures resolve SG-02, and they can support format-support claims because FreeCAD wrote them.
-
-## 4. Persistent topology identity
-
-### PT-02. Element-map position to neutral-occurrence order
-
-**Question.** What exact relation connects each final element-map name position to neutral topology occurrences, including repeated placed roots?
-
-**Known.** `freecad_fcstd.md` §7 "A newly encoded element map likewise uses a compatibility marker" states that group order and name position establish the transient `Face1`, `Edge1`, and `Vertex1` indices. Those positions connect persistent names to every placed neutral occurrence. The source index belongs to the B-rep topology map, not to persistent identity.
-
-**Conflict.** `element_map.rs` `bind_topology` gathers all neutral ids of one kind in arena traversal order. It assigns the Nth id to one-based name position N and repeats the complete sequence for placed occurrences. No source topology index is carried through this join, and no check proves that arena order equals the B-rep indexed-map order for each placement. A different traversal or a missing occurrence can attach a valid persistent name to the wrong face, edge, or vertex.
-
-**Need.** We must establish the B-rep indexed-map enumeration rule and carry that index through exact-topology transfer. Repeated placements must bind by placement plus source index, not by a global modulo assumption.

@@ -31,13 +31,21 @@ use crate::native::PropertyRecord;
 
 type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
 
+pub(crate) struct TopologyOccurrence {
+    pub(crate) property: String,
+    pub(crate) indexed_name: &'static str,
+    pub(crate) source_index: usize,
+    pub(crate) topology_id: String,
+}
+
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     payloads: &[ShapePayloadRecord],
     properties: &[PropertyRecord],
-) -> Result<(), CodecError> {
+) -> Result<Vec<TopologyOccurrence>, CodecError> {
+    let mut occurrences = Vec::new();
     for payload in payloads {
         let Some(tables) = Tables::from_payload(payload) else {
             continue;
@@ -55,6 +63,7 @@ pub(crate) fn transfer(
             builder.append_body(ctx, ir, root)?;
         }
         builder.emit_unowned_triangulations(ir);
+        occurrences.extend(builder.occurrences);
     }
     close_radial_rings(&mut ir.model.coedges);
     let referenced_pcurves = ir
@@ -67,7 +76,7 @@ pub(crate) fn transfer(
     ir.model
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
-    Ok(())
+    Ok(occurrences)
 }
 
 #[derive(Clone, Copy)]
@@ -137,6 +146,15 @@ impl OccurrenceKey {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct SourceOccurrenceKey(String);
+
+impl SourceOccurrenceKey {
+    fn new(shape: usize, transform: Transform) -> Self {
+        Self(format!("{}@{}", shape, transform_digest(transform)))
+    }
+}
+
 struct Builder<'a> {
     payload: &'a ShapePayloadRecord,
     tables: Tables<'a>,
@@ -149,10 +167,13 @@ struct Builder<'a> {
     root_discriminator: Option<usize>,
     current_body: Option<BodyId>,
     source_object: String,
+    source_indices: HashMap<(TextShapeKind, SourceOccurrenceKey), usize>,
+    occurrences: Vec<TopologyOccurrence>,
 }
 
 impl<'a> Builder<'a> {
     fn new(payload: &'a ShapePayloadRecord, tables: Tables<'a>, source_object: String) -> Self {
+        let source_indices = source_topology_indices(tables);
         Self {
             payload,
             tables,
@@ -165,6 +186,8 @@ impl<'a> Builder<'a> {
             root_discriminator: None,
             current_body: None,
             source_object,
+            source_indices,
+            occurrences: Vec::new(),
         }
     }
 
@@ -178,6 +201,25 @@ impl<'a> Builder<'a> {
             layer: None,
             instance_path: Vec::new(),
         }
+    }
+
+    fn bind_topology(
+        &mut self,
+        kind: TextShapeKind,
+        shape: usize,
+        local: Transform,
+        topology_id: String,
+    ) {
+        let key = SourceOccurrenceKey::new(shape, self.body_scope.compose(local));
+        let Some(source_index) = self.source_indices.get(&(kind, key)).copied() else {
+            return;
+        };
+        self.occurrences.push(TopologyOccurrence {
+            property: self.payload.property.clone(),
+            indexed_name: indexed_name(kind),
+            source_index,
+            topology_id,
+        });
     }
 
     fn emit_pcurves(&self, ir: &mut CadIr) {
@@ -374,6 +416,12 @@ impl<'a> Builder<'a> {
             color: None,
             visible: None,
         });
+        if matches!(
+            root_kind,
+            TextShapeKind::Compound | TextShapeKind::CompSolid
+        ) {
+            self.bind_topology(root_kind, root.shape, Transform::identity(), body_id.0);
+        }
         Ok(())
     }
 
@@ -436,6 +484,14 @@ impl<'a> Builder<'a> {
                 body: body.clone(),
                 shells,
             });
+            if shape.kind == TextShapeKind::Solid {
+                self.bind_topology(
+                    TextShapeKind::Solid,
+                    shape_index,
+                    transform,
+                    region_id.0.clone(),
+                );
+            }
             output.push(region_id);
         }
         Ok(())
@@ -540,6 +596,9 @@ impl<'a> Builder<'a> {
             wire_edges,
             free_vertices: Vec::new(),
         });
+        if matches!(shape.kind, TextShapeKind::Shell | TextShapeKind::Wire) {
+            self.bind_topology(shape.kind, shape_index, transform, shell_id.0.clone());
+        }
         Ok(shell_id)
     }
 
@@ -712,6 +771,12 @@ impl<'a> Builder<'a> {
                 boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 vertex_uses: Vec::new(),
             });
+            self.bind_topology(
+                TextShapeKind::Wire,
+                wire_use.shape,
+                wire_transform,
+                loop_id.0.clone(),
+            );
             loops.push(loop_id);
         }
         ir.model.faces.push(Face {
@@ -724,6 +789,12 @@ impl<'a> Builder<'a> {
             color: None,
             tolerance: positive_tolerance(tolerance),
         });
+        self.bind_topology(
+            TextShapeKind::Face,
+            face_use.shape,
+            face_transform,
+            face_id.0.clone(),
+        );
         Ok(Some(face_id))
     }
 
@@ -735,8 +806,9 @@ impl<'a> Builder<'a> {
     ) -> Result<EdgeId, CodecError> {
         let transform = parent.compose(self.tables.location(edge_use.location));
         let key = OccurrenceKey::new(edge_use.shape, self.body_scope.compose(transform));
-        if let Some(id) = self.edges.get(&key) {
-            return Ok(id.clone());
+        if let Some(id) = self.edges.get(&key).cloned() {
+            self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
+            return Ok(id);
         }
         let shape = self.shape(edge_use.shape)?.clone();
         let TextTShapeGeometry::Edge {
@@ -793,6 +865,7 @@ impl<'a> Builder<'a> {
             param_range,
             tolerance: positive_tolerance(tolerance),
         });
+        self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.0.clone());
         self.edges.insert(key, id.clone());
         Ok(id)
     }
@@ -905,8 +978,14 @@ impl<'a> Builder<'a> {
     ) -> Result<VertexId, CodecError> {
         let transform = parent.compose(self.tables.location(vertex_use.location));
         let key = OccurrenceKey::new(vertex_use.shape, self.body_scope.compose(transform));
-        if let Some(id) = self.vertices.get(&key) {
-            return Ok(id.clone());
+        if let Some(id) = self.vertices.get(&key).cloned() {
+            self.bind_topology(
+                TextShapeKind::Vertex,
+                vertex_use.shape,
+                transform,
+                id.0.clone(),
+            );
+            return Ok(id);
         }
         let shape = self.shape(vertex_use.shape)?;
         let TextTShapeGeometry::Vertex {
@@ -939,6 +1018,12 @@ impl<'a> Builder<'a> {
             point: point_id,
             tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
         });
+        self.bind_topology(
+            TextShapeKind::Vertex,
+            vertex_use.shape,
+            transform,
+            vertex_id.0.clone(),
+        );
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
     }
@@ -1433,6 +1518,80 @@ fn occurrence_label(shape: usize, transform: Transform) -> String {
     }
 }
 
+fn source_topology_indices(
+    tables: Tables<'_>,
+) -> HashMap<(TextShapeKind, SourceOccurrenceKey), usize> {
+    let mut indices = HashMap::new();
+    for target in [
+        TextShapeKind::Vertex,
+        TextShapeKind::Edge,
+        TextShapeKind::Wire,
+        TextShapeKind::Face,
+        TextShapeKind::Shell,
+        TextShapeKind::Solid,
+        TextShapeKind::CompSolid,
+        TextShapeKind::Compound,
+    ] {
+        for root in tables.roots {
+            let mut seen = HashSet::new();
+            let mut next_index = 1;
+            let mut stack = vec![(root.clone(), Transform::identity())];
+            while let Some((shape_use, parent)) = stack.pop() {
+                let transform = parent.compose(tables.location(shape_use.location));
+                let shape = &tables.tshapes[shape_use.shape - 1];
+                if shape.kind == target {
+                    let key = SourceOccurrenceKey::new(shape_use.shape, transform);
+                    if seen.insert(key.clone()) {
+                        indices.entry((target, key)).or_insert_with(|| {
+                            let index = next_index;
+                            next_index += 1;
+                            index
+                        });
+                    }
+                    continue;
+                }
+                if topology_rank(shape.kind) < topology_rank(target) {
+                    stack.extend(
+                        shape
+                            .children
+                            .iter()
+                            .rev()
+                            .cloned()
+                            .map(|child| (child, transform)),
+                    );
+                }
+            }
+        }
+    }
+    indices
+}
+
+fn topology_rank(kind: TextShapeKind) -> u8 {
+    match kind {
+        TextShapeKind::Compound => 0,
+        TextShapeKind::CompSolid => 1,
+        TextShapeKind::Solid => 2,
+        TextShapeKind::Shell => 3,
+        TextShapeKind::Face => 4,
+        TextShapeKind::Wire => 5,
+        TextShapeKind::Edge => 6,
+        TextShapeKind::Vertex => 7,
+    }
+}
+
+fn indexed_name(kind: TextShapeKind) -> &'static str {
+    match kind {
+        TextShapeKind::Vertex => "Vertex",
+        TextShapeKind::Edge => "Edge",
+        TextShapeKind::Wire => "Wire",
+        TextShapeKind::Face => "Face",
+        TextShapeKind::Shell => "Shell",
+        TextShapeKind::Solid => "Solid",
+        TextShapeKind::CompSolid => "CompSolid",
+        TextShapeKind::Compound => "Compound",
+    }
+}
+
 fn transform_digest(transform: Transform) -> String {
     let mut bytes = Vec::with_capacity(16 * 8);
     for row in transform.rows {
@@ -1519,6 +1678,10 @@ mod tests {
         assert_eq!(
             OccurrenceKey::new(7, positive).0,
             occurrence_label(7, positive)
+        );
+        assert_ne!(
+            SourceOccurrenceKey::new(7, positive),
+            SourceOccurrenceKey::new(7, negative)
         );
     }
 

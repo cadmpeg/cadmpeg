@@ -5,12 +5,12 @@ use std::collections::HashMap;
 
 use cadmpeg_core::cursor::bounded_len;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::CadIr;
 
 use crate::native::{
     ElementMapGroup, ElementMapNode, ElementMapRecord, ElementMappedName, EntryRecord,
     PropertyRecord, StringTableEntry, StringTableRecord,
 };
+use crate::topology_transfer::TopologyOccurrence;
 
 const MAX_TABLE_ENTRIES: usize = 10_000_000;
 const MAX_MAP_NODES: usize = 1_000_000;
@@ -182,106 +182,31 @@ fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
     Ok(count)
 }
 
-/// Connect transient indexed-name positions to every neutral placed occurrence.
-///
-/// Neutral arenas preserve source traversal order. Repeated outer placements
-/// therefore form consecutive copies of the same indexed-element sequence.
-pub(crate) fn bind_topology(
-    maps: &mut [ElementMapRecord],
-    payload_ids: &HashMap<&str, &str>,
-    ir: &CadIr,
-) {
+/// Connect kernel indexed-map positions to every neutral placed occurrence.
+pub(crate) fn bind_topology(maps: &mut [ElementMapRecord], occurrences: &[TopologyOccurrence]) {
     for map in maps {
-        let Some(payload_id) = payload_ids.get(map.property.as_str()).copied() else {
-            continue;
-        };
         let Some(root) = map.maps.last_mut() else {
             continue;
         };
         for group in &mut root.groups {
-            let ids = topology_ids(ir, payload_id, &group.indexed_name);
-            bind_group_occurrences(group, &ids);
+            let indexed_name = group.indexed_name.clone();
+            for occurrence in occurrences.iter().filter(|occurrence| {
+                occurrence.property == map.property && occurrence.indexed_name == indexed_name
+            }) {
+                bind_group_occurrence(group, occurrence.source_index, &occurrence.topology_id);
+            }
         }
     }
 }
 
-fn bind_group_occurrences(group: &mut ElementMapGroup, ids: &[String]) {
-    let source_count = group.names.len().saturating_sub(1);
-    if source_count == 0 {
+fn bind_group_occurrence(group: &mut ElementMapGroup, source_index: usize, id: &str) {
+    let Some(names) = group.names.get_mut(source_index) else {
         return;
-    }
-    for (position, id) in ids.iter().enumerate() {
-        // IndexedName position zero is reserved. Each complete one-based
-        // sequence describes another placed occurrence of the source shape.
-        let slot = position % source_count + 1;
-        for name in &mut group.names[slot] {
-            name.topology_ids.push(id.clone());
+    };
+    for name in names {
+        if !name.topology_ids.iter().any(|existing| existing == id) {
+            name.topology_ids.push(id.to_owned());
         }
-    }
-}
-
-fn topology_ids(ir: &CadIr, payload: &str, kind: &str) -> Vec<String> {
-    let prefix = format!("{}:", crate::native::id_key(payload));
-    let belongs_to_payload = |id: &str| crate::native::id_key(id).starts_with(&prefix);
-    match kind {
-        "Vertex" => ir
-            .model
-            .vertices
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Edge" => ir
-            .model
-            .edges
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Wire" => ir
-            .model
-            .loops
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .chain(
-                ir.model
-                    .shells
-                    .iter()
-                    .filter(|entity| !entity.wire_edges.is_empty())
-                    .map(|entity| entity.id.0.as_str())
-                    .filter(|id| belongs_to_payload(id))
-                    .map(str::to_owned),
-            )
-            .collect(),
-        "Face" => ir
-            .model
-            .faces
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Shell" => ir
-            .model
-            .shells
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        "Solid" | "CompSolid" | "Compound" => ir
-            .model
-            .bodies
-            .iter()
-            .map(|entity| entity.id.0.as_str())
-            .filter(|id| belongs_to_payload(id))
-            .map(str::to_owned)
-            .collect(),
-        _ => Vec::new(),
     }
 }
 
@@ -788,12 +713,13 @@ mod tests {
             children: Vec::new(),
             names: vec![Vec::new(), vec![mapped_name()], Vec::new()],
         };
-        let ids = (1..=4)
-            .map(|index| format!("edge-{index}"))
-            .collect::<Vec<_>>();
+        bind_group_occurrence(&mut group, 1, "edge-first-placement");
+        bind_group_occurrence(&mut group, 2, "unmapped-edge");
+        bind_group_occurrence(&mut group, 1, "edge-second-placement");
 
-        bind_group_occurrences(&mut group, &ids);
-
-        assert_eq!(group.names[1][0].topology_ids, ["edge-1", "edge-3"]);
+        assert_eq!(
+            group.names[1][0].topology_ids,
+            ["edge-first-placement", "edge-second-placement"]
+        );
     }
 }
