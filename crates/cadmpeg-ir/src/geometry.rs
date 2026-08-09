@@ -3291,6 +3291,86 @@ pub enum CurveOffsetDistanceLaw {
     },
 }
 
+/// A two-dimensional affine map in a surface parameter chart.
+///
+/// `linear` is row-major and applies to column vectors. The transform is
+/// useful when the source chart uses different units on its two axes: the
+/// neutral pcurve keeps the exact source parameterization instead of forcing
+/// an analytic carrier into an inexact axis-aligned form.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+pub struct PcurveAffineTransform {
+    /// Two-by-two linear component, in row-major order.
+    pub linear: [[f64; 2]; 2],
+    /// Translation in the destination parameter chart.
+    pub translation: Point2,
+}
+
+impl PcurveAffineTransform {
+    /// Construct the identity map.
+    pub const fn identity() -> Self {
+        Self {
+            linear: [[1.0, 0.0], [0.0, 1.0]],
+            translation: Point2 { u: 0.0, v: 0.0 },
+        }
+    }
+
+    /// Construct a positive axis-unit conversion with no translation.
+    pub const fn scale(u: f64, v: f64) -> Self {
+        Self {
+            linear: [[u, 0.0], [0.0, v]],
+            translation: Point2 { u: 0.0, v: 0.0 },
+        }
+    }
+
+    /// Whether every coefficient is finite.
+    pub fn is_finite(&self) -> bool {
+        self.linear.iter().flatten().all(|value| value.is_finite())
+            && self.translation.u.is_finite()
+            && self.translation.v.is_finite()
+    }
+
+    /// Whether the map is finite and has a numerically usable inverse.
+    pub fn is_invertible(&self) -> bool {
+        if !self.is_finite() {
+            return false;
+        }
+        let determinant =
+            self.linear[0][0] * self.linear[1][1] - self.linear[0][1] * self.linear[1][0];
+        determinant.is_finite() && determinant != 0.0
+    }
+
+    /// Apply the full affine map to a parameter point.
+    pub fn apply_point(self, point: Point2) -> Point2 {
+        Point2::new(
+            self.linear[0][0] * point.u + self.linear[0][1] * point.v + self.translation.u,
+            self.linear[1][0] * point.u + self.linear[1][1] * point.v + self.translation.v,
+        )
+    }
+
+    /// Apply only the linear component to a parameter vector.
+    pub fn apply_vector(self, vector: Point2) -> Point2 {
+        Point2::new(
+            self.linear[0][0] * vector.u + self.linear[0][1] * vector.v,
+            self.linear[1][0] * vector.u + self.linear[1][1] * vector.v,
+        )
+    }
+
+    /// Apply the inverse affine map to a parameter point.
+    pub fn inverse_point(self, point: Point2) -> Option<Point2> {
+        if !self.is_invertible() || !point.u.is_finite() || !point.v.is_finite() {
+            return None;
+        }
+        let determinant =
+            self.linear[0][0] * self.linear[1][1] - self.linear[0][1] * self.linear[1][0];
+        let delta = Point2::new(point.u - self.translation.u, point.v - self.translation.v);
+        Some(Point2::new(
+            (self.linear[1][1] * delta.u - self.linear[0][1] * delta.v) / determinant,
+            (self.linear[0][0] * delta.v - self.linear[1][0] * delta.u) / determinant,
+        ))
+    }
+}
+
 /// The shape of a parameter-space (u, v) curve on a surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -3445,6 +3525,14 @@ pub enum PcurveGeometry {
         distance: f64,
         /// Exact basis geometry.
         basis: Box<PcurveGeometry>,
+    },
+    /// Exact affine placement of a basis pcurve in the surface parameter
+    /// chart.
+    Transformed {
+        /// Basis pcurve before the affine map.
+        basis: Box<PcurveGeometry>,
+        /// Map from basis coordinates to the stored parameter chart.
+        transform: PcurveAffineTransform,
     },
 }
 

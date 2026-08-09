@@ -1978,6 +1978,9 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             crate::geometry::PcurveGeometry::Offset { basis, distance } => {
                 distance.is_finite() && pcurve_basis_is_valid(basis)
             }
+            crate::geometry::PcurveGeometry::Transformed { basis, transform } => {
+                transform.is_invertible() && pcurve_basis_is_valid(basis)
+            }
             crate::geometry::PcurveGeometry::PolarHarmonic {
                 radial_center,
                 radial_cos,
@@ -2658,6 +2661,9 @@ fn pcurve_basis_is_valid(geometry: &crate::geometry::PcurveGeometry) -> bool {
         PcurveGeometry::Offset { basis, distance } => {
             distance.is_finite() && pcurve_basis_is_valid(basis)
         }
+        PcurveGeometry::Transformed { basis, transform } => {
+            transform.is_invertible() && pcurve_basis_is_valid(basis)
+        }
     }
 }
 
@@ -2976,6 +2982,25 @@ mod tests {
             ref_direction,
             major_radius: tiny,
             minor_radius: -tiny,
+        }));
+    }
+
+    #[test]
+    fn affine_pcurve_carriers_require_an_invertible_parameter_map() {
+        let basis = PcurveGeometry::Line {
+            origin: Point2::new(0.0, 0.0),
+            direction: Point2::new(1.0, 0.0),
+        };
+        assert!(pcurve_basis_is_valid(&PcurveGeometry::Transformed {
+            basis: Box::new(basis.clone()),
+            transform: crate::geometry::PcurveAffineTransform::identity(),
+        }));
+        assert!(!pcurve_basis_is_valid(&PcurveGeometry::Transformed {
+            basis: Box::new(basis),
+            transform: crate::geometry::PcurveAffineTransform {
+                linear: [[1.0, 2.0], [2.0, 4.0]],
+                translation: Point2::new(0.0, 0.0),
+            },
         }));
     }
 }

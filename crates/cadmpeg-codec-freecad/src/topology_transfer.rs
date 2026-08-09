@@ -1239,6 +1239,11 @@ fn scale_pcurve_v(geometry: &mut PcurveGeometry, scale: f64) {
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_v(basis, scale);
         }
+        PcurveGeometry::Transformed { transform, .. } => {
+            transform.linear[1][0] *= scale;
+            transform.linear[1][1] *= scale;
+            transform.translation.v *= scale;
+        }
     }
 }
 
@@ -1331,6 +1336,11 @@ fn scale_pcurve_u(geometry: &mut PcurveGeometry, scale: f64) {
         }
         PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
             scale_pcurve_u(basis, scale);
+        }
+        PcurveGeometry::Transformed { transform, .. } => {
+            transform.linear[0][0] *= scale;
+            transform.linear[0][1] *= scale;
+            transform.translation.u *= scale;
         }
     }
 }

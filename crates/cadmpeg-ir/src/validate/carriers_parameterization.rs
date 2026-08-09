@@ -875,40 +875,14 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
             let mut valid =
                 start.is_finite() && end.is_finite() && start != end && geometry.is_some();
             if let Some(geometry) = geometry {
-                let domain = match geometry {
-                    PcurveGeometry::Nurbs {
-                        degree,
-                        knots,
-                        control_points,
-                        ..
-                    } => crate::eval::nurbs_pcurve_parameter_domain(
-                        *degree,
-                        knots,
-                        control_points.len(),
-                    ),
-                    PcurveGeometry::PolarNurbs {
-                        degree,
-                        knots,
-                        radial_control_points,
-                        ..
-                    } => crate::eval::nurbs_pcurve_parameter_domain(
-                        *degree,
-                        knots,
-                        radial_control_points.len(),
-                    ),
-                    _ => None,
-                };
+                let domain = pcurve_parameter_domain(geometry);
                 match domain {
                     Some([lower, upper]) => {
                         valid &= [start, end]
                             .into_iter()
                             .all(|value| value >= lower && value <= upper);
                     }
-                    None if matches!(
-                        geometry,
-                        PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. }
-                    ) =>
-                    {
+                    None if pcurve_requires_bounded_domain(geometry) => {
                         valid = false;
                     }
                     None => {}
@@ -923,5 +897,44 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 });
             }
         }
+    }
+}
+
+fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            ..
+        } => crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, control_points.len()),
+        PcurveGeometry::PolarNurbs {
+            degree,
+            knots,
+            radial_control_points,
+            ..
+        } => {
+            crate::eval::nurbs_pcurve_parameter_domain(*degree, knots, radial_control_points.len())
+        }
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
+        _ => None,
+    }
+}
+
+fn pcurve_requires_bounded_domain(geometry: &PcurveGeometry) -> bool {
+    match geometry {
+        PcurveGeometry::Nurbs { .. } | PcurveGeometry::PolarNurbs { .. } => true,
+        PcurveGeometry::Transformed { basis, .. } => pcurve_requires_bounded_domain(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Harmonic { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. }
+        | PcurveGeometry::Hyperbolic { .. }
+        | PcurveGeometry::Trimmed { .. }
+        | PcurveGeometry::Offset { .. }
+        | PcurveGeometry::PolarHarmonic { .. } => false,
     }
 }

@@ -203,7 +203,7 @@ fn semantic_decode_uses_the_decode_session_work_budget() {
 }
 
 #[test]
-fn implicit_face_plane_work_is_refused_before_pair_search_runs() {
+fn implicit_face_plane_work_is_refused_before_plane_inference_runs() {
     let point_references = (2..=17)
         .map(|id| format!("#{id}"))
         .collect::<Vec<_>>()
@@ -215,7 +215,7 @@ fn implicit_face_plane_work_is_refused_before_pair_search_runs() {
     let source = format!(
         "ISO-10303-21;HEADER;ENDSEC;DATA;#1=POLY_LOOP('',({point_references}));{point_records}ENDSEC;END-ISO-10303-21;"
     );
-    let mut pair_limit = None;
+    let mut plane_limit = None;
     for max_work_units in 1..=16_384 {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -227,18 +227,18 @@ fn implicit_face_plane_work_is_refused_before_pair_search_runs() {
         )
         .expect("root fits the test policy");
         let error = crate::reader::decode(source.as_bytes(), DecodeOptions::default(), &ctx)
-            .expect_err("a bounded pair search must be refused at some budget");
+            .expect_err("bounded implicit-plane work must be refused at some budget");
         let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
             continue;
         };
         if limit.context.operation == "step_implicit_face_plane" {
-            assert_eq!(limit.additional, 120);
+            assert_eq!(limit.additional, 16);
             assert!(limit.used <= limit.limit);
-            pair_limit = Some(limit);
+            plane_limit = Some(limit);
             break;
         }
     }
-    let limit = pair_limit.expect("pairwise face-plane work must have a stable budget gate");
+    let limit = plane_limit.expect("implicit face-plane work must have a stable budget gate");
     assert_eq!(
         limit.dimension,
         cadmpeg_core::decode::ResourceDimension::WorkUnits
@@ -1332,6 +1332,45 @@ fn unsupported_pcurve_family_is_reported_and_strict_export_rejects() {
 }
 
 #[test]
+fn affine_pcurve_without_native_lowering_is_reported_and_strict_export_rejects() {
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap214_sheet.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode sheet pcurve")
+        .ir;
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Transformed {
+        basis: Box::new(cadmpeg_ir::geometry::PcurveGeometry::Circle {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+            y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            radius: 1.0,
+        }),
+        transform: cadmpeg_ir::geometry::PcurveAffineTransform::scale(2.0, 3.0),
+    };
+
+    let mut output = Vec::new();
+    let report = write_step(&ir, &mut output, &StepWriteOptions::default())
+        .expect("report mode writes the representable sheet");
+    assert!(!String::from_utf8(output).unwrap().contains("PCURVE"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == cadmpeg_ir::LossKind::PcurveOmitted
+            && loss.severity == cadmpeg_ir::Severity::Warning
+            && loss.message.contains("step:data:pcurve#56")
+    }));
+
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    assert!(matches!(
+        write_step(&ir, &mut Vec::new(), &options),
+        Err(StepError::Unsupported(message)) if message.contains("pcurve")
+    ));
+}
+
+#[test]
 fn unsupported_standalone_curve_is_reported_and_strict_export_rejects() {
     let mut ir = CadIr::empty(Units::default());
     let curve_id = CurveId("step:test:curve#standalone-unsupported".into());
@@ -1659,6 +1698,42 @@ fn base_face_with_polygon_loop_gets_an_inferred_plane() {
     }));
     let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn implicit_plane_uses_the_outer_loop_and_composes_oriented_face_reversal() {
+    let source = String::from_utf8(include_bytes!("../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "#25=EDGE_LOOP('',(#22,#23,#24));",
+            "#25=POLY_LOOP('',(#3,#4,#5));",
+        )
+        .replace(
+            "#29=ADVANCED_FACE('',(#26),#28,.T.);",
+            "#29=FACE('',(#35,#26));",
+        )
+        .replace("#30=OPEN_SHELL('',(#29));", "#30=OPEN_SHELL('',(#34));")
+        .replace(
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+            "#31=SHELL_BASED_SURFACE_MODEL('',(#33));\n#34=ORIENTED_FACE('',#29,.F.);\n#35=FACE_BOUND('',#36,.T.);\n#36=POLY_LOOP('',(#69,#70,#71));\n#69=CARTESIAN_POINT('',(2.,2.,0.));\n#70=CARTESIAN_POINT('',(3.,2.,0.));\n#71=CARTESIAN_POINT('',(2.,3.,0.));",
+        );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode oriented base face");
+
+    let surface = decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#implicit-face-34")
+        .expect("implicit face surface");
+    let SurfaceGeometry::Plane { normal, .. } = surface.geometry else {
+        panic!("base face must infer a plane");
+    };
+    assert!((normal.x).abs() < 1.0e-12);
+    assert!((normal.y).abs() < 1.0e-12);
+    assert!((normal.z + 1.0).abs() < 1.0e-12);
 }
 
 #[test]

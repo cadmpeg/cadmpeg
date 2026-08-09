@@ -605,9 +605,9 @@ fn pcurve_geometry_is_periodic(geometry: &PcurveGeometry) -> bool {
         PcurveGeometry::Nurbs { periodic, .. } | PcurveGeometry::PolarNurbs { periodic, .. } => {
             *periodic
         }
-        PcurveGeometry::Trimmed { basis, .. } | PcurveGeometry::Offset { basis, .. } => {
-            pcurve_geometry_is_periodic(basis)
-        }
+        PcurveGeometry::Trimmed { basis, .. }
+        | PcurveGeometry::Offset { basis, .. }
+        | PcurveGeometry::Transformed { basis, .. } => pcurve_geometry_is_periodic(basis),
         PcurveGeometry::Line { .. }
         | PcurveGeometry::SphericalGreatCircle { .. }
         | PcurveGeometry::Harmonic { .. }
@@ -657,7 +657,9 @@ fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64;
         PcurveGeometry::Trimmed {
             parameter_range, ..
         } => Some(*parameter_range),
-        PcurveGeometry::Offset { basis, .. } => pcurve_geometry_parameter_extremes(basis),
+        PcurveGeometry::Offset { basis, .. } | PcurveGeometry::Transformed { basis, .. } => {
+            pcurve_geometry_parameter_extremes(basis)
+        }
         PcurveGeometry::Line { .. }
         | PcurveGeometry::Circle { .. }
         | PcurveGeometry::Ellipse { .. }

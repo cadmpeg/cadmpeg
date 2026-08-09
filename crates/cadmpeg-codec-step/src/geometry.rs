@@ -248,7 +248,8 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Option<Ref> {
         | PcurveGeometry::Hyperbolic { .. }
         | PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => return None,
+        | PcurveGeometry::SphericalGreatCircle { .. }
+        | PcurveGeometry::Transformed { .. } => return None,
     })
 }
 

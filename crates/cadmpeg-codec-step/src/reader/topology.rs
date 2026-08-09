@@ -10,7 +10,7 @@ use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
     SurfaceId, VertexId,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossKind, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, PcurveUse, Region, Sense, Shell,
@@ -1870,6 +1870,7 @@ fn build_one(
                         geometry: require_carrier(
                             implicit_face_plane(
                                 &face_info.bounds,
+                                face_info.reverse_bound_orientation,
                                 exchange,
                                 vdefs,
                                 edefs,
@@ -2533,8 +2534,15 @@ fn implicit_face_points(
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|oriented_step| odefs.get(&oriented_step))
-                .filter_map(|oriented| edefs.get(&oriented.edge))
-                .flat_map(|edge| [edge.start, edge.end])
+                .filter_map(|oriented| {
+                    let edge = edefs.get(&oriented.edge)?;
+                    Some(if oriented.forward {
+                        [edge.start, edge.end]
+                    } else {
+                        [edge.end, edge.start]
+                    })
+                })
+                .flatten()
                 .collect::<Vec<_>>()
         } else {
             Vec::new()
@@ -2546,9 +2554,7 @@ fn implicit_face_points(
             let Some(point) = point_positions.get(point_step).copied() else {
                 continue;
             };
-            if !points.contains(&point) {
-                points.push(point);
-            }
+            points.push(point);
         }
     }
     points
@@ -2556,31 +2562,89 @@ fn implicit_face_points(
 
 fn implicit_face_plane(
     bounds: &[u64],
+    reverse_bound_orientation: bool,
     exchange: &Exchange,
     vdefs: &BTreeMap<u64, VertexDef>,
     edefs: &BTreeMap<u64, EdgeDef>,
     odefs: &BTreeMap<u64, OrientedDef>,
     point_positions: &CarrierIndex,
 ) -> Option<SurfaceGeometry> {
-    let points = implicit_face_points(bounds, exchange, vdefs, edefs, odefs, point_positions);
-    let origin = *points.first()?;
-    for (index, &point) in points.iter().enumerate().skip(1) {
-        let u = point.vector_from(origin);
-        for &other in points.iter().skip(index + 1) {
-            let v = other.vector_from(origin);
-            let Some(u_axis) = u.unit() else {
-                continue;
-            };
-            if let Some(normal) = u.cross(v).unit() {
-                return Some(SurfaceGeometry::Plane {
-                    origin,
-                    normal,
-                    u_axis,
-                });
-            }
-        }
+    const RELATIVE_COLLINEAR_TOLERANCE: f64 = 1.0e-12;
+    let bound_step = bounds
+        .iter()
+        .copied()
+        .find(|bound| {
+            exchange
+                .records
+                .get(bound)
+                .is_some_and(|record| has_type(record, "FACE_OUTER_BOUND"))
+        })
+        .or_else(|| bounds.first().copied())?;
+    let bound = exchange.records.get(&bound_step)?;
+    let bound_type = if has_type(bound, "FACE_OUTER_BOUND") {
+        "FACE_OUTER_BOUND"
+    } else {
+        "FACE_BOUND"
+    };
+    let bound_forward = named_logical(bound, bound_type, 2, 0).unwrap_or(true);
+    let bound_forward = if reverse_bound_orientation {
+        !bound_forward
+    } else {
+        bound_forward
+    };
+    let points = implicit_face_points(
+        std::slice::from_ref(&bound_step),
+        exchange,
+        vdefs,
+        edefs,
+        odefs,
+        point_positions,
+    );
+    if points.len() < 3 {
+        return None;
     }
-    None
+    let origin = *points.first()?;
+    let mut normal = Vector3::new(0.0, 0.0, 0.0);
+    for (&current, &next) in points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+    {
+        normal.x += (current.y - next.y) * (current.z + next.z);
+        normal.y += (current.z - next.z) * (current.x + next.x);
+        normal.z += (current.x - next.x) * (current.y + next.y);
+    }
+    let extent = points
+        .iter()
+        .map(|point| point.distance(origin))
+        .filter(|distance| distance.is_finite())
+        .fold(0.0, f64::max);
+    let area_scale = extent.max(f64::MIN_POSITIVE).powi(2);
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= RELATIVE_COLLINEAR_TOLERANCE * area_scale {
+        return None;
+    }
+    normal = normal.unit()?;
+    if !bound_forward {
+        normal = normal.scale(-1.0);
+    }
+    let tangent_tolerance = RELATIVE_COLLINEAR_TOLERANCE * extent.max(f64::MIN_POSITIVE);
+    let u_axis = points
+        .iter()
+        .zip(points.iter().cycle().skip(1))
+        .take(points.len())
+        .find_map(|(&current, &next)| {
+            let edge = next.vector_from(current);
+            let tangent = edge - normal.scale(edge.dot(normal));
+            (tangent.norm() > tangent_tolerance)
+                .then(|| tangent.unit())
+                .flatten()
+        })?;
+    Some(SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    })
 }
 
 fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {

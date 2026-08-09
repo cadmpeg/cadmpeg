@@ -8327,6 +8327,10 @@ fn reverse_pcurve_over_range(
                 )?,
             })
         }
+        PcurveGeometry::Transformed { basis, transform } => Some(PcurveGeometry::Transformed {
+            basis: Box::new(reverse_pcurve_over_range(basis, [start, end])?),
+            transform: *transform,
+        }),
         PcurveGeometry::Parabola { .. } => None,
     }
 }

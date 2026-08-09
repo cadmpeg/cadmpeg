@@ -126,7 +126,7 @@ fn decode_exchange_mode(
     charge_semantic_stage(ctx, semantic_input_work, &ir, "step_topology_decode")?;
     if let Some(ctx) = ctx {
         ctx.charge_work(
-            implicit_face_plane_pair_work(exchange),
+            implicit_face_plane_work(exchange),
             "step_implicit_face_plane",
         )?;
     }
@@ -596,13 +596,12 @@ fn reference_work_units(value: &Value) -> u64 {
     }
 }
 
-/// Reserve the pairwise work used to find a plane for an implicit face.
+/// Reserve the linear work used to find a plane for an implicit face.
 ///
-/// The topology builder compares every distinct point pair when a face has no
-/// explicit surface. Charge the complete upper bound before topology decoding
-/// so a large polygon cannot consume an unbounded amount of work before the
-/// shared budget can refuse it.
-fn implicit_face_plane_pair_work(exchange: &Exchange) -> u64 {
+/// The topology builder uses the ordered outer-loop points and Newell's
+/// polygon normal. Charge the complete point population before topology
+/// decoding so a large polygon cannot materialize outside the shared budget.
+fn implicit_face_plane_work(exchange: &Exchange) -> u64 {
     exchange
         .records
         .values()
@@ -616,12 +615,7 @@ fn implicit_face_plane_pair_work(exchange: &Exchange) -> u64 {
                     Value::List(values) => Some(values.as_slice()),
                     _ => None,
                 })
-                .map(|points| {
-                    let count = u64::try_from(points.len()).unwrap_or(u64::MAX);
-                    count
-                        .saturating_mul(count.saturating_sub(1))
-                        .saturating_div(2)
-                })
+                .map(|points| u64::try_from(points.len()).unwrap_or(u64::MAX))
         })
         .fold(0, u64::saturating_add)
 }
@@ -1056,10 +1050,10 @@ mod tests {
     }
 
     #[test]
-    fn implicit_face_plane_work_scales_with_point_pairs() {
+    fn implicit_face_plane_work_scales_with_point_count() {
         let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=POLY_LOOP('',(#2,#3,#4,#5));#2=ITEM();#3=ITEM();#4=ITEM();#5=ITEM();ENDSEC;END-ISO-10303-21;";
         let (exchange, _) = crate::parse::parse(source).expect("polygon exchange");
 
-        assert_eq!(implicit_face_plane_pair_work(&exchange), 6);
+        assert_eq!(implicit_face_plane_work(&exchange), 4);
     }
 }

@@ -32,8 +32,10 @@ surface constructors resolve through dependency worklists instead of rescanning
 the full population for every chain level. Periodic endpoint sweeps reduce
 through `rem_euclid` instead of adding one period per turn. The decode session
 charges the worst-case range-inference allowance before the pass. A synthesized
-16-point implicit-face regression refuses the 120 pair comparisons at the
-`step_implicit_face_plane` operation before the pair search starts.
+16-point implicit-face regression refuses the 16-point linear allowance at the
+`step_implicit_face_plane` operation before plane inference starts. Implicit
+plane inference uses the ordered outer-loop winding and a scale-relative
+collinearity threshold.
 
 **Closure.** Run the full admitted-file sweep with one timeout per file. Every
 file must either complete within the declared limit or return a deterministic
@@ -52,10 +54,10 @@ bounded endpoint inference, and copied opaque-record bytes charge the shared
 decode session. Each semantic pass charges the complete parsed source graph
 once: records, complex-entity leaves, aggregate members, and nested typed
 values. It also charges the neutral IR entity count already produced before
-the pass. The pairwise point search used for implicit face planes reserves its
-complete upper bound before topology decoding. This prevents a record-only
-allowance from hiding work proportional to aggregate depth, decoded output
-size, or polygon cardinality. Pcurve consistency omission indexes coedges once,
+the pass. The implicit-face plane pass reserves its complete linear point
+population before topology decoding. This prevents a record-only allowance
+from hiding work proportional to aggregate depth, decoded output size, or
+polygon cardinality. Pcurve consistency omission indexes coedges once,
 so retaining or omitting many failed optional pcurves is linear in the decoded
 coedge population. Edition-3 anchor expansion charges every cloned value node
 to the same collection-item and work-unit dimensions before materialization;
@@ -326,12 +328,15 @@ angular axes. A NURBS surface uses its native knot-domain parameters. A
 transformed surface keeps the parameterization of its basis. The decoder
 converts these axes to canonical IR units before it binds a pcurve.
 
-**Need.** Add an affine parameter-space carrier so analytic conics and
-`OFFSET_CURVE_2D` pcurves remain exact when the two axis scales differ. Define
-the parameter-unit rules for procedural surfaces whose directrix parameter is
-not a standard analytic length or angle parameter. Until then, those pcurves
-remain opaque and report `PcurveOmitted`; the decoder must not apply one scalar
-to both axes.
+**Current control.** The decoder stores a `PcurveAffineTransform` around the
+exact basis carrier when the two axis scales differ. Evaluation, inverse
+parameter search, validation, and nested trim/offset handling apply the full
+affine map. The writer refuses a transformed pcurve when the target format has
+no native carrier that preserves its parameterization and reports
+`PcurveOmitted`; it does not emit a geometrically false analytic conic.
+
+**Need.** Define the parameter-unit rules for procedural surfaces whose
+directrix parameter is not a standard analytic length or angle parameter.
 
 ### TP-04. Partial solid and tolerant point carriers
 
@@ -352,8 +357,17 @@ and how does it compose with `ORIENTED_FACE` bound reversal?
 **Known.** The decoder derives a plane from non-collinear boundary points and
 composes explicit face and bound orientation.
 
-**Need.** We need a winding-based rule that uses the outer loop only and a
-degeneracy threshold for nearly collinear points.
+**Current control.** The decoder selects the first explicit
+`FACE_OUTER_BOUND`, or the first bound when no outer bound is present. It
+preserves the ordered loop points, computes the Newell area normal in linear
+time, and reverses it when the effective bound orientation is not forward.
+The effective orientation includes the enclosing `ORIENTED_FACE` reversal. It
+rejects a non-finite or nearly collinear loop using a relative threshold of
+`1e-12`. The synthesized polygon regression covers outer-bound selection and
+oriented-face reversal. The work allowance is linear in the point count.
+
+**Need.** Define the standard-valid behavior for a nearly collinear implicit
+face whose source does not provide a usable surface carrier.
 
 ### TP-06. Pcurve recursion and normalization
 

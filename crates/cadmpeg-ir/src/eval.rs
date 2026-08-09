@@ -2970,6 +2970,16 @@ fn pcurve_uv_differential_inner(
             acceleration: None,
         });
     }
+    if let PcurveGeometry::Transformed { basis, transform } = geometry {
+        let basis = pcurve_uv_differential_inner(basis, t, depth + 1)?;
+        return Some(PcurveDifferential {
+            point: transform.apply_point(basis.point),
+            tangent: basis.tangent.map(|tangent| transform.apply_vector(tangent)),
+            acceleration: basis
+                .acceleration
+                .map(|acceleration| transform.apply_vector(acceleration)),
+        });
+    }
     let pair = match geometry {
         PcurveGeometry::Line { origin, direction } => (
             Point2::new(origin.u + t * direction.u, origin.v + t * direction.v),
@@ -3270,7 +3280,7 @@ fn pcurve_uv_differential_inner(
         PcurveGeometry::Trimmed { basis, .. } => {
             return pcurve_uv_differential_inner(basis, t, depth + 1);
         }
-        PcurveGeometry::Offset { .. } => return None,
+        PcurveGeometry::Offset { .. } | PcurveGeometry::Transformed { .. } => return None,
     };
     if !pair.0.u.is_finite() || !pair.0.v.is_finite() {
         return None;
@@ -3302,8 +3312,9 @@ mod tests {
         IsolineDirection,
     };
     use crate::geometry::{
-        Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurface,
-        ProceduralSurfaceDefinition, Surface, SurfaceGeometry, SurfaceParameterAxis,
+        Curve, CurveGeometry, NurbsCurve, NurbsSurface, PcurveAffineTransform, PcurveGeometry,
+        ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+        SurfaceParameterAxis,
     };
     use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
     use crate::math::{Point2, Point3, Vector3};
@@ -4065,6 +4076,26 @@ mod tests {
         assert!((polar.v - 3.0).abs() < 1e-12);
         assert!((polar_nurbs.u - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
         assert!((polar_nurbs.v - 4.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn transformed_pcurve_applies_affine_map_to_point_and_tangent() {
+        let geometry = PcurveGeometry::Transformed {
+            basis: Box::new(PcurveGeometry::Line {
+                origin: Point2::new(1.0, 2.0),
+                direction: Point2::new(3.0, 4.0),
+            }),
+            transform: PcurveAffineTransform {
+                linear: [[2.0, 1.0], [0.5, 3.0]],
+                translation: Point2::new(5.0, 7.0),
+            },
+        };
+
+        assert_eq!(pcurve_uv(&geometry, 0.5), Some(Point2::new(14.0, 20.25)));
+        assert_eq!(
+            pcurve_tangent(&geometry, 0.5),
+            Some(Point2::new(10.0, 13.5))
+        );
     }
 
     #[test]

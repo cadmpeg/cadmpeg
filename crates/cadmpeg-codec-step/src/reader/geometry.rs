@@ -12,9 +12,9 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::geometry::{
     derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
-    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveAffineTransform, PcurveGeometry,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -339,6 +339,7 @@ fn pcurve_parameter_domain(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
         PcurveGeometry::Trimmed {
             parameter_range, ..
         } => Some(*parameter_range),
+        PcurveGeometry::Transformed { basis, .. } => pcurve_parameter_domain(basis),
         _ => None,
     }
 }
@@ -409,6 +410,10 @@ fn pcurve_parameter_near_uv(
         } => {
             let parameter = pcurve_parameter_near_uv(basis, target, seed, tolerance)?;
             parameter_range.contains(&parameter).then_some(parameter)?
+        }
+        PcurveGeometry::Transformed { basis, transform } => {
+            let target = transform.inverse_point(target)?;
+            pcurve_parameter_near_uv(basis, target, seed, tolerance)?
         }
         PcurveGeometry::Offset { .. }
         | PcurveGeometry::PolarHarmonic { .. }
@@ -3558,7 +3563,23 @@ fn scale_pcurve_geometry_axes(geometry: &mut PcurveGeometry, u_scale: f64, v_sca
         | PcurveGeometry::Offset { .. }
         | PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
-        | PcurveGeometry::SphericalGreatCircle { .. } => false,
+        | PcurveGeometry::SphericalGreatCircle { .. } => {
+            let basis = geometry.clone();
+            *geometry = PcurveGeometry::Transformed {
+                basis: Box::new(basis),
+                transform: PcurveAffineTransform::scale(u_scale, v_scale),
+            };
+            true
+        }
+        PcurveGeometry::Transformed { transform, .. } => {
+            transform.linear[0][0] *= u_scale;
+            transform.linear[0][1] *= u_scale;
+            transform.linear[1][0] *= v_scale;
+            transform.linear[1][1] *= v_scale;
+            transform.translation.u *= u_scale;
+            transform.translation.v *= v_scale;
+            transform.is_finite()
+        }
     }
 }
 
@@ -3634,6 +3655,14 @@ fn scale_planar_pcurve_geometry(geometry: &mut PcurveGeometry, scale: f64) {
         PcurveGeometry::PolarHarmonic { .. }
         | PcurveGeometry::PolarNurbs { .. }
         | PcurveGeometry::SphericalGreatCircle { .. } => {}
+        PcurveGeometry::Transformed { transform, .. } => {
+            transform.linear[0][0] *= scale;
+            transform.linear[0][1] *= scale;
+            transform.linear[1][0] *= scale;
+            transform.linear[1][1] *= scale;
+            transform.translation.u *= scale;
+            transform.translation.v *= scale;
+        }
     }
 }
 
@@ -3984,7 +4013,7 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::eval::nurbs_curve_point;
+    use cadmpeg_ir::eval::{nurbs_curve_point, pcurve_uv};
 
     #[test]
     fn every_iso_si_prefix_resolves_to_its_exact_factor() {
@@ -4030,6 +4059,28 @@ mod tests {
             Value::Typed("PARAMETER_VALUE".into(), Box::new(Value::Real(0.25))),
         ]);
         assert_eq!(pcurve_trim_parameter(&value), Some(0.25));
+    }
+
+    #[test]
+    fn nonuniform_pcurve_units_preserve_analytic_parameterization() {
+        let mut geometry = PcurveGeometry::Circle {
+            center: Point2::new(1.0, 2.0),
+            x_axis: Point2::new(1.0, 0.0),
+            y_axis: Point2::new(0.0, 1.0),
+            radius: 3.0,
+        };
+
+        assert!(scale_pcurve_geometry_axes(&mut geometry, 2.0, 4.0));
+        let PcurveGeometry::Transformed { basis, transform } = &geometry else {
+            panic!("nonuniform units must retain an affine carrier");
+        };
+        assert!(matches!(basis.as_ref(), PcurveGeometry::Circle { .. }));
+        assert_eq!(transform.linear, [[2.0, 0.0], [0.0, 4.0]]);
+        assert_eq!(pcurve_uv(&geometry, 0.0), Some(Point2::new(8.0, 8.0)));
+        let quarter_turn = pcurve_uv(&geometry, std::f64::consts::FRAC_PI_2)
+            .expect("transformed analytic pcurve evaluates");
+        assert!((quarter_turn.u - 2.0).abs() < 1.0e-12);
+        assert!((quarter_turn.v - 20.0).abs() < 1.0e-12);
     }
 
     #[test]
