@@ -10,6 +10,16 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn bytes_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len().saturating_mul(2));
+    for byte in bytes {
+        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
+    }
+    encoded
+}
+
 fn source_meta(global: &global::Global) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("representation".into(), "fixed-ascii".into());
@@ -21,20 +31,23 @@ fn source_meta(global: &global::Global) -> SourceMeta {
         "record_delimiter".into(),
         char::from(global.record_delimiter).to_string(),
     );
-    if let Some(value) = global.version() {
-        attributes.insert("iges_version".into(), value.into());
-    }
-    if let Some(value) = global.version_flag() {
-        attributes.insert("iges_version_flag".into(), value.to_string());
-    }
+    attributes.insert("iges_version".into(), global.version().into());
+    attributes.insert(
+        "iges_version_flag".into(),
+        global.version_flag().to_string(),
+    );
     if let Some(value) = global.units_name() {
         attributes.insert("native_units".into(), value);
     }
     if let Some(value) = global.sender_product() {
         attributes.insert("sender_product".into(), value);
+    } else if let Some(value) = global.sender_product_bytes() {
+        attributes.insert("sender_product_bytes_hex".into(), bytes_hex(value));
     }
     if let Some(value) = global.native_file_name() {
         attributes.insert("native_file_name".into(), value);
+    } else if let Some(value) = global.native_file_name_bytes() {
+        attributes.insert("native_file_name_bytes_hex".into(), bytes_hex(value));
     }
     SourceMeta {
         format: "iges".into(),
@@ -45,10 +58,10 @@ fn source_meta(global: &global::Global) -> SourceMeta {
 pub(crate) fn decode(bytes: &[u8], options: DecodeOptions) -> Result<DecodeResult, CodecError> {
     let scan = card::scan(bytes)?;
     let global = global::parse(&scan)?;
-    if !matches!(global.version(), Some("5.1" | "5.2" | "5.3")) {
+    if !matches!(global.version(), "5.1" | "5.2" | "5.3") {
         return Err(CodecError::NotImplemented(format!(
             "IGES Fixed ASCII version {} decode; target envelope is 5.1, 5.2, or 5.3",
-            global.version().unwrap_or("unrecognized")
+            global.version()
         )));
     }
     let directory = directory::parse(&scan)?;

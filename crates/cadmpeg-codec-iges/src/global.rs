@@ -27,6 +27,13 @@ impl Value {
         std::str::from_utf8(bytes).ok()?.trim().parse::<i64>().ok()
     }
 
+    fn string_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::String(bytes) => Some(bytes),
+            Self::Omitted | Self::Atom(_) => None,
+        }
+    }
+
     fn real(&self) -> Option<f64> {
         match self {
             Self::Atom(bytes) => std::str::from_utf8(bytes)
@@ -117,7 +124,12 @@ fn delimited_value(
             .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
             .and_then(|relative| start.checked_add(relative))
             .ok_or_else(|| malformed("record delimiter is missing"))?;
-        (Value::Atom(bytes[start..end].to_vec()), end)
+        let atom = &bytes[start..end];
+        if atom.iter().all(u8::is_ascii_whitespace) {
+            (Value::Omitted, end)
+        } else {
+            (Value::Atom(atom.to_vec()), end)
+        }
     };
     match bytes.get(end).copied() {
         Some(separator) if separator == parameter_delimiter => {
@@ -172,13 +184,15 @@ pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
             break;
         }
     }
-    Ok(Global {
+    let global = Global {
         parameter_delimiter,
         record_delimiter,
         values,
         value_spans,
         record_end: cursor,
-    })
+    };
+    global.validate()?;
+    Ok(global)
 }
 
 fn version_name(flag: i64) -> Option<&'static str> {
@@ -199,31 +213,112 @@ fn version_name(flag: i64) -> Option<&'static str> {
 }
 
 impl Global {
+    fn integer_field(
+        &self,
+        index: usize,
+        name: &str,
+        default: Option<i64>,
+    ) -> Result<i64, CodecError> {
+        match self.values.get(index).unwrap_or(&Value::Omitted) {
+            Value::Omitted => default
+                .ok_or_else(|| malformed(format!("field {} ({name}) has no value", index + 1))),
+            value => value.integer().ok_or_else(|| {
+                malformed(format!("field {} ({name}) is not an integer", index + 1))
+            }),
+        }
+    }
+
+    fn real_field(
+        &self,
+        index: usize,
+        name: &str,
+        default: Option<f64>,
+    ) -> Result<f64, CodecError> {
+        match self.values.get(index).unwrap_or(&Value::Omitted) {
+            Value::Omitted => default
+                .ok_or_else(|| malformed(format!("field {} ({name}) has no value", index + 1))),
+            value => value
+                .real()
+                .ok_or_else(|| malformed(format!("field {} ({name}) is not a real", index + 1))),
+        }
+    }
+
+    fn validate(&self) -> Result<(), CodecError> {
+        let scale = self.real_field(12, "model space scale", Some(1.0))?;
+        if !scale.is_finite() || scale <= 0.0 {
+            return Err(malformed(
+                "field 13 (model space scale) must be finite and positive",
+            ));
+        }
+        let units = self.integer_field(13, "units flag", Some(1))?;
+        if !(1..=11).contains(&units) {
+            return Err(malformed("field 14 (units flag) must be in 1 through 11"));
+        }
+        if units == 3 && self.named_unit_factor_mm().is_none() {
+            return Err(malformed(
+                "field 15 (units name) is not a supported standard unit name for units flag 3",
+            ));
+        }
+        let gradations = self.integer_field(15, "maximum line-weight gradations", Some(1))?;
+        if !(1..=32_768).contains(&gradations) {
+            return Err(malformed(
+                "field 16 (maximum line-weight gradations) must be in 1 through 32768",
+            ));
+        }
+        let maximum_width = self.real_field(16, "maximum line width", None)?;
+        if !maximum_width.is_finite() || maximum_width <= 0.0 {
+            return Err(malformed(
+                "field 17 (maximum line width) must be finite and positive",
+            ));
+        }
+        let resolution = self.real_field(18, "minimum resolution", None)?;
+        if !resolution.is_finite() || resolution < 0.0 {
+            return Err(malformed(
+                "field 19 (minimum resolution) must be finite and nonnegative",
+            ));
+        }
+        let version = self.integer_field(22, "version flag", Some(3))?;
+        if version_name(version).is_none() {
+            return Err(malformed(
+                "field 23 (version flag) is not a defined IGES version",
+            ));
+        }
+        Ok(())
+    }
+
     pub(crate) fn model_scale(&self) -> f64 {
-        self.values.get(12).and_then(Value::real).unwrap_or(1.0)
+        self.real_field(12, "model space scale", Some(1.0))
+            .expect("validated Global model space scale")
     }
 
     pub(crate) fn units_flag(&self) -> i64 {
-        self.values.get(13).and_then(Value::integer).unwrap_or(1)
+        self.integer_field(13, "units flag", Some(1))
+            .expect("validated Global units flag")
     }
 
-    pub(crate) fn length_factor_mm(&self) -> Option<f64> {
+    fn named_unit_factor_mm(&self) -> Option<f64> {
+        match self.values.get(14).and_then(Value::string_bytes)? {
+            b"IN" | b"INCH" => Some(25.4),
+            b"MM" => Some(1.0),
+            b"FT" => Some(304.8),
+            b"MI" => Some(1_609_344.0),
+            b"M" => Some(1_000.0),
+            b"KM" => Some(1_000_000.0),
+            b"MIL" => Some(0.0254),
+            b"UM" => Some(0.001),
+            b"CM" => Some(10.0),
+            b"UIN" => Some(0.000_025_4),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn length_factor_mm(&self) -> f64 {
         let unit = match self.units_flag() {
             1 => 25.4,
             2 => 1.0,
-            3 => match self.units_name()?.as_str() {
-                "IN" | "INCH" => 25.4,
-                "MM" => 1.0,
-                "FT" => 304.8,
-                "MI" => 1_609_344.0,
-                "M" => 1_000.0,
-                "KM" => 1_000_000.0,
-                "MIL" => 0.0254,
-                "UM" => 0.001,
-                "CM" => 10.0,
-                "UIN" => 0.000_025_4,
-                _ => return None,
-            },
+            3 => self
+                .named_unit_factor_mm()
+                .expect("validated Global named units"),
             4 => 304.8,
             5 => 1_609_344.0,
             6 => 1_000.0,
@@ -232,22 +327,26 @@ impl Global {
             9 => 0.001,
             10 => 10.0,
             11 => 0.000_025_4,
-            _ => return None,
+            _ => unreachable!("validated Global units flag"),
         };
-        let scale = self.model_scale();
-        (scale.is_finite() && scale > 0.0).then_some(unit / scale)
+        unit / self.model_scale()
     }
 
-    pub(crate) fn minimum_resolution_mm(&self) -> Option<f64> {
-        let resolution = self.values.get(18).and_then(Value::real)?;
-        let factor = self.length_factor_mm()?;
-        (resolution.is_finite() && resolution > 0.0).then_some(resolution * factor)
+    pub(crate) fn minimum_resolution_mm(&self) -> f64 {
+        let resolution = self
+            .real_field(18, "minimum resolution", None)
+            .expect("validated Global minimum resolution");
+        resolution * self.length_factor_mm()
     }
 
     pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
-        let gradations = self.values.get(15).and_then(Value::integer).unwrap_or(1);
-        let maximum = self.values.get(16).and_then(Value::real)?;
-        let factor = self.length_factor_mm()?;
+        let gradations = self
+            .integer_field(15, "maximum line-weight gradations", Some(1))
+            .expect("validated Global line-weight gradations");
+        let maximum = self
+            .real_field(16, "maximum line width", None)
+            .expect("validated Global maximum line width");
+        let factor = self.length_factor_mm();
         (number > 0
             && number <= gradations
             && gradations > 0
@@ -260,20 +359,29 @@ impl Global {
         self.values.get(2).and_then(Value::string)
     }
 
+    pub(crate) fn sender_product_bytes(&self) -> Option<&[u8]> {
+        self.values.get(2).and_then(Value::string_bytes)
+    }
+
     pub(crate) fn native_file_name(&self) -> Option<String> {
         self.values.get(3).and_then(Value::string)
+    }
+
+    pub(crate) fn native_file_name_bytes(&self) -> Option<&[u8]> {
+        self.values.get(3).and_then(Value::string_bytes)
     }
 
     pub(crate) fn units_name(&self) -> Option<String> {
         self.values.get(14).and_then(Value::string)
     }
 
-    pub(crate) fn version_flag(&self) -> Option<i64> {
-        self.values.get(22).and_then(Value::integer).or(Some(3))
+    pub(crate) fn version_flag(&self) -> i64 {
+        self.integer_field(22, "version flag", Some(3))
+            .expect("validated Global version flag")
     }
 
-    pub(crate) fn version(&self) -> Option<&'static str> {
-        self.version_flag().and_then(version_name)
+    pub(crate) fn version(&self) -> &'static str {
+        version_name(self.version_flag()).expect("validated Global version flag")
     }
 
     pub(crate) fn summary_notes(&self) -> Vec<String> {
@@ -290,9 +398,7 @@ impl Global {
         if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        if let Some(version) = self.version() {
-            notes.push(format!("iges_version={version}"));
-        }
+        notes.push(format!("iges_version={}", self.version()));
         notes
     }
 }

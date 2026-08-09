@@ -157,10 +157,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 112 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -357,10 +354,7 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 114 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;

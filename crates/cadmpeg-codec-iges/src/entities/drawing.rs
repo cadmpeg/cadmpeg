@@ -150,16 +150,14 @@ pub(super) fn project(
                     entries.get(&sequence).is_some_and(|target| {
                         target.entity_type == 124
                             && target.form == 0
-                            && global.length_factor_mm().is_some_and(|factor| {
-                                resolve_transform(
-                                    entry.transform,
-                                    &entries,
-                                    &records,
-                                    factor,
-                                    &mut BTreeSet::new(),
-                                )
-                                .is_ok()
-                            })
+                            && resolve_transform(
+                                entry.transform,
+                                &entries,
+                                &records,
+                                global.length_factor_mm(),
+                                &mut BTreeSet::new(),
+                            )
+                            .is_ok()
                     })
                 })
             };

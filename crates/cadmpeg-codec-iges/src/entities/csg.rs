@@ -98,10 +98,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,
@@ -230,10 +227,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(profile) = pointer(record, 1).filter(|sequence| {
             ir.model
                 .curves
@@ -269,10 +263,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "solid sweep axis is invalid"));
             continue;
         }
-        let Some(closed) = global
-            .minimum_resolution_mm()
-            .and_then(|tolerance| profile_closed(ir, profile, tolerance))
-        else {
+        let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
             losses.push(entity_loss(
                 entry,
                 "solid profile endpoints are unavailable",
@@ -393,10 +384,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,
@@ -443,10 +431,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         if resolve_transform(
             entry.transform,
             &entries,

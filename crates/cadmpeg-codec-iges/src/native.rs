@@ -3504,28 +3504,26 @@ pub(crate) fn store(
     }
     let mut product_occurrences = Vec::new();
     let mut product_occurrences_truncated = false;
-    if let Some(length_factor) = global.length_factor_mm() {
-        let expansion = OccurrenceExpansion {
-            entries: &entries,
-            records: &by_directory,
-            definitions: &occurrence_definitions,
-            neutral_links: &occurrence_neutral_links,
-            length_factor,
-        };
-        for root in directory.iter().filter(|entry| {
-            matches!(entry.entity_type, 408 | 420)
-                && entry.form == 0
-                && !contained_instances.contains(&entry.sequence)
-        }) {
-            if expansion.expand(
-                root.sequence,
-                Affine::IDENTITY,
-                &mut Vec::new(),
-                &mut product_occurrences,
-            ) {
-                product_occurrences_truncated = true;
-                break;
-            }
+    let expansion = OccurrenceExpansion {
+        entries: &entries,
+        records: &by_directory,
+        definitions: &occurrence_definitions,
+        neutral_links: &occurrence_neutral_links,
+        length_factor: global.length_factor_mm(),
+    };
+    for root in directory.iter().filter(|entry| {
+        matches!(entry.entity_type, 408 | 420)
+            && entry.form == 0
+            && !contained_instances.contains(&entry.sequence)
+    }) {
+        if expansion.expand(
+            root.sequence,
+            Affine::IDENTITY,
+            &mut Vec::new(),
+            &mut product_occurrences,
+        ) {
+            product_occurrences_truncated = true;
+            break;
         }
     }
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {

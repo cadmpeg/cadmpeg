@@ -309,10 +309,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 100 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -378,7 +375,6 @@ pub(crate) fn project_geometry(
         };
         let radius_tolerance = global
             .minimum_resolution_mm()
-            .unwrap_or_default()
             .max(radius.max(end_radius).max(1.0) * TRANSFORM_TOLERANCE);
         if !end_radius.is_finite() || (end_radius - radius).abs() > radius_tolerance {
             losses.push(entity_loss(
@@ -454,10 +450,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -507,10 +500,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -613,10 +603,7 @@ pub(crate) fn project_geometry(
         .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;

@@ -119,10 +119,7 @@ pub(super) fn project(
         matches!(entry.entity_type, 190 | 192 | 194 | 196 | 198) && matches!(entry.form, 0 | 1)
     }) {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
+        let factor = global.length_factor_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;

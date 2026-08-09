@@ -554,7 +554,12 @@ fn decode_names_forms_outside_the_closed_envelope() {
 #[test]
 fn inspect_reports_sections_and_physical_line_endings() {
     let mut bytes = card_with_ending(b"original fixture", b'S', 1, b"\r\n");
-    bytes.extend(card_with_ending(b"1H,,1H;,,;", b'G', 1, b"\n"));
+    bytes.extend(card_with_ending(
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b'G',
+        1,
+        b"\n",
+    ));
     bytes.extend(card_with_ending(
         b"S0000001G0000001D0000000P0000000",
         b'T',
@@ -664,6 +669,97 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     assert!(summary.notes.contains(&format!("sender_product={product}")));
     assert!(summary.notes.contains(&"iges_version=5.3".into()));
     assert!(summary.notes.contains(&"units=MM".into()));
+}
+
+#[test]
+fn global_defaults_apply_only_to_omitted_fields() {
+    let global =
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,,,2HIN,1,1.0,1Hd,0,1,1Ha,1Ho,,0,0H,0H;";
+    let bytes = fixed_ascii_with_global(global);
+    let scan = crate::card::scan(&bytes).unwrap();
+    let parsed = crate::global::parse(&scan).unwrap();
+
+    assert_eq!(parsed.model_scale(), 1.0);
+    assert_eq!(parsed.units_flag(), 1);
+    assert_eq!(parsed.version_flag(), 3);
+    assert_eq!(parsed.minimum_resolution_mm(), 0.0);
+}
+
+#[test]
+fn malformed_global_integer_does_not_select_its_default() {
+    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2.,2HMM,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
+    let error = IgesCodec
+        .inspect(
+            &mut Cursor::new(fixed_ascii_with_global(global)),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "malformed container: IGES Global: field 14 (units flag) is not an integer"
+    );
+}
+
+#[test]
+fn other_units_require_an_exact_supported_standard_name() {
+    let global = b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,3,2Hmm,1,1.0,1Hd,0.001,1,1Ha,1Ho,11,0,0H,0H;";
+    let error = IgesCodec
+        .inspect(
+            &mut Cursor::new(fixed_ascii_with_global(global)),
+            &cadmpeg_core::decode::InspectOptions::default(),
+        )
+        .unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("field 15 (units name) is not a supported standard unit name"));
+}
+
+#[test]
+fn minimum_resolution_is_required_and_cannot_be_negative() {
+    for (resolution, expected) in [
+        ("", "field 19 (minimum resolution) has no value"),
+        (
+            "-0.001",
+            "field 19 (minimum resolution) must be finite and nonnegative",
+        ),
+    ] {
+        let global = format!(
+            "1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,1Hd,{resolution},1,1Ha,1Ho,11,0,0H,0H;"
+        );
+        let error = IgesCodec
+            .inspect(
+                &mut Cursor::new(fixed_ascii_with_global(global.as_bytes())),
+                &cadmpeg_core::decode::InspectOptions::default(),
+            )
+            .unwrap_err();
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+}
+
+#[test]
+fn non_utf8_global_identifiers_are_preserved_as_exact_hex_attributes() {
+    let mut bytes = point_file();
+    let product = bytes
+        .windows(9)
+        .position(|window| window == b"7Hproduct")
+        .expect("sender product");
+    bytes[product + 5] = 0xff;
+    let file_name = bytes
+        .windows(10)
+        .position(|window| window == b"8Hpart.igs")
+        .expect("native file name");
+    bytes[file_name + 4] = 0xfe;
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let attributes = &result.ir.source.as_ref().unwrap().attributes;
+    assert_eq!(attributes["sender_product_bytes_hex"], "70726fff756374");
+    assert_eq!(attributes["native_file_name_bytes_hex"], "7061fe742e696773");
+    assert!(!attributes.contains_key("sender_product"));
+    assert!(!attributes.contains_key("native_file_name"));
 }
 
 #[test]
@@ -8775,7 +8871,11 @@ fn inspect_rejects_terminate_count_mismatch() {
 #[test]
 fn inspect_accepts_space_padded_terminate_counts() {
     let mut bytes = card(b"original fixture", b'S', 1);
-    bytes.extend(card(b"1H,,1H;,,;", b'G', 1));
+    bytes.extend(card(
+        b"1H,,1H;,1Hp,1Hf,1Hs,1Hv,32,38,6,308,15,,1,2,2HMM,1,1,1Hd,0,0,,,11;",
+        b'G',
+        1,
+    ));
     bytes.extend(card(b"S      1G      1D      0P      0", b'T', 1));
 
     IgesCodec

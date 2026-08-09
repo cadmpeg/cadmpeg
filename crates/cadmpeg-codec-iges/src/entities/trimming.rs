@@ -375,17 +375,8 @@ pub(super) fn project(
         .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let Some(factor) = global.length_factor_mm() else {
-            losses.push(entity_loss(entry, "units or model scale are unsupported"));
-            continue;
-        };
-        let Some(tolerance) = global.minimum_resolution_mm() else {
-            losses.push(entity_loss(
-                entry,
-                "Global minimum resolution is missing or invalid",
-            ));
-            continue;
-        };
+        let factor = global.length_factor_mm();
+        let tolerance = global.minimum_resolution_mm();
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -598,16 +589,14 @@ pub(super) fn project(
                     } else {
                         (end, start)
                     };
-                    let agrees = global.minimum_resolution_mm().is_some_and(|tolerance| {
-                        pcurves_agree(
-                            ir,
-                            &surface_id,
-                            &pcurves,
-                            expected_start,
-                            expected_end,
-                            tolerance,
-                        )
-                    });
+                    let agrees = pcurves_agree(
+                        ir,
+                        &surface_id,
+                        &pcurves,
+                        expected_start,
+                        expected_end,
+                        tolerance,
+                    );
                     if !agrees {
                         losses.push(entity_loss(
                             entry,
@@ -695,7 +684,7 @@ pub(super) fn project(
                             wrapper_reversed: None,
                             native_tail_flags: None,
                             parameter_range: Some(parameter_range),
-                            fit_tolerance: global.minimum_resolution_mm(),
+                            fit_tolerance: Some(tolerance),
                         });
                         PcurveUse {
                             pcurve: id,

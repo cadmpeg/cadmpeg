@@ -138,50 +138,6 @@ The result decides two unrelated things: where an entity's own parameters stop, 
 
 **Need.** Both representations give `NotImplemented`, so a wrong constant changes the reported identity only. We need the flag-record layout to give the correct refusal instead of `Representation::Unknown`.
 
-## 2. Global metadata
-
-### GL-01. Global defaults, and defaults applied to unparseable fields
-
-**Question.** Which Global fields have defaults, what are they, and what does an unparseable Global field mean?
-
-**Known.** `iges.md` "Global section" gives defaults for the two delimiters only. `global.rs` gives four more that this repository records nowhere: model scale `1.0` (line 203), units flag `1` (line 207), maximum line-weight gradations `1` (line 248), and version flag `3` (line 272). Each uses `and_then(...).unwrap_or(...)`, which cannot separate an absent field from a field that does not parse. `Value::integer` (`global.rs:23-28`) gives `None` for a Hollerith value, a blank atom, and any text that `parse::<i64>` refuses.
-
-**Note.** `Value::real` accepts `"2."` and `Value::integer` refuses it. A units flag written as `2.` therefore gives `None`, `units_flag()` gives 1, `length_factor_mm()` selects 25.4, and each length in a millimetre file is multiplied by 25.4 with no loss note.
-
-**Note.** `version_flag` gives `Option<i64>`, and `.or(Some(3))` makes `None` impossible. A file that omits the version flag is refused with the text "IGES Fixed ASCII version 2.0 decode", which names a version the file never declared.
-
-**Need.** A wrong units flag silently rescales the complete model. We need the Global default table, and a rule that separates an omitted field from a malformed field.
-
-### GL-02. The units-name comparison rule
-
-**Question.** How is the Global units name compared with the standard unit codes?
-
-**Known.** `global.rs:213-226` compares the raw Hollerith payload with a closed list by exact bytes. `"INCH"` is accepted beside `"IN"`, so an alias policy exists. The policy does not cover padding or letter case. `iges.md` "Global section" gives the field and no comparison rule. A units flag of 3 with the name `4HMM  ` or `2Hmm` matches no arm, so `length_factor_mm()`, `minimum_resolution_mm()`, and `line_weight_mm()` all give `None`.
-
-**Need.** The minimum resolution is the tolerance that `iges.md` "Topology" require for topology attachment. A padded unit name removes that tolerance and changes topology acceptance with no diagnostic. We need the comparison rule and the complete alias set.
-
-### GL-03. A missing or zero Global minimum resolution
-
-**Question.** What does an absent, zero, or negative Global minimum resolution mean?
-
-**Known.** `global.rs:241-245` gives `Some` only for a finite value greater than zero. The positivity requirement is a codec rule. Producers write `0.0` for "unspecified". Three consumers of the same absent value disagree:
-
-- `trimming.rs:382-386` refuses the topology candidate and names the cause.
-- `geometry.rs:379-382` replaces it with zero through `unwrap_or_default()` and continues.
-- `brep.rs:775`, `:841`, `:886` and `csg.rs:272-281` fold it into an `is_some_and` guard, so the absent field refuses every Type 186 solid and every orphan Type 514 shell in the file with a loss that names a geometry disagreement that did not occur.
-
-**Conflict.** One missing field gives a refusal on one path, a silent zero on another, and a misattributed refusal on a third.
-
-**Need.** We need the meaning of a zero or absent minimum resolution, and one behavior for it across the codec. The misattributed loss messages must name the cause.
-
-### GL-04. Byte encoding of Global Hollerith values
-
-**Question.** What character encoding do Global Hollerith values use?
-
-**Known.** IGES counts Hollerith payload bytes and declares no encoding. `iges.md` "Parameter Data section" gives "Tokens retain their exact source spans and lexical bytes". `global.rs:16-21` gives `String::from_utf8(...).ok()`, so a payload that is not UTF-8 gives `None`, and `reader.rs:33-38` then omits the `sender_product` and `native_file_name` attributes with no `LossNote`.
-
-**Need.** A file authored in a Latin-1 locale loses its producer identity silently, and nothing separates "absent" from "removed". We need the retention rule for non-UTF-8 Global strings.
-
 ## 3. Directory fields, the reference graph, and the native arenas
 
 ### DR-01. Parameter Data pointers become typed arena identities without validation
@@ -227,14 +183,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 **Note.** The two rules combine. One member written as `13.` instead of `13` removes the definition, so every instance of it becomes a root and expands from `Affine::IDENTITY`. The `product_occurrences` arena then holds records that describe a structure the file does not contain, with the parent transform chain dropped and no loss emitted.
 
 **Need.** Fabricated occurrences are worse than missing ones, because a consumer cannot detect them. We need per-member recovery, or a rule that a definition which fails to parse blocks root inference for its instances.
-
-### DR-05. An unrecognized Global unit empties the product occurrence arena
-
-**Question.** What does the occurrence expansion do when the Global unit is not recognized?
-
-**Known.** `native.rs:3507` runs the expansion inside `if let Some(length_factor) = global.length_factor_mm()`. There is no `else`. `product_occurrences` stays empty and `product_occurrence_expansion` reports `emitted: 0, truncated: false`, which is byte-identical to a file that holds no instances.
-
-**Need.** GL-02 gives the trigger: a unit name outside the closed list. The assembly structure then disappears with no signal. We need a loss for a suppressed expansion.
 
 ### DR-06. A blank Directory Structure field gives a link to `#D0`
 

@@ -659,16 +659,14 @@ pub(super) fn project(
     }) {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
-            let transform_valid = global.length_factor_mm().is_some_and(|factor| {
-                resolve_transform(
-                    entry.transform,
-                    &entries,
-                    &records,
-                    factor,
-                    &mut BTreeSet::new(),
-                )
-                .is_ok()
-            });
+            let transform_valid = resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                global.length_factor_mm(),
+                &mut BTreeSet::new(),
+            )
+            .is_ok();
             entry.status.use_flag == 1
                 && transform_valid
                 && match entry.entity_type {
