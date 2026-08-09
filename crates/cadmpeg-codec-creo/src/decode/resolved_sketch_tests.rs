@@ -6675,6 +6675,128 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
 }
 
 #[test]
+fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: value.is_none(),
+        offset: 0,
+    };
+    let definition = |first, second, midpoint| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x2a\xf8\x03\x00\x01\x02\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 3,
+            entity_ref: None,
+            rows: vec![row(1, 10, first), row(1, 11, second), row(6, 20, midpoint)],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition(Some(2.0), None, Some(5.0))).get(&11),
+        Some(&[Some(8.0), None])
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&definition(Some(2.0), Some(8.0), None)).get(&(6, 20)),
+        Some(&5.0)
+    );
+
+    let conflicting = definition(Some(2.0), Some(9.0), Some(5.0));
+    assert!(!resolved_section_scalar_values(&conflicting).contains_key(&(6, 20)));
+}
+
+#[test]
+fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
+    let row = |variable_type, key, value| crate::feature::FeatureVariableRow {
+        variable_type,
+        key,
+        value,
+        value_body: Vec::new(),
+        guess: value,
+        guess_body: Vec::new(),
+        guess_dimension_driven: value.is_none(),
+        known: Some(0),
+        homogeneity: Some(1),
+        uvar_id: None,
+        dimension_driven: value.is_none(),
+        offset: 0,
+    };
+    let definition = |u, v, first, second| crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+                \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+                \x01\x1f\xf8\x04\x00\x01\x02\x03\xf6\xe2"
+            .to_vec(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: vec![
+                row(1, 10, u),
+                row(2, 10, v),
+                row(6, 20, first),
+                row(6, 21, second),
+            ],
+            points: Vec::new(),
+            offset: 0,
+        }),
+        segments: None,
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        resolved_section_coordinates(&definition(None, None, Some(3.0), Some(4.0))).get(&10),
+        Some(&[Some(3.0), Some(4.0)])
+    );
+    let partial = definition(None, Some(4.0), Some(3.0), None);
+    assert_eq!(
+        resolved_section_coordinates(&partial).get(&10),
+        Some(&[Some(3.0), Some(4.0)])
+    );
+    assert_eq!(
+        resolved_section_scalar_values(&partial).get(&(6, 21)),
+        Some(&4.0)
+    );
+    let resolved = resolved_section_scalar_values(&definition(Some(3.0), Some(4.0), None, None));
+    assert_eq!(resolved.get(&(6, 20)), Some(&3.0));
+    assert_eq!(resolved.get(&(6, 21)), Some(&4.0));
+}
+
+#[test]
 fn equation_function_zero_solves_radial_endpoint_and_opaque_scalars() {
     let variable = |variable_type, key, value| crate::feature::FeatureVariableRow {
         variable_type,

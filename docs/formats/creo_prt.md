@@ -1514,6 +1514,20 @@ quadratic has one finite root that satisfies the complete equation system; two
 roots, no root, an incomplete auxiliary row, or an ambiguous point key leaves
 the equation native.
 
+Function `42` has three argument slots. The first two rows have the same
+coordinate type, either `1` or `2`, and identify two point coordinates. The
+third row has type `6`. The type-6 scalar equals the arithmetic mean of the two
+selected coordinates. A missing coordinate is solved from a finite type-6
+scalar and the other coordinate; a missing type-6 scalar is derived from two
+finite coordinates. A stored scalar or coordinate that conflicts with the
+equation leaves that row native.
+Function `31` has four argument slots. The first two rows are the type-1 and
+type-2 coordinates of one point key. The final two rows are distinct type-6
+scalars and bind the point's `u` and `v` coordinates, respectively. A missing
+coordinate is solved from its finite type-6 scalar, and a missing type-6 scalar
+is derived from its finite bound coordinate. A conflicting stored value leaves
+the equation native.
+
 Complete native `ent_tab` rows are retained independently of whether `segtab`
 is present, complete, or contains the same external identifiers. Cross-table
 agreement is required only when deriving solved section topology.

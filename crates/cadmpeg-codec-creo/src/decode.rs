@@ -3305,6 +3305,9 @@ pub(crate) fn resolved_section_coordinates(
                 })
         })
         .collect::<Vec<_>>();
+    let auxiliary_constraints =
+        section_equation_auxiliary_constraints(definition, &ambiguous_point_ids);
+    let mut auxiliary_scalar_values = section_equation_scalar_seed_values(definition);
     let linear_dimension_candidates = definition
         .relations
         .iter()
@@ -3537,14 +3540,21 @@ pub(crate) fn resolved_section_coordinates(
         }
     }
     let stored_coordinates = points
-        .into_iter()
-        .flat_map(|(point, coordinates)| {
+        .iter()
+        .flat_map(|(&point, coordinates)| {
             coordinates
-                .into_iter()
+                .iter()
+                .copied()
                 .enumerate()
                 .filter_map(move |(coordinate, value)| Some(((point, coordinate), value?)))
         })
         .collect();
+    append_section_equation_auxiliary_coordinate_constraints(
+        &auxiliary_constraints,
+        &auxiliary_scalar_values,
+        &stored_coordinates,
+        &mut equations,
+    );
     let unsigned_coordinates = solve_unsigned_dimension_coordinates(
         &equations,
         &stored_coordinates,
@@ -3603,6 +3613,18 @@ pub(crate) fn resolved_section_coordinates(
             point, coordinate, value,
         ));
     }
+    let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
+    for (variable, value) in
+        section_equation_scalar_values_from_coordinates(definition, &solved_coordinates)
+    {
+        merge_scalar_value_candidate(&mut auxiliary_scalar_values, variable, value);
+    }
+    append_section_equation_auxiliary_coordinate_constraints(
+        &auxiliary_constraints,
+        &auxiliary_scalar_values,
+        &stored_coordinates,
+        &mut equations,
+    );
     let solved_coordinates = solve_section_coordinate_equations(&equations, &stored_coordinates);
     let arc_midpoint_constraints = active_complete_section_skamps(definition)
         .filter_map(|skamp| {
@@ -3780,6 +3802,302 @@ fn section_equation_coordinate_equalities(
 }
 
 type SectionScalarVariable = (u32, u32);
+
+#[derive(Clone, Copy)]
+struct SectionEquationMidpointConstraint {
+    first: SectionCoordinateVariable,
+    second: SectionCoordinateVariable,
+    result: SectionScalarVariable,
+}
+
+#[derive(Clone, Copy)]
+struct SectionEquationPointBinding {
+    point: u32,
+    coordinates: [SectionScalarVariable; 2],
+}
+
+#[derive(Default)]
+struct SectionEquationAuxiliaryConstraints {
+    midpoints: Vec<SectionEquationMidpointConstraint>,
+    point_bindings: Vec<SectionEquationPointBinding>,
+}
+
+fn section_equation_auxiliary_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> SectionEquationAuxiliaryConstraints {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return SectionEquationAuxiliaryConstraints::default();
+    };
+    let Some(equations) =
+        crate::feature::equation_table(&definition.body, 0, definition.body.len())
+    else {
+        return SectionEquationAuxiliaryConstraints::default();
+    };
+    let Some(declared_count) = usize::try_from(equations.declared_count).ok() else {
+        return SectionEquationAuxiliaryConstraints::default();
+    };
+    if declared_count != equations.rows.len() + 1 {
+        return SectionEquationAuxiliaryConstraints::default();
+    }
+
+    let row = |ordinal: Option<u32>| {
+        usize::try_from(ordinal?)
+            .ok()
+            .and_then(|ordinal| variables.rows.get(ordinal))
+    };
+    let mut constraints = SectionEquationAuxiliaryConstraints::default();
+    for equation in equations
+        .rows
+        .iter()
+        .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
+    {
+        match (equation.function_id, equation.arguments.as_slice()) {
+            (42, [Some(first), Some(second), Some(result)]) => {
+                let (Some(first), Some(second), Some(result)) =
+                    (row(Some(*first)), row(Some(*second)), row(Some(*result)))
+                else {
+                    continue;
+                };
+                if first.variable_type != second.variable_type
+                    || !matches!(first.variable_type, 1 | 2)
+                    || result.variable_type != 6
+                    || ambiguous_point_ids.contains(&first.key)
+                    || ambiguous_point_ids.contains(&second.key)
+                {
+                    continue;
+                }
+                let coordinate = usize::from(first.variable_type == 2);
+                constraints
+                    .midpoints
+                    .push(SectionEquationMidpointConstraint {
+                        first: (first.key, coordinate),
+                        second: (second.key, coordinate),
+                        result: (result.variable_type, result.key),
+                    });
+            }
+            (31, [Some(first_u), Some(first_v), Some(second_u), Some(second_v)]) => {
+                let (Some(first_u), Some(first_v), Some(second_u), Some(second_v)) = (
+                    row(Some(*first_u)),
+                    row(Some(*first_v)),
+                    row(Some(*second_u)),
+                    row(Some(*second_v)),
+                ) else {
+                    continue;
+                };
+                if first_u.variable_type != 1
+                    || first_v.variable_type != 2
+                    || first_u.key != first_v.key
+                    || second_u.variable_type != 6
+                    || second_v.variable_type != 6
+                    || second_u.key == second_v.key
+                    || ambiguous_point_ids.contains(&first_u.key)
+                {
+                    continue;
+                }
+                constraints
+                    .point_bindings
+                    .push(SectionEquationPointBinding {
+                        point: first_u.key,
+                        coordinates: [
+                            (second_u.variable_type, second_u.key),
+                            (second_v.variable_type, second_v.key),
+                        ],
+                    });
+            }
+            _ => {}
+        }
+    }
+    constraints
+}
+
+fn merge_scalar_value_candidate(
+    values: &mut BTreeMap<SectionScalarVariable, Option<f64>>,
+    variable: SectionScalarVariable,
+    value: f64,
+) {
+    if !value.is_finite() {
+        return;
+    }
+    match values.entry(variable) {
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            entry.insert(Some(value));
+        }
+        std::collections::btree_map::Entry::Occupied(mut entry) => {
+            let Some(stored) = *entry.get() else {
+                return;
+            };
+            if !approximately_equal(stored, value) {
+                *entry.get_mut() = None;
+            }
+        }
+    }
+}
+
+fn section_equation_scalar_seed_values(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<SectionScalarVariable, Option<f64>> {
+    let Some(variables) = definition
+        .variables
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
+        return BTreeMap::new();
+    };
+    let mut values = BTreeMap::new();
+    for row in &variables.rows {
+        if matches!(row.variable_type, 1 | 2) {
+            continue;
+        }
+        let variable = (row.variable_type, row.key);
+        match row.value {
+            Some(value) if value.is_finite() => {
+                merge_scalar_value_candidate(&mut values, variable, value);
+            }
+            Some(_) => {
+                values.insert(variable, None);
+            }
+            None => {}
+        }
+    }
+    for (variable, value) in section_equation_scalar_equalities(definition) {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
+    values
+}
+
+fn append_section_equation_auxiliary_coordinate_constraints(
+    constraints: &SectionEquationAuxiliaryConstraints,
+    scalar_values: &BTreeMap<SectionScalarVariable, Option<f64>>,
+    stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
+    equations: &mut Vec<SectionCoordinateEquation>,
+) {
+    for constraint in &constraints.midpoints {
+        let Some(Some(value)) = scalar_values.get(&constraint.result) else {
+            continue;
+        };
+        if stored_coordinates
+            .get(&constraint.first)
+            .zip(stored_coordinates.get(&constraint.second))
+            .is_some_and(|(first, second)| {
+                !approximately_equal(f64::midpoint(*first, *second), *value)
+            })
+        {
+            continue;
+        }
+        let mut equation = SectionCoordinateEquation::default();
+        equation.add_point(constraint.first.0, constraint.first.1, 1.0);
+        equation.add_point(constraint.second.0, constraint.second.1, 1.0);
+        equation.rhs = 2.0 * value;
+        equations.push(equation);
+    }
+    for constraint in &constraints.point_bindings {
+        let mut values = [None; 2];
+        let mut underdetermined = false;
+        let mut invalid = false;
+        for (coordinate, variable) in constraint.coordinates.into_iter().enumerate() {
+            match scalar_values.get(&variable) {
+                Some(Some(value)) => {
+                    if stored_coordinates
+                        .get(&(constraint.point, coordinate))
+                        .is_some_and(|stored| !approximately_equal(*stored, *value))
+                    {
+                        invalid = true;
+                        break;
+                    }
+                    values[coordinate] = Some(*value);
+                }
+                Some(None) => {
+                    invalid = true;
+                    break;
+                }
+                None => {
+                    underdetermined |=
+                        !stored_coordinates.contains_key(&(constraint.point, coordinate));
+                }
+            }
+        }
+        if invalid || underdetermined {
+            continue;
+        }
+        for (coordinate, value) in values
+            .into_iter()
+            .enumerate()
+            .filter_map(|(coordinate, value)| Some((coordinate, value?)))
+        {
+            equations.push(SectionCoordinateEquation::point_value(
+                constraint.point,
+                coordinate,
+                value,
+            ));
+        }
+    }
+}
+
+fn section_equation_scalar_values_from_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> BTreeMap<SectionScalarVariable, f64> {
+    let ambiguous_point_ids = definition
+        .variables
+        .as_ref()
+        .map_or_else(BTreeSet::new, |variables| variables.reconciled_points().1);
+    let constraints = section_equation_auxiliary_constraints(definition, &ambiguous_point_ids);
+    let seed_values = section_equation_scalar_seed_values(definition);
+    let mut derived = BTreeMap::<SectionScalarVariable, Option<f64>>::new();
+    let compatible = |variable: SectionScalarVariable, value: f64| {
+        !seed_values.contains_key(&variable)
+            || seed_values[&variable].is_some_and(|stored| approximately_equal(stored, value))
+    };
+    for constraint in constraints.midpoints {
+        let (Some(Some(first)), Some(Some(second))) = (
+            coordinates
+                .get(&constraint.first.0)
+                .map(|point| point[constraint.first.1]),
+            coordinates
+                .get(&constraint.second.0)
+                .map(|point| point[constraint.second.1]),
+        ) else {
+            continue;
+        };
+        let value = f64::midpoint(first, second);
+        if compatible(constraint.result, value) {
+            merge_scalar_value_candidate(&mut derived, constraint.result, value);
+        }
+    }
+    for constraint in constraints.point_bindings {
+        let Some(point) = coordinates.get(&constraint.point) else {
+            continue;
+        };
+        let mut invalid = false;
+        let mut candidates = Vec::new();
+        for (coordinate, variable) in constraint.coordinates.into_iter().enumerate() {
+            let Some(value) = point[coordinate] else {
+                continue;
+            };
+            if !compatible(variable, value) {
+                invalid = true;
+                break;
+            }
+            if !seed_values.contains_key(&variable) {
+                candidates.push((variable, value));
+            }
+        }
+        if !invalid {
+            for (variable, value) in candidates {
+                merge_scalar_value_candidate(&mut derived, variable, value);
+            }
+        }
+    }
+    derived
+        .into_iter()
+        .filter_map(|(variable, value)| Some((variable, value?)))
+        .collect()
+}
 
 fn section_equation_scalar_equality_components(
     definition: &crate::feature::FeatureDefinition,
@@ -4055,6 +4373,11 @@ pub(crate) fn resolved_section_scalar_values(
     for (variable, value) in section_equation_scalar_equalities(definition) {
         values.insert(variable, Some(value));
     }
+    for (variable, value) in
+        section_equation_scalar_values_from_coordinates(definition, &coordinates)
+    {
+        merge_scalar_value_candidate(&mut values, variable, value);
+    }
     for constraint in
         section_equation_radial_constraints(definition, &coordinates, &BTreeSet::new())
     {
@@ -4065,20 +4388,7 @@ pub(crate) fn resolved_section_scalar_values(
             let Some(value) = value else {
                 continue;
             };
-            match values.entry(variable) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(Some(value));
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                    let Some(stored) = entry.get() else {
-                        continue;
-                    };
-                    let scale = stored.abs().max(value.abs()).max(1.0);
-                    if (stored - value).abs() > 1e-9 * scale {
-                        *entry.get_mut() = None;
-                    }
-                }
-            }
+            merge_scalar_value_candidate(&mut values, variable, value);
         }
     }
     values
