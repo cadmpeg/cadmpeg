@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 
 use cadmpeg_core::be::{f64_at, u16_at, u32_at};
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
 use cadmpeg_ir::math::{Point2, Point3};
 
 use super::{Carrier, CarrierGeometry, LEN_TO_MM};
@@ -33,20 +33,18 @@ struct Chart {
     chordal_error: f64,
 }
 
-/// One validated intersection curve and its optional support parameterization.
+/// One validated intersection curve and its solved chart.
 pub(super) struct IntersectionCarrier {
     pub carrier: Carrier,
-    pub parameterization: Option<IntersectionParameterization>,
+    pub support_data: IntersectionSupportData,
 }
 
-/// Ordered support surfaces and their co-parameterized solved UV caches.
+/// Ordered supports and optional UV lanes for the model-space chart curve.
 #[derive(Clone)]
-pub(super) struct IntersectionParameterization {
+pub(super) struct IntersectionSupportData {
     pub supports: [u16; 2],
-    pub pcurves: [PcurveGeometry; 2],
-    pub parameter_range: [f64; 2],
-    pub model_points: Vec<Point3>,
     pub fit_tolerance_mm: f64,
+    pub support_uv: Option<[Vec<Point2>; 2]>,
 }
 
 struct UvRecord {
@@ -335,14 +333,11 @@ fn solved_curve(
     ))
 }
 
-fn solved_parameterization(
-    supports: [u16; 2],
+fn solved_support_uv(
     parameters: &[f64],
-    model_points: &[Point3],
-    fit_tolerance_mm: f64,
     reversed: bool,
     records: Option<&[UvRecord]>,
-) -> Option<IntersectionParameterization> {
+) -> Option<[Vec<Point2>; 2]> {
     let expected_values = parameters.len().checked_mul(4)?;
     let mut candidates = records?
         .iter()
@@ -359,33 +354,11 @@ fn solved_parameterization(
                 }
                 control_points
             });
-            let knots = degree_one_knots(parameters);
-            IntersectionParameterization {
-                supports,
-                pcurves: controls.map(|control_points| PcurveGeometry::Nurbs {
-                    degree: 1,
-                    knots: knots.clone(),
-                    control_points,
-                    weights: None,
-                    periodic: false,
-                }),
-                parameter_range: [
-                    parameters[0],
-                    *parameters.last().expect("non-empty parameters"),
-                ],
-                model_points: model_points.to_vec(),
-                fit_tolerance_mm,
-            }
+            controls
         });
     let candidate = candidates.next()?;
     candidates
-        .all(|other| {
-            other.supports == candidate.supports
-                && other.pcurves == candidate.pcurves
-                && other.parameter_range == candidate.parameter_range
-                && other.model_points == candidate.model_points
-                && other.fit_tolerance_mm == candidate.fit_tolerance_mm
-        })
+        .all(|other| other == candidate)
         .then_some(candidate)
 }
 
@@ -457,18 +430,8 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
             continue;
         }
         let supports = [refs[0], refs[1]];
-        let model_points = match &geometry {
-            CurveGeometry::Nurbs(curve) => curve.control_points.as_slice(),
-            _ => unreachable!("solved intersection curve is a NURBS cache"),
-        };
-        let parameterization = solved_parameterization(
-            supports,
-            &parameters,
-            model_points,
-            fit_tolerance_mm,
-            reversed,
-            uvs.get(&uv_ref).map(Vec::as_slice),
-        );
+        let support_uv =
+            solved_support_uv(&parameters, reversed, uvs.get(&uv_ref).map(Vec::as_slice));
         out.entry(attr).or_insert(IntersectionCarrier {
             carrier: Carrier {
                 attr,
@@ -479,7 +442,11 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Intersect
                 parameter_range: None,
                 orientation_reversed: false,
             },
-            parameterization,
+            support_data: IntersectionSupportData {
+                supports,
+                fit_tolerance_mm,
+                support_uv,
+            },
         });
     }
     out
@@ -612,31 +579,21 @@ mod tests {
         assert_eq!(curve.knots.len(), 5);
         assert!((curve.knots[2] - 0.01).abs() < 1e-12);
         assert!((curve.knots[3] - 0.02).abs() < 1e-12);
-        let parameterization = carrier
-            .parameterization
+        let support_data = &carrier.support_data;
+        assert_eq!(support_data.supports, [2, 3]);
+        let support_uv = support_data
+            .support_uv
             .as_ref()
-            .expect("width-four UV lanes decoded");
-        assert_eq!(parameterization.supports, [2, 3]);
-        let PcurveGeometry::Nurbs {
-            control_points,
-            knots,
-            ..
-        } = &parameterization.pcurves[0]
-        else {
-            panic!("expected a degree-one UV cache");
-        };
+            .expect("width-four UV cache");
         assert_eq!(
-            control_points,
+            support_uv[0],
             &[
                 Point2::new(0.0, 1.0),
                 Point2::new(4.0, 5.0),
                 Point2::new(8.0, 9.0)
             ]
         );
-        assert_eq!(knots, &curve.knots);
-        assert_eq!(parameterization.parameter_range, [0.0, 0.02]);
-        assert_eq!(parameterization.model_points, curve.control_points);
-        assert_eq!(parameterization.fit_tolerance_mm, 0.01);
+        assert_eq!(support_data.fit_tolerance_mm, 0.01);
     }
 
     #[test]
@@ -681,13 +638,11 @@ mod tests {
                 Point3::new(0.0, 0.0, 0.0),
             ]
         );
-        let parameterization = carrier.parameterization.as_ref().expect("UV cache");
-        let PcurveGeometry::Nurbs { control_points, .. } = &parameterization.pcurves[0] else {
-            panic!("expected a UV NURBS cache");
-        };
+        let support_data = &carrier.support_data;
+        let control_points = &support_data.support_uv.as_ref().expect("UV cache")[0];
         assert_eq!(control_points[0], Point2::new(8.0, 9.0));
         assert_eq!(control_points[2], Point2::new(0.0, 1.0));
-        assert_eq!(parameterization.parameter_range, [-0.02, 0.0]);
+        assert_eq!(curve.knots, [-0.02, -0.02, -0.01, 0.0, 0.0]);
     }
 
     #[test]
@@ -699,7 +654,7 @@ mod tests {
         bytes.extend(uv(7, POINTS.len() + 1));
         let carriers = scan_intersection_carriers(&bytes);
         let carrier = carriers.get(&9).expect("seam-row carrier decoded");
-        assert!(carrier.parameterization.is_none());
+        assert!(carrier.support_data.support_uv.is_none());
     }
 
     #[test]

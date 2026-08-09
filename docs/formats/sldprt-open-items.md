@@ -30,9 +30,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** Where are the chart, terminator, and support-UV witnesses for an intersection composite when its referenced witnesses are absent or inconsistent?
 
-**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. A complete width-4 support-UV record supplies the two solved pcurve caches. The two support surfaces define the exact intersection only when the carrier selects a usable branch. A chart and its terminators can be complete while the referenced support-UV record is absent.
+**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. A complete width-4 support-UV record supplies the two solved pcurve caches. When that record is absent, every chart point on an analytic support has an exact inverse. Consecutive inverses select a continuous periodic branch, and the terminators supply the exact endpoint parameters. A chart and its terminators can be complete while a free-form support has no stored support-UV record.
 
-**Need.** We must find the witnesses to construct the bounded intersection curve.
+**Need.** We must construct and certify the inverse chart on a free-form support when its support-UV record is absent. We must locate an authoritative replacement when a referenced chart, terminator, or support-UV witness is inconsistent.
 
 ### GC-03. Surface-owned edge curve attributes
 

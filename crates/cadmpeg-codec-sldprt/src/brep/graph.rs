@@ -989,25 +989,34 @@ fn decode_graph(
                 let pcurves = edge_ends
                     .get(&edge_attr)
                     .and_then(|(_, _, curve_attr)| {
-                        let parameterization =
-                            carriers.intersection_parameterization(*curve_attr)?;
+                        let support_data = carriers.intersection_support_data(*curve_attr)?;
+                        let curve_carrier = carriers.curve(*curve_attr)?;
+                        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
+                            &curve_carrier.geometry
+                        else {
+                            return None;
+                        };
                         let surface = carriers.surface(f.surface_attr)?;
                         let CarrierGeometry::Surface(surface) = &surface.geometry else {
                             return None;
                         };
-                        let (geometry, parameter_range) = intersection_support_pcurve(
-                            parameterization,
+                        let (geometry, parameter_range, source) = intersection_support_pcurve(
+                            support_data,
+                            curve,
                             f.surface_attr,
                             surface,
                             *edge_endpoint_positions.get(&edge_attr)?,
                         )?;
                         let id = PcurveId(format!("sldprt:brep:pcurve#intersection:{ce_attr}"));
-                        let offset = carriers
-                            .curve(*curve_attr)
-                            .map_or(0, |carrier| carrier.offset);
+                        let offset = curve_carrier.offset;
                         annotations
                             .note(&id, source_stream, offset as u64)
-                            .tag("surface_intersection_uv");
+                            .tag(match source {
+                                IntersectionPcurveSource::StoredCache => "surface_intersection_uv",
+                                IntersectionPcurveSource::AnalyticInverse => {
+                                    "derived_intersection_analytic_uv"
+                                }
+                            });
                         annotations.exactness(&id, Exactness::Derived);
                         out.pcurves.push(Pcurve {
                             id: id.clone(),
@@ -1015,7 +1024,7 @@ fn decode_graph(
                             wrapper_reversed: None,
                             native_tail_flags: None,
                             parameter_range: Some(parameter_range),
-                            fit_tolerance: None,
+                            fit_tolerance: Some(support_data.fit_tolerance_mm),
                         });
                         Some(vec![cadmpeg_ir::topology::PcurveUse {
                             pcurve: id,
@@ -2859,61 +2868,143 @@ fn derive_nurbs_isoparametric_pcurves(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IntersectionPcurveSource {
+    StoredCache,
+    AnalyticInverse,
+}
+
+/// Conservative maximum separation between one analytic surface image of a
+/// linear UV segment and the straight chord through its endpoints.
+fn analytic_pcurve_chord_bound(
+    surface: &SurfaceGeometry,
+    start: cadmpeg_ir::math::Point2,
+    end: cadmpeg_ir::math::Point2,
+) -> Option<f64> {
+    let du = (end.u - start.u).abs();
+    let dv = (end.v - start.v).abs();
+    let second_derivative_bound = match surface {
+        SurfaceGeometry::Plane { .. } => 0.0,
+        SurfaceGeometry::Cylinder { radius, .. } => radius.abs() * du * du,
+        SurfaceGeometry::Cone {
+            radius,
+            ratio,
+            half_angle,
+            ..
+        } => {
+            let slope = half_angle.tan().abs();
+            let radial_scale = 1.0f64.max(ratio.abs());
+            let max_radius = (radius + start.v * half_angle.tan())
+                .abs()
+                .max((radius + end.v * half_angle.tan()).abs());
+            radial_scale * (max_radius * du * du + 2.0 * slope * du * dv)
+        }
+        SurfaceGeometry::Sphere { radius, .. } => radius.abs() * (du + dv).powi(2),
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            (major_radius.abs() + minor_radius.abs()) * du * du
+                + 2.0 * minor_radius.abs() * du * dv
+                + minor_radius.abs() * dv * dv
+        }
+        _ => return None,
+    };
+    let bound = second_derivative_bound / 8.0;
+    bound.is_finite().then_some(bound)
+}
+
 fn intersection_support_pcurve(
-    parameterization: &super::intersection::IntersectionParameterization,
+    support_data: &super::intersection::IntersectionSupportData,
+    chart: &cadmpeg_ir::geometry::NurbsCurve,
     surface_attr: u16,
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
-) -> Option<(PcurveGeometry, [f64; 2])> {
-    let support_index = match parameterization
-        .supports
-        .map(|support| support == surface_attr)
+) -> Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)> {
+    if chart.degree != 1
+        || chart.weights.is_some()
+        || chart.periodic
+        || chart.control_points.len() < 2
+        || chart.knots.len() != chart.control_points.len() + 2
+        || !support_data.fit_tolerance_mm.is_finite()
+        || support_data.fit_tolerance_mm <= 0.0
     {
+        return None;
+    }
+    let support_index = match support_data.supports.map(|support| support == surface_attr) {
         [true, false] => 0,
         [false, true] => 1,
         _ => return None,
     };
-    let mut geometry = parameterization.pcurves[support_index].clone();
-    let PcurveGeometry::Nurbs { control_points, .. } = &mut geometry else {
-        return None;
-    };
-    match surface {
-        SurfaceGeometry::Plane { .. } => {
-            for point in control_points.iter_mut() {
-                point.u *= LEN_TO_MM;
-                point.v *= LEN_TO_MM;
-            }
-        }
-        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
-            for point in control_points.iter_mut() {
-                point.v *= LEN_TO_MM;
-            }
-        }
-        SurfaceGeometry::Sphere { .. }
-        | SurfaceGeometry::Torus { .. }
-        | SurfaceGeometry::Nurbs(_) => {}
-        _ => return None,
-    }
-    let mapped_endpoints = [
-        surface_point(
-            surface,
-            control_points.first()?.u,
-            control_points.first()?.v,
-        )?,
-        surface_point(surface, control_points.last()?.u, control_points.last()?.v)?,
-    ];
     let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
         (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
     };
-    let direct_error = squared_distance(mapped_endpoints[0], edge_endpoints[0])
-        + squared_distance(mapped_endpoints[1], edge_endpoints[1]);
-    let reverse_error = squared_distance(mapped_endpoints[0], edge_endpoints[1])
-        + squared_distance(mapped_endpoints[1], edge_endpoints[0]);
+    let model_endpoints = [
+        *chart.control_points.first()?,
+        *chart.control_points.last()?,
+    ];
+    let direct_error = squared_distance(model_endpoints[0], edge_endpoints[0])
+        + squared_distance(model_endpoints[1], edge_endpoints[1]);
+    let reverse_error = squared_distance(model_endpoints[0], edge_endpoints[1])
+        + squared_distance(model_endpoints[1], edge_endpoints[0]);
     let targets = if direct_error <= reverse_error {
         edge_endpoints
     } else {
         [edge_endpoints[1], edge_endpoints[0]]
     };
+    let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
+        let mut control_points = support_uv[support_index].clone();
+        match surface {
+            SurfaceGeometry::Plane { .. } => {
+                for point in &mut control_points {
+                    point.u *= LEN_TO_MM;
+                    point.v *= LEN_TO_MM;
+                }
+            }
+            SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+                for point in &mut control_points {
+                    point.v *= LEN_TO_MM;
+                }
+            }
+            SurfaceGeometry::Sphere { .. }
+            | SurfaceGeometry::Torus { .. }
+            | SurfaceGeometry::Nurbs(_) => {}
+            _ => return None,
+        }
+        (control_points, IntersectionPcurveSource::StoredCache)
+    } else {
+        let mut control_points = chart
+            .control_points
+            .iter()
+            .copied()
+            .map(|point| analytic_surface_parameters(surface, point))
+            .collect::<Option<Vec<_>>>()?;
+        for index in 1..control_points.len() {
+            let previous = control_points[index - 1];
+            match surface {
+                SurfaceGeometry::Cylinder { .. }
+                | SurfaceGeometry::Cone { .. }
+                | SurfaceGeometry::Sphere { .. }
+                | SurfaceGeometry::Torus { .. } => {
+                    control_points[index].u +=
+                        ((previous.u - control_points[index].u) / std::f64::consts::TAU).round()
+                            * std::f64::consts::TAU;
+                }
+                SurfaceGeometry::Plane { .. } => {}
+                _ => return None,
+            }
+            if matches!(surface, SurfaceGeometry::Torus { .. }) {
+                control_points[index].v +=
+                    ((previous.v - control_points[index].v) / std::f64::consts::TAU).round()
+                        * std::f64::consts::TAU;
+            }
+        }
+        (control_points, IntersectionPcurveSource::AnalyticInverse)
+    };
+    if control_points.len() != chart.control_points.len() {
+        return None;
+    }
     if !matches!(surface, SurfaceGeometry::Nurbs(_)) {
         let adjust_periodic = |parameter: f64, reference: f64| {
             parameter
@@ -2950,20 +3041,47 @@ fn intersection_support_pcurve(
     {
         return None;
     }
-    if control_points.len() != parameterization.model_points.len()
-        || control_points
-            .iter()
-            .zip(&parameterization.model_points)
-            .any(|(parameters, target)| {
-                surface_point(surface, parameters.u, parameters.v).is_none_or(|point| {
-                    squared_distance(point, *target)
-                        > parameterization.fit_tolerance_mm * parameterization.fit_tolerance_mm
-                })
+    let mapped_points = control_points
+        .iter()
+        .map(|parameters| surface_point(surface, parameters.u, parameters.v))
+        .collect::<Option<Vec<_>>>()?;
+    let control_errors = mapped_points
+        .iter()
+        .zip(&chart.control_points)
+        .map(|(point, target)| squared_distance(*point, *target).sqrt())
+        .collect::<Vec<_>>();
+    if control_errors
+        .iter()
+        .any(|error| !error.is_finite() || *error > support_data.fit_tolerance_mm)
+    {
+        return None;
+    }
+    if !matches!(surface, SurfaceGeometry::Nurbs(_))
+        && control_points
+            .windows(2)
+            .zip(control_errors.windows(2))
+            .any(|(parameters, endpoint_errors)| {
+                analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
+                    |curvature_error| {
+                        curvature_error + endpoint_errors[0].max(endpoint_errors[1])
+                            > support_data.fit_tolerance_mm
+                    },
+                )
             })
     {
         return None;
     }
-    Some((geometry, parameterization.parameter_range))
+    Some((
+        PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: chart.knots.clone(),
+            control_points,
+            weights: None,
+            periodic: false,
+        },
+        [*chart.knots.first()?, *chart.knots.last()?],
+        source,
+    ))
 }
 
 fn resolve_axis_candidates<T, const N: usize>(
@@ -3941,30 +4059,29 @@ mod tests {
             cadmpeg_ir::eval::surface_point(&surface, 0.0, 3.0).expect("cylinder start"),
             cadmpeg_ir::eval::surface_point(&surface, 0.5, 2.0).expect("cylinder end"),
         ];
-        let parameterization = super::super::intersection::IntersectionParameterization {
-            supports: [10, 11],
-            pcurves: [
-                cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
-                    degree: 1,
-                    knots: vec![0.0, 0.0, 1.0, 1.0],
-                    control_points: vec![
-                        cadmpeg_ir::math::Point2::new(0.0, 0.0029),
-                        cadmpeg_ir::math::Point2::new(0.5, 0.0018),
-                    ],
-                    weights: None,
-                    periodic: false,
-                },
-                cadmpeg_ir::geometry::PcurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                    direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-                },
-            ],
-            parameter_range: [0.0, 1.0],
-            model_points: endpoints.to_vec(),
-            fit_tolerance_mm: 0.2,
+        let chart = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: endpoints.to_vec(),
+            weights: None,
+            periodic: false,
         };
-        let (geometry, range) =
-            super::intersection_support_pcurve(&parameterization, 10, &surface, endpoints)
+        let support_data = super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm: 0.2,
+            support_uv: Some([
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0029),
+                    cadmpeg_ir::math::Point2::new(0.5, 0.0018),
+                ],
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                ],
+            ]),
+        };
+        let (geometry, range, source) =
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
                 .expect("support parameterization");
         let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
             panic!("expected solved UV NURBS");
@@ -3972,12 +4089,118 @@ mod tests {
         assert_eq!(control_points[0], cadmpeg_ir::math::Point2::new(0.0, 3.0));
         assert_eq!(control_points[1], cadmpeg_ir::math::Point2::new(0.5, 2.0));
         assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(source, super::IntersectionPcurveSource::StoredCache);
 
-        let ambiguous = super::super::intersection::IntersectionParameterization {
+        let ambiguous = super::super::intersection::IntersectionSupportData {
             supports: [10, 10],
-            ..parameterization
+            ..support_data.clone()
         };
-        assert!(super::intersection_support_pcurve(&ambiguous, 10, &surface, endpoints).is_none());
+        assert!(
+            super::intersection_support_pcurve(&ambiguous, &chart, 10, &surface, endpoints)
+                .is_none()
+        );
+
+        let malformed = super::super::intersection::IntersectionSupportData {
+            support_uv: Some([Vec::new(), Vec::new()]),
+            ..support_data
+        };
+        assert!(
+            super::intersection_support_pcurve(&malformed, &chart, 10, &surface, endpoints)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn analytic_intersection_chart_derives_continuous_uv_without_cache() {
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let model_points = [(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)]
+            .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("cylinder point"))
+            .to_vec();
+        let endpoints = [model_points[0], model_points[2]];
+        let chart = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            control_points: model_points,
+            weights: None,
+            periodic: false,
+        };
+        let support_data = super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm: 0.011,
+            support_uv: None,
+        };
+
+        let (geometry, _, source) =
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+                .expect("analytic support inversion");
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected solved UV NURBS");
+        };
+        for (point, expected) in control_points
+            .iter()
+            .zip([(3.0, 1.0), (3.2, 2.0), (3.4, 3.0)])
+        {
+            assert!((point.u - expected.0).abs() < 1.0e-12);
+            assert!((point.v - expected.1).abs() < 1.0e-12);
+        }
+        assert_eq!(source, super::IntersectionPcurveSource::AnalyticInverse);
+
+        let under_toleranced = super::super::intersection::IntersectionSupportData {
+            fit_tolerance_mm: 0.009,
+            ..support_data
+        };
+        assert!(super::intersection_support_pcurve(
+            &under_toleranced,
+            &chart,
+            10,
+            &surface,
+            endpoints
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn analytic_torus_chart_unwraps_both_periodic_parameters() {
+        let surface = cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+            center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: 1.0,
+        };
+        let expected = [(3.0, 3.0), (3.2, 3.2), (3.4, 3.4)];
+        let model_points = expected
+            .map(|(u, v)| cadmpeg_ir::eval::surface_point(&surface, u, v).expect("torus point"))
+            .to_vec();
+        let endpoints = [model_points[0], model_points[2]];
+        let chart = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            control_points: model_points,
+            weights: None,
+            periodic: false,
+        };
+        let support_data = super::super::intersection::IntersectionSupportData {
+            supports: [10, 11],
+            fit_tolerance_mm: 0.08,
+            support_uv: None,
+        };
+
+        let (geometry, _, _) =
+            super::intersection_support_pcurve(&support_data, &chart, 10, &surface, endpoints)
+                .expect("torus support inversion");
+        let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected solved UV NURBS");
+        };
+        for (point, expected) in control_points.iter().zip(expected) {
+            assert!((point.u - expected.0).abs() < 1.0e-12);
+            assert!((point.v - expected.1).abs() < 1.0e-12);
+        }
     }
 
     #[test]

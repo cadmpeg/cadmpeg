@@ -169,8 +169,8 @@ pub(crate) struct CarrierIndex {
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
     derived_curves: HashSet<u16>,
-    /// Solved support parameterizations carried by surface-intersection curves.
-    intersection_parameterizations: HashMap<u16, intersection::IntersectionParameterization>,
+    /// Support metadata carried by surface-intersection curves.
+    intersection_support_data: HashMap<u16, intersection::IntersectionSupportData>,
 }
 
 impl CarrierIndex {
@@ -218,12 +218,12 @@ impl CarrierIndex {
         self.derived_curves.contains(&attr)
     }
 
-    /// Solved support UV lanes carried by one surface-intersection curve.
-    fn intersection_parameterization(
+    /// Support metadata carried by one surface-intersection curve.
+    fn intersection_support_data(
         &self,
         attr: u16,
-    ) -> Option<&intersection::IntersectionParameterization> {
-        self.intersection_parameterizations.get(&attr)
+    ) -> Option<&intersection::IntersectionSupportData> {
+        self.intersection_support_data.get(&attr)
     }
 
     pub(crate) fn merge_missing(&mut self, other: Self) {
@@ -232,9 +232,9 @@ impl CarrierIndex {
                 if other.derived_curves.contains(&attr) {
                     self.derived_curves.insert(attr);
                 }
-                if let Some(parameterization) = other.intersection_parameterizations.get(&attr) {
-                    self.intersection_parameterizations
-                        .insert(attr, parameterization.clone());
+                if let Some(support_data) = other.intersection_support_data.get(&attr) {
+                    self.intersection_support_data
+                        .insert(attr, support_data.clone());
                 }
                 entry.insert(carrier);
             }
@@ -462,10 +462,8 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
             entry.insert(intersection.carrier);
             out.derived_curves.insert(attr);
-            if let Some(parameterization) = intersection.parameterization {
-                out.intersection_parameterizations
-                    .insert(attr, parameterization);
-            }
+            out.intersection_support_data
+                .insert(attr, intersection.support_data);
         }
     }
     out
