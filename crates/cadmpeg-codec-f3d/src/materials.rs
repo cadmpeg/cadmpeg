@@ -3,14 +3,15 @@
 //!
 //! Material and appearance semantics are defined in [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 //! [`decode`] reads appearance records without resolving body bindings.
-//! [`decode_with_bodies`] joins Protein assets, Design assignments, ACT
-//! channels, and ASM body keys through the design-entity join backbone in
+//! [`decode_with_body_bindings`] joins Protein assets, Design assignments, ACT
+//! channels, and blob-qualified Design body-map bindings through the
+//! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
-use crate::records::DesignMaterialAssignment;
+use crate::records::{DesignBodyBinding, DesignMaterialAssignment};
 use cadmpeg_core::le::{u32_at, u64_at};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{
@@ -363,7 +364,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
 pub struct DecodedMaterials {
     /// Merged appearance records, deduplicated by [`AppearanceId`].
     pub appearances: Vec<Appearance>,
-    /// Body-to-appearance bindings resolved via ACT/design/ASM body-key joins.
+    /// Body-to-appearance bindings resolved through ACT and Design body-map joins.
     pub bindings: Vec<AppearanceBinding>,
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
     pub face_assignments: Vec<FaceAppearanceAssignment>,
@@ -375,23 +376,22 @@ pub struct DecodedMaterials {
     pub has_topology_assignments: bool,
 }
 
-/// Decode `.protein` assets and Design and ACT assignments without ASM body
-/// bindings.
+/// Decode `.protein` assets and Design and ACT assignments without resolved
+/// Design body-map bindings.
 ///
 /// The [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials)
-/// `asm_body_key` join is skipped. Use [`decode_with_bodies`] when ASM body keys
-/// are available.
+/// Design body-map join is skipped. Use [`decode_with_body_bindings`] when the
+/// resolved map pairs are available.
 pub fn decode(scan: &ContainerScan) -> Result<DecodedMaterials, CodecError> {
-    decode_with_bodies(scan, &std::collections::HashMap::new())
+    decode_with_body_bindings(scan, &[])
 }
 
-/// Decode appearance assets and resolve body bindings through
-/// `body_keys` (`BodyId` to the ASM `Body.chunk[1]` value), closing the
-/// design-entity join backbone in
-/// [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
-pub fn decode_with_bodies<S: std::hash::BuildHasher>(
+/// Decode appearance assets and resolve body bindings through the ordered,
+/// blob-qualified Design body-map pairs, closing the design-entity join
+/// backbone in [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
+pub fn decode_with_body_bindings(
     scan: &ContainerScan,
-    body_keys: &std::collections::HashMap<BodyId, u64, S>,
+    body_bindings: &[DesignBodyBinding],
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -471,15 +471,18 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
             appearance.physical_token = assignment.physical_token.clone();
         }
     }
-    let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
-    let body_overrides = decode_body_appearance_overrides(scan)?;
+    let mut bindings = bind_bodies(
+        &out,
+        &assignments,
+        &act_channels,
+        &object_types,
+        body_bindings,
+    )?;
+    let body_overrides = decode_body_appearance_overrides(scan, body_bindings)?;
     for over in &body_overrides {
-        let Some(body) = body_for_key(body_keys, over.asm_body_key) else {
-            continue;
-        };
         if bindings
             .iter()
-            .any(|binding| binding.target == AppearanceTarget::Body(body.clone()))
+            .any(|binding| binding.target == AppearanceTarget::Body(over.body.clone()))
         {
             continue;
         }
@@ -496,7 +499,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 "f3d:appearance:body#{}:{}",
                 over.entity_suffix, over.visual_guid
             ),
-            target: AppearanceTarget::Body(body),
+            target: AppearanceTarget::Body(over.body.clone()),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: object_types.get(&over.entity_suffix).cloned(),
@@ -730,9 +733,10 @@ pub(crate) fn decode_design_assignments(
         let stream_types =
             crate::design::decode::meta::stream_types_by_class_tag(&types, &entry.name);
         let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
-        let body_map = metadata
-            .as_ref()
-            .map_or_else(|| Ok(BTreeMap::new()), |meta| decode_body_map(bytes, meta))?;
+        let body_map = metadata.as_ref().map_or_else(
+            || Ok(Vec::new()),
+            |meta| crate::design::decode::body::body_bindings(bytes, meta),
+        )?;
         let entity_types = crate::design::decode::meta::stream_types_by_entity(&types, &entry.name);
         for presentation in crate::design::decode::presentation::body_presentations(
             bytes,
@@ -742,11 +746,8 @@ pub(crate) fn decode_design_assignments(
             let Some(material) = presentation.material else {
                 continue;
             };
-            let body_bindings = body_map
-                .iter()
-                .filter(|(_, (suffix, _, _))| *suffix == presentation.entity_suffix)
-                .collect::<Vec<_>>();
-            let [(&asm_body_key, &(_, key_offset, suffix_offset))] = body_bindings.as_slice()
+            let Some(body_binding) =
+                unique_body_map_pair(&body_map, presentation.entity_suffix, "material assignment")?
             else {
                 continue;
             };
@@ -756,10 +757,10 @@ pub(crate) fn decode_design_assignments(
                     "material-assignment",
                     presentation.byte_offset as usize,
                 ),
-                asm_body_key,
-                asm_body_key_offset: key_offset as u64,
+                asm_body_key: body_binding.asm_key,
+                asm_body_key_offset: body_binding.asm_key_offset as u64,
                 entity_suffix: presentation.entity_suffix,
-                entity_suffix_offset: suffix_offset as u64,
+                entity_suffix_offset: body_binding.entity_suffix_offset as u64,
                 entity_id: presentation.entity_id,
                 entity_id_offset: presentation.entity_id_offset,
                 visual_guid: material.visual_guid,
@@ -774,10 +775,10 @@ pub(crate) fn decode_design_assignments(
     Ok(out)
 }
 
-/// One per-body appearance override joined to its ASM body key.
+/// One per-body appearance override joined through its exact Design body-map pair.
 pub(crate) struct BodyAppearanceOverride {
-    /// The referenced ASM body key from the Design body map.
-    pub asm_body_key: u64,
+    /// Solved body selected by the exact blob-qualified body-map pair.
+    pub body: BodyId,
     /// The body's design-entity suffix.
     pub entity_suffix: u64,
     /// First 36 characters of the bound visual GUID.
@@ -785,11 +786,11 @@ pub(crate) struct BodyAppearanceOverride {
 }
 
 /// Decode per-body appearance overrides from browser body records in every
-/// Design `BulkStream` and join them to ASM body keys through the BREP
-/// body-map record
+/// Design `BulkStream` and join them through the exact BREP body-map pair
 /// ([spec §3.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#31-design-metadata)).
 fn decode_body_appearance_overrides(
     scan: &ContainerScan,
+    body_bindings: &[DesignBodyBinding],
 ) -> Result<Vec<BodyAppearanceOverride>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -799,33 +800,42 @@ fn decode_body_appearance_overrides(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let metadata = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?;
-        let body_map = metadata
-            .as_ref()
-            .map_or_else(|| Ok(BTreeMap::new()), |meta| decode_body_map(bytes, meta))?;
+        let body_map = metadata.as_ref().map_or_else(
+            || Ok(Vec::new()),
+            |meta| crate::design::decode::body::body_bindings(bytes, meta),
+        )?;
         for (entity_suffix, visual_guid) in browser_body_appearances(bytes) {
-            let matching_keys = body_map
-                .iter()
-                .filter(|(_, (suffix, _, _))| *suffix == entity_suffix)
-                .map(|(&key, _)| key)
-                .collect::<Vec<_>>();
-            let [asm_body_key] = matching_keys.as_slice() else {
+            let Some(map_pair) =
+                unique_body_map_pair(&body_map, entity_suffix, "browser body appearance")?
+            else {
+                continue;
+            };
+            let Some(body) = resolved_body_for_map_pair(
+                body_bindings,
+                &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
+                map_pair.asm_key,
+                map_pair.asm_key_offset as u64,
+                map_pair.entity_suffix,
+                map_pair.entity_suffix_offset as u64,
+            )?
+            else {
                 continue;
             };
             out.push(BodyAppearanceOverride {
-                asm_body_key: *asm_body_key,
+                body,
                 entity_suffix,
                 visual_guid,
             });
         }
     }
     out.sort_by(|left, right| {
-        left.asm_body_key
-            .cmp(&right.asm_body_key)
+        left.body
+            .cmp(&right.body)
             .then_with(|| left.entity_suffix.cmp(&right.entity_suffix))
             .then_with(|| left.visual_guid.cmp(&right.visual_guid))
     });
     out.dedup_by(|left, right| {
-        left.asm_body_key == right.asm_body_key
+        left.body == right.body
             && left.entity_suffix == right.entity_suffix
             && visual_guid_matches(&left.visual_guid, &right.visual_guid)
     });
@@ -1123,57 +1133,87 @@ fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
 }
 
-/// The body carrying ASM body key `key`.
-///
-/// Several bodies can carry one key. Hash order decides which of them an
-/// iteration reaches first and would put a different body in the appearance
-/// binding — and so a different document digest — on every process run, so the
-/// smallest identity wins instead.
-pub(crate) fn body_for_key<S: std::hash::BuildHasher>(
-    body_keys: &std::collections::HashMap<BodyId, u64, S>,
-    key: u64,
-) -> Option<BodyId> {
-    body_keys
-        .iter()
-        .filter_map(|(body, candidate)| (*candidate == key).then_some(body))
-        .min()
-        .cloned()
-}
-
-fn bind_bodies<S: std::hash::BuildHasher>(
+fn bind_bodies(
     appearances: &[Appearance],
     assignments: &[DesignMaterialAssignment],
     act_channels: &std::collections::HashMap<u64, BTreeMap<String, String>>,
     object_types: &std::collections::HashMap<u64, String>,
-    body_keys: &std::collections::HashMap<BodyId, u64, S>,
-) -> Vec<AppearanceBinding> {
-    assignments
-        .iter()
-        .filter_map(|assignment| {
-            let body = body_for_key(body_keys, assignment.asm_body_key)?;
-            let appearance = appearances.iter().find(|appearance| {
-                appearance
-                    .visual_guid
-                    .as_deref()
-                    .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
-                    || assignment.visual_preset.as_deref() == appearance.name.as_deref()
-            })?;
-            Some(AppearanceBinding {
-                id: format!(
-                    "f3d:appearance:binding#{}:{}",
-                    assignment.entity_id, assignment.visual_guid
-                ),
-                target: AppearanceTarget::Body(body),
-                appearance: appearance.id.clone(),
-                source_entity_id: Some(assignment.entity_id.clone()),
-                object_type: object_types.get(&assignment.entity_suffix).cloned(),
-                channels: act_channels
-                    .get(&assignment.entity_suffix)
-                    .cloned()
-                    .unwrap_or_default(),
-            })
-        })
-        .collect()
+    body_bindings: &[DesignBodyBinding],
+) -> Result<Vec<AppearanceBinding>, CodecError> {
+    let mut out = Vec::new();
+    for assignment in assignments {
+        let Some(body) = resolved_body_for_map_pair(
+            body_bindings,
+            &assignment.id,
+            assignment.asm_body_key,
+            assignment.asm_body_key_offset,
+            assignment.entity_suffix,
+            assignment.entity_suffix_offset,
+        )?
+        else {
+            continue;
+        };
+        let Some(appearance) = appearances.iter().find(|appearance| {
+            appearance
+                .visual_guid
+                .as_deref()
+                .is_some_and(|guid| visual_guid_matches(guid, &assignment.visual_guid))
+                || assignment.visual_preset.as_deref() == appearance.name.as_deref()
+        }) else {
+            continue;
+        };
+        out.push(AppearanceBinding {
+            id: format!(
+                "f3d:appearance:binding#{}:{}",
+                assignment.entity_id, assignment.visual_guid
+            ),
+            target: AppearanceTarget::Body(body),
+            appearance: appearance.id.clone(),
+            source_entity_id: Some(assignment.entity_id.clone()),
+            object_type: object_types.get(&assignment.entity_suffix).cloned(),
+            channels: act_channels
+                .get(&assignment.entity_suffix)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+/// Resolve one material owner through its exact ordered body-map pair.
+///
+/// ASM keys are local to the pair's BREP basename. The already-resolved native
+/// binding therefore remains authoritative; reconstructing a document-global
+/// key map would discard that namespace.
+fn resolved_body_for_map_pair(
+    body_bindings: &[DesignBodyBinding],
+    owner_id: &str,
+    asm_body_key: u64,
+    asm_body_key_offset: u64,
+    entity_suffix: u64,
+    entity_suffix_offset: u64,
+) -> Result<Option<BodyId>, CodecError> {
+    let owner_stream = crate::ids::native_stream(owner_id).ok_or_else(|| {
+        CodecError::Malformed(format!(
+            "F3D material owner has no native stream: {owner_id}"
+        ))
+    })?;
+    let mut matches = body_bindings.iter().filter(|binding| {
+        crate::ids::native_stream(&binding.id) == Some(owner_stream)
+            && binding.asm_body_key == asm_body_key
+            && binding.asm_body_key_offset == asm_body_key_offset
+            && binding.entity_suffix == entity_suffix
+            && binding.entity_suffix_offset == entity_suffix_offset
+    });
+    let Some(binding) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "F3D material owner {owner_id} matches multiple exact body-map pairs"
+        )));
+    }
+    Ok(binding.body.clone())
 }
 
 fn decode_design_object_types(
@@ -1341,29 +1381,25 @@ fn lp_utf16_string_at(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     Some((value, 4 + byte_len))
 }
 
-/// ASM body key to design-entity suffix and the two field offsets, keyed in
-/// ascending body-key order.
-///
-/// Callers search this map by entity suffix rather than by key, so an ordered
-/// map is what keeps the answer the same across process runs when two body keys
-/// carry one suffix.
-fn decode_body_map(
-    bytes: &[u8],
-    metadata: &crate::metastream::MetaStream,
-) -> Result<BTreeMap<u64, (u64, usize, usize)>, CodecError> {
-    Ok(crate::design::decode::body::body_bindings(bytes, metadata)?
-        .into_iter()
-        .map(|binding| {
-            (
-                binding.asm_key,
-                (
-                    binding.entity_suffix,
-                    binding.asm_key_offset,
-                    binding.entity_suffix_offset,
-                ),
-            )
-        })
-        .collect())
+/// Select the sole ordered body-map pair carrying one material owner's Design
+/// entity suffix. More than one pair leaves the owner ambiguous.
+fn unique_body_map_pair<'a>(
+    body_map: &'a [crate::design::decode::body::BodyBinding],
+    entity_suffix: u64,
+    owner_kind: &str,
+) -> Result<Option<&'a crate::design::decode::body::BodyBinding>, CodecError> {
+    let mut matches = body_map
+        .iter()
+        .filter(|binding| binding.entity_suffix == entity_suffix);
+    let Some(binding) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(CodecError::Malformed(format!(
+            "F3D {owner_kind} entity {entity_suffix} matches multiple body-map pairs"
+        )));
+    }
+    Ok(Some(binding))
 }
 
 fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
@@ -1622,6 +1658,114 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    fn raw_body_map_pair(
+        asm_key_offset: usize,
+        entity_suffix: u64,
+    ) -> crate::design::decode::body::BodyBinding {
+        crate::design::decode::body::BodyBinding {
+            blob_name: "BREP.synthetic.smbh".into(),
+            blob_name_offset: asm_key_offset + 32,
+            pair_count: 2,
+            pair_ordinal: 0,
+            asm_key: 7,
+            asm_key_offset,
+            entity_suffix,
+            entity_suffix_offset: asm_key_offset + 8,
+        }
+    }
+
+    fn resolved_body_binding(
+        stream: &str,
+        asm_key_offset: u64,
+        entity_suffix: u64,
+        blob_name: &str,
+        body: &str,
+    ) -> crate::records::DesignBodyBinding {
+        crate::records::DesignBodyBinding {
+            id: crate::ids::native_design_body_binding_id(stream, asm_key_offset),
+            stream: stream.into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 7,
+            asm_body_key_offset: asm_key_offset,
+            entity_suffix,
+            entity_suffix_offset: asm_key_offset + 8,
+            blob_name: blob_name.into(),
+            blob_name_offset: asm_key_offset + 32,
+            body: Some(cadmpeg_ir::ids::BodyId(body.into())),
+        }
+    }
+
+    #[test]
+    fn material_owner_rejects_more_than_one_pair_for_its_entity_suffix() {
+        let body_map = [raw_body_map_pair(25, 100), raw_body_map_pair(41, 100)];
+        let Err(error) = super::unique_body_map_pair(&body_map, 100, "material assignment") else {
+            panic!("one Design entity must not select two map pairs")
+        };
+        assert!(error
+            .to_string()
+            .contains("matches multiple body-map pairs"));
+    }
+
+    #[test]
+    fn equal_keys_in_different_brep_namespaces_resolve_by_exact_map_pair() {
+        let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let first = resolved_body_binding(
+            stream,
+            25,
+            100,
+            "BREP.first.smbh",
+            "f3d:brep/first/brep:entity#1",
+        );
+        let second_body = cadmpeg_ir::ids::BodyId("f3d:brep/second/brep:entity#1".into());
+        let second = resolved_body_binding(stream, 125, 200, "BREP.second.smbh", &second_body.0);
+        let owner = crate::ids::native_scoped_id(stream, "material-assignment", 500);
+        let visual_guid = "11111111-2222-3333-4444-555555555555";
+        let appearance = cadmpeg_ir::appearance::Appearance {
+            id: cadmpeg_ir::ids::AppearanceId("f3d:appearance#second".into()),
+            name: None,
+            asset_guid: Some(visual_guid.into()),
+            library_id: None,
+            visual_guid: Some(visual_guid.into()),
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        };
+        let assignment = crate::records::DesignMaterialAssignment {
+            id: owner,
+            asm_body_key: 7,
+            asm_body_key_offset: 125,
+            entity_suffix: 200,
+            entity_suffix_offset: 133,
+            entity_id: "0_200".into(),
+            entity_id_offset: 500,
+            visual_guid: visual_guid.into(),
+            visual_guid_offset: 600,
+            physical_token: None,
+            physical_token_offset: None,
+            visual_preset: None,
+            visual_preset_offset: None,
+        };
+        let projected = super::bind_bodies(
+            &[appearance],
+            &[assignment],
+            &std::collections::HashMap::new(),
+            &std::collections::HashMap::new(),
+            &[first, second],
+        )
+        .expect("blob-qualified material binding");
+        let [binding] = projected.as_slice() else {
+            panic!("one appearance binding expected")
+        };
+        assert_eq!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Body(second_body)
+        );
+    }
+
     #[test]
     fn generic_connection_delta_rejects_unknown_and_truncated_forms() {
         let mut record = vec![0; 120];

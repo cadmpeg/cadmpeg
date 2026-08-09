@@ -1479,7 +1479,12 @@ fn finish_model_decode<'a>(
             provenance: None,
         });
     }
-    let decoded_materials = materials::decode_with_bodies(scan, &brep.asm.body_keys)?;
+    let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
+        scan,
+        Some(&primary_model_brep.name),
+        &brep.asm.body_native_keys,
+    )?;
+    let decoded_materials = materials::decode_with_body_bindings(scan, &design_body_bindings)?;
     let annotation_records = std::mem::take(&mut brep.asm.annotation_records);
     let (mut ir, mut native, unknowns) = build_geometry_ir(scan, primary_model_brep, brep);
     let (subds, subd_losses) = crate::tsm::decode(scan)?;
@@ -1571,11 +1576,7 @@ fn finish_model_decode<'a>(
         &mut native.sketch_curve_identities,
     )?;
     native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-    native.design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
-        scan,
-        Some(&primary_model_brep.name),
-        &native.body_native_keys,
-    )?;
+    native.design_body_bindings = design_body_bindings;
     native.design_body_bounds =
         crate::design::decode::body::decode_body_bounds(scan, &native.design_entity_headers)?;
     crate::design::decode::body::bind_body_bounds(

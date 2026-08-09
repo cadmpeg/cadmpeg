@@ -452,19 +452,11 @@ The closure also has no operand. `resolve_face_appearance_bindings` in `decode.r
 
 **Question.** What distinguishes two body appearance assignments that carry no preset name and whose visual GUIDs name no catalog asset?
 
-**Known.** `decode_with_bodies` and `bind_bodies` in `materials.rs` accept an appearance for an assignment when the visual GUIDs agree or when the assignment's preset name equals the appearance's name. A decoded appearance always carries a name; a synthesized one carries the assignment's preset, which is absent unless the string begins with `Prism-`.
+**Known.** `decode_with_body_bindings` and `bind_bodies` in `materials.rs` accept an appearance for an assignment when the visual GUIDs agree or when the assignment's preset name equals the appearance's name. A decoded appearance always carries a name; a synthesized one carries the assignment's preset, which is absent unless the string begins with `Prism-`.
 
 Two preset-less assignments whose GUIDs resolve to no asset therefore compare equal on the name clause, because both names are absent. The first synthesizes one appearance and the second finds it, so the second GUID produces no appearance and no loss. Both bodies then bind to the first appearance.
 
 **Need.** The name clause exists for the preset-named case. The identity of a preset-less assignment must come from its visual GUID alone, or two bodies with different appearances are reported as sharing one.
-
-### MA-13. Body identity when several bodies carry one key
-
-**Question.** Which body does a material assignment name when more than one body carries its ASM body key, or when two body keys carry one entity suffix?
-
-**Known.** `body_for_key` and `decode_body_map` in `materials.rs` both state the multiplicity in their own comments and both resolve it by taking the smallest identity, for a stable digest across process runs. `resolve_body_selector` in `brep.rs` meets the same shape and raises `Malformed` instead.
-
-**Need.** Determinism is not correctness. The other bodies keep no appearance binding and no loss is recorded. The field that separates the bodies settles the item; without it the two paths must agree on refusing.
 
 ### MA-14. Length of a visual GUID and the uniqueness of its match
 

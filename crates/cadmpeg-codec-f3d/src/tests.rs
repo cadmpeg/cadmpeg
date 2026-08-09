@@ -26289,35 +26289,6 @@ fn f3z_prefix_detects_as_f3d() {
     );
 }
 
-#[test]
-fn colliding_body_keys_bind_the_smallest_body() {
-    let body_keys = [
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/b.smbh/brep:entity#1".into()),
-            7u64,
-        ),
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/a.smbh/brep:entity#1".into()),
-            7u64,
-        ),
-        (
-            cadmpeg_ir::ids::BodyId("f3d:brep/c.smbh/brep:entity#1".into()),
-            9u64,
-        ),
-    ]
-    .into_iter()
-    .collect::<std::collections::HashMap<_, _>>();
-    assert_eq!(
-        crate::materials::body_for_key(&body_keys, 7).map(|body| body.0),
-        Some("f3d:brep/a.smbh/brep:entity#1".to_owned())
-    );
-    assert_eq!(
-        crate::materials::body_for_key(&body_keys, 9).map(|body| body.0),
-        Some("f3d:brep/c.smbh/brep:entity#1".to_owned())
-    );
-    assert_eq!(crate::materials::body_for_key(&body_keys, 11), None);
-}
-
 /// A report carrying the BREP-less geometry losses that `build_container_report`
 /// states before the design segment is classified.
 fn brep_less_geometry_report() -> cadmpeg_ir::report::DecodeReport {
