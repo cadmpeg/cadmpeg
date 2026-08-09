@@ -10,7 +10,7 @@ use cadmpeg_ir::report::{LossKind, LossNote};
 
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::{decode_text, opaque_record_id, typed_record_targets};
+use super::{decode_text, opaque_record_id, record_targets};
 
 const DRAWING_ENTITIES: &[&str] = &[
     "DRAWING_DEFINITION",
@@ -84,7 +84,7 @@ pub(super) fn decode(
         .iter()
         .map(|(id, name)| (*id, drawing_identity(*id, name)))
         .collect::<BTreeMap<_, _>>();
-    let mut target_identities = typed_record_targets(ir, known_typed, None);
+    let mut target_identities = record_targets(ir, |record_id| known_typed.contains(&record_id));
     for (&id, identity) in &drawing_identities {
         target_identities
             .entry(id)

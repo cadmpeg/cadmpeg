@@ -426,7 +426,7 @@ fn decode_exchange_mode(
     };
     let mut counts = BTreeMap::<String, usize>::new();
     let mut opaque_ids = BTreeMap::new();
-    let mut typed_targets = BTreeMap::new();
+    let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
     let mut source_fidelity = SourceFidelity::default();
     if retain_opaque {
@@ -472,7 +472,7 @@ fn decode_exchange_mode(
             .iter()
             .flat_map(|source| source.links.iter().copied())
             .collect::<BTreeSet<_>>();
-        typed_targets = typed_record_targets(&ir, &typed_records, Some(&target_ids));
+        source_targets = record_targets(&ir, |record_id| target_ids.contains(&record_id));
     } else {
         for record in exchange.records.values() {
             if typed_records.contains(&record.id) {
@@ -524,7 +524,7 @@ fn decode_exchange_mode(
                             .get(&id)
                             .cloned()
                             .into_iter()
-                            .chain(typed_targets.get(&id).into_iter().flatten().cloned())
+                            .chain(source_targets.get(&id).into_iter().flatten().cloned())
                     })
                     .collect(),
             });
@@ -1018,19 +1018,15 @@ fn opaque_record_id(record: &parse::RawRecord) -> UnknownId {
     UnknownId(format!("step:data:{kind}#{}", record.id))
 }
 
-fn typed_record_targets(
+fn record_targets(
     ir: &CadIr,
-    typed_records: &HashSet<u64>,
-    target_ids: Option<&BTreeSet<u64>>,
+    include_record: impl Fn(u64) -> bool,
 ) -> BTreeMap<u64, BTreeSet<String>> {
     cadmpeg_ir::index::ModelIndex::new(ir)
         .identities()
         .filter_map(|identity| {
             let record_id = source_record_id(identity)?;
-            typed_records.contains(&record_id).then_some(())?;
-            target_ids
-                .is_none_or(|targets| targets.contains(&record_id))
-                .then(|| (record_id, identity.to_owned()))
+            include_record(record_id).then(|| (record_id, identity.to_owned()))
         })
         .fold(BTreeMap::new(), |mut targets, (record_id, identity)| {
             targets.entry(record_id).or_default().insert(identity);
