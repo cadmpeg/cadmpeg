@@ -2862,8 +2862,8 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     if s.unknown_surface_faces > 0 {
         losses.push(
             SldprtLossCode::GeometryFaceSupportSurfaceUntyped.note(format!(
-                "{} face(s) rest on a support surface this codec does not type (offset, swept, \
-                 blended, intersection, or spline-on-surface); \
+                "{} face(s) rest on a support surface this codec does not type (swept, blended, \
+                 intersection, spline-on-surface, or another unsupported family); \
                  the face, its loops, and trims are emitted with an unknown-geometry surface \
                  linking to the preserved record bytes. Topology is transferred; the underlying \
                  surface shape is not.",

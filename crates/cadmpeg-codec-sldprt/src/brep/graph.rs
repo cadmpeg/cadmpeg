@@ -31,6 +31,7 @@ use cadmpeg_ir::Exactness;
 use super::attrib;
 use super::blend::BlendSupportRef;
 use super::entity;
+use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology::{self, Record};
 use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
@@ -171,16 +172,21 @@ impl Brep {
         for procedural in &mut self.procedural_surfaces {
             procedural.id.0 = qualify(&procedural.id.0);
             procedural.surface.0 = qualify(&procedural.surface.0);
-            if let ProceduralSurfaceDefinition::Blend {
-                supports, spine, ..
-            } = &mut procedural.definition
-            {
-                for support in supports.iter_mut().flatten() {
-                    support.surface.0 = qualify(&support.surface.0);
+            match &mut procedural.definition {
+                ProceduralSurfaceDefinition::Blend {
+                    supports, spine, ..
+                } => {
+                    for support in supports.iter_mut().flatten() {
+                        support.surface.0 = qualify(&support.surface.0);
+                    }
+                    if let Some(spine) = spine {
+                        spine.0 = qualify(&spine.0);
+                    }
                 }
-                if let Some(spine) = spine {
-                    spine.0 = qualify(&spine.0);
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    support.0 = qualify(&support.0);
                 }
+                _ => {}
             }
         }
         for curve in &mut self.curves {
@@ -435,6 +441,127 @@ fn resolve_sweep_surface(
             ))
         }
     }
+}
+
+fn id_offset_surface(attr: u16) -> SurfaceId {
+    SurfaceId(format!("sldprt:brep:offset-support-surf#{attr}"))
+}
+
+fn id_offset_construction(attr: u16) -> ProceduralSurfaceId {
+    ProceduralSurfaceId(format!("sldprt:brep:offset-support-construction#{attr}"))
+}
+
+fn emit_offset_surface(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    surface: SurfaceId,
+    construction: ProceduralSurfaceId,
+    support: SurfaceId,
+    offset: &OffsetCarrier,
+) {
+    annotations
+        .note(&surface, source_stream, offset.offset as u64)
+        .tag("00_3c");
+    out.procedural_surfaces.push(ProceduralSurface {
+        id: construction.clone(),
+        surface: surface.clone(),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support,
+            distance: offset.distance,
+            u_sense: None,
+            v_sense: None,
+            extension_flags: Vec::new(),
+            revision_form: None,
+        },
+        cache_fit_tolerance: None,
+        record_bounds: None,
+    });
+    out.surfaces.push(Surface {
+        id: surface,
+        source_object: None,
+        geometry: SurfaceGeometry::Procedural { construction },
+    });
+}
+
+/// Resolve one carrier as a support of an offset construction. Face-owned
+/// carriers reuse their face surface identity. A support that is not itself
+/// face-owned is emitted as a carrier surface. Offset carriers recurse, and a
+/// cycle invalidates the complete construction.
+fn ensure_offset_support(
+    attr: u16,
+    carriers: &CarrierIndex,
+    face_surface_by_carrier: &HashMap<u16, u16>,
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    resolving: &mut HashSet<u16>,
+) -> Option<SurfaceId> {
+    if !resolving.insert(attr) {
+        return None;
+    }
+    let result = (|| {
+        if let Some(carrier) = carriers.surface(attr) {
+            let id = face_surface_by_carrier.get(&attr).map_or_else(
+                || id_offset_surface(attr),
+                |bridge| SurfaceId(id_surf(*bridge)),
+            );
+            if !out.surfaces.iter().any(|surface| surface.id == id)
+                && !face_surface_by_carrier.contains_key(&attr)
+            {
+                let CarrierGeometry::Surface(geometry) = &carrier.geometry else {
+                    unreachable!("surface index contains only surface carriers");
+                };
+                let mut geometry = geometry.clone();
+                if let Some((_, u_reference, v_reference)) = carrier.frame {
+                    fold_surface_frame(&mut geometry, u_reference, v_reference);
+                    annotate_surface_frame(annotations, &id.0, &geometry);
+                }
+                annotations
+                    .note(&id, source_stream, carrier.offset as u64)
+                    .tag("offset_support");
+                out.surfaces.push(Surface {
+                    id: id.clone(),
+                    source_object: None,
+                    geometry,
+                });
+            }
+            Some(id)
+        } else if let Some(offset) = carriers.offset(attr) {
+            let support = ensure_offset_support(
+                offset.support,
+                carriers,
+                face_surface_by_carrier,
+                out,
+                annotations,
+                source_stream,
+                resolving,
+            )?;
+            let surface = face_surface_by_carrier.get(&attr).map_or_else(
+                || id_offset_surface(attr),
+                |bridge| SurfaceId(id_surf(*bridge)),
+            );
+            if !face_surface_by_carrier.contains_key(&attr)
+                && !out.surfaces.iter().any(|candidate| candidate.id == surface)
+            {
+                let construction = id_offset_construction(attr);
+                emit_offset_surface(
+                    out,
+                    annotations,
+                    source_stream,
+                    surface.clone(),
+                    construction,
+                    support,
+                    offset,
+                );
+            }
+            Some(surface)
+        } else {
+            None
+        }
+    })();
+    resolving.remove(&attr);
+    result
 }
 
 fn walk_face(bridge: &Record, t: &topology::Tables) -> WalkedFace {
@@ -1248,6 +1375,19 @@ fn decode_graph(
             .or_default()
             .push((face.bridge_attr, edges));
     }
+    let mut offset_surface_ids_by_carrier = HashMap::<u16, u16>::new();
+    for face in &faces {
+        if face
+            .loops
+            .iter()
+            .any(|(loop_attr, _)| loop_set.contains(loop_attr))
+        {
+            offset_surface_ids_by_carrier
+                .entry(face.surface_attr)
+                .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
+                .or_insert(face.bridge_attr);
+        }
+    }
     for f in &faces {
         let loops: Vec<LoopId> = f
             .loops
@@ -1279,6 +1419,18 @@ fn decode_graph(
                 });
             }
             _ => {
+                let resolved_offset = carriers.offset(f.surface_attr).and_then(|offset| {
+                    let support = ensure_offset_support(
+                        offset.support,
+                        carriers,
+                        &offset_surface_ids_by_carrier,
+                        &mut out,
+                        &mut annotations,
+                        source_stream,
+                        &mut HashSet::new(),
+                    )?;
+                    Some((offset, support))
+                });
                 let resolved_blend = carriers.blend(f.surface_attr).and_then(|blend| {
                     let face_edges: HashSet<u16> = f
                         .loops
@@ -1317,7 +1469,21 @@ fn decode_graph(
                     };
                     Some((blend, first, second))
                 });
-                if let Some((blend, first, second)) = resolved_blend {
+                if let Some((offset, support)) = resolved_offset {
+                    let construction = ProceduralSurfaceId(format!(
+                        "sldprt:brep:offset-construction#{}",
+                        f.bridge_attr
+                    ));
+                    emit_offset_surface(
+                        &mut out,
+                        &mut annotations,
+                        source_stream,
+                        SurfaceId(id_surf(f.bridge_attr)),
+                        construction,
+                        support,
+                        offset,
+                    );
+                } else if let Some((blend, first, second)) = resolved_blend {
                     let spine = carriers.curve(blend.spine).map(|carrier| {
                         if emitted_curves.insert(blend.spine) {
                             emit_curve(&mut out, carrier);

@@ -1244,6 +1244,78 @@ path = "crates/cadmpeg-codec-sldprt/src/brep/blend.rs"
 contains = "0x45 | 0x52"
 note = "The parser's selector value set; see the `selector` field note."
 
+# --- §7.5 Offset surface ----------------------------------------------------
+
+[[record]]
+name = "offset_surface_00_3c"
+kind = "byte"
+section = "7.5"
+anchor = "00 3c [ff]? attr u16 BE  ordinal u32 BE  refs u16 BE[5]"
+size = 29
+endianness = "big"
+note = "Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`."
+
+[[record.field]]
+name = "attr"
+offset = 0
+type = "u16"
+source = "spec"
+anchor = "attr u16 BE  ordinal u32 BE"
+
+[[record.field]]
+name = "ordinal"
+offset = 2
+type = "u32"
+source = "spec"
+anchor = "ordinal u32 BE  refs u16 BE[5]"
+
+[[record.field]]
+name = "refs"
+offset = 6
+type = "u16[5]"
+source = "spec"
+anchor = "refs u16 BE[5] marker u8 (0x2b|0x2d)"
+
+[[record.field]]
+name = "marker"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "marker u8 (0x2b|0x2d)"
+
+[[record.field]]
+name = "discriminator"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "discriminator u8 ('V'|'I'|'U')"
+
+[[record.field]]
+name = "true_offset"
+offset = 18
+type = "u8"
+source = "spec"
+anchor = "true_offset u8 (0|1)"
+
+[[record.field]]
+name = "support"
+offset = 19
+type = "u16"
+source = "spec"
+anchor = "support u16 BE  distance f64 BE"
+
+[[record.field]]
+name = "distance"
+offset = 21
+type = "f64"
+source = "spec"
+anchor = "distance f64 BE"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-sldprt/src/brep/offset.rs"
+contains = "const TAG: [u8; 2] = [0x00, 0x3c];"
+note = "The parser identifies the type-60 carrier by its exact tag."
+
 [[record]]
 name = "extended_wide_104_profile_curve"
 kind = "byte"

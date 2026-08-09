@@ -42,14 +42,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the grammar to construct the edge curve.
 
-### GC-04. Offset-surface carriers
-
-**Question.** Which record carries offset-surface geometry, and what is its payload grammar?
-
-**Known.** `sldprt.md` §6 "The disc1e-disc14-face layout uses one `0x1e/flo2` region with a slot-1 sentinel and the chain" through `sldprt.md` §7.3 "**`00 28` chart** — the solved point cache:" define compact analytic, B-spline, intersection, and constant-radius rolling-ball surface carriers.
-
-**Need.** We must know the carrier to construct an exact offset surface.
-
 ### GC-05. Variable-radius blend carriers
 
 **Question.** Which record carries non-constant-radius blend geometry, and what is its payload grammar?

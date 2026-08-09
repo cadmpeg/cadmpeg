@@ -354,6 +354,22 @@ fn plane_carrier(attr: u16, origin: [f64; 3], normal: [f64; 3], refdir: [f64; 3]
     b
 }
 
+/// A compact type-60 offset surface over one support-surface attribute.
+fn offset_surface_carrier(attr: u16, support: u16, distance: f64) -> Vec<u8> {
+    let mut bytes = vec![0x00, 0x3c];
+    be16(&mut bytes, attr);
+    be32(&mut bytes, 0);
+    for _ in 0..5 {
+        be16(&mut bytes, 0);
+    }
+    bytes.push(0x2b);
+    bytes.push(b'V');
+    bytes.push(1);
+    be16(&mut bytes, support);
+    bef64(&mut bytes, distance);
+    bytes
+}
+
 /// A compact analytic line carrier (tag `00 1e`, 6 f64): point, direction.
 fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1e];
@@ -8255,6 +8271,80 @@ fn faces_decode_nurbs_surface() {
     assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
     assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
     assert_eq!(nurbs.control_points.len(), 4);
+}
+
+#[test]
+fn faces_decode_nested_offset_surface_with_hidden_support() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    let mut body = triangle_body();
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    body.extend(offset_surface_carrier(180, 181, 0.002));
+    body.extend(offset_surface_carrier(181, 100, 0.003));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir.model.surfaces.len(), 3);
+    assert!(result.ir.model.procedural_surfaces.iter().any(|surface| {
+        matches!(
+            surface.definition,
+            ProceduralSurfaceDefinition::Offset { distance, .. }
+                if (distance - 2.0).abs() < f64::EPSILON
+        )
+    }));
+    assert!(result.ir.model.surfaces.iter().any(|surface| {
+        matches!(surface.geometry, SurfaceGeometry::Plane { .. })
+            && surface.id.0.contains("offset-support-surf#100")
+    }));
+
+    let face_surface = &result.ir.model.faces[0].surface;
+    let point = cadmpeg_ir::eval::model_surface_point_by_id(
+        &cadmpeg_ir::index::ModelIndex::new(&result.ir),
+        face_surface,
+        0.0,
+        0.0,
+    )
+    .expect("nested offset evaluation");
+    assert!((point.z - 5.0).abs() < 1.0e-12);
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn cyclic_offset_surface_graph_remains_unknown() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let mut body = triangle_body();
+    let bridge = body
+        .windows(2)
+        .position(|window| window == [0x00, 0x0e])
+        .expect("bridge");
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    body.extend(offset_surface_carrier(180, 181, 0.002));
+    body.extend(offset_surface_carrier(181, 180, 0.003));
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir.model.procedural_surfaces.is_empty());
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
 }
 
 #[test]

@@ -436,6 +436,27 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-sldprt/src/brep/blend.rs` — The parser's selector value set; see the `selector` field note.
 
+## `offset_surface_00_3c`
+
+Spec §7.5 · layout: byte offsets · size: 29 B
+
+Partition body relative to the byte after the `00 3c` tag and optional `ff`. With the two-byte tag, the compact record is 31 bytes. The deltas form expands each reference, including `support`, to `[hi][lo][01]`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `attr` | `u16` | big | spec | attr u16 BE ordinal u32 BE |
+| 2 | 4 | `ordinal` | `u32` | big | spec | ordinal u32 BE refs u16 BE[5] |
+| 6 | 10 | `refs` | `u16[5]` | big | spec | refs u16 BE[5] marker u8 (0x2b\|0x2d) |
+| 16 | 1 | `marker` | `u8` | big | spec | marker u8 (0x2b\|0x2d) |
+| 17 | 1 | `discriminator` | `u8` | big | spec | discriminator u8 ('V'\|'I'\|'U') |
+| 18 | 1 | `true_offset` | `u8` | big | spec | true_offset u8 (0\|1) |
+| 19 | 2 | `support` | `u16` | big | spec | support u16 BE distance f64 BE |
+| 21 | 8 | `distance` | `f64` | big | spec | distance f64 BE |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-sldprt/src/brep/offset.rs` — The parser identifies the type-60 carrier by its exact tag.
+
 ## `extended_wide_104_profile_curve`
 
 Spec §2 · layout: byte offsets · size: 104 B

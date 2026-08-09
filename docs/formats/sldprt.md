@@ -1132,6 +1132,27 @@ For selector `52`, `support0` and `support1` directly name the two support-surfa
 
 For a blend record, `spine` names the center/spine curve that selects the blend branch. `abs(offset0) == abs(offset1) > 0`; their common magnitude is the constant rolling-ball radius. A sign difference between the offsets reverses the second support relative to the first. Each `side` value is exactly `+1` or `-1`; a negative value independently reverses that support's natural-normal side. Lengths are metres.
 
+### 7.5 Offset surfaces
+
+A `00 3c` surface carrier defines an exact signed normal offset from one support surface:
+
+```
+00 3c [ff]? attr u16 BE  ordinal u32 BE  refs u16 BE[5]
+             marker u8 (0x2b|0x2d)
+             discriminator u8 ('V'|'I'|'U')  true_offset u8 (0|1)
+             support u16 BE  distance f64 BE
+```
+
+The compact partition record is 31 bytes from the `00 3c` tag through `distance`. The deltas form stores each common-header reference and `support` as `[hi][lo][01]`. A deltas status frame can continue after `distance`; that continuation is not part of the surface carrier.
+
+`support` is a non-null reference to an analytic, B-spline, or typed procedural surface carrier. `distance` is a finite signed length in metres and has no magnitude limit. `discriminator` and `true_offset` classify the serialized construction and do not change its point equation. For support point `S(u,v)` with partial derivatives `S_u` and `S_v`, the offset surface is
+
+```
+O(u,v) = S(u,v) + distance * unit(S_u(u,v) × S_v(u,v)).
+```
+
+The offset surface retains the support parameterization. Nested offset carriers resolve recursively. A cyclic support-reference graph is invalid.
+
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. Each descriptor is `item_size u32 LE`, `kind u32 LE`, `flags u32 LE`, `count u32 LE`, then `item_size * count` data bytes. All six descriptors have `flags = 2`. Their `(item_size, kind)` pairs are `(4, 8)`, `(12, 100)`, `(12, 100)`, `(4, 8)`, `(4, 8)`, and `(1, 8)`. Let `N = len(ListA)`, `C = sum(ListA)`, and `E = sum(2*ListA[i] - 2)`. The Positions count is `C`; the Normals count is zero or `C`; `ListC[i] = 2*ListA[i] - 2`; and `TriCount = C - 2*N`. Lists B and D are both empty or both have `E` entries. List B contains finite f32 values. List D contains byte values.

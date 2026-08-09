@@ -67,8 +67,8 @@ streams, record offsets, and derived entities such as reconstructed pcurves and
 periodic seams.
 
 Typed transfer covers analytic carriers, NURBS, swept and spun surfaces that
-resolve to NURBS, constant-radius rolling-ball blends, and validated
-surface-intersection curves. Offset surfaces, variable-radius blends, and
+resolve to NURBS, recursive offset surfaces, constant-radius rolling-ball
+blends, and validated surface-intersection curves. Variable-radius blends and
 other unsupported families remain opaque. The decode report records opaque
 carriers, synthetic body grouping, trim reconstruction limits, and appearance
 ambiguity.

@@ -8,8 +8,9 @@
 //! The decoded chain connects face bridges to support surfaces and loop heads,
 //! coedges to edge uses and curves, and vertex uses to world points. Supported
 //! carriers include lines, circles, ellipses, planes, cylinders, cones, spheres,
-//! tori, and NURBS curves and surfaces. The decoder converts model-space metres
-//! to millimetres and leaves dimensionless vectors and ratios unchanged.
+//! tori, NURBS curves and surfaces, and recursive offset surfaces. The decoder
+//! converts model-space metres to millimetres and leaves dimensionless vectors
+//! and ratios unchanged.
 //!
 //! [`Brep::stats`] counts carriers and grouping that could not be transferred
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
@@ -25,6 +26,7 @@ mod attrib;
 mod blend;
 pub(crate) mod entity;
 mod intersection;
+mod offset;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -165,6 +167,8 @@ pub(crate) struct CarrierIndex {
     sweeps: HashMap<u16, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
     blends: HashMap<u16, blend::BlendCarrier>,
+    /// Exact offset-surface constructions, resolved recursively at face binding.
+    offsets: HashMap<u16, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
     blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
     /// Curve attrs whose geometry is a derived cache, not an exact carrier.
@@ -207,6 +211,11 @@ impl CarrierIndex {
         self.blends.get(&attr)
     }
 
+    /// Exact offset-surface construction carried by `attr`.
+    pub(crate) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
+        self.offsets.get(&attr)
+    }
+
     /// Zero-offset surface pair carried by `attr`.
     pub(crate) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
@@ -247,6 +256,9 @@ impl CarrierIndex {
         }
         for (attr, carrier) in other.blends {
             self.blends.entry(attr).or_insert(carrier);
+        }
+        for (attr, carrier) in other.offsets {
+            self.offsets.entry(attr).or_insert(carrier);
         }
         for (attr, carrier) in other.blend_support_pairs {
             self.blend_support_pairs.entry(attr).or_insert(carrier);
@@ -457,6 +469,7 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     }
     out.sweeps = sweep::scan_sweep_carriers(body);
     (out.blends, out.blend_support_pairs) = blend::scan(body);
+    out.offsets = offset::scan(body);
     for (attr, intersection) in intersection::scan_intersection_carriers(body) {
         debug_assert_eq!(attr, intersection.carrier.attr);
         if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
