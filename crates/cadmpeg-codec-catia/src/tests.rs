@@ -7433,6 +7433,8 @@ fn native_namespace_retains_separate_zero_entity_topology_registries() {
     };
     assert_eq!(edge_stride.record_ordinal, 1);
     assert_eq!(edge_stride.allocations, [5, 7, 8, 4, 3]);
+    assert_eq!(edge_stride.topology_refs, [5, 4, 3]);
+    assert_eq!(edge_stride.surface_support_refs, [7, 8]);
 
     let [pair] = native.zero_entity_oriented_use_pairs.as_slice() else {
         panic!("one zero-entity oriented-use pair")
@@ -7659,6 +7661,18 @@ fn decode_reports_separate_zero_entity_topology_registries() {
             .report
             .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT),
         5
+    );
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT,),
+        3
+    );
+    assert_eq!(
+        decoded.report.coverage_count(
+            crate::coverage::DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT,
+        ),
+        2
     );
     assert_eq!(
         decoded

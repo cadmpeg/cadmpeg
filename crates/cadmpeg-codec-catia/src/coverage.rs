@@ -307,6 +307,10 @@ pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_ALLOCATION_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_edge_stride_allocation_count");
 pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_edge_stride_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_SURFACE_SUPPORT_REF_COUNT: CoverageKey =
+    CoverageKey("decoded_zero_entity_edge_stride_surface_support_ref_count");
+pub(crate) const DECODED_ZERO_ENTITY_EDGE_STRIDE_TOPOLOGY_REF_COUNT: CoverageKey =
+    CoverageKey("decoded_zero_entity_edge_stride_topology_ref_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_BOUND_SUPPORT_RUN_COUNT: CoverageKey =
     CoverageKey("decoded_zero_entity_face_bound_support_run_count");
 pub(crate) const DECODED_ZERO_ENTITY_FACE_TERMINAL_CONTROL_03_COUNT: CoverageKey =

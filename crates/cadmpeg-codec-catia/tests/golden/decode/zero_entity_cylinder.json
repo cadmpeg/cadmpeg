@@ -363,6 +363,8 @@
       "decoded_zero_entity_bound_typed_loop_reference_count": 0,
       "decoded_zero_entity_edge_stride_allocation_count": 0,
       "decoded_zero_entity_edge_stride_count": 0,
+      "decoded_zero_entity_edge_stride_surface_support_ref_count": 0,
+      "decoded_zero_entity_edge_stride_topology_ref_count": 0,
       "decoded_zero_entity_endpoint_locus_candidate_count": 0,
       "decoded_zero_entity_endpoint_pair_candidate_count": 0,
       "decoded_zero_entity_face_bound_support_run_count": 0,

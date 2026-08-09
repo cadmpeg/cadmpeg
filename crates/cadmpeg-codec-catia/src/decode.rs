@@ -1724,6 +1724,22 @@ fn finish_decode(
                 .sum(),
         ),
         (
+            "decoded_zero_entity_edge_stride_topology_ref_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .map(|stride| stride.topology_refs.len())
+                .sum(),
+        ),
+        (
+            "decoded_zero_entity_edge_stride_surface_support_ref_count".to_string(),
+            native
+                .zero_entity_edge_strides
+                .iter()
+                .map(|stride| stride.surface_support_refs.len())
+                .sum(),
+        ),
+        (
             "decoded_zero_entity_face_bound_support_run_count".to_string(),
             native
                 .zero_entity_support_runs

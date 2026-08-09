@@ -4917,6 +4917,12 @@ pub struct CatiaZeroEntityEdgeStride {
     pub record_ordinal: u32,
     /// Five allocation values following the fixed tagged-one prefix.
     pub allocations: [u32; 5],
+    /// The three allocations in the `0638`/`2569` topology namespace, in
+    /// source order `[T, T-1, T-2]`.
+    pub topology_refs: [u32; 3],
+    /// The two allocations selecting the adjacent surface-support slots, in
+    /// source order `[X, Y]`.
+    pub surface_support_refs: [u32; 2],
 }
 
 /// One positional zero-entity `0638` oriented use.
@@ -7245,6 +7251,8 @@ fn zero_entity_edge_strides(bytes: &[u8]) -> Vec<CatiaZeroEntityEdgeStride> {
             byte_offset: record.pos as u64,
             record_ordinal: record.record_ordinal,
             allocations: record.allocations,
+            topology_refs: record.topology_refs,
+            surface_support_refs: record.surface_support_refs,
         })
         .collect()
 }
@@ -8944,6 +8952,13 @@ fn validate_zero_entity_topology_records(
             && !record.allocations.contains(&0)
             && record.allocations[0].checked_sub(1) == Some(record.allocations[3])
             && record.allocations[0].checked_sub(2) == Some(record.allocations[4])
+            && record.topology_refs
+                == [
+                    record.allocations[0],
+                    record.allocations[3],
+                    record.allocations[4],
+                ]
+            && record.surface_support_refs == [record.allocations[1], record.allocations[2]]
             && zero_entity_record(records, record.record_ordinal).is_some_and(|source| {
                 source.byte_offset == record.byte_offset && source.tag == [0x5e, 0x1a]
             })
