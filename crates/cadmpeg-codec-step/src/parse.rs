@@ -792,6 +792,7 @@ impl Parser<'_, '_, '_> {
             return self.err("tokens after exchange terminator");
         }
         record_values.shrink_to_fit();
+        self.charge_vec_storage(&record_values, "step_parse_record_table_storage")?;
         record_values.sort_unstable_by_key(|record| record.id);
         let mut records = RecordTable::from_sorted(record_values);
         if !anchors.is_empty() {

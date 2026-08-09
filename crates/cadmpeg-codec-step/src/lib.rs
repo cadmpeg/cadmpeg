@@ -3,9 +3,11 @@
 //! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
 //! 21 exchange structures for AP203, AP214, and AP242.
 //!
-//! Support level: [L8 tested](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
-//! for AP242 editions 1–3 and AP203 editions 1–2/AP214. The L9 write-back
-//! gate is open.
+//! Support level: [L9 proven](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+//! for the declared ISO 10303-21 envelope covering AP242 editions 1–3 and
+//! AP203 editions 1–2/AP214. Part 28 archives, Part 26 encodings, external
+//! references, and unsupported application protocols remain outside that
+//! envelope.
 //!
 //! [`write_step`] emits the application protocol selected by
 //! [`StepWriteOptions::schema`]. It writes product and representation context,

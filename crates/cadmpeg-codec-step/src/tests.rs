@@ -176,6 +176,36 @@ fn parser_accounts_for_owned_value_storage() {
 }
 
 #[test]
+fn parser_accounts_for_record_table_storage() {
+    let source = b"ISO-10303-21;HEADER;ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
+    let mut record_table_limit = None;
+    for max_retained_bytes in 1..=2048 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(source, &arena, &policy)
+                .expect("root fits the test policy");
+        let error = crate::parse::parse_with_context(source, &ctx)
+            .expect_err("record-table storage must consume retained bytes");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            continue;
+        };
+        if limit.context.operation == "step_parse_record_table_storage" {
+            record_table_limit = Some(limit);
+            break;
+        }
+    }
+    let limit = record_table_limit.expect("record-table backing storage must be charged");
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
+    assert!(limit.additional > 0);
+    assert!(limit.used <= limit.limit);
+}
+
+#[test]
 fn anchor_materialization_uses_the_decode_session_budget() {
     let source = b"ISO-10303-21;HEADER;ENDSEC;ANCHOR;<a>=(1,2,3,4,5,6,7,8);ENDSEC;DATA;#1=ITEM(<a>);ENDSEC;END-ISO-10303-21;";
     let mut materialization_limit = None;
