@@ -296,16 +296,6 @@ The owner is one logical indexed record delimited by two headers that carry the 
 
 **Need.** The projector emits a one-sided blind extent from that value. If the word is the travel direction, the second side is dropped and no loss is recorded. The field that carries the extent of this dialect settles the item.
 
-### DR-47. Recipe-kind conditioning of a recipe-backed linear dimension
-
-**Question.** Does the recipe kind of a dimension companion's records restrict the candidate family of a recipe-backed linear dimension?
-
-**Known.** `f3d.md` §3.1 "A recipe-backed linear dimension" gives the candidate rule and states that candidates are axis-aligned point pairs and parallel line pairs. It states no condition on the recipe kind.
-
-`design/dimensions.rs` adds one. When every recipe record of the companion has the `Edge` kind, the candidate list keeps only the parallel-line-pair results and drops the point-pair results. The filter removes a rival candidate instead of proving it wrong: a companion whose candidates hold one point pair and one line pair of equal measurement gives one surviving candidate and the dimension asserts it.
-
-**Need.** The filter is in neither `f3d.md` nor this document. Either the recipe kind carries the candidate family, or the two candidates must give a repeated dimension or native retention.
-
 ### DR-48. Adjacent-versus-span discriminator of a rectangular sketch pattern
 
 **Question.** Which stored member states whether a rectangular sketch-pattern distance is adjacent spacing or the seed-to-final span?
