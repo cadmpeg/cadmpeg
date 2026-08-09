@@ -7,7 +7,7 @@
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -761,56 +761,49 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    let active = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        (root.tag_name().name() == "swSolidWorks")
-            .then(|| {
-                root.descendants()
-                    .find(|node| node.has_tag_name("swModel"))?
-                    .attribute("swConfigurationName")
-            })
-            .flatten()
-            .map(str::to_string)
-    })?;
-    let (position, explicit_index, configuration_count) = scan.blocks.iter().find_map(|block| {
-        let text = std::str::from_utf8(&block.payload).ok()?;
-        let document = roxmltree::Document::parse(text).ok()?;
-        let root = document.root_element();
-        root.tag_name().name().contains("Keywords").then_some(())?;
-        let configurations = root
-            .children()
-            .filter(|node| node.has_tag_name("Configuration"))
-            .collect::<Vec<_>>();
-        let position = configurations
-            .iter()
-            .position(|node| node.attribute("Name") == Some(active.as_str()))?;
-        let explicit_index = configurations[position]
-            .attribute("SourceIndex")
-            .and_then(|value| value.parse().ok());
-        Some((position, explicit_index, configurations.len()))
-    })?;
-    if explicit_index.is_some() {
-        return explicit_index;
-    }
-    let mut partitions = scan
+    let active_names = scan
         .blocks
         .iter()
-        .filter(|block| {
-            block
-                .section
-                .as_deref()
-                .is_some_and(|section| section.to_ascii_lowercase().ends_with("-partition"))
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| document.root_element().has_tag_name("swSolidWorks"))
+        .flat_map(|document| {
+            document
+                .descendants()
+                .filter(|node| node.has_tag_name("swModel"))
+                .filter_map(|node| node.attribute("swConfigurationName").map(str::to_string))
+                .collect::<Vec<_>>()
         })
-        .filter_map(|block| configuration_index(block.section.as_deref()?))
+        .collect::<BTreeSet<_>>();
+    let active = (active_names.len() == 1).then(|| active_names.first().cloned())??;
+    let indices = scan
+        .blocks
+        .iter()
+        .filter_map(|block| std::str::from_utf8(&block.payload).ok())
+        .filter_map(|text| roxmltree::Document::parse(text).ok())
+        .filter(|document| {
+            document
+                .root_element()
+                .tag_name()
+                .name()
+                .contains("Keywords")
+        })
+        .flat_map(|document| {
+            document
+                .root_element()
+                .children()
+                .filter(|node| {
+                    node.has_tag_name("Configuration")
+                        && node.attribute("Name") == Some(active.as_str())
+                })
+                .map(|node| {
+                    node.attribute("SourceIndex")
+                        .and_then(|value| value.parse::<usize>().ok())
+                })
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    partitions.sort_unstable();
-    partitions.dedup();
-    if partitions.len() == configuration_count {
-        return partitions.get(position).copied();
-    }
-    partitions.contains(&position).then_some(position)
+    (indices.len() == 1).then(|| indices[0]).flatten()
 }
 
 #[cfg(test)]

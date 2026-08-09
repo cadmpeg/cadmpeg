@@ -1343,7 +1343,7 @@ fn sldprt_with_body_and_display_list(body: &[u8]) -> Vec<u8> {
 
 fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
     let mut f = sldprt_with_body(body);
-    f.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension><EquationDrivenCurve Name="Profile" id="8"/></Extrusion></Keywords>"#));
+    f.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords Name="Bracket"><Configuration Name="Default" SourceIndex="0" Material="Steel" DisplayState="Shaded"/><Extrusion Name="Boss" Type="BossExtrude" id="7" Scope="Body1"><Dimension Name="Depth">12.5mm</Dimension><EquationDrivenCurve Name="Profile" id="8"/></Extrusion></Keywords>"#));
     f
 }
 
@@ -4867,7 +4867,7 @@ fn semantic_writer_removes_deleted_history_records() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Keep"/><Configuration Name="Delete"/><Feature Name="Keep" Type="Custom" id="80"/><Feature Name="Delete" Type="Custom" id="81"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Keep" SourceIndex="0"/><Configuration Name="Delete" SourceIndex="1"/><Feature Name="Keep" Type="Custom" id="80"/><Feature Name="Delete" Type="Custom" id="81"/></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5108,6 +5108,12 @@ fn encoder_writes_source_less_neutral_configurations() {
             .collect::<Vec<_>>(),
         vec![0, 1]
     );
+    assert_eq!(decoded.ir.model.configurations[0].source_index, Some(0));
+    assert_eq!(decoded.ir.model.configurations[1].source_index, Some(1));
+    assert!(sldprt_native(&decoded.ir).feature_histories[0]
+        .configurations
+        .iter()
+        .all(|configuration| !configuration.properties.contains_key("SourceIndex")));
     let configuration = &decoded.ir.model.configurations[0];
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
@@ -5188,6 +5194,10 @@ fn decode_preserves_unresolved_active_configuration() {
         "Contents/SolidWorks",
         br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Missing"/></swSolidWorks>"#,
     ));
+    assert_eq!(
+        container::active_configuration_index(&container::scan_bytes(&source)),
+        None
+    );
 
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -5201,7 +5211,7 @@ fn decode_preserves_unresolved_active_configuration() {
         .all(|configuration| !configuration.active));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.message
-            == "active configuration identity is unresolved; 0 of 2 configuration records are active."
+            == "active configuration identity is unresolved; 0 of 3 configuration records are active."
     }));
     assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
@@ -5358,7 +5368,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Configuration Name="Default"/></Keywords>"#,
+        br#"<Keywords><Configuration Name="Default" SourceIndex="0"/></Keywords>"#,
     ));
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -10741,7 +10751,7 @@ fn semantic_writer_preserves_keywords_child_order() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/>between<Configuration Name="Default"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/>between<Configuration Name="Default" SourceIndex="0"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -10783,7 +10793,7 @@ fn semantic_writer_applies_history_root_ordinals() {
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/><Configuration Name="A"/><Feature Name="Second" Type="Custom" id="2"/><Configuration Name="B"/></Keywords>"#,
+        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/><Configuration Name="A" SourceIndex="0"/><Feature Name="Second" Type="Custom" id="2"/><Configuration Name="B" SourceIndex="1"/></Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

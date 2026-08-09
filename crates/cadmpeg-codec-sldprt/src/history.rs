@@ -76,7 +76,9 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                         id,
                         parent: parent.clone(),
                         ordinal: ordinal as u32,
-                        source_index: None,
+                        source_index: node
+                            .attribute("SourceIndex")
+                            .and_then(|value| value.parse().ok()),
                         name: node.attribute("Name").unwrap_or("").into(),
                         material: node
                             .attribute("Material")
@@ -84,7 +86,9 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                             .map(str::to_string),
                         properties: node
                             .attributes()
-                            .filter(|attribute| !matches!(attribute.name(), "Name" | "Material"))
+                            .filter(|attribute| {
+                                !matches!(attribute.name(), "Name" | "Material" | "SourceIndex")
+                            })
                             .map(|attribute| {
                                 (attribute.name().to_string(), attribute.value().to_string())
                             })

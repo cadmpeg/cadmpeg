@@ -232,7 +232,9 @@ fn assign_configuration_indices(
     positions.sort_by_key(|position| configurations[*position].ordinal);
     let mut next = 0;
     for position in positions {
-        if configurations[position].source_index.is_none() {
+        if configurations[position].source_index.is_none()
+            && configurations[position].bodies.resolved().is_some()
+        {
             configurations[position].source_index =
                 Some(reserve_configuration_index(&mut used, &mut next)?);
         }
@@ -1310,6 +1312,9 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
         out.push_str("<Configuration");
         xml_attribute(out, "Name", &configuration.name);
+        if let Some(source_index) = configuration.source_index {
+            xml_attribute(out, "SourceIndex", &source_index.to_string());
+        }
         if let Some(material) = &configuration.material {
             xml_attribute(out, "Material", material);
         }

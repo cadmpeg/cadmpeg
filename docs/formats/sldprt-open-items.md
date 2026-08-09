@@ -140,27 +140,6 @@ Observed gap:
 
 **Need.** We must know the gap to write the record back. A writer that omits it moves every later record in the SW Objects payload, which moves the byte offset each `sldprt:metadata:` identifier carries, so a rewrite that changes nothing still renames those attributes.
 
-### CM-08. Active configuration partition binding
-
-**Question.** Which field binds a Keywords configuration to its `Config-N-Partition` section?
-
-**Known.** `sldprt.md` §2 "A Keywords configuration's decimal `id` attribute is the slot identity for" states that the configuration `id` is the slot identity for `Config-N-ResolvedFeatures` and that it is independent of `Config-N-Partition`.
-
-**Conflict.** `crates/cadmpeg-codec-sldprt/src/container.rs:767` binds them by list position. It takes the position of the active `Configuration` element among its siblings and uses that position to index the sorted, deduplicated partition slot numbers:
-
-```rust
-if partitions.len() == configuration_count {
-    return partitions.get(position).copied();
-}
-partitions.contains(&position).then_some(position)
-```
-
-The `SourceIndex` attribute at `container.rs:790` is the only other path. `SourceIndex` occurs one time in the repository, at that read. No writer sets it and `sldprt.md` does not name it, so the position rule is the only live path.
-
-The result adds `1_000_000` to the score in `select_active_parasolid`, so it selects the active block. That block gives the active body set at `decode.rs:3518` and is the block the writer patches at `writer.rs:397` and `writer_patch.rs:46`.
-
-**Need.** We must know the field to select the active configuration's geometry. Element order is not a defined selector, and the specification states that the two identities are independent.
-
 ### CM-09. Active body stream selection
 
 **Question.** Which field identifies the active B-rep stream when no configuration record selects one?
@@ -216,21 +195,11 @@ The decoder has a second and different idea of the active stream, `container::se
 
 ### CM-14. Configuration body membership
 
-**Question.** Which field binds a configuration without a stored source index to its bodies?
+**Question.** Which field binds an inactive configuration without `SourceIndex` to its bodies?
 
-**Known.** `sldprt.md` §2 "A Keywords configuration's decimal `id` attribute is the slot identity for" states that the configuration `id` is independent of `Config-N-Partition`. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for a configuration whose body membership is not established.
+**Known.** Decimal `SourceIndex=N` binds a Keywords configuration to `Config-N-Partition`. The Keywords decimal `id` selects `Config-N-ResolvedFeatures` and is independent of the partition identity. Element order and regeneration ordinal do not bind a partition. A uniquely named active configuration can use the active geometry partition. `crates/cadmpeg-ir/src/features.rs:57` defines `ConfigurationBodies::Unresolved` for every remaining configuration whose body membership is not established.
 
-`crates/cadmpeg-codec-sldprt/src/decode.rs:3550` uses the configuration ordinal as the partition index. `crates/cadmpeg-codec-sldprt/src/decode.rs:3586` then replaces every remaining `Unresolved` value with an empty resolved list:
-
-```rust
-if configuration.bodies.is_unresolved() {
-    configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new());
-}
-```
-
-An empty resolved list states that the configuration holds no bodies. It is not distinct from a configuration that holds none. The `unresolved_configuration_bodies` counter at `decode.rs:427` therefore cannot be nonzero for a file with geometry, so `ConfigIncoherentBodyRefs` cannot report this state.
-
-**Need.** We must know the field to bind the bodies. Until we know it, the decoder must keep `Unresolved` and report the loss.
+**Need.** We must know whether another stored field binds an inactive source-less configuration. The decoder keeps this body membership `Unresolved` and reports the loss.
 
 ## 4. Auxiliary lanes
 

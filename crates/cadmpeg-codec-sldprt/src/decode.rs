@@ -3302,18 +3302,13 @@ fn mark_active_configuration(ir: &mut CadIr) {
             .configurations
             .iter()
             .enumerate()
-            .filter(|(_, configuration)| {
-                configuration.source_index == Some(index)
-                    || configuration.source_index.is_none() && configuration.ordinal == index
-            })
+            .filter(|(_, configuration)| configuration.source_index == Some(index))
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
         (matches.len() == 1).then(|| matches[0])
     });
-    let inferred_by_index =
-        by_index.filter(|position| ir.model.configurations[*position].native_ref.is_none());
     let selected = if active_name.is_some() {
-        by_name.or(inferred_by_index)
+        by_name
     } else if active_index.is_some() {
         by_index
     } else if ir.model.configurations.len() == 1 {
@@ -3544,14 +3539,23 @@ fn assign_configuration_bodies(
         }
     }
 
-    let mut assigned = vec![false; ir.model.configurations.len()];
-    for (configuration, is_assigned) in ir.model.configurations.iter_mut().zip(&mut assigned) {
+    let source_counts = ir
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.source_index)
+        .fold(BTreeMap::<u32, usize>::new(), |mut counts, source_index| {
+            *counts.entry(source_index).or_default() += 1;
+            counts
+        });
+    for configuration in &mut ir.model.configurations {
         let Some(source_index) = configuration.source_index else {
             continue;
         };
-        if let Some(bodies) = partition_map.remove(&source_index) {
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
-            *is_assigned = true;
+        if source_counts.get(&source_index) == Some(&1) {
+            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(
+                partition_map.remove(&source_index).unwrap_or_default(),
+            );
         }
     }
     let active_name = ir
@@ -3570,10 +3574,8 @@ fn assign_configuration_bodies(
             .configurations
             .iter()
             .enumerate()
-            .filter(|(position, configuration)| {
-                !assigned[*position]
-                    && configuration.source_index.is_none()
-                    && &configuration.name == active_name
+            .filter(|(_, configuration)| {
+                configuration.source_index.is_none() && &configuration.name == active_name
             })
             .map(|(position, _)| position)
             .collect::<Vec<_>>();
@@ -3583,22 +3585,9 @@ fn assign_configuration_bodies(
                 let configuration = &mut ir.model.configurations[position];
                 configuration.source_index = Some(active_index);
                 configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
-                assigned[position] = true;
             }
         }
     }
-    for (configuration, is_assigned) in ir.model.configurations.iter_mut().zip(&mut assigned) {
-        if *is_assigned || configuration.source_index.is_some() {
-            continue;
-        }
-        let source_index = configuration.ordinal;
-        if let Some(bodies) = partition_map.remove(&source_index) {
-            configuration.source_index = Some(source_index);
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(bodies);
-            *is_assigned = true;
-        }
-    }
-
     for (source_index, bodies) in partition_map {
         let ordinal = ir
             .model
@@ -3626,11 +3615,6 @@ fn assign_configuration_bodies(
                 feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
-    }
-    for configuration in &mut ir.model.configurations {
-        if configuration.bodies.is_unresolved() {
-            configuration.bodies = cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new());
-        }
     }
 }
 
@@ -5580,7 +5564,7 @@ mod design_loss_tests {
             name: id.into(),
             material: None,
             properties: BTreeMap::new(),
-            bodies: cadmpeg_ir::ConfigurationBodies::Resolved(Vec::new()),
+            bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
             parameter_values: BTreeMap::new(),
             suppressed_features: Vec::new(),
             parameter_overrides: BTreeMap::new(),
@@ -5593,6 +5577,9 @@ mod design_loss_tests {
         ir.model
             .configurations
             .push(configuration("inferred", 9, None));
+        ir.model
+            .configurations
+            .push(configuration("empty", 10, Some(8)));
         let first = BodyId("body:first".into());
         let second = BodyId("body:second".into());
         let third = BodyId("body:third".into());
@@ -5609,14 +5596,47 @@ mod design_loss_tests {
         assert_eq!(ir.model.configurations[0].source_index, Some(5));
         assert_eq!(ir.model.configurations[0].bodies, vec![first, second]);
         assert_eq!(ir.model.configurations[1].source_index, None);
-        assert!(ir.model.configurations[1].bodies.is_empty());
-        assert_eq!(ir.model.configurations[2].source_index, Some(7));
-        assert_eq!(ir.model.configurations[2].bodies, vec![third]);
+        assert!(ir.model.configurations[1].bodies.is_unresolved());
+        assert_eq!(ir.model.configurations[2].source_index, Some(8));
+        assert!(ir.model.configurations[2].bodies.is_empty());
+        assert_eq!(ir.model.configurations[3].source_index, Some(7));
+        assert_eq!(ir.model.configurations[3].bodies, vec![third]);
+        assert!(ir.model.configurations[3].native_ref.is_none());
+    }
+
+    #[test]
+    fn duplicate_configuration_source_identity_does_not_select_a_partition() {
+        let mut ir = CadIr::empty(Units::default());
+        for ordinal in 0..2 {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId(format!("configuration:{ordinal}")),
+                ordinal,
+                active: false,
+                source_index: Some(5),
+                name: format!("Configuration {ordinal}"),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: cadmpeg_ir::ConfigurationBodies::Unresolved,
+                parameter_values: BTreeMap::new(),
+                suppressed_features: Vec::new(),
+                parameter_overrides: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                native_ref: Some(format!("native:{ordinal}")),
+            });
+        }
+        let body = BodyId("body:partition".into());
+
+        assign_configuration_bodies(&mut ir, &[(5, vec![body.clone()])]);
+
+        assert!(ir.model.configurations[0].bodies.is_unresolved());
+        assert!(ir.model.configurations[1].bodies.is_unresolved());
+        assert_eq!(ir.model.configurations[2].source_index, Some(5));
+        assert_eq!(ir.model.configurations[2].bodies, vec![body]);
         assert!(ir.model.configurations[2].native_ref.is_none());
     }
 
     #[test]
-    fn inferred_active_partition_preserves_active_configuration_identity() {
+    fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         let mut ir = CadIr::empty(Units::default());
         ir.source = Some(cadmpeg_ir::document::SourceMeta {
             attributes: BTreeMap::from([
@@ -5635,7 +5655,7 @@ mod design_loss_tests {
 
         assert_eq!(ir.model.configurations.len(), 1);
         let configuration = &ir.model.configurations[0];
-        assert!(configuration.active);
+        assert!(!configuration.active);
         assert_eq!(configuration.source_index, Some(3));
         assert_eq!(configuration.bodies, vec![body]);
 
@@ -5649,9 +5669,10 @@ mod design_loss_tests {
             notes: Vec::new(),
         };
         append_design_losses(&ir, &mut report);
-        assert!(report.losses.iter().all(|loss| !loss
-            .message
-            .starts_with("active configuration identity is unresolved")));
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "active configuration identity is unresolved; 0 of 1 configuration records are active."
+        }));
     }
 
     #[test]

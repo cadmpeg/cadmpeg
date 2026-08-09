@@ -46,6 +46,16 @@
       ],
       "configurations": [
         {
+          "id": "sldprt:model:configuration#247:0",
+          "material": "Steel",
+          "name": "Default",
+          "native_ref": "sldprt:history:configuration#247:0",
+          "ordinal": 0,
+          "properties": {
+            "DisplayState": "Shaded"
+          }
+        },
+        {
           "active": true,
           "bodies": [
             "sldprt:brep:body#0"
@@ -83,19 +93,14 @@
               "suppressed": false
             }
           },
-          "id": "sldprt:model:configuration#247:0",
-          "material": "Steel",
-          "name": "Default",
-          "native_ref": "sldprt:history:configuration#247:0",
-          "ordinal": 0,
+          "id": "sldprt:model:configuration#partition:0",
+          "name": "Config-0",
+          "ordinal": 1,
           "parameter_values": {
             "sldprt:model:parameter#247:0:0": {
               "kind": "length",
               "value": 12.5
             }
-          },
-          "properties": {
-            "DisplayState": "Shaded"
           },
           "source_index": 0
         }
@@ -324,8 +329,7 @@
               "parent": "sldprt:history:feature-history#247",
               "properties": {
                 "DisplayState": "Shaded"
-              },
-              "source_index": 0
+              }
             }
           ],
           "feature_histories": [
@@ -427,9 +431,9 @@
         "png_preview_count": "0",
         "sldprt_configuration_feature_states_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "sldprt_configuration_parameter_values_local_sha256": "<elided: digest over tolerantly compared geometry>",
-        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#247:0",
-        "sldprt_native_configuration_sha256": "447c7dda045069252cb7c70de5013090fe1146ad98ef8618c0b954e5c01ebf92",
-        "sldprt_native_history_sha256": "8d20c9d3ec679aa7fd590ee8f3c7afd2a4d6c71aea31460692f70ddb8f5c7081",
+        "sldprt_configuration_snapshot_synthesized": "sldprt:model:configuration#partition:0",
+        "sldprt_native_configuration_sha256": "24f62a5432ea2d42146d3b510c0b0ace55619f201f3cc7cc5fc9fae955e4be3b",
+        "sldprt_native_history_sha256": "9d2898de656ceabc083488c7d7d7fc73cc22a4a83dfb24095690a42ea4620286",
         "sldprt_native_parameter_sha256": "be06a56cb696745554da5ee23598aabc0da501daf52a306d98488d3472fa6bff",
         "sldprt_native_sketch_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
         "sldprt_neutral_configuration_local_sha256": "<elided: digest over tolerantly compared geometry>",
@@ -456,6 +460,21 @@
       {
         "code": "topology_gauge_substituted",
         "message": "No body record was available; one body/region/shell hierarchy was derived.",
+        "severity": "warning"
+      },
+      {
+        "code": "feature_history_retained",
+        "message": "1 configuration state(s) are inferred from geometry partitions without native configuration definitions.",
+        "severity": "warning"
+      },
+      {
+        "code": "feature_history_retained",
+        "message": "1 configuration record(s) have unresolved body membership; 0 configuration record(s) contain missing or repeated body references.",
+        "severity": "warning"
+      },
+      {
+        "code": "feature_history_retained",
+        "message": "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot.",
         "severity": "warning"
       },
       {
