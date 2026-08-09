@@ -2878,6 +2878,15 @@ pub(crate) fn store(
                             .then(|| record.integer(value_index + 1))
                             .flatten()
                             .filter(|sequence| *sequence != 0)
+                            .and_then(|sequence| {
+                                parameter_resolver.resolve_type(
+                                    entry.sequence,
+                                    value_index + 1,
+                                    sequence,
+                                    312,
+                                    &[0, 1],
+                                )
+                            })
                             .map(|sequence| format!("iges:entity:directory#{sequence}"));
                         values.push(NativeAttributeValue {
                             value,
