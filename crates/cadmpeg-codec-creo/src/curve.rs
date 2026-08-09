@@ -1509,6 +1509,7 @@ fn evaluate_expression_program_details(
     let mut assignments = Vec::<CurveExpressionAssignment>::new();
     let mut solve_solutions = BTreeMap::new();
     let mut solve_block_dimensions = BTreeMap::new();
+    let mut solve_block_initial_values = BTreeMap::new();
     for (index, line) in lines.iter().enumerate() {
         if let Some(block) = solve_program
             .blocks
@@ -1526,6 +1527,14 @@ fn evaluate_expression_program_details(
                 })
                 .collect::<Vec<_>>();
             solve_block_dimensions.insert(block.offset, dimensions);
+            solve_block_initial_values.insert(
+                block.offset,
+                block
+                    .variables
+                    .iter()
+                    .map(|variable| values.get(&expression_identifier_key(variable)).cloned())
+                    .collect::<Vec<_>>(),
+            );
             for variable in &block.variables {
                 let key = expression_identifier_key(variable);
                 values.remove(&key);
@@ -1552,6 +1561,17 @@ fn evaluate_expression_program_details(
                 })
                 .and_then(|dimensions| {
                     solve_affine_expression_block(block, &values, &dimensions, context)
+                })
+                .or_else(|| {
+                    let dimensions = solve_block_dimensions.get(&block.offset)?;
+                    let initial_values = solve_block_initial_values.get(&block.offset)?;
+                    solve_nonlinear_expression_block(
+                        block,
+                        &values,
+                        dimensions,
+                        initial_values,
+                        context,
+                    )
                 })
             {
                 for (variable, value) in block.variables.iter().zip(&solution) {
@@ -4741,6 +4761,316 @@ fn solve_affine_expression_block(
     )
 }
 
+const MAX_NONLINEAR_SOLVE_VARIABLES: usize = 8;
+const MAX_NONLINEAR_SOLVE_ITERATIONS: usize = 64;
+const MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS: usize = 16;
+const NONLINEAR_SOLVE_RESIDUAL_TOLERANCE: f64 = 1e-8;
+const NONLINEAR_SOLVE_DERIVATIVE_STEP: f64 = 1e-6;
+const NONLINEAR_SOLVE_SOLUTION_TOLERANCE: f64 = 1e-7;
+
+#[derive(Debug, Clone, Copy)]
+struct SolveResidual {
+    value: f64,
+    scale: f64,
+    dimension: RelationDimension,
+}
+
+fn solve_nonlinear_expression_block(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    known_dimensions: &[Option<RelationDimension>],
+    initial_values: &[Option<CurveExpressionValue>],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<CurveExpressionValue>> {
+    nonlinear_equations_are_smooth(block).then_some(())?;
+    let variable_dimensions =
+        infer_solve_variable_dimensions(block, values, known_dimensions, context)?;
+    let variable_count = block.variables.len();
+    (variable_count > 0
+        && variable_count <= MAX_NONLINEAR_SOLVE_VARIABLES
+        && block.equations.len() >= variable_count)
+        .then_some(())?;
+    let seeds = nonlinear_initial_guesses(initial_values, &variable_dimensions);
+    let mut solution = None;
+    for seed in seeds {
+        let Some(candidate) =
+            refine_nonlinear_solution(block, values, &variable_dimensions, &seed, context)
+        else {
+            continue;
+        };
+        if solution
+            .as_ref()
+            .is_some_and(|known: &Vec<f64>| !nonlinear_solutions_close(known, &candidate))
+        {
+            return None;
+        }
+        solution = Some(candidate);
+    }
+    solution.map(|values| {
+        values
+            .into_iter()
+            .zip(variable_dimensions)
+            .map(|(value, dimension)| quantity_value(value, dimension))
+            .collect()
+    })
+}
+
+fn nonlinear_equations_are_smooth(block: &CurveExpressionSolveBlock) -> bool {
+    block.equations.iter().all(|equation| {
+        [equation.left.as_str(), equation.right.as_str()]
+            .into_iter()
+            .all(nonlinear_expression_is_smooth)
+    })
+}
+
+fn nonlinear_expression_is_smooth(expression: &str) -> bool {
+    let bytes = expression.as_bytes();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if matches!(bytes[cursor], b'\'' | b'"') {
+            let delimiter = bytes[cursor];
+            cursor += 1;
+            while bytes.get(cursor).is_some_and(|byte| *byte != delimiter) {
+                cursor += 1;
+            }
+            if bytes.get(cursor) != Some(&delimiter) {
+                return false;
+            }
+            cursor += 1;
+            continue;
+        }
+        if matches!(bytes[cursor], b'=' | b'!' | b'<' | b'>' | b'&' | b'|') {
+            return false;
+        }
+        if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
+            let start = cursor;
+            let Some(end) = expression_identifier_end(bytes, start) else {
+                return false;
+            };
+            cursor = end;
+            let mut following = cursor;
+            while bytes.get(following).is_some_and(u8::is_ascii_whitespace) {
+                following += 1;
+            }
+            if bytes.get(following) == Some(&b'(') {
+                let name = &expression[start..end];
+                let smooth = [
+                    "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh",
+                    "log", "ln", "exp", "pow", "sqrt",
+                ]
+                .into_iter()
+                .any(|candidate| name.eq_ignore_ascii_case(candidate));
+                if !smooth {
+                    return false;
+                }
+            }
+            continue;
+        }
+        cursor += 1;
+    }
+    true
+}
+
+fn nonlinear_initial_guesses(
+    initial_values: &[Option<CurveExpressionValue>],
+    variable_dimensions: &[RelationDimension],
+) -> Vec<Vec<f64>> {
+    let variable_count = variable_dimensions.len();
+    let mut seeds = Vec::new();
+    let mut add_seed = |seed: Vec<f64>| {
+        if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
+            seeds.push(seed);
+        }
+    };
+    add_seed(vec![0.0; variable_count]);
+    if initial_values.len() == variable_count {
+        let initial = initial_values
+            .iter()
+            .zip(variable_dimensions)
+            .map(|(value, dimension)| {
+                value.as_ref().and_then(|value| {
+                    let (value, value_dimension) = quantity_parts_ref(value)?;
+                    (value_dimension == *dimension).then_some(value)
+                })
+            })
+            .collect::<Option<Vec<_>>>();
+        if let Some(initial) = initial {
+            add_seed(initial);
+        }
+    }
+    for magnitude in [0.01, 0.1, 1.0, 10.0, 100.0] {
+        add_seed(vec![magnitude; variable_count]);
+        add_seed(vec![-magnitude; variable_count]);
+    }
+    for index in 0..variable_count {
+        for magnitude in [0.1, 1.0, 10.0] {
+            let mut positive = vec![0.0; variable_count];
+            positive[index] = magnitude;
+            add_seed(positive);
+            let mut negative = vec![0.0; variable_count];
+            negative[index] = -magnitude;
+            add_seed(negative);
+        }
+    }
+    seeds
+}
+
+fn refine_nonlinear_solution(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    variable_dimensions: &[RelationDimension],
+    seed: &[f64],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<f64>> {
+    let variable_count = variable_dimensions.len();
+    let mut point = seed.to_vec();
+    let mut residuals =
+        evaluate_nonlinear_residuals(block, values, variable_dimensions, &point, context)?;
+    for _ in 0..MAX_NONLINEAR_SOLVE_ITERATIONS {
+        if nonlinear_residuals_converged(&residuals) {
+            return Some(point);
+        }
+        let mut rows = Vec::with_capacity(residuals.len());
+        for (row_index, residual) in residuals.iter().enumerate() {
+            let mut coefficients = Vec::with_capacity(variable_count);
+            for column in 0..variable_count {
+                let step = NONLINEAR_SOLVE_DERIVATIVE_STEP * point[column].abs().max(1.0);
+                let mut plus = point.clone();
+                let mut minus = point.clone();
+                plus[column] += step;
+                minus[column] -= step;
+                let plus_residuals = evaluate_nonlinear_residuals(
+                    block,
+                    values,
+                    variable_dimensions,
+                    &plus,
+                    context,
+                )?;
+                let minus_residuals = evaluate_nonlinear_residuals(
+                    block,
+                    values,
+                    variable_dimensions,
+                    &minus,
+                    context,
+                )?;
+                let plus_residual = plus_residuals.get(row_index)?;
+                let minus_residual = minus_residuals.get(row_index)?;
+                (plus_residual.dimension == residual.dimension
+                    && minus_residual.dimension == residual.dimension)
+                    .then_some(())?;
+                let derivative = (plus_residual.value - minus_residual.value) / (2.0 * step);
+                derivative.is_finite().then_some(())?;
+                coefficients.push(derivative);
+            }
+            rows.push(AffineEquationRow {
+                coefficients,
+                rhs: -residual.value,
+            });
+        }
+        let delta = solve_unique_affine_system(&mut rows, variable_count)?;
+        let maximum_delta = delta.iter().map(|value| value.abs()).fold(0.0, f64::max);
+        let point_scale = point.iter().map(|value| value.abs()).fold(1.0, f64::max);
+        (maximum_delta.is_finite() && maximum_delta <= 1e12 * point_scale).then_some(())?;
+        let base_norm = nonlinear_residual_norm(&residuals);
+        let mut accepted = None;
+        let mut scale = 1.0;
+        for _ in 0..MAX_NONLINEAR_SOLVE_LINE_SEARCH_STEPS {
+            let candidate = point
+                .iter()
+                .zip(&delta)
+                .map(|(value, change)| value + scale * change)
+                .collect::<Vec<_>>();
+            if candidate.iter().all(|value| value.is_finite()) {
+                if let Some(candidate_residuals) = evaluate_nonlinear_residuals(
+                    block,
+                    values,
+                    variable_dimensions,
+                    &candidate,
+                    context,
+                ) {
+                    let candidate_norm = nonlinear_residual_norm(&candidate_residuals);
+                    if nonlinear_residuals_converged(&candidate_residuals)
+                        || candidate_norm < base_norm
+                    {
+                        accepted = Some((candidate, candidate_residuals));
+                        break;
+                    }
+                }
+            }
+            scale *= 0.5;
+        }
+        let (candidate, candidate_residuals) = accepted?;
+        point = candidate;
+        residuals = candidate_residuals;
+        if maximum_delta * scale <= 1e-12 * point_scale
+            && !nonlinear_residuals_converged(&residuals)
+        {
+            return None;
+        }
+    }
+    nonlinear_residuals_converged(&residuals).then_some(point)
+}
+
+fn evaluate_nonlinear_residuals(
+    block: &CurveExpressionSolveBlock,
+    values: &BTreeMap<String, CurveExpressionValue>,
+    variable_dimensions: &[RelationDimension],
+    point: &[f64],
+    context: RelationEvaluationContext<'_>,
+) -> Option<Vec<SolveResidual>> {
+    (variable_dimensions.len() == block.variables.len()
+        && point.len() == variable_dimensions.len())
+    .then_some(())?;
+    let mut evaluation_values = values.clone();
+    for ((variable, dimension), value) in block.variables.iter().zip(variable_dimensions).zip(point)
+    {
+        value.is_finite().then_some(())?;
+        evaluation_values.insert(
+            expression_identifier_key(variable),
+            quantity_value(*value, *dimension),
+        );
+    }
+    block
+        .equations
+        .iter()
+        .map(|equation| {
+            let left = evaluate_relation_expression(&equation.left, &evaluation_values, context)?;
+            let right = evaluate_relation_expression(&equation.right, &evaluation_values, context)?;
+            let (left, left_dimension) = quantity_parts_ref(&left)?;
+            let (right, right_dimension) = quantity_parts_ref(&right)?;
+            (left_dimension == right_dimension).then_some(())?;
+            let value = left - right;
+            let scale = left.abs().max(right.abs()).max(1.0);
+            (value.is_finite() && scale.is_finite()).then_some(SolveResidual {
+                value,
+                scale,
+                dimension: left_dimension,
+            })
+        })
+        .collect()
+}
+
+fn nonlinear_residual_norm(residuals: &[SolveResidual]) -> f64 {
+    residuals
+        .iter()
+        .map(|residual| (residual.value / residual.scale).abs())
+        .fold(0.0, f64::max)
+}
+
+fn nonlinear_residuals_converged(residuals: &[SolveResidual]) -> bool {
+    residuals
+        .iter()
+        .all(|residual| residual.value.abs() <= NONLINEAR_SOLVE_RESIDUAL_TOLERANCE * residual.scale)
+}
+
+fn nonlinear_solutions_close(left: &[f64], right: &[f64]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            (left - right).abs()
+                <= NONLINEAR_SOLVE_SOLUTION_TOLERANCE * left.abs().max(right.abs()).max(1.0)
+        })
+}
+
 struct AffineEquationRow {
     coefficients: Vec<f64>,
     rhs: f64,
@@ -6417,6 +6747,49 @@ mod tests {
         assert!(evaluation.solve_solutions.is_empty());
         assert_eq!(evaluation.assignments[0].value, None);
         assert_eq!(evaluation.assignments[1].value, None);
+    }
+
+    #[test]
+    fn solves_unique_nonlinear_simultaneous_equations() {
+        let lines = ["x=2", "SOLVE", "x*x*x=8", "FOR x", "after=x+1"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        let [CurveExpressionValue::Number(solution)] = evaluation.solve_solutions[&1].as_slice()
+        else {
+            panic!("expected one numeric nonlinear solution");
+        };
+        assert!((*solution - 2.0).abs() <= 1e-9);
+        let Some(CurveExpressionValue::Number(after)) = &evaluation.assignments[1].value else {
+            panic!("expected evaluated assignment after nonlinear solve");
+        };
+        assert!((*after - 3.0).abs() <= 1e-9);
+    }
+
+    #[test]
+    fn rejects_nonlinear_systems_with_multiple_roots() {
+        let lines = ["SOLVE", "x*x=4", "FOR x"]
+            .into_iter()
+            .enumerate()
+            .map(|(offset, text)| CurveExpressionLine {
+                text: text.to_owned(),
+                offset,
+            })
+            .collect::<Vec<_>>();
+
+        let evaluation =
+            evaluate_expression_program_details(&lines, None, &ExternalRelationSymbols::default());
+
+        assert!(evaluation.solve_solutions.is_empty());
+        assert!(evaluation.assignments.is_empty());
     }
 
     #[test]

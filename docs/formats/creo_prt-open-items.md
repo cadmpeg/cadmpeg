@@ -312,9 +312,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Question.** How must a nonlinear curve-equation `SOLVE` block be solved?
 
-**Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems over numeric unknowns and retains other blocks.
+**Known.** `creo_prt.md` §8.3 "`SOLVE` opens a simultaneous-equation block and `FOR` followed by one or more" defines the block framing. The decoder solves complete, dimensionally valid affine systems and smooth numeric nonlinear systems when one finite full-rank root is established, and retains other blocks.
 
-**Need.** We must know the nonlinear solve rules to evaluate all derived curve parameters.
+**Need.** The neutral format model does not yet define a transfer for non-smooth, piecewise, or discrete function forms whose affine reduction does not resolve them.
 
 ### SP-03. Section-to-datum joins
 

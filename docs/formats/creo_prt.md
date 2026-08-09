@@ -3539,13 +3539,19 @@ by the equation expressions. Free dimension exponents are zero. A dimension
 constraint is inconsistent when it has no integral solution in the five
 canonical axes: length, mass, time, angle, and temperature. A dimensionally
 valid affine equality is then evaluated after known dependencies and block-local
-auxiliary relations are applied. When the complete system has one finite
+auxiliary relations are applied. When the complete affine system has one finite
 consistent solution, the solution in canonical relation units replaces the
 unknown values at `FOR` and supplies following assignments. Unknowns may have
 different physical dimensions; multiplication or division by a known
-dimensioned value supplies the corresponding affine coefficient. Nonlinear,
-dimensionally inconsistent, dependency-unresolved, underdetermined, or
-inconsistent systems retain absent solution values.
+dimensioned value supplies the corresponding affine coefficient. A nonlinear
+system uses the same dimension checks and replaces the unknown values only when
+its numeric residual equations have one finite root with a full-rank local
+Jacobian. A root is not a solution when any residual is nonnumeric,
+dimensionally inconsistent, outside a function domain, or non-finite. Multiple
+roots, a rank-deficient root, an underdetermined system, an inconsistent system,
+or an unresolved dependency retains absent solution values. Non-smooth,
+piecewise, and discrete function forms retain absent solution values unless the
+affine reduction above resolves them without a numeric nonlinear solve.
 An equality or ordering comparison between two affine forms is independent of
 the unknowns when subtraction cancels every unknown coefficient. Such a
 comparison has its constant Boolean value during the solve. `if` selects an
