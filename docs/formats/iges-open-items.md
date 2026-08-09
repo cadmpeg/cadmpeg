@@ -218,14 +218,6 @@ The constant demands about ten correct significant digits in each element. The G
 
 **Need.** We need the standard-position requirement for Type 104. The unreachable arm is then removed or its gate is corrected.
 
-### GE-14. Type 106 interpretation flag against the form
-
-**Question.** Must the Type 106 interpretation flag agree with the entity form?
-
-**Known.** `copious.rs:26-33` and `:99-105` refuse the entity when the flag does not match the form-derived expectation. The interpretation flag alone gives the tuple arity and is sufficient to read the record. The form is a usage classification.
-
-**Need.** We need to know whether IGES requires the pairing before a disagreement is fatal.
-
 ## 5. Surfaces and topology
 
 ### TP-01. The Global minimum resolution serves five unrelated roles

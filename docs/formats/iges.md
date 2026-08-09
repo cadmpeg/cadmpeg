@@ -72,6 +72,8 @@ Pointer-defined analytic surfaces use odd Directory pointers to Type 116 locatio
 
 Type 130 Form 0 defines a planar offset of a base curve. FLAG `1` uses one uniform distance, `2` interpolates two distances as a function of arc length or native parameter, and `3` takes one coordinate of another curve as the distance function. A real or integer parameter that is unused for the selected FLAG is zero or omitted; omission selects that data type's implicit zero. The unused DE2 pointer is an explicit integer zero because pointer fields have no implicit default unless their field definition declares one.
 
+Type 106 interpretation flag IP and Directory form are redundant required constraints. Forms 1, 11, 20, 21, 31 through 38, 40, and 63 require IP `1` for planar coordinate pairs with one common Z value. Forms 2 and 12 require IP `2` for coordinate triples. Forms 3 and 13 require IP `3` for point-and-vector sextuples. A disagreement is malformed entity data; IP determines tuple width but does not override the Directory form's entity semantics.
+
 ## Primitive solids
 
 Primitive solid entities use Form 0. Their native dimensional values remain in declared model units, their origin defaults to `(0,0,0)`, and their axis vectors are dimensionless. An omitted X axis defaults to `(1,0,0)` and an omitted Z or revolution axis defaults to `(0,0,1)`. Every supplied or defaulted axis is unit length. Entities carrying both X and Z axes require them to be orthogonal; local Y is `Z × X`. The Directory transformation remains a separate placement link.

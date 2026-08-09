@@ -1483,6 +1483,22 @@ fn decode_projects_copious_linear_paths_with_segment_parameters() {
 }
 
 #[test]
+fn decode_rejects_a_copious_interpretation_that_disagrees_with_its_form() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(copious_data_file(11, b"106,2,2,0,0,0,1,0,0;", "00000000")),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir.model.curves.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            .contains("interpretation flag disagrees with the entity form")
+    }));
+}
+
+#[test]
 fn decode_separates_copious_points_vectors_and_presentation_forms() {
     let points = IgesCodec
         .decode(
