@@ -5,6 +5,8 @@
 use cadmpeg_core::decode::WorkBudget;
 
 use crate::families::standard::fbb::{largest_fbb_run, parse_edge_tables, parse_vertex_table};
+#[cfg(test)]
+use crate::families::standard::topology::EdgeBoundaryLayout;
 use crate::families::standard::topology::{
     incidence_cycles, orient_face_cycles, reconstruct_mesh_selection, CoedgeUse, EdgeRow,
     StandardTopology,
@@ -6564,6 +6566,188 @@ pub fn parse_standard_mesh_endpoint_candidates(
     .into_option()
 }
 
+fn singleton_mesh_boundary_directions(
+    boundary: &[MeshBoundaryEdgeCandidate],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<bool>> {
+    if boundary.is_empty() {
+        return None;
+    }
+    let first = boundary[0];
+    let first_pair = *edge_candidates.get(first.edge)?.first()?;
+    let first_directions = first
+        .reversed
+        .map_or_else(|| vec![false, true], |direction| vec![direction]);
+    let mut solutions = Vec::new();
+    for first_direction in first_directions {
+        let first_start = if first_direction {
+            first_pair[1]
+        } else {
+            first_pair[0]
+        };
+        let mut current = if first_direction {
+            first_pair[0]
+        } else {
+            first_pair[1]
+        };
+        let mut directions = vec![first_direction];
+        let mut valid = true;
+        for use_ in &boundary[1..] {
+            let pair = *edge_candidates.get(use_.edge)?.first()?;
+            let mut choices = [pair[0] == current, pair[1] == current]
+                .into_iter()
+                .enumerate()
+                .filter_map(|(direction, matches)| matches.then_some(direction == 1))
+                .collect::<Vec<_>>();
+            if let Some(required) = use_.reversed {
+                choices.retain(|direction| *direction == required);
+            }
+            let [direction] = choices.as_slice() else {
+                valid = false;
+                break;
+            };
+            current = if *direction { pair[0] } else { pair[1] };
+            directions.push(*direction);
+        }
+        if valid && current == first_start {
+            solutions.push(directions);
+        }
+    }
+    solutions.sort_unstable();
+    solutions.dedup();
+    if solutions.len() == 2 && boundary.iter().all(|use_| use_.reversed.is_none()) {
+        solutions.truncate(1);
+    }
+    (solutions.len() == 1).then(|| solutions.remove(0))
+}
+
+fn resolve_singleton_mesh_selection(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    selected: &[MeshFaceBoundaryAssignment],
+    directions: &[Vec<Vec<bool>>],
+    port_identities: &[[u32; 2]],
+) -> Option<MeshEndpointResolve> {
+    if selected.len() != directions.len()
+        || edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+    {
+        return None;
+    }
+    let topology = reconstruct_mesh_selection(
+        edge_rows.to_vec(),
+        vertex_points.to_vec(),
+        selected,
+        directions,
+    )?;
+    let point_assignment = topology.bind_vertex_points(
+        &edge_candidates
+            .iter()
+            .map(|candidates| candidates[0])
+            .collect::<Vec<_>>(),
+    )?;
+    let edge_vertices = topology.edge_vertices()?;
+    let mut edge_use_counts = vec![0usize; edge_rows.len()];
+    for use_ in selected
+        .iter()
+        .flat_map(|assignment| &assignment.boundaries)
+        .flatten()
+    {
+        *edge_use_counts.get_mut(use_.edge)? += 1;
+    }
+    if edge_use_counts.iter().any(|count| *count > 2) {
+        return None;
+    }
+    let mut points_by_identity = HashMap::<u32, usize>::new();
+    for (edge, vertices) in edge_vertices.into_iter().enumerate() {
+        let points = [
+            *point_assignment.get(vertices[0])?,
+            *point_assignment.get(vertices[1])?,
+        ];
+        for (identity, point) in port_identities[edge].into_iter().zip(points) {
+            match points_by_identity.insert(identity, point) {
+                Some(previous) if previous != point => return None,
+                _ => {}
+            }
+        }
+    }
+    Some(MeshEndpointResolve::Solved(topology, point_assignment))
+}
+
+fn resolve_singleton_mesh_endpoint_candidates(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    assignments: &[Vec<MeshFaceBoundaryAssignment>],
+    port_identities: &[[u32; 2]],
+) -> Option<MeshEndpointResolve> {
+    if edge_candidates.len() != edge_rows.len()
+        || port_identities.len() != edge_rows.len()
+        || edge_candidates
+            .iter()
+            .any(|candidates| candidates.len() != 1 || candidates[0][0] == candidates[0][1])
+        || assignments.iter().any(|face| face.len() != 1)
+    {
+        return None;
+    }
+
+    let selected = assignments
+        .iter()
+        .map(|face| face.first().cloned())
+        .collect::<Option<Vec<_>>>()?;
+    // An unresolved coedge direction does not select a point endpoint. It is
+    // a row-orientation gauge. Let the exact coordinate binding prove the
+    // resulting cycle, then try the endpoint-labelled gauge only when the
+    // fixed false direction cannot bind.
+    let fixed_directions = selected
+        .iter()
+        .map(|assignment| {
+            assignment
+                .boundaries
+                .iter()
+                .map(|boundary| {
+                    (!boundary.is_empty()).then(|| {
+                        boundary
+                            .iter()
+                            .map(|use_| use_.reversed.unwrap_or(false))
+                            .collect::<Vec<_>>()
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if let Some(resolved) = resolve_singleton_mesh_selection(
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        &selected,
+        &fixed_directions,
+        port_identities,
+    ) {
+        return Some(resolved);
+    }
+
+    let endpoint_labelled_directions = selected
+        .iter()
+        .map(|assignment| {
+            assignment
+                .boundaries
+                .iter()
+                .map(|boundary| singleton_mesh_boundary_directions(boundary, edge_candidates))
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    resolve_singleton_mesh_selection(
+        edge_rows,
+        vertex_points,
+        edge_candidates,
+        &selected,
+        &endpoint_labelled_directions,
+        port_identities,
+    )
+}
+
 fn resolve_standard_mesh_endpoint_candidates(
     edge_rows: &[EdgeRow],
     vertex_points: &[[f64; 3]],
@@ -6594,6 +6778,15 @@ fn resolve_standard_mesh_endpoint_candidates(
         if face.is_empty() {
             return MeshEndpointResolve::Rejected;
         }
+    }
+    if let Some(resolved) = resolve_singleton_mesh_endpoint_candidates(
+        edge_rows,
+        vertex_points,
+        &edge_candidates,
+        &assignments,
+        port_identities,
+    ) {
+        return resolved;
     }
     let face_work = assignments
         .iter()
@@ -7088,4 +7281,68 @@ fn coordinate_root_preparation_budgets_independent_components_separately() {
         "{outcome:?}"
     );
     assert!(!preparation_budget.exhausted());
+}
+
+#[test]
+fn singleton_mesh_path_handles_many_independent_face_cycles() {
+    const FACE_COUNT: usize = 128;
+    let mut edge_rows = Vec::with_capacity(FACE_COUNT * 4);
+    let mut edge_candidates = Vec::with_capacity(FACE_COUNT * 4);
+    let mut port_identities = Vec::with_capacity(FACE_COUNT * 4);
+    let mut assignments = Vec::with_capacity(FACE_COUNT);
+    let mut vertex_points = Vec::with_capacity(FACE_COUNT * 4);
+
+    for face in 0..FACE_COUNT {
+        let edge = face * 4;
+        let point = face * 4;
+        vertex_points.extend([
+            [point as f64, 0.0, 0.0],
+            [(point + 1) as f64, 0.0, 0.0],
+            [(point + 2) as f64, 0.0, 0.0],
+            [(point + 3) as f64, 0.0, 0.0],
+        ]);
+        edge_rows.extend((0..4).map(|_| EdgeRow {
+            kind: 1,
+            handles: Vec::new(),
+            boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+        }));
+        edge_candidates.extend([
+            vec![[point, point + 1]],
+            vec![[point + 1, point + 2]],
+            vec![[point + 2, point + 3]],
+            vec![[point, point + 3]],
+        ]);
+        let identity = (edge * 2) as u32;
+        port_identities.extend([
+            [identity, identity + 1],
+            [identity + 2, identity + 3],
+            [identity + 4, identity + 5],
+            [identity + 6, identity + 7],
+        ]);
+        assignments.push(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..4)
+                .map(|offset| MeshBoundaryEdgeCandidate {
+                    edge: edge + offset,
+                    start: offset,
+                    end: offset + 1,
+                    reversed: None,
+                })
+                .collect()],
+        }]);
+    }
+
+    let MeshEndpointResolve::Solved(topology, point_assignment) =
+        resolve_singleton_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &edge_candidates,
+            &assignments,
+            &port_identities,
+        )
+        .expect("singleton path applies")
+    else {
+        panic!("singleton path did not solve");
+    };
+    assert_eq!(topology.faces.len(), FACE_COUNT);
+    assert_eq!(point_assignment.len(), FACE_COUNT * 4);
 }
