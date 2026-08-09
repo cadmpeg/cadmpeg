@@ -4986,6 +4986,96 @@ fn decode_transfers_a_uniquely_named_literal_typed_legacy_string() {
 }
 
 #[test]
+fn decode_transfers_an_input_bound_legacy_string_formula() {
+    fn named_string(bytes: &mut Vec<u8>, entity_id: u32, name: &str, value: &str) {
+        bytes.push(0xea);
+        bytes.extend(entity_id.to_le_bytes());
+        bytes.extend([0x81, 0xfd, 0x8c]);
+        bytes.extend([5, b'n', b'a', b'm', b'e', 0xd1]);
+        bytes.push(u8::try_from(entity_id - 1).expect("small name selector"));
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(name.len() + 1).expect("short parameter name"));
+        bytes.extend(name.as_bytes());
+        bytes.push(0xfe);
+        bytes.extend(b"\xfe\x84\x92\x82");
+        bytes.extend([7, b'S', b't', b'r', b'i', b'n', b'g', 0x83]);
+        bytes.extend(b"\xfe\x85\x93\x82\xfe");
+        bytes.push(u8::try_from(value.len() + 1).expect("short string value"));
+        bytes.extend(value.as_bytes());
+    }
+
+    fn relation_field(bytes: &mut Vec<u8>, role: &str, selector: &[u8], value: &str) {
+        bytes.push(u8::try_from(role.len() + 1).expect("short relation role"));
+        bytes.extend(role.as_bytes());
+        bytes.extend(selector);
+        bytes.extend(b"\xe8\x00\x12\x01");
+        bytes.push(u8::try_from(value.len() + 1).expect("short relation text"));
+        bytes.extend(value.as_bytes());
+        bytes.push(0xfe);
+    }
+
+    let mut bytes = zero_entity_catpart();
+    bytes.push(0xea);
+    bytes.extend(1_u32.to_le_bytes());
+    bytes.extend([0x81, 0xfd, 0x8c]);
+    relation_field(
+        &mut bytes,
+        "body",
+        &[0x80, 1, 0, 0, 0],
+        "#3_ = #1_ + \"-\" + #2_",
+    );
+    relation_field(
+        &mut bytes,
+        "param",
+        &[0xd1, 3],
+        "(#1_ : #In String,#2_ : #In String,#3_ : #Out String) : VoidType\n",
+    );
+    named_string(&mut bytes, 2, "#1_", "left");
+    named_string(&mut bytes, 3, "#2_", "right");
+    named_string(&mut bytes, 4, "Result", "left-right");
+    bytes.extend(b"\xde\x04\xfe\xfe\x12CATCatalogManager");
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode input-bound legacy string formula");
+    let result = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Result")
+        .expect("legacy formula result parameter");
+    assert_eq!(
+        result.value,
+        Some(cadmpeg_ir::ParameterValue::String("left-right".to_string()))
+    );
+    assert_eq!(result.expression, "#1_ + \"-\" + #2_");
+    let dependency_names = result
+        .dependencies
+        .iter()
+        .map(|dependency| {
+            decoded
+                .ir
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| parameter.id == *dependency)
+                .expect("legacy formula dependency")
+                .name
+                .as_str()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(dependency_names, ["#1_", "#2_"]);
+    assert_eq!(
+        decoded
+            .report
+            .coverage_count(crate::coverage::TRANSFERRED_LEGACY_FORMULA_COUNT),
+        1
+    );
+    assert!(cadmpeg_ir::validate::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_transfers_a_uniquely_named_literal_typed_legacy_integer() {
     let mut bytes = zero_entity_catpart();
     bytes.push(0xea);

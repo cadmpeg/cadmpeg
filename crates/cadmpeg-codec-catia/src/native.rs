@@ -4354,7 +4354,7 @@ pub(crate) fn resolved_relation_program_inputs(
         .collect()
 }
 
-fn relation_symbols(source: &str) -> Vec<(u64, String)> {
+pub(crate) fn relation_symbols(source: &str) -> Vec<(u64, String)> {
     let bytes = source.as_bytes();
     let mut symbols = Vec::new();
     let mut at = 0;

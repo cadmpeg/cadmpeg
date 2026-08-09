@@ -681,6 +681,7 @@ fn collect_legacy_parameters(
         .filter(|run| outer_container_in_scope(run.outer_container.as_ref(), modeling_scope))
     {
         let mut parameters_by_entity = HashMap::<u32, Vec<ParameterId>>::new();
+        let mut parameters_by_name = HashMap::<String, Vec<ParameterId>>::new();
         for scalar in &run.scalar_values {
             if scalar.encoding != crate::native::CatiaLegacyScalarEncoding::Named84 {
                 continue;
@@ -743,7 +744,8 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(scalar.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -797,7 +799,8 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(string.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
@@ -851,20 +854,19 @@ fn collect_legacy_parameters(
             parameters_by_entity
                 .entry(integer.entity_id)
                 .or_default()
-                .push(id);
+                .push(id.clone());
+            parameters_by_name.entry(name.clone()).or_default().push(id);
             transfer.parameters += 1;
             transfer.selector_parameters += usize::from(selected);
         }
         let mut relations_by_parameter =
             HashMap::<u32, Vec<&crate::native::CatiaLegacyRelation>>::new();
         for relation in &run.relations {
-            if relation.inputs.is_empty() {
-                if let Some(parameter) = relation.parameter_entity_id {
-                    relations_by_parameter
-                        .entry(parameter)
-                        .or_default()
-                        .push(relation);
-                }
+            if let Some(parameter) = relation.parameter_entity_id {
+                relations_by_parameter
+                    .entry(parameter)
+                    .or_default()
+                    .push(relation);
             }
         }
         for (entity_id, relations) in relations_by_parameter {
@@ -877,43 +879,27 @@ fn collect_legacy_parameters(
             ) else {
                 continue;
             };
-            let Some(candidate) = candidates.get_mut(parameter) else {
-                continue;
-            };
-            let (source_type, formula_expression, evaluated) = match relation.output.as_ref() {
-                Some(output) if relation.result_type == "VoidType" => {
-                    let formula_expression = legacy_output_assignment_expression(
-                        &relation.expression,
-                        &output.parameter,
-                    );
-                    let evaluated =
-                        evaluate_legacy_output_assignment(&relation.expression, &output.parameter);
-                    (output.value_type.as_str(), formula_expression, evaluated)
-                }
-                None if relation.result_type != "VoidType" => (
-                    relation.result_type.as_str(),
-                    Some(relation.expression.as_str()),
-                    evaluate_formula_expression(&relation.expression, &BTreeMap::new()),
-                ),
-                _ => continue,
-            };
-            if canonical_parameter_type(source_type) != Some(candidate.parameter_type) {
-                continue;
-            }
-            let Some(evaluated) =
-                evaluated.filter(|value| value.satisfies_source_type(source_type))
+            let Some(evaluation) =
+                legacy_relation_evaluation(relation, &parameters_by_name, candidates)
             else {
                 continue;
             };
-            let Some(formula_expression) = formula_expression else {
+            let Some(candidate) = candidates.get_mut(parameter) else {
                 continue;
             };
+            if canonical_parameter_type(evaluation.source_type) != Some(candidate.parameter_type) {
+                continue;
+            }
             if let Some(stored) = candidate.parameter.value.clone() {
-                if !evaluated.agrees_with(&TypedParameterEvaluation::Value(stored)) {
+                if !evaluation
+                    .evaluated
+                    .agrees_with(&TypedParameterEvaluation::Value(stored))
+                {
                     continue;
                 }
             }
-            candidate.parameter.expression = formula_expression.to_string();
+            candidate.parameter.expression = evaluation.expression.to_string();
+            candidate.parameter.dependencies = evaluation.dependencies;
             candidate.formula_output = true;
             transfer.formulas += 1;
         }
@@ -921,12 +907,93 @@ fn collect_legacy_parameters(
     transfer
 }
 
+#[cfg(test)]
 fn evaluate_legacy_output_assignment(
     source: &str,
     output_parameter: &str,
 ) -> Option<EvaluatedFormulaValue> {
     let expression = legacy_output_assignment_expression(source, output_parameter)?;
     evaluate_formula_expression(expression, &BTreeMap::new())
+}
+
+struct LegacyRelationEvaluation<'a> {
+    source_type: &'a str,
+    expression: &'a str,
+    evaluated: EvaluatedFormulaValue,
+    dependencies: Vec<ParameterId>,
+}
+
+// A legacy relation is evaluable only when its signature names a unique,
+// typed, same-run packet for every input. This is the complete local binding
+// rule; unresolved selector namespaces never participate in the join.
+fn legacy_relation_evaluation<'a>(
+    relation: &'a crate::native::CatiaLegacyRelation,
+    parameters_by_name: &HashMap<String, Vec<ParameterId>>,
+    candidates: &BTreeMap<ParameterId, FormulaParameterCandidate>,
+) -> Option<LegacyRelationEvaluation<'a>> {
+    let (source_type, expression) = match relation.output.as_ref() {
+        Some(output) if relation.result_type == "VoidType" => (
+            output.value_type.as_str(),
+            legacy_output_assignment_expression(&relation.expression, &output.parameter)?,
+        ),
+        None if relation.result_type != "VoidType" => {
+            (relation.result_type.as_str(), relation.expression.as_str())
+        }
+        _ => return None,
+    };
+    let symbols = (!relation.inputs.is_empty())
+        .then(|| crate::native::relation_symbols(&relation.expression));
+    let mut bindings = BTreeMap::new();
+    let mut dependencies = Vec::with_capacity(relation.inputs.len());
+    for input in &relation.inputs {
+        let symbols = symbols.as_ref()?;
+        if !symbols
+            .iter()
+            .any(|(_, symbol)| legacy_symbol_matches_input(symbol, &input.parameter))
+        {
+            return None;
+        }
+        let [parameter_id] = parameters_by_name
+            .get(&input.parameter)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+        else {
+            return None;
+        };
+        if dependencies.contains(parameter_id) {
+            return None;
+        }
+        let candidate = candidates.get(parameter_id)?;
+        if canonical_parameter_type(&input.value_type) != Some(candidate.parameter_type) {
+            return None;
+        }
+        let value = candidate.parameter.value.as_ref()?;
+        bindings.insert(
+            input.parameter.as_str(),
+            EvaluatedFormulaValue::from_parameter_value(value),
+        );
+        dependencies.push(parameter_id.clone());
+    }
+    let evaluated = evaluate_formula_expression(expression, &bindings)?;
+    evaluated
+        .satisfies_source_type(source_type)
+        .then_some(LegacyRelationEvaluation {
+            source_type,
+            expression,
+            evaluated,
+            dependencies,
+        })
+}
+
+fn legacy_symbol_matches_input(symbol: &str, input: &str) -> bool {
+    let Some(suffix) = symbol.strip_prefix(input) else {
+        return false;
+    };
+    let suffix = suffix.trim_start_matches(|character: char| character.is_ascii_whitespace());
+    suffix.is_empty()
+        || suffix.strip_prefix('/').is_some_and(|ordinal| {
+            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn legacy_output_assignment_expression<'a>(
