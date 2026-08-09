@@ -366,14 +366,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the object role to assign the owner to a feature or face.
 
-### SN-26. Revolution profile allocation identity
-
-**Question.** How does the `u16le` profile allocation identity in a `b2 03 2d` revolution record select its native profile record?
-
-**Known.** `catia.md` §5.15 "The `00 33 30` byte is only" defines the axis frame, angular chart, and exact unique profile-interval binding.
-
-**Need.** We must resolve the directrix identity when the interval binding is not unique.
-
 ### SN-27. Consolidated class-`0x27` plane carrier
 
 **Question.** What semantic roles do the four tail scalars of an `ec` class-`0x27` record have, and what supplies its missing plane axis frame?
