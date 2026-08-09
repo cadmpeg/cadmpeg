@@ -6390,10 +6390,10 @@ fn feature_body_outputs(
     {
         return Vec::new();
     }
-    bodies_by_object_index
-        .get(&object_index)
-        .cloned()
-        .unwrap_or_default()
+    let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
+        return Vec::new();
+    };
+    vec![body.clone()]
 }
 
 pub(crate) fn attach_expression_parameters(
@@ -8069,6 +8069,16 @@ mod tests {
         assert_eq!(
             super::feature_body_outputs(94, &segment_bindings, &bindings),
             vec![first]
+        );
+        let ambiguous_body_bindings = BTreeMap::from([(
+            94,
+            vec![
+                BodyId("nx:s2:body#3".to_string()),
+                BodyId("nx:s2:body#4".to_string()),
+            ],
+        )]);
+        assert!(
+            super::feature_body_outputs(94, &segment_bindings, &ambiguous_body_bindings).is_empty()
         );
         assert!(super::feature_body_outputs(123, &segment_bindings, &bindings).is_empty());
         let ambiguous_bindings = [
