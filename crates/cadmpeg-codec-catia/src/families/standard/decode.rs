@@ -3808,6 +3808,7 @@ fn attach_standard_topology(
             options,
             &branch_groups,
             &initial_assignment,
+            Some(work_budget),
         )?;
         let mut branch_preferred_edges = vec![false; options.len()];
         for edge in branch_groups
@@ -3833,6 +3834,7 @@ fn attach_standard_topology(
                     &solver_options,
                     &branch_groups,
                     pairs,
+                    Some(work_budget),
                 ) && standard_circle_pair_solution_is_simple(
                     ir,
                     bindings,
@@ -3869,6 +3871,7 @@ fn attach_standard_topology(
                             &solver_options,
                             &branch_groups,
                             pairs,
+                            Some(work_budget),
                         )
                     },
                 )
@@ -5090,9 +5093,19 @@ fn standard_curve_branch_candidates_after_partial_assignment(
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
 ) -> Option<Vec<Vec<[usize; 2]>>> {
     if supports.len() != candidates.len() || candidates.len() != assignment.len() {
         return None;
+    }
+    if let Some(budget) = budget {
+        let candidate_count = candidates.iter().map(Vec::len).sum::<usize>();
+        let work = groups
+            .len()
+            .checked_mul(supports.len().saturating_add(candidate_count))?;
+        if !budget.charge_by(work) {
+            return None;
+        }
     }
     let mut constrained = candidates.to_vec();
     for StandardCurveBranchGroup {
@@ -5161,9 +5174,10 @@ fn standard_curve_branch_assignment_is_ranked(
     candidates: &[Vec<[usize; 2]>],
     groups: &[StandardCurveBranchGroup],
     assignment: &[Option<[usize; 2]>],
+    budget: Option<&WorkBudget<'_>>,
 ) -> bool {
     standard_curve_branch_candidates_after_partial_assignment(
-        supports, candidates, groups, assignment,
+        supports, candidates, groups, assignment, budget,
     )
     .is_some()
 }
@@ -6943,6 +6957,7 @@ mod route_tests {
     use cadmpeg_ir::topology::{Face, Point, Sense, Vertex};
     use cadmpeg_ir::units::Units;
 
+    use cadmpeg_core::decode::WorkBudget;
     use cadmpeg_ir::AnnotationBuilder;
     use std::cell::Cell;
     use std::collections::BTreeMap;
@@ -8231,10 +8246,35 @@ mod route_tests {
             &candidates,
             &groups,
             &assignment,
+            None,
         )
         .expect("unresolved branch relation remains admissible");
 
         assert_eq!(constrained, candidates);
+    }
+
+    #[test]
+    fn standard_branch_ranking_stops_when_its_work_budget_is_exhausted() {
+        let supports = [10, 11].map(|tag| StandardCurveSupport {
+            pos: tag as usize,
+            tag,
+            faces: [3, 7],
+            geometry: StandardCurveGeometry::Line,
+        });
+        let domain = vec![[2, 8], [2, 9], [3, 8], [3, 9]];
+        let candidates = [domain.clone(), domain];
+        let groups = standard_curve_branch_groups(&supports, &candidates);
+        let budget = WorkBudget::new(1);
+
+        assert!(standard_curve_branch_candidates_after_partial_assignment(
+            &supports,
+            &candidates,
+            &groups,
+            &[None, None],
+            Some(&budget),
+        )
+        .is_none());
+        assert!(budget.exhausted());
     }
 
     #[test]
@@ -8421,18 +8461,21 @@ mod route_tests {
             &candidates,
             &groups,
             &ranked,
+            None,
         ));
         assert!(!standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
             &crossed,
+            None,
         ));
         assert!(standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
             &partial,
+            None,
         ));
     }
 
@@ -8469,13 +8512,15 @@ mod route_tests {
             &supports,
             &candidates,
             &groups,
-            &ranked
+            &ranked,
+            None,
         ));
         assert!(!standard_curve_branch_assignment_is_ranked(
             &supports,
             &candidates,
             &groups,
-            &crossed
+            &crossed,
+            None,
         ));
     }
 
@@ -8510,6 +8555,7 @@ mod route_tests {
             &candidates,
             &groups,
             &assignment,
+            None,
         )
         .expect("fixed frontiers establish a valid branch relation");
 
