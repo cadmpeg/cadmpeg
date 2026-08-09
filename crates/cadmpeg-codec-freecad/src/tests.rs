@@ -3395,6 +3395,83 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 }
 
 #[test]
+fn rejects_populated_link_arrays_when_element_count_is_zero() {
+    let decode = |array_property: &str, entry: Option<(&str, Vec<u8>)>| {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2"><Object type="Part::Feature" name="Prototype"/><Object type="App::Link" name="Occurrence"/></Objects>
+<ObjectData Count="2"><Object name="Prototype"><Properties Count="0"/></Object><Object name="Occurrence"><Properties Count="3">
+<Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property>
+<Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="0"/></Property>
+{array_property}
+</Properties></Object></ObjectData></Document>"#
+        );
+        let bytes = entry.map_or_else(
+            || archive(&document),
+            |(name, content)| {
+                archive_entries(&[("Document.xml", document.as_bytes()), (name, &content)])
+            },
+        );
+        FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+    };
+
+    let mut placement = 1_u32.to_le_bytes().to_vec();
+    for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0] {
+        placement.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut scale = 1_u32.to_le_bytes().to_vec();
+    for value in [1.0_f64, 1.0, 1.0] {
+        scale.extend_from_slice(&value.to_le_bytes());
+    }
+    let cases = [
+        (
+            r#"<Property name="PlacementList" type="App::PropertyPlacementList"><PlacementList file="PlacementList"/></Property>"#,
+            Some(("PlacementList", placement)),
+        ),
+        (
+            r#"<Property name="ScaleList" type="App::PropertyVectorList"><VectorList file="ScaleList"/></Property>"#,
+            Some(("ScaleList", scale)),
+        ),
+        (
+            r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="1"><Bool value="true"/></BoolList></Property>"#,
+            None,
+        ),
+        (
+            r#"<Property name="ElementList" type="App::PropertyLinkList"><LinkList count="1"><Link value="Prototype"/></LinkList></Property>"#,
+            None,
+        ),
+    ];
+
+    for (array_property, entry) in cases {
+        assert!(matches!(
+            decode(array_property, entry),
+            Err(cadmpeg_core::CodecError::Malformed(message))
+                if message.contains("inconsistent link-array counts")
+        ));
+    }
+
+    let zero = decode(
+        r#"<Property name="VisibilityList" type="App::PropertyBoolList"><BoolList count="0"/></Property>"#,
+        None,
+    )
+    .expect("empty zero-count link array");
+    assert_eq!(
+        zero.ir
+            .model
+            .occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|native_ref| native_ref.ends_with("Occurrence"))
+            })
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn recovers_assembly_joint_operands_frames_and_state() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">

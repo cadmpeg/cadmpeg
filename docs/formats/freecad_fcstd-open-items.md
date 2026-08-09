@@ -226,19 +226,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must establish the endpoint equivalence rule and the admissible profile topology. An ambiguous junction must use constraint identity, an explicit source order rule, or an attributable refusal instead of a first match.
 
-## 9. Product structure
-
-### PS-01. Zero `ElementCount` with populated arrays
-
-**Question.** Does a persisted `ElementCount=0` permit any populated link-array field?
-
-**Known.** `freecad_fcstd.md` §9 "Link semantics remain distinct from placement." states that every array-valued field is absent or matches `ElementCount`. FreeCAD's link extension resizes placement and scale lists from the nonnegative `ElementCount` value. Zero is a present value with zero elements.
-
-**Conflict.** `product.rs` `occurrence_count` filters out a parsed zero and infers the count from the longest array field. Thus `ElementCount=0` plus a populated placement, scale, visibility, or object list becomes a nonzero neutral array instead of an invalid record.
-
-**Need.** The decoder must distinguish an absent `ElementCount` property from a present zero. A present zero must require empty arrays.
-
-## 10. Semantic annotations
+## 9. Semantic annotations
 
 ### SA-01. Runtime-type to annotation-kind mapping
 

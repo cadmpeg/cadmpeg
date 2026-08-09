@@ -216,6 +216,9 @@ base and per-element scale, explicit element objects, and per-element visibility
 neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit
 future native policy, with its source, ownership group, and touched state resolved independently.
 All array-valued fields must either be absent or match `ElementCount`.
+A present zero `ElementCount` requires every array-valued field to be empty. The link retains its
+single scalar occurrence. An absent `ElementCount` permits one scalar link occurrence or infers a
+nonzero count from the populated array-valued fields.
 
 Native namespace version 5 extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
