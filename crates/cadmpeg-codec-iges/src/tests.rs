@@ -4891,6 +4891,32 @@ fn occurrence_depth_limit_file() -> Vec<u8> {
     owned_test_file(&entities)
 }
 
+fn malformed_occurrence_definition_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000200",
+            parameters: "308,0,5HCHILD,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "CHILDINS".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "BROKEN".into(),
+            status: "00000200",
+            parameters: "308,1,6HBROKEN,1,3.;".into(),
+        },
+    ])
+}
+
 fn invalid_subfigure_depth_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -7369,8 +7395,7 @@ fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
     assert_eq!(expansion.fields()["depth_limit"], 64);
     assert_eq!(expansion.fields()["emitted"], 100);
     assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["output_truncated"], true);
-    assert_eq!(expansion.fields()["depth_truncated"], false);
+    assert_eq!(expansion.fields()["issues"][0], "output_limit");
     assert!(result.report.losses.iter().any(|loss| {
         loss.message == "IGES product occurrence expansion reached its configured output limit"
     }));
@@ -7395,11 +7420,32 @@ fn decode_reports_product_occurrence_depth_truncation() {
     assert_eq!(expansion.fields()["depth_limit"], 64);
     assert_eq!(expansion.fields()["emitted"], 64);
     assert_eq!(expansion.fields()["truncated"], true);
-    assert_eq!(expansion.fields()["output_truncated"], false);
-    assert_eq!(expansion.fields()["depth_truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "depth_limit");
     assert!(result.report.losses.iter().any(|loss| {
         loss.message
             == "IGES product occurrence expansion reached its configured nesting-depth limit"
+    }));
+}
+
+#[test]
+fn decode_does_not_infer_roots_from_malformed_definition_members() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(malformed_occurrence_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["subfigure_definitions"].len(), 2);
+    assert_eq!(native.arenas["subfigure_instances"].len(), 1);
+    assert!(native.arenas["product_occurrences"].is_empty());
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields()["truncated"], true);
+    assert_eq!(expansion.fields()["issues"][0], "malformed_definition");
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message
+            == "IGES product occurrence root inference was suppressed because a definition member list is malformed"
     }));
 }
 

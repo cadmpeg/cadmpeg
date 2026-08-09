@@ -768,14 +768,22 @@ struct NativeProductOccurrenceExpansion {
     depth_limit: usize,
     emitted: usize,
     truncated: bool,
-    output_truncated: bool,
-    depth_truncated: bool,
+    issues: Vec<ProductOccurrenceIssue>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum ProductOccurrenceIssue {
+    OutputLimit,
+    DepthLimit,
+    MalformedDefinition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductOccurrenceExpansion {
     pub(crate) output_truncated: bool,
     pub(crate) depth_truncated: bool,
+    pub(crate) root_inference_blocked: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -3453,19 +3461,33 @@ pub(crate) fn store(
             })
         })
         .collect::<Vec<_>>();
+    let mut root_inference_blocked = false;
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
         .filter_map(|entry| {
-            let record = by_directory.get(&entry.sequence).copied()?;
-            let count = record.count(3)?;
+            let Some(record) = by_directory.get(&entry.sequence).copied() else {
+                root_inference_blocked = true;
+                return None;
+            };
+            let Some(count) = record.count(3) else {
+                root_inference_blocked = true;
+                return Some((
+                    entry.sequence,
+                    OccurrenceDefinition {
+                        members: Vec::new(),
+                    },
+                ));
+            };
             let members = (0..count)
-                .map(|index| {
-                    record
+                .filter_map(|index| {
+                    let member = record
                         .integer(4 + index)
-                        .and_then(|value| u32::try_from(value).ok())
+                        .and_then(|value| u32::try_from(value).ok());
+                    root_inference_blocked |= member.is_none();
+                    member
                 })
-                .collect::<Option<Vec<_>>>()?;
+                .collect();
             Some((entry.sequence, OccurrenceDefinition { members }))
         })
         .collect::<BTreeMap<_, _>>();
@@ -3535,30 +3557,39 @@ pub(crate) fn store(
         output_limit: limits.output,
         depth_limit: limits.depth,
     };
-    for root in directory.iter().filter(|entry| {
-        matches!(entry.entity_type, 408 | 420)
-            && entry.form == 0
-            && !contained_instances.contains(&entry.sequence)
-    }) {
-        if expansion.expand(
-            root.sequence,
-            Affine::IDENTITY,
-            &mut Vec::new(),
-            &mut product_occurrences,
-            &mut depth_truncated,
-        ) {
-            output_truncated = true;
-            break;
+    if !root_inference_blocked {
+        for root in directory.iter().filter(|entry| {
+            matches!(entry.entity_type, 408 | 420)
+                && entry.form == 0
+                && !contained_instances.contains(&entry.sequence)
+        }) {
+            if expansion.expand(
+                root.sequence,
+                Affine::IDENTITY,
+                &mut Vec::new(),
+                &mut product_occurrences,
+                &mut depth_truncated,
+            ) {
+                output_truncated = true;
+                break;
+            }
         }
     }
+    let issues = [
+        output_truncated.then_some(ProductOccurrenceIssue::OutputLimit),
+        depth_truncated.then_some(ProductOccurrenceIssue::DepthLimit),
+        root_inference_blocked.then_some(ProductOccurrenceIssue::MalformedDefinition),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
     let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
         id: "iges:product:occurrence-expansion#state".into(),
         output_limit: limits.output,
         depth_limit: limits.depth,
         emitted: product_occurrences.len(),
-        truncated: output_truncated || depth_truncated,
-        output_truncated,
-        depth_truncated,
+        truncated: !issues.is_empty(),
+        issues,
     }];
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
@@ -3607,5 +3638,6 @@ pub(crate) fn store(
     Ok(ProductOccurrenceExpansion {
         output_truncated,
         depth_truncated,
+        root_inference_blocked,
     })
 }

@@ -152,16 +152,6 @@ The codec knows the correct pattern. `native.rs:3253-3266` looks the target up a
 
 **Need.** We need the validation contract for entity parameter pointers, and a resolution state for those that fail it.
 
-### DR-04. One malformed subfigure definition promotes its instances to assembly roots
-
-**Question.** How is a top-level product instance identified?
-
-**Known.** IGES declares no root marker, so the codec infers roots as the instances that no surviving definition names (`native.rs:3515-3519`). `native.rs:3438-3450` drops a complete Type 308 or Type 320 definition when any single member token is not a nonnegative integer, because `collect::<Option<Vec<_>>>()` gives `None`.
-
-**Note.** The two rules combine. One member written as `13.` instead of `13` removes the definition, so every instance of it becomes a root and expands from `Affine::IDENTITY`. The `product_occurrences` arena then holds records that describe a structure the file does not contain, with the parent transform chain dropped and no loss emitted.
-
-**Need.** Fabricated occurrences are worse than missing ones, because a consumer cannot detect them. We need per-member recovery, or a rule that a definition which fails to parse blocks root inference for its instances.
-
 ### DR-06. A blank Directory Structure field gives a link to `#D0`
 
 **Question.** What does a blank or positive Structure field on a Type 422 mean?

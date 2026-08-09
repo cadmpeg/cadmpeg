@@ -3081,11 +3081,10 @@
           "product_occurrence_expansion": [
             {
               "depth_limit": 64,
-              "depth_truncated": false,
               "emitted": 3,
               "id": "iges:product:occurrence-expansion#state",
+              "issues": [],
               "output_limit": 100000,
-              "output_truncated": false,
               "truncated": false
             }
           ],

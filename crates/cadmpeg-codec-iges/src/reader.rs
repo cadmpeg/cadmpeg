@@ -142,6 +142,15 @@ fn decode_with_occurrence_limits(
             provenance: None,
         });
     }
+    if product_occurrence_expansion.root_inference_blocked {
+        losses.push(LossNote {
+            code: cadmpeg_ir::LossKind::DecodeDiagnostic,
+            severity: Severity::Warning,
+            message: "IGES product occurrence root inference was suppressed because a definition member list is malformed"
+                .into(),
+            provenance: None,
+        });
+    }
     if !options.container_only {
         losses.extend(
             directory
