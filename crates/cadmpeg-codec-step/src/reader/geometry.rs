@@ -1580,18 +1580,15 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .surfaces
         .iter()
         .filter_map(|surface| {
-            step_instance_id(&surface.id.0).map(|id| {
-                (
-                    id,
-                    surface_parameter_scales_for_step(
-                        ir,
-                        &surface.id,
-                        &surface.geometry,
-                        unit_scales.length(id, scale),
-                        unit_scales.angle(id, angle_scale),
-                    ),
-                )
-            })
+            let id = step_instance_id(&surface.id.0)?;
+            let scales = surface_parameter_scales_for_step(
+                ir,
+                &surface.id,
+                &surface.geometry,
+                unit_scales.length(id, scale),
+                unit_scales.angle(id, angle_scale),
+            )?;
+            Some((id, scales))
         })
         .collect::<BTreeMap<_, _>>();
     for (id, record) in exchange.entities("PCURVE") {
@@ -4006,17 +4003,219 @@ fn surface_parameter_scales_for_step(
     geometry: &SurfaceGeometry,
     length_scale: f64,
     angle_scale: f64,
-) -> [f64; 2] {
-    if ir.model.procedural_surfaces.iter().any(|procedural| {
-        procedural.surface == *surface_id
-            && matches!(
-                procedural.definition,
-                ProceduralSurfaceDefinition::AxisRevolution { .. }
+) -> Option<[f64; 2]> {
+    procedural_surface_parameter_scales(
+        ir,
+        surface_id,
+        geometry,
+        length_scale,
+        angle_scale,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn procedural_surface_parameter_scales(
+    ir: &CadIr,
+    surface_id: &SurfaceId,
+    geometry: &SurfaceGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<SurfaceId>,
+) -> Option<[f64; 2]> {
+    if !active.insert(surface_id.clone()) {
+        return None;
+    }
+    let direct = match geometry {
+        SurfaceGeometry::Plane { .. } => Some([length_scale, length_scale]),
+        SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. } => {
+            Some([angle_scale, length_scale])
+        }
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
+            Some([angle_scale, angle_scale])
+        }
+        SurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
+        SurfaceGeometry::Transformed { basis, .. } => procedural_surface_parameter_scales(
+            ir,
+            surface_id,
+            basis,
+            length_scale,
+            angle_scale,
+            active,
+        ),
+        SurfaceGeometry::Procedural { construction } => ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.id == *construction)
+            .and_then(|procedural| {
+                procedural_definition_parameter_scales(
+                    ir,
+                    &procedural.definition,
+                    length_scale,
+                    angle_scale,
+                    active,
+                )
+            }),
+        SurfaceGeometry::Unknown { .. } => ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface == *surface_id)
+            .and_then(|procedural| {
+                procedural_definition_parameter_scales(
+                    ir,
+                    &procedural.definition,
+                    length_scale,
+                    angle_scale,
+                    active,
+                )
+            }),
+        SurfaceGeometry::Polygonal { .. } => None,
+    };
+    active.remove(surface_id);
+    direct
+}
+
+fn procedural_definition_parameter_scales(
+    ir: &CadIr,
+    definition: &ProceduralSurfaceDefinition,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<SurfaceId>,
+) -> Option<[f64; 2]> {
+    let support_scales = |support: &SurfaceId, active: &mut BTreeSet<SurfaceId>| {
+        let carrier = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == *support)?;
+        procedural_surface_parameter_scales(
+            ir,
+            support,
+            &carrier.geometry,
+            length_scale,
+            angle_scale,
+            active,
+        )
+    };
+    match definition {
+        ProceduralSurfaceDefinition::Extrusion { directrix, .. }
+        | ProceduralSurfaceDefinition::LinearSweep { directrix, .. } => Some([
+            directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?,
+            length_scale,
+        ]),
+        ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => Some([
+            angle_scale,
+            directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?,
+        ]),
+        ProceduralSurfaceDefinition::Revolution {
+            directrix,
+            transposed,
+            ..
+        } => {
+            let directrix = directrix_parameter_scale(ir, directrix, length_scale, angle_scale)?;
+            Some(if *transposed {
+                [angle_scale, directrix]
+            } else {
+                [directrix, angle_scale]
+            })
+        }
+        ProceduralSurfaceDefinition::Offset { support, .. }
+        | ProceduralSurfaceDefinition::ParallelOffset { support, .. }
+        | ProceduralSurfaceDefinition::Subset { support, .. }
+        | ProceduralSurfaceDefinition::SubSurface { support, .. }
+        | ProceduralSurfaceDefinition::CurveBounded { support, .. }
+        | ProceduralSurfaceDefinition::Replica {
+            source: support, ..
+        } => support_scales(support, active),
+        ProceduralSurfaceDefinition::DegenerateTorus { .. } => Some([angle_scale, angle_scale]),
+        _ => None,
+    }
+}
+
+fn directrix_parameter_scale(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    length_scale: f64,
+    angle_scale: f64,
+) -> Option<f64> {
+    directrix_parameter_scale_inner(
+        ir,
+        curve_id,
+        length_scale,
+        angle_scale,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn directrix_parameter_scale_inner(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> Option<f64> {
+    if !active.insert(curve_id.clone()) {
+        return None;
+    }
+    let scale = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *curve_id)
+        .and_then(|curve| {
+            directrix_geometry_parameter_scale(
+                ir,
+                &curve.geometry,
+                length_scale,
+                angle_scale,
+                active,
             )
-    }) {
-        [angle_scale, 1.0]
-    } else {
-        surface_parameter_scales(geometry, length_scale, angle_scale)
+        });
+    active.remove(curve_id);
+    scale
+}
+
+fn directrix_geometry_parameter_scale(
+    ir: &CadIr,
+    geometry: &CurveGeometry,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<CurveId>,
+) -> Option<f64> {
+    match geometry {
+        CurveGeometry::Line { .. } => Some(length_scale),
+        CurveGeometry::Circle { .. }
+        | CurveGeometry::Ellipse { .. }
+        | CurveGeometry::Parabola { .. }
+        | CurveGeometry::Hyperbola { .. } => Some(angle_scale),
+        CurveGeometry::Nurbs(_) => Some(1.0),
+        CurveGeometry::Transformed { basis, .. } => {
+            directrix_geometry_parameter_scale(ir, basis, length_scale, angle_scale, active)
+        }
+        CurveGeometry::Procedural { construction } => ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|procedural| procedural.id == *construction)
+            .and_then(|procedural| match &procedural.definition {
+                ProceduralCurveDefinition::Offset { source, .. }
+                | ProceduralCurveDefinition::SpatialOffset { source, .. }
+                | ProceduralCurveDefinition::Subset { source, .. }
+                | ProceduralCurveDefinition::VectorOffset { source, .. }
+                | ProceduralCurveDefinition::Projection { source, .. } => {
+                    directrix_parameter_scale_inner(ir, source, length_scale, angle_scale, active)
+                }
+                ProceduralCurveDefinition::Deformable {
+                    source: cadmpeg_ir::geometry::DeformableCurveSource::Curve { curve },
+                    ..
+                } => directrix_parameter_scale_inner(ir, curve, length_scale, angle_scale, active),
+                _ => None,
+            }),
+        CurveGeometry::Degenerate { .. }
+        | CurveGeometry::Composite { .. }
+        | CurveGeometry::Polyline { .. }
+        | CurveGeometry::Unknown { .. } => None,
     }
 }
 
@@ -4734,6 +4933,7 @@ impl ValueExt for Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_ir::eval::nurbs_curve_point;
 
     #[test]
     fn edge_parameter_range_rejects_reversed_nonperiodic_interval() {
@@ -4759,6 +4959,44 @@ mod tests {
         let range = edge_parameter_range(&circle, start, end).expect("periodic interval");
         assert!((range[0] - 1.5).abs() < 1.0e-10);
         assert!((range[1] - (0.5 + std::f64::consts::TAU)).abs() < 1.0e-10);
+    }
+
+    #[test]
+    fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
+        let nurbs = NurbsCurve {
+            degree: 3,
+            knots: vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+                Point3::new(5.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        };
+        let geometry = CurveGeometry::Nurbs(nurbs.clone());
+        let start_point =
+            nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 0.0)
+                .expect("start point");
+        let end_point =
+            nurbs_curve_point(nurbs.degree, &nurbs.knots, &nurbs.control_points, None, 1.0)
+                .expect("end point");
+        let start_seed = curve_endpoint_seed(&geometry, false, 0.0);
+        let start = nurbs_curve_parameter_near_point(&nurbs, start_point, 1.0e-6, start_seed)
+            .expect("start witness");
+        let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, start)
+            .expect("unanchored end witness");
+        assert!((start_seed_end - 1.0).abs() > 0.1);
+        let end_seed = curve_endpoint_seed(&geometry, true, start);
+        let end = nurbs_curve_parameter_near_point(&nurbs, end_point, 1.0e-6, end_seed)
+            .expect("end witness");
+
+        assert!(start.abs() < 1.0e-12);
+        assert!((end - 1.0).abs() < 1.0e-12);
     }
 
     #[test]
@@ -4801,9 +5039,133 @@ mod tests {
     }
 
     #[test]
+    fn procedural_surface_units_follow_the_evaluated_parameter_order() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let directrix = CurveId("line".into());
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
+        let sweep = SurfaceId("sweep".into());
+        let revolution = SurfaceId("revolution".into());
+        ir.model.surfaces.extend([
+            Surface {
+                id: sweep.clone(),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            },
+            Surface {
+                id: revolution.clone(),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            },
+        ]);
+        ir.model.procedural_surfaces.extend([
+            ProceduralSurface {
+                id: ProceduralSurfaceId("sweep-construction".into()),
+                surface: sweep.clone(),
+                definition: ProceduralSurfaceDefinition::LinearSweep {
+                    directrix: directrix.clone(),
+                    direction: Vector3::new(0.0, 1.0, 0.0),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+            ProceduralSurface {
+                id: ProceduralSurfaceId("revolution-construction".into()),
+                surface: revolution.clone(),
+                definition: ProceduralSurfaceDefinition::AxisRevolution {
+                    directrix,
+                    axis_origin: Point3::new(0.0, 0.0, 0.0),
+                    axis_direction: Vector3::new(0.0, 0.0, 1.0),
+                },
+                cache_fit_tolerance: None,
+                record_bounds: None,
+            },
+        ]);
+        let length_scale = 0.001;
+        let angle_scale = std::f64::consts::PI / 180.0;
+
+        assert_eq!(
+            surface_parameter_scales_for_step(
+                &ir,
+                &sweep,
+                &ir.model.surfaces[0].geometry,
+                length_scale,
+                angle_scale,
+            ),
+            Some([length_scale, length_scale])
+        );
+        assert_eq!(
+            surface_parameter_scales_for_step(
+                &ir,
+                &revolution,
+                &ir.model.surfaces[1].geometry,
+                length_scale,
+                angle_scale,
+            ),
+            Some([angle_scale, length_scale])
+        );
+    }
+
+    #[test]
+    fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
+        let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        let directrix = CurveId("composite".into());
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            geometry: CurveGeometry::Composite {
+                segments: Vec::new(),
+                self_intersect: None,
+            },
+            source_object: None,
+        });
+        let surface = SurfaceId("sweep".into());
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("sweep-construction".into()),
+            surface: surface.clone(),
+            definition: ProceduralSurfaceDefinition::LinearSweep {
+                directrix,
+                direction: Vector3::new(0.0, 1.0, 0.0),
+            },
+            cache_fit_tolerance: None,
+            record_bounds: None,
+        });
+
+        assert_eq!(
+            surface_parameter_scales_for_step(
+                &ir,
+                &surface,
+                &ir.model.surfaces[0].geometry,
+                0.001,
+                std::f64::consts::PI / 180.0,
+            ),
+            None
+        );
+    }
+
+    #[test]
     fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         let surface_id = SurfaceId("surface".into());
+        let directrix = CurveId("directrix".into());
         let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.curves.push(Curve {
+            id: directrix.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        });
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
@@ -4813,7 +5175,7 @@ mod tests {
             id: ProceduralSurfaceId("construction".into()),
             surface: surface_id.clone(),
             definition: ProceduralSurfaceDefinition::AxisRevolution {
-                directrix: CurveId("directrix".into()),
+                directrix,
                 axis_origin: Point3::new(0.0, 0.0, 0.0),
                 axis_direction: Vector3::new(0.0, 0.0, 1.0),
             },
@@ -4829,7 +5191,7 @@ mod tests {
                 10.0,
                 std::f64::consts::PI / 180.0,
             ),
-            [std::f64::consts::PI / 180.0, 1.0]
+            Some([std::f64::consts::PI / 180.0, 10.0])
         );
     }
 
